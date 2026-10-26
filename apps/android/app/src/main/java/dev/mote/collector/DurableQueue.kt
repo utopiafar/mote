@@ -504,6 +504,16 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     private fun metadataWindow(capturedAt: String, minutes: Int): Long =
         java.time.Instant.parse(capturedAt).toEpochMilli() / (minutes * 60_000L)
+    /** A durable confirmation can finish only the exact selected body, never a later stateSeries. */
+    internal fun acknowledgeReceivedVersion(id: String, version: String, origin: String, uploadedBytes: Long, retentionDays: Int, now: Long): Boolean = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) return@guarded false
+        val record = read(file)
+        if (!matchesOrigin(record) || origin.trim().trimEnd('/') != archiveOrigin.trim().trimEnd('/') ||
+            CaptureUploadVersion.of(record) != version) return@guarded false
+        acknowledge(id, uploadedBytes, retentionDays, now)
+        true
+    }
     fun acknowledge(id: String, uploadedBytes: Long = 0, retentionDays: Int = 0, now: Long = System.currentTimeMillis(), observations: Int? = null): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
@@ -661,7 +671,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         return event
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
-    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null): JSONObject {
+    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null, libraryBindings: Boolean = false, libraryVersion: ((JSONObject, String?) -> String)? = null): JSONObject {
         prepareIndex(requireStatistics = true)
         return guarded {
             require(limit in 1..60)
@@ -680,7 +690,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val next = if (page.size <= limit) null else items.last().let {
                 Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject().put("at", it.getString("capturedAt")).put("id", it.getString("id")).toString().toByteArray())
         }
+        val bindings = JSONObject(); val versions = JSONObject()
+        if (libraryBindings) items.forEach { event -> bindings.put(event.getString("id"), event.optString("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))); versions.put(event.getString("id"), (libraryVersion ?: CaptureLibraryVersion::of)(event, event.optString("_blob"))) }
         JSONObject().put("items", org.json.JSONArray(items.map { display(it).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
+        .apply { if (libraryBindings) { put("bindings", bindings); put("versions", versions) } }
         .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
         }
     }

@@ -67,7 +67,7 @@ test('note deletion invalidates evidence and cannot be resurrected by an offline
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/notes/${input.id}`, headers })).json().deleted, 0);
   assert.equal((await app.inject({ url: `/api/notes/${input.id}`, headers })).statusCode, 404);
   assert.equal((await app.inject({ method: 'POST', url: '/api/notes', headers, payload: input })).statusCode, 410);
-  assert.deepEqual(store.search({ query: '合成文本' }), []); assert.equal(store.insights().length, 0);
+  assert.deepEqual(store.search({ query: '合成文本' }), []); assert.equal(store.insights().items.length, 0);
 });
 
 test('malformed note metadata and blank text reject before storage', async t => {

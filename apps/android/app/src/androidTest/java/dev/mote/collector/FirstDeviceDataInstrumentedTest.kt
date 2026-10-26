@@ -40,7 +40,7 @@ class FirstDeviceDataInstrumentedTest {
         return result.get().getOrThrow()
     }
     private fun views(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList()
-    private fun visible() = WindowInspector.getGlobalWindowViews().filter { it.isShown }.flatMap(::views).filter { it.isShown }
+    private fun visible() = WindowInspector.getGlobalWindowViews().filter { it.isShown && it.hasWindowFocus() }.flatMap(::views).filter { it.isShown }
     private fun activityOrNull(): Activity? = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).singleOrNull { it.packageName == context.packageName }
     private fun activity(): Activity = requireNotNull(activityOrNull())
     private fun until(description: String, timeout: Long = 25000, check: () -> Boolean) {
@@ -59,7 +59,7 @@ class FirstDeviceDataInstrumentedTest {
     }
     private fun clickText(label: String) = click("Reach native action $label") { it is TextView && it.text.toString() == label }
     private fun screenshot(name: String) = main {
-        val roots = WindowInspector.getGlobalWindowViews().filter { it.isShown && it.width > 0 && it.height > 0 }
+        val roots = WindowInspector.getGlobalWindowViews().filter { it.isShown && it.hasWindowFocus() && it.width > 0 && it.height > 0 }
         val root = roots.firstOrNull { views(it).filterIsInstance<TextView>().any { label -> label.isShown && label.text.toString() == "基于这条记录提问" } } ?: activity().window.decorView
         val image = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
         root.draw(Canvas(image)) // Keep FLAG_SECURE; render only our generated app views.
@@ -78,11 +78,17 @@ class FirstDeviceDataInstrumentedTest {
         click("Open Library") { it.tag == "primary:LIBRARY" }
         click("Open the exact saved record") { it.tag == "library-record:$id" }
         until("The native original reader shows the saved text") { main {
-            WindowInspector.getGlobalWindowViews().any { root ->
+            WindowInspector.getGlobalWindowViews().filter { it.hasWindowFocus() }.any { root ->
                 val labels = views(root).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
                 "原文" in labels && "基于这条记录提问" in labels && text in labels
             }
         } }
+    }
+    private fun returnFromOriginal() {
+        clickText("关闭详情")
+        until("Return to the focused record list") { main { activityOrNull() is CaptureRecordsActivity && activity().window.decorView.hasWindowFocus() } }
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        until("Return to the original main Activity before closing its scenario") { main { activityOrNull() is MainActivity && activity().window.decorView.hasWindowFocus() } }
     }
 
     @Test fun connectSaveSendAndConfirmSameOriginal() {
@@ -122,10 +128,7 @@ class FirstDeviceDataInstrumentedTest {
             assertEquals(text, record.getString("ocrText")); assertEquals(settings.deviceId, record.getString("deviceId"))
             assertEquals("waiting", owner.get("/api/devices/first-data").getString("state"))
             openOriginal(id); screenshot("local-original")
-            instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-            instrumentation.waitForIdleSync()
-            instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-            instrumentation.waitForIdleSync()
+            returnFromOriginal()
             click("Return home") { it.tag == "primary:HOME" }
             clickText("查看状态与操作"); clickText("立即同步")
             until("Real WorkManager receives a valid upload acknowledgement", 120000) { context.queue().pendingSync().count == 0 }
@@ -139,6 +142,7 @@ class FirstDeviceDataInstrumentedTest {
             assertEquals("The retained local original survives successful upload", text, context.queue().capture(id)!!.getString("ocrText"))
             openOriginal(id); screenshot("confirmed-original")
             File(context.filesDir, "first-data-result.json").writeText(JSONObject().put("id", id).put("deviceId", settings.deviceId).put("text", text).put("candidate", candidate).toString())
+            returnFromOriginal()
         }
     }
 
@@ -149,6 +153,6 @@ class FirstDeviceDataInstrumentedTest {
         assertEquals(0, context.queue().pendingSync().count)
         assertEquals(text, context.queue().capture(id)!!.getString("ocrText"))
         assertEquals(saved.getJSONObject("candidate").getString("receivedAt"), owner.get("/api/devices/first-data").getJSONObject("candidate").getString("receivedAt"))
-        ActivityScenario.launch(MainActivity::class.java).use { openOriginal(id); screenshot("restarted-original") }
+        ActivityScenario.launch(MainActivity::class.java).use { openOriginal(id); screenshot("restarted-original"); returnFromOriginal() }
     }
 }

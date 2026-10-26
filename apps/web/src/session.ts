@@ -76,6 +76,7 @@ export function persistSession(connection: Connection, lifetime: SessionLifetime
 }
 
 export function clearSession(): void {
+  try { globalThis.sessionStorage?.removeItem('mote.plugin-quick-add'); } catch { /* storage may be blocked */ }
   try { globalThis.sessionStorage?.removeItem(periodStorageKey); } catch { /* storage may be blocked */ }
   try { globalThis.sessionStorage?.removeItem(connectionStorageKey); } catch { /* storage may be blocked */ }
   try { globalThis.localStorage?.removeItem(connectionStorageKey); } catch { /* storage may be blocked */ }

@@ -23,5 +23,8 @@ app.post('/api/insight-runs/:id/cancel',async req=>{const id=z.string().uuid().p
 app.get('/api/insight-runs',async()=>({items:insightRuns.list()}));
 app.get('/api/insight-runs/:id',async req=>insightRuns.detail(z.string().uuid().parse((req.params as {id:string}).id)));
 app.post('/api/insights',async req=>{const id=randomUUID(),input=insightRequestSchema.parse(req.body??{});return insightRuns.perform(id,input,(observe,signal,snapshot)=>insight(input,observe,signal,'insight:'+id,snapshot));});
-app.get('/api/insights',async()=>({items:store.insights()}));
+app.get('/api/insights',async req=>store.insights(req.query));
+// A result identity is independent of its background job. Only the current
+// published table is authoritative; job receipts cannot restore deleted results.
+app.get('/api/insights/:runId',async req=>store.insight(z.string().min(1).max(128).refine(id=>!/[\u0000-\u001f\u007f]/.test(id)).parse((req.params as {runId:string}).runId)));
 }

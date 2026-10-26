@@ -18,6 +18,8 @@ export class StorageLedger {
   private refresh(){
     const jsonTables=['import_uploads','todos','perception_results','captures','memories','memory_deletions','memory_input_plans','source_connections','conversations','conversation_turns','memory_jobs','memory_batches','memory_extraction_drafts','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_effective','memory_recipe_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets','context_contents','context_artifacts','processing_jobs','coding_conversation_contexts','delegation_works','delegation_units','delegation_payloads','delegation_results'];
     const expressions:Record<string,string>=Object.fromEntries(jsonTables.map(t=>[t,'length(CAST(json AS BLOB))']));
+    expressions.context_topic_batches='length(CAST(json AS BLOB))+length(CAST(operation_id AS BLOB))+128';
+    expressions.context_topic_heads='length(CAST(snapshot_key AS BLOB))+length(CAST(operation_id AS BLOB))+128';
     expressions.memory_phase_outputs='length(CAST(json AS BLOB))+256';
     expressions.media_execution_calls='length(CAST(input AS BLOB))+coalesce(length(CAST(fact AS BLOB)),0)+1024';
     expressions.media_execution_instance='length(CAST(nonce AS BLOB))+128';

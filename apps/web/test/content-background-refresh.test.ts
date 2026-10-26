@@ -106,10 +106,10 @@ for(const kind of ['capture','material'] as const)test(`Memory selected ${kind} 
 
 for(const populated of [false,true])test(`Insight ${populated?'populated':'empty'} history and compose stay stable during background reads`,async t=>{
  const {root,d,apiWith}=await fixture(t),first=deferred(),refresh=deferred();let refreshing=false;
- const api=apiWith(path=>path==='/api/insights'?(refreshing?refresh.promise:first.promise):{items:[]});
+ const api=apiWith(path=>path==='/api/insights?limit=30'?(refreshing?refresh.promise:first.promise):{items:[]});
  await act(async()=>root.render(insightView(api)));assert.match(d.querySelector('.workspace-list')!.textContent!,/正在读取/);
  await act(async()=>first.resolve({items:populated?[report]:[]}));await act(async()=>button(d,'新建洞察').click());const list=d.querySelector('.workspace-list')!,settled=list.querySelector(populated?'.workspace-select':'p.muted'),compose=d.querySelector('textarea');
- refreshing=true;await act(async()=>resources(api).invalidate(path=>path==='/api/insights'));
+ refreshing=true;await act(async()=>resources(api).invalidate(path=>path==='/api/insights?limit=30'));
  assert.doesNotMatch(list.textContent!,/正在读取/);assert.equal(list.querySelector(populated?'.workspace-select':'p.muted'),settled);assert.equal(d.querySelector('textarea'),compose);assert.equal(compose!.disabled,false);assert.equal(d.querySelector('.insights-page')!.getAttribute('aria-busy'),'false');
  await act(async()=>refresh.resolve({items:populated?[report]:[]}));assert.equal(list.querySelector(populated?'.workspace-select':'p.muted'),settled);
 });
@@ -118,7 +118,8 @@ test('an Insight completion refreshes history and notifies its shell once',async
  const {root,d,apiWith}=await fixture(t),completion=deferred(),historyRefresh=deferred();let historyReads=0,runReads=0,changes=0;
  const running={id:'generated-run',status:'running',createdAt:when,updatedAt:when,scope:{},events:[]};
  const api=apiWith(path=>{
-  if(path==='/api/insights')return ++historyReads===1?{items:[]}:historyRefresh.promise;
+  if(path==='/api/insights?limit=30')return ++historyReads===1?{items:[]}:historyRefresh.promise;
+  if(path==='/api/insights/'+report.runId)return report;
   if(path==='/api/insight-runs')return {items:[running]};
   if(path==='/api/insight-runs/generated-run'){runReads++;return completion.promise;}
   return {items:[]};
@@ -134,7 +135,7 @@ for(const kind of ['Memory','Insight'] as const)test(`${kind} mounts once at a n
  const api=apiWith(path=>{counts.set(path,(counts.get(path)??0)+1);return {items:[],nextCursor:null};});
  const view=kind==='Memory'?memoryView:insightView;
  await act(async()=>root.render(view(api,{refreshVersion:14})));
- const paths=[...counts.keys()].filter(path=>kind==='Memory'?path.startsWith('/api/memories?')||path==='/api/memory-jobs':path==='/api/insights'||path==='/api/insight-runs');
+ const paths=[...counts.keys()].filter(path=>kind==='Memory'?path.startsWith('/api/memories?')||path==='/api/memory-jobs':path==='/api/insights?limit=30'||path==='/api/insight-runs');
  assert.equal(paths.length,2);for(const path of paths)assert.equal(counts.get(path),1);
  await act(async()=>root.render(view(api,{refreshVersion:15})));for(const path of paths)assert.equal(counts.get(path),2);
 });

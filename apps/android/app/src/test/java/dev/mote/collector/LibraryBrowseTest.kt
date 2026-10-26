@@ -40,4 +40,35 @@ class LibraryBrowseTest {
         assertEquals(0, queue.capturePage(after, before, source = "media").getJSONArray("items").length())
         assertEquals(4, queue.depth()) // Browsing has no retention or acknowledgement side effects.
     }
+
+    @Test fun libraryBindingSidecarPreservesOriginsWithoutChangingCapturedBodies() {
+        val queue = DurableQueue(directory.newFolder(), cipher)
+        val old = fixture("note", 8); queue.archiveOrigin = "https://old.invalid"; queue.enqueue(old, null, 1000000)
+        val unbound = fixture("note", 9); queue.archiveOrigin = ""; queue.enqueue(unbound, null, 1000000)
+        val page = queue.capturePage("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", source = "", libraryBindings = true)
+        assertEquals("https://old.invalid", page.getJSONObject("bindings").getString(old.getString("id")))
+        assertEquals("", page.getJSONObject("bindings").getString(unbound.getString("id")))
+        assertEquals(2, queue.depth()); assertEquals(2, queue.pendingSync().count)
+        repeat(2) { assertFalse(page.getJSONArray("items").getJSONObject(it).has("_archiveOrigin")) }
+        assertFalse(queue.capturePage("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", source = "").has("bindings"))
+    }
+    @Test fun stickyOriginJoinsRecordAfterQueueReopenWithoutRepinningEvidence() {
+        val folder = directory.newFolder()
+        val queue = DurableQueue(folder, cipher)
+        val note = fixture("note", 8).put("deviceId", "phone")
+        queue.enqueue(note, null, 1000000)
+        val reopened = DurableQueue(folder, cipher).apply { archiveOrigin = "https://central.invalid/" }
+        val page = reopened.capturePage("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", source = "", libraryBindings = true)
+        val id = note.getString("id")
+        val item = page.getJSONArray("items").getJSONObject(0).put("libraryVersion", page.getJSONObject("versions").getString(id))
+        val projection = LibraryCaptureProjection()
+        projection.local(item, page.getJSONObject("bindings").getString(id), "phone")
+        projection.central(JSONObject(item.toString()), "https://central.invalid")
+        assertEquals(LibraryCaptureProjection.Remote.READABLE, projection.visible("").single().remote)
+        assertEquals("https://central.invalid", page.getJSONObject("bindings").getString(id))
+        assertEquals(1, reopened.pendingSync().count)
+        val unbound = DurableQueue(folder, cipher).capturePage("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", source = "", libraryBindings = true)
+        assertEquals("", unbound.getJSONObject("bindings").getString(id))
+    }
+
 }
