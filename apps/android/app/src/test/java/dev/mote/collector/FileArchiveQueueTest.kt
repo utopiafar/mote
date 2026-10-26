@@ -9,6 +9,18 @@ import java.io.ByteArrayInputStream
 import java.util.UUID
 
 class FileArchiveQueueTest {
+    @Test fun libraryPaginationReadsAllEqualTimeFilesWithoutMutatingReceipts() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val source = source("snapshot")
+        val generation = queue.configure(source).getString("generation")
+        repeat(25) { queue.observe(source, item("page-$it", "snapshot", 10).put("observedAt", "2026-10-01T00:00:00Z"), generation, 0) }
+        val before = queue.rows(source.id).associate { it.getJSONObject("candidate").getString("externalId") to it.toString() }
+        val first = queue.libraryRows(source, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", null, 20)
+        val last = first.last()
+        val second = queue.libraryRows(source, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", last.getJSONObject("candidate").getString("observedAt") to last.getString("libraryKey"), 20)
+        assertEquals(20, first.size); assertEquals(5, second.size)
+        assertEquals(25, (first + second).map { it.getJSONObject("candidate").getString("externalId") }.toSet().size)
+        assertEquals(before, queue.rows(source.id).associate { it.getJSONObject("candidate").getString("externalId") to it.toString() })
+    }
     @Test fun contextEditsDoNotResetCapturedImportOrReuploadItsOriginalBytes() {
         val store = LocalSourceStore(folder.newFolder(), cipher); val queue = FileArchiveQueue(folder.newFolder(), cipher)
         val original = source("snapshot").copy(tree = false, syncContinuously = false, centralProcessingConsent = true)

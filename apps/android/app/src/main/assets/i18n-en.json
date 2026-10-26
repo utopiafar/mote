@@ -8667,5 +8667,18 @@
   "尚未设为当前记忆方案。": "Not selected as the current memory plan.",
   "查看已安装插件": "View installed plugins",
   "离开此引导不会撤销已登记的安装或核验。": "Leaving this guide does not undo an installation or verification already registered.",
-  "填写连接配置。保存不会运行核验、启用插件或更换记忆方案。": "Enter connection settings. Saving does not run verification, enable the plugin or change the memory plan."
+  "填写连接配置。保存不会运行核验、启用插件或更换记忆方案。": "Enter connection settings. Saving does not run verification, enable the plugin or change the memory plan.",
+  "整理资料": "Organized material",
+  "仅目录信息": "Metadata only",
+  "加载更多来源资料": "Load more source materials",
+  "此版本没有保存正文。": "No body is stored for this version.",
+  "原始依据": "Original evidence",
+  "此依据暂不能在本机阅读。": "This evidence cannot currently be read on this device.",
+  "此版本已变化，请返回资料列表重新选择。": "This version changed. Return to the library and select it again.",
+  "提取的正文": "Extracted text",
+  "来源（已加载）": "Sources loaded so far",
+  "已选来源": "Selected source",
+  "未命名来源": "Unnamed source",
+  "已加载 {0} 条资料": "{0} items loaded",
+  "收集/更新时间": "Collected / updated date"
 }

@@ -856,7 +856,7 @@ export class MaterialStore {
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
 
-  list(args:{sourceId?:string;kind?:string;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string;query?:string;order?:'source'}={}):MaterialPage {
+  list(args:{sourceId?:string;kind?:string;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string;query?:string;order?:'source'|'library'}={}):MaterialPage {
     const limit=args.limit??30;if(!Number.isInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid material page size');
     const clauses=[`h.retired=0`,`h.sequence>=h.min_visible_sequence`],values:(string|number)[]=[];
     if(args.query){const terms=args.query.trim().split(/\s+/).filter(Boolean);for(const term of terms){
@@ -892,9 +892,10 @@ export class MaterialStore {
       }
     }}
     for(const [key,column] of [['sourceId','source_id'],['kind','kind'],['deviceId','device_id']] as const)if(args[key]){clauses.push(`h.${column}=?`);values.push(args[key]!);}
-    if(args.after){const after=new Date(args.after).toISOString();clauses.push('h.last_at>=?');values.push(after);}
-    if(args.before){const before=new Date(args.before).toISOString();clauses.push('h.first_at<?');values.push(before);}
-    const sort=args.order==='source'?'COALESCE(h.last_at,h.first_at,h.updated_at)':'h.updated_at';
+    const librarySort='COALESCE(h.last_at,h.updated_at)';
+    if(args.after){const after=new Date(args.after).toISOString();clauses.push(args.order==='library'?`${librarySort}>=?`:'h.last_at>=?');values.push(after);}
+    if(args.before){const before=new Date(args.before).toISOString();clauses.push(args.order==='library'?`${librarySort}<?`:'h.first_at<?');values.push(before);}
+    const sort=args.order==='library'?librarySort:args.order==='source'?'COALESCE(h.last_at,h.first_at,h.updated_at)':'h.updated_at';
     if(args.cursor){
       let cursor:{u:string;id:string};try{cursor=JSON.parse(Buffer.from(args.cursor,'base64url').toString()) as typeof cursor;if(typeof cursor.u!=='string'||!materialIdSchema.safeParse(cursor.id).success)throw Error();}catch{throw new StoreError('Invalid material cursor');}
       clauses.push(`(${sort}<? OR (${sort}=? AND h.id<?))`);values.push(cursor.u,cursor.u,cursor.id);

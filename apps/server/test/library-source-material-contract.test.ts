@@ -7,7 +7,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 
-/** B1 preparation: exercises existing source and Material readers, not the proposed projection. */
+/** Real owner HTTP projection plus immutable source and Material reader contracts. */
 test('source revisions and Material revisions retain distinct identities and exact historical members',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-library-b1-contract-'));
   const token='generated-library-b1-contract-owner',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
@@ -43,11 +43,41 @@ test('source revisions and Material revisions retain distinct identities and exa
     assert.equal(originalRead.provenance.externalId,externalId);
     assert.equal(originalRead.ocrText,original===first.id?'Generated original v1':'Generated original v2');
   }
+  const request={after:'2026-10-01T00:00:00Z',before:'2026-10-02T00:00:00Z',stream:'originals',limit:1,candidates:[]};
+  const project=async(payload:unknown,expected=200)=>{const r=await node.app.inject({method:'POST',url:'/api/library/source-view',headers,payload});assert.equal(r.statusCode,expected,r.body);return r.json();};
+  const page1=await project(request),page2=await project({...request,cursor:page1.nextCursor});
+  assert.deepEqual(new Set([...page1.items,...page2.items].map((r:any)=>r.captureId)),new Set([second.id,other.id]));
+  assert.equal(page2.nextCursor,null);
+  await project({...request,cursor:page1.nextCursor,sourceId:'generated-source-a'},409);
+  await project({...request,cursor:'invalid'},409);
+  const matches=await project({...request,candidates:[
+    {sourceId:'generated-source-a',externalId,revision:'source-v1',deviceId:'generated-phone',captureId:first.id},
+    {sourceId:'generated-source-a',externalId,revision:'source-v2',deviceId:'generated-phone',captureId:first.id},
+    {sourceId:'generated-source-a',externalId,revision:'source-v2',deviceId:'other-phone'},
+  ]});
+  assert.equal(matches.matches[0].original.captureId,first.id);
+  assert.equal(matches.matches[1].state,'unavailable');assert.equal(matches.matches[2].state,'unavailable');
+  assert.equal(matches.matches[1].original,undefined);
+  const materialPage=await project({...request,stream:'materials'});
+  assert.equal(materialPage.items[0].ref,material2.ref);assert.equal(materialPage.items[0].type,'material');
+  const empty=await project({...request,sourceId:'missing'});assert.deepEqual(empty.items,[]);
+  // Collection time is independent of authored/modified time and keeps the old source API semantics.
+  const dated=await node.sources.upsert('generated-source-a',{...item('dated-v1','Generated old authored text'),externalId:'dated',modifiedAt:'2020-01-01T00:00:00Z'});
+  const datedPage=await project({...request,limit:20});assert.ok(datedPage.items.some((row:any)=>row.captureId===dated.id));
+  const fallbackDraft={...draft(second.id,'Generated fallback time'),id:materialId('generated-source-a','fallback'),origin:{sourceId:'generated-source-a',externalId:'fallback',deviceId:'generated-phone'}};
+  const fallback=node.materials.publish(fallbackDraft);
+  const fallbackPage=await project({...request,stream:'materials',after:new Date(Date.now()-60000).toISOString(),before:new Date(Date.now()+60000).toISOString(),limit:20});
+  assert.equal(fallbackPage.items.find((row:any)=>row.id===fallback.id)?.sortAt,fallback.updatedAt);
+  await project({...request,candidates:Array.from({length:21},()=>({sourceId:'generated-source-a',externalId,revision:'source-v1',deviceId:'generated-phone'}))},400);
+  assert.equal((await node.app.inject({method:'POST',url:'/api/library/source-view',payload:request})).statusCode,401);
+
   assert.equal((await node.app.inject(`/api/materials/${material2.id}/read?revision=${material2.revision}`)).statusCode,401);
   const invitation=await node.app.inject({method:'POST',url:'/api/connections/collector-invitations',headers,payload:{serverUrl:'https://generated.invalid',label:'Generated limited collector'}});
   assert.equal(invitation.statusCode,200,invitation.body);
   const redeem=await node.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.json().invitation.code,deviceId:'generated-limited-phone',deviceName:'Generated limited phone',platform:'android'}});
   assert.equal(redeem.statusCode,200,redeem.body);assert.equal(redeem.json().scope,'collector');
   const denied=await node.app.inject({url:`/api/materials/${material2.id}/read?revision=${material2.revision}`,headers:{authorization:'Bearer '+redeem.json().token}});
+  const deniedProjection=await node.app.inject({method:'POST',url:'/api/library/source-view',payload:request,headers:{authorization:'Bearer '+redeem.json().token}});
+  assert.equal(deniedProjection.statusCode,403);
   assert.equal(denied.statusCode,403,'a real collector grant must not acquire owner Material reading');
 });

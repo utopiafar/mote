@@ -22,6 +22,10 @@ internal class LibraryCaptureView(
     private val status = TextView(activity)
     private val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
     private val more = Button(activity)
+    private var deniedOrigin: String? = null
+    private val sourceView by lazy { LibrarySourceView(activity, { render() }, { origin ->
+        deniedOrigin = origin; projection.clearCentral(origin); remoteCursor = null; remoteMore = false; render()
+    }, { origin -> deniedOrigin != origin }) }
     private var source = state?.getString("source").orEmpty()
     private var location = state?.getString("location").orEmpty()
     private var day = state?.getString("day").orEmpty()
@@ -40,7 +44,7 @@ internal class LibraryCaptureView(
     private var anchor = state?.getString("anchor")
     private var anchorTop = state?.getInt("anchorTop") ?: 0
     init {
-        val types = listOf("" to "全部记录", "file" to "文件", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "随手记", "notification" to "通知", "media" to "媒体播放状态", "activity" to "应用活动", "device_event" to "设备事件")
+        val types = listOf("" to "全部记录", "file" to "文件", "source" to "来源资料", "material" to "整理资料", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "随手记", "notification" to "通知", "media" to "媒体播放状态", "activity" to "应用活动", "device_event" to "设备事件")
         fun selector(label: String, choices: List<Pair<String,String>>, selected: String, changed: (String) -> Unit) {
             val spinner = Spinner(activity).apply {
                 contentDescription = MoteI18n.text(label)
@@ -55,6 +59,7 @@ internal class LibraryCaptureView(
         }
         selector("资料类型", types, source) { if (source != it) { source = it; resetFilter() } }
         selector("资料位置", listOf("" to "全部位置", "local" to "本机可读", "central" to "中央可读"), location) { if (location != it) { location = it; render() } }
+        parent.addView(TextView(activity).apply { text = MoteI18n.text("收集/更新时间"); MoteUi.type(this, NativeFontRole.META) })
         val date = Button(activity).apply {
             text = day.ifBlank { MoteI18n.text("选择日期") }
             setOnClickListener {
@@ -65,13 +70,13 @@ internal class LibraryCaptureView(
             }
         }; parent.addView(MoteUi.button(date))
         parent.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("全部日期"); setOnClickListener { day = ""; date.text = MoteI18n.text("选择日期"); resetFilter() } }))
-        parent.addView(TextView(activity).apply { text = MoteI18n.text("采集记录在此合并展示。文件、来源资料与正式资料仍可从原入口查看。") })
+        sourceView.restore(state?.getBundle("sourceView")); sourceView.controls(parent)
         parent.addView(status); parent.addView(rows)
         more.text = MoteI18n.text("加载更多"); more.setOnClickListener { if (!task.busy) load() }; parent.addView(MoteUi.button(more))
         parent.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("刷新"); setOnClickListener { refresh() } }))
     }
     fun saveState(): Bundle = Bundle().apply {
-        putString("source", source); putString("location", location); putString("day", day); putInt("pages", pages.coerceAtLeast(1))
+        putBundle("sourceView", sourceView.save()); putString("source", source); putString("location", location); putString("day", day); putInt("pages", pages.coerceAtLeast(1))
         val row = (0 until rows.childCount).map { rows.getChildAt(it) }.firstOrNull { it.getGlobalVisibleRect(android.graphics.Rect()) }
         putString("anchor", row?.transitionName)
         val position = IntArray(2); row?.getLocationInWindow(position); putInt("anchorTop", position[1])
@@ -85,9 +90,10 @@ internal class LibraryCaptureView(
         if (pages > 0) {
             val saved = saveState(); anchor = saved.getString("anchor"); anchorTop = saved.getInt("anchorTop"); restorePages = pages
         }
+        deniedOrigin = null
         stamp++; projection.clear(); files = emptyList(); localCursor = null; remoteCursor = null
         localMore = true; remoteMore = true; pages = 0; before = Instant.now().plusSeconds(1).toString()
-        remoteNotice = ""; render()
+        remoteNotice = ""; sourceView.refresh(source, day); render()
         if (task.busy) refreshPending = true else load()
     }
     private data class Loaded(val local: JSONObject?, val central: Result<JSONObject>?, val files: List<JSONObject>)
@@ -108,8 +114,8 @@ internal class LibraryCaptureView(
         more.isEnabled = false
         task.start(MoteI18n.text("正在读取…"), { status.text = it }, {
             val context = activity.applicationContext
-            val local = if (readLocal && filter != "file") context.withNativeNotePreviews(context.queue().capturePage(after, until, nextLocal, source = filter, libraryBindings = true, libraryVersion = context::captureLibraryVersion)) else null
-            val localFiles = if (firstPage && (filter.isEmpty() || filter == "file")) context.localFileContents(20) else previousFiles
+            val local = if (readLocal && filter !in setOf("file", "source", "material")) context.withNativeNotePreviews(context.queue().capturePage(after, until, nextLocal, source = filter, libraryBindings = true, libraryVersion = context::captureLibraryVersion)) else null
+            val localFiles = emptyList<JSONObject>()
             // Local originals remain usable while an offline Central request waits.
             activity.runOnUiThread {
                 val current = CentralAccess.resolve(activity)
@@ -126,7 +132,7 @@ internal class LibraryCaptureView(
                         candidates.put(JSONObject().put("deviceId", item.optString("deviceId").ifBlank { Settings(context).deviceId }).put("id", item.getString("id")))
                 }
             }
-            val central = if (readRemote && filter != "file") runCatching {
+            val central = if (readRemote && filter !in setOf("file", "source", "material")) runCatching {
                 val api = selection.client ?: error(MoteI18n.text("请先登录中央节点，各页面会共用这次登录。"))
                 if (api.get("/api/connections/self").getJSONObject("credential").getString("scope") != "owner") throw CentralFailure(403, "connection_scope_denied")
                 val body = JSONObject().put("after", after).put("before", until).put("limit", 20).put("candidates", candidates)
@@ -142,6 +148,7 @@ internal class LibraryCaptureView(
                     files = loaded.files
                     applyLocal(loaded.local)
                     loaded.central?.onSuccess { page ->
+                        if (deniedOrigin == selection.server) return@onSuccess
                         remoteNotice = ""; val items = page.getJSONArray("items")
                         repeat(items.length()) { projection.central(items.getJSONObject(it), selection.server) }
                         val matches = page.getJSONArray("matches")
@@ -149,12 +156,13 @@ internal class LibraryCaptureView(
                         remoteCursor = page.optString("nextCursor").takeUnless { it.isBlank() || it == "null" }; remoteMore = remoteCursor != null
                     }?.onFailure {
                         if (it is CentralFailure && (it.status in setOf(401, 403) || it.code == "connection_revoked")) {
+                            deniedOrigin = selection.server; sourceView.clearRemote()
                             projection.clearCentral(selection.server); remoteCursor = null
                         }
                         if (it is CentralFailure && it.status == 409) { refreshPending = true; pages = 0; restorePages = 1 }
                         remoteNotice = it.message.orEmpty(); remoteMore = false
                     }
-                    if (filter == "file") remoteMore = false
+                    if (filter in setOf("file", "source", "material")) remoteMore = false
                     pages++; render()
                     if (pages < restorePages && (localMore || remoteMore)) load() else restoreAnchor()
                 }.onFailure { status.text = MoteI18n.text("资料暂不可读取，请稍后重试。"); more.isEnabled = true }
@@ -172,7 +180,7 @@ internal class LibraryCaptureView(
     private fun render() {
         rows.removeAllViews()
         if (location != "central") files.forEach { file(rows, it) }
-        val visible = projection.visible(location)
+        val visible = projection.visible(location).filter { sourceView.matchesCapture(it.item) }.filterNot { sourceView.containsCapture(it.identity.scope, it.item) }
         visible.forEach { row ->
             val label = when {
                 row.local == null -> MoteI18n.text("中央可读")
@@ -196,8 +204,9 @@ internal class LibraryCaptureView(
                 })
             }
         }
-        status.text = MoteI18n.text("已加载 {0} 条采集记录", visible.size) + if (remoteNotice.isNotBlank()) "\n$remoteNotice" else ""
-        if (visible.isEmpty() && (files.isEmpty() || location == "central")) rows.addView(TextView(activity).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或随手记。") })
+        status.text = MoteI18n.text("已加载 {0} 条资料", visible.size + sourceView.count(location)) + if (remoteNotice.isNotBlank()) "\n$remoteNotice" else ""
+        if (!sourceView.isLoading && visible.isEmpty() && sourceView.count(location) == 0 && (files.isEmpty() || location == "central")) rows.addView(TextView(activity).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或随手记。") })
+        sourceView.render(rows, location)
         more.isEnabled = !task.busy && (localMore || remoteMore)
     }
     private fun restoreAnchor() {
@@ -211,5 +220,5 @@ internal class LibraryCaptureView(
         } }
         anchor = null
     }
-    fun close() { stamp++; task.close() }
+    fun close() { stamp++; task.close(); sourceView.close() }
 }

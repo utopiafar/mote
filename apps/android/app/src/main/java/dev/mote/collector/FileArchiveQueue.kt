@@ -34,6 +34,16 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             presentationRow(source, read(File(root(source.id), "item-${entry.key}.enc")))
         }
     }
+    internal fun libraryRows(source: LocalSource, after: String, before: String, cursor: Pair<String, String>?, limit: Int): List<JSONObject> = synchronized(lock) {
+        progressInventory(source.id).values.filter { entry ->
+            val at = java.time.Instant.parse(entry.observedAt)
+            val key = source.id + ":" + entry.key
+            at >= java.time.Instant.parse(after) && at < java.time.Instant.parse(before) &&
+                (cursor == null || entry.observedAt < cursor.first || entry.observedAt == cursor.first && key > cursor.second)
+        }.sortedWith(compareByDescending<FileSyncEntry> { it.observedAt }.thenBy { it.key }).take(limit).map { entry ->
+            presentationRow(source, read(File(root(source.id), "item-${entry.key}.enc"))).put("libraryKey", source.id + ":" + entry.key)
+        }
+    }
     internal fun progress(source: LocalSource, now: Long = System.currentTimeMillis()): FileSyncProgress = synchronized(lock) {
         val sourceKey = root(source.id).absolutePath
         // Read the inventory once per process on a background thread; mutations update only their entry.

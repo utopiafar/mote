@@ -80,6 +80,11 @@ class FileContentActivity : MoteActivity() {
             val source = localSources().sources().first { it.id == sourceId }
             val row = fileArchives().let { it.presentationRow(source, it.row(sourceId, external)) }
             val item = row.optJSONObject("pending")?.optJSONObject("manifest")?.optJSONObject("item") ?: row.getJSONObject("candidate")
+            intent.getStringExtra("sourceRevision")?.let { selected ->
+                val actual = row.optJSONObject("pending")?.optJSONObject("manifest")?.optJSONObject("item")?.optString("revision")
+                    ?: if (LocalContentPresentation.currentReceipt(row) != null) row.optString("revision") else "candidate:" + SourceRules.fileSignature(row.getJSONObject("candidate"))
+                check(selected == actual) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+            }
             val local = if (row.has("pending")) runCatching { fileArchives().pendingPreview(sourceId, external, item.getString("revision")) }.getOrNull() else null
             val access = CentralAccess.resolve(this)
             var capture: JSONObject? = null; var file: JSONObject? = null; var material: JSONObject? = null; var read: String? = null; var next: Int? = null; var total: Int? = null; var failed = false; var retryRead = false
@@ -115,7 +120,7 @@ class FileContentActivity : MoteActivity() {
                 }.onFailure { error ->
                     failed = true
                     retryRead = error !is CentralFailure || error.status !in setOf(401, 403)
-                    if (error is CentralFailure && error.status in setOf(401, 403)) { capture = null; file = null; material = null; read = null; next = null; total = null }
+                    if (error is CentralFailure && error.status in setOf(401, 403, 404, 409, 410)) { capture = null; file = null; material = null; read = null; next = null; total = null }
                 }
             }
             Detail(source, row, item, access, capture, file, material, read, next, total, local, failed, retryRead, if (source.tree) LocalContentPresentation.folderStatus(this, source) else "")
@@ -155,13 +160,19 @@ class FileContentActivity : MoteActivity() {
         }
         text(MoteI18n.text("原文与出处"), MoteTheme.fontSection.toFloat())
         val local = detail.localPreview
-        val original = if (local != null) local.first.drop(offset).take(4000) else detail.read?.takeIf { it.isNotBlank() } ?: detail.capture?.optString("ocrText")?.takeIf { it.isNotBlank() } ?: item.optString("text")
+        val original = if (local != null) local.first.drop(offset).take(4000) else detail.capture?.optString("ocrText")?.takeIf { it.isNotBlank() } ?: item.optString("text")
         if (original.isNotBlank()) text(original, 16f)
         else text(MoteI18n.text("本机保留文件信息与待发原始字节；正文由中央整理后显示。"), MoteTheme.fontSupport.toFloat())
         if (local != null) {
             text(MoteI18n.text(if (local.second && offset + 4000 >= local.first.length) "已显示本机保存原文的最后一页" else "正在预览本机保存的原文，尚未显示完整内容"), 12f)
             if (offset + 4000 < local.first.length) button(MoteI18n.text("继续展开")) { offset += 4000; load() }
-        } else {
+        }
+        if (!detail.read.isNullOrBlank()) {
+            text(MoteI18n.text(if (detail.material != null) "整理资料" else "提取的正文"), MoteTheme.fontSection.toFloat())
+            text(detail.read, 16f)
+            detail.material?.let { material -> button(MoteI18n.text("原始依据")) {
+                LibrarySourceReaderActivity.open(this, detail.access.server, "material", material.getString("id"), "", "", material.getString("revision"))
+            } }
             detail.total?.let { text(MoteI18n.text("原文范围：{0}–{1} / {2} 字符", offset, offset + original.length, it), 12f) }
             detail.nextOffset?.let { next -> button(MoteI18n.text("继续展开")) { offset = next; load() } }
         }
