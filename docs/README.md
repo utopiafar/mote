@@ -3,13 +3,14 @@
 Current direction (2026-10-23): [single-owner MVP](adr-single-owner-mvp.md). Earlier dated validation does not qualify this recovery.
 Central（server + web）、macOS、Android 使用各自产品版本；当前版本分别记录在 app package.json 与 Android version.properties。拆分架构与发版操作见 [独立发布架构](release-architecture.md) 和 [发布流程](releasing.md)。早期版本曾从 0.8.0 重置到 0.0.1，历史验收应结合日期阅读。
 
-使用指南描述当前代码，历史验收只证明当次执行的范围，方案记录保留当时的取舍。文档中的“本轮”“已通过”和构建产物路径均应结合该篇日期阅读，不代表本次重新验收。当前基线与本轮证据见 [MVP 决策](adr-mvp-baseline.md) 和 [清理审计](audits/mvp-baseline-cleanup-2026-10-09.md)。
+使用指南描述当前代码，历史验收只证明当次执行的范围，方案记录保留当时的取舍。文档中的“本轮”“已通过”和构建产物路径均应结合该篇日期阅读，不代表本次重新验收；旧性能记录与专项发布门槛不会自动成为当前日常门槛。测试分层与触发规则以 [testing](testing.md) 为准。当前基线与本轮证据见 [MVP 决策](adr-mvp-baseline.md) 和 [清理审计](audits/mvp-baseline-cleanup-2026-10-09.md)。
 
 ## 常用入口
 
 | 需要了解什么 | 当前说明 |
 | --- | --- |
 | 安装、开发、部署与更新 | [项目首页（中文）](../README.zh-CN.md)、[English](../README.md)、[Agent 安装](agent-install.md)、[开发](development.md)、[部署](deployment.md)、[当前 DEV 更新](updating.md)、[发布](releasing.md) |
+| 测试分层、定向命令与 CI | [测试规则](testing.md)、[CI 入口](ci.md)、[多模块协作](agent-development-workflow.md)、[真实回归 skill](../.agents/skills/real-world-testing/SKILL.md) |
 | 采集、隐私和上传 | [统一行为](collection-and-sync.md)、[macOS](desktop.md)、[Android](android.md)、[文字审查与中央感知](central-perception.md)、[同步恢复](sync-recovery.md) |
 | 本地 OCR / ASR 与文件 | [运行时和模型安装](ocr-asr-implementation-plan.md)、[文件归档](files.md)、[文件处理](file-processing.md)、[类型策略](file-processing-policies.md) |
 | MVP 清理、断代与验证 | [当前基线与本轮回归](audits/mvp-baseline-cleanup-2026-10-09.md)、[基线 ADR](adr-mvp-baseline.md)；历史 [原始审计](audits/compatibility-audit-2026-10-04.md) 与 [83 项实施](audits/compatibility-cleanup-2026-10-04.md) |
@@ -121,7 +122,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [范围评估与模型选取 Memory ADR](adr-memory-range-evaluation.md) | 完整原件、逐范围评估、独立审核、模型选取、资源恢复与旧任务契约边界 |
 | [范围评估回归矩阵](memory-range-evaluation-validation.md) | 新旧入口、选取与未完成状态、实际资源恢复、授权和重启场景；执行结果单独记录 |
 | [系统改造方案（2026-10-10，已确认）](design/system-refactor-2026-10-10.md) | 14模块变更、5组选型、旅程、supersession和发布路线；拟议收益不是实测结果 |
-| [系统改造验证方案](design/system-refactor-validation-2026-10-10.md) | 22条真实入口旅程、质量rubric、同模型性能对照与发布门槛；结果见本次验收记录 |
+| [系统改造验证方案](design/system-refactor-validation-2026-10-10.md) | 2026-10-10 历史专项的22条旅程、质量rubric、性能对照与发布范围；不作为日常测试规则，结果见当次验收记录 |
 | [问答证据与简化上下文决定](adr-ask-evidence-quality-and-simple-context.md) | 模型覆盖、移除近似预算与二分、录音时间/正文、质量实验与实际恢复边界 |
 | [跨来源状态问答回归](ask-quality-validation.md) | 多来源与续问的生成资料场景、固定输入比较方法、证据覆盖和验证边界 |
 | [大范围续问与 Memory 启动回归](validation/query-lease-and-memory-activation-2026-10-14.md) | 完整依赖批量授权、租约续期、删除栅栏与显式启动后的重启恢复；生成 HTTP/provider 回归证据 |

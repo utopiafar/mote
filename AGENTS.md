@@ -12,13 +12,13 @@
 
 ## Working rules
 
-- Read the affected app's `AGENTS.md` for exact commands. Use [development](docs/development.md) for setup and [testing](docs/testing.md) to choose validation.
-- Work in small modules. Run focused checks for changed behavior and connect a minimal real cross-module journey early. Do not defer first integration until every module is finished.
+- Read the affected app's `AGENTS.md` for commands and platform limits. [Testing](docs/testing.md) is the single source for layers and triggers; [development](docs/development.md) covers setup.
+- Work in small modules, use focused checks and add light contracts when interfaces change. Connect one shortest real journey early for large requirements; complete relevant acceptance at stage completion and before release.
+- Heavy E2E, expensive scale checks, benchmarks and real external models require explicit manual selection. Never run heavy suites or benchmarks automatically on each push. Preserve correctness coverage when splitting suites.
 - Prioritize functional correctness for this MVP. Defer performance optimization unless measured behavior is seriously slow or prevents practical use; matching historical PR performance is not a recovery requirement.
-- Run the affected candidate plan after planned changes converge. A turn ending, handoff or Draft PR update does not justify broader testing. After fixes rerun invalidated checks, not unchanged successful work.
-- Preserve meaningful assertions, input scale and lifecycle coverage. New product decisions may supersede old tests; explain the changed behavior rather than preserving obsolete requirements.
+- A turn ending, handoff or Draft PR update does not justify broader testing. After fixes rerun invalidated checks; preserve meaningful assertions, input scale, timeouts and lifecycle coverage.
 - Use [real-world-testing](.agents/skills/real-world-testing/SKILL.md) when adding regression coverage or evaluating test quality. Keep automated UI work hidden/background by default.
-- Review genuine authorization, deletion, persistence, cross-client protocol or major lifecycle changes before implementation; ordinary fixes need no repeated design approval. See [risk-based review](docs/testing.md#risk-based-review).
+- Independently review changed product boundaries or architectural decisions; fixes within an established contract need corresponding risk regressions, not new approval. See [risk-based review](docs/testing.md#risk-based-review).
 - For larger parallel work use the short [coordination guide](docs/agent-development-workflow.md). Prefer GPT-6.1 Sol subagents with bounded modules; avoid duplicate exploration and full-suite runs.
-- Report implemented behavior, checks actually run and gaps. Separate fixture, physical-device and live-model evidence. Do not describe unperformed or reused checks as newly passed.
+- PRs record behavior changes, checks actually run and untested risks. Separate fixture, physical-device and live-model evidence; do not create extra ledgers or call reused checks newly passed.
 - Reuse established UI terminology, navigation and components. Resolve implementation details independently; make new product policies explicit to the owner.

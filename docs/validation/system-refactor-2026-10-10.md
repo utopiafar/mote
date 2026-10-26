@@ -1,5 +1,7 @@
 # 系统改造验收记录 · 2026-10-10
 
+> 这是当次专项的执行记录，不是当前提交的通过证据；其中的模型、性能与全量验收要求不自动成为日常门槛。当前测试分层与触发规则见 [testing](../testing.md)。
+
 本轮按已批准的 [方案](../design/system-refactor-2026-10-10.md) 和 [ADR](../adr-system-refactor.md) 实施。查询、Memory、执行三个实现 subagent 均为 gpt-6.1-sol/high，随后交叉审查。Central 目标 0.0.85，Android 目标 0.0.83/code94；epoch4、wire1、Ingress2 保持不变。
 
 ## 环境与证据边界

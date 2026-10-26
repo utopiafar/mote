@@ -1,37 +1,48 @@
-# Focused development and candidate validation
+# Test layers and validation triggers
+
+This is the single source for test layers and when to run them. App `AGENTS.md` files provide commands and platform limits; [CI](ci.md) describes workflow entrypoints. Choose checks by the behavior and boundaries changed, not by a test filename.
+
+## Test layers
+
+| Layer | What it establishes | When to run |
+| --- | --- | --- |
+| Local unit | A function or module rule, using real domain values and controlled dependencies | Focused feedback for the affected behavior |
+| Module integration with real SQLite / HTTP | Storage, transactions, authenticated routes and module lifecycle against generated data | When those module behaviors change; keep focused cases in ordinary checks |
+| Light cross-module contract | A producer's real serialized output is accepted and used by its actual consumer, including relevant errors | When an interface or its producer/consumer behavior changes; include affected contracts in ordinary checks |
+| Heavy cross-client E2E | An assembled journey across processes, clients, UI, native runtime or containers, including relevant recovery | Explicit manual selection at a meaningful stage or before release; never automatically on each push |
+| Scale correctness | Completeness, ordering, isolation, cancellation, deletion or recovery at a required input size | Keep the required scale and assertions; manually select expensive cases when the affected risk or relevant acceptance needs them |
+| Pure performance benchmark | Latency, throughput, resource use or a comparison against a measured baseline | Explicit manual run for a performance investigation, a major performance-sensitive change or a measured severe regression |
+| Real external model | Actual provider behavior and semantic quality with fixed generated inputs and declared model settings | Explicit manual selection when the change needs live-provider or quality evidence |
+
+A module test using real SQLite or HTTP is not automatically heavy E2E. A large fixture that checks every record or cancellation is correctness coverage, even if its file contains `performance` or `migration`. Retain that coverage when splitting suites; keeping it does not require running it on every PR. A test that measures time and asserts correctness may need separate entrypoints, with its meaningful assertions, input size, lifecycle states and timeouts preserved. Do not delete or weaken valid tests to hide an existing failure.
 
 ## Daily feedback
 
-Run the narrow command that exercises changed behavior after a coherent batch of edits. A report, handoff or Draft PR update does not trigger wider checks. Do not run `npm test` and then append a file when the npm script already contains a full glob.
+Run the narrow command that exercises changed behavior after a coherent batch of edits. Ordinary changes need affected unit/module checks; interface changes also need a light contract against the real consumer. A small fix involving permissions, deletion or restoration still needs the corresponding risk regression, without expanding to unrelated repository suites.
 
-| Module | Focused command (module working directory unless stated) |
-| --- | --- |
-| Server | `node --import tsx --test --test-concurrency=4 --test-timeout=120000 test/connections.test.ts` |
-| Web | `node --import tsx --test test/api.test.ts` |
-| Desktop | `npm run test -w @mote/desktop -- test/config.test.ts` from root |
-| Agent | Build changed shared/Agent libraries, then `node --test packages/agent/test/task-context.test.mjs` from root |
-| Android | `apps/android/gradlew -p apps/android --no-daemon :app:testDebugUnitTest --tests 'actual.package.TestClass'` from root |
+Use the affected app's focused examples: [server](../apps/server/AGENTS.md), [web](../apps/web/AGENTS.md), [desktop](../apps/desktop/AGENTS.md), [Android](../apps/android/AGENTS.md). For Agent tests, build changed or missing shared/Agent inputs, then select an existing file, for example `node --test packages/agent/test/task-context.test.mjs` from the root. Do not append a filename to an npm script that already includes a full glob. Use Node `--test-name-pattern` before the filename for a single diagnostic case and report that selection.
 
-Replace examples with an existing affected file/class. Use Node `--test-name-pattern` before the filename for one diagnostic case; report that selection. Build shared inputs only when changed or absent and coordinate shared output with other owners. SQLite must match the active Node ABI. Preserve existing timeouts, assertions, data scale and lifecycle coverage.
+Build shared inputs only when changed or absent; coordinate shared output with other owners. SQLite must match the active Node ABI. A report, handoff, turn ending or Draft PR update does not trigger wider checks.
 
 ## Early integration and candidate checks
 
-For cross-module work agree on one small real journey and connect it early: actual entrypoint/startup, authenticated action, producer output and consumer result. Add relevant restart, cancellation or partial-failure states as their modules converge. A manually composed internal object is not evidence for actual startup.
+For a large requirement, connect one shortest real journey early: actual entrypoint/startup, authenticated action, producer output and consumer result. A light contract can catch an interface mismatch quickly; it does not replace the assembled journey. Add relevant restart, cancellation or partial-failure states as the modules converge. A manually composed internal object does not prove actual startup.
 
-After planned changes converge, one owner inspects and executes the candidate plan:
+At a meaningful stage completion and before release, one owner completes the full relevant acceptance scope for the converged candidate. Select heavy E2E, expensive scale correctness and live-model checks explicitly and manually when relevant. Stage/release acceptance is not a reason to run heavy suites on every push, every small PR or every handoff. Performance benchmarks follow their own triggers in the table above; historical performance targets do not automatically become current gates.
+
+Inspect the available affected plan before running it:
 
 ```sh
 npm run check:affected -- --dry-run
-npm run check:affected
 # Explicit comparison for a recovery branch:
 npm run check:affected -- --base origin/main --head HEAD --dry-run
 ```
 
-The dry-run is the default scope, not a proof of runtime compatibility. Add consumer/journey checks for a real contract or safety risk, not because a turn ended. `check:local` is broad TypeScript integration, not daily feedback. The recovered selector has no `--test-file` or receipt API; use the direct commands above.
+The dry-run describes the commands in the checked-out revision; it is not runtime evidence. Inspect their scope before selecting execution. Broad component commands and `check:local` are manual integration tools, not daily feedback or permission to run benchmarks implicitly. Exact fast/manual suite entrypoints must match the implemented scripts and [CI](ci.md).
 
-After a fix rerun checks invalidated by source, dependency, fixture, configuration or environment changes. Reuse unchanged successful results without another run. Never reuse failed, interrupted or uncertain-cleanup results. A repeated failure should prompt diagnosis; do not endlessly replay the same test or stop useful repairs merely at an arbitrary count.
+After a fix rerun checks invalidated by source, dependency, fixture, configuration or environment changes. Reuse unchanged successful results without another run. Never reuse failed, interrupted or uncertain-cleanup results. Diagnose repeated failures rather than endlessly replaying the same test. A known failure remains a failure until repaired and verified; moving it to a manual suite does not resolve it.
 
-Document-only changes receive formatting, grammar, link and rendering review. Product or protocol changes may need native builds/UI checks. Report fixture, physical-device and live-model checks separately. Historical results are not current evidence.
+Document-only changes receive formatting, grammar, link and rendering review. Report fixture, physical-device and live-model evidence separately; historical results are not current evidence. In the PR record only: behavior changes, checks actually run, and untested risks. Use Git, CI and existing ignored logs; do not create a separate evidence ledger or receipt process.
 
 ## Logs
 
@@ -47,11 +58,13 @@ exit "$check_status"
 
 ## Risk-based review
 
-Small fixes and internal implementation changes need focused checks, not a new approval process. For a module feature, state its behavior and consumers briefly. Changes to authorization, destructive data behavior, persistence contracts, cross-client protocols or major lifecycle ordering need a bounded technical plan and an independent explicit APPROVE before implementation. Bind that review to the revision, scope and assumptions; review only a changed decision boundary again.
+Independent review before implementation applies to a changed product boundary or architectural decision: for example who may access data, what deletion/restoration promises, a persistence or cross-client contract, or lifecycle responsibilities across modules. State the old/new decision, affected consumers, risks and real-boundary validation briefly. Bind review to that scope and assumptions; review again only when the decision boundary changes. New product policies still belong to the human owner.
 
-The plan compares old/new user entrypoints, state transitions, risks and real-boundary validation. Use KEEP/CHANGE/REMOVE/EXCEPTION/UNKNOWN when an architectural responsibility is superseded, not as a mandatory form for every edit. Test changes that relax valid assertions/timeouts/success criteria or change the tested entrypoint require the same coverage review. New product policies still belong to the human owner.
+Module features and bug fixes within an established boundary need focused validation, not new design approval. A permission, deletion or recovery fix that restores the existing contract needs the corresponding regression. It does not automatically require an independent approval or full-repository run.
 
-Do not require per-edit evidence ledgers, full-suite reruns at handoff, or repeated reviews of an unchanged approved design. [Coordination](agent-development-workflow.md) applies only when work actually needs multiple owners; [CI](ci.md) describes final revision checks.
+Product decisions can supersede obsolete assertions. Explain the changed behavior and review the decision when it changes a product or architectural boundary; do not relax valid assertions, timeouts, scale or tested entrypoints just to make a failure pass. KEEP/CHANGE/REMOVE/EXCEPTION/UNKNOWN is useful for superseded architectural responsibilities, not a mandatory form for every edit.
+
+[Coordination](agent-development-workflow.md) applies when work needs multiple owners. The [2026-10-10 system-refactor validation plan](design/system-refactor-validation-2026-10-10.md) is a historical project-specific plan, not today's default workflow, approval process or performance gate.
 
 <a id="background-testing"></a>
 

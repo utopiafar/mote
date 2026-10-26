@@ -1,5 +1,7 @@
 # Mote 系统改造技术方案（已确认）
 
+> 历史专项：本文保留 2026-10-10 当次批准的设计、模型选择、执行和发布范围；不将这些授权或性能目标延续为当前任务的默认要求。日常测试分层与触发规则统一见 [testing](../testing.md)。
+
 日期：2026-10-10。状态：**方案已确认，进入实现与验证**。所有者已授权按模块启动 `gpt-6.1-sol / high` subagent，使用本地 Codex server 做真实链路回归并发布。D1-A、D2-C、D3-A、D4-B、D5-B是本轮实施范围。
 
 依据：聊天 [Review Mote architecture and latency](codex://threads/01a12118-b81c-7e80-9399-b2893ec7bc8b) 的完整审查建议，以及本工作树 `8de27162` 的架构、ADR、代码和测试。当前 Central/server/web 与 macOS 为 0.0.84，Android 为 0.0.82；Central epoch 4、客户端格式 3、wire 1、Ingress 2、便携归档 2 各自独立。
