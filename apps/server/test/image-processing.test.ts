@@ -167,13 +167,30 @@ test('a declared non-screen source and recipe stage extend processing without co
 });
 
 
-test('OCR failure still allows pixel understanding and keeps extraction failure visible',async t=>{
+for(const named of [false,true])test(`OCR failure stays visible while pixel understanding runs${named?' with named steps':''}`,async t=>{
  const f=await fixture(t);f.processing.runtime.registry.get('image.http').process=async()=>({durationMs:1,segments:[]});
- const id=await f.upload();await f.images.tick();await f.organize();
+ const ocr=named?'text-recognition':'ocr',visual=named?'interpretation':'understanding';
+ if(named){
+  f.processing.runtime.imageRecipes.registerRecipe({id:'fixture.failed-named-ocr',version:'1',steps:[{name:ocr,stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]},{name:visual,stage:{id:'mote.image-understanding',version:'1'},dependsOn:[ocr],optionalDependencies:[ocr]}]});
+  const view=f.processing.view(),policy=structuredClone(view.policy);
+  policy.profiles.push({...policy.profiles.find(p=>p.id==='central-image')!,id:'failed-named-ocr',name:'Generated failed named OCR',imageRecipe:{id:'fixture.failed-named-ocr',version:'1'}});
+  f.processing.update({revision:view.revision,settings:view.settings,policy});
+ }
+ let begin!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>begin=r),held=new Promise<void>(r=>release=r);
+ const stage=f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}),original=stage.run;
+ stage.run=async input=>{begin();await held;return original(input);};
+ const id=await f.upload('generated-import',named?'failed-named-ocr':undefined),running=f.images.tick();
+ try{
+  await Promise.race([entered,running.then(()=>{throw Error('Generated image pipeline ended before interpretation');})]);await f.organize();
+  const pending=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!;
+  assert.equal(pending.artifacts!.find(a=>a.key==='extracted-text')!.state,'failed','an independent running visual stage cannot make failed OCR pending');
+  assert.equal(pending.artifacts!.find(a=>a.key==='image-'+visual)!.state,'pending');
+ }finally{release();await running;}
+ await f.organize();
  const jobs=f.store.db.prepare('SELECT kind,state FROM perception_jobs WHERE capture_id=?').all(id);
- assert.equal(jobs.find(j=>j.kind==='ocr')!.state,'failed');assert.equal(jobs.find(j=>j.kind==='understanding')!.state,'succeeded');
+ assert.equal(jobs.find(j=>j.kind===ocr)!.state,'failed');assert.equal(jobs.find(j=>j.kind===visual)!.state,'succeeded');
  const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!;
- assert.equal(material.artifacts!.find(a=>a.key==='image-understanding')!.state,'ready');assert.notEqual(material.artifacts!.find(a=>a.key==='extracted-text')!.state,'ready');
+ assert.equal(material.artifacts!.find(a=>a.key==='image-'+visual)!.state,'ready');assert.equal(material.artifacts!.find(a=>a.key==='extracted-text')!.state,'failed');
 });
 
 test('a ready screen original admits one Memory grant while vision is pending; late OCR and recompute never replace that scope',async t=>{
