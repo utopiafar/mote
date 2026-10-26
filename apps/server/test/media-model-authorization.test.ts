@@ -64,10 +64,16 @@ test('explicit same-target retry gets new durable steps without resetting previo
  assert.equal(f.requests.length,1);assert.equal(f.files.detail(id).job?.state,'succeeded');for(const old of previous)assert.equal(f.engine.get(old.id)?.state,old.state);assert.ok(f.seen.some(row=>row.ownerIntentId===work));
 });
 
-test('stop fences a late ASR result and unknown confirmation cannot cause a second send',async t=>{
+test('stop fences late ASR and only an explicit same-original owner confirmation can retry unknown work',async t=>{
  const f=await fixture(t);f.command('authorize');const id=await f.upload(),barrier=f.hold(),tick=f.processing.tick();await barrier.started;f.command('stop');barrier.release();await tick;
  assert.equal(f.requests.length,1);assert.equal(f.files.chunks(id).length,0);assert.equal(f.files.detail(id).hasOriginal,true);
- assert.equal(f.processing.cancellation(id).wait,'unknown');{await assert.rejects(f.manual(id,()=>f.processing.retry(id,'transcribe',false,true)));assert.equal(f.requests.length,1);}
+ assert.equal(f.processing.cancellation(id).wait,'unknown');
+ assert.throws(()=>f.processing.retry(id,'transcribe',false,true));
+ await assert.rejects(f.manual('unrelated-original',()=>f.processing.retry(id,'transcribe',false,true)));
+ await assert.rejects(f.manual(id,()=>f.processing.retry(id,'transcribe',false,false)));
+ assert.equal(f.requests.length,1);
+ await f.manual(id,()=>f.processing.retry(id,'transcribe',false,true));await f.processing.tick();
+ assert.equal(f.requests.length,2);assert.equal(f.files.chunks(id)[0].ocrText,'Generated orchard transcript.');
 });
 
 test('pause gaps and replaced media connections cannot inherit a previous approval',async t=>{

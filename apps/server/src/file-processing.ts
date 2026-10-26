@@ -130,6 +130,7 @@ export class FileProcessing {
     return true;
   }
   modelAuthorityEnabled(){return Boolean(this.options.modelAuthority);}
+  ownerCanConfirmUnknown(id:string,authority=this.options.modelAuthority){return !authority||Boolean(authority.ownerIntent?.(id));}
   async runModelStage<T>(request:ModelProcessingRequest,signal:AbortSignal,task:(signal:AbortSignal,assertCurrent:()=>void)=>Promise<T>,authority=this.options.modelAuthority):Promise<T>{
     const run=async(currentSignal:AbortSignal,assertCurrent:()=>void)=>{currentSignal.throwIfAborted();assertCurrent();const value=await task(currentSignal,assertCurrent);currentSignal.throwIfAborted();assertCurrent();return value;};
     return authority?authority(request,signal,run):task(signal,()=>signal.throwIfAborted());
@@ -446,7 +447,7 @@ export class FileProcessing {
     if(this.imageControl?.owns(id))return this.imageControl.retry(id,!reuseMatchingSteps,confirmUnknown);
     this.files.version(id);const db=this.files.store.db,waits=this.processorWaits(id);
     if(waits.some(row=>this.activeProcessorCalls.has(String(row.token))))throw new StoreError(moteText("当前处理尚未结束，请稍后再试。"),409);
-    if(waits.length&&(this.options.modelAuthority||!confirmUnknown))throw new StoreError(moteText("上次处理是否结束未知，重试可能重复执行。请确认后继续。"),409);
+    if(waits.length&&(!confirmUnknown||!this.ownerCanConfirmUnknown(id)))throw new StoreError(moteText("上次处理是否结束未知，重试可能重复执行。请确认后继续。"),409);
     if(db.prepare("SELECT 1 FROM file_jobs WHERE capture_id=? AND (state='running' OR summary_state='running')").get(id))throw new StoreError('File processing is active',409);
     const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{

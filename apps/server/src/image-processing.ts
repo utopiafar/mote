@@ -355,7 +355,7 @@ export class ImageProcessing {
  private retryImage(id:string,recompute:boolean,confirmUnknown:boolean,rememberIntent:boolean){
   const row=this.row(id);if(!row||!this.store.isCurrentEvidence(id))throw new StoreError('Image not found',404);
   if(this.excludeMetadata(row))return {queued:false};
-  const wait=this.processing.imageProcessorWait(id);if(wait==='running'||wait==='unknown'&&(this.options.modelAuthority||this.processing.modelAuthorityEnabled()||!confirmUnknown))throw new StoreError('Previous image processing has not finished or its completion is unknown',409);if(confirmUnknown)this.processing.clearImageProcessorWait(id);
+  const wait=this.processing.imageProcessorWait(id);if(wait==='running'||wait==='unknown'&&(!confirmUnknown||!this.processing.ownerCanConfirmUnknown(id,this.options.modelAuthority)))throw new StoreError('Previous image processing has not finished or its completion is unknown',409);if(confirmUnknown)this.processing.clearImageProcessorWait(id);
   const intentChanged=rememberIntent?this.processing.rememberModelIntent(id,'image',this.options.modelAuthority):Boolean(this.processing.modelIntent(id,'image'));
   if(intentChanged){for(const step of this.engine.list({operationId:'image:'+id,limit:100}).items)if(['waiting','running','blocked'].includes(step.state))this.engine.cancel(step.id);}else this.cancel(id,false);
   this.store.db.prepare('UPDATE image_inputs SET semantic_withdrawn=0 WHERE capture_id=?').run(id);this.store.db.prepare('UPDATE image_inputs SET auto_eligible=1,generation=generation+?,reuse_allowed=?,policy_json=NULL,understanding_enabled=? WHERE capture_id=?').run(Number(recompute||intentChanged),Number(!recompute),Number(this.settings().understandingEnabled),id);
