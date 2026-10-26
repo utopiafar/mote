@@ -1,3 +1,5 @@
+import {storedCaptureLibraryVersion} from './capture-library-version.js';
+import {registerDeviceLibrary} from './device-library.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import {navigationScopeSchema} from './context-navigation.js';
 import { moteText } from './i18n.js';
@@ -19,6 +21,7 @@ const update=z.object({status:z.enum(['completed','failed']),ocrText:z.string().
 
 export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;evidenceReader:EvidenceReader;connections:Connections;credential:(req:FastifyRequest)=>ConnectionCredential|undefined}) {
   const {store,connections,credential,evidenceReader}=context;
+  registerDeviceLibrary(app,context);
   const thumbnails=new Map<string,Buffer>();let cachedBytes=0;
   const ownRecord=(req:FastifyRequest)=>{
     const id=z.string().uuid().parse((req.params as {id:string}).id);
@@ -86,7 +89,7 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
       record.source!=='screen'&&record.source!=='ui_page'&&
       store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(provenance.sourceId));
     const memoryMaterialRef=evidenceReader.currentMemoryMaterialRef(record);
-    return {...evidenceReader.context([record])[0],fileArchive:file?{captureId:record.id}:undefined,
+    return {...evidenceReader.context([record])[0],libraryVersion:storedCaptureLibraryVersion(store,record.id),fileArchive:file?{captureId:record.id}:undefined,
       requiresMaterialForMemory,...(memoryMaterialRef?{memoryMaterialRef}:{})};
   });
   app.get('/api/capture-browser/:id/image',async(req,reply)=>{

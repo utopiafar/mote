@@ -13,6 +13,30 @@ import java.util.UUID
 import java.io.ByteArrayInputStream
 
 class ItemUploadFlowInstrumentedTest {
+    @Test fun failedAttachmentNoteOpensOriginalThroughIntegratedLibraryReader() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("itemCaptureReaderFixture")=="true")
+        val context=InstrumentationRegistry.getInstrumentation().targetContext; val instrumentation=InstrumentationRegistry.getInstrumentation()
+        require(Build.FINGERPRINT.contains("emu64a") && context.packageName.endsWith(".dev"))
+        val settings=Settings(context);settings.saveConnection("http://127.0.0.1:47890","generated-item-history-fixture-token","Generated reader",true)
+        settings.save(settings.read().copy(syncMode="manual"))
+        val original=JSONObject().put("id",UUID.randomUUID().toString()).put("deviceId",settings.deviceId).put("source","note").put("capturedAt","2026-10-26T00:00:00Z").put("durationMs",0).put("ocrText","Generated failed attachment original").put("privacy",JSONObject().put("excluded",false))
+        context.queue().enqueue(original,null,100000)
+        val outgoing=JSONObject(original.toString()).put("metadata",JSONObject().put("attachments",JSONArray().put(UUID.randomUUID().toString())))
+        val batch=UUID.randomUUID().toString();val scope=CaptureUploadReceipt.scope(settings.read().server,settings.deviceId)
+        CaptureUploadAttempts(context.captureUploadHistory(),batch,scope,LoginProcess.id).send(listOf(outgoing),100,true,listOf(original)) { 503 to JSONObject() }
+        fun views(v:android.view.View):List<android.view.View> = listOf(v)+if(v is android.view.ViewGroup)(0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
+        ActivityScenario.launch<UploadBatchActivity>(Intent(context,UploadBatchActivity::class.java).putExtra("batchId",batch)).use { scenario ->
+            var clicked=false;val end=android.os.SystemClock.elapsedRealtime()+10000
+            while(!clicked && android.os.SystemClock.elapsedRealtime()<end) { scenario.onActivity { a -> views(a.window.decorView).firstOrNull { it.tag=="history-original-${original.getString("id")}" }?.let { clicked=it.performClick() } };if(!clicked) Thread.sleep(50) };assertTrue(clicked)
+            var read=false
+            while(!read && android.os.SystemClock.elapsedRealtime()<end) { instrumentation.runOnMainSync {
+                val visible=android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it.isShown }.flatMap(::views).filterIsInstance<android.widget.TextView>()
+                read=visible.any { it.text.contains("Generated failed attachment original") }
+                assertFalse(visible.any { it.text.contains(MoteI18n.text("历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。")) })
+            };if(!read) Thread.sleep(50) };assertTrue(read)
+            instrumentation.runOnMainSync { androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<CaptureRecordsActivity>().forEach { it.finish() } }
+        }
+    }
     @Test fun restartRestoresItemsAndOriginalNavigation() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("itemRestartFixture")=="true")
         val context=InstrumentationRegistry.getInstrumentation().targetContext

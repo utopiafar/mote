@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 class CalendarActionWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
         val config = Settings(applicationContext).read()
-        if (!config.hasSyncConnection() || config.syncMode == "manual" || !CalendarActions(applicationContext).permissions()) return Result.success()
+        if (!config.hasSyncConnection() || config.syncMode == "manual") return Result.success()
         if (SyncSchedule.waitingReason(applicationContext, config) != null) return Result.retry()
         return try { CalendarActions(applicationContext).deliver(); Result.success() } catch (_: Exception) { Result.retry() }
     }

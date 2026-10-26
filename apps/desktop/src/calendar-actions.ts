@@ -1,3 +1,4 @@
+import {publishCalendarCapability} from './calendar-capabilities';
 import { connectionToken, requireConnectionToken } from './login-session';
 import { moteText } from '@mote/shared/i18n';
 import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
@@ -7,14 +8,14 @@ import {moteActionMarker,calendarEventSchema,calendarDescription,type ActionProp
 import {calendarHelper} from './source-calendar';
 import {validateServerUrl} from './config';
 import type {Config} from './contracts';
-export interface CalendarActionIO {request:(path:string,body?:unknown)=>Promise<any>;native:(command:'calendar-permission'|'calendar-create'|'calendar-change',input?:unknown)=>Promise<any>;read:(key:string)=>Promise<string|undefined>;write:(key:string,value:string)=>Promise<void>}
+export interface CalendarActionIO {request:(path:string,body?:unknown)=>Promise<any>;native:(command:'calendar-permission'|'calendar-list'|'calendar-create'|'calendar-change',input?:unknown)=>Promise<any>;read:(key:string)=>Promise<string|undefined>;write:(key:string,value:string)=>Promise<void>}
 /** Native ledger is written before creation; a crash can only reconcile, never blindly insert again. */
 const executionQueues=new Map<unknown,Promise<unknown>>();
 export class CalendarActions {
  constructor(private config:Pick<Config,'deviceId'|'deviceName'>,private io:CalendarActionIO,private queueKey:unknown=io){}
- connect(){return this.serial(async()=>{const value=await this.io.native('calendar-permission');if(value.permission!=='granted')throw Error(moteText("请允许日历访问后重试"));await this.io.request('/api/actions/targets',{deviceId:this.config.deviceId,deviceName:this.config.deviceName,calendars:value.calendars.filter((c:any)=>c.writable===true).map((c:any)=>({id:c.id,title:c.title}))});await this.io.write('enabled','1');return {deviceId:this.config.deviceId};});}
+ connect(){return this.serial(async()=>{const value=await this.io.native('calendar-permission');await publishCalendarCapability(this.config.deviceId,value,this.io.request);if(value.permission!=='granted')throw Error(moteText("请允许日历访问后重试"));await this.io.request('/api/actions/targets',{deviceId:this.config.deviceId,deviceName:this.config.deviceName,calendars:value.calendars.filter((c:any)=>c.writable===true).map((c:any)=>({id:c.id,title:c.title}))});await this.io.write('enabled','1');return {deviceId:this.config.deviceId};});}
  private serial<T>(fn:()=>Promise<T>):Promise<T>{const task=(executionQueues.get(this.queueKey)??Promise.resolve()).catch(()=>{}).then(fn);executionQueues.set(this.queueKey,task);void task.finally(()=>{if(executionQueues.get(this.queueKey)===task)executionQueues.delete(this.queueKey);}).catch(()=>{});return task;}
- async deliver(){if(await this.io.read('enabled')!=='1')return;const data=await this.io.request('/api/actions/deliveries?deviceId='+encodeURIComponent(this.config.deviceId));for(const a of data.items)await this.execute(a.id);}
+ async deliver(){if(await this.io.read('enabled')!=='1')return;const permission=await this.serial(async()=>{const value=await this.io.native('calendar-list');await publishCalendarCapability(this.config.deviceId,value,this.io.request);return value.permission;});if(permission!=='granted')return;const data=await this.io.request('/api/actions/deliveries?deviceId='+encodeURIComponent(this.config.deviceId));for(const a of data.items)await this.execute(a.id);}
  execute(id:string){return this.serial(async()=>{
   if(!/^[0-9a-f-]{36}$/i.test(id))throw Error(moteText("日程编号无效"));
   const action=await this.io.request(`/api/actions/${id}/claim`,{deviceId:this.config.deviceId}) as ActionProposal&{mutationAllowed?:boolean};

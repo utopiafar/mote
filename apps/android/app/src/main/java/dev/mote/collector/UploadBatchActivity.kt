@@ -21,7 +21,7 @@ class UploadBatchActivity : MoteActivity() {
                     text = MoteI18n.text("查看原件") + " · " + if (item.received) MoteI18n.text("已确认") else MoteI18n.text("未确认")
                     tag = "history-original-${item.captureId}"
                     setOnClickListener {
-                        val destination = if (item.identity == null) Intent(this@UploadBatchActivity, CaptureRecordsActivity::class.java).putExtra("recordId", item.captureId).putExtra("recordVersion", item.originalVersion)
+                        val destination = if (item.identity == null) Intent(this@UploadBatchActivity, CaptureRecordsActivity::class.java).putExtra("recordId", item.captureId).putExtra("historyOriginalVersion", item.originalVersion)
                         else Intent(this@UploadBatchActivity, UploadOriginalActivity::class.java).putExtra("batchId", batch.id).putExtra("itemKey", item.key)
                         startActivity(destination)
                     }

@@ -76,12 +76,8 @@ class MainActivity : MoteActivity() {
     private lateinit var homeSourceList: LinearLayout
     private lateinit var homeRecentList: LinearLayout
     private val homeTask by lazy { UiTask(this) }
-    private lateinit var localLibraryList: LinearLayout
-    private lateinit var localLibraryStatus: TextView
-    private val libraryTask by lazy { UiTask(this) }
-    private var librarySource = ""
-    private var libraryGeneration = 0
-    private var libraryRefreshPending = false
+    private var libraryView: LibraryCaptureView? = null
+    private var libraryState: Bundle? = null
     private var libraryRecordsRevision = -1L
     private var firstUseGuide: LinearLayout? = null
     private var firstUse = true
@@ -241,6 +237,7 @@ class MainActivity : MoteActivity() {
         root.navigation(navigation)
         setContentView(root)
         // CollectorConfig is the complete draft baseline. Unvisited pages never supply defaults.
+        libraryState = savedInstanceState?.getBundle("library")
         buildToday()
         buildSettings()
         val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: intent.getStringExtra("page")?.let { value -> Page.entries.find { it.name == value } } ?: Page.valueOf(MoteNavigation.initialLocalPage())
@@ -426,14 +423,14 @@ class MainActivity : MoteActivity() {
             startActivity(Intent(this, FileContentActivity::class.java).putExtra("sourceId", row.getString("sourceId")).putExtra("externalId", row.getJSONObject("candidate").getString("externalId")))
         }
     }
-    private fun addCaptureRow(parent: LinearLayout, item: org.json.JSONObject) {
+    private fun addCaptureRow(parent: LinearLayout, item: org.json.JSONObject, remote: Boolean = false, location: String = "", scope: String = "") {
         val title = item.optString("appName").ifBlank { if (item.optString("source") == "note") MoteI18n.text("随手记") else MoteI18n.text("采集记录") }
         val note = item.optString("source") == "note"
         val timestamp = runCatching { java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT).withLocale(resources.configuration.locales[0]).withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(item.getString("capturedAt"))) }.getOrDefault(item.optString("capturedAt"))
         val kind = MoteI18n.text(if (note) "随手记" else "采集记录")
         val provenance = if (title == kind) timestamp else "$kind · $timestamp"
-        addContentRow(parent, title, NativeRecordPreview.text(item), "library-record:" + item.getString("id"), if (note) "notes" else "capture", provenance) {
-            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
+        addContentRow(parent, title, NativeRecordPreview.text(item), "library-record:" + item.getString("id"), if (note) "notes" else "capture", listOf(provenance, location).filter(String::isNotBlank).joinToString(" · ")) {
+            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("recordVersion", LibraryCaptureProjection.version(item)).putExtra("recordObservationCount", LibraryCaptureProjection.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
         }
     }
 
@@ -451,62 +448,17 @@ class MainActivity : MoteActivity() {
             text = MoteI18n.text("我的记忆"); setOnClickListener { openCentral("memories") }
         }), LinearLayout.LayoutParams(0, -2, 1f))
         content.addView(views, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
-        val scope = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        scope.addView(TextView(this).apply {
-            text = MoteI18n.text("本机保留"); MoteUi.type(this, NativeFontRole.ACTION, medium = true); gravity = Gravity.CENTER; minHeight = dp(MoteTheme.controlHeight)
-            isSelected = true; isFocusable = true; MoteUi.textColor(this, NativeColorRole.ACCENT); background = MoteUi.shape(this@MainActivity, NativeColorRole.TINT, NativeRadiusRole.CONTROL)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
-        scope.addView(MoteUi.button(Button(this).apply {
-            text = MoteI18n.text("中央归档"); setOnClickListener { openCentral("archive") }
-        }).apply { background = MoteUi.clickable(this@MainActivity, NativeColorRole.SURFACE, NativeRadiusRole.CONTROL) }, LinearLayout.LayoutParams(0, -2, 1f))
-        content.addView(scope, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
-        text(MoteI18n.text("本机与中央资料暂分别浏览。"), NativeFontRole.META, NativeColorRole.MUTED)
-        val types = listOf("" to "全部记录", "file" to "文件", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "随手记", "notification" to "通知", "media" to "媒体播放状态", "activity" to "应用活动", "device_event" to "设备事件")
-        val selector = Spinner(this).apply {
-            contentDescription = MoteI18n.text("资料类型")
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, types.map { MoteI18n.text(it.second) })
-            setSelection(types.indexOfFirst { it.first == librarySource }.coerceAtLeast(0))
-        }; content.addView(selector, LinearLayout.LayoutParams(-1, dp(52)))
-        selector.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val source = types[position].first
-                if (source != librarySource) { librarySource = source; loadLocalLibrary() }
-            }
-        }
-        localLibraryStatus = text(MoteI18n.text("正在读取…"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
-        localLibraryList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(localLibraryList)
+        button(MoteI18n.text("中央归档")) { openCentral("archive") }
+        libraryView = LibraryCaptureView(this, content, libraryState,
+            { parent, item, remote, location, scope -> addCaptureRow(parent, item, remote, location, scope) },
+            { parent, item -> addFileRow(parent, item) })
         button(MoteI18n.text("按日期浏览更多记录")) { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
 
         content = pageContent
     }
     private fun openCentral(page: String) { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", page)) }
 
-    private fun loadLocalLibrary() {
-        if (!::localLibraryList.isInitialized) return
-        val generation = ++libraryGeneration
-        if (libraryTask.busy) { libraryRefreshPending = true; return }
-        val list = localLibraryList; val label = localLibraryStatus; val source = librarySource
-        libraryTask.start(MoteI18n.text("正在读取…"), { label.text = it }, {
-            applicationContext.withNativeNotePreviews(applicationContext.queue().capturePage("1970-01-01T00:00:00Z", java.time.Instant.now().plusSeconds(1).toString(), limit = 20, source = source)) to (if (source.isEmpty() || source == "file") applicationContext.localFileContents(20) else emptyList())
-        }) { result ->
-            if (generation == libraryGeneration && list === localLibraryList) {
-                list.removeAllViews()
-                result.onSuccess { (page, files) ->
-                    files.forEach { addFileRow(list, it) }
-                    val items = page.getJSONArray("items")
-                    label.text = MoteI18n.text("本机保留 · {0} 条资料", page.getInt("totalCount"))
-                    if (items.length() == 0 && files.isEmpty()) list.addView(TextView(this).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或随手记。"); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, dp(20), 0, dp(20)) })
-                    for (i in 0 until items.length()) {
-                        val item = items.getJSONObject(i)
-                        addCaptureRow(list, item)
-                    }
-                }.onFailure { label.text = MoteI18n.text("资料暂不可读取，请稍后重试。") }
-            }
-            if (libraryRefreshPending) { libraryRefreshPending = false; loadLocalLibrary() }
-        }
-    }
+    private fun loadLocalLibrary() { libraryView?.refresh() }
 
     private fun buildSettings() {
         page(Page.SETTINGS, MoteI18n.text("本机采集、隐私与同步，各自可控"))
@@ -1462,6 +1414,7 @@ class MainActivity : MoteActivity() {
         resumeUi()
     }
     private fun resumeUi() {
+        if (currentPage == Page.LIBRARY) libraryView?.resume()
         if (currentPage == Page.ASK) centralContent?.resume()
         if (currentPage == Page.ACTIVITY) activityContent?.resume()
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
@@ -1498,7 +1451,7 @@ class MainActivity : MoteActivity() {
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
@@ -1667,6 +1620,7 @@ class MainActivity : MoteActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBundle("library", libraryView?.saveState() ?: libraryState)
         outState.putString("page", currentPage.name)
         outState.putString("permissionReturnPage", permissionReturnPage.name)
         if (currentPage == Page.CONNECTION) connectionOrigin?.let { outState.putString("connectionOrigin", it.name) }
