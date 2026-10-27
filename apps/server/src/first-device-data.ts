@@ -31,11 +31,13 @@ export function firstDeviceData(store:Store,files:FileStore,reader:EvidenceReade
   return Boolean(record.ocrText.trim()||record.metadata?.noteOrigin?.text?.trim()||attachments.length);
  };
  for(const device of devices.slice(0,DEVICE_LIMIT)){
-  // The existing per-device/time index bounds each metadata candidate page. Do
-  // not scan the archive looking for an absolute first record or load a blob.
+  // Exclude observations without originals before limiting the candidate page,
+  // so frequent media or activity records cannot hide an older original.
   const rows=store.db.prepare(`SELECT id,received_at,json_extract(json,'$.platform') platform,
    json_extract(json,'$.source') source,json_extract(json,'$.privacy.collection') collection,
    json_extract(json,'$.appId') app_id FROM captures WHERE device_id=?
+   AND COALESCE(json_extract(json,'$.source'),'') NOT IN ('activity','media')
+   AND COALESCE(json_extract(json,'$.privacy.collection'),'')!='activity'
    ORDER BY captured_at DESC,id DESC LIMIT ?`).all(device.id,RECORD_LIMIT+1);
   windowLimited ||= rows.length>RECORD_LIMIT;
   for(const row of rows.slice(0,RECORD_LIMIT)){
