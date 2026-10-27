@@ -573,6 +573,15 @@ describe.skipIf(process.platform!=='darwin')('independent collection channel jou
  it('refuses screenshot pixels for visible background Chrome because its active page binding is unavailable',async()=>{
   mocks.active.mockResolvedValue({...application,visibleAppIds:[application.appId,'com.google.Chrome']});const {collector,queue}=await makeCollector();await collector.start();await collector.settleCapture();expect(mocks.capture).not.toHaveBeenCalled();expect(queue.stats().depth).toBe(0);
  });
+ it.each(['unconfigured','disconnected','blocked'] as const)('explains missing Chrome structure while preserving selected duration (%s)',async failure=>{
+  mocks.foreground.mockResolvedValue({...application,appId:'com.google.Chrome'});
+  const provider={sample:vi.fn(async()=>({status:failure==='disconnected'?'disconnected' as const:'blocked' as const,pages:[]})),validate:vi.fn(async()=>false)};
+  const config={...fixtureConfig(),syncMode:'manual' as const,defaultCollection:{...activity,structured:true},chromeOrigins:failure==='unconfigured'?[]:['https://fixture.example']};
+  const queue=new DurableQueue(directory,config);await queue.initialize();collector=new Collector(config,queue,'/fixture',()=>true,()=>undefined,undefined,undefined,undefined,undefined,provider);
+  await collector.start();await collector.settleCapture();
+  expect(collector.status().message).toContain(failure==='unconfigured'?'允许的 Chrome 站点':failure==='disconnected'?'扩展尚未连接':'遮挡校验未通过');
+  expect((await queue.exportArchive()).records.map(r=>r.event.source)).toEqual(['activity']);expect(mocks.capture).not.toHaveBeenCalled();
+ });
  it('measures media only across valid matching playing observations and resets on pause, stale binding and restart',async()=>{
   const appId='com.google.Chrome',appName='Google Chrome';mocks.foreground.mockResolvedValue({...application,appId,appName});
   let state:'playing'|'paused'='playing',bound=true,mediaId='generated-a';

@@ -8,6 +8,27 @@ import java.nio.file.Files
 import java.util.UUID
 
 class AppPolicyAndActivityTest {
+    @Test fun miuiStatusPluginIsChromeOnlyForVerifiedInactiveSystemBarGeometry() {
+        val display=CaptureBounds(0,0,1200,2608)
+        val insets=CaptureBounds(0,144,0,48)
+        val island=CaptureBounds(409,19,790,143)
+        fun match(bounds:CaptureBounds=island, owner:String=SystemBarRegion.MIUI_SYSTEM_UI, system:Boolean=true,
+            type:Int=3, active:Boolean=false, focused:Boolean=false, bars:CaptureBounds=insets) =
+            SystemBarRegion.miuiStatus(bounds,display,bars,owner,system,type,active,focused)
+        assertTrue(match())
+        assertFalse(match(system=false));assertFalse(match(owner="dev.generated.impostor"))
+        assertFalse(match(type=1));assertFalse(match(active=true));assertFalse(match(focused=true))
+        assertFalse(match(bounds=CaptureBounds(409,19,790,145)))
+        assertFalse(match(bounds=CaptureBounds(-1,19,790,143)))
+        assertFalse(match(bounds=CaptureBounds(409,19,409,143)))
+        assertFalse(match(bars=CaptureBounds(0,0,0,0)))
+        val app=CollectionWindow(1,"dev.generated.app")
+        val rules=AppCollectionRules.parse("""{"default":"off","apps":{"dev.generated.app":"structured"}}""")
+        val admitted=CollectionWindows.snapshot(listOf(app,CollectionWindow(3,SystemBarRegion.MIUI_SYSTEM_UI,match())),app.packageName)
+        assertTrue(rules.allows(admitted,emptySet(),AppCollectionChannel.STRUCTURED))
+        val blocked=CollectionWindows.snapshot(listOf(app,CollectionWindow(3,SystemBarRegion.MIUI_SYSTEM_UI,false)),app.packageName)
+        assertFalse(rules.allows(blocked,emptySet(),AppCollectionChannel.STRUCTURED))
+    }
     @Test fun miuiNavigationOutsidePlatformInsetDoesNotApplyLauncherPrivacyToOtherApps() {
         val display = CaptureBounds(0, 0, 1200, 2608)
         val strip = CaptureBounds(0, 2534, 1200, 2608)

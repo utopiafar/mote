@@ -30,6 +30,8 @@ export class ChromeCaptureBridge implements BrowserCaptureProvider {
  private bound(reply:Reply,context:BrowserNativeContext):boolean {const b=reply.binding;return Boolean(b&&canonicalBrowserUrl(b.url)===canonicalBrowserUrl(context.url)&&canonicalBrowserUrl(b.url)&&JSON.stringify(b.window)===JSON.stringify(context.window)&&JSON.stringify(b.viewport)===JSON.stringify(context.viewport));}
  async sample(request:BrowserCaptureRequest,signal:AbortSignal):Promise<BrowserCaptureResult>{
   if(signal.aborted)return {status:'stale',pages:[]};if(!normalizedMasksSchema.safeParse(request.masks).success)return {status:'blocked',pages:[]};if(request.appId!=='com.google.Chrome')return {status:'unsupported',pages:[]};
+  if(!request.origins.length)return {status:'blocked',pages:[]};
+  const connected=[...this.peers].filter(p=>p.ready);if(connected.length!==1)return {status:connected.length?'blocked':'disconnected',pages:[]};
   const context=await this.context(request,signal);if(!context)return {status:'blocked',pages:[]};const url=canonicalBrowserUrl(context.url);if(!url||!request.origins.includes(new URL(url).origin))return {status:'blocked',pages:[]};
   const peers=[...this.peers].filter(p=>p.ready);if(peers.length!==1)return {status:peers.length?'blocked':'disconnected',pages:[]};const epoch=this.epoch,reply=await this.request(peers[0],request,context,signal);if(!reply)return {status:'disconnected',pages:[]};if(reply.status!=='ok'||!this.bound(reply,context))return {status:reply.status==='ok'?'stale':reply.status,pages:[]};
   const after=await this.context(request,signal);if(signal.aborted||epoch!==this.epoch||!after||!browserContextMatches(context,after))return {status:'stale',pages:[]};

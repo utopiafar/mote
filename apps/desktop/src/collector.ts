@@ -283,6 +283,11 @@ export class Collector {
         const result=await this.browserCapture?.sample({appId:foreground.appId,pid:foreground.pid,origins:cfg.chromeOrigins,observedAt:at,observationId,masks:cfg.masks,structured:selected.structured},abort.signal).catch(()=>undefined);
         if(!valid()||!await sameForeground())return;
         browserIdentity=result?.identity;chromeReady=result?.status==='ok'&&Boolean(browserIdentity);browserScreenshotSafe=result?.screenshotSafe===true;if(!chromeReady||!result?.media)this.lastMediaSample=undefined;
+        if (selected.structured && !chromeReady) this.message = !cfg.chromeOrigins.length
+          ? moteText('结构化内容未采集：请先配置允许的 Chrome 站点；应用时长按所选设置记录')
+          : result?.status === 'disconnected' || !this.browserCapture
+            ? moteText('结构化内容未采集：Mote Chrome 扩展尚未连接；应用时长按所选设置记录')
+            : moteText('结构化内容未采集：Chrome 窗口、站点授权或遮挡校验未通过；应用时长按所选设置记录');
         if(chromeReady&&result){
           const browserValid=async()=>{const current=Boolean(browserIdentity&&await this.browserCapture?.validate(browserIdentity,abort.signal))&&await sameForeground();if(!current)this.lastMediaSample=undefined;return current;};
           if(selected.structured){

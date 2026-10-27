@@ -4,18 +4,20 @@
 
 ## Current exact-version mappings
 
-The pack includes reviewed resource-ID mappings and 109 converted subtree mappings for these versions:
+The pack includes resource-ID mappings and 109 converted subtree mappings plus one current-layout variant for these exact versions. Xiaohongshu 9.51.0 and Bilibili 9.16.1 reuse the prior 9.50.0 / 9.15.0 selectors and subtree guards at the owner’s request; rebinding the version does not establish that every page still matches:
 
 | App | Exact version | Converted subtree rules | Additional resource-ID mappings |
 |---|---|---:|---|
-| Xiaohongshu | 9.50.0 | 25 | Visible video captions and note author |
+| Xiaohongshu | 9.51.0 | 25 + 1 current-layout variant | Visible video captions and note author |
 | WeRead | 10.2.2 | 4 | Individual bookshelf titles and mini-player progress |
-| Bilibili | 9.15.0 | 46 | Uploader display fields, player progress, scoped ad titles |
+| Bilibili | 9.16.1 | 46 | Uploader display fields, player progress, scoped ad titles |
 | QQ | 9.3.75 | 34 | Conversation header display fields |
 
 These are migrations of reviewed offline declarative rules, **not claims of current physical-device support**. No historical personal text, screenshots, coordinates, or record identifiers are included. Version 3 preserves the rules' named field semantics: message body and quoted message are separate; displayed time, progress, counts and descriptions remain original display strings; app-generated summaries remain labelled as such. A rule match establishes an observation, not reading completion, agreement, playback duration or an action.
 
 The pack retains the existing WeChat 8.0.78 article and Taobao 10.66.22 product mappings. WeChat uses the `js_article`, `activity-name`, `js_name` and `js_content` containers in `TmplWebViewMMUI`. Taobao uses the `rv_main_container_wrapper` RecyclerView and original child path `[0,0,1,0]` in `com.taobao.tao.welcome.Welcome`. Taobao's historical export did not retain platform indices, so current Android index correspondence remains unverified. Generated fixtures validate these extraction contracts, not real-App coverage.
+
+Physical-device checks on 2026-10-27 verified WeRead 10.2.2 bookshelf titles, Xiaohongshu 9.51.0 note author, and Bilibili 9.16.1 scoped ad title and displayed player progress through the real Android collector into the running development Central archive and searchable materials. This does not validate every mapping, note body, video title, uploader field, or viewing duration. The additional Xiaohongshu two-visible-leaf variant has generated structural conformance coverage; its Activity-bound extraction remains unverified on the device.
 
 ## Named fields and structural fences
 
@@ -40,7 +42,7 @@ The per-App generated results are in `packs/`; `packs/conversion-report.json` li
 
 ## Generated examples and conformance
 
-`examples/generated-article-product.json` remains an authoring example for generated fixture Apps. It is not a support claim for third-party Apps. `fixtures/structured-conformance.json` exercises article/product extraction. `fixtures/named-field-conformance.json` contains five generated current-version subtree fixtures: XHS title/body, WeRead chapter-container rejection, Bilibili title and metadata, and QQ message fields. Only reviewed structural resource IDs, roles and child ordering are retained; all content strings and bounds are generated. The WeRead fixture intentionally demonstrates safe rejection of a container description.
+`examples/generated-article-product.json` remains an authoring example for generated fixture Apps. It is not a support claim for third-party Apps. `fixtures/structured-conformance.json` exercises article/product extraction. `fixtures/named-field-conformance.json` contains six generated current-version subtree fixtures: XHS title/body with and without its hidden separator, WeRead chapter-container rejection, Bilibili title and metadata, and QQ message fields. Only reviewed structural resource IDs, roles and child ordering are retained; all content strings and bounds are generated. The WeRead fixture intentionally demonstrates safe rejection of a container description.
 
 ```sh
 npm run build -w @mote/shared

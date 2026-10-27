@@ -96,6 +96,11 @@ class CaptureAccessibilityService : AccessibilityService() {
                 val info = packageManager.getApplicationInfo(SystemBarRegion.MIUI_HOME, 0)
                 info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
             }.getOrDefault(false)
+            val miuiStatusOwner = runCatching {
+                @Suppress("DEPRECATION")
+                val info = packageManager.getApplicationInfo(SystemBarRegion.MIUI_SYSTEM_UI, 0)
+                info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
+            }.getOrDefault(false)
             val observed = all.map { window ->
                 val root = window.root
                 val name = root?.packageName?.toString()
@@ -117,7 +122,11 @@ class CaptureAccessibilityService : AccessibilityService() {
                     displayBounds,
                     navigationBottom, resources.displayMetrics.density, name, miuiSystemOwner,
                     window.type, window.isActive, window.isFocused)
-                val chrome = (window.type == 3 && name == "com.android.systemui" && !window.isActive && !window.isFocused && inBar) || miuiBar
+                val miuiStatus = displayBounds != null && barInsets != null && SystemBarRegion.miuiStatus(
+                    CaptureBounds(bounds.left, bounds.top, bounds.right, bounds.bottom), displayBounds,
+                    CaptureBounds(barInsets.left, barInsets.top, barInsets.right, barInsets.bottom), name, miuiStatusOwner,
+                    window.type, window.isActive, window.isFocused)
+                val chrome = (window.type == 3 && name == "com.android.systemui" && !window.isActive && !window.isFocused && inBar) || miuiBar || miuiStatus
                 CollectionWindow(window.type, name, chrome)
             }
             windowCounts = Triple(observed.size, observed.count { it.packageName.isNullOrBlank() || it.type !in 1..3 }, observed.count { it.systemBar })
@@ -332,7 +341,12 @@ class CaptureAccessibilityService : AccessibilityService() {
                     if(valid())pageMerge.accepted(page,context)
                 }
                 outcome=UiPageOutcome.CAPTURED
-                if(valid()){settings.captured(sampledAt);settings.status("capturing",MoteI18n.text("页面内容已保存"))}
+                if(valid()){
+                    settings.captured(sampledAt)
+                    val message=MoteI18n.text("页面内容已保存")
+                    settings.status("capturing",message)
+                    settings.screenStatus(message)
+                }
             } catch (_: Exception) {
                 if (outcome in setOf(UiPageOutcome.EXTRACTED,UiPageOutcome.CAPTURED)) outcome=UiPageOutcome.SAVE_FAILED
                 else if (outcome != UiPageOutcome.PRIVACY_REJECTED) outcome=UiPageOutcome.FAILED
