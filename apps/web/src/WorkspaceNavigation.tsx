@@ -1,6 +1,6 @@
 import { moteText } from '@mote/shared/i18n';
 import {useSyncExternalStore} from 'react';
-import { ArrowLeft, ArrowRight, Settings2, SlidersHorizontal, Puzzle, Archive, BarChart3, HardDrive, Wrench, Bot, CircleHelp } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Settings2, SlidersHorizontal, Puzzle, Archive, BarChart3, HardDrive, Wrench, Bot, CircleHelp } from 'lucide-react';
 const settingsIcons:Record<string,typeof Settings2>={settings:SlidersHorizontal,extensions:Puzzle,vault:Archive,usage:BarChart3,statistics:HardDrive,developer:Wrench,agentView:Bot,help:CircleHelp};
 import { webFeatures } from './features/registry';
 import {AppearanceSelector} from './AppearanceSelector';
@@ -36,6 +36,10 @@ export function parentDestination(page:Page):Page|undefined {
     if(page==='actions')return 'overview';
     if(primaryDestination(page)==='about'&&page!=='about')return 'about';
 }
+/** Section tools are visible links, not a form control, so the current tool reads as navigation. */
+function ToolLinks({ label, tools, page, onPage }: { label: string; tools: string[]; page: Page; onPage: (page: Page) => void }) {
+    return <nav className="workspace-tool-links" aria-label={label}>{tools.map(id => <button key={id} type="button" className="text-button" aria-current={page === id ? 'page' : undefined} onClick={() => onPage(id)}>{pageLabels[id]}</button>)}</nav>;
+}
 export function WorkspaceNavigation({ page, onPage }: {
     page: Page;
     onPage: (page: Page) => void;
@@ -45,16 +49,14 @@ export function WorkspaceNavigation({ page, onPage }: {
         const tools = sections.library.filter(id => id !== 'archive');
         return <div className="workspace-context">
       {page !== 'archive' && <button className="back-link" aria-label={moteText('返回{0}', pageLabels.archive)} onClick={() => onPage('archive')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>}
-      <label className="workspace-tool-select"><span>{moteText('资料库工具')}</span><select aria-label={moteText('资料库工具')} value={tools.includes(page) ? page : ''} onChange={event => { if (event.target.value)
-            onPage(event.target.value); }}><option value="">{moteText('选择工具')}</option>{tools.map(id => <option value={id} key={id}>{pageLabels[id]}</option>)}</select></label>
+      <ToolLinks label={moteText('资料库工具')} tools={tools} page={page} onPage={onPage}/>
     </div>;
     }
     if (section === 'connections' && page !== 'connections') {
         const tools = sections.connections.filter(id => id !== 'sources' && id !== 'connections');
         return <div className="workspace-context">
       {page !== 'sources' && <button className="back-link" aria-label={moteText('返回{0}', pageLabels.sources)} onClick={() => onPage('sources')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>}
-      <label className="workspace-tool-select"><span>{moteText('来源与连接')}</span><select aria-label={moteText('来源与连接')} value={tools.includes(page) ? page : ''} onChange={event => { if (event.target.value)
-            onPage(event.target.value); }}><option value="">{moteText('管理来源或授权')}</option>{tools.map(id => <option value={id} key={id}>{pageLabels[id]}</option>)}</select></label>
+      <ToolLinks label={moteText('来源与连接')} tools={tools} page={page} onPage={onPage}/>
     </div>;
     }
     // The models page owns its nested categories and their single parent control.
@@ -81,5 +83,5 @@ export function SettingsLanding({ onPage }: {
     ];
     const known = new Set(cards.map(card => card.id));
     const extra = webFeatures.pages().filter(entry => (entry.section === 'system' || !entry.section) && !known.has(entry.id) && !new Set(['overview', 'ask', 'actions', 'activity', 'processing', 'about', 'featureGuide','search','coding']).has(entry.id));
-    return <section className="settings-destinations"><div className="settings-toolbar"><LanguageSelector /><AppearanceSelector /><button className="text-button" onClick={() => onPage('featureGuide')}>{moteText("全部功能")}<ArrowRight size={15}/></button></div><p className="settings-scope">{moteText("采集范围在设备本机；中央节点负责归档、理解、检索和资料管理。")}</p><div className="settings-link-grid discovery-settings-grid">{cards.map(card => { const Icon=settingsIcons[card.id]??Settings2; return <button key={card.id} disabled={!webFeatures.page(card.id)} onClick={() => onPage(card.id)}><Icon size={18}/><span><strong>{card.title}</strong><small>{card.description}</small>{!webFeatures.page(card.id)&&<small>{moteText("当前服务未提供此入口")}</small>}</span><ArrowRight size={16}/></button>;})}{extra.map(entry => <button key={entry.id} onClick={() => onPage(entry.id)}><Settings2 size={18}/><span><strong>{entry.label}</strong><small>{moteText("打开此功能查看状态与操作。")}</small></span><ArrowRight size={16}/></button>)}</div><details className="panel discovery-settings-boundary"><summary>{moteText("记忆设置分两处，各管什么？")}</summary><p><strong>{moteText("模型与服务 → 模块与模型")}</strong>{moteText("：选择模型、自动配方和历史资料的处理节奏。")}</p><p><strong>{moteText("自动记忆与插件 → 记忆方案")}</strong>{moteText("：暂停 / 恢复自动记忆，查看或准备更换当前方案。更换方案需先准备，再确认生效。")}</p></details></section>;
+    return <section className="settings-destinations"><div className="settings-toolbar"><LanguageSelector /><AppearanceSelector /><button className="text-button" onClick={() => onPage('featureGuide')}>{moteText("全部功能")}<ArrowRight size={15}/></button></div><p className="settings-scope">{moteText("采集范围在设备本机；中央节点负责归档、理解、检索和资料管理。")}</p><div className="settings-link-grid discovery-settings-grid">{cards.map(card => { const Icon=settingsIcons[card.id]??Settings2; return <button key={card.id} disabled={!webFeatures.page(card.id)} onClick={() => onPage(card.id)}><Icon size={18}/><span><strong>{card.title}</strong><small>{card.description}</small>{!webFeatures.page(card.id)&&<small>{moteText("当前服务未提供此入口")}</small>}</span><ChevronRight size={16}/></button>;})}{extra.map(entry => <button key={entry.id} onClick={() => onPage(entry.id)}><Settings2 size={18}/><span><strong>{entry.label}</strong><small>{moteText("打开此功能查看状态与操作。")}</small></span><ChevronRight size={16}/></button>)}</div><details className="panel discovery-settings-boundary"><summary>{moteText("记忆设置分两处，各管什么？")}</summary><p><strong>{moteText("模型与服务 → 模块与模型")}</strong>{moteText("：选择模型、自动配方和历史资料的处理节奏。")}</p><p><strong>{moteText("自动记忆与插件 → 记忆方案")}</strong>{moteText("：暂停 / 恢复自动记忆，查看或准备更换当前方案。更换方案需先准备，再确认生效。")}</p></details></section>;
 }

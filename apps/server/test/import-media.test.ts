@@ -2,10 +2,10 @@ import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {zipSync} from 'fflate';
 import sharp from 'sharp';
 import type {ImportJob} from '@mote/shared';
@@ -15,6 +15,8 @@ import {Store,StoreError,sha256} from '../src/store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {SourceStore} from '../src/sources.js';
 import {ImportStore} from '../src/imports.js';
+import type {ImportPreparation,ImportPreparationResult} from '../src/imports.js';
+import {prepareImportInput} from '../src/import-runtime.js';
 import {ServerFeatureScope} from '../src/feature-host.js';
 import {materialId} from '../src/materials.js';
 import {ImportIntakeRegistry,installImportIntake} from '../src/import-intake.js';
@@ -22,7 +24,7 @@ import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes} from '../src/f
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {generatedAppleDouble} from './fixtures/appledouble.js';
 
-async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>,configureImage=false){
+async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>,prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>,configureImage=false){
   // Advance durable workers explicitly, so wall-clock load cannot race assertions.
   t.mock.method(ServerFeatureScope.prototype,'every',()=>{});
   const directory=mkdtempSync(join(tmpdir(),'mote-media-import-'));
@@ -32,7 +34,7 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
   const config:Config={dataDir:directory,token:'generated-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'http://127.0.0.1:19300/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,backendPluginModules:modules};
   const calls:string[]=[],modelCalls:string[]=[],failed=new Set<string>();
   const start=async()=>{
-    node=await buildApp(config,{backgroundWorker:false,transcriptionProvider:{transcribe:async input=>{
+    node=await buildApp(config,{backgroundWorker:false,prepareImport,transcriptionProvider:{transcribe:async input=>{
       const parts:Buffer[]=[];for await(const part of input.body)parts.push(part);const key=Buffer.concat(parts).toString();calls.push(key);
       if(failed.has(key))throw new StoreError('Generated unsupported response',422);
       return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated participant described a plan; its outcome is unknown.'}]};
@@ -45,8 +47,8 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
   await start();await node.processing.save({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},policy:fixtureFilePolicy({...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},node.processing.runtime.registry)});
   if(!configureImage)await authorizeFixtureModels(node);
   const headers={authorization:'Bearer '+config.token};
-  const create=async(files:{name:string;dataBase64:string}[],processing:'automatic'|'preview'='automatic')=>{
-    const result=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files,processing}});assert.equal(result.statusCode,202,result.body);let job=result.json<ImportJob>();
+  const create=async(files:{name:string;dataBase64:string}[],processing:'automatic'|'preview'='automatic',instruction='')=>{
+    const result=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files,processing,instruction}});assert.equal(result.statusCode,202,result.body);let job=result.json<ImportJob>();
     for(let attempt=0;attempt<500&&['queued','preparing','importing'].includes(job.status);attempt++){await new Promise(r=>setTimeout(r,10));job=node.imports.get(job.id);}
     return job;
   };
@@ -55,8 +57,37 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
 }
 const entry=(name:string,bytes:Buffer|string)=>({name,dataBase64:Buffer.from(bytes).toString('base64')});
 
+test('a link-only diary record attaches host-retained ZIP media through helper, preview, confirmation and restart',async t=>{
+ const text='![Generated photo](assets/photo.png)',png=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();
+ const f=await fixture(t,[],undefined,async input=>{
+  assert.equal(input.inputPaths.length,1);assert.match(input.inputPaths[0],/diary\.md$/);
+  assert.equal(input.hostMedia?.length,1);const media=input.hostMedia![0];
+  assert.equal(media.relativePath,'diary.zip.contents/assets/photo.png');assert.equal(media.mimeType,'image/png');
+  assert.equal(media.contentAvailable,false);assert.equal(media.processing,'after_confirmation');
+  assert.equal(existsSync(media.path),false,'Host media is a retained reference, not a parser-readable copy');
+  writeFileSync(join(input.workspace,'records.jsonl'),JSON.stringify({item:{externalId:'generated-link-only',revision:'v1',observedAt:'2026-10-26T00:00:00Z',title:'Generated diary',text,kind:'file',layer:'original',document:{recordedAt:'2020-01-01T00:00:00Z',contentRole:'authored'}},evidencePaths:input.inputPaths,attachments:[media.path]})+'\n');
+  writeFileSync(join(input.workspace,'dispositions.json'),JSON.stringify({items:input.inputPaths.map(path=>({path,status:'parsed',reason:'Generated diary text'}))}));
+  const prepared=prepareImportInput(input),helper=await import(pathToFileURL(prepared.helperPath).href);
+  assert.deepEqual(await helper.validateRecords('records.jsonl'),{valid:true,count:1,errors:[]});
+  return {summary:'Generated diary; media extraction follows confirmation.',reviewDecision:{confidence:'high',ambiguous:false,reason:'Explicit generated source mapping'}};
+ });
+ const job=await f.create([entry('diary.zip',Buffer.from(zipSync({'diary.md':Buffer.from(text),'assets/photo.png':png})))],'preview','Preserve diary entries and image references');
+ assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.deepEqual(job.warnings,[]);
+ assert.equal(job.preview?.count,2);assert.equal(job.preview?.samples[0].attachmentCount,1);
+ assert.equal(job.dispositions?.counts.parsed,1);assert.equal(job.dispositions?.counts.processing,1);assert.equal(job.dispositions?.counts.container,1);assert.equal(job.dispositions?.items.length,3);
+ const response=await f.node.app.inject({method:'POST',url:`/api/imports/${job.id}/confirm`,headers:f.headers});assert.equal(response.statusCode,202,response.body);
+ let saved=f.node.imports.get(job.id);for(let attempt=0;attempt<500&&['awaiting_confirmation','importing'].includes(saved.status);attempt++){await new Promise(r=>setTimeout(r,10));saved=f.node.imports.get(job.id);}
+ assert.equal(saved.status,'completed');assert.equal(saved.progress.imported,2);
+ const diary=f.node.sources.getItem(saved.sourceId,'generated-link-only');
+ assert.ok(diary);assert.equal(diary.text,text);assert.equal(diary.document?.recordedAt,'2020-01-01T00:00:00Z');
+ const imageId=saved.media![0].fileId;assert.deepEqual(diary.document?.attachments?.map(attachment=>attachment.id),[imageId]);assert.deepEqual(f.node.archivedFiles.read(imageId),png);
+ await f.restart();
+ const read=await f.node.app.inject({url:`/api/imports/${job.id}`,headers:f.headers});assert.equal(read.statusCode,200);assert.equal(read.json<ImportJob>().status,'completed');
+ assert.equal(f.node.sources.getItem(saved.sourceId,'generated-link-only')?.document?.attachments?.[0].id,imageId);
+});
+
 test('ZIP AppleDouble members are retained and explicitly excluded by bytes while ._ named images still process',async t=>{
- const f=await fixture(t,[],undefined,true),metadata=generatedAppleDouble(),png=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
+ const f=await fixture(t,[],undefined,undefined,true),metadata=generatedAppleDouble(),png=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
  f.node.processing.runtime.registry.get('image.http').process=async()=>{ocr++;return {durationMs:0,segments:[]};};
  await f.node.processing.save({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},f.node.processing.runtime.registry)});
  await authorizeFixtureModels(f.node);
@@ -106,7 +137,7 @@ test('one failed extraction is isolated, retries without reupload, then enters a
 });
 
 test('mixed image and text import uses separate native extraction and preserves original text',async t=>{
-  const f=await fixture(t,[],undefined,true),image=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
+  const f=await fixture(t,[],undefined,undefined,true),image=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
   f.node.processing.runtime.registry.get('image.http').process=async()=>{ocr++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image text'}]};};
   await f.node.processing.save({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},f.node.processing.runtime.registry)});
   await authorizeFixtureModels(f.node);

@@ -64,7 +64,9 @@ async function run(){
  await select('任务类型','capture');await until(()=>js(`document.querySelector('.empty h2')?.textContent==='没有符合条件的任务'`),'empty filtered view');window.setSize(390,844);await screenshot('processing-empty-mobile');window.setSize(1360,1000);await select('任务类型','');await select('每页条数','10');await until(()=>js(`document.querySelectorAll('.operation-row').length===10`),'restore list');
  window.setSize(390,844);await screenshot('processing-mobile');window.setSize(1360,1000);wc.setZoomFactor(2);await screenshot('processing-200-percent');wc.setZoomFactor(1);
  await js(`document.querySelector('.processing-advanced').open=true`);await until(()=>js(`!!document.querySelector('[aria-label="上下文任务状态"]')`),'lazy advanced view');assert.equal(await js(`document.querySelectorAll('.content h1').length`),1,'advanced steps have no duplicate page title');
- await js(`window.confirm=()=>true;true;`);await select('界面语言','en');
+ // Language is a settings control; switch there and return to the processing view.
+ const processingRoute=await js(`location.hash`);await js(`location.hash='#/about'`);await until(()=>js(`!!document.querySelector('select[aria-label="界面语言"]')`),'settings language control');
+ await js(`window.confirm=()=>true;true;`);await select('界面语言','en');await js(`location.hash=${JSON.stringify(processingRoute)}`);
  await until(()=>js(`document.querySelector('.content h1')?.textContent==='Processing tasks'`),'English processing');await until(()=>js(`document.querySelectorAll('.operation-row').length===10`),'English tasks');
  await screenshot('processing-english-desktop');window.setSize(390,844);await screenshot('processing-english-mobile');
  await open('system/models','Models & services');await click('Model providers');await until(()=>js(`!!document.querySelector('.provider-sidebar')`),'English providers');await screenshot('providers-english-mobile');window.setSize(1360,1000);

@@ -17,6 +17,18 @@ export const linearUiTheme:UiThemePack=Object.freeze({id:'mote.linear',version:'
 export const defaultUiLayout:UiLayoutProfile=Object.freeze({id:'mote.central',version:'1',primary:Object.freeze(['home','library','sources','connections'] as UiDestination[]),initial:'home',navigation:'adaptive',detail:'split'});
 export const desktopUiLayout:UiLayoutProfile=Object.freeze({...defaultUiLayout,id:'mote.desktop',primary:Object.freeze(['home','library','sources','ask'] as UiDestination[])});
 export const androidUiLayout:UiLayoutProfile=Object.freeze({...defaultUiLayout,id:'mote.android',primary:Object.freeze(['home','library','ask','sources'] as UiDestination[])});
+/** Semantic glyph roles; each client maps them to its own icon set. */
+export type UiDestinationIcon='home'|'library'|'ask'|'sources'|'agent'|'activity';
+/** One owner-facing name and glyph per destination, so every client uses the same words. */
+export const uiDestinationPresentation:Readonly<Record<UiDestination,Readonly<{label:string;icon:UiDestinationIcon}>>>=Object.freeze({
+  home:Object.freeze({label:'首页',icon:'home'}),
+  library:Object.freeze({label:'资料库',icon:'library'}),
+  ask:Object.freeze({label:'问一问',icon:'ask'}),
+  sources:Object.freeze({label:'来源',icon:'sources'}),
+  connections:Object.freeze({label:'AI 接入',icon:'agent'}),
+  activity:Object.freeze({label:'活动',icon:'activity'}),
+});
+export const moteBrand=Object.freeze({name:'Mote',tagline:'你的个人上下文'});
 
 function reference(value:UiReference){if(!/^[a-z][a-z0-9.-]*$/.test(value.id)||!/^\d+(?:\.\d+)*$/.test(value.version))throw Error('Invalid presentation identity');return value.id+'@'+value.version;}
 /** Theme data is role values only, never a stylesheet, resource loader or executable UI. */

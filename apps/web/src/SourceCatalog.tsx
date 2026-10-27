@@ -1,3 +1,4 @@
+import {recordingBindingText,recordingSyncText} from './recording-status';
 import {moteText} from '@mote/shared/i18n';
 import { ArrowRight, FileText, FolderInput, Link2, Mail, Mic, Monitor, Plus } from 'lucide-react';
 import type { RecordingStatus } from '@mote/shared';
@@ -37,7 +38,7 @@ export function SourceCatalog({ api, onPage }: {
 
 /** recordingManifest owns the provider-suffix ID/status key and its matching detail route. */
 function RecorderCard({statusKey,status}:{statusKey:string;status:RecordingStatus}){
- const content=<><Mic size={24}/><span className={'badge '+(status.connected?'green':'muted')}>{status.connected?moteText('已连接'):moteText('待接入')}</span><h3>{recorderNames[status.provider]?moteText(recorderNames[status.provider]):status.label??status.provider}</h3><p>{moteText('选择首次历史范围和持续同步，归档转写并备份原始音频。')}</p><small>{status.provider==='dingtalk'?moteText('中央节点需 DWS CLI 授权；真实账号适配仍待验证。'):status.provider==='feishu'?moteText('中央节点需 Lark CLI 的妙记读取与媒体导出授权。'):moteText('按此来源说明完成中央账号授权。')}</small><span className="discovery-card-action">{moteText('查看接入与同步')}<ArrowRight size={16}/></span></>;
+ const content=<><Mic size={24}/><span className="badge muted">{recordingBindingText(status)}</span><h3>{recorderNames[status.provider]?moteText(recorderNames[status.provider]):status.label??status.provider}</h3><p className="recording-sync-status">{recordingSyncText(status)}</p><p>{moteText('选择首次历史范围和持续同步，归档转写并备份原始音频。')}</p><small>{status.provider==='dingtalk'?moteText('中央节点需 DWS CLI 授权；真实账号适配仍待验证。'):status.provider==='feishu'?moteText('中央节点需 Lark CLI 的妙记读取与媒体导出授权。'):moteText('按此来源说明完成中央账号授权。')}</small><span className="discovery-card-action">{moteText('查看接入与同步')}<ArrowRight size={16}/></span></>;
  const identityMatches=/^[a-z][a-z0-9-]{0,63}$/.test(statusKey)&&statusKey===status.provider+'-recordings';
  if(!identityMatches)return <div className="panel discovery-source-card discovery-link-unavailable" aria-disabled="true">{content}<small className="discovery-availability">{discoveryAvailabilityText('unavailable')}</small></div>;
  return <DiscoveryLink className="panel discovery-source-card" disabledAs="div" target={{pageId:'recordings',href:'#/connections/recordings?provider='+encodeURIComponent(status.provider),requires:[{id:'connector:'+statusKey,version:'1',host:'server'}]}}>{content}</DiscoveryLink>;

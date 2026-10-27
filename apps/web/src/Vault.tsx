@@ -64,7 +64,6 @@ export function Vault({ api, status, refresh, disconnect, embedded = false, }: {
         : 0;
     return (<>
       <div className={embedded ? "section-heading" : "page-heading"}>
-        {!embedded && <div className="eyebrow">YOUR CONTEXT BELONGS TO YOU</div>}
         {embedded ? <h2>{moteText("数据与备份")}</h2> : <h1>{moteText("数据与备份")}</h1>}
         <p>{moteText("知道留下了什么、存在哪里，也随时保留迁移的自由。")}</p>
       </div>

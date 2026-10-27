@@ -23,6 +23,7 @@
     "test:settings-ui": "npm run build && electron scripts/test-settings-ui.cjs",
     "test:background-ui": "electron scripts/test-background-ui.cjs",
     "test:activity-ui": "npm run build:central && electron scripts/test-activity-ui.cjs",
+    "snapshots:cross-client": "npm run build && electron scripts/cross-client-snapshots.cjs",
     "test:e2e": "node --import tsx scripts/e2e.ts",
     "test:media-e2e": "node --import tsx scripts/media-e2e.ts",
     "test:container": "node scripts/test-container.mjs",

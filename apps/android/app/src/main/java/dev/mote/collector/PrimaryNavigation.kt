@@ -3,10 +3,10 @@ package dev.mote.collector
 /** Application routes are explicit UI metadata, never inferred from captured content. */
 enum class MotePrimaryTab(val titleKey: String, val icon: String, val localPage: String, val route: String) {
     HOME("首页", "overview", "OVERVIEW", "home"),
-    LIBRARY("资料", "library", "LIBRARY", "library"),
+    LIBRARY("资料库", "library", "LIBRARY", "library"),
     ASK("问一问", "ask", "ASK", "ask"),
     SOURCES("来源", "sources", "SOURCES", "sources"),
-    ACTIVITY("活动", "chart", "ACTIVITY", "activity")
+    ACTIVITY("活动", "activity", "ACTIVITY", "activity")
 }
 
 data class MoteNavigationGroup(val titleKey: String, val pages: List<String>)
@@ -18,7 +18,7 @@ object MoteNavigation {
     // Legacy Coding transport links retain their library context, but are not content types.
     val libraryBrowsePages = libraryPages.filterNot { it == "coding" }
     val groups = listOf(
-        MoteNavigationGroup("内容", libraryBrowsePages),
+        MoteNavigationGroup("资料库", libraryBrowsePages),
         MoteNavigationGroup("首页", listOf("overview", "actions")),
         MoteNavigationGroup("来源", listOf("sources", "devices", "connections", "lark")),
         MoteNavigationGroup("管理与维护", listOf("statistics", "processing", "plugins", "settings", "usage", "vault", "developer", "about", "help"))

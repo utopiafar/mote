@@ -1,6 +1,6 @@
 import {observeModelTransport} from './model-transport-observer.js';
 import {ActiveExecutionBudget,DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active-budget.js';
-import {ProviderFailure,type ImportReviewDecision,type TokenUsage} from '@mote/shared';
+import {ProviderFailure,type ImportHostMedia,type ImportReviewDecision,type TokenUsage} from '@mote/shared';
 import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {createCodexImportAgent} from './codex-import.js';
@@ -14,7 +14,7 @@ import {bundledSkills,skillContent} from './skills.js';
 import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './model-runtime.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
-export type ImportAgentInput={language?:"zh-CN"|"en";workspace:string;inputPaths:string[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
+export type ImportAgentInput={language?:"zh-CN"|"en";workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
 export type ImportAgentResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
 export type ImportAgentObserver=(notification:HarnessNotification)=>void;
 export type ImportAgentLaunch=(input:{workspace:string;runtimeRoot:string})=>Promise<{dshBin:string}>;

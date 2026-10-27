@@ -215,7 +215,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
             ...devices.map(device => [device.deviceId, device] as const),
         ]).values()];
     return <section className="panel connections" aria-labelledby="connections-title">
-    <div className="section-heading"><div><span className="eyebrow">CONNECT ONCE</span><h2 id="connections-title"><QrCode size={19}/>{moteText(mode === 'device' ? '连接设备' : 'AI 接入')}</h2></div><span className="badge muted">{activeCount}{' '}{moteText("个有效连接")}</span></div>
+    <div className="section-heading"><div><h2 id="connections-title"><QrCode size={19}/>{moteText(mode === 'device' ? '连接设备' : 'AI 接入')}</h2></div><span className="badge muted">{activeCount}{' '}{moteText("个有效连接")}</span></div>
     {mode === 'device' && <details className="connection-help"><summary>{moteText('连接帮助')}</summary><p>{moteText("此页面只生成连接授权。先安装 Mac / Android 客户端，再填写客户端可访问的节点地址；二维码不会创建公网地址或隧道。")}</p><p><a className="text-button" href="https://github.com/utopiafar/mote/releases" target="_blank" rel="noreferrer">{moteText("下载 Mac / Android 客户端 →")}</a></p></details>}
     {Boolean(error || inventoryResource.error || configuration.error) && <div className="notice error" role="alert">{error || errorMessage(inventoryResource.error || configuration.error)}</div>}
     {message && <div className="notice" role="status"><Check size={16}/>{message}</div>}

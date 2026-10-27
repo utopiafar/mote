@@ -86,6 +86,13 @@ npm run test:ui -w @mote/desktop
 npm run test:profiles -w @mote/desktop
 ```
 
+跨端视觉一致性只做人工比对，不进入自动检查。下面的命令构建客户端后，用生成数据截取 Web（宽屏与手机）和 Mac 的首页、资料库、来源、问一问、设置，生成 `.mote/cross-client/index.html` 对照页；Android 截图可从专用模拟器导出为 `home.png`、`library.png` 等后用 `--android` 传入。导航名称与图标的一致性由 `packages/shared/test/ui-presentation.test.mjs` 自动检查。
+
+```sh
+npm run snapshots:cross-client
+npm run snapshots:cross-client -- --android /absolute/android-screens
+```
+
 隐藏窗口不会自动隐藏系统原生文件选择、消息提示或外部浏览器。因此后台 fixture 遇到未预期的原生 dialog 或 `shell.openExternal` 会报错；未捕获异常（包括 ready 前的启动失败）输出错误并以非零状态退出，避免 Electron 自身显示错误窗口。需要这些操作的测试应在加载入口后提供明确的生成响应或记录目标 URL。原生 Chrome 登录 fixture 已拦截 `/usr/bin/open`；不要为了让测试通过而静默选择取消或绕过授权。资料测试的 `interactive-400` 表示数据和交互场景，默认也隐藏窗口。
 
 确实需要查看界面时，明确设置 `MOTE_TEST_SHOW_UI=1`，例如：

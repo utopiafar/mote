@@ -31,7 +31,7 @@ async function run(){
  await route('library','.library-navigation');await click('应用活动');await until(()=>js(`document.querySelector('.activity-panel')?.textContent.includes('Generated Activity Browser')`),'library activity fetch without overview');
  // Discover the optional Coding page through the visible source directory.
  await click('来源');await until(()=>js(`!!document.querySelector('.sources-page')`),'sources destination');
- await js(`(()=>{const select=document.querySelector('select[aria-label="来源与连接"]');select.value='sourceCatalog';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+ await js(`[...document.querySelectorAll('nav[aria-label="来源与连接"] button')].find(button=>button.textContent==='新增数据源').click()`);
  await until(()=>js(`!!document.querySelector('.discovery-source-catalog')`),'source discovery');
  await until(()=>js(`(()=>{const card=[...document.querySelectorAll('a.discovery-source-card')].find(card=>card.querySelector('h3')?.textContent==='Coding Agent 会话');if(!card)return false;card.click();return true})()`),'discover Coding sync status');
  await until(()=>js(`location.hash==='#/library?view=coding-status'&&document.querySelector('.coding-uploads')?.textContent.includes('Generated Coding upload')`),'Coding discovery opens sync status');

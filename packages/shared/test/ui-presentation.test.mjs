@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
-import {UiPresentationHost,linearUiTheme,defaultUiLayout,androidUiLayout} from '../dist/ui-presentation.js';
+import {UiPresentationHost,linearUiTheme,defaultUiLayout,androidUiLayout,desktopUiLayout,uiDestinationPresentation} from '../dist/ui-presentation.js';
 
 const fixture=()=>new UiPresentationHost({theme:linearUiTheme,layout:{...defaultUiLayout,implementation:{name:'default'}}});
 test('one failed presentation observer does not split the committed binding across consumers',()=>{
@@ -47,4 +47,17 @@ test('data-only themes and complete core navigation are validated before registr
   host.activate({theme:pack,layout:defaultUiLayout});
   assert.equal(host.getSnapshot().theme.tokens.accent,linearUiTheme.tokens.accent);
   assert(Object.isFrozen(host.getSnapshot().theme.tokens));
+});
+test('every client names shared primary destinations with the same words and distinct glyphs',()=>{
+  const repo=new URL('../../../',import.meta.url),read=path=>readFileSync(new URL(path,repo),'utf8');
+  const glyphs=Object.values(uiDestinationPresentation).map(item=>item.icon);
+  assert.equal(new Set(glyphs).size,glyphs.length,'Each destination needs its own glyph');
+  // Mac ships static navigation before the renderer mounts; it must already use the shared names.
+  const html=read('apps/desktop/src/index.html'),mainNav=html.slice(html.indexOf('<nav class="main-nav"'),html.indexOf('</nav>'));
+  assert.deepEqual([...mainNav.matchAll(/<span data-i18n>([^<]+)<\/span>/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>uiDestinationPresentation[id].label));
+  assert.match(html,/data-nav="work"[^>]*>.*?<span data-i18n>活动<\/span>/);
+  // Android declares its tabs natively; route ids map to the same destinations.
+  const kotlin=read('apps/android/app/src/main/java/dev/mote/collector/PrimaryNavigation.kt');
+  const tabs=Object.fromEntries([...kotlin.matchAll(/^\s+[A-Z]+\("([^"]+)", "[^"]+", "[A-Z]+", "([a-z]+)"\)/gm)].map(match=>[match[2],match[1]]));
+  for(const id of [...androidUiLayout.primary,'activity'])assert.equal(tabs[id],uiDestinationPresentation[id].label,'Android '+id);
 });

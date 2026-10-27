@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { Activity as ActivityIcon, ArrowLeft, ArrowRight, GitBranch, FileCheck2, Eye } from 'lucide-react';
+import { ArrowLeft, ArrowRight, GitBranch, FileCheck2, Eye } from 'lucide-react';
 import { moteText } from '@mote/shared/i18n';
 import { formatEvidenceRef, parseEvidenceId, type WorkActivity, type WorkActivityPage } from '@mote/shared';
 import { type Api, errorMessage } from './api';
@@ -26,7 +26,7 @@ function WorkDetail({ api, id, onBack, onNavigate, onOpen }: {
         window.location.hash = '#/agent?runId=' + encodeURIComponent(runId); };
     return <div className="activity-detail"><button className="back-link" onClick={onBack}><ArrowLeft size={16}/>{moteText('返回活动')}</button>
   {error !== undefined && <p role="alert">{errorMessage(error)} <button className="text-button" onClick={refresh}>{moteText('重试')}</button></p>}{loading && !work && <p role="status">{moteText('正在读取…')}</p>}
-  {work && <><div className="page-heading"><div className="eyebrow">MOTE / <ActivityIcon size={14}/></div><h1 tabIndex={-1}>{work.goal}</h1><WorkStateBadge state={work.state}/><WorkProgress progress={work.progress}/></div>
+  {work && <><div className="page-heading"><h1 tabIndex={-1}>{work.goal}</h1><WorkStateBadge state={work.state}/><WorkProgress progress={work.progress}/></div>
    <nav className="section-tabs" aria-label={moteText('工作详情')}>{tabs.map(([key, label]) => <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{moteText(label)}</button>)}</nav>
    {tab === 'overview' && <WorkIssueNotice api={api} work={work}/>}
    {tab === 'overview' && <section className="panel panel-pad work-overview"><div className="work-overview-grid"><button className="work-overview-link" onClick={() => setTab('work')}><GitBranch size={22}/><span><strong>{moteText('工作分支')}</strong><small>{moteText('{0} 个分支正在进行', work.branchCounts?.running ?? 0)}</small></span><ArrowRight size={17}/></button><button className="work-overview-link" onClick={() => setTab('results')}><FileCheck2 size={22}/><span><strong>{moteText('成果')}</strong><small>{moteText('{0} 项已保存成果', work.artifacts.length)}</small></span><ArrowRight size={17}/></button><button className="work-overview-link" onClick={() => setTab('evidence')}><Eye size={22}/><span><strong>{moteText('证据')}</strong><small>{moteText('{0} 条来源资料', work.evidence.count)}</small></span><ArrowRight size={17}/></button></div>
@@ -59,7 +59,7 @@ export function Activity({ api, onNavigate, onOpen }: {
     useEffect(() => { const changed = () => {const query=new URLSearchParams(window.location.hash.split('?')[1]);setSelected(query.get('work')??'');setRelated(query);if(query.get('coding')==='receipts')setAdvanced(true);}; window.addEventListener('hashchange', changed); return () => window.removeEventListener('hashchange', changed); }, []);
     if (selected)
         return <WorkDetail key={selected} api={api} id={selected} onBack={() => { setSelected(''); const query=new URLSearchParams(window.location.hash.split('?')[1]??''); query.delete('work'); window.location.hash = '#/activity'+(query.size?'?'+query:''); }} onNavigate={onNavigate} onOpen={onOpen}/>;
-    return <div className="activity-centre"><div className="page-heading settings-heading"><div><div className="eyebrow">MOTE / <ActivityIcon size={15}/></div><h1>{moteText('活动')}</h1><p>{moteText("这里是 Mote 的后台工作：理解资料、导入、整理记忆与生成洞察。手机和电脑的应用使用情况在「资料库 → 应用活动」。")}</p></div><button className="button subtle" disabled={loading} onClick={refresh}>{moteText('刷新')}</button></div>
+    return <div className="activity-centre"><div className="page-heading settings-heading"><div><h1>{moteText('活动')}</h1><p>{moteText("这里是 Mote 的后台工作：理解资料、导入、整理记忆与生成洞察。手机和电脑的应用使用情况在「资料库 → 应用活动」。")}</p></div><button className="button subtle" disabled={loading} onClick={refresh}>{moteText('刷新')}</button></div>
   {(related.has('sourceId')||related.has('materialId'))&&<div className="related-activity-context"><span>{moteText('相关活动')}</span><p>{moteText('这里只列出已有稳定回执关联的活动，历史关联可能不完整。')}</p><a className="text-button" href="#/activity">{moteText('全部活动')}</a></div>}
   <nav className="section-tabs" aria-label={moteText('活动状态')}>{([['active', moteText("进行中")], ['attention', moteText("需要处理")], ['completed', moteText("最近完成")]] as const).map(([key, label]) => <button key={key} aria-current={state === key ? 'page' : undefined} onClick={() => { setState(key); paging.reset(); }}>{moteText(label)}</button>)}</nav>
   {feedError !== undefined && <p role="status">{moteText('进度连接暂时中断，正在自动重连。')}</p>}{error !== undefined && <p className="notice error" role="alert">{errorMessage(error)} <button className="text-button" onClick={refresh}>{moteText('重试')}</button></p>}{loading && !data && <p role="status">{moteText('正在读取…')}</p>}

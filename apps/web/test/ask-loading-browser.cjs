@@ -144,9 +144,9 @@ async function run(){
  // Central IA: the built shell keeps retrieval available and opens the complete Ask workspace.
  await js(`location.hash=''`);
  await until(()=>js(`document.querySelector('[data-page="overview"][data-session="ready"]')`),'default overview');
- await until(()=>js(`document.querySelector('[data-page="overview"] h1')?.textContent==='总览'&&document.querySelector('.central-first-steps')`),'overview onboarding content');
+ await until(()=>js(`document.querySelector('[data-page="overview"] h1')?.textContent==='首页'&&document.querySelector('.central-first-steps')`),'overview onboarding content');
  await delay(80);writeFileSync(join(output,'central-overview.png'),(await wc.capturePage()).toPNG());
- assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar nav button')].map(node=>node.innerText)`),['总览','资料库','数据来源','AI 接入']);
+ assert.deepEqual(await js(`[...document.querySelectorAll('.sidebar nav button')].map(node=>node.innerText)`),['首页','资料库','来源','AI 接入']);
  await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))`);
  assert.equal(await js(`document.activeElement===document.querySelector('.global-retrieval input')`),true);
  await js(`(()=>{const input=document.querySelector('.global-retrieval input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'generated');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);

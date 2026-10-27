@@ -1,3 +1,4 @@
+import {recordingBindingText,recordingSyncText} from './recording-status';
 import {RecordingAuthorization} from './RecordingAuthorization';
 import { formatEvidenceRef } from '@mote/shared';
 import {ListPagination,useCursorPages} from './ListPagination';
@@ -127,8 +128,10 @@ export function RecordingConnection({ api, provider, onOpen }: {
         }
     };
     const status = read.data;
-    return <section className="panel lark-step"><div className="section-heading"><h2>{names[provider]?moteText(names[provider]):status?.label ?? provider}</h2><span className={`badge ${status?.connected ? 'green' : 'muted'}`}>{status?.connected ? moteText('已连接') : moteText('尚未授权')}</span></div>
+    return <section className="panel lark-step"><div className="section-heading"><h2>{names[provider]?moteText(names[provider]):status?.label ?? provider}</h2><span className="badge muted">{recordingBindingText(status)}</span></div>
  {Boolean(error || read.error) && <p role="alert" className="notice error">{error || errorMessage(read.error)}</p>}
+ {status && <p className="recording-sync-status">{recordingSyncText(status)}</p>}
+ {status?.connected && <p className="muted">{moteText('已保存账号绑定不代表当前登录或读取权限有效。“重新检测”检查中央运行环境；请结合授权结果与同步步骤确认账号权限。')}</p>}
  {status?.authorization&&<RecordingAuthorization key={provider} api={api} provider={provider}/>}
  {status?.accountName && <p>{status.accountName}</p>}{!status?.connected && !status?.authorization && <div className="discovery-inline-guidance"><p>{moteText("先在中央节点授权厂商账号，确认所需读取权限，再选择历史范围并启用同步。飞书文档与日历的授权另在自己的页面管理。")}</p></div>}
  {!status?.connected && <><p>{status?.authorization?moteText('授权完成后，确认历史范围并启用同步。'):moteText('连接中央节点已经授权的厂商账号，然后选择首次导入时间。')}</p><button className="button" disabled={busy || !status} onClick={() => void run('POST', '/connect')}>{moteText('连接已授权账号')}</button>
@@ -159,6 +162,6 @@ export function RecordingsSettings({ api, onSources, onOpen, onAdd }: {
     const [selected]=useHashChoice('provider',readProvider);
     const chosen = providers.find(status => status.provider === selected);
     return <div className="lark-settings">{onAdd && <button className="back-link" onClick={onAdd}>{moteText("← 返回数据源目录")}</button>}<div className="page-heading"><h1>{chosen ? names[chosen.provider]?moteText(names[chosen.provider]):chosen.label ?? chosen.provider : moteText('录音归档')}</h1><p>{moteText('照常使用录音笔。厂商完成上传和转写后，Mote 自动归档并生成可追溯的 Memory。')}</p></div><div className="lark-boundary"><p>{moteText('默认用转写生成洞察，原始音频在后台备份。厂商端删除后，Mote 归档继续保留。停止同步或断开连接会保留历史资料。')}</p></div><div className="discovery-recorder-steps"><span><b>1</b>{moteText("准备厂商账号与读取授权")}</span><span><b>2</b>{moteText("确认历史范围并启用同步")}</span><span><b>3</b>{moteText("查看转写归档与音频备份状态")}</span></div>{Boolean(registry.error) && <p role="alert">{errorMessage(registry.error)}</p>}
- {chosen ? <RecordingConnection key={chosen.provider} api={api} provider={chosen.provider} onOpen={onOpen}/> : <><div className="discovery-source-grid">{providers.map(status => <a className="panel discovery-source-card" key={status.provider} href={'#/connections/recordings?provider=' + encodeURIComponent(status.provider)}><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{status.connected ? moteText("已连接，查看范围和同步状态") : moteText("尚未接入，查看首次授权和同步设置")}</p><span className="discovery-card-action">{moteText("打开此录音来源 →")}</span></a>)}</div>{selected && registry.data && <p role="status">{moteText("该录音来源当前未注册。请重新选择可用来源；已归档资料仍可从资料库查看。")}</p>}</>}
+ {chosen ? <RecordingConnection key={chosen.provider} api={api} provider={chosen.provider} onOpen={onOpen}/> : <><div className="discovery-source-grid">{providers.map(status => <a className="panel discovery-source-card" key={status.provider} href={'#/connections/recordings?provider=' + encodeURIComponent(status.provider)}><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{recordingBindingText(status)}</p><p className="recording-sync-status">{recordingSyncText(status)}</p><span className="discovery-card-action">{moteText("打开此录音来源 →")}</span></a>)}</div>{selected && registry.data && <p role="status">{moteText("该录音来源当前未注册。请重新选择可用来源；已归档资料仍可从资料库查看。")}</p>}</>}
  <button className="button subtle" onClick={onSources}>{moteText('查看来源与归档')}</button></div>;
 }

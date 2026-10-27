@@ -2,22 +2,20 @@
 .app-shell[data-navigation] { min-height:100vh; background:var(--mote-background); color:var(--mote-ink); }
 .app-shell[data-navigation]>.sidebar { position:fixed; inset:0 auto 0 0; z-index:40; width:var(--mote-sidebar-width); padding:24px 12px 14px; display:flex; flex-direction:column; background:var(--mote-sidebar); border-right:1px solid var(--mote-sidebar-border); color:var(--mote-sidebar-ink); overflow-y:auto; }
 .app-shell[data-navigation]>.main { min-width:0; width:calc(100% - var(--mote-sidebar-width)); margin-left:var(--mote-sidebar-width); }
-.app-shell[data-navigation] .brand { display:flex; align-items:center; gap:10px; padding:4px 10px; font:600 20px/1.4 var(--mote-font-heading); color:var(--mote-ink); }
+/* Same mark as the Mac client: a filled primary tile and the plain wordmark. */
+.app-shell[data-navigation] .brand { display:flex; align-items:center; gap:10px; padding:4px 10px; font:600 18px/1.2 var(--mote-font-heading); letter-spacing:-.02em; color:var(--mote-ink); }
 .app-shell[data-navigation] .brand>span:last-child { font:inherit; }
-.app-shell[data-navigation] .brand-dot { color:var(--mote-accent); }
-.app-shell[data-navigation] .mote-symbol { display:grid; place-items:center; width:26px; height:26px; padding:0; border:1px solid var(--mote-sidebar-border); border-radius:6px; color:var(--mote-sidebar-ink); background:var(--mote-surface-raised); font:600 19px/1 var(--mote-font); }
-.app-shell[data-navigation] .workspace-label { margin:28px 10px 9px; font-size:11px; letter-spacing:0; color:var(--mote-sidebar-muted); }
+.app-shell[data-navigation] .mote-symbol { display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:var(--mote-radius-control); color:var(--mote-primary-ink); background:var(--mote-primary-background); font:600 var(--mote-font-title)/1 var(--mote-font); letter-spacing:0; }
+.app-shell[data-navigation] .workspace-label { margin:28px 10px 9px; font-size:var(--mote-font-meta); letter-spacing:0; color:var(--mote-sidebar-muted); }
 .app-shell[data-navigation] .sidebar nav { display:flex; flex-direction:column; gap:3px; padding:0; }
 .app-shell[data-navigation] .sidebar nav button,.app-shell[data-navigation] .auxiliary-nav,.app-shell[data-navigation] .settings-nav { display:flex; align-items:center; gap:10px; width:100%; min-height:var(--mote-nav-height); padding:6px 10px; margin:0; border:0; border-radius:var(--mote-radius-control); background:transparent; color:var(--mote-sidebar-muted); font:400 var(--mote-font-action)/1.5 var(--mote-font); text-align:left; }
 .app-shell[data-navigation] .sidebar nav button:hover,.app-shell[data-navigation] .auxiliary-nav:hover,.app-shell[data-navigation] .settings-nav:hover { color:var(--mote-sidebar-ink); background:var(--mote-sidebar-tint); }
 .app-shell[data-navigation] .sidebar [aria-current=page] { background:var(--mote-sidebar-tint); color:var(--mote-sidebar-ink); }
 .app-shell[data-navigation] .sidebar [aria-current=page]>svg { color:var(--mote-accent); }
 .app-shell[data-navigation] .sidebar-bottom { margin-top:auto; padding:32px 0 0; display:grid; gap:3px; }
-.app-shell[data-navigation] .sidebar .language-selector { padding:12px 10px 2px; font-size:var(--mote-font-meta); }
-.app-shell[data-navigation] .sidebar .language-selector select { min-height:var(--mote-control-height); padding:4px 8px; }
 .app-shell[data-navigation] .node-button { display:flex; align-items:center; gap:9px; width:100%; padding:13px 10px 0; margin-top:10px; border:0; border-top:1px solid var(--mote-sidebar-border); background:transparent; text-align:left; color:var(--mote-sidebar-muted); }
 .app-shell[data-navigation] .node-button>span:last-child { min-width:0; }
-.app-shell[data-navigation] .node-button strong,.app-shell[data-navigation] .node-button small { display:block; font-size:11px; font-weight:400; overflow-wrap:anywhere; }
+.app-shell[data-navigation] .node-button strong,.app-shell[data-navigation] .node-button small { display:block; font-size:var(--mote-font-meta); font-weight:400; overflow-wrap:anywhere; }
 .app-shell[data-navigation] .node-button small { margin-top:4px; color:var(--mote-sidebar-muted); }
 .app-shell[data-navigation] .node-state { width:6px; height:6px; border-radius:50%; background:var(--mote-muted); flex-shrink:0; }
 .app-shell[data-navigation] .node-state.online { background:var(--mote-success); box-shadow:none; }
@@ -52,12 +50,50 @@
 .source-grid aside article>small { display:block; font-size:var(--mote-font-meta); color:var(--mote-muted); margin-bottom:8px; }
 .source-grid .source-select { border-radius:var(--mote-radius-control); padding:7px 0; }
 .source-grid .source-select.active { color:var(--mote-accent); }
+/* Two surface patterns only: a bordered surface card for clickable grid tiles and split-view detail panes,
+   and divided rows for lists. Flat .panel groups keep the token's borderless form. */
+.central-status-grid>button,.discovery-source-grid>.discovery-source-card,.source-grid>section.panel,.conversation-history.panel { border:var(--mote-border-width) solid var(--mote-border); border-radius:var(--mote-radius-container); background:var(--mote-surface); box-shadow:none; }
+.central-status-grid>button,.discovery-source-grid>.discovery-source-card { padding:var(--mote-space-panel); transition:border-color .12s ease,background-color .12s ease; }
+.central-status-grid>button:hover,.discovery-source-grid>a.discovery-source-card:hover { border-color:var(--mote-control-border); background:var(--mote-surface-hover); }
+.central-status-grid { gap:var(--mote-space-item); margin:var(--mote-space-panel) 0 var(--mote-section-gap); }
+.central-status-grid>button { grid-template-columns:auto minmax(0,1fr); align-items:center; gap:var(--mote-space-inline) var(--mote-space-item); }
+.central-status-grid>button>svg { color:var(--mote-accent); }
+.central-status-grid>button>strong { font-size:var(--mote-font-support); font-weight:500; color:var(--mote-muted); }
+.central-status-grid>button>span,.central-status-grid>button>small { grid-column:1/-1; }
+.central-status-grid>button>span { font-size:var(--mote-font-section); font-weight:600; color:var(--mote-ink); }
+.discovery-source-grid { gap:var(--mote-space-item); }
+.discovery-source-grid>.discovery-source-card h3 { margin:var(--mote-space-item) 0 var(--mote-space-inline); }
+.discovery-source-grid>.discovery-source-card p,.discovery-source-grid>.discovery-source-card small { font-size:var(--mote-font-support); color:var(--mote-muted); }
+.source-grid>section.panel { padding:var(--mote-space-panel); align-self:start; }
+.conversation-history.panel { padding:var(--mote-space-panel); }
+/* Recent records: one compact row per record instead of a tall card. */
+.home-record-list { border:var(--mote-border-width) solid var(--mote-border); border-radius:var(--mote-radius-container); background:var(--mote-surface); overflow:hidden; }
+.home-record-list .capture-card-compact { display:flex; align-items:center; gap:var(--mote-space-item); width:100%; min-height:0; margin:0; padding:var(--mote-row-padding) var(--mote-space-panel); border:0; border-bottom:var(--mote-row-border-width) solid var(--mote-divider); border-radius:0; background:transparent; box-shadow:none; text-align:left; color:inherit; }
+.home-record-list .capture-card-compact:last-child { border-bottom:0; }
+.home-record-list .capture-card-compact:hover { transform:none; background:var(--mote-surface-hover); }
+.home-record-list .capture-card-compact .capture-record-icon { margin:0; color:var(--mote-muted); }
+.home-record-list .capture-card-compact .capture-card-body { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:2px var(--mote-space-item); padding:0; flex:1; min-width:0; }
+.home-record-list .capture-card-compact .capture-caption { display:contents; }
+.home-record-list .capture-card-compact .capture-caption strong { grid-column:1; grid-row:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--mote-font-row); font-weight:500; }
+.home-record-list .capture-card-compact .capture-caption time { grid-column:2; grid-row:1; font-size:var(--mote-font-meta); color:var(--mote-muted); }
+.home-record-list .capture-card-compact .capture-card-body>p { grid-column:1; grid-row:2; margin:0; max-height:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; font-size:var(--mote-font-support); color:var(--mote-muted); }
+.home-record-list .capture-card-compact .capture-bottom { grid-column:2; grid-row:2; margin:0; padding:0; border:0; font-size:var(--mote-font-meta); color:var(--mote-muted); justify-self:end; }
+.home-record-list .capture-card-compact .capture-bottom>span { display:inline-flex; align-items:center; gap:4px; }
+/* Record state stays visible in the library card; the summary list keeps one line per record. */
+.home-record-list .capture-card-compact .capture-ocr { display:none; }
+.ask-form>.chat-model-options { padding:0 var(--mote-space-panel); font-size:var(--mote-font-support); color:var(--mote-muted); }
+.ask-form>.chat-model-options>summary { cursor:pointer; width:max-content; padding-block:4px; }
+.ask-form>.chat-model-options>.model-selector { display:flex; flex-wrap:wrap; align-items:center; gap:var(--mote-space-inline) var(--mote-space-item); padding-block:var(--mote-space-inline); }
+.workspace-context { flex-wrap:wrap; }
+.workspace-tool-links { display:flex; flex-wrap:wrap; align-items:center; gap:2px; min-width:0; }
+.workspace-tool-links>button { min-height:var(--mote-control-height); padding:0 var(--mote-space-item); color:var(--mote-muted); font-size:var(--mote-font-action); }
+.workspace-tool-links>button[aria-current=page] { color:var(--mote-accent); background:var(--mote-tint); }
 @media(pointer:coarse) { .button,.text-button,.icon-button,input,select,.section-tabs button,.segmented-nav button { min-height:var(--mote-control-height-mobile); } }
 @media(max-width:760px) {
   .app-shell[data-navigation]>.sidebar { position:fixed; inset:auto 0 0; width:100%; height:calc(64px + env(safe-area-inset-bottom)); padding:0; overflow:visible; border:0; border-top:1px solid var(--mote-sidebar-border); }
   .app-shell[data-navigation] .sidebar>.brand,.app-shell[data-navigation] .workspace-label,.app-shell[data-navigation] .sidebar-bottom { display:none; }
   .app-shell[data-navigation] .sidebar nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; height:100%; padding:4px 8px max(4px,env(safe-area-inset-bottom)); }
-  .app-shell[data-navigation] .sidebar nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:4px 2px; min-height:48px; font-size:11px; text-align:center; }
+  .app-shell[data-navigation] .sidebar nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:4px 2px; min-height:48px; font-size:var(--mote-font-meta); text-align:center; }
   .app-shell[data-navigation]>.main { width:100%; margin:0; padding-bottom:calc(70px + env(safe-area-inset-bottom)); }
   .app-shell[data-navigation] .topbar { min-height:56px; padding:8px 16px; gap:8px; }
   .app-shell[data-navigation] .topbar-actions { gap:6px; }

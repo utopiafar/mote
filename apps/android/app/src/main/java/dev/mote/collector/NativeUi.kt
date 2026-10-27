@@ -235,10 +235,14 @@ class MoteNavigationIcon(context: Context, private val kind: String, private val
             "overview" -> { path(3f, 11f, 12f, 3f, 21f, 11f); path(5f, 10f, 5f, 21f, 19f, 21f, 19f, 10f); path(10f, 21f, 10f, 14f, 14f, 14f, 14f, 21f) }
             "notes", "note" -> { canvas.drawRoundRect(4f, 3f, 20f, 21f, 3f, 3f, paint); line(8f, 8f, 16f, 8f); line(8f, 12f, 16f, 12f); line(8f, 16f, 13f, 16f) }
             "import" -> { path(13f, 3f, 5f, 3f, 5f, 21f, 19f, 21f, 19f, 9f, 13f, 3f, 13f, 9f, 19f, 9f); line(8f, 14f, 16f, 14f); path(13f, 11f, 16f, 14f, 13f, 17f) }
-            "library", "sources", "folder" -> { path(3f, 7f, 3f, 20f, 21f, 20f, 21f, 7f, 3f, 7f, 3f, 4f, 10f, 4f, 13f, 7f) }
+            "folder" -> { path(3f, 7f, 3f, 20f, 21f, 20f, 21f, 7f, 3f, 7f, 3f, 4f, 10f, 4f, 13f, 7f) }
+            // Library and sources share glyph roles with Web and Mac: a database and a link.
+            "library" -> { canvas.drawOval(4f, 2f, 20f, 8f, paint); line(4f, 5f, 4f, 19f); line(20f, 5f, 20f, 19f); canvas.drawArc(4f, 9f, 20f, 15f, 0f, 180f, false, paint); canvas.drawArc(4f, 16f, 20f, 22f, 0f, 180f, false, paint) }
+            "sources" -> { canvas.drawRoundRect(2f, 8f, 13f, 16f, 4f, 4f, paint); canvas.drawRoundRect(11f, 8f, 22f, 16f, 4f, 4f, paint) }
             "ask" -> { canvas.drawRoundRect(3f, 3f, 21f, 18f, 4f, 4f, paint); path(7f, 18f, 7f, 22f, 12f, 18f); line(7f, 8f, 17f, 8f); line(7f, 12f, 14f, 12f) }
             "capture" -> { canvas.drawRoundRect(4f, 3f, 20f, 21f, 3f, 3f, paint); canvas.drawCircle(12f, 12f, 4f, paint); line(10f, 18f, 14f, 18f) }
             "chart" -> { path(4f, 4f, 4f, 20f, 21f, 20f); path(8f, 15f, 12f, 10f, 16f, 13f, 21f, 5f) }
+            "activity" -> { line(5f, 20f, 5f, 11f); line(12f, 20f, 12f, 4f); line(19f, 20f, 19f, 13f) }
             "shield" -> { path(12f, 2f, 21f, 6f, 20f, 15f, 17f, 19f, 12f, 22f, 7f, 19f, 4f, 15f, 3f, 6f, 12f, 2f); path(8f, 12f, 11f, 15f, 16f, 9f) }
             "language" -> {
                 canvas.drawCircle(12f, 12f, 9f, paint); canvas.drawOval(8f, 3f, 16f, 21f, paint)

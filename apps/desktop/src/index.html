@@ -30,11 +30,11 @@
     <symbol id="icon-ask" viewBox="0 0 24 24"><path d="M7 18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7l-5 4Zm0-10h10M7 12h7"/></symbol>
   </defs></svg>
   <aside class="sidebar" aria-label="主导航" data-i18n-aria-label="">
-    <div class="brand"><span class="brand-icon" aria-hidden="true">m</span><strong>mote<span><span data-i18n>你的个人上下文</span></span></strong></div>
+    <div class="brand"><span class="brand-icon" aria-hidden="true">m</span><strong>Mote<span><span data-i18n>你的个人上下文</span></span></strong></div>
     <nav class="main-nav" aria-label="主导航" data-i18n-aria-label="">
-      <button class="nav-item selected" data-nav="overview" type="button" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-home"/></svg><span data-i18n>工作台</span></button>
-      <button class="nav-item" data-nav="records" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-source"/></svg><span data-i18n>内容</span></button>
-      <button class="nav-item" data-nav="sources" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span data-i18n>来源</span></button>
+      <button class="nav-item selected" data-nav="overview" type="button" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-home"/></svg><span data-i18n>首页</span></button>
+      <button class="nav-item" data-nav="records" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-storage"/></svg><span data-i18n>资料库</span></button>
+      <button class="nav-item" data-nav="sources" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg><span data-i18n>来源</span></button>
       <button id="ask-central" class="nav-item" data-nav="ask" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-ask"/></svg><span data-i18n>问一问</span></button>
     </nav>
     <div class="sidebar-bottom">
@@ -44,7 +44,7 @@
     </div>
   </aside>
   <header class="workspace-toolbar">
-    <div class="workspace-location"><button id="workspace-back" class="text-button" type="button" hidden><span aria-hidden="true">‹</span><span data-i18n>返回上级</span></button><span id="workspace-location" aria-live="polite"><span data-i18n>内容</span></span></div>
+    <div class="workspace-location"><button id="workspace-back" class="text-button" type="button" hidden><span aria-hidden="true">←</span><span data-i18n>返回上级</span></button><span id="workspace-location" aria-live="polite"><span data-i18n>资料库</span></span></div>
     <div class="actions"><button id="central" class="text-button" type="button"><span data-i18n>中央工作台</span><span aria-hidden="true"> ↗</span></button><button id="note-action" class="secondary" data-add type="button"><span aria-hidden="true">＋</span><span data-i18n>添加</span></button></div>
   </header>
   <main id="main-content">
@@ -52,7 +52,7 @@
     <div id="feedback" role="alert" hidden></div>
 
     <section data-page="overview" class="page home-page workspace-home" hidden>
-      <header class="page-header"><div><div class="eyebrow" data-i18n>本地优先 · macOS</div><h1 tabindex="-1" data-page-title data-i18n>工作台</h1></div></header>
+      <header class="page-header"><div><div class="eyebrow" data-i18n>本地优先 · macOS</div><h1 tabindex="-1" data-page-title data-i18n>首页</h1></div></header>
       <section class="home-status" aria-live="polite"><button class="text-button" data-nav="screen" type="button"><span data-i18n>屏幕记录</span> · <span id="home-screen-state"></span></button><span id="home-central-state"></span><p id="home-sync-line" data-i18n>正在读取本机状态…</p><details id="home-sync-details"><summary data-i18n>查看状态与操作</summary><div class="home-state-details">        <section id="central-status" class="central-status" aria-live="polite" aria-label="中央节点连接状态" data-i18n-aria-label="">
           <span id="central-status-icon" class="central-status-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span>
           <div class="central-status-copy"><div class="eyebrow"><span data-i18n>中央节点连接</span></div><h2 id="central-status-title"><span data-i18n>正在读取</span></h2><p id="central-status-message" class="helper"></p><small id="central-status-origin" class="profile-path"></small></div>
@@ -96,11 +96,11 @@
     </section>
 
     <section data-page="records" class="page workspace-content" hidden>
-      <header class="page-header"><div><h1 tabindex="-1" data-page-title><span data-i18n>内容</span></h1></div></header>
+      <header class="page-header"><div><h1 tabindex="-1" data-page-title><span data-i18n>资料库</span></h1></div></header>
       <div class="content-library-tools"><label><span data-i18n>查看内容</span><select id="content-scope"><option value="all" data-i18n>本机与已发送</option><option value="local" data-i18n>本机保留</option><option value="received" data-i18n>中央已收到</option></select></label><button id="content-memories" class="secondary" type="button" data-i18n>记忆主题</button><button id="content-refresh" class="secondary" type="button" data-i18n>刷新</button><button class="secondary" data-add type="button" data-i18n>添加</button></div><p id="content-status" class="helper" role="status"></p><div id="content-feed" class="content-feed"></div><button id="content-more" class="secondary" type="button" hidden data-i18n>加载更多</button>
       <details id="capture-library-tools" class="capture-library-tools"><summary data-i18n>按日期浏览屏幕与页面记录</summary>
       <section class="panel records-toolbar"><label><span data-i18n>日期</span><input id="records-day" type="date"></label><label><span data-i18n>记录来源</span><select id="records-source"><option value="screen" data-i18n>截图</option><option value="ui_page" data-i18n>页面内容采集</option></select></label><button id="records-refresh" class="secondary" type="button"><span data-i18n>刷新</span></button><details class="records-options"><summary data-i18n>显示选项</summary><div class="form-grid"><label><span data-i18n>记录位置</span><select id="records-location"><option value="local" data-i18n>本机待同步 / 待 OCR</option><option value="central" data-i18n>中央已归档</option></select></label><label><span data-i18n>展示方式</span><select id="records-grouping"><option value="sessions" data-i18n>按 Session</option><option value="records" data-i18n>全部截图</option></select></label><label><span data-i18n>展示方式</span><select id="records-layout"><option value="list" data-i18n>列表</option><option value="grid" data-i18n>缩略图</option></select></label></div><p class="helper"><span data-i18n>Session 按本机 / 中央现存截图分别分组：同应用连续采样归为一段，切换应用或间隔超过 5 分钟即分段。起止范围不代表使用时长。</span></p></details></section>
-      <button id="records-back" class="secondary" type="button" hidden><span data-i18n>‹ 返回 Session</span></button><p id="records-selection" class="helper"></p><p id="records-status" class="helper" role="status"></p><div class="records-browser"><div id="records-grid" class="records-grid record-list"></div>      <section id="record-detail" class="panel record-detail" hidden><div class="section-title"><div><h2 id="record-detail-title" tabindex="-1"><span data-i18n>记录详情</span></h2><p id="record-detail-meta"></p></div><button id="record-detail-close" class="text-button" type="button"><span data-i18n>关闭详情</span></button></div><img id="record-detail-image" alt="当前选择的采集截图" data-i18n-alt=""><h3><span data-i18n>识别文字</span></h3><pre id="record-detail-text" class="record-ocr-text"></pre></section></div>
+      <button id="records-back" class="secondary" type="button" hidden><span aria-hidden="true">←</span> <span data-i18n>返回采集时段</span></button><p id="records-selection" class="helper"></p><p id="records-status" class="helper" role="status"></p><div class="records-browser"><div id="records-grid" class="records-grid record-list"></div>      <section id="record-detail" class="panel record-detail" hidden><div class="section-title"><div><h2 id="record-detail-title" tabindex="-1"><span data-i18n>记录详情</span></h2><p id="record-detail-meta"></p></div><button id="record-detail-close" class="text-button" type="button"><span data-i18n>关闭详情</span></button></div><img id="record-detail-image" alt="当前选择的采集截图" data-i18n-alt=""><h3><span data-i18n>识别文字</span></h3><pre id="record-detail-text" class="record-ocr-text"></pre></section></div>
       <div class="records-pagination"><button id="records-previous" class="secondary" type="button" disabled><span data-i18n>上一页</span></button><span id="records-page" class="helper"></span><button id="records-next" class="secondary" type="button" disabled><span data-i18n>下一页</span></button></div>
 
       <p class="page-footnote"><span data-i18n>本机只保留未完成同步或等待 OCR 的图片。已完成的记录可在“中央已归档”查看；关闭采集不会自动删除历史截图。</span></p>

@@ -31,7 +31,7 @@ class PrimaryNavigationTest {
         assertFalse(MoteNavigation.libraryBrowsePages.contains("coding"))
         assertEquals(MotePrimaryTab.LIBRARY, MoteNavigation.centralTab("coding"))
         assertEquals("archive", MoteNavigation.centralParent("coding"))
-        assertEquals(listOf("首页", "资料", "问一问", "来源"), MoteNavigation.primaryTabs().map { it.titleKey })
+        assertEquals(listOf("首页", "资料库", "问一问", "来源"), MoteNavigation.primaryTabs().map { it.titleKey })
         assertEquals("OVERVIEW", MoteNavigation.initialLocalPage())
         assertEquals(MotePrimaryTab.SOURCES, MoteNavigation.localTab("SOURCES"))
         assertEquals(MotePrimaryTab.ACTIVITY, MoteNavigation.centralTab("activity"))

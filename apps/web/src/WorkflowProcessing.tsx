@@ -17,7 +17,7 @@ export function WorkflowProcessing({api,extensions=false,embedded=false,onNaviga
     setBusy(job.id);setError('');
     try {await api.request(`/api/processing/${encodeURIComponent(job.id)}/${action==='retry-step'?'retry':'cancel'}`,{method:'POST'});setRevision(n=>n+1);} catch(e){setError(errorMessage(e));} finally{setBusy('');}
   }
-  return <><div className={embedded?"section-heading":"page-heading"}>{!embedded&&<div className="eyebrow">MOTE / SYSTEM</div>}{embedded?<h2>{moteText('上下文步骤操作')}</h2>:<h1>{moteText(extensions?'扩展能力':'处理任务')}</h1>}<p>{moteText(extensions?'已注册的处理器及其版本。扩展由节点管理，不提供在线安装。':'查看处理步骤、依赖与等待原因。重试保留其他已完成步骤。')}</p></div>
+  return <><div className={embedded?"section-heading":"page-heading"}>{embedded?<h2>{moteText('上下文步骤操作')}</h2>:<h1>{moteText(extensions?'扩展能力':'处理任务')}</h1>}<p>{moteText(extensions?'已注册的处理器及其版本。扩展由节点管理，不提供在线安装。':'查看处理步骤、依赖与等待原因。重试保留其他已完成步骤。')}</p></div>
     <div className="processing-actions"><button className="button" onClick={()=>setRevision(n=>n+1)}>{moteText('刷新')}</button>{!embedded&&<button className="button" onClick={()=>onNavigate('settings')}>{moteText('模型与服务')}</button>}</div>
     {error&&<p className="notice error" role="alert">{error}</p>}{!view&&!error&&<p role="status">{moteText('正在读取…')}</p>}
     {view&&extensions&&<div className="processing-list">{view.processors.map(p=><article className="processing-row" key={p.id}><h2>{p.id}</h2><p>{moteText('版本')} {p.version} · {p.lane}</p></article>)}</div>}

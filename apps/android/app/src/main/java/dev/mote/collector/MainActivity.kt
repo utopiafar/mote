@@ -91,7 +91,7 @@ class MainActivity : MoteActivity() {
     private var currentPage = Page.LIBRARY
     private var draftGeneration = 0
     private enum class Page(private val titleKey: String, val parent: String? = null) {
-        OVERVIEW("首页"), LIBRARY("资料"), ASK("问一问"), ACTIVITY("活动"), NOTES("随手记", "LIBRARY"), SOURCES("来源"), SETTINGS("设置", "LIBRARY"),
+        OVERVIEW("首页"), LIBRARY("资料库"), ASK("问一问"), ACTIVITY("活动"), NOTES("随手记", "LIBRARY"), SOURCES("来源"), SETTINGS("设置", "LIBRARY"),
         CONNECTION("连接与同步", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
         PROCESSING("图像质量与去重", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("记录屏幕", "OVERVIEW"), PERMISSIONS("权限与后台运行", "SETTINGS"),

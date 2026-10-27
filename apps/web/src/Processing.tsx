@@ -44,7 +44,7 @@ function OperationsCentre({api,onNavigate}:{api:Api;onNavigate:(page:Page)=>void
  const query=new URLSearchParams({limit:String(pageSize),...state?{state}:{},...kind?{kind}:{},...paging.cursor?{cursor:String(paging.cursor)}:{}});
  const {data,error,loading,refresh}=useResource<OperationPage>(api,'/api/operations?'+query);
  return <div className="processing-centre">
-  <div className="page-heading settings-heading"><div><div className="eyebrow">MOTE / SYSTEM</div><h1>{moteText('处理任务')}</h1><p>{moteText('查看截图、文件、上下文与记忆整理的进度、依赖和等待原因。')}</p></div><button className="button subtle" disabled={loading} onClick={refresh}>{moteText('刷新')}</button></div>
+  <div className="page-heading settings-heading"><div><h1>{moteText('处理任务')}</h1><p>{moteText('查看截图、文件、上下文与记忆整理的进度、依赖和等待原因。')}</p></div><button className="button subtle" disabled={loading} onClick={refresh}>{moteText('刷新')}</button></div>
   <section className="panel operations-panel">
    <div className="processing-filters">
     <label>{moteText('任务状态')}<select aria-label={moteText('任务状态')} value={state} onChange={e=>{setState(e.target.value as OperationState|'');paging.reset();}}><option value="">{moteText('全部')}</option>{Object.entries(states).map(([value,label])=><option key={value} value={value}>{moteText(label)}</option>)}</select></label>

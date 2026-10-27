@@ -1,4 +1,4 @@
-import {UiPresentationHost,applyAppearanceTheme,type AppearanceStore,desktopUiLayout,linearUiTheme,type UiDestination,type UiLayoutProfile} from '@mote/shared';
+import {UiPresentationHost,applyAppearanceTheme,type AppearanceStore,desktopUiLayout,linearUiTheme,uiDestinationPresentation,type UiDestination,type UiDestinationIcon,type UiLayoutProfile} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import type {DesktopPage,DesktopSection} from './navigation';
 
@@ -32,8 +32,10 @@ function createPresentationScope(root:HTMLElement){
   return {scope,abort(){controller.abort();},dispose(){controller.abort();const errors:unknown[]=[];for(const cleanup of [...cleanups].reverse())try{cleanup();}catch(error){errors.push(error);}return errors;}};
 }
 export const desktopDestination:Record<UiDestination,DesktopPage>={home:'overview',library:'records',ask:'ask',sources:'sources',activity:'work',connections:'connection'};
-const labels:Record<UiDestination,string>={home:'工作台',library:'内容',ask:'问一问',sources:'来源',activity:'活动',connections:'连接与设备'};
-const icons:Record<UiDestination,string>={home:'home',library:'source',ask:'ask',sources:'folder',activity:'activity',connections:'link'};
+// The desktop connection destination is the central/device link, not Agent access.
+const labels:Record<UiDestination,string>={...Object.fromEntries(Object.entries(uiDestinationPresentation).map(([id,item])=>[id,item.label])) as Record<UiDestination,string>,connections:'连接与设备'};
+export const desktopIconSymbols:Record<UiDestinationIcon,string>={home:'home',library:'storage',ask:'ask',sources:'link',agent:'access',activity:'activity'};
+const icons:Record<UiDestination,string>={...Object.fromEntries(Object.entries(uiDestinationPresentation).map(([id,item])=>[id,desktopIconSymbols[item.icon]])) as Record<UiDestination,string>,connections:'link'};
 
 /** Presentation receives stable DOM slots and navigation commands, never the preload API.
  * Replacing it cannot recreate editors, restart work, or acquire platform capabilities. */

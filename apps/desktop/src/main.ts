@@ -80,7 +80,7 @@ function refreshApplicationMenu() {
       ] },
       { role: 'editMenu', label: moteText("编辑") },
       { label: moteText("前往"), submenu: [
-        { label: moteText("工作台"), accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
+        { label: moteText("首页"), accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
         { label: moteText("随手记"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
         { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
       ] },

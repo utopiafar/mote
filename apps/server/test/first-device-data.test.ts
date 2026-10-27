@@ -65,11 +65,32 @@ test('image availability does not read payloads; original opening verifies compl
  assert.equal((await f.state()).state,'ready');f.node.store.assets.read=read;f.node.store.assets.bytes=readBytes;
  const original=await f.node.app.inject({url:'/api/capture-browser/'+record.id+'/image',headers});assert.equal(original.statusCode,200,original.body);assert.deepEqual(original.rawPayload,bytes);
  const hash=f.node.store.imageReference(record.id)!.blobHash,path=join(f.node.store.assets.directory,hash,'0.plain');
+ for(let n=0;n<6;n++)await sendMedia(f,collector,n);
  renameSync(path,path+'.fixture-missing');assert.equal((await f.state()).state,'received_unavailable');
  assert.notEqual((await f.node.app.inject({url:'/api/capture-browser/'+record.id+'/image',headers})).statusCode,200);
  renameSync(path+'.fixture-missing',path);assert.equal((await f.state()).state,'ready');
  const removed=await f.node.app.inject({method:'DELETE',url:'/api/captures/'+record.id,headers});assert.equal(removed.statusCode,200,removed.body);
  assert.equal((await f.state()).state,'unverified');
+});
+
+async function sendMedia(f:Awaited<ReturnType<typeof fixture>>,collector:Record<string,string>,n:number){
+ const capturedAt=new Date(Date.parse(old)+1000+n).toISOString();
+ const media={id:randomUUID(),deviceId:'generated-phone',deviceName:'Generated phone',platform:'android',source:'media',appId:'generated.player',appName:'Generated player',capturedAt,durationMs:0,ocrText:'',privacy:{collection:'content'},metadata:{version:1,observedAt:capturedAt,media:{status:'available',sessions:[{sessionId:'generated-session',appId:'generated.player',appName:'Generated player',playbackState:'playing',appVisibility:'background',playbackType:'local',title:'Generated chapter',positionMs:0}]}}};
+ const response=await f.node.app.inject({method:'POST',url:'/api/captures',headers:collector,payload:media});assert.equal(response.statusCode,201,response.body);
+}
+
+test('media observations do not claim an original is missing or hide an older device original',async t=>{
+ const f=await fixture(t),collector=await f.pair();
+ for(let n=0;n<6;n++)await sendMedia(f,collector,n);
+ const mediaOnly=await f.state();assert.equal(mediaOnly.state,'unverified');assert.equal(mediaOnly.originalAvailable,false);assert.equal(mediaOnly.candidate,undefined);
+ const note={id:randomUUID(),deviceId:'generated-phone',deviceName:'Generated phone',platform:'android',capturedAt:old,text:'Generated older readable note'};
+ assert.equal((await f.node.app.inject({method:'POST',url:'/api/notes',headers:collector,payload:note})).statusCode,201);
+ for(let n=0;n<6;n++){
+  const activity={id:randomUUID(),deviceId:note.deviceId,deviceName:note.deviceName,platform:'android',source:'activity',appId:'generated.activity',appName:'Generated activity',capturedAt:new Date(Date.parse(old)+2000+n).toISOString(),durationMs:1000,ocrText:'',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}};
+  const response=await f.node.app.inject({method:'POST',url:'/api/captures',headers:collector,payload:activity});assert.equal(response.statusCode,201,response.body);
+ }
+ const result=await f.state();assert.equal(result.state,'ready');assert.equal(result.candidate.id,note.id);
+ assert.equal((await f.node.app.inject({url:'/api/capture-browser/'+note.id,headers})).json().ocrText,note.text);
 });
 
 test('a staged file is not received; committed file and its original bytes share identity; reference-only retention remains unchanged',async t=>{
@@ -96,15 +117,19 @@ test('a staged file is not received; committed file and its original bytes share
  assert.equal(f.node.files.detail(ref.json().id).hasOriginal,false,'onboarding does not change source retention');
 });
 
-test('bounded recent candidates report unverified instead of scanning older content or claiming the whole archive is empty',async t=>{
+test('checks at most four eligible records without claiming the whole archive is empty',async t=>{
  const f=await fixture(t),collector=await f.pair();
  const note={id:randomUUID(),deviceId:'generated-phone',deviceName:'Generated phone',platform:'android',capturedAt:old,text:'Generated older readable note'};
  assert.equal((await f.node.app.inject({method:'POST',url:'/api/notes',headers:collector,payload:note})).statusCode,201);
+ const bytes=await sharp({create:{width:48,height:32,channels:3,background:'#725482'}}).png().toBuffer();
+ let imageId='';
  for(let n=0;n<6;n++){
-  const activity={id:randomUUID(),deviceId:note.deviceId,deviceName:note.deviceName,platform:'android',source:'activity',appId:'generated.activity',appName:'Generated activity',capturedAt:new Date(Date.parse(old)+1000+n).toISOString(),durationMs:1000,ocrText:'',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}};
-  const response=await f.node.app.inject({method:'POST',url:'/api/captures',headers:collector,payload:activity});assert.equal(response.statusCode,201,response.body);
+  const capturedAt=new Date(Date.parse(old)+1000+n).toISOString();
+  const image={id:randomUUID(),deviceId:note.deviceId,deviceName:note.deviceName,platform:'android',source:'screen',capturedAt,durationMs:0,ocrText:'',ocr:{status:'disabled'},imageMime:'image/png',imageBase64:bytes.toString('base64')};
+  const response=await f.node.app.inject({method:'POST',url:'/api/captures',headers:collector,payload:image});assert.equal(response.statusCode,201,response.body);imageId=image.id;
  }
- const result=await f.state();assert.equal(result.state,'unverified');assert.equal(result.windowLimited,true);assert.equal(result.checkedRecords,4);assert.equal(result.candidate,undefined);
+ const hash=f.node.store.imageReference(imageId)!.blobHash,path=join(f.node.store.assets.directory,hash,'0.plain');renameSync(path,path+'.fixture-missing');
+ const result=await f.state();assert.equal(result.state,'received_unavailable');assert.equal(result.windowLimited,true);assert.equal(result.checkedRecords,4);assert.ok(result.candidate);
  assert.equal((await f.node.app.inject({url:'/api/capture-browser/'+note.id,headers})).statusCode,200,'the older record remains reachable through Library');
  for(let n=0;n<12;n++)f.node.store.heartbeat({deviceId:'generated-'+n,deviceName:'Generated bounded device',platform:'android',status:'paused',queueDepth:0});
  const bounded=await f.state();assert.equal(bounded.checkedDevices,8);assert.ok(bounded.checkedRecords<=32);assert.equal(bounded.windowLimited,true);

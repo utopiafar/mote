@@ -713,7 +713,7 @@ export const guideSections:GuideSection[] = [
             "collectionId": null,
             "categoryId": null,
             "label": "连接设备",
-            "path": "数据来源 → 连接设备",
+            "path": "来源 → 连接设备",
             "where": "选择「连接设备」，填写地址、名称和设备身份。"
           }
         ],
@@ -832,7 +832,7 @@ export const guideSections:GuideSection[] = [
               "collectionId": null,
               "categoryId": null,
               "label": "连接设备",
-              "path": "数据来源 → 连接设备",
+              "path": "来源 → 连接设备",
               "where": "选择「连接设备」，填写地址、名称和设备身份。"
             },
             "otherTargets": [],
@@ -861,7 +861,7 @@ export const guideSections:GuideSection[] = [
               "collectionId": null,
               "categoryId": null,
               "label": "连接设备",
-              "path": "数据来源 → 连接设备",
+              "path": "来源 → 连接设备",
               "where": "页面下方「已授权连接」列表。"
             },
             "otherTargets": [{

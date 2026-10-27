@@ -26,7 +26,7 @@ export function Overview({ api, status, devices, recent, insights, onPage, onOpe
  const complete=checked?.state==='ready'&&checked.originalAvailable&&Boolean(sample);
  const issues=sources.data?.items.filter(item=>['error','permission_required'].includes(item.status?.state??''))??[];
  return <div className="home-page central-overview">
-  <div className="page-heading"><div className="eyebrow">Mote</div><h1>{moteText('总览')}</h1></div>
+  <div className="page-heading"><h1>{moteText('首页')}</h1></div>
   <section className={"panel central-onboarding"+(complete?" compact":"")} aria-label={moteText('开始使用')} data-onboarding-state={firstData.error?'error':firstData.loading?'loading':checked?.state??'unverified'}>
    {!complete&&<div className="central-first-steps">
     {[{ready:sourceReady,label:moteText('连接设备'),page:'deviceConnections',icon:Link2},{ready:Boolean(sample),label:moteText('中央已接收'),page:'devices',icon:Database},{ready:false,label:moteText('查看原文'),page:'archive',icon:Database}].map((step,index)=><button key={step.page} aria-label={step.label} className={step.ready?'completed':''} onClick={()=>step.page==='archive'&&sample?onOpen('capture:'+sample.id):onPage(step.page)}><span className="step-number">{step.ready?'✓':index+1}</span><step.icon size={20}/><strong>{step.label}</strong><ArrowRight size={16}/></button>)}
@@ -41,7 +41,7 @@ export function Overview({ api, status, devices, recent, insights, onPage, onOpe
    </div>
   </section>
   <section className="central-status-grid" aria-label={moteText('运行状态')}>
-   <button className="panel" onClick={()=>onPage('sources')}><Link2 size={20}/><strong>{moteText('数据来源')}</strong><span>{sources.data?(sources.data.items.length+devices.length):'—'}</span>{issues.length>0&&<small className="attention">{moteText('需要处理')} · {issues.length}</small>}</button>
+   <button className="panel" onClick={()=>onPage('sources')}><Link2 size={20}/><strong>{moteText('来源')}</strong><span>{sources.data?(sources.data.items.length+devices.length):'—'}</span>{issues.length>0&&<small className="attention">{moteText('需要处理')} · {issues.length}</small>}</button>
    <button className="panel" onClick={()=>onPage('activity')}><ActivityIcon size={20}/><strong>{moteText('Mote 后台工作')}</strong><span>{moteText('查看进展')}<ArrowRight size={15}/></span></button>
    <button className="panel" onClick={()=>onPage('connections')}><Bot size={20}/><strong>{moteText('AI 接入')}</strong><span>{connections.data?(aiReady?moteText('已授权'):moteText('未连接')):'—'}</span></button>
   </section>

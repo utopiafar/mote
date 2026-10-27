@@ -21,7 +21,7 @@ const provider='generated-recorder',recorderKey=provider+'-recordings';
 const providerDetailId='connector:'+recorderKey;
 const recorder:RecordingStatus={provider,category:'recordings',label:'Generated recording provider',connected:false,selection:{enabled:false,start:'2026-01-01T00:00:00Z',autoSync:false,backupAudio:true},steps:[],counts:{transcripts:0,audio:0,pending:0,failed:0}};
 
-async function fixture(t:import('node:test').TestContext,options:{capabilities:FeatureCapability[];pageIds?:string[];coding?:boolean;statusKey?:string;emptyStatus?:boolean;statusError?:boolean}){
+async function fixture(t:import('node:test').TestContext,options:{capabilities:FeatureCapability[];pageIds?:string[];coding?:boolean;statusKey?:string;emptyStatus?:boolean;statusError?:boolean;recorderStatus?:RecordingStatus}){
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/connections/add',pretendToBeVisual:true});
   const previousLocale=getLocale(),previous=new Map<string,PropertyDescriptor|undefined>();
   let locale:'zh-CN'|'en'='zh-CN';
@@ -36,7 +36,7 @@ async function fixture(t:import('node:test').TestContext,options:{capabilities:F
   const api={request:async(path:string)=>{
     reads.push(path);
     if(path==='/api/features')return structuredClone(currentInventory);
-    if(path==='/api/connectors/status'){if(options.statusError)throw new Error('Generated connector status read failed');return options.emptyStatus?{}:{[options.statusKey??recorderKey]:structuredClone(recorder),gmail:{category:'mail',provider:'gmail'}};}
+    if(path==='/api/connectors/status'){if(options.statusError)throw new Error('Generated connector status read failed');return options.emptyStatus?{}:{[options.statusKey??recorderKey]:structuredClone(options.recorderStatus??recorder),gmail:{category:'mail',provider:'gmail'}};}
     if(path==='/api/sources')return {items:[]};
     if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
     throw new Error('Unexpected generated catalog read '+path);
@@ -223,4 +223,13 @@ for(const [title,setup,summary] of [
   assert.ok(f.reads.filter(path=>path==='/api/connectors/status').length>before,'the setup components receive refreshed source data');
   assert.equal(details.open,false,'refresh preserves the owner’s closed section');
   assert.equal(location.hash,'#/connections?setup='+setup);
+});
+
+test('recording discovery shows a saved binding and disabled sync with known runtime failure without probing credentials',async t=>{
+ const status=structuredClone(recorder);status.connected=true;status.authorization={revision:'generated',environment:{installed:false,configured:false,error:'generated_cli_missing'}};
+ const f=await fixture(t,{capabilities:[capability(providerDetailId)],recorderStatus:status});await f.render();
+ const recording=card(f.d,status.label!);
+ assert.equal(recording.querySelector('.badge')?.textContent,'已保存账号绑定');assert.equal(recording.querySelector('.badge.green'),null);
+ assert.equal(recording.querySelector('.recording-sync-status')?.textContent,'录音同步未启用 · 运行环境需要处理');
+ assert.ok(!f.reads.some(path=>/\/(check|login|sync|connect)$/.test(path)));
 });
