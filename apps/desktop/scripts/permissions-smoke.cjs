@@ -1,5 +1,5 @@
-// Generated settings and native-drag bridge contract. Never opens System Settings or grants TCC.
 require('../../../scripts/fixture-background.cjs');
+// Generated settings and native-drag bridge contract. Never opens System Settings or grants TCC.
 require('../../../scripts/fixture-language.cjs');
 const { app, BrowserWindow, shell, systemPreferences, ipcMain, nativeImage, screen } = require('electron');
 const { mkdtempSync, writeFileSync, mkdirSync } = require('node:fs');
