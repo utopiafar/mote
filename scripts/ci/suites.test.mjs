@@ -151,3 +151,15 @@ test('Web regression preparation builds the Agent runtime needed by real Server 
   assert.ok(!plan.some(step => step.args.includes('test') && (step.args.includes('@mote/agent') || step.args.includes('@mote/server'))));
   assert.deepEqual(taskPlan('web-contract').filter(step => step.command === 'npm').map(step => step.args), [['run', 'build', '-w', '@mote/shared']]);
 });
+
+test('Server contracts build the runnable Central release before update and rollback process fixtures', () => {
+  const plan = taskPlan('server-contract');
+  const build = workspace => plan.findIndex(step => step.command === 'npm' && step.args[1] === 'build' && step.args.includes(workspace));
+  assert.ok(build('@mote/server') >= 0, 'Clean CI runners need the compiled Server entrypoint and configuration capability markers');
+  assert.ok(build('@mote/shared') < build('@mote/agent'));
+  assert.ok(build('@mote/agent') < build('@mote/server'));
+  for (const consumer of ['scripts/update-deployment-tests.mjs', 'scripts/test-central-runner.mjs']) {
+    const run = plan.findIndex(step => step.args.includes(consumer));
+    assert.ok(run > build('@mote/server'), `${consumer} must run after the selected Server release is built`);
+  }
+});
