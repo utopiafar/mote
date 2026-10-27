@@ -153,6 +153,7 @@ for(const revoke of [false,true])test(`dialogue intermediate transcript preserve
   }});
   const settings={...f.node.processing.view().settings,localEndpoint:'http://127.0.0.1:1234/transcribe',audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.held-diarizer',speakerCount:1};
   await f.node.processing.save({revision:f.node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.node.processing.runtime.registry)});
+  await authorizeFixtureModels(f.node);
   const file=await f.upload();await f.organize();await f.queue();
   const processing=f.node.processing.tick();
   await Promise.race([entered,processing.then(()=>{throw Error('Generated pipeline ended before diarization: '+JSON.stringify(f.node.files.detail(file.id).job));})]);
