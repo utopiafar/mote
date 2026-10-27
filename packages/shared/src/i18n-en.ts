@@ -8804,5 +8804,8 @@ export const english: Readonly<Record<string, string>> = {
   "已暂停接收资料": "Intake paused",
   "恢复接入仅允许接收资料；录音同步需在录音同步设置中确认范围并启用。": "Resuming intake only allows this source to receive material. Confirm the range and enable recording sync in Recording sync settings.",
   "录音同步设置": "Recording sync settings",
-  "已保存账号绑定不代表当前登录或读取权限有效。“重新检测”检查中央运行环境；请结合授权结果与同步步骤确认账号权限。": "A saved account binding does not confirm a valid login or read permissions. Recheck inspects the central runtime; confirm account permissions from authorization results and sync steps."
+  "已保存账号绑定不代表当前登录或读取权限有效。“重新检测”检查中央运行环境；请结合授权结果与同步步骤确认账号权限。": "A saved account binding does not confirm a valid login or read permissions. Recheck inspects the central runtime; confirm account permissions from authorization results and sync steps.",
+  "结构化内容未采集：请先配置允许的 Chrome 站点；应用时长按所选设置记录": "Structured content not captured: configure allowed Chrome sites first; app duration follows your selection",
+  "结构化内容未采集：Mote Chrome 扩展尚未连接；应用时长按所选设置记录": "Structured content not captured: the Mote Chrome extension is not connected; app duration follows your selection",
+  "结构化内容未采集：Chrome 窗口、站点授权或遮挡校验未通过；应用时长按所选设置记录": "Structured content not captured: Chrome window, site permission or visibility checks failed; app duration follows your selection"
 };

@@ -116,6 +116,7 @@ class UiPageServiceInstrumentedTest {
                 val activity=service?.let { target -> val field=target.javaClass.getDeclaredField("pageActivity");field.isAccessible=true;field.get(target) }
                 service?.windowSnapshot()?.foreground==fixture && MoteApplication.visibleActivities==0 && activity==ExternalFixtureActivity::class.java.name && renderedScene(scene)
             }
+            settings.screenStatus(MoteI18n.text("锁屏或熄屏，暂停采集"))
             settings.enabled=true
         }
         var testFailure: Throwable? = null
@@ -182,6 +183,7 @@ class UiPageServiceInstrumentedTest {
                 assertEquals(choice.wire,choice.duration,records.any {it.optString("source")=="activity"})
                 assertEquals(choice.wire,choice.screenshots,context.queue().inventory().images>0)
                 assertEquals(choice.wire,choice.structured,records.any {it.optString("source")=="ui_page"})
+                if(choice==AppCollectionMode.STRUCTURED)assertEquals("Structured-only success clears a previous screen pause",MoteI18n.text("页面内容已保存"),settings.screenStatus())
                 assertTrue(records.filter {it.optString("source")!="activity"}.all {it.getLong("durationMs")==0L})
                 val groups=records.groupBy {it.getJSONObject("metadata").getJSONObject("captureObservation").getString("id")}
                 if(choice.duration&&choice.structured)assertTrue(groups.values.any {group->group.any {it.optString("source")=="activity"}&&group.any {it.optString("source")=="ui_page"}})

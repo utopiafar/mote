@@ -106,7 +106,7 @@ emit(result)
   await mkdir(join(app, 'Contents/MacOS'), { recursive: true });
   await writeFile(join(app, 'Contents/Info.plist'), `<?xml version="1.0"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>dev.mote.generated.structured-ax</string><key>CFBundleExecutable</key><string>fixture</string><key>CFBundleName</key><string>Generated Mote AX fixture</string><key>NSHighResolutionCapable</key><true/></dict></plist>`);
   const binary = join(app, 'Contents/MacOS/fixture');
-  execFileSync('swiftc', [join(root, 'native/StructuredCapture.swift'), main, '-module-cache-path', join(root, 'native/bin/swift-module-cache'), '-o', binary], { stdio: 'pipe' });
+  execFileSync('swiftc', [join(root, 'native/StructuredCapture.swift'), join(root, 'native/CaptureSystemOverlay.swift'), main, '-module-cache-path', join(root, 'native/bin/swift-module-cache'), '-o', binary], { stdio: 'pipe' });
   const permission = JSON.parse(execFileSync(binary, ['permission'], { encoding: 'utf8' }));
   if (!permission.available) {
     process.stdout.write(JSON.stringify({ skipped: true, reason: 'existing_ax_permission_required', generatedNativeAXOnly: true }) + '\n');

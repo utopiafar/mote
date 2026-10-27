@@ -7,7 +7,7 @@ await build({entryPoints:['src/ui-bootstrap.ts'],outfile:'dist/ui-bundle.js',bun
 for (const file of ['appearance-init.js', 'index.html', 'styles.css', 'design-tokens.css', 'art-direction.css']) await copyFile(`src/${file}`, `dist/${file}`);
 await mkdir('native/bin', { recursive: true });
 if (process.platform === 'darwin') {
-  const result = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteHelper.swift', 'native/WindowIdentity.swift', 'native/StructuredCapture.swift', '-module-cache-path', 'native/bin/swift-module-cache', '-o', 'native/bin/mote-helper'], { stdio: 'inherit' });
+  const result = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteHelper.swift', 'native/WindowIdentity.swift', 'native/StructuredCapture.swift', 'native/CaptureSystemOverlay.swift', '-module-cache-path', 'native/bin/swift-module-cache', '-o', 'native/bin/mote-helper'], { stdio: 'inherit' });
   if (result.status !== 0) process.exit(result.status ?? 1);
   const updater = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteUpdater.swift', '-module-cache-path', 'native/bin/swift-module-cache', '-o', 'native/bin/mote-updater'], { stdio: 'inherit' });
   if (updater.status !== 0) process.exit(updater.status ?? 1);

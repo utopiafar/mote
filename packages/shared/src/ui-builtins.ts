@@ -2086,11 +2086,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:image-note-title-body",
+    "id": "com.xingin.xhs:9.51.0:image-note-title-body",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "image_note_title_body",
     "repeat": {
       "role": "android.widget.LinearLayout"
@@ -2121,11 +2121,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:image-note-body-only",
+    "id": "com.xingin.xhs:9.51.0:image-note-body-only",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "image_note_body_only",
     "repeat": {
       "role": "android.widget.LinearLayout"
@@ -2146,11 +2146,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:image-note-title-only",
+    "id": "com.xingin.xhs:9.51.0:image-note-title-only",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "image_note_title_only",
     "repeat": {
       "role": "android.widget.LinearLayout"
@@ -2171,11 +2171,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:search-note-result",
+    "id": "com.xingin.xhs:9.51.0:search-note-result",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "search_note_result",
     "repeat": {
       "role": "android.widget.RelativeLayout"
@@ -2232,11 +2232,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-01",
+    "id": "com.xingin.xhs:9.51.0:note-comment-01",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_01",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2292,11 +2292,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-02",
+    "id": "com.xingin.xhs:9.51.0:note-comment-02",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_02",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2352,11 +2352,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-03",
+    "id": "com.xingin.xhs:9.51.0:note-comment-03",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_03",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2412,11 +2412,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-04",
+    "id": "com.xingin.xhs:9.51.0:note-comment-04",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_04",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2472,11 +2472,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-05",
+    "id": "com.xingin.xhs:9.51.0:note-comment-05",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_05",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2532,11 +2532,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-06",
+    "id": "com.xingin.xhs:9.51.0:note-comment-06",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_06",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2592,11 +2592,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-07",
+    "id": "com.xingin.xhs:9.51.0:note-comment-07",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_07",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2652,11 +2652,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-08",
+    "id": "com.xingin.xhs:9.51.0:note-comment-08",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_08",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2712,11 +2712,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-09",
+    "id": "com.xingin.xhs:9.51.0:note-comment-09",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_09",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2772,11 +2772,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-10",
+    "id": "com.xingin.xhs:9.51.0:note-comment-10",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_10",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2832,11 +2832,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-11",
+    "id": "com.xingin.xhs:9.51.0:note-comment-11",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_11",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2892,11 +2892,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-12",
+    "id": "com.xingin.xhs:9.51.0:note-comment-12",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_12",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -2952,11 +2952,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-13",
+    "id": "com.xingin.xhs:9.51.0:note-comment-13",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_13",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -3012,11 +3012,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:note-comment-14",
+    "id": "com.xingin.xhs:9.51.0:note-comment-14",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_comment_14",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -3072,11 +3072,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:discovery-card-01",
+    "id": "com.xingin.xhs:9.51.0:discovery-card-01",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "discovery_card_01",
     "repeat": {
       "role": "android.widget.FrameLayout"
@@ -3121,11 +3121,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:discovery-card-02",
+    "id": "com.xingin.xhs:9.51.0:discovery-card-02",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "discovery_card_02",
     "repeat": {
       "role": "android.widget.FrameLayout"
@@ -3170,11 +3170,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:discovery-card-03",
+    "id": "com.xingin.xhs:9.51.0:discovery-card-03",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "discovery_card_03",
     "repeat": {
       "role": "android.widget.FrameLayout"
@@ -3219,11 +3219,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:discovery-card-04",
+    "id": "com.xingin.xhs:9.51.0:discovery-card-04",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "discovery_card_04",
     "repeat": {
       "role": "android.widget.FrameLayout"
@@ -3268,11 +3268,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:discovery-card-05",
+    "id": "com.xingin.xhs:9.51.0:discovery-card-05",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "discovery_card_05",
     "repeat": {
       "role": "android.widget.FrameLayout"
@@ -3317,11 +3317,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:profile-note-card-image",
+    "id": "com.xingin.xhs:9.51.0:profile-note-card-image",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "profile_note_card_image",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -3380,11 +3380,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "com.xingin.xhs:9.50.0:profile-note-card-video",
+    "id": "com.xingin.xhs:9.51.0:profile-note-card-video",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "profile_note_card_video",
     "repeat": {
       "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
@@ -3443,11 +3443,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:video-detail-title-01",
+    "id": "tv.danmaku.bili:9.16.1:video-detail-title-01",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "video_detail_title_01",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3473,11 +3473,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:video-detail-metadata-01",
+    "id": "tv.danmaku.bili:9.16.1:video-detail-metadata-01",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "video_detail_metadata_01",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3530,11 +3530,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:video-detail-metadata-02",
+    "id": "tv.danmaku.bili:9.16.1:video-detail-metadata-02",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "video_detail_metadata_02",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3587,11 +3587,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:recommended-video-card-01",
+    "id": "tv.danmaku.bili:9.16.1:recommended-video-card-01",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "recommended_video_card_01",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3644,11 +3644,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:recommended-video-card-02",
+    "id": "tv.danmaku.bili:9.16.1:recommended-video-card-02",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "recommended_video_card_02",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3701,11 +3701,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:recommended-video-card-03",
+    "id": "tv.danmaku.bili:9.16.1:recommended-video-card-03",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "recommended_video_card_03",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3758,11 +3758,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:home-video-card",
+    "id": "tv.danmaku.bili:9.16.1:home-video-card",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "home_video_card",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3816,11 +3816,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:home-mixed-card",
+    "id": "tv.danmaku.bili:9.16.1:home-mixed-card",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "home_mixed_card",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3853,11 +3853,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:home-video-card-with-badge",
+    "id": "tv.danmaku.bili:9.16.1:home-video-card-with-badge",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "home_video_card_with_badge",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3911,11 +3911,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:home-film-card",
+    "id": "tv.danmaku.bili:9.16.1:home-film-card",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "home_film_card",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3954,11 +3954,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:home-documentary-card",
+    "id": "tv.danmaku.bili:9.16.1:home-documentary-card",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "home_documentary_card",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -3990,11 +3990,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:recommended-live-room",
+    "id": "tv.danmaku.bili:9.16.1:recommended-live-room",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "recommended_live_room",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -4033,11 +4033,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:search-video-card-01",
+    "id": "tv.danmaku.bili:9.16.1:search-video-card-01",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "search_video_card_01",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -4090,11 +4090,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:search-video-card-02",
+    "id": "tv.danmaku.bili:9.16.1:search-video-card-02",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "search_video_card_02",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -4147,11 +4147,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:search-video-card-03",
+    "id": "tv.danmaku.bili:9.16.1:search-video-card-03",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "search_video_card_03",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -4204,11 +4204,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:search-video-card-04",
+    "id": "tv.danmaku.bili:9.16.1:search-video-card-04",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "search_video_card_04",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -4261,11 +4261,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:search-video-card-05",
+    "id": "tv.danmaku.bili:9.16.1:search-video-card-05",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "search_video_card_05",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -4318,11 +4318,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:search-video-card-06",
+    "id": "tv.danmaku.bili:9.16.1:search-video-card-06",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "search_video_card_06",
     "repeat": {
       "role": "android.view.ViewGroup"
@@ -4375,11 +4375,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-01",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-01",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_01",
     "repeat": {
       "role": "android.view.View"
@@ -4432,11 +4432,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-02",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-02",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_02",
     "repeat": {
       "role": "android.view.View"
@@ -4489,11 +4489,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-03",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-03",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_03",
     "repeat": {
       "role": "android.view.View"
@@ -4546,11 +4546,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-04",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-04",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_04",
     "repeat": {
       "role": "android.view.View"
@@ -4603,11 +4603,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-05",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-05",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_05",
     "repeat": {
       "role": "android.view.View"
@@ -4660,11 +4660,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-06",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-06",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_06",
     "repeat": {
       "role": "android.view.View"
@@ -4717,11 +4717,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-07",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-07",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_07",
     "repeat": {
       "role": "android.view.View"
@@ -4774,11 +4774,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-08",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-08",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_08",
     "repeat": {
       "role": "android.view.View"
@@ -4831,11 +4831,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-09",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-09",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_09",
     "repeat": {
       "role": "android.view.View"
@@ -4888,11 +4888,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-10",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-10",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_10",
     "repeat": {
       "role": "android.view.View"
@@ -4945,11 +4945,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-11",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-11",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_11",
     "repeat": {
       "role": "android.view.View"
@@ -5002,11 +5002,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-12",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-12",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_12",
     "repeat": {
       "role": "android.view.View"
@@ -5059,11 +5059,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-13",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-13",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_13",
     "repeat": {
       "role": "android.view.View"
@@ -5116,11 +5116,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-14",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-14",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_14",
     "repeat": {
       "role": "android.view.View"
@@ -5173,11 +5173,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-15",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-15",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_15",
     "repeat": {
       "role": "android.view.View"
@@ -5230,11 +5230,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-16",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-16",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_16",
     "repeat": {
       "role": "android.view.View"
@@ -5287,11 +5287,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-17",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-17",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_17",
     "repeat": {
       "role": "android.view.View"
@@ -5344,11 +5344,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-18",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-18",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_18",
     "repeat": {
       "role": "android.view.View"
@@ -5401,11 +5401,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-19",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-19",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_19",
     "repeat": {
       "role": "android.view.View"
@@ -5458,11 +5458,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-20",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-20",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_20",
     "repeat": {
       "role": "android.view.View"
@@ -5515,11 +5515,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-21",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-21",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_21",
     "repeat": {
       "role": "android.view.View"
@@ -5572,11 +5572,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-22",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-22",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_22",
     "repeat": {
       "role": "android.view.View"
@@ -5629,11 +5629,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-23",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-23",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_23",
     "repeat": {
       "role": "android.view.View"
@@ -5686,11 +5686,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-24",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-24",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_24",
     "repeat": {
       "role": "android.view.View"
@@ -5743,11 +5743,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-25",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-25",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_25",
     "repeat": {
       "role": "android.view.View"
@@ -5800,11 +5800,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-26",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-26",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_26",
     "repeat": {
       "role": "android.view.View"
@@ -5857,11 +5857,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-27",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-27",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_27",
     "repeat": {
       "role": "android.view.View"
@@ -5914,11 +5914,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "tv.danmaku.bili:9.15.0:compose-comment-28",
+    "id": "tv.danmaku.bili:9.16.1:compose-comment-28",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "compose_comment_28",
     "repeat": {
       "role": "android.view.View"
@@ -6047,11 +6047,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "xhs-video-caption-android-9.50.0",
+    "id": "xhs-video-caption-android-9.51.0",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "video_caption",
     "fields": {
       "note_video_caption_text": {
@@ -6080,11 +6080,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "xhs-note-author-android-9.50.0",
+    "id": "xhs-note-author-android-9.51.0",
     "version": "1",
     "platform": "android",
     "appId": "com.xingin.xhs",
-    "appVersion": "9.50.0",
+    "appVersion": "9.51.0",
     "kind": "note_author",
     "fields": {
       "note_author_display_name": {
@@ -6102,11 +6102,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "bili-uploader-android-9.15.0",
+    "id": "bili-uploader-android-9.16.1",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "uploader",
     "fields": {
       "uploader_display_name": {
@@ -6142,11 +6142,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "bili-player-progress-android-9.15.0",
+    "id": "bili-player-progress-android-9.16.1",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "player_state",
     "fields": {
       "player_progress": {
@@ -6164,11 +6164,11 @@ export const builtinUiRules=uiRulesSchema.parse([
   },
   {
     "formatVersion": 3,
-    "id": "bili-ad-title-android-9.15.0",
+    "id": "bili-ad-title-android-9.16.1",
     "version": "1",
     "platform": "android",
     "appId": "tv.danmaku.bili",
-    "appVersion": "9.15.0",
+    "appVersion": "9.16.1",
     "kind": "ad_card",
     "fields": {
       "ad_title": {
@@ -6186,5 +6186,41 @@ export const builtinUiRules=uiRulesSchema.parse([
     "repeat": {
       "resourceId": "tv.danmaku.bili:id/ad_tint_frame"
     }
+  },
+  {
+    "formatVersion": 3,
+    "id": "com.xingin.xhs:9.51.0:image-note-visible-title-body",
+    "version": "1",
+    "platform": "android",
+    "appId": "com.xingin.xhs",
+    "appVersion": "9.51.0",
+    "kind": "image_note_title_body",
+    "repeat": {
+      "role": "android.widget.LinearLayout"
+    },
+    "repeatSubtreeHash": "d847b39aad712ee2f5f2120b0ba7e42e659de7ca83a0ebf2ce62152fab3b4644",
+    "fields": {
+      "note_visible_title": {
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "childPath": [
+          0
+        ],
+        "source": "text",
+        "cardinality": "one"
+      },
+      "note_visible_body": {
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "childPath": [
+          2
+        ],
+        "source": "text",
+        "cardinality": "one"
+      }
+    },
+    "activity": "com.xingin.matrix.notedetail.NoteDetailActivity"
   }
 ]);

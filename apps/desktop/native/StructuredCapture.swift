@@ -23,6 +23,7 @@ struct CaptureWindowProof {
     var screen: CGRect
     var occlusions: [CGRect]
     var windowID: Int
+    var stack: [String] = []
 }
 func captureRectJSON(_ r: CGRect) -> [String: Double] {
     ["x": r.minX, "y": r.minY, "width": r.width, "height": r.height]
@@ -33,16 +34,26 @@ func captureRectSafe(_ r: CGRect) -> Bool {
 func captureTextAllowed(_ d: CaptureAXDescriptor) -> Bool {
     !d.hidden && !d.editable && !["AXTextField", "AXTextArea", "AXSecureTextField", "AXSearchField", "AXComboBox"].contains(d.role)
 }
-func captureWindowProof(_ windows: [[String: Any]], pid: Int32, focused: CGRect, screen: CGRect) -> CaptureWindowProof? {
+func captureWindowProof(_ windows: [[String: Any]], pid: Int32, focused: CGRect, screen: CGRect, focusedTitle: String? = nil, focusedTitleSuffix: String? = nil, transparentSystemWindows: Set<Int> = []) -> CaptureWindowProof? {
     guard captureRectSafe(focused), screen.contains(focused), windows.count <= 8192 else { return nil }
     // Match the actual focused window, not the first window owned by its PID:
     // same-application sheets and floating windows can cover captured content.
-    let matching = windows.enumerated().filter { _, w in
+    var matching = windows.enumerated().filter { _, w in
         guard w[kCGWindowOwnerPID as String] as? Int32 == pid,
               (w[kCGWindowLayer as String] as? Int ?? 0) == 0,
               let dictionary = w[kCGWindowBounds as String] as? NSDictionary,
               let bounds = CGRect(dictionaryRepresentation: dictionary) else { return false }
         return bounds == focused && (w[kCGWindowAlpha as String] as? Double ?? 1) > 0
+    }
+    // Geometry is not a window identity when several Chrome windows are
+    // maximized. Refine only with the exact focused AX title, never z-order.
+    if matching.count > 1, let title = focusedTitle, !title.isEmpty {
+        var titles = Set([title])
+        // Chrome's AX title includes its application suffix, while WindowServer
+        // exposes the document title. Both exact spellings remain candidates;
+        // a document imitating the suffix must not resolve an ambiguity.
+        if let suffix = focusedTitleSuffix, !suffix.isEmpty, title.hasSuffix(suffix), title.count > suffix.count { titles.insert(String(title.dropLast(suffix.count))) }
+        matching = matching.filter { ($0.element[kCGWindowName as String] as? String).map(titles.contains) == true }
     }
     guard matching.count == 1, let target = matching.first,
           let number = target.element[kCGWindowNumber as String] as? Int else { return nil }
@@ -51,9 +62,19 @@ func captureWindowProof(_ windows: [[String: Any]], pid: Int32, focused: CGRect,
         if (w[kCGWindowAlpha as String] as? Double ?? 1) <= 0 { continue }
         guard let dictionary = w[kCGWindowBounds as String] as? NSDictionary,
               let bounds = CGRect(dictionaryRepresentation: dictionary), captureRectSafe(bounds) else { return nil }
-        if bounds.intersects(focused) { occlusions.append(bounds) }
+        if bounds.intersects(focused), !transparentSystemWindows.contains(w[kCGWindowNumber as String] as? Int ?? -1) { occlusions.append(bounds) }
     }
-    return CaptureWindowProof(bounds: focused, screen: screen, occlusions: occlusions, windowID: number)
+    let stack = windows.prefix(target.offset + 1).filter { window in
+        guard let raw = window[kCGWindowBounds as String] as? NSDictionary, let bounds = CGRect(dictionaryRepresentation: raw) else { return true }
+        return bounds.intersects(focused) && (window[kCGWindowAlpha as String] as? Double ?? 1) > 0
+    }.map { window -> String in
+        let keys = [kCGWindowNumber, kCGWindowOwnerPID, kCGWindowLayer, kCGWindowBounds, kCGWindowAlpha, kCGWindowName]
+        let fields = Dictionary(uniqueKeysWithValues: keys.compactMap { key -> (String, Any)? in
+            window[key as String].map { (key as String, $0) }
+        })
+        return (try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "invalid"
+    }
+    return CaptureWindowProof(bounds: focused, screen: screen, occlusions: occlusions, windowID: number, stack: stack)
 }
 // Full-display screenshots need a policy for every browser window, including
 // windows behind the foreground one. Native metadata has no tab/site permission
@@ -77,14 +98,14 @@ private func captureAttribute(_ e: AXUIElement, _ key: String) -> CFTypeRef? {
     guard AXUIElementCopyAttributeValue(e, key as CFString, &value) == .success else { return nil }
     return value
 }
-private func captureBounds(_ e: AXUIElement) -> CGRect? {
+private func captureBounds(_ e: AXUIElement, allowEmpty: Bool = false) -> CGRect? {
     guard let p = captureAttribute(e, kAXPositionAttribute), let s = captureAttribute(e, kAXSizeAttribute),
           CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID() else { return nil }
     var point = CGPoint.zero; var size = CGSize.zero
     guard AXValueGetValue(unsafeBitCast(p, to: AXValue.self), .cgPoint, &point),
           AXValueGetValue(unsafeBitCast(s, to: AXValue.self), .cgSize, &size) else { return nil }
     let r = CGRect(origin: point, size: size)
-    return captureRectSafe(r) ? r : nil
+    return captureRectSafe(r) || (allowEmpty && [r.minX, r.minY, r.width, r.height].allSatisfy { $0.isFinite } && r.width >= 0 && r.height >= 0) ? r : nil
 }
 private func captureFocusedWindow(_ root: AXUIElement) -> AXUIElement? {
     guard let value = captureAttribute(root, kAXFocusedWindowAttribute), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
@@ -116,7 +137,7 @@ func captureReader() -> CaptureAXReader<AXUIElement> {
         var count: CFIndex = 0
         let counted = AXUIElementGetAttributeValueCount(e, kAXChildrenAttribute as CFString, &count)
         return CaptureAXDescriptor(role: subrole == "AXSecureTextField" ? subrole : role,
-            identifier: String((read(e, kAXIdentifierAttribute) as? String ?? "").prefix(300)), bounds: captureBounds(e),
+            identifier: String((read(e, kAXIdentifierAttribute) as? String ?? "").prefix(300)), bounds: captureBounds(e, allowEmpty: true),
             hidden: read(e, "AXHidden") as? Bool == true || read(e, "AXVisible") as? Bool == false,
             editable: settable.boolValue || ![AXError.success, AXError.attributeUnsupported].contains(setter),
             childCount: counted == .success ? max(0, count) : counted == .attributeUnsupported ? 0 : -1, uncertain: role.isEmpty)
@@ -144,12 +165,18 @@ private func scanCaptureTree<E>(_ root: E, reader: CaptureAXReader<E>, window: C
         visited += 1
         let d = reader.describe(e)
         if d.uncertain { truncated = true }
+        if stopAtWebArea && (d.hidden || ["AXTextField", "AXTextArea", "AXSecureTextField", "AXSearchField", "AXComboBox"].contains(d.role)) { return }
+        if stopAtWebArea, d.childCount == 0, let bounds = d.bounds, bounds.isEmpty { return }
         guard let bounds = d.bounds, captureRectSafe(bounds) else { truncated = true; return }
         guard clip.intersects(bounds) else { return }
         // AX-only projection drops protected subtrees. Keep their geometry in
         // the separate proof so a whole-region OCR query cannot turn omitted
         // input/draft pixels into captured message text.
-        guard captureTextAllowed(d) else { rejected.append(bounds.intersection(clip)); return }
+        // Chrome exposes its outer content group as value-settable. Identity
+        // traversal reads only geometry/roles and the selected WebArea URL,
+        // never container values or editable descendants' text.
+        let identityContainer = stopAtWebArea && !d.hidden && ["AXGroup", "AXSplitGroup", "AXToolbar", "AXScrollArea", "AXWebArea"].contains(d.role)
+        guard captureTextAllowed(d) || identityContainer else { rejected.append(bounds.intersection(clip)); return }
         let clipped = clip.intersection(bounds)
         let index = nodes.count
         nodes.append(ScannedCaptureNode(element: e, descriptor: d, parent: parent, childIndex: childIndex, clip: clipped))
@@ -243,19 +270,19 @@ struct BrowserCapturePage<E> {
     var url: String
     var viewport: CGRect
 }
-func browserCapturePage<E>(_ window: E, reader: CaptureAXReader<E>, proof: CaptureWindowProof, deadline: Date) -> BrowserCapturePage<E>? {
+func browserCapturePage<E>(_ window: E, reader: CaptureAXReader<E>, proof: CaptureWindowProof, deadline: Date, failure: ((String) -> Void)? = nil) -> BrowserCapturePage<E>? {
     guard proof.occlusions.isEmpty else { return nil }
     let tree = scanCaptureTree(window, reader: reader, window: proof.bounds, deadline: deadline, stopAtWebArea: true)
-    guard !tree.truncated else { return nil }
+    guard !tree.truncated else { failure?("web_tree_incomplete"); return nil }
     // Traversal stops at each main web area: no page text is read and embedded
     // frame trees cannot become alternative candidates or exhaust the budget.
     let areas = tree.nodes.indices.filter { tree.nodes[$0].descriptor.role == "AXWebArea" }
-    guard areas.count == 1, let index = areas.first, let viewport = tree.nodes[index].descriptor.bounds,
-          tree.nodes[index].clip.contains(viewport), proof.bounds.contains(viewport),
-          let url = reader.text(tree.nodes[index].element, "AXURL"), url.count <= 2000,
+    guard areas.count == 1, let index = areas.first else { failure?("web_area_ambiguous"); return nil }
+    guard let viewport = tree.nodes[index].descriptor.bounds, tree.nodes[index].clip.contains(viewport), proof.bounds.contains(viewport) else { failure?("web_area_geometry"); return nil }
+    guard let url = reader.text(tree.nodes[index].element, "AXURL"), url.count <= 2000,
           !url.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0) }),
           let parsed = URLComponents(string: url), ["http", "https"].contains(parsed.scheme?.lowercased() ?? ""),
-          parsed.host?.isEmpty == false, parsed.user == nil, parsed.password == nil, reader.valid(), Date() <= deadline else { return nil }
+          parsed.host?.isEmpty == false, parsed.user == nil, parsed.password == nil, reader.valid(), Date() <= deadline else { failure?("web_url_unavailable"); return nil }
     return BrowserCapturePage(element: tree.nodes[index].element, url: url, viewport: viewport)
 }
 func browserCaptureContext(_ input: Data) -> [String: Any] {
@@ -264,16 +291,33 @@ func browserCaptureContext(_ input: Data) -> [String: Any] {
     guard AXIsProcessTrusted() else { return ["status": "permission_required"] }
     guard !captureLocked(), let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier == pid, app.bundleIdentifier == "com.google.Chrome" else { return ["status": "blocked"] }
     let root = AXUIElementCreateApplication(pid); AXUIElementSetMessagingTimeout(root, 0.05)
-    guard let window = captureFocusedWindow(root), let bounds = captureBounds(window), let windows = captureWindows(),
-          let proof = captureWindowProof(windows, pid: pid, focused: bounds, screen: CGDisplayBounds(CGMainDisplayID())), proof.occlusions.isEmpty else { return ["status": "unsupported"] }
+    // Chromium enables its native accessibility tree when an assistive client
+    // queries the application role. This reads identity, never page content.
+    _ = captureAttribute(root, kAXRoleAttribute)
+    guard let window = captureFocusedWindow(root), let bounds = captureBounds(window), let windows = captureWindows() else { return ["status": "unsupported", "reason": "focused_window_unavailable"] }
+    let title = captureAttribute(window, kAXTitleAttribute) as? String
+    let titleSuffix = " - \(app.localizedName ?? "Google Chrome")"
+    let screen = CGDisplayBounds(CGMainDisplayID())
+    guard let initial = captureWindowProof(windows, pid: pid, focused: bounds, screen: screen, focusedTitle: title, focusedTitleSuffix: titleSuffix) else { return ["status": "unsupported", "reason": "window_identity_ambiguous"] }
+    let transparent = captureTransparentDockWindows(windows, before: initial.windowID, within: bounds, screen: screen)
+    guard let proof = captureWindowProof(windows, pid: pid, focused: bounds, screen: screen, focusedTitle: title, focusedTitleSuffix: titleSuffix, transparentSystemWindows: transparent), proof.occlusions.isEmpty else { return ["status": "unsupported", "reason": "window_occluded"] }
     let browserWindows = visibleBrowserWindowCount(windows, within: proof.screen, resolveBundle: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier })
     let reader = captureReader()
-    guard let page = browserCapturePage(window, reader: reader, proof: proof, deadline: Date().addingTimeInterval(1)) else { return ["status": "unsupported"] }
+    var reason = "web_area_unavailable"
+    guard let page = browserCapturePage(window, reader: reader, proof: proof, deadline: Date().addingTimeInterval(1), failure: { reason = $0 }) else { return ["status": "unsupported", "reason": reason] }
+    guard let current = captureFocusedWindow(root), let currentBounds = captureBounds(current), let currentWindows = captureWindows() else { return ["status": "stale"] }
+    let afterTransparent = captureTransparentDockWindows(currentWindows, before: proof.windowID, within: currentBounds, screen: screen)
+    // Alpha acquisition is asynchronous. Re-read focus and the entire relevant
+    // stack after it; a new/changed overlay must not escape through an old list.
     guard AXIsProcessTrusted(), !captureLocked(), NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-          let current = captureFocusedWindow(root), CFEqual(window, current), let currentBounds = captureBounds(current), let currentWindows = captureWindows(),
-          let after = captureWindowProof(currentWindows, pid: pid, focused: currentBounds, screen: CGDisplayBounds(CGMainDisplayID())),
+          let finalWindow = captureFocusedWindow(root), CFEqual(window, finalWindow), let finalBounds = captureBounds(finalWindow), finalBounds == currentBounds,
+          captureAttribute(finalWindow, kAXTitleAttribute) as? String == title, let finalWindows = captureWindows(),
+          let requested = captureWindowProof(currentWindows, pid: pid, focused: currentBounds, screen: screen, focusedTitle: title, focusedTitleSuffix: titleSuffix, transparentSystemWindows: afterTransparent),
+          let after = captureWindowProof(finalWindows, pid: pid, focused: finalBounds, screen: CGDisplayBounds(CGMainDisplayID()), focusedTitle: title, focusedTitleSuffix: titleSuffix, transparentSystemWindows: afterTransparent),
+          requested.stack == after.stack,
           after.windowID == proof.windowID, after.bounds == proof.bounds, after.screen == proof.screen, after.occlusions.isEmpty,
-          visibleBrowserWindowCount(currentWindows, within: after.screen, resolveBundle: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }) == browserWindows,
+          after.stack == proof.stack,
+          visibleBrowserWindowCount(finalWindows, within: after.screen, resolveBundle: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }) == browserWindows,
           captureBounds(page.element) == page.viewport, reader.text(page.element, "AXURL") == page.url else { return ["status": "stale"] }
     return ["status": "ok", "appId": "com.google.Chrome", "pid": Int(pid), "url": page.url, "window": captureRectJSON(proof.bounds), "viewport": captureRectJSON(page.viewport), "screen": captureRectJSON(proof.screen), "windowId": proof.windowID, "visibleBrowserWindows": browserWindows]
 }

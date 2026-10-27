@@ -83,6 +83,11 @@ internal data class CollectionWindow(val type: Int, val packageName: String?, va
 internal data class CaptureBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
 internal object SystemBarRegion {
     const val MIUI_HOME = "com.miui.home"
+    const val MIUI_SYSTEM_UI = "miui.systemui.plugin"
+    /** A system-owned OEM status surface is chrome only inside OS-provided bar geometry. */
+    fun miuiStatus(window: CaptureBounds, display: CaptureBounds, insets: CaptureBounds,
+        packageName: String?, systemOwner: Boolean, type: Int, active: Boolean, focused: Boolean): Boolean =
+        packageName == MIUI_SYSTEM_UI && systemOwner && type == 3 && !active && !focused && contains(window, display, insets)
     /** HyperOS exposes GestureStubHome outside the standard navigation inset (74px vs 48px).
      * This OEM exception only covers an inactive system-owned, full-width bottom navigation strip.
      * Never apply it to launcher Activities, side overlays, floating panels or hidden navigation.
@@ -107,7 +112,7 @@ internal object SystemBarRegion {
 }
 internal object CollectionWindows {
     fun snapshot(windows: List<CollectionWindow>, foreground: String?): WindowSnapshot {
-        val contentWindows = windows.filterNot { it.type == 3 && it.packageName in setOf("com.android.systemui", SystemBarRegion.MIUI_HOME) && it.systemBar }
+        val contentWindows = windows.filterNot { it.type == 3 && it.packageName in setOf("com.android.systemui", SystemBarRegion.MIUI_HOME, SystemBarRegion.MIUI_SYSTEM_UI) && it.systemBar }
         val packages = contentWindows.mapNotNull { it.packageName }.toSet()
         val trustworthy = contentWindows.isNotEmpty() && contentWindows.all { it.type in 1..3 && !it.packageName.isNullOrBlank() } &&
             (foreground.isNullOrBlank() || foreground in packages)

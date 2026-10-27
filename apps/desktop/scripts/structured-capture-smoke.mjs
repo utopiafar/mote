@@ -131,6 +131,16 @@ func page(_ root: GeneratedNode, _ p: CaptureWindowProof = proof) -> BrowserCapt
 let area = web(); let browser = window([area])
 precondition(page(browser)?.url == "https://fixture.invalid/generated")
 precondition(reads == ["generated-page:AXURL"] && !childReads.contains("generated-page"))
+let settableChromeWrapper = node("AXGroup", "chrome-content-wrapper", "MUST_NOT_READ", full, [web()]); settableChromeWrapper.editable = true
+precondition(page(window([settableChromeWrapper]))?.url == "https://fixture.invalid/generated")
+precondition(reads == ["generated-page:AXURL"] && !childReads.contains("generated-page"))
+let browserInput = node("AXTextArea", "browser-input", "MUST_NOT_READ", full, [web()]); browserInput.editable = true
+precondition(page(window([browserInput])) == nil && reads.isEmpty)
+let emptyToolbarIcon = node("AXImage", "empty-toolbar-icon", "MUST_NOT_READ", .zero)
+precondition(page(window([emptyToolbarIcon, web()]))?.url == "https://fixture.invalid/generated")
+precondition(reads == ["generated-page:AXURL"])
+let uncertainEmptyBranch = node("AXGroup", "empty-branch", "MUST_NOT_READ", .zero, [web()])
+precondition(page(window([uncertainEmptyBranch, web()])) == nil)
 precondition(page(window([web(), web()])) == nil && reads.isEmpty)
 precondition(page(window([web()]), coveredProof) == nil && reads.isEmpty)
 let hiddenArea = web(); hiddenArea.hidden = true; precondition(page(window([hiddenArea])) == nil && reads.isEmpty)
@@ -153,6 +163,34 @@ precondition(captureWindowProof([[:], target], pid: 7, focused: full, screen: fu
 precondition(captureWindowProof([target, target], pid: 7, focused: full, screen: full) == nil)
 precondition(captureWindowProof([target], pid: 8, focused: full, screen: full) == nil)
 precondition(captureWindowProof([target], pid: 7, focused: full, screen: box) == nil)
+var titled = target; titled[kCGWindowName as String] = "Selected public article"
+var otherTitle = cg(7, 12, full); otherTitle[kCGWindowName as String] = "Another window"
+precondition(captureWindowProof([titled, otherTitle], pid: 7, focused: full, screen: full, focusedTitle: "Selected public article")?.windowID == 10)
+precondition(captureWindowProof([otherTitle, titled], pid: 7, focused: full, screen: full, focusedTitle: "Selected public article")?.occlusions == [full])
+precondition(captureWindowProof([titled, titled], pid: 7, focused: full, screen: full, focusedTitle: "Selected public article") == nil)
+precondition(captureWindowProof([titled, otherTitle], pid: 7, focused: full, screen: full, focusedTitle: "") == nil)
+precondition(captureWindowProof([titled, otherTitle], pid: 7, focused: full, screen: full, focusedTitle: "Selected public article - Google Chrome", focusedTitleSuffix: " - Google Chrome")?.windowID == 10)
+var imitatedSuffix = otherTitle; imitatedSuffix[kCGWindowName as String] = "Selected public article - Google Chrome"
+precondition(captureWindowProof([titled, imitatedSuffix], pid: 7, focused: full, screen: full, focusedTitle: "Selected public article - Google Chrome", focusedTitleSuffix: " - Google Chrome") == nil)
+let beforeStack = captureWindowProof([overlay, titled], pid: 7, focused: full, screen: full)!.stack
+let swappedStack = captureWindowProof([cg(7, 99, box), titled], pid: 7, focused: full, screen: full)!.stack
+precondition(beforeStack != swappedStack)
+// Read alpha only, including the outward-rounded edge of the overlap. A
+// painted Dock outside the selected window is harmless; one alpha byte within
+// it, an opaque/no-alpha image or a scaled/mismatched buffer must reject.
+func alphaImage(_ values: [UInt8], alpha: CGImageAlphaInfo = .premultipliedFirst) -> CGImage {
+    let bytes: [UInt8] = values.flatMap { [UInt8(0), UInt8(0), UInt8(0), $0] }
+    let provider = CGDataProvider(data: Data(bytes) as CFData)!
+    return CGImage(width: 2, height: 2, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 8,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: alpha.rawValue).union(.byteOrder32Little),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+}
+let surface = CGRect(x: 0, y: 0, width: 2, height: 2), upper = CGRect(x: 0, y: 0, width: 2, height: 1)
+precondition(captureAlphaIsClear(alphaImage([0,0,255,255]), within: upper, surface: surface, scale: 1))
+precondition(!captureAlphaIsClear(alphaImage([0,1,0,0]), within: upper, surface: surface, scale: 1))
+precondition(!captureAlphaIsClear(alphaImage([0,0,255,0]), within: CGRect(x: 0, y: 0, width: 1, height: 1.01), surface: surface, scale: 1))
+precondition(!captureAlphaIsClear(alphaImage([0,0,0,0], alpha: .noneSkipFirst), within: upper, surface: surface, scale: 1))
+precondition(!captureAlphaIsClear(alphaImage([0,0,0,0]), within: upper, surface: surface, scale: 2))
 // A second Chrome profile/window below the active one still belongs to the
 // screenshot, even when it does not occlude the foreground DOM viewport.
 func bundle(_ pid: Int32) -> String? { pid == 7 || pid == 8 ? "com.google.Chrome" : pid == 9 ? "dev.mote.fixture" : nil }
@@ -165,6 +203,6 @@ precondition(visibleBrowserWindowCount([target, cg(8, 20, box, 0), cg(8, 21, CGR
 print("{\"ok\":true,\"generatedDescriptorsOnly\":true,\"scopeAndLeafAttributes\":true,\"editableHiddenClippedMaskedOccludedExcluded\":true,\"originalChildOrder\":true,\"wholeOcrRegionProof\":true,\"browserIdentityWithoutText\":true,\"ambiguousContextsRejected\":true}")
 `);
   const binary = join(directory, 'fixture');
-  execFileSync('swiftc', [join(root, 'native/StructuredCapture.swift'), main, '-module-cache-path', join(root, 'native/bin/swift-module-cache'), '-o', binary], { stdio: 'pipe' });
+  execFileSync('swiftc', [join(root, 'native/StructuredCapture.swift'), join(root, 'native/CaptureSystemOverlay.swift'), main, '-module-cache-path', join(root, 'native/bin/swift-module-cache'), '-o', binary], { stdio: 'pipe' });
   process.stdout.write(execFileSync(binary));
 } finally { await rm(directory, { recursive: true, force: true }); }

@@ -5,11 +5,11 @@
       "name": "image-note-title-body",
       "rule": {
         "formatVersion": 3,
-        "id": "com.xingin.xhs:9.50.0:image-note-title-body",
+        "id": "com.xingin.xhs:9.51.0:image-note-title-body",
         "version": "1",
         "platform": "android",
         "appId": "com.xingin.xhs",
-        "appVersion": "9.50.0",
+        "appVersion": "9.51.0",
         "kind": "image_note_title_body",
         "repeat": {
           "role": "android.widget.LinearLayout"
@@ -40,7 +40,7 @@
       },
       "snapshot": {
         "appId": "com.xingin.xhs",
-        "appVersion": "9.50.0",
+        "appVersion": "9.51.0",
         "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
         "observedAt": "2026-10-24T00:00:00.000Z",
         "nodes": [
@@ -1970,11 +1970,11 @@
       "name": "video-detail-title-01",
       "rule": {
         "formatVersion": 3,
-        "id": "tv.danmaku.bili:9.15.0:video-detail-title-01",
+        "id": "tv.danmaku.bili:9.16.1:video-detail-title-01",
         "version": "1",
         "platform": "android",
         "appId": "tv.danmaku.bili",
-        "appVersion": "9.15.0",
+        "appVersion": "9.16.1",
         "kind": "video_detail_title_01",
         "repeat": {
           "role": "android.view.ViewGroup"
@@ -2000,7 +2000,7 @@
       },
       "snapshot": {
         "appId": "tv.danmaku.bili",
-        "appVersion": "9.15.0",
+        "appVersion": "9.16.1",
         "activity": "com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity",
         "observedAt": "2026-10-24T00:00:00.000Z",
         "nodes": [
@@ -2064,11 +2064,11 @@
       "name": "video-detail-metadata-01",
       "rule": {
         "formatVersion": 3,
-        "id": "tv.danmaku.bili:9.15.0:video-detail-metadata-01",
+        "id": "tv.danmaku.bili:9.16.1:video-detail-metadata-01",
         "version": "1",
         "platform": "android",
         "appId": "tv.danmaku.bili",
-        "appVersion": "9.15.0",
+        "appVersion": "9.16.1",
         "kind": "video_detail_metadata_01",
         "repeat": {
           "role": "android.view.ViewGroup"
@@ -2121,7 +2121,7 @@
       },
       "snapshot": {
         "appId": "tv.danmaku.bili",
-        "appVersion": "9.15.0",
+        "appVersion": "9.16.1",
         "activity": "com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity",
         "observedAt": "2026-10-24T00:00:00.000Z",
         "nodes": [
@@ -2678,6 +2678,115 @@
         }
       ],
       "expectedSubtreeHash": "e0a5ef6306b06a5622c6c6a7a2b4c188747e6cf35581d87665eb7a53ac81e946"
+    },
+    {
+      "name": "image-note-visible-title-body",
+      "rule": {
+        "formatVersion": 3,
+        "id": "com.xingin.xhs:9.51.0:image-note-visible-title-body",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "appVersion": "9.51.0",
+        "kind": "image_note_title_body",
+        "repeat": {
+          "role": "android.widget.LinearLayout"
+        },
+        "repeatSubtreeHash": "d847b39aad712ee2f5f2120b0ba7e42e659de7ca83a0ebf2ce62152fab3b4644",
+        "fields": {
+          "note_visible_title": {
+            "select": {
+              "role": "android.widget.TextView"
+            },
+            "childPath": [
+              0
+            ],
+            "source": "text",
+            "cardinality": "one"
+          },
+          "note_visible_body": {
+            "select": {
+              "role": "android.widget.TextView"
+            },
+            "childPath": [
+              2
+            ],
+            "source": "text",
+            "cardinality": "one"
+          }
+        },
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity"
+      },
+      "snapshot": {
+        "appId": "com.xingin.xhs",
+        "appVersion": "9.51.0",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "observedAt": "2026-10-24T00:00:00.000Z",
+        "nodes": [
+          {
+            "id": "n0",
+            "resourceId": "",
+            "role": "android.widget.LinearLayout",
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "width": 100,
+              "height": 20
+            },
+            "text": ""
+          },
+          {
+            "id": "n1",
+            "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
+            "role": "android.widget.TextView",
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "width": 100,
+              "height": 20
+            },
+            "text": "Generated note_visible_title 1",
+            "parentId": "n0",
+            "childIndex": 0
+          },
+          {
+            "id": "n3",
+            "resourceId": "com.xingin.xhs:id/0_resource_name_obfuscated",
+            "role": "android.widget.TextView",
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "width": 100,
+              "height": 20
+            },
+            "text": "Generated note_visible_body 1",
+            "parentId": "n0",
+            "childIndex": 2
+          }
+        ],
+        "truncated": false
+      },
+      "expectedFields": [
+        {
+          "name": "note_visible_body",
+          "values": [
+            {
+              "text": "Generated note_visible_body 1",
+              "source": "text"
+            }
+          ]
+        },
+        {
+          "name": "note_visible_title",
+          "values": [
+            {
+              "text": "Generated note_visible_title 1",
+              "source": "text"
+            }
+          ]
+        }
+      ],
+      "expectedSubtreeHash": "d847b39aad712ee2f5f2120b0ba7e42e659de7ca83a0ebf2ce62152fab3b4644"
     }
   ]
 }

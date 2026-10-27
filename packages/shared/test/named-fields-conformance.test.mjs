@@ -86,3 +86,20 @@ test('named field limits apply per field and in total with codepoint ordering be
   assert.equal(page.truncated, true); assert.equal(page.status, 'partial');
   assert.equal(uiPageSchema.safeParse(page).success, true);
 });
+
+test('requested Android app upgrades retain exact version and reviewed subtree fences', () => {
+  for (const [appId, currentVersion, previousVersion] of [['com.xingin.xhs', '9.51.0', '9.50.0'], ['tv.danmaku.bili', '9.16.1', '9.15.0']]) {
+    const catalog = builtin.filter(rule => rule.appId === appId);
+    assert.ok(catalog.length > 0);
+    assert.ok(catalog.every(rule => rule.appVersion === currentVersion));
+    for (const fixture of fixtures.filter(value => value.snapshot.appId === appId)) {
+      const installedRule = catalog.find(rule => rule.id === fixture.rule.id);
+      assert.deepEqual(installedRule, fixture.rule);
+      assert.ok(installedRule.repeatSubtreeHash, 'rebinding never removes a subtree guard');
+      assert.deepEqual(extractUiPages({...fixture.snapshot, appVersion: previousVersion}, uiRulesSchema.parse([installedRule]), 'android'), []);
+      const changed = structuredClone(fixture.snapshot);
+      changed.nodes.at(-1).role = 'dev.generated.ChangedRole';
+      assert.deepEqual(extractUiPages(changed, uiRulesSchema.parse([installedRule]), 'android'), []);
+    }
+  }
+});
