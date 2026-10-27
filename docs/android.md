@@ -91,7 +91,7 @@ MOTE_ANDROID_KEY_PASSWORD
 
 四项齐备时 `release` 和 `development` 都使用指定证书；普通本机 debug 继续使用本机 debug keystore。缺少配置时 `assembleRelease` 拒绝产出未签名发布包，不能把另一台机器新生成的 debug 证书当成升级凭据。构建时需同时包含仓库内的固定发布公钥；APK 签名和发布清单签名是两层独立检查。
 
-只需要真机验证用的同签名 APK 时，可以在签名环境允许的分支上手动运行 `Release Android`，选择 `profile=dev`、`publish=false`。它保留构建、签名、验证与私有构建产物，跳过公开发布；不会放宽 `release` 环境的分支保护。默认手动发布及版本标签触发的发布行为保持原样。
+只需要真机验证用的同签名 APK 时，可以在签名环境允许的分支上手动运行 `Release Android`，选择 `profile=dev`、`publish=false`。它保留构建、签名、验证与构建产物，跳过公开发布；不会放宽 `release` 环境的分支保护。默认手动发布及版本标签触发的发布行为保持原样。
 
 ## 从本机开始，以及可选的节点连接
 
