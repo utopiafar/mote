@@ -276,3 +276,28 @@ for(const explicitRecipe of [false,true])test(`public source and Memory job API 
  assert.equal((await api('POST','/api/memory-jobs/'+done.id+'/retry')).statusCode,202);await node.memoryPipeline.run(done.id);assert.equal(calls.length,before,'completed API work never repeats generation or review after restart');
  assert.equal(node.memories.list({limit:100}).length,40);
 });
+
+test('owner retry after incomplete assessment preserves successful sibling and phase receipts across restart',async t=>{
+ const texts=['Generated completed sibling. '+'.'.repeat(8000),'Generated incomplete sibling. '+'.'.repeat(8000)],f=await fixture(t,texts);
+ f.setGenerate(async input=>{
+  const member=work(input).members[0],draft=result(input,[{member,quote:member.id===f.ids[0]?'Generated completed sibling.':'Generated incomplete sibling.'}]);
+  if(member.id===f.ids[1]){const value=JSON.parse(draft.answer);value.coverage[0].state='incomplete';value.coverage[0].reason='Generated target was not fully assessed';draft.answer=JSON.stringify(value);}
+  return draft;
+ });
+ const job=f.create(),blocked=await f.pipeline.run(job.id);
+ assert.equal(blocked.completedBatches,1);assert.equal(blocked.failedBatches,1);assert.equal(blocked.memoryCount,1);
+ assert.equal(f.extracts.length,2);assert.equal(f.reviews.length,2);
+ const phases=()=>f.store.db.prepare('SELECT step_id,output_hash FROM memory_phase_outputs ORDER BY step_id').all();
+ const before=phases(),completed=blocked.batches.find(batch=>batch.status==='completed')!;
+ assert.equal(before.length,4);
+ const failed=blocked.batches.find(batch=>batch.status==='failed')!;
+ assert.equal((f.extracts[1].taskContext!.memoryWork as Work&{history:unknown[]}).history.length,0);
+ assert.equal(failed.evaluation!.incompleteTargets,1);
+ await f.restart();
+ const retried=await f.pipeline.retry(job.id);
+ assert.equal(retried.errorCode,'memory_evaluation_incomplete');assert.equal(retried.completedBatches,1);assert.equal(retried.failedBatches,1);
+ assert.equal(f.extracts.length,2,'retry does not issue another extraction');assert.equal(f.reviews.length,2,'retry does not issue another review');
+ assert.deepEqual(phases(),before,'all successful phase outputs survive restart and retry');
+ assert.deepEqual(retried.batches.find(batch=>batch.id===completed.id)!.memoryIds,completed.memoryIds);
+ assert.equal(f.memories.list().length,1,'failed batch remains unpublished');
+});
