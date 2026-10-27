@@ -9,6 +9,10 @@ on:
         type: choice
         options: [dev, prod]
         default: dev
+      publish:
+        description: 'Publish after signing (disable for an artifact-only device validation build)'
+        type: boolean
+        default: true
 env:
   MOTE_BUILD_PROFILE: ${{ startsWith(github.ref, 'refs/tags/') && 'prod' || inputs.profile || 'dev' }}
   MOTE_ANDROID_DEV_RUN: ${{ github.run_number }}
@@ -86,7 +90,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: { name: "${{ needs.version.outputs.build_id }}", path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }
   publish:
-    if: needs.version.outputs.profile == 'prod'
+    if: needs.version.outputs.profile == 'prod' && (github.event_name != 'workflow_dispatch' || inputs.publish)
     needs: [version, package]
     runs-on: ubuntu-24.04
     environment: release
@@ -104,7 +108,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/release/publish.mjs android
   publish-dev:
-    if: needs.version.outputs.profile == 'dev' && github.ref == 'refs/heads/main'
+    if: needs.version.outputs.profile == 'dev' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish)
     needs: [version, package]
     runs-on: ubuntu-24.04
     environment: release
