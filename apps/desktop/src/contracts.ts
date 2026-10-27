@@ -98,8 +98,10 @@ export interface DesktopApi {
   syncHistoryContent(runId: string, key: string, chunkOffset?: number, includeImage?:boolean): Promise<import('./sync-content').SyncContent>;
   syncHistoryPending(): Promise<{source:import('./sync-history').SyncSource;pending:number;review:number;blocked:number;retrying:number}[]>;
   ask(command: import('./ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string; durationMs?: number}): Promise<unknown>;
-  permissionStatus(): Promise<{screen: string; accessibility: string; calendar: string; appPath?: string; bundleId?: string}>;
-  permissionSettings(kind: 'screen' | 'accessibility' | 'calendar' | 'files'): Promise<void>;
+  permissionStatus(): Promise<import('./permission-types').PermissionStatus>;
+  permissionSettings(kind: import('./permission-types').PermissionKind): Promise<void>;
+  requestPermission(kind: import('./permission-types').PermissionKind): Promise<void>;
+  restartForPermissions(): Promise<void>;
   storageStatistics(): Promise<import('@mote/shared/storage-statistics').StorageStatistics>;
   language(): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
   setLanguage(preference: import('@mote/shared/i18n').LanguagePreference): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;

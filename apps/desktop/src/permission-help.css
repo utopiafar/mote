@@ -1,0 +1,16 @@
+:root { font-family: var(--mote-font); font-size: var(--mote-font-support); color: var(--mote-ink); background: var(--mote-surface); }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 15px 18px; user-select: none; }
+header { display: flex; align-items: center; justify-content: space-between; -webkit-app-region: drag; }
+header strong { font-size: 13px; }
+button { font: inherit; cursor: pointer; color: inherit; -webkit-app-region: no-drag; }
+#permission-help-close { border: 0; background: transparent; font-size: 20px; line-height: 20px; border-radius: 4px; }
+p { margin: 10px 0; line-height: 1.5; }
+#permission-help-app { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px dashed var(--mote-control-border); border-radius: var(--mote-radius-control); background: var(--mote-tint); cursor: grab; -webkit-user-drag: element; }
+#permission-help-app:active { cursor: grabbing; }
+#permission-help-app strong { flex: 1; overflow-wrap: anywhere; }
+#permission-help-icon { width: 36px; height: 36px; }
+#permission-help-existing, #permission-help-note { color: var(--mote-muted); font-size: 11px; }
+#permission-help-note { margin-bottom: 6px; }
+#permission-help-reveal { padding: 2px 0; border: 0; background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+button:focus-visible { outline: 2px solid var(--mote-focus-ring); outline-offset: 3px; }

@@ -4,6 +4,7 @@ import {createContentLibraryUi} from './content-library-ui';
 import {createSyncHistoryUi} from './sync-history-ui';
 import {createDesktopPresentation} from './presentation';
 import {createWorkActivityUi} from './work-activity-ui';
+import {createPermissionsUi} from './permissions-ui';
 import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation, renderAskScope } from './ask-presentation';
 import {prependConversationTurns} from './ask-conversation';
@@ -43,8 +44,9 @@ const libraryUi=createContentLibraryUi(desktopApi,()=>memoryTopicsUi.open());
 function refreshContent():Promise<void>{return libraryUi.refresh();}
 const syncHistoryUi = createSyncHistoryUi(desktopApi, page => showPage(page));
 const workActivityUi=createWorkActivityUi(desktopApi,page=>showPage(page));
+const permissionsUi=createPermissionsUi(desktopApi);
 const presentation=createDesktopPresentation({root:document.body,sidebar:document.querySelector<HTMLElement>('.sidebar')!,toolbar:document.querySelector<HTMLElement>('.workspace-toolbar')!,main:byId('main-content'),navigate:page=>{showPage(page);}},desktopAppearance);
-window.addEventListener('beforeunload',()=>{workActivityUi.dispose();presentation.dispose();},{once:true});
+window.addEventListener('beforeunload',()=>{workActivityUi.dispose();permissionsUi.dispose();presentation.dispose();},{once:true});
 let setupReviewed = false;
 try { setupReviewed = localStorage.getItem('mote-desktop-collection-reviewed') === '1'; } catch { /* Collection remains usable without local storage. */ }
 
@@ -68,6 +70,7 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false): bool
   }
   if (currentPage === 'uploads' && page !== 'uploads') syncHistoryUi.hide();
   if (currentPage === 'work' && page !== 'work') workActivityUi.hide();
+  if (currentPage === 'permissions' && page !== 'permissions') permissionsUi.hide();
   currentPage = page;
   if(initialized) renderOperations(currentStatus.operations??[]);
   if (page === 'uploads') syncHistoryUi.show();
@@ -91,7 +94,7 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false): bool
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
   if (page === 'compression') { byId<HTMLInputElement>('compression-quality').value=String(currentStatus.config.jpegQuality); const side=byId<HTMLSelectElement>('compression-side');if(!Array.from(side.options).some(o=>o.value===String(currentStatus.config.captureMaxSide)))side.add(new Option(String(currentStatus.config.captureMaxSide),String(currentStatus.config.captureMaxSide)));side.value=String(currentStatus.config.captureMaxSide); void refreshCompression(); }
   if (page === 'ask') void refreshAsk();
-  if (page === 'permissions') void refreshPermissions();
+  if (page === 'permissions') permissionsUi.show();
   if (page === 'privacy') void appCaptureUi.refreshApplications();
   if (page === 'statistics') void loadStorageStatistics();
   if (page === 'records') { void loadRecords(); void refreshContent(); }
@@ -1105,22 +1108,6 @@ async function loadStorageStatistics(): Promise<void> {
 }
 byId('storage-refresh').addEventListener('click',()=>void loadStorageStatistics());
 
-async function refreshPermissions(): Promise<void> {
-  try {
-    const status = await desktopApi.permissionStatus();
-    for (const kind of ['screen', 'accessibility', 'calendar'] as const) {
-      const element = byId('permission-' + kind), granted = status[kind] === 'granted';
-      const unknown = ['unknown', 'unsupported'].includes(status[kind]);
-      element.className = 'permission-badge ' + (granted ? 'granted' : unknown ? 'unknown' : 'denied');
-      element.textContent = (granted ? '✓ ' : unknown ? '? ' : '! ') + (({granted: moteText("已授权"), denied: moteText("未授权"), 'not-determined': moteText("尚未授权"), unsupported: moteText("当前平台不支持"), unknown: moteText("无法确认，请检查系统设置")} as Record<string,string>)[status[kind]] ?? status[kind]);
-    }
-    setText('permission-identity', `${status.bundleId ?? 'unknown'}\n${status.appPath ?? ''}`);
-
-  } catch { feedback(moteText("权限状态读取失败，请重试。")); }
-}
-byId('permissions-refresh').addEventListener('click', () => void refreshPermissions());
-window.addEventListener('focus', () => { if (currentPage === 'permissions') void refreshPermissions(); });
-for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-permission]'))) button.addEventListener('click', () => void perform(() => desktopApi.permissionSettings(button.dataset.permission as 'screen' | 'accessibility' | 'calendar' | 'files')));
 byId('notification-collection').addEventListener('change', () => {
   if (!byId<HTMLInputElement>('notification-collection').checked) return;
   void desktopApi.permissionStatus().then(status => {

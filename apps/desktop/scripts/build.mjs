@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 await mkdir('dist', { recursive: true });
 await build({entryPoints:['src/ui-bootstrap.ts'],outfile:'dist/ui-bundle.js',bundle:true,platform:'browser',target:'chrome130',format:'iife'});
-for (const file of ['appearance-init.js', 'index.html', 'styles.css', 'design-tokens.css', 'art-direction.css']) await copyFile(`src/${file}`, `dist/${file}`);
+for (const file of ['appearance-init.js', 'index.html', 'styles.css', 'design-tokens.css', 'art-direction.css', 'permission-help.html', 'permission-help.css']) await copyFile(`src/${file}`, `dist/${file}`);
 await mkdir('native/bin', { recursive: true });
 if (process.platform === 'darwin') {
   const result = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteHelper.swift', 'native/WindowIdentity.swift', 'native/StructuredCapture.swift', 'native/CaptureSystemOverlay.swift', '-module-cache-path', 'native/bin/swift-module-cache', '-o', 'native/bin/mote-helper'], { stdio: 'inherit' });

@@ -13,6 +13,7 @@
     "test:fixture": "npm run build && electron scripts/fixture-smoke.cjs",
     "test:profiles": "npm run build && node scripts/test-profiles.mjs",
     "test:ui": "npm run build && electron scripts/ui-smoke.cjs && electron scripts/sync-history-smoke.cjs",
+    "test:permissions": "npm run build && electron scripts/permissions-smoke.cjs",
     "package": "npm run build && electron-builder --dir",
     "test:central": "npm run build && electron scripts/central-smoke.cjs"
   },

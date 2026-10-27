@@ -16,6 +16,24 @@ struct MoteHelper {
 static func main() {
 do {
     switch CommandLine.arguments.dropFirst().first ?? "" {
+    case "permission-settings-window":
+        // Window Server bounds require neither screen capture nor Accessibility trust.
+        // Only return System Settings geometry; never window titles or captured content.
+        guard let settings = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.systempreferences").first,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == settings.processIdentifier else {
+            try output(["frontmost": false]); break
+        }
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        var result: [String: Any] = ["frontmost": true]
+        for window in windows {
+            guard (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == settings.processIdentifier,
+                  (window[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                  let rawBounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: rawBounds as CFDictionary), bounds.width >= 400, bounds.height >= 300 else { continue }
+            result["bounds"] = ["x": bounds.origin.x, "y": bounds.origin.y, "width": bounds.width, "height": bounds.height]
+            break
+        }
+        try output(result)
     case "installed-apps":
         // Explicit settings picker only. Return app identities, never windows or screen content.
         let manager = FileManager.default

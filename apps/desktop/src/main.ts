@@ -13,6 +13,9 @@ import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
+import { CalendarPermissionError } from './source-calendar';
+import { PermissionGuide } from './permission-guide';
+import { permissionKind, type SettingsWindow } from './permission-types';
 import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences, Tray } from 'electron';
@@ -201,6 +204,12 @@ else {
     pendingNoteStatus = () => ({ count: noteDrafts.hasPrepared() && !queue.contains(noteDrafts.get().id) ? 1 : 0, unbound: queue.binding.unbound() && (!localSources || localSources.nodeBinding.unbound()) && (!noteDrafts.hasPrepared() || noteDrafts.hasUnboundPrepared()), baseRecords: queue.stats().depth + (localSources?.pendingStats().pendingRecords ?? 0) });
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
     const bundlePath = app.isPackaged ? await realpath(resolve(process.resourcesPath, '../..')) : undefined;
+    const permissionGuide = new PermissionGuide({
+      appPath: bundlePath, owner: () => window,
+      settingsWindow: () => runHelper(helperPath, 'permission-settings-window') as Promise<SettingsWindow>,
+      granted: kind => process.platform === 'darwin' && (kind === 'screen' ? systemPreferences.getMediaAccessStatus('screen') === 'granted' : kind === 'accessibility' ? systemPreferences.isTrustedAccessibilityClient(false) : false),
+    });
+    app.once('before-quit', () => permissionGuide.dispose());
     const updateDirectory = join(dataDirectory, 'updates');
     const updateSession = session.fromPartition('mote-public-updates', { cache: false });
     updater = new DesktopUpdater({ directory: updateDirectory, helper: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'), bundlePath, currentVersion: app.getVersion(), arch: process.arch === 'arm64' ? 'arm64' : 'x64', profile: profile.name }, createUpdateNetwork(createChromiumUpdateFetch(options => net.request({ ...options, session: updateSession }))));
@@ -623,19 +632,34 @@ else {
     });
     handle('mote:permission-status', async () => ({
       appPath: bundlePath ?? app.getPath('exe'),
+      canDrag: process.platform === 'darwin' && Boolean(bundlePath),
       bundleId: bundlePath ? await promisify(execFile)('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(bundlePath, 'Contents', 'Info.plist')]).then(result => result.stdout.trim()).catch(() => 'unknown') : 'unpackaged',
       screen: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
       accessibility: process.platform === 'darwin' ? (systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied') : 'unsupported',
       calendar: process.platform === 'darwin' ? await runHelper(helperPath, 'calendar-status').then(value => (value as {status: string}).status).catch(() => 'unknown') : 'unsupported',
     }));
-    handle('mote:permission-settings', async kind => {
-      const panes: Record<string, string> = { screen: 'Privacy_ScreenCapture', accessibility: 'Privacy_Accessibility', calendar: 'Privacy_Calendars', files: 'Privacy_AllFiles' };
-      if (typeof kind !== 'string' || !panes[kind]) throw new Error('Unknown permission');
+    let permissionSettingsGeneration = 0;
+    const openPermissionSettings = async (raw: unknown) => {
+      const kind = permissionKind(raw);
+      const generation = ++permissionSettingsGeneration;
+      const panes = { screen: 'Privacy_ScreenCapture', accessibility: 'Privacy_Accessibility', calendar: 'Privacy_Calendars', files: 'Privacy_AllFiles' };
+      permissionGuide.close();
       if (process.platform === 'darwin') {
-        if (kind === 'accessibility') systemPreferences.isTrustedAccessibilityClient(true);
         await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?' + panes[kind]);
+        if (kind !== 'calendar' && generation === permissionSettingsGeneration) await permissionGuide.open(kind);
       }
+    };
+    handle('mote:permission-settings', openPermissionSettings);
+    handle('mote:permission-request', async raw => {
+      const kind = permissionKind(raw);
+      if (kind === 'calendar' && process.platform === 'darwin') {
+        const generation = ++permissionSettingsGeneration;
+        permissionGuide.close();
+        try { await localSources!.authorizeCalendar(); }
+        catch (error) { if (!(error instanceof CalendarPermissionError)) throw error; if (generation === permissionSettingsGeneration) await openPermissionSettings(kind); }
+      } else await openPermissionSettings(kind);
     });
+    handle('mote:permission-restart', () => { app.relaunch(); app.quit(); });
     handle('mote:permissions', async () => { if (process.platform === 'darwin') { await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
     handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
     handle('mote:export-metadata', async () => {

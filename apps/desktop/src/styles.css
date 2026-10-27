@@ -130,6 +130,22 @@ details.disclosure>.hint:last-child { margin-bottom: 0; }
 .central-status-actions { flex: 0 0 auto; }
 .central-status.syncing .central-status-icon .icon { animation: pulse-connection 1.5s ease-in-out infinite; }
 #permission-identity { white-space: pre-wrap; overflow-wrap: anywhere; }
+.permission-list.panel { margin-top: 12px; padding: 0; }
+.permission-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 22px 0; border-bottom: 1px solid var(--mote-divider); }
+.permission-item:first-child { padding-top: 8px; }
+.permission-copy { min-width: 0; max-width: 620px; }
+.permission-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.permission-heading h2 { margin: 0; }
+.permission-copy p { margin: 9px 0 0; }
+.permission-copy .helper { font-size: var(--mote-font-support); }
+.permission-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; flex: 0 0 auto; }
+.permission-actions button { margin: 0; }
+.permission-recovery { margin-top: 12px; font-size: var(--mote-font-support); }
+.permission-recovery summary, .permission-diagnostics summary { cursor: pointer; color: var(--mote-muted); }
+.permission-recovery button { margin-top: 10px; }
+.permission-diagnostics { margin-top: 24px; }
+#permissions-error:empty { display: none; }
+@media (max-width: 760px) { .permission-item { flex-direction: column; gap: 12px; } .permission-actions { flex-direction: row; flex-wrap: wrap; } }
 .ask-layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 20px; }
 #ask-messages { min-width: 0; }
 .ask-layout>.panel { min-width: 0; }
