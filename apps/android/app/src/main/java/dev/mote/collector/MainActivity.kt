@@ -475,10 +475,10 @@ class MainActivity : MoteActivity() {
         section(MoteI18n.text("应用"))
         menuGroup {
             menu(MoteI18n.text("首页"), MoteI18n.text("采集状态与最近内容"), "overview") { showPage(Page.OVERVIEW) }
-            menu(if (MoteI18n.language() == "en") "Language" else "界面语言", "中文 / English", "language") {
-                val choices = arrayOf(if (MoteI18n.language() == "en") "System default" else "跟随系统", "中文", "English")
-                val values = listOf("system", "zh-CN", "en")
-                MoteDialogBuilder(this).setTitle(if (MoteI18n.language() == "en") "Language" else "界面语言")
+            menu(MoteI18n.text("界面语言"), "中文 / English / 日本語 / Français / Deutsch / Español / Русский", "language") {
+                val choices = arrayOf(MoteI18n.text("跟随系统"), "中文", "English", "日本語", "Français", "Deutsch", "Español", "Русский")
+                val values = listOf("system", "zh-CN", "en", "ja", "fr", "de", "es", "ru")
+                MoteDialogBuilder(this).setTitle(MoteI18n.text("界面语言"))
                     .setSingleChoiceItems(choices, values.indexOf(MoteI18n.preference())) { dialog, index ->
                         MoteI18n.select(this, values[index]); dialog.dismiss(); recreate()
                     }.setNegativeButton(android.R.string.cancel, null).show()

@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Mote コンテキストコレクター</string>
+    <string name="accessibility_name">Mote 画面キャプチャ</string>
+    <string name="accessibility_description">「開始」をタップした後だけ収集します。プライバシールール適用のためアプリ識別情報を読み取り、スクリーンショットを取得します。ページ収集を明示的に有効にしてルールを設定した場合のみ、パスワード・入力欄・マスク領域を除く表示中の UI テキストも読み取ります。タップ・スクロール・ページ内指示の実行は一切行いません。記録はプライベートなキューに保存され、設定した中央ノードにアップロードされます。アプリまたは通知からいつでも停止できます。</string>
+</resources>

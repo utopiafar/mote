@@ -17,8 +17,8 @@ export function selectScopes(paths) {
   const add = (...names) => names.forEach(name => selected.add(name));
   for (const path of paths) {
     if (documentation(path)) continue;
-    if (/^packages\/shared\/(?:src\/i18n(?:-en)?\.ts|test\/i18n\.test\.mjs)$/.test(path)
-      || path === 'apps/android/app/src/main/assets/i18n-en.json' || /^scripts\/(?:check|sync)-i18n\.mjs$/.test(path)) { add('i18n'); continue; }
+    if (/^packages\/shared\/(?:src\/i18n(?:-[a-z]{2})?\.ts|test\/i18n\.test\.mjs)$/.test(path)
+      || /^apps\/android\/app\/src\/main\/assets\/i18n-[a-z]{2}\.json$/.test(path) || /^scripts\/(?:check|sync)-i18n\.mjs$/.test(path)) { add('i18n'); continue; }
     if (path.startsWith('apps/web/')) { add('web', 'i18n'); continue; }
     if (path.startsWith('apps/server/')) { add('server', 'i18n'); continue; }
     if (path.startsWith('packages/agent/')) { add('agent', 'server'); broadServer = true; continue; }

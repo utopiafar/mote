@@ -9,6 +9,7 @@ import {materialRequirementsSchema} from './material-readiness.js';
 import type {ModelConfiguration} from './model-configuration.js';
 import type {UsageLedger} from './usage.js';
 import {StoreError} from './store.js';
+import {languagePreference} from '@mote/shared/i18n';
 import {memoryWorkCoverageFor,memoryWorkCapacitySchema,memoryWorkInstruction,readMemoryWorkCoverage,type MemoryWorkMember} from './memory-work-contract.js';
 import {claimSchema,MemoryOutputValidationError,type MemoryStore,type EvidenceRange} from './memory.js';
 import {memoryProfile} from './memory-profiles.js';
@@ -136,12 +137,13 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
    return output;
   };
   const host={operationId:input.execution?.operationId??'conversation:'+material.id,jobId:input.execution?.jobId,requestId:randomUUID()};
+  const preferredLanguage=languagePreference(input.config.language);
   const meter=options.usage.start(selected.provider,selected.model,'coding-conversation-understanding',{moduleId:'memories',agentId:'coding-conversation-understanding',skillId:null,...host});
   try{
    const result=await options.query({executionLane:'background',responseMode:'memory-extraction',processingMaterialInputs:materialInputs,modelProfileId:selected.profileId,modelOverride:selected.model,traceContext:host,
     contextTime:typeof input.config.contextTime==='string'?input.config.contextTime:undefined,
     timeZone:typeof input.config.timeZone==='string'?input.config.timeZone:undefined,
-    language:input.config.language==='en'?'en':input.config.language==='zh-CN'?'zh-CN':undefined,
+    language:preferredLanguage==='system'?undefined:preferredLanguage,
     taskContext:work?{turns:[],memoryWork:{...work,instruction:conversationMemoryInstruction(work.instruction)}}:undefined,
     evidenceIds:scope.records.map(record=>record.id),evidenceRanges:scope.ranges,
     question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+responsePrompt+(work?'\nThe host memoryWork contract supersedes the legacy eight-candidate ceiling. '+conversationMemoryInstruction(memoryWorkInstruction(work.members,work.maxCandidates,work.workContract)):''),

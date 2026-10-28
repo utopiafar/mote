@@ -29,6 +29,13 @@ app.on('browser-window-created',(_event,window)=>{
  await js(`document.querySelector('[data-nav="settings"]').click()`);await pause(150);
  writeFileSync(join(output,'english.png'),(await window.webContents.capturePage()).toPNG());
  assert.equal((await js('window.mote.status()')).running,false);
+ await js(`window.confirm=()=>true;const s=document.querySelector('#language');s.value='fr';s.dispatchEvent(new Event('change',{bubbles:true}));`);
+ await until(()=>js(`document.documentElement.lang==='fr'`).catch(()=>false),'French reload');
+ assert.equal(JSON.parse(readFileSync(join(profile,'language.json'),'utf8')),'fr');
+ await js(`document.querySelector('[data-nav="settings"]').click()`);await pause(180);
+ assert.equal(await js(`document.querySelector('#language')?.previousElementSibling?.textContent`),'Langue de l\'interface');
+ const frResidual=await js(`Array.from(document.querySelectorAll('[data-page="settings"] *')).filter(e=>!e.children.length&&e.getClientRects().length&&/\\p{Script=Han}/u.test(e.textContent)&&e.textContent.trim()!=='中文').map(e=>e.textContent)`);
+ assert.deepEqual(frResidual,[],'settings French residuals');
  await js(`window.confirm=()=>true;const s=document.querySelector('#language');s.value='zh-CN';s.dispatchEvent(new Event('change',{bubbles:true}));`);
  await until(()=>js(`document.documentElement.lang==='zh-CN'`).catch(()=>false),'Chinese reload');
  assert.equal(JSON.parse(readFileSync(join(profile,'language.json'),'utf8')),'zh-CN');

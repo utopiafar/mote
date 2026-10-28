@@ -14,7 +14,7 @@ import {bundledSkills,skillContent} from './skills.js';
 import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './model-runtime.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
-export type ImportAgentInput={language?:"zh-CN"|"en";workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
+export type ImportAgentInput={language?:import('@mote/shared/i18n').Locale;workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
 export type ImportAgentResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
 export type ImportAgentObserver=(notification:HarnessNotification)=>void;
 export type ImportAgentLaunch=(input:{workspace:string;runtimeRoot:string})=>Promise<{dshBin:string}>;

@@ -8833,5 +8833,9 @@ export const english: Readonly<Record<string, string>> = {
   "请为下方路径中的当前应用授权，避免选中其他版本。": "Grant access to the current app at the path below to avoid selecting another version.",
   "完整磁盘访问": "Full Disk Access",
   "在访达中显示": "Show in Finder",
-  "正在打开…": "Opening…"
+  "正在打开…": "Opening…",
+  "切换语言会重新加载页面，请先保存未提交的修改。继续？": "Changing the language reloads this page. Save pending edits first. Continue?",
+  "无法保存语言偏好，请检查浏览器存储。": "Could not save language preference. Check browser storage.",
+  "切换语言会重新加载界面，请先保存未提交的设置。继续？": "Changing the language reloads this window. Save pending settings first. Continue?",
+  "语言保存失败，请重试。": "Could not save the language. Please retry."
 };

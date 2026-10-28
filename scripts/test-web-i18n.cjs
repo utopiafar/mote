@@ -13,10 +13,10 @@ async function until(fn,label){const deadline=Date.now()+20000;while(Date.now()<
 async function run(){
  await app.whenReady();
  const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
- const base='http://127.0.0.1:'+port,owner=randomBytes(32).toString('hex'),envFile=join(root,'mote.env');
- writeFileSync(envFile,`MOTE_PROFILE=test\nMOTE_HOST=127.0.0.1\nMOTE_PORT=${port}\nMOTE_DATA_DIR=./data\nMOTE_TOKEN=${owner}\n`,{mode:0o600});
+ const base='http://127.0.0.1:'+port,owner=randomBytes(32).toString('hex'),configFile=join(root,'mote.yaml');
+ writeFileSync(configFile,`version: 1\nrevision: 0\nserver:\n  profile: test\n  host: 127.0.0.1\n  port: ${port}\n  token: ${owner}\nstorage:\n  dataDir: ./data\n`,{mode:0o600});
  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_')));
- server=spawn('node',[join(repo,'apps/server/dist/index.js')],{env:{...env,MOTE_ENV_FILE:envFile},stdio:'ignore'});
+ server=spawn('node',[join(repo,'apps/server/dist/index.js')],{env:{...env,MOTE_CONFIG_FILE:configFile},stdio:'ignore'});
  await until(async()=>{try{return(await fetch(base+'/api/health')).ok;}catch{return false;}},'fixture server');
  const request=(path,token,body)=>fetch(base+path,{method:body?'POST':'GET',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
  const invite=await(await request('/api/connections/invitations',owner,{label:'Generated phone',serverUrl:base})).json();
@@ -26,25 +26,41 @@ async function run(){
  const click=async text=>until(()=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)return false;b.click();return true;})()`),'button '+text);
  const input=async value=>js(`(()=>{const e=document.querySelector('[aria-label="管理访问令牌"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
  async function shot(name){await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');writeFileSync(join(output,name+'.png'),(await wc.capturePage()).toPNG());assert.ok(await js('document.documentElement.scrollWidth<=innerWidth'),'no horizontal overflow: '+name+' '+JSON.stringify(await js(`Array.from(document.querySelectorAll('body *')).filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>({tag:e.tagName,cls:e.className,width:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right})).slice(0,12)`)));}
- await window.loadURL(base);
+ await window.loadURL(base+'#/preferences');
+ await click('登录 Mote');
+ await until(()=>js(`!!document.querySelector('[aria-label="管理访问令牌"]')`),'token input');
+ await input(owner);
+ await click('登录并继续');
+ await until(()=>js(`!!sessionStorage.getItem('mote.connection')||!!localStorage.getItem('mote.connection')`),'session established');
+ await window.loadURL(base+'#/preferences');
  await until(()=>js(`!!document.querySelector('.language-selector select')`),'language selector');
  await js(`window.confirm=()=>true;const e=document.querySelector('.language-selector select');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,'en');e.dispatchEvent(new Event('change',{bubbles:true}));`);
  await until(()=>js(`document.documentElement.lang==='en'`).catch(()=>false),'English reload');
  assert.equal(await js(`localStorage.getItem('mote.language')`),'en');
  assert.equal(await js(`document.documentElement.dir`),'ltr');
- await shot('anonymous-english');
- await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token:owner}))});location.reload();`);
- await until(()=>js(`!!document.querySelector('.archive-page,.welcome,.home-page')`).catch(()=>false),'authenticated page');
+ await shot('english');
+ await js(`location.reload()`);
+ await until(()=>js(`!!document.querySelector('.archive-page,.welcome,.home-page,.settings-destinations')`).catch(()=>false),'authenticated page');
  await delay(500);
  const titles=await js(`Array.from(document.querySelectorAll('.sidebar button')).filter(e=>e.getClientRects().length).map(e=>e.textContent.trim())`);
  for(const label of titles){
   if(/sign out|log out/i.test(label)||!label)continue;
   await js(`(()=>{const b=Array.from(document.querySelectorAll('.sidebar button')).find(e=>e.textContent.trim()===${JSON.stringify(label)});b?.click()})()`);await delay(300);
   const text=await js(`document.body.innerText`);
-  assert.ok(!/[\u4e00-\u9fff]/u.test(text.replaceAll('中文','').replaceAll('Generated phone','')),label+' untranslated text: '+text.match(/[\u4e00-\u9fff][^\n]*/gu));
+  // Native language names (中文, 日本語) intentionally stay untranslated in the selector.
+  const visible=value=>value.replaceAll('中文','').replaceAll('日本語','').replaceAll('Generated phone','');
+  assert.ok(!/[\u4e00-\u9fff]/u.test(visible(text)),label+' untranslated text: '+text.match(/[\u4e00-\u9fff][^\n]*/gu));
  }
  await shot('authenticated-english');
  window.setSize(420,900);await shot('mobile-english');
+ window.setSize(1360,1000);
+ await js(`location.hash='#/preferences'`).catch(()=>{});
+ await until(()=>js(`!!document.querySelector('.language-selector select')`).catch(()=>false),'language selector after settings');
+ await js(`window.confirm=()=>true;const e=document.querySelector('.language-selector select');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,'fr');e.dispatchEvent(new Event('change',{bubbles:true}));`);
+ await until(()=>js(`document.documentElement.lang==='fr' && !!document.querySelector('.language-selector select')`).catch(()=>false),'French reload');
+ assert.equal(await js(`localStorage.getItem('mote.language')`),'fr');
+ const frenchBody=await js(`document.body.innerText`);
+ assert.ok(!/[\u4e00-\u9fff]/u.test(frenchBody.replaceAll('中文','').replaceAll('日本語','').replaceAll('Generated phone','')),'untranslated French text');
  await js(`window.confirm=()=>true;const e=document.querySelector('.language-selector select');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,'zh-CN');e.dispatchEvent(new Event('change',{bubbles:true}));`);
  await until(()=>js(`document.documentElement.lang==='zh-CN'`).catch(()=>false),'Chinese reload');
  assert.equal(await js(`localStorage.getItem('mote.language')`),'zh-CN');

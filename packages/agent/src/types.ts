@@ -140,7 +140,7 @@ export interface QueryInput {
   executionLane?:'interactive'|'background';
   /** Pure host validation before the session closes. Return only trusted repair guidance; never commit output here. */
   validateOutput?: (answer: AgentAnswer) => Promise<{code:string;feedback:string}|undefined> | {code:string;feedback:string}|undefined;
-  language?: "zh-CN" | "en";
+  language?: import('@mote/shared/i18n').Locale;
   /** Host-selected saved connection; never interpreted as prompt content. */
   modelProfileId?: string;
   modelOverride?: string;

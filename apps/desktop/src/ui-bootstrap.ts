@@ -13,10 +13,9 @@ async function start() {
   select.value = language.preference;
   select.addEventListener('change', async () => {
     const next: LanguagePreference = languagePreference(select.value);
-    const chinese = language.locale === 'zh-CN';
-    if (!window.confirm(chinese ? '切换语言会重新加载界面，请先保存未提交的设置。继续？' : 'Changing language reloads this window. Save pending settings first. Continue?')) { select.value = language.preference; return; }
+    if (!window.confirm(translate(language.locale, '切换语言会重新加载界面，请先保存未提交的设置。继续？'))) { select.value = language.preference; return; }
     try { language = await window.mote.setLanguage(next); }
-    catch { select.value = language.preference; window.alert(chinese ? '语言保存失败，请重试。' : 'Could not save language. Please retry.'); }
+    catch { select.value = language.preference; window.alert(translate(language.locale, '语言保存失败，请重试。')); }
   });
   const appearance=document.getElementById('appearance') as HTMLSelectElement;
   const updateAppearance=()=>{appearance.value=desktopAppearance.getSnapshot().preference;};

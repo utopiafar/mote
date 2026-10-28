@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Mote Kontextsammler</string>
+    <string name="accessibility_name">Mote Bildschirmaufnahme</string>
+    <string name="accessibility_description">Erfasst erst nach dem Tippen auf Start. Liest App-Identitäten für Ihre Datenschutzregeln und macht Screenshots. Liest sichtbaren UI-Text nur, wenn Sie die Seitenerfassung ausdrücklich aktivieren und Regeln konfigurieren; Passwörter, Eingabefelder und maskierte Bereiche werden ausgefiltert. Tippt, scrollt oder führt niemals Anweisungen der Seite aus. Aufzeichnungen werden privat zwischengespeichert und an Ihren konfigurierten zentralen Knoten hochgeladen. Jederzeit in der App oder über die Benachrichtigung stoppen.</string>
+</resources>

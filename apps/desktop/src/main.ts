@@ -10,7 +10,7 @@ import { basename } from 'node:path';
 import { syncContent, readCentralContent } from './sync-content';
 import { AskClient } from './ask';
 import {storageStatistics} from '@mote/shared/storage-statistics';
-import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
+import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, locales, type LanguagePreference } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
 import { CalendarPermissionError } from './source-calendar';
@@ -271,7 +271,7 @@ else {
       ipcMain.handle('mote:language', event => { trusted(event); return languageState(); });
     ipcMain.handle('mote:set-language', async (event, raw: unknown) => {
       trusted(event);
-      if (!['system', 'zh-CN', 'en'].includes(String(raw))) throw new Error('Invalid language');
+      if (raw !== 'system' && !(locales as readonly string[]).includes(String(raw))) throw new Error('Invalid language');
       await Promise.all([...noteWork]);
       const next = languagePreference(raw);
       writeFileSync(languageFile + '.tmp', JSON.stringify(next), { mode: 0o600 });

@@ -2,8 +2,13 @@ import ts from 'typescript';
 import {readFileSync,readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
-const source=readFileSync('packages/shared/src/i18n-en.ts','utf8');
-const catalog=JSON.parse(source.slice(source.indexOf('= ')+2).trim().replace(/;$/,''));
+const locales={en:'i18n-en.ts',ja:'i18n-ja.ts',fr:'i18n-fr.ts',de:'i18n-de.ts',es:'i18n-es.ts',ru:'i18n-ru.ts'};
+const catalogs={};
+for(const [locale,file] of Object.entries(locales)){
+ const source=readFileSync(`packages/shared/src/${file}`,'utf8');
+ catalogs[locale]=JSON.parse(source.slice(source.indexOf('= ')+2).trim().replace(/;$/,''));
+}
+const catalog=catalogs.en;
 function walk(dir){return readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(join(dir,e.name)):[join(dir,e.name)]);}
 const missing=[];
 function check(key,file){if(/\p{Script=Han}/u.test(key)&&!Object.hasOwn(catalog,key))missing.push({file,key});}
@@ -25,9 +30,14 @@ for(const m of html.matchAll(/<[^>]*data-i18n(?:\s|>)[^<]*|<[^>]*data-i18n>/g)){
  const key=m[0].slice(m[0].indexOf('>')+1);if(key)check(key,'desktop HTML');
 }
 assert.deepEqual(missing,[],'Missing English translations');
-for(const [key,value] of Object.entries(catalog)){
- assert.ok(value.trim(),'Empty translation: '+key);
- assert.deepEqual(value.match(/\{\d+\}/g)?.sort()??[],key.match(/\{\d+\}/g)?.sort()??[],'Placeholder mismatch: '+key);
+for(const [locale,entries] of Object.entries(catalogs)){
+ for(const [key,value] of Object.entries(entries)){
+  assert.ok(value.trim(),`Empty ${locale} translation: `+key);
+  assert.deepEqual(value.match(/\{\d+\}/g)?.sort()??[],key.match(/\{\d+\}/g)?.sort()??[],`Placeholder mismatch (${locale}): `+key);
+ }
+ assert.deepEqual(Object.keys(entries).sort(),Object.keys(catalog).sort(),`${locale} catalog keys differ from the English catalog`);
+ // Japanese legitimately uses Kanji; every other non-Chinese catalog must stay free of Han script.
+ if(locale!=='ja')for(const [key,value] of Object.entries(entries))assert.ok(!/\p{Script=Han}/u.test(value),`${locale} translation contains Han script: `+key);
+ assert.deepEqual(JSON.parse(readFileSync(`apps/android/app/src/main/assets/i18n-${locale}.json`,'utf8')),entries,`Android ${locale} catalog is out of sync`);
 }
-assert.deepEqual(JSON.parse(readFileSync('apps/android/app/src/main/assets/i18n-en.json','utf8')),catalog,'Android catalog is out of sync');
-console.log(`Checked ${Object.keys(catalog).length} bilingual messages and TS/Kotlin call sites.`);
+console.log(`Checked ${Object.keys(catalog).length} messages across ${Object.keys(catalogs).length} locales and TS/Kotlin call sites.`);

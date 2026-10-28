@@ -58,7 +58,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         }
     }
     private fun preferences() {
-        val choices = listOf("system" to MoteI18n.text("跟随系统"), "zh-CN" to "简体中文", "en" to "English")
+        val choices = listOf("system" to MoteI18n.text("跟随系统"), "zh-CN" to "简体中文", "en" to "English", "ja" to "日本語", "fr" to "Français", "de" to "Deutsch", "es" to "Español", "ru" to "Русский")
         ui.button(MoteI18n.text("界面语言")) {
             MoteDialogBuilder(ui).setTitle(MoteI18n.text("界面语言")).setItems(choices.map { it.second }.toTypedArray()) { _, index ->
                 ui.work(MoteI18n.text("正在保存…"), { MoteI18n.select(ui, choices[index].first) }) { ui.recreate() }

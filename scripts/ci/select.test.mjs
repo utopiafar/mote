@@ -13,7 +13,7 @@ test('Web, Agent, translations and shared wire changes retain their actual consu
   assert.deepEqual(changed('apps/web/src/App.tsx').scopes, ['web', 'i18n']);
   assert.deepEqual(changed('apps/server/src/connections.ts').scopes, ['server', 'i18n']);
   assert.deepEqual(changed('packages/agent/src/prompt.md').scopes, ['server', 'agent']);
-  for (const path of ['packages/shared/src/i18n.ts', 'packages/shared/src/i18n-en.ts', 'apps/android/app/src/main/assets/i18n-en.json']) assert.deepEqual(changed(path).scopes, ['i18n']);
+  for (const path of ['packages/shared/src/i18n.ts', 'packages/shared/src/i18n-en.ts', 'packages/shared/src/i18n-ja.ts', 'packages/shared/src/i18n-ru.ts', 'apps/android/app/src/main/assets/i18n-en.json', 'apps/android/app/src/main/assets/i18n-de.json']) assert.deepEqual(changed(path).scopes, ['i18n']);
   for (const path of ['packages/shared/src/protocol.ts', 'protocol/contract.json']) assert.deepEqual(changed(path).scopes, scopes.filter(name => name !== 'tooling'));
 });
 test('unknown inputs and locks conservatively select all light scopes and explain the fallback', () => {

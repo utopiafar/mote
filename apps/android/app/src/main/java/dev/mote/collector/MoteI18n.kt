@@ -10,30 +10,38 @@ import org.json.JSONObject
 
 /** Localizes authored UI messages only. Arguments and captured content remain verbatim. */
 object MoteI18n {
+    val supported = listOf("zh-CN", "en", "ja", "fr", "de", "es", "ru")
     @Volatile private var application: Context? = null
-    @Volatile private var english: Map<String, String> = emptyMap()
+    private val catalogs = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
     @Volatile private var selected = "system"
     private val argument = Regex("\\{(\\d+)\\}")
     fun initialize(context: Context) {
         application = context.applicationContext
         selected = context.getSharedPreferences("mote.language", Context.MODE_PRIVATE).getString("language", "system") ?: "system"
-        val json = context.assets.open("i18n-en.json").bufferedReader().use { JSONObject(it.readText()) }
-        english = json.keys().asSequence().associateWith { json.getString(it) }
     }
+    private fun load(name: String): Map<String, String> {
+        val context = application ?: return emptyMap()
+        return try {
+            val json = context.assets.open(name).bufferedReader().use { JSONObject(it.readText()) }
+            json.keys().asSequence().associateWith { json.getString(it) }
+        } catch (_: Exception) { emptyMap() }
+    }
+    private fun catalog(language: String): Map<String, String> = catalogs.getOrPut(language) { load("i18n-$language.json") }
     fun preference() = selected
     fun language(): String {
-        if (selected == "en" || selected == "zh-CN") return selected
+        if (selected in supported) return selected
         if (application == null) return "zh-CN" // Headless unit fixtures retain the protocol default.
         val languages = Resources.getSystem().configuration.locales
         for (i in 0 until languages.size()) {
-            if (languages[i].language == "zh") return "zh-CN"
-            if (languages[i].language == "en") return "en"
+            for (candidate in supported) {
+                if (languages[i].language == Locale.forLanguageTag(candidate).language) return candidate
+            }
         }
         return "en"
     }
     fun locale(): Locale = Locale.forLanguageTag(language())
     fun select(context: Context, value: String) {
-        require(value in listOf("system", "zh-CN", "en"))
+        require(value == "system" || value in supported)
         check(context.getSharedPreferences("mote.language", Context.MODE_PRIVATE).edit().putString("language", value).commit())
         selected = value
         Notifications.create(context)
@@ -45,7 +53,8 @@ object MoteI18n {
         return context.createConfigurationContext(config)
     }
     fun text(source: String, vararg values: Any?): String {
-        val template = if (language() == "en") english[source] ?: source else source
+        val active = language()
+        val template = if (active == "zh-CN") source else catalog(active)[source] ?: catalog("en")[source] ?: source
         return argument.replace(template) { match ->
             val index = match.groupValues[1].toIntOrNull()
             if (index != null && index < values.size) values[index]?.toString() ?: "" else match.value

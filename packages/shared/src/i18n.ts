@@ -1,10 +1,16 @@
 import { english } from './i18n-en.js';
+import { japanese } from './i18n-ja.js';
+import { french } from './i18n-fr.js';
+import { german } from './i18n-de.js';
+import { spanish } from './i18n-es.js';
+import { russian } from './i18n-ru.js';
 
-export type Locale = 'zh-CN' | 'en';
+export const locales = ['zh-CN', 'en', 'ja', 'fr', 'de', 'es', 'ru'] as const;
+export type Locale = typeof locales[number];
 export type LanguagePreference = 'system' | Locale;
 export const languageStorageKey = 'mote.language';
 export function languagePreference(value: unknown): LanguagePreference {
-  return value === 'zh-CN' || value === 'en' ? value : 'system';
+  return typeof value === 'string' && (locales as readonly string[]).includes(value) ? value as Locale : 'system';
 }
 /** Only supported BCP 47 language ranges participate; unsupported locales fall back to English. */
 export function negotiateLocale(header?: string | readonly string[], fallback: Locale = 'en'): Locale {
@@ -17,6 +23,11 @@ export function negotiateLocale(header?: string | readonly string[], fallback: L
   for (const {tag} of values) {
     if (/^zh(?:-|$)/.test(tag)) return 'zh-CN';
     if (/^en(?:-|$)/.test(tag)) return 'en';
+    if (/^ja(?:-|$)/.test(tag)) return 'ja';
+    if (/^fr(?:-|$)/.test(tag)) return 'fr';
+    if (/^de(?:-|$)/.test(tag)) return 'de';
+    if (/^es(?:-|$)/.test(tag)) return 'es';
+    if (/^ru(?:-|$)/.test(tag)) return 'ru';
   }
   return fallback;
 }
@@ -34,8 +45,17 @@ export function getLocale(): Locale {
   // Preserve the protocol's historical default for headless clients and fixture tests.
   return 'zh-CN';
 }
+const catalogs: Record<Exclude<Locale, 'zh-CN'>, Readonly<Record<string, string>>> = {
+  en: english, ja: japanese, fr: french, de: german, es: spanish, ru: russian,
+};
+/** Ideographic locales join adjacent translated fragments without a word space or Western quote marks. */
+export function cjkLocale(locale: Locale = getLocale()): boolean { return locale === 'zh-CN' || locale === 'ja'; }
 export function translate(locale: Locale, source: string, ...values: unknown[]): string {
-  const template = locale === 'en' && Object.hasOwn(english, source) ? english[source] : source;
+  const catalog = locale === 'zh-CN' ? undefined : catalogs[locale];
+  // Missing target-locale entries fall back to English, then to the authored source.
+  const template = catalog && Object.hasOwn(catalog, source) ? catalog[source]!
+    : locale !== 'zh-CN' && locale !== 'en' && Object.hasOwn(english, source) ? english[source]!
+    : source;
   // A replacement callback does not interpret $, braces, HTML, or instructions in values.
   return template.replace(/\{(\d+)\}/g, (match, index: string) => Number(index) < values.length ? String(values[Number(index)] ?? '') : match);
 }
@@ -45,6 +65,6 @@ export function saveLanguagePreference(preference: LanguagePreference): void {
   globalThis.localStorage.setItem(languageStorageKey, languagePreference(preference));
 }
 
-const messageSources = new Map(Object.entries(english).map(([source,value]) => [value,source]));
+const messageSources = new Map(Object.values(catalogs).flatMap(catalog => Object.entries(catalog).map(([source, value]) => [value, source] as const)));
 /** Re-render only app-authored status fields retained across a language change. Never use for evidence or logs. */
 export function statusMessage(message: string): string { return translate(getLocale(), messageSources.get(message) ?? message); }
