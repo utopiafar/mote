@@ -1,9 +1,9 @@
 # ADR: Single MVP baseline without upgrade adapters
 
-Current direction (2026-10-23): [single-owner MVP](adr-single-owner-mvp.md). Earlier dated validation does not qualify this recovery.
+Current direction (format and supersession checked 2026-10-29): [single-owner MVP](adr-single-owner-mvp.md). Earlier dated validation does not qualify this recovery.
 Status: Accepted, 2026-10-09. Owner approved the cleanup, validation, PR and merge.
 
-Mote uses one current implementation and persisted format. There is no installed-version transition period, old reader, dual write or startup migration. Central storage is epoch **4** (`backend_epoch` and SQLite `user_version`); Desktop and Android local storage remain format **3**. Wire protocol **1**, collector Ingress **2** and portable archive **2** are independent contracts, not product versions.
+Mote uses one current implementation and persisted format. There is no installed-version transition period, old reader, dual write or startup migration. Central storage is epoch **4** (`backend_epoch` and SQLite `user_version`); Desktop and Android local storage use format **4**. Wire protocol **1**, collector Ingress **2** and portable archive **2** are independent contracts, not product versions.
 
 A populated Central vault from another epoch is rejected before schema installation. Existing data is retained. Start with a new empty directory, or stop the service, preserve a backup and explicitly reset the selected vault. This change does not reset any user's directory. Same-epoch backup/restore and current-format portable import remain supported.
 
@@ -38,6 +38,6 @@ Central retained-text expansion and excerpt dependency links remain supported.
 
 Question requests use DelegatedQueryRuns and the durable delegation journal. No callback closure can substitute for a missing journal. Completed plans and model children resume through their existing identities; an invalid proposal wait is not synthesized or repaired. A current product-owned proposal must be handed to its product before execution can be awaited.
 
-Automatic Memory receipt authorization remains continuous. `extraction.enabled` accepts only `true`; source configuration has no `memory` boolean. Separate processing lanes and integration/insight/working controls retain their current meanings. Privacy withdrawal and missing authorization still prevent model work.
+The original continuous automatic-Memory policy in this ADR was superseded by the [plugin center and memory replacement decision](adr-plugin-center-memory-replacement.md). Current automatic Memory supports ordinary pause (stop admitting new work while already authorized tasks drain), resume with a new generation, and a separate immediate-stop command. Source configuration still has no `memory` boolean. Separate processing lanes and insight/working controls retain their independent meanings. Privacy withdrawal and missing authorization still prevent model work.
 
-The [plugin center and memory replacement decision](adr-plugin-center-memory-replacement.md), accepted on 2026-10-12, changes the automatic Memory policy to allow pausing new work while existing authorized tasks drain. Its [phase-one implementation plan](design/plugin-center-phase-one-2026-10-12.md) is not yet implemented; the continuous-authorization API behavior above describes the current code. This decision does not reinstate retired epoch adapters, source Memory booleans or empty-recipe fallbacks.
+The [plugin center and memory replacement decision](adr-plugin-center-memory-replacement.md), accepted on 2026-10-12, supersedes the continuous-authorization policy in this ADR. Phase-one controls and pinned adapters are implemented; [current behavior](plugin-center.md) and [recorded validation](design/plugin-center-phase-one-validation-2026-10-12.md) remain separate. The [phase-one plan](design/plugin-center-phase-one-2026-10-12.md) is the historical delivery breakdown, not proof that every platform or provider has passed. This decision does not reinstate retired epoch adapters, source Memory booleans or empty-recipe fallbacks.

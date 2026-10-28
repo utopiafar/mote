@@ -41,7 +41,7 @@ npm run desktop:dev
 node scripts/mote.mjs token --profile dev
 ```
 
-Mac 的命名 profile 使用独立的用户数据目录、队列、草稿和连接设置。`desktop:dev` 将所选中央 URL 与令牌交给主进程；只对新 profile 引导连接，已有设置不会被后台替换。首次开始截图仍需要用户在 App 中设置并授权；这些命令本身不会采集屏幕。未命名 App 的 default profile 使用原 Electron 用户数据路径，旧存储仍受格式 3 拒绝边界约束，详见 [电脑端说明](desktop.md)。
+Mac 的命名 profile 使用独立的用户数据目录、队列、草稿和连接设置。`desktop:dev` 将所选中央 URL 与令牌交给主进程；只对新 profile 引导连接，已有设置不会被后台替换。首次开始截图仍需要用户在 App 中设置并授权；这些命令本身不会采集屏幕。未命名 App 的 default profile 使用原 Electron 用户数据路径，旧存储仍受格式 4 拒绝边界约束，详见 [电脑端说明](desktop.md)。
 
 运行 test 环境的同一套热重载界面：
 

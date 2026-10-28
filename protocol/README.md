@@ -30,9 +30,9 @@ bundled Web console remain one release unit and retain their build consistency
 check.
 
 Storage epochs and release tags are independent of the wire range. This cleanup
-uses Central epoch 4 and native local format 3 while retaining wire range 1 and collector
+uses Central epoch 4 and native local format 4 while retaining wire range 1 and collector
 ingress 2. Unsupported stored formats fail explicitly without rewriting their
-files. See the [MVP baseline](../docs/adr-mvp-baseline.md) for Central epoch 4 and client local format 3 boundaries.
+files. See the [MVP baseline](../docs/adr-mvp-baseline.md) for Central epoch 4 and client local format 4 boundaries.
 Future wire changes must update the supported range and generated fixtures, and
 validate all consumers.
 

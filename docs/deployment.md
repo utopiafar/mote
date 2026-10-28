@@ -136,7 +136,7 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 ## 升级与回退
 
-本次是配置格式的破坏变更：主配置改为 YAML version 1，旧 `mote.env`、`model-settings.json`、`file-processing.json` 与 SQLite 当前运行设置不再作为配置来源，也不会自动转换。中央仍使用既有 `backend_epoch=4`，Desktop/Android 本机格式仍为 3，HTTP 便携归档仍为 version 2。已有 epoch 4 资料库无需新空目录或 reset；备份并离线准备新 YAML，保留原资料目录、访问令牌与内容密钥，再由所有者明确启动新版本。
+本次是配置格式的破坏变更：主配置改为 YAML version 1，旧 `mote.env`、`model-settings.json`、`file-processing.json` 与 SQLite 当前运行设置不再作为配置来源，也不会自动转换。中央仍使用既有 `backend_epoch=4`，Desktop/Android 当前本机格式为 4，HTTP 便携归档仍为 version 2。已有 epoch 4 资料库无需新空目录或 reset；备份并离线准备新 YAML，保留原资料目录、访问令牌与内容密钥，再由所有者明确启动新版本。
 
 历史 MVP 基线曾切换上述存储与客户端格式，这与本次配置改造是两件事。来自更早 epoch、客户端格式、内容包装或便携包的资料仍不自动转换。跨越该历史基线时，请先用相应旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，再选择新空目录；只有明确放弃旧资料时才按 [MVP 基线操作](audits/mvp-baseline-cleanup-2026-10-09.md) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
 

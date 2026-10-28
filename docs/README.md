@@ -24,7 +24,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | 当前用户旅程与三端 UI 衔接 | [UI IA v1](adr-ui-ia-v1.md)、[模块与完整旅程](ui-user-journeys.md)；区分已确认交互、当前能力与暂缓内容 |
 | 第五轮三端 UI 落地与逐页验收 | [落地方案与验收门槛](design/ui-rollout-2026-10-14.md)、[当前验证记录](validation/ui-rollout-2026-10-14.md) |
 | 2026-10-10 系统改造 | [已确认方案](design/system-refactor-2026-10-10.md)、[当前ADR](adr-system-refactor.md)、[验收结果与边界](validation/system-refactor-2026-10-10.md) |
-| 插件中心与可替换记忆一期 | [已确认实施方案](design/plugin-center-phase-one-2026-10-12.md)、[架构决定](adr-plugin-center-memory-replacement.md)、[验证计划](design/plugin-center-phase-one-validation-2026-10-12.md)；产品实现尚未完成 |
+| 插件中心与可替换记忆一期 | [已确认实施方案](design/plugin-center-phase-one-2026-10-12.md)、[架构决定](adr-plugin-center-memory-replacement.md)、[验证计划](design/plugin-center-phase-one-validation-2026-10-12.md)；一期控制与固定适配器已实现；验收范围以验证计划中的实际记录为准 |
 
 端侧 Qwen 文档是已删除运行时的历史说明，当前截图不调用 VLM。旧版充电补 OCR、默认加密、签名在线更新及 Memory 的周期 AND 数量门槛不能当作当前默认。现行入口分别见上表。
 
@@ -39,7 +39,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [agent](agent.md) | Agent 配置与权限 |
 | [android-bulk-dedupe](android-bulk-dedupe.md) | Android local bulk image deduplication |
 | [android-capture-recovery](android-capture-recovery.md) | Android capture recovery and central navigation |
-| [android-library-performance](android-library-performance.md) | Android 大资料库性能与当前格式 3 存储 |
+| [android-library-performance](android-library-performance.md) | Android 大资料库性能与当前格式 4 存储 |
 | [android-local-state](android-local-state.md) | Android shared local state |
 | [android-power-optimization](android-power-optimization.md) | Android 采集与同步开销优化 |
 | [android-system-events](android-system-events.md) | Android 通知、设备事件与采集记录 |

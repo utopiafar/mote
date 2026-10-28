@@ -5,7 +5,7 @@ Current direction (2026-10-23): [single-owner MVP](adr-single-owner-mvp.md). Ear
 
 问答覆盖、无字符近似配额的正常分页、录音语料时间与规范正文，以及质量对照和实际恢复边界，以[2026-10-14简化决定](adr-ask-evidence-quality-and-simple-context.md)为准。Memory不再自动二分恢复，历史验证与已固定记录仍保留各自日期和身份。
 
-Mote 是 AI-native 的个人上下文采集器与中央归档。当前实现采用单一 MVP 基线：Central 存储 epoch 4，Desktop / Android 本机格式 3，不安装旧库迁移器。产品版本、wire protocol 1、collector Ingress 2、便携归档 v2 各自独立，见 [MVP 基线决策](adr-mvp-baseline.md)。
+Mote 是 AI-native 的个人上下文采集器与中央归档。当前实现采用单一 MVP 基线：Central 存储 epoch 4，Desktop / Android 本机格式 4，不安装旧库迁移器。产品版本、wire protocol 1、collector Ingress 2、便携归档 v2 各自独立，见 [MVP 基线决策](adr-mvp-baseline.md)。
 
 导入说明是确切新增原件的宿主背景，不是整份来源的身份分类。个人 v5 保留 v4 的声明、日记主叙述者、时间框架与续文解释，并组合范围评估与模型择要；真实身份未知时仍保留有限观察。新 Memory 任务区分产出目标与同一任务的已授权解释范围，提取和独立审核模型可按具体缺口补读原件。实际披露范围提供精确引用资格并保留阶段依赖；未读许可不成为本批上下文依赖，另一未读原件的变化不撤出独立目标。Ask 逐事实核对主体和时间。版本与旧任务边界见[上下文读取 ADR](adr-memory-context-reading.md)，v3 固定定义见[有限个人 Memory ADR](adr-bounded-personal-memory.md)。
 
@@ -60,7 +60,7 @@ flowchart LR
 
 `capturedAt` 是观察时间，`receivedAt` 是首次接收时间，journal 游标是到达/变化顺序。文档另保留 `recordedAt / occurredAt / timeBasis`；没有可靠发生时间时不以上传日期代替。重试相同身份和字节；冲突不会覆盖原版本。
 
-原件统一使用 `files/objects/<sha256>/<part>.plain|.aes`，每片最多 4 MiB，引用与 pin 控制 GC。SQLite 保存元数据、来源状态、索引和执行记录；Coding 原始正文在 `source-archive/`。中央内容加密默认关闭，启用后只保护内容对象及明确的私有载荷，不等于整个 SQLite 加密。客户端格式 3 内容原样存放于应用私有目录，凭据仍使用系统安全存储。
+原件统一使用 `files/objects/<sha256>/<part>.plain|.aes`，每片最多 4 MiB，引用与 pin 控制 GC。SQLite 保存元数据、来源状态、索引和执行记录；Coding 原始正文在 `source-archive/`。中央内容加密默认关闭，启用后只保护内容对象及明确的私有载荷，不等于整个 SQLite 加密。客户端格式 4 内容原样存放于应用私有目录，凭据仍使用系统安全存储。
 
 图片默认绑定中央本地 OCR 策略；图片理解是独立的模型阶段，由当前方案、授权与模型可用性控制。Agent 读取原图另受披露开关与范围约束。音频默认本地 ASR 与匿名说话人分离；模型和 Worker 未就绪时保留原件并等待。文件快照索引单独保存，处理结果不改写接入时的原始回执。
 
@@ -85,6 +85,8 @@ ExecutionEngine 负责并发、资源互斥、持久租约、输入版本、取�
 导入是独立运行时，可使用文件/shell 工具生成预览清单；宿主校验原件、版本、路径和用户确认后提交。日程建议的外部写入也由独立的用户授权与宿主队列处理，不向查询 Agent 开放写工具。
 
 ## 产品与运维边界
+
+服务端的当前配置入口是 version 1 的主 `mote.yaml`；`MOTE_CONFIG_FILE` 只选择该文件，普通环境变量不覆盖 YAML。命名 profile 由 CLI 选择独立文件与目录；旧 `mote.env` / `MOTE_ENV_FILE` 不再作为配置来源。详见 [统一配置决策](adr-unified-configuration.md) 与 [配置说明](server-configuration.md)。
 
 Central 不设置 HTTP 请求次数额度，不按前台/同步接口划分频控，也不因上传、查询、导入、登录、原件读取或文件准备队列达到固定总数而拒绝新请求。积压任务由现有执行并发、取消和生命周期机制调度；用户配置的存储容量和上游实际限流仍适用，见 [请求准入决策](adr-central-request-admission.md)。
 
