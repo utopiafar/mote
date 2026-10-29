@@ -29,6 +29,9 @@ export const attributionContextSchema=z.object({
   importStatements:z.array(z.object({id:z.string().uuid(),version:z.number().int().positive(),instruction:z.string().max(12000),captureIds:z.array(z.string().uuid()).min(1)}).strict()).optional(),
   sourceContextDeclarations:z.array(sourceDescriptionDeclarationSchema).optional(),
   sourceContextStatements:z.array(z.object({sourceId:sourceContextDeclarationSchema.shape.sourceId,version:z.number().int().positive(),description:z.string().max(12000)}).strict()).optional(),
+  /** A frozen owner description of this exact original and its derived excerpts. */
+  recordContextDeclarations:z.array(z.object({captureId:z.string().uuid(),version:z.literal(1),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).optional(),
+  recordContextStatements:z.array(z.object({captureId:z.string().uuid(),version:z.literal(1),description:z.string().max(12000)}).strict()).optional(),
 }).strict();
 export type AttributionContext=z.infer<typeof attributionContextSchema>;
 export const unknownAttributionContext=():AttributionContext=>({version:1,ownerRelation:'unknown',basis:'default'});

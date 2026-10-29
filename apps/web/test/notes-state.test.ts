@@ -115,3 +115,26 @@ test('retired notes and missing client identities are rejected without mutating 
   assert.throws(()=>new NoteOutbox(storage,'fixture'));
   assert.deepEqual([...storage.entries], original);
 });
+
+test('independent description survives offline restart, denial and same-ID retry without changing original text',()=>{
+  const storage=new MemoryStorage(),box=new NoteOutbox(storage,'description'),draft={text:'Generated original',mood:'',description:'  Generated context\nexact owner words.  '};
+  box.saveDraft(draft);const prepared=box.prepareSubmission(draft,note());box.enqueue(prepared);box.mark(prepared.id,'HTTP 403',true);
+  const reopened=new NoteOutbox(storage,'description');
+  assert.deepEqual(reopened.draft(),draft);assert.equal(reopened.items()[0].blocked,true);
+  assert.equal(reopened.prepareSubmission(reopened.draft(),note()).id,prepared.id);
+  assert.equal(reopened.items()[0].note.text,draft.text);assert.equal(prepared.metadata?.ownerDescription,draft.description);
+  const changed={...draft,description:'Generated replacement context'};reopened.saveDraft(changed);
+  const replacement=reopened.prepareSubmission(changed,note());assert.notEqual(replacement.id,prepared.id);
+  reopened.completeSubmission(prepared.id);assert.deepEqual(reopened.draft(),changed);
+  assert.equal(reopened.items()[0].note.metadata?.ownerDescription,draft.description,'an immutable queued event keeps the original context');
+});
+
+test('description alone cannot submit; empty and absent match; oversized or corrupt descriptions preserve storage',()=>{
+  const storage=new MemoryStorage(),box=new NoteOutbox(storage,'description-validation'),draft={text:'Generated original',mood:''};
+  assert.throws(()=>box.prepareSubmission({text:'',mood:'',description:'Only context'},note()));
+  const prepared=box.prepareSubmission(draft,note());
+  assert.equal(box.prepareSubmission({...draft,description:''},note()).id,prepared.id);
+  const before=[...storage.entries];assert.throws(()=>box.saveDraft({...draft,description:'x'.repeat(12001)}));assert.deepEqual([...storage.entries],before);
+  const key=before[0][0];storage.setItem(key,JSON.stringify({...draft,description:42}));
+  assert.throws(()=>box.draft());assert.equal(JSON.parse(storage.getItem(key)!).description,42);
+});

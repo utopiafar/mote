@@ -54,3 +54,12 @@ test('file system and provider timestamps have distinct fields and deletion obse
   assert.equal(sourceItemSchema.safeParse({...item,metadata:{version:1,file:{deletedAt:at}}}).success,false);
   assert.equal(captureSchema.safeParse({...identity,source:'file',durationMs:0,provenance:{sourceId:'files',externalId:'test-file',revision:'1',layer:'reference',metadata:{version:1,file:{deletionObservedAt:at}}}}).success,false);
 });
+
+test('owner record descriptions remain independent context and cannot be a note body or heartbeat fact',()=>{
+  const description='  Generated owner context\nexact wording.  ';
+  const input={...identity,text:'Generated original',metadata:{version:1,observedAt:at,ownerDescription:description}};
+  const note=noteCapture(noteSchema.parse(input));assert.equal(note.ocrText,input.text);assert.equal(note.metadata.ownerDescription,description);
+  assert.equal(noteSchema.safeParse({...input,text:''}).success,false);
+  assert.equal(noteSchema.safeParse({...input,metadata:{...input.metadata,ownerDescription:'x'.repeat(12001)}}).success,false);
+  assert.equal(heartbeatSchema.safeParse({deviceId:identity.deviceId,deviceName:identity.deviceName,platform:identity.platform,status:'paused',queueDepth:0,metadata:input.metadata}).success,false);
+});
