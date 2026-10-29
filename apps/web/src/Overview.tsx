@@ -40,6 +40,9 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
  const sample=retained?.candidate;
  const sourceReady=Boolean(checked?.checkedDevices);
  const complete=checked?.state==='ready'&&checked.originalAvailable&&Boolean(sample);
+ // Keep the verified receipt's location while it is being rechecked. Its text
+ // still shows loading; a failed read immediately returns it to the main area.
+ const foldReceipt=retained?.state==='ready'&&retained.originalAvailable&&Boolean(sample);
  const discovery=insights.find(item=>item.citations.length>0);
  const sourceItems=sources.error===undefined?sources.data?.items:undefined;
  const issues=sourceItems?.filter(item=>['error','permission_required'].includes(item.status?.state??''))??[];
@@ -69,7 +72,7 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
   </section>;
  return <DiscoveryProvider state={availability}><div className="home-page central-overview">
   <div className="page-heading home-heading"><h1>{moteText('首页')}</h1><div className="home-heading-meta"><time>{new Date().toLocaleDateString(getLocale(),{month:'long',day:'numeric'})} · {new Date().toLocaleDateString(getLocale(),{weekday:'short'})}</time><button className="text-button" onClick={()=>onPage('activity')}>{moteText('后台活动')}<ArrowRight size={13}/></button></div></div>
-  {!complete&&firstReceipt}
+  {!foldReceipt&&firstReceipt}
   <form className="home-find" role="search" aria-label={moteText('搜索资料或提问')} onSubmit={event=>{event.preventDefault();if(query.trim())window.location.hash='/search?query='+encodeURIComponent(query.trim());}}>
    <input aria-label={moteText('搜索资料或提问')} placeholder={moteText('想找什么，或问点什么…')} maxLength={500} value={query} onChange={event=>setQuery(event.target.value)}/><button type="submit" className="button primary">{moteText('搜索')}</button><button type="button" className="button ghost" disabled={!hasPage('ask')} onClick={()=>{window.location.hash='/ask'+(query.trim()?'?questionDraft='+encodeURIComponent(query.trim()):'');}}>{moteText('问一问')}<ArrowUpRight size={13}/></button>
   </form>
@@ -94,6 +97,6 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
    {recentConversations?.map(item=><DiscoveryLink className="home-conversation-row" key={item.id} target={{pageId:'ask',href:'#/ask?conversation='+encodeURIComponent(item.id)}}><MessageCircle size={18}/><span><strong>{item.title}</strong><small>{moteText('{0} 轮对话',item.turnCount)} · <time dateTime={item.updatedAt}>{dateTime(item.updatedAt)}</time></small></span><ChevronRight size={14}/></DiscoveryLink>)}
    {conversations.error!==undefined?<p className="home-read-error" role="alert">{errorMessage(conversations.error)}<button className="text-button" onClick={conversations.refresh}>{moteText('重新读取')}</button></p>:conversations.loading&&!conversations.data?<p role="status" className="home-empty">{moteText('正在读取…')}</p>:!recentConversations?.length&&<button className="text-button home-empty" onClick={()=>onPage('ask')}>{moteText('开启一段对话')}<ArrowRight size={13}/></button>}
   </section>}
-  <details className="home-extensions"><summary>{moteText('更多上下文视图')}</summary>{complete&&firstReceipt}<FeatureHome api={api} onPage={onPage}/></details>
+  <details className="home-extensions"><summary>{moteText('更多上下文视图')}</summary>{foldReceipt&&firstReceipt}<FeatureHome api={api} onPage={onPage}/></details>
  </div></DiscoveryProvider>;
 }

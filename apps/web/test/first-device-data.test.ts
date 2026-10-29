@@ -85,6 +85,15 @@ test('missing originals remain unavailable; another node cannot inherit a pendin
  const emptyApi=apiWith(()=>({...result('unverified'),checkedDevices:0,checkedRecords:0,windowLimited:true}));await f.render(emptyApi);assert.equal(f.d.querySelector('.central-first-data time'),null);assert.doesNotMatch(f.d.querySelector('.central-first-data')!.textContent!,/Generated phone/);
 });
 
+test('background receipt revalidation preserves the original opener until a genuine failure changes availability',async t=>{
+ const f=await fixture(t);let reads=0,finish!:(value:unknown)=>void;
+ const api=apiWith(()=>++reads===1?result():new Promise(resolve=>finish=resolve));
+ await f.render(api);const opener=f.d.querySelector<HTMLButtonElement>('.central-first-data .text-button')!;
+ await act(async()=>button(f.d,'刷新').click());
+ assert.equal(f.d.querySelector('[data-onboarding-state]')!.getAttribute('data-onboarding-state'),'loading');assert.match(f.d.querySelector('.central-first-data')!.textContent!,/正在读取采集记录/);assert.equal(f.d.querySelector('.central-first-data .text-button')===opener,true,'background revalidation must not detach the element that owns reader focus');assert.equal(opener.closest('.home-extensions')?.tagName,'DETAILS');
+ await act(async()=>finish(result()));assert.equal(f.d.querySelector('.central-first-data .text-button')===opener,true);assert.equal(f.d.querySelector('[data-onboarding-state]')!.getAttribute('data-onboarding-state'),'ready');
+});
+
 test('capture/file changes recheck exact availability without polling model/plugin events',async t=>{
  assert.equal(affectedResource('/api/devices/first-data',new Set(['capture:'+id]),false),true);
  assert.equal(affectedResource('/api/devices/first-data',new Set(['file:'+id]),false),true);
