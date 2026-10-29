@@ -7,13 +7,12 @@ ArrowRight,
 Activity as ActivityIcon,
 Database,
 FileText,
+Plus,
 Info,
 LayoutDashboard,
 Link2,
 MessageSquare,
 Monitor,
-RefreshCw,
-Settings2,
 ShieldCheck,
 Sparkles,
 X
@@ -55,7 +54,7 @@ import { isSettingsContext,primaryDestination,WorkspaceNavigation } from './Work
 import { readResource,resources } from './resource-cache';
 import { importQueue } from './import-queue';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
-import { CentralStatusPill,ErrorNotice,EvidenceDialog,LoginDialog,Spinner } from './shell-components';
+import { ErrorNotice,EvidenceDialog,LoginDialog,Spinner } from './shell-components';
 import "./styles.css";
 import './workspace.css';
 import './library.css';
@@ -66,6 +65,9 @@ import './feature-guide.css';
 import './art-direction.css';
 import './memory-presentation.css';
 import './presentation.css';
+import './final-web.css';
+import {QuickNoteDialog} from './QuickNoteDialog';
+import {QuickNoteContext} from './quick-note-context';
 import { confirmNavigation } from './unsaved';
 
 
@@ -95,6 +97,8 @@ function App() {
   const [clientLogin,setClientLogin]=useState(loginRequestId);
   const [verified, setVerified] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
+  const [quickNoteApi,setQuickNoteApi]=useState<ReturnType<typeof createApi>|null>(null);
+  const closeQuickNote=useCallback(()=>setQuickNoteApi(null),[]);
   const collectionIds = () => webFeatures.collections().map(entry=>entry.id);
   const initialRoute = useRef(readWorkspaceRoute(location.hash,readPage,collectionIds()));
   const [page, setPage] = useState<Page>(initialRoute.current.page);
@@ -306,49 +310,27 @@ function App() {
     setSessionLifetime(lifetime);
     if (connection) setConnection(persistSession(connection, lifetime));
   }
+  const notesAvailable=Boolean(webFeatures.page('notes'));
+  useEffect(()=>{if(!notesAvailable)setQuickNoteApi(null);},[notesAvailable]);
+  const openQuickNote=useCallback(()=>{if(!webFeatures.page('notes')){setNotice(moteText('当前服务未提供此入口'));return;}if(api&&verified)setQuickNoteApi(api);else setShowConnect(true);},[api,verified]);
   return (
     <>
+    <QuickNoteContext.Provider value={openQuickNote}>
     <PresentationSurface
-      navigation={layout => <WorkspaceSidebar layout={layout} page={page} onPage={onPage} connection={connection} verified={verified} profile={status?.profile} onConnect={()=>setShowConnect(true)}/>}
+      navigation={layout => <WorkspaceSidebar layout={layout} page={page} onPage={onPage} connection={connection} verified={verified} profile={status?.profile} onConnect={()=>setShowConnect(true)} onRefresh={refresh} refreshing={loading}/>}
       toolbar={
         <header className="topbar">
-          <div>
-            <span className="breadcrumb">
-              <span className="breadcrumb-workspace">{moteText("我的空间")} / </span>
-              <strong>{pageLabels[page]??moteText("当前服务未提供此入口")}</strong>
-            </span>
-          </div>
-          <GlobalRetrieval onPage={onPage}/><div className="topbar-actions"><details className="shell-menu"><summary aria-label={moteText('全部功能')}>{moteText('更多')}</summary><div><button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('overview');}}>{moteText('首页')}</button><button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button><button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('about');}}>{moteText('设置')}</button><button onClick={event=>{event.currentTarget.closest('details')!.open=false;setShowConnect(true);}}>{moteText('登录 Mote')}</button></div></details>{!settingsContext&&page!=='featureGuide'&&page!=='notes'&&<button className="button quick-note" onClick={()=>onPage("notes")}><FileText size={16}/>{moteText("随手记")}</button>}
-            <CentralStatusPill
-              connection={connection}
-              verified={verified}
-              onClick={() => connection && verified ? onPage("about") : setShowConnect(true)}
-            />
-            {connection && (
-              <>
-                <span className="private-label">
-                  <ShieldCheck size={14} />
-                  {moteText("私有节点")}</span>
-                <button className="icon-button mobile-settings" aria-label={moteText('设置')} onClick={()=>onPage('about')}><Settings2 size={18}/></button>
-                <button
-                  className="icon-button"
-                  aria-label={settingsContext?moteText("刷新生效配置"):moteText("刷新资料")}
-                  onClick={refresh}
-                  disabled={loading}
-                >
-                  <RefreshCw size={16} className={loading ? "spin" : ""} />
-                </button>
-              </>
-            )}
-            <button
-              className="avatar"
-              aria-label={connection ? moteText("登录会话") : moteText("登录 Mote")}
-              onClick={() => connection ? onPage("about") : setShowConnect(true)}
-            >
-              {moteText("我")}</button>
+          <span className="breadcrumb"><strong>{pageLabels[page]??moteText("当前服务未提供此入口")}</strong></span>
+          <div className="topbar-actions"><GlobalRetrieval onPage={onPage}/><button className="button quick-note" disabled={!notesAvailable} title={notesAvailable?undefined:moteText('当前服务未提供此入口')} onClick={openQuickNote} aria-haspopup="dialog"><Plus size={16}/>{moteText("随手记")}</button>
+            <details className="shell-menu shell-mobile-menu"><summary aria-label={moteText('全部功能')}>{moteText('更多')}</summary><div>
+              <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button>
+              <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('about');}}>{moteText('设置')}</button>
+              <button onClick={event=>{event.currentTarget.closest('details')!.open=false;setShowConnect(true);}}>{moteText('登录 Mote')}</button>
+              {connection&&<button onClick={refresh} disabled={loading}>{moteText('刷新资料')}</button>}
+            </div></details>
           </div>
         </header>}
-      footer={<footer className="footer"><span>{moteText("Mote · 让上下文，有迹可循。")}</span><span>{connection && status ? moteText("{0} 条记录 · {1}", status.storage.captures.toLocaleString(getLocale()), status.agent.configured ? moteText("Agent 就绪") : moteText("等待模型配置")) : moteText("采集 · 汇聚 · 理解")}</span></footer>}
+      footer={null}
     >
         <React.Suspense key={page} fallback={<p role="status" data-page-loading={page}>{moteText("正在读取…")}</p>}><div data-page={page} data-session={!connection?'signed-out':verified?'ready':error?'verification-failed':'verifying'} aria-busy={Boolean(connection&&loading)} className={`content ${settingsContext?'settings-surface':''}`}>
           <div className="workspace-tools">
@@ -448,6 +430,8 @@ function App() {
         </div>
         </React.Suspense>
     </PresentationSurface>
+    </QuickNoteContext.Provider>
+    {notesAvailable&&quickNoteApi===api&&api&&verified&&<QuickNoteDialog api={api} namespace={window.location.origin} revision={timelineRevision} onSaved={refresh} onClose={closeQuickNote}/>}
       {showConnect && (
         <LoginDialog
           destination={pageLabels[page]??moteText("当前服务未提供此入口")}

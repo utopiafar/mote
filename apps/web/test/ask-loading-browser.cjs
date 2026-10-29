@@ -157,8 +157,10 @@ async function run(){
  writeFileSync(join(output,'central-search-evidence.png'),(await wc.capturePage()).toPNG());
  await js(`document.querySelector('.library-back').click()`);
  assert.equal(await js(`document.querySelector('.library-browser').classList.contains('has-selection')`),false);
- await js(`[...document.querySelectorAll('.global-retrieval button')].find(node=>node.textContent==='提问').click()`);
- await js(`document.querySelector('.global-retrieval').requestSubmit()`);
+ await js(`location.hash='#/today'`);
+ await until(()=>js(`!!document.querySelector('.home-find input')`),'Home query entry');
+ await js(`(()=>{const input=document.querySelector('.home-find input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'generated');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ await delay(60);await js(`[...document.querySelectorAll('.home-find button')].find(node=>node.textContent==='问一问').click()`);
  await until(()=>js(`document.querySelector('[data-page="ask"] .conversation-history')&&document.querySelector('textarea[aria-label="向 Mote 提问"]')`),'global Ask full workspace');
  await until(()=>js(`document.querySelector('textarea[aria-label="向 Mote 提问"]')?.value==='generated'`),'global Ask draft handoff without sending');
  assert.equal(await js(`document.querySelector('[role="dialog"]')===null`),true);

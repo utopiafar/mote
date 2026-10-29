@@ -1,16 +1,14 @@
 import {useEffect,useRef,useState} from 'react';
-import {Search,MessageSquare,ArrowRight} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from './api';
 import {useResource} from './useResource';
 import {LibraryBrowseLayout} from './LibraryBrowse';
 export function GlobalRetrieval({onPage}:{onPage:(page:string)=>void}) {
- const [mode,setMode]=useState<'search'|'ask'>('search'),[query,setQuery]=useState('');
+ const [query,setQuery]=useState('');
  const input=useRef<HTMLInputElement>(null);
  useEffect(()=>{const key=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();input.current?.focus();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
- return <form className="global-retrieval" role="search" aria-label={moteText('搜索与提问')} onSubmit={event=>{event.preventDefault();if(mode==='ask'){window.location.hash='/ask'+(query.trim()?'?questionDraft='+encodeURIComponent(query.trim()):'');return;}if(!query.trim())return;window.location.hash='/search?query='+encodeURIComponent(query.trim());}}>
- <div className="global-retrieval-modes"><button type="button" aria-pressed={mode==='search'} onClick={()=>setMode('search')}><Search size={15}/>{moteText('搜索')}</button><button type="button" aria-pressed={mode==='ask'} onClick={()=>setMode('ask')}><MessageSquare size={15}/>{moteText('提问')}</button></div>
- <input ref={input} aria-label={moteText('搜索资料')} placeholder={moteText(mode==='ask'?'向 Mote 提问':'搜索资料')} value={query} onChange={event=>setQuery(event.target.value)} maxLength={500}/><kbd>⌘ K</kbd><button type="submit" className="icon-button" aria-label={moteText(mode==='ask'?'提问':'搜索')}><ArrowRight size={16}/></button>
+ return <form className="global-retrieval" role="search" aria-label={moteText('搜索资料')} onSubmit={event=>{event.preventDefault();if(query.trim())window.location.hash='/search?query='+encodeURIComponent(query.trim());}}>
+ <input ref={input} aria-label={moteText('搜索资料')} placeholder={moteText('搜索资料')} value={query} onChange={event=>setQuery(event.target.value)} maxLength={500}/><kbd aria-hidden="true">⌘ K</kbd>
  </form>;
 }
 export function SearchWorkspace({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}) {

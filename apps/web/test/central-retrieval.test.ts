@@ -14,11 +14,11 @@ async function fixture(t:any){
  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,location:dom.window.location,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of previous){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,d:dom.window.document,w:dom.window};
 }
-test('global retrieval keyboard focuses search and Ask enters the existing full conversation destination',async t=>{
+test('global retrieval keyboard focuses search without opening a modal or issuing an empty query',async t=>{
  const {root,d,w}=await fixture(t),pages:string[]=[];
  await act(async()=>root.render(React.createElement(GlobalRetrieval,{onPage:page=>pages.push(page)})));
  w.dispatchEvent(new w.KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));assert.equal(d.activeElement,d.querySelector('input'));
- await act(async()=>Array.from(d.querySelectorAll('button')).find(node=>node.textContent==='提问')!.click());assert.deepEqual(pages,[],'mode selection preserves the entry until explicit submit');assert.equal(d.querySelector('[role=dialog]'),null);await act(async()=>d.querySelector('form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));assert.equal(w.location.hash,'#/ask');
+ await act(async()=>d.querySelector('form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));assert.equal(w.location.hash,'#/search?query=generated');assert.deepEqual(pages,[]);assert.equal(d.querySelector('[role=dialog]'),null);
 });
 test('search opens a pinned result with evidence then returns to its result list',async t=>{
  const {root,d}=await fixture(t),reads:string[]=[];
