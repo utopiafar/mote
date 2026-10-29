@@ -1,0 +1,52 @@
+# ADR: Three-client UI finalization from the owner review
+
+Date: 2026-10-29. Status: owner-directed UI target plus four explicitly authorized bounded backend changes; implementation and visual acceptance pending. Other extensions remain subject to the boundaries below.
+
+## Source and scope
+
+The source is the owner's [39-turn UI review](codex://threads/01a17d84-94a3-7382-b12a-5c656106f534). [The source, decisions and acceptance scope](design/ui-final-three-clients-2026-10-29.md) records exact turn/message IDs, accepted and superseded prototypes, the three clients, page/dialog/state inventories and known evidence gaps. That inventory is normative for this UI revision; a filename containing `final` alone is not the whole accepted scope.
+
+The owner authorizes implementation of the UI, strict comparison, draft PRs, independent review and merging checked heads into main. In the [execution thread](codex://threads/01a1767c-d428-715a-8055-60970a2a00c5), the owner's reply `Sentinel_257460f132848191881fe64393bba4c5` to `Sentinel_6409e67a4e0481918ccb06bb1688db5a` also approves the four scoped history/calendar/context/local-recognition changes below and explicitly includes automatic dependency preparation in the fourth. This execution authorization is separate from the UI design source. It does not authorize deployment, release, unrelated features, new device/calendar scopes or arbitrary backend changes.
+
+## Decision
+
+Central Web remains the complete archive and management workspace. Preserve the sidebar and top bar, original-first reading, separate materials and memories, input sources and outward AI access. Keep quick note in the global top bar; saving or collapsing returns to the same page, reading position and unsent question. The same record uses the same detail from library, source or citation, with an origin-aware return path.
+
+Android becomes one daily home with **Record** and **Ask** as its two primary actions. Materials and memories, discoveries, tasks/calendar, capture/sync and settings remain reachable from secondary navigation. The four-primary-tab and additional Record-tab prototypes are superseded. Normal background capture/sending does not occupy the home; actionable exceptions have direct repair entries. First use explicitly supports recording locally before connection and deferring permissions and model setup. Exact record/citation readers remain directly reachable from saved records, answers and results.
+
+Mac retains its sidebar, full content/source/Ask workspaces and menu-bar quick entry. Its landing emphasizes Ask, recent conversations and recent content, with compact normal capture/sending status. It does not adopt Android's layout. Closing the main window retains the existing background lifecycle; explicit quit remains separate. Native permissions, local folders, capture and queued copies stay on the device.
+
+Default surfaces show content, necessary status and meaningful actions. Technical detail is available progressively in settings, More, help and diagnostics. Existing capabilities must remain reachable; simplicity is not permission to remove them. Use the agreed warm surfaces, restrained accent, components and platform controls from the actual prototypes, rather than a newly invented cross-platform layout.
+
+One implementation variance is recorded as D34 in the source inventory: keep the existing 4.5:1 secondary-text contrast check and adjust the light-theme muted text from source `#777066` to `#6f695f` for the checked backgrounds, including selected summaries on the tint surface. The source screenshots retain their original color. This is an implementation choice within the UI work, not an invented claim that the owner approved individual color values, and must be disclosed in visual acceptance.
+
+Use existing original text/images for list previews, not a new summary object. Memory has a detail and searchable/filterable list; an independent view-management product was rejected. Remove the server-directory import UI; preserve file/folder/ZIP intake and their existing archive/preview/recovery semantics. Discovery defaults to the formatted result and moves alternate standard reading into More without changing generation or storage.
+
+Settings use Models and Services, with service connections, module/model assignment and material processing. Background authorization is presented as automatic processing within material processing, retaining the existing global service/source/content scope and first-enable/change confirmation. Saving a provider does not grant authorization. Pause and immediate stop retain their separate existing semantics. Memory/plugin, storage/backup, usage, diagnostics and preferences remain discoverable. Complete the one-action local OCR/ASR managed path, including dependency preparation, model download, start and failure recovery. Download completion must not be represented as service availability. Validate this path using resources controlled by this task, not the owner's existing deployment.
+
+Every save/import/source-sync journey offers optional owner-authored context, separate from originals, quoted material and the owner's own addition. Single-item and source-wide scope must be explicit. Background continuation reuses saved context and must not silently trigger paid historical processing. The owner authorizes completing missing fields, storage, transport and parsing context; a cosmetic successful save is insufficient.
+
+Submitted conversations remain visible after ordinary referenced-material modification or deletion. They retain historical citation identity and a continuation entry; unavailable originals explain their state and are never silently retargeted. Ordinary-update history already satisfies this target. The owner authorizes changing ordinary deletion to retain that submitted history, while explicit privacy erasure, forget and revocation retain their current erasure/restriction rules. Already-erased text cannot be recovered. This does not broaden original access, model-context permissions or expiry policy.
+
+Calendar's target is automatic effectiveness within granted bounds, with no per-item approval queue. Missing information, waiting for a device, uncertainty and actual write receipts remain visible. The owner authorizes extending the current create-only managed path to update/cancel/complete within the existing authorization, without extending devices or calendars. Preserve target/version checks, idempotency, actual device receipts and host protections; authorization does not establish that implementation or verification has finished.
+
+## Supersession and unchanged contracts
+
+| Classification | Disposition |
+| --- | --- |
+| KEEP | One instance/owner; original/evidence identity; current authorization; deterministic saves; separate local save, Central receipt and processing facts; capture/source/send pause distinctions; durable drafts and origin-aware returns; native permissions; existing local copy policies; no fake success. |
+| CHANGE | Android primary navigation and Mac landing priority; original preview default; global Central quick note; unified reader; Memory list/filter organization; discovery More menu; settings/authorization grouping; low-frequency existing entries. |
+| REMOVE | Android four-tab/Record-tab candidates as the final layout; independent Memory view management; server-directory import UI; discovery's prominent report/text tabs; standalone background-authorization tab; unnecessary daily explanatory prose. |
+| AUTHORIZED, IMPLEMENTATION PENDING | Ordinary-deletion history retention with privacy erasure/forget/revocation exceptions; automatic update/cancel/complete within existing calendar/device authorization; complete independent description fields/storage/transport/context; full managed OCR/ASR dependency/download/start/recovery path. See H01–H04 in the source inventory; these are no longer approval Holds. |
+| STILL SEPARATE | New receipt/count policies, recovery transaction/checkpoint semantics, provider auto-restoration, broader credential reuse, missing browser-origin permission inspection and any authorization beyond the four explicitly approved scopes. See H06–H09 and capability checks Q01/Q02. |
+| UNKNOWN | Full final-prototype dynamic access, native visual parity, physical-device permissions/OEM behavior, unexecuted state transitions and actual provider behavior. Existing prototype screenshots do not certify the product. |
+
+This supersedes the Android navigation and overlapping presentation/entry-placement portions of [UI IA v1](adr-ui-ia-v1.md), [the 2026-10-26 user journeys](ui-user-journeys.md), and their earlier client/presentation recommendations. It does not replace unrelated architecture decisions. In [retained evidence history](adr-evidence-history-retention.md), ordinary-update retention remains valid; the owner has now approved changing ordinary deletion while preserving explicit privacy erasure/forget/revocation. The baseline backend still requires that implementation and verification. Older Holds are narrowed only by the explicit UI decisions and four additional execution authorizations.
+
+## Validation and release boundary
+
+An independent reviewer uses the source inventory established before implementation to check completeness. Validate the changed module with focused risk checks, then run the real three clients in isolated generated profiles and compare each applicable page, dialog and state with its corresponding prototype. Record viewport/screen, theme, language, source, revision, screenshot, differences and pass/fail/untested/Hold. Unit tests and DOM assertions do not prove visual equality; platform-specific layouts are expected to differ exactly as their own approved sources differ.
+
+The final HTML is readable, but old final temporary screenshots are missing and a supported browser request to open its local URL was denied by browser security policy. No workaround is authorized. Ten already-created source default-state screenshots have independent image review; no product state has completed this round's visual acceptance. Full comparison remains blocked pending an allowed source delivery/access method.
+
+Use draft PRs, independent code/design review, relevant checks on the final head and the owner's authorized merge path. Verify the remote main commit. Do not approve on the owner's behalf, bypass branch protection, push directly to main, deploy or publish a release.

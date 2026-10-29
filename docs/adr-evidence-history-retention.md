@@ -4,6 +4,8 @@ Date: 2026-10-17. Status: owner-directed implementation; independently reviewed,
 awaiting merge and deployment.
 Applies to main. This does not authorize deployment or a paid historical replay.
 
+2026-10-29 supersession target: the owner’s later [UI review and execution authorization](adr-ui-final-three-clients.md) require visible submitted conversations after ordinary material deletion as well as modification. Ordinary-update retention below already meets that target. H01 now authorizes changing ordinary deletion while explicit privacy erasure, forget and revocation retain their existing erasure/restriction rules. The exceptions below describe the code baseline until that authorized change is implemented and verified; this note does not claim completion, expand expiry/access/model-context policy or recover already-erased text.
+
 ## Decision and scope
 
 The owner explicitly requires change detection at normalized, model-visible evidence,

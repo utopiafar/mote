@@ -1,0 +1,578 @@
+{
+  "date": "2026-10-29",
+  "thread": "codex://threads/01a17d84-94a3-7382-b12a-5c656106f534",
+  "sourcePrototype": "mote-final-workspace.html",
+  "sourceSha256": "d6ae147fbb0b2b9df08b52bc8ee60a85e02c4340c7872e45c4878fdb0592819e",
+  "sourceStatus": "candidate-awaiting-owner-review; later owner task authorizes existing-capability UI implementation",
+  "collectionMethod": "Only copied existing PNG bytes; no new render or browser action",
+  "scope": "10 default source states; no product screenshot or product visual pass",
+  "blockedAction": {
+    "status": "denied",
+    "target": "file:///Users/utopiafar/.codex/visualizations/2026/10/27/01a17d84-94a3-7382-b12a-5c656106f534/mote-final-workspace.html",
+    "surface": "CUA hidden IAB",
+    "reason": "Browser Use rejected this action due to browser security policy. Reason: The browser URL policy blocks this action. Browser use could not acquire authority to trigger network egress. The URL policy gate did not grant access. The requested URL protocol is not allowed. Allowed protocols: \"http:\", \"https:\".",
+    "instruction": "The agent must not attempt to achieve the same outcome via workaround, indirect execution, raw CDP or browser commands, alternate browser surfaces, or policy circumvention. Proceed only with a materially safer alternative that does not require this blocked browser action; if none exists, stop and request user input."
+  },
+  "limitations": [
+    "Prototype review controls and sample receipts are not product UI",
+    "No new rendering is authorized by these existing images",
+    "No deep pages, errors, empty/loading, permissions, dark or narrow states are certified",
+    "Mac ask is conversation history; initial.png is Central owner questions, despite its producer directory"
+  ],
+  "images": [
+    {
+      "file": "web-home.png",
+      "client": "Central Web",
+      "state": "首页",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-web/.mote/ui-final-source/home.png",
+      "sourceMtimeUtc": "2026-10-29T02:54:35.771910Z",
+      "sha256": "d9bb408bd350b6d2539a38b9571b8d3b40b3d75f519cd028cc350e9ac528c6fc",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        1347
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "fullPage",
+      "producer": "web_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "web-guide.png",
+      "client": "Central Web",
+      "state": "全部功能",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-web/.mote/ui-final-source/guide.png",
+      "sourceMtimeUtc": "2026-10-29T02:54:35.814527Z",
+      "sha256": "333c95147804e266312426fc0fac98c4ddfc3d7f0b0919493d751ecd12f9d10b",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        1081
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "fullPage",
+      "producer": "web_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "web-owner-questions.png",
+      "client": "Central Web",
+      "state": "需要你补充列表",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-desktop/.mote/final-ui-source/initial.png",
+      "sourceMtimeUtc": "2026-10-29T02:54:53.185189Z",
+      "sha256": "7a11737061cca3a6b48632a65a00083875f3564f41e7788026ddee7c85b40ecb",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        1064
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "fullPage; observed PNG height 1064",
+      "producer": "desktop_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "android-home.png",
+      "client": "Android",
+      "state": "日常首页",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-android/.mote/ui-final-source/prototype-android-home-390.png",
+      "sourceMtimeUtc": "2026-10-29T02:55:00.368232Z",
+      "sha256": "65689aded02ed83be2888dd445a7160bb4d5533287514e02bf881be5111fb792",
+      "viewportCssPx": [
+        390,
+        844
+      ],
+      "imagePixels": [
+        390,
+        844
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "fullPage",
+      "producer": "android_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "mac-home.png",
+      "client": "Mac",
+      "state": "工作台",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-desktop/.mote/final-ui-source/home.png",
+      "sourceMtimeUtc": "2026-10-29T02:55:18.073280Z",
+      "sha256": "7abb30ee47e0f6eaadb3716062813a03fdeff2cfd393e76e24563f97af206ca2",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        936
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "#mac-app element",
+      "producer": "desktop_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "mac-content.png",
+      "client": "Mac",
+      "state": "内容",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-desktop/.mote/final-ui-source/content.png",
+      "sourceMtimeUtc": "2026-10-29T02:55:18.184637Z",
+      "sha256": "a710a505f35c21b6456f1d5f3dff01c89a132cfed719f653b8562a5d970ec735",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        936
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "#mac-app element",
+      "producer": "desktop_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "mac-sources.png",
+      "client": "Mac",
+      "state": "来源",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-desktop/.mote/final-ui-source/sources.png",
+      "sourceMtimeUtc": "2026-10-29T02:55:18.286818Z",
+      "sha256": "bc3d589a7b4af53854adde810a37e2557129fc81a52067700cb937ea3971d893",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        936
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "#mac-app element",
+      "producer": "desktop_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "mac-ask.png",
+      "client": "Mac",
+      "state": "对话历史",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-desktop/.mote/final-ui-source/ask.png",
+      "sourceMtimeUtc": "2026-10-29T02:55:18.402539Z",
+      "sha256": "e6521b460a44f253b66e13ff18a6d03c1e525f585737e5cc884fe12fa7f6bc05",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        936
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "#mac-app element",
+      "producer": "desktop_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "mac-sync.png",
+      "client": "Mac",
+      "state": "待发送",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-desktop/.mote/final-ui-source/sync.png",
+      "sourceMtimeUtc": "2026-10-29T02:55:18.503966Z",
+      "sha256": "f2e6c80e35160b006d80f90e7671b26486ed3fa51550206b2795976f6c039d77",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        936
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "#mac-app element",
+      "producer": "desktop_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    },
+    {
+      "file": "mac-settings.png",
+      "client": "Mac",
+      "state": "设置",
+      "sourceOriginalPath": "/Users/utopiafar/Documents/Codex/2026-10-29/task-3/mote-desktop/.mote/final-ui-source/settings.png",
+      "sourceMtimeUtc": "2026-10-29T02:55:18.606651Z",
+      "sha256": "092ae4920e5bd3ce6ee7cfaba4997d915863033ae8b2de2389b04b878592b0c4",
+      "viewportCssPx": [
+        1440,
+        1000
+      ],
+      "imagePixels": [
+        1440,
+        1067
+      ],
+      "devicePixelRatio": 1,
+      "theme": "light",
+      "language": "zh",
+      "capture": "#mac-app element",
+      "producer": "desktop_ui",
+      "reviewedBy": "independent_audit",
+      "evidenceKind": "source-prototype-only",
+      "productAcceptance": "not-run",
+      "generatedBeforeDenialNotification": true
+    }
+  ],
+  "referencedHtml": [
+    {
+      "file": "mote-actions-automatic.html",
+      "sha256": "79a00f8e8aa31aec6741bf4e4b909ef7767b781cef41a9d5166a8c3ffd2655ee",
+      "turns": [
+        "S28"
+      ]
+    },
+    {
+      "file": "mote-actions-workspace.html",
+      "sha256": "32ba19508fec5f624f92bc1186344319b666bd405d44fac929104cafcb00265f",
+      "turns": [
+        "S26",
+        "S27"
+      ]
+    },
+    {
+      "file": "mote-activity-workspace.html",
+      "sha256": "77acdb2ac54f144336fd74cce15fc8b02ed0d07a082b4ab9e8bf8e3a68602bac",
+      "turns": [
+        "S19"
+      ]
+    },
+    {
+      "file": "mote-ai-access.html",
+      "sha256": "d6ac826ec73a417085058aedb940a1ccbc971dfe9037713a5429da2f3a734002",
+      "turns": [
+        "S16",
+        "S17"
+      ]
+    },
+    {
+      "file": "mote-android-assistant.html",
+      "sha256": "361fd91595477797a77059df9bd243b8b005f4ac8e9582499f5f2a2a88fe259b",
+      "turns": [
+        "S33",
+        "S34"
+      ]
+    },
+    {
+      "file": "mote-android-navigation.html",
+      "sha256": "06a55700c9c7c640e6e8d00ffaaaf10665d7d8a8e873af267988a688a63cd75e",
+      "turns": [
+        "S32",
+        "S33"
+      ]
+    },
+    {
+      "file": "mote-android-workspace.html",
+      "sha256": "88f5015f54972dd2dd42372dd6de67f418393ac79924478091d1116d1851605c",
+      "turns": [
+        "S31",
+        "S32"
+      ]
+    },
+    {
+      "file": "mote-continuity-workspace.html",
+      "sha256": "15f899ce90dd79d6058f322bdfc8b34b940a7dec4fa31c04476c57af7eba61b3",
+      "turns": [
+        "S36",
+        "S37"
+      ]
+    },
+    {
+      "file": "mote-detail-library.html",
+      "sha256": "157f46c6666b9ee1ce332e2005a4e4bb566d363b9e2ea4d7504da1922a8a70d7",
+      "turns": [
+        "S10"
+      ]
+    },
+    {
+      "file": "mote-detail-source.html",
+      "sha256": "e7bd5796a36c0e00c028ff384c0b02743386a501ffe877966032b38161279fd4",
+      "turns": [
+        "S10"
+      ]
+    },
+    {
+      "file": "mote-device-workspace.html",
+      "sha256": "7f4b5a15c9542cbb6c92ace5c3973bf6cca187e18e5d29b931a158e3a7e8ec93",
+      "turns": [
+        "S28",
+        "S29"
+      ]
+    },
+    {
+      "file": "mote-discovery-refined.html",
+      "sha256": "d57cb20bb75084500b1885f3ac801c810d5cd3720ce4129f7151adfb35e68fd8",
+      "turns": [
+        "S19",
+        "S20"
+      ]
+    },
+    {
+      "file": "mote-final-workspace.html",
+      "sha256": "d6ae147fbb0b2b9df08b52bc8ee60a85e02c4340c7872e45c4878fdb0592819e",
+      "turns": [
+        "S38"
+      ]
+    },
+    {
+      "file": "mote-first-use.html",
+      "sha256": "01b1f22269645d40af80957731b6ecae8f7169e31942bee2c31f60dc0889d7af",
+      "turns": [
+        "S35",
+        "S36"
+      ]
+    },
+    {
+      "file": "mote-home-discoveries.html",
+      "sha256": "6a19c719b3400592997d4ef1e4e91eed63de4d605220ec8c38f43edde7c20526",
+      "turns": [
+        "S17",
+        "S18",
+        "S19"
+      ]
+    },
+    {
+      "file": "mote-import-workspace.html",
+      "sha256": "2ddc5503438edeeb823bbfb6ac0081e117af5d28ee2ce6addd926658e4a3c09c",
+      "turns": [
+        "S14",
+        "S15"
+      ]
+    },
+    {
+      "file": "mote-library-complete.html",
+      "sha256": "31990cdb676ef805fb50155197eab5dae5b17a239a00131145ae28cc99edb05d",
+      "turns": [
+        "S07",
+        "S08"
+      ]
+    },
+    {
+      "file": "mote-library-content.html",
+      "sha256": "56e88022165b91fea3f438d2d8a4debf99ea78c03f37208b7ddc5d75cc3cc4f6",
+      "turns": [
+        "S02",
+        "S03"
+      ]
+    },
+    {
+      "file": "mote-library-data-audit.html",
+      "sha256": "7b192a7af747252a390e920b8f1db351014fe912fe92b568066866c038548107",
+      "turns": [
+        "S03",
+        "S04"
+      ]
+    },
+    {
+      "file": "mote-library-list.html",
+      "sha256": "b1a93aa35e02c00ec49e2a914bcf697de61c4685611b1264ed0661e2cc781d17",
+      "turns": [
+        "S06",
+        "S07"
+      ]
+    },
+    {
+      "file": "mote-library-restored.html",
+      "sha256": "6196a2b2a0bd38a56bc3cb1b1caca1a7a7bf3739dd2faba16707de69f3faaffc",
+      "turns": [
+        "S05",
+        "S06"
+      ]
+    },
+    {
+      "file": "mote-library.html",
+      "sha256": "ec3e8cde37e1a9dd8cb611f4fb5135975396fb0425ce68c21709e47afebd5bbe",
+      "turns": [
+        "S04",
+        "S05"
+      ]
+    },
+    {
+      "file": "mote-mac-role-exploration.html",
+      "sha256": "64739e25469d468b981a055d05865e04915e38e8c586be6f4a06f7a0620ff113",
+      "turns": [
+        "S34",
+        "S35"
+      ]
+    },
+    {
+      "file": "mote-mac-workspace.html",
+      "sha256": "cffbcf5c3ce6039b46eb480c50608ee0c757eff197c2e6c1703e0359eb5e4ece",
+      "turns": [
+        "S30",
+        "S31"
+      ]
+    },
+    {
+      "file": "mote-material-ask.html",
+      "sha256": "df2db138095093b0d69f891282c7e4b8dfb7ffdeb6a1b96c6028f7e9188e24a8",
+      "turns": [
+        "S01",
+        "S02"
+      ]
+    },
+    {
+      "file": "mote-memory-current.html",
+      "sha256": "eaff067cabd83a8f21131e24ccbd42f21acf31a115301c5588fbbd6dbcbddca8",
+      "turns": [
+        "S12",
+        "S13"
+      ]
+    },
+    {
+      "file": "mote-memory-polished.html",
+      "sha256": "718e67795d8907532fe997f35bb7046d89c86c72013613f6c22a37cc4573199e",
+      "turns": [
+        "S13",
+        "S14"
+      ]
+    },
+    {
+      "file": "mote-memory-workspace.html",
+      "sha256": "0b2c7aee14f801ffbdb096bc6509d15fbd9b852c07e759710bbbd5cb80850127",
+      "turns": [
+        "S11",
+        "S12"
+      ]
+    },
+    {
+      "file": "mote-model-settings.html",
+      "sha256": "c9f249c967f148582588074641baa2e5db50f544f28d35db295c292d9c85a2ad",
+      "turns": [
+        "S20",
+        "S21"
+      ]
+    },
+    {
+      "file": "mote-note-global.html",
+      "sha256": "1fdbfadbea8cba3387bbd4f998f6876bcea0918f809982fece1e1e9faedb3b1d",
+      "turns": [
+        "S08",
+        "S09"
+      ]
+    },
+    {
+      "file": "mote-recording-workspace.html",
+      "sha256": "c10fda2676cfb4092ce4446839c2bddb8d267cf9b6fc2587dc4b0b03390e8208",
+      "turns": [
+        "S29",
+        "S30"
+      ]
+    },
+    {
+      "file": "mote-recovery-workspace.html",
+      "sha256": "58bedf951b124128d7853246e2d3b967e28bdd8e66a6468fc0d3d3a19473bde2",
+      "turns": [
+        "S37",
+        "S38"
+      ]
+    },
+    {
+      "file": "mote-settings-automatic.html",
+      "sha256": "707cbcae9a4ae14a509d59bc992468b6220bd2566b03474bb726c478a6d15749",
+      "turns": [
+        "S24",
+        "S25"
+      ]
+    },
+    {
+      "file": "mote-settings-complete.html",
+      "sha256": "66936e053542241d055be76fdc6e716c59d41255aba9bd1a1291951d9c716e66",
+      "turns": [
+        "S25",
+        "S26",
+        "S27",
+        "S28"
+      ]
+    },
+    {
+      "file": "mote-settings-services.html",
+      "sha256": "00afe1c925e06d485db908f38fb13bccc260fd71df62b66bb49604016f2e5648",
+      "turns": [
+        "S22",
+        "S23",
+        "S24"
+      ]
+    },
+    {
+      "file": "mote-source-workspace.html",
+      "sha256": "5d63e0b950cbea3c8c2eb9902855977c517dcbbbf98d73fd1bba78e2ae538813",
+      "turns": [
+        "S15",
+        "S16"
+      ]
+    },
+    {
+      "file": "mote-ui-review.html",
+      "sha256": "1d6f30f9a7d43c889865bd5bc21dfbe00a52c730e1e8034f4ce93070d54a9059",
+      "turns": [
+        "S00"
+      ]
+    },
+    {
+      "file": "mote-workspace-next.html",
+      "sha256": "23be9582c4403d4ca32aac6f7cb1cc1ef27fa5f1e411fee7fc3b3313d5d890b6",
+      "turns": [
+        "S09",
+        "S10"
+      ]
+    }
+  ]
+}

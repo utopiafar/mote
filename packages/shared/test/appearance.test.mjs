@@ -25,6 +25,8 @@ test('both built-in palettes meet text and required-control contrast including s
  for(const [scheme,t]of Object.entries(linearUiTheme.schemes)){
   for(const fg of ['ink','muted','accent','success','warning','danger'])for(const bg of ['background','surface','surface-raised','surface-sunken','surface-hover'])assert.ok(ratio(t[fg],t[bg])>=4.5,`${scheme} ${fg}/${bg}: ${ratio(t[fg],t[bg])}`);
   for(const [fg,bg]of [['primary-ink','primary-background'],['on-accent','accent'],['accent','tint'],['sidebar-ink','sidebar'],['sidebar-muted','sidebar'],['success','success-tint'],['warning','warning-tint'],['danger','danger-tint']])assert.ok(ratio(t[fg],t[bg])>=4.5,`${scheme} ${fg}/${bg}: ${ratio(t[fg],t[bg])}`);
+  // Selected discovery summaries and native record timestamps retain muted text.
+  assert.ok(ratio(t.muted,t.tint)>=4.5,`${scheme} muted/tint: ${ratio(t.muted,t.tint)}`);
   for(const bg of ['background','surface'])assert.ok(ratio(t['control-border'],t[bg])>=3,`${scheme} control/${bg}`);
  }
 });
