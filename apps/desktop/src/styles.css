@@ -958,3 +958,35 @@ input,select,textarea { accent-color:var(--mote-accent); }
   .home-content-row .content-state { grid-column: 2; grid-row: 2; margin-top: -8px; }
   .home-content-row>.chevron { grid-column: 3; grid-row: 1; }
 }
+
+/* The independent Mac note keeps owner context separate from the recorded text. */
+.quick-note-window #main-content { padding: 0; }
+.quick-note-window .workspace-note { max-width: none; }
+.workspace-note .page-header { padding: 22px 25px; margin: 0; border-bottom: 1px solid var(--mote-divider); align-items: center; }
+.workspace-note .page-header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+#note-dismiss { font-size: 22px; line-height: 1; padding: 0; }
+.workspace-note .note-composer { margin: 0; background: transparent; }
+.workspace-note .note-composer form { gap: 0; }
+.workspace-note .note-composer #note-text { margin: 0; padding: 20px 25px; min-height: 260px; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 13px; }
+.workspace-note .note-composer #note-text:focus-visible { outline-offset: -4px; }
+.note-description { margin: 0 25px; padding: 17px 0; border-top: 1px solid var(--mote-divider); font-size: 12px; color: var(--mote-muted); }
+.note-description summary { cursor: pointer; }
+#note-description { margin-top: 16px; padding: 10px 11px; font-size: 13px; line-height: 1.8; min-height: 64px; background: var(--mote-surface); border: 1px solid var(--mote-divider); border-radius: 5px; resize: vertical; }
+#note-description-help { font-size: 11px; margin: 7px 0 0; }
+.workspace-note .composer-bottom { margin: 0; padding: 17px 25px; gap: 14px; }
+.workspace-note .composer-bottom > span { font-size: 11px; color: var(--mote-muted); }
+.workspace-note .composer-bottom button { font-size: 12px; }
+#note-feedback { margin: 0 25px 12px; font-size: 11px; }
+#note-feedback:empty { display: none; }
+.note-extra { margin: 0 25px 18px; font-size: 11px; color: var(--mote-muted); }
+.note-extra button { font-size: 11px; margin-top: 8px; }
+.content-description { border-top: 1px solid var(--mote-divider); padding: 18px 0; margin: 25px 0 12px; }
+.content-description h2 { font-size: 13px; font-weight: 500; }
+#content-detail-description { font-size: 12px; line-height: 1.9; margin-top: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#note-dismiss { color: var(--mote-muted); }
+.note-description summary { font-weight: 400; }
+.workspace-note .composer-bottom { position: sticky; bottom: 0; background: var(--mote-background); z-index: 2; }
+.note-footer-copy { display: flex; align-items: center; gap: 14px; color: var(--mote-muted); font-size: 11px; }
+.note-footer-copy .note-extra { position: relative; margin: 0; }
+.note-footer-copy .note-extra summary { font-size: 11px; font-weight: 400; }
+.note-footer-copy .note-extra button { position: absolute; bottom: 25px; left: 0; width: max-content; padding: 10px; border: 1px solid var(--mote-divider); border-radius: 5px; background: var(--mote-surface); }

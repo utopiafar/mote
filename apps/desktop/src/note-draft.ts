@@ -11,11 +11,12 @@ import { encodeLocalContent, readLocalContent } from './local-content';
 
 interface StoredDraft { draft: NoteDraft; submission?: CaptureEvent; targetOrigin?: string; completed?: { draftId: string; eventId: string } }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-function emptyDraft(): NoteDraft { return { id: randomUUID(), text: '', mood: '', revision: 0 }; }
+function emptyDraft(): NoteDraft { return { id: randomUUID(), text: '', mood: '', description: '', revision: 0 }; }
 function validateDraft(value: NoteDraft): void {
-  if (!value || !uuid.test(value.id) || typeof value.text !== 'string' || typeof value.mood !== 'string' || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error(moteText("随手记草稿格式无效"));
+  if (!value || !uuid.test(value.id) || typeof value.text !== 'string' || typeof value.mood !== 'string' || typeof value.description !== 'string' || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error(moteText("随手记草稿格式无效"));
   if (value.text.length > 20000) throw new Error(moteText("正文最多 20000 个字符位，部分表情占多个字符位；原草稿未改动"));
   if (value.mood.length > 80) throw new Error(moteText("心情最多 80 个字符位，部分表情占多个字符位；原草稿未改动"));
+  if (value.description.length > 12000) throw new Error(moteText('资料说明最多 12000 个字符位；原草稿未改动。'));
 }
 /** Prepared IDs precede queue writes, so an interrupted submit never becomes a second note. */
 export class NoteDraftStore {
@@ -32,9 +33,9 @@ export class NoteDraftStore {
       if ((await stat(path)).size > maxBytes) throw new Error('oversized');
       const data = (await readLocalContent(path)).toString('utf8');
       if (Buffer.byteLength(data) > maxBytes) throw new Error('oversized');
-      const value = JSON.parse(data) as StoredDraft; validateDraft(value.draft);
+      const value = JSON.parse(data) as StoredDraft;value.draft.description??='';validateDraft(value.draft);
       if (value.completed && (!uuid.test(value.completed.draftId) || !uuid.test(value.completed.eventId))) throw new Error('invalid completion');
-      if (value.submission && (value.submission.id !== value.draft.id || value.submission.source !== 'note' || value.submission.ocrText !== value.draft.text || typeof value.targetOrigin !== 'string')) throw new Error('invalid prepared note');
+      if (value.submission && (value.submission.id !== value.draft.id || value.submission.source !== 'note' || value.submission.ocrText !== value.draft.text || (value.submission.metadata?.ownerDescription??'')!==(value.draft.description.trim()?value.draft.description:'') || typeof value.targetOrigin !== 'string')) throw new Error('invalid prepared note');
       this.value = value;
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("随手记草稿无法读取；请先备份草稿文件再修复")); await this.persist(this.value); }
     for (const name of await readdir(this.directory)) if (name.endsWith('.tmp') && uuid.test(name.slice(0, -4))) await unlink(join(this.directory, name));
@@ -61,7 +62,7 @@ export class NoteDraftStore {
       if (input.id !== this.value.draft.id) throw new Error(moteText("草稿已更新，请重新载入当前草稿"));
       if (input.revision <= this.value.draft.revision) return this.get();
       if (this.value.submission) throw new Error(moteText("此草稿已有待完成保存，请先重试保存；不能改写已准备的记录"));
-      await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, revision: input.revision } });
+      await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, description: input.description, revision: input.revision } });
       return this.get();
     });
   }
@@ -75,13 +76,16 @@ export class NoteDraftStore {
       if (input.revision < this.value.draft.revision) throw new Error(moteText("提交版本已过期，请重新保存当前草稿"));
       if (this.value.submission) {
         if (this.value.targetOrigin !== (config.serverUrl && config.token ? config.serverUrl : '')) throw new Error(moteText("待完成记录属于原中央节点，请恢复原节点完成保存"));
-        if (input.text !== this.value.draft.text || input.mood !== this.value.draft.mood) throw new Error(moteText("待完成记录不能改写，请重新载入草稿后重试"));
+        if (input.text !== this.value.draft.text || input.mood !== this.value.draft.mood || input.description !== this.value.draft.description) throw new Error(moteText("待完成记录不能改写，请重新载入草稿后重试"));
       } else {
-        const metadata = config.metadataEnabled ? await metadataProvider?.() : undefined;
+        const observed = config.metadataEnabled ? await metadataProvider?.() : undefined;
+        const capturedAt=new Date().toISOString();
+        // Explicit owner text is independent of optional device observations and the original body.
+        const metadata = input.description.trim()?{version:1 as const,observedAt:capturedAt,collector:{method:'manual' as const},...observed,ownerDescription:input.description}:observed;
         const submission: CaptureEvent = { id: input.id, deviceId: config.deviceId, deviceName: config.deviceName, platform,
-          capturedAt: new Date().toISOString(), durationMs: 0, appId: 'dev.mote.notes', appName: moteText("随手记"), source: 'note',
+          capturedAt, durationMs: 0, appId: 'dev.mote.notes', appName: moteText("随手记"), source: 'note',
           ocrText: input.text, ...(metadata ? { metadata } : {}), ...(input.mood ? { mood: input.mood } : {}), privacy: { excluded: false, redacted: false, mode: 'none' } };
-        await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, revision: input.revision }, submission, targetOrigin: config.serverUrl && config.token ? config.serverUrl : '' });
+        await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, description: input.description, revision: input.revision }, submission, targetOrigin: config.serverUrl && config.token ? config.serverUrl : '' });
       }
       const submission = this.value.submission!;
       await queue.enqueue(submission);

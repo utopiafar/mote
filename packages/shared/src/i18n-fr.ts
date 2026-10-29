@@ -8864,5 +8864,15 @@ export const french: Readonly<Record<string, string>> = {
   "查看全部 →": "Tout voir →",
   "本机采集与同步 →": "Collecte et synchronisation locales →",
   "对话暂不可读取，请稍后重试。": "Les conversations sont temporairement indisponibles. Réessayez plus tard.",
-  "内容暂不可完整读取，请重试。": "Une partie du contenu est temporairement indisponible. Réessayez."
+  "内容暂不可完整读取，请重试。": "Une partie du contenu est temporairement indisponible. Réessayez.",
+  "资料说明最多 12000 个字符位；原草稿未改动。": "La description est limitée à 12000 unités de caractères. Le brouillon est inchangé.",
+  "记录内容": "Contenu de la note",
+  "这条记录的资料说明": "Description de cette entrée",
+  "仅用于理解这条记录。": "Utilisée uniquement pour comprendre cette entrée.",
+  "先保存在本机": "Enregistré localement en premier",
+  "收起": "Réduire",
+  "收起随手记": "Réduire la note rapide",
+  "记点什么…": "Notez quelque chose…",
+  "例如：这是我的日记，记录当天的经历和感受。": "Par exemple : ceci est mon journal, où je note les expériences et émotions de la journée.",
+  "资料说明": "Description"
 };

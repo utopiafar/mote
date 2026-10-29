@@ -75,3 +75,29 @@ it('rejects a saved old-format note without changing prepared identity or text',
   await expect(new NoteDraftStore(directory).initialize()).rejects.toThrow('Unsupported desktop storage format');
   expect(await readFile(join(directory,'draft.json'))).toEqual(before);
 });
+
+it('persists the independent owner description through restart and a prepared retry without changing the original',async()=>{
+  const store=new NoteDraftStore(directory);await store.initialize();
+  const input={...store.get(),text:'Generated original\nkept exactly',mood:'calm',description:'Generated owner explanation\nnot original text',revision:1};
+  await store.update(input);const restarted=new NoteDraftStore(directory);await restarted.initialize();expect(restarted.get()).toMatchObject(input);
+  const queue=new DurableQueue(join(directory,'queue'),config);await queue.initialize();
+  const withoutObservations={...config,metadataEnabled:false};
+  await expect(restarted.submit(input,withoutObservations,'macos',{enqueue:async event=>{await queue.enqueue(event);throw Error('generated interrupted save');}})).rejects.toThrow('interrupted');
+  const first=(await queue.next())!.record.event;
+  expect(first.ocrText).toBe(input.text);expect(first.mood).toBe(input.mood);expect(first.metadata?.ownerDescription).toBe(input.description);
+  expect(first.metadata?.state).toBeUndefined();expect(first.metadata?.noteOrigin).toBeUndefined();
+  await expect(restarted.submit({...input,description:'Changed explanation',revision:2},withoutObservations,'macos',queue)).rejects.toThrow('不能改写');
+  const recovered=new NoteDraftStore(directory);await recovered.initialize();await recovered.submit(input,withoutObservations,'macos',queue);
+  expect((await queue.next())!.record.event).toEqual(first);expect(queue.stats().depth).toBe(1);expect(recovered.get().description).toBe('');
+  const {localContentDetail}=await import('../src/content-library');
+  const reader=await localContentDetail(queue,{} as never,'queue:'+first.id);
+  expect(reader.text).toBe(input.text);expect(reader.description).toBe(input.description);
+});
+
+it('does not save description-only notes or replace a draft with oversized explanation',async()=>{
+  const store=new NoteDraftStore(directory);await store.initialize();
+  const original={...store.get(),description:'Generated explanation',revision:1};await store.update(original);
+  await expect(store.submit(original,config,'macos',{enqueue:async()=>{throw Error('must not enqueue');}})).rejects.toThrow('正文');
+  await expect(store.update({...original,description:'x'.repeat(12001),revision:2})).rejects.toThrow('12000');
+  expect(store.get()).toMatchObject(original);
+});

@@ -44,7 +44,7 @@ export async function syncContent(history: SyncHistory, queue: DurableQueue, sou
       }
     } else if (item.captureId) {
       const record = queue.recordForHistory(item.captureId);
-      if (record) { const bytes = includeImage ? await queue.imageForBrowser(item.captureId) : undefined; return { item, location: 'local', hasImage:Boolean(record.blobHash), truncated:recordText(item.source,record.event as unknown as Record<string,unknown>).length>100000,text:recordText(item.source,record.event as unknown as Record<string,unknown>).slice(0,100000), ...(bytes && includeImage ? { image: await previewWork.run<string>({ kind: 'preview', bytes, thumbnail: false }) } : {}), metadata: JSON.stringify(record.event.metadata ?? {}, null, 2) }; }
+      if (record) { const bytes = includeImage ? await queue.imageForBrowser(item.captureId) : undefined; return { item, location: 'local',description:record.event.metadata?.ownerDescription, hasImage:Boolean(record.blobHash), truncated:recordText(item.source,record.event as unknown as Record<string,unknown>).length>100000,text:recordText(item.source,record.event as unknown as Record<string,unknown>).slice(0,100000), ...(bytes && includeImage ? { image: await previewWork.run<string>({ kind: 'preview', bytes, thumbnail: false }) } : {}), metadata: JSON.stringify(record.event.metadata ?? {}, null, 2) }; }
     }
     // A later retry can have cleared the local copy. Resolve only a receipt from this same node/device.
     const receipt = history.receivedCapture(config, item.key);
@@ -61,7 +61,9 @@ export async function readCentralContent(config:Config,item:SyncHistoryItem,chun
   item.observedAt=typeof record.capturedAt==='string'?record.capturedAt:item.observedAt;
   const provenance = record.provenance as Record<string, unknown> | undefined;
   if (item.sourceId && provenance?.sourceId !== item.sourceId) throw Error(moteText('记录不属于当前设备'));
-  const result: SyncContent = { truncated:recordText(item.source,record).length>100000,item, location: 'central', captureId: item.captureId, text:recordText(item.source,record).slice(0,100000), metadataOnly: item.layer === 'reference'||provenance?.layer==='reference', metadata: JSON.stringify({ capturedAt: record.capturedAt, appName: record.appName, provenance, metadata: record.metadata }, null, 2).slice(0, 100000) };
+  const descriptions=(record.attributionContext as {recordContextStatements?:{captureId:string;description:string}[]}|undefined)?.recordContextStatements;
+  const description=Array.isArray(descriptions)?descriptions.find(statement=>statement.captureId===item.captureId&&typeof statement.description==='string'&&statement.description.length<=12000)?.description:undefined;
+  const result: SyncContent = { truncated:recordText(item.source,record).length>100000,item, location: 'central', captureId: item.captureId, text:recordText(item.source,record).slice(0,100000),description, metadataOnly: item.layer === 'reference'||provenance?.layer==='reference', metadata: JSON.stringify({ capturedAt: record.capturedAt, appName: record.appName, provenance, metadata: record.metadata }, null, 2).slice(0, 100000) };
   const ocr = record.ocr as { status?: string } | undefined;
   result.processing = ocr?.status === 'pending';
   result.hasImage=Boolean(record.imageMime && item.source==='screen'); if(record.imageMime)result.retainsOriginal=true;

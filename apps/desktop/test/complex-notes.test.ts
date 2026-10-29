@@ -13,13 +13,14 @@ const diary = '【完全合成测试】\n第一天：我把远山项目的初稿
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-complex-note-')); });
 afterEach(async () => { if (server) { server.closeAllConnections(); await new Promise<void>(resolve => server!.close(() => resolve())); server = undefined; } await rm(directory, { recursive: true, force: true }); vi.unstubAllGlobals(); });
 it('keeps multiple Chinese diary revisions, emoji and combining characters exact across draft, queue, restart and ACK faults', async () => {
-  const accepted = new Map<string, string>(); let mode: 'offline' | 'wrong-id' | 'invalid-json' | 'ok' = 'offline';
+  const accepted = new Map<string, string>(); let mode: 'offline' | 'wrong-id' | 'invalid-json' | 'denied' | 'ok' = 'offline';
   server = createServer(async (req, res) => {
     req.setEncoding('utf8'); let raw = ''; for await (const chunk of req) raw += chunk;
     const value = JSON.parse(raw); const previous = accepted.get(value.id);
     if (previous && previous !== raw) { res.writeHead(409); res.end('{}'); return; }
     accepted.set(value.id, raw);
     if (mode === 'offline') { req.socket.destroy(); return; }
+    if (mode === 'denied') {res.writeHead(403);res.end('{}');return;}
     res.writeHead(201, { 'content-type': 'application/json' });
     res.end(mode === 'invalid-json' ? 'malformed fixture ack' : JSON.stringify(captureAck(mode === 'wrong-id' ? 'incorrect-id' : value.id)));
   });
@@ -32,19 +33,20 @@ it('keeps multiple Chinese diary revisions, emoji and combining characters exact
   for (let round = 0; round < bodies.length; round++) {
     const store = new NoteDraftStore(join(directory, 'notes')); await store.initialize();
     const base = store.get();
-    const latest = { ...base, text: bodies[round], mood: moods[round], revision: base.revision + 2 };
+    const latest = { ...base, text: bodies[round], mood: moods[round], description:'Generated owner description '+round, revision: base.revision + 2 };
     await store.update(latest); await store.update({ ...base, text: 'stale autosave', revision: base.revision + 1 });
     const restartedDraft = new NoteDraftStore(join(directory, 'notes')); await restartedDraft.initialize();
     expect(restartedDraft.get().text).toBe(bodies[round]); expect(restartedDraft.get().mood).toBe(moods[round]);
     let queue = new DurableQueue(join(directory, 'queue'), config); await queue.initialize();
     const saved = await restartedDraft.submit(restartedDraft.get(), config, 'macos', queue); ids.push(saved.id);
-    for (const failure of ['offline', 'wrong-id', 'invalid-json'] as const) {
+    for (const failure of ['offline', 'wrong-id', 'invalid-json','denied'] as const) {
       mode = failure; const pending = await queue.next(); expect(pending).toBeDefined();
       await expect(uploadCapture(config, pending!.record.event, pending!.image)).rejects.toThrow();
       await queue.failed(saved.id, 1000, () => .5);
       queue = new DurableQueue(join(directory, 'queue'), config); await queue.initialize();
       const restored = await queue.next(Number.MAX_SAFE_INTEGER);
       expect(restored!.record.event.id).toBe(saved.id); expect(restored!.record.event.ocrText).toBe(bodies[round]);
+      expect(restored!.record.event.metadata?.ownerDescription).toBe(latest.description);
       await queue.resetRetries();
     }
     mode = 'ok'; const pending = (await queue.next())!;
@@ -52,7 +54,7 @@ it('keeps multiple Chinese diary revisions, emoji and combining characters exact
     await queue.acknowledge(saved.id); expect(queue.stats().depth).toBe(0);
   }
   expect(new Set(ids).size).toBe(3); expect(accepted.size).toBe(3);
-  for (const [i, id] of ids.entries()) { const payload = JSON.parse(accepted.get(id)!); expect(payload.ocrText).toBe(bodies[i]); expect(payload.imageBase64).toBeUndefined(); }
+  for (const [i, id] of ids.entries()) { const payload = JSON.parse(accepted.get(id)!); expect(payload.ocrText).toBe(bodies[i]);expect(payload.metadata.ownerDescription).toBe('Generated owner description '+i); expect(payload.imageBase64).toBeUndefined(); }
 });
 it('rejects boundary overflow without changing the durable draft', async () => {
   const store = new NoteDraftStore(directory); await store.initialize();

@@ -137,3 +137,9 @@ it('shows shared note evidence with attribution separately from the owner commen
   expect(result.text).toBe('备注\nMy generated comment\n\n原文 · Generated browser · https://generated.invalid/article\nThird-party generated original');
   expect(result.metadata).toContain('"kind": "share"');
 });
+
+it('reads only the server-scoped description for this exact capture without merging it into the original',async()=>{
+  const {run,item}=receipt();
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({id:item.captureId,deviceId:config.deviceId,source:'note',ocrText:'Generated exact original',metadata:{ownerDescription:'Untrusted legacy metadata'},attributionContext:{recordContextStatements:[{captureId:'99999999-9999-4999-8999-999999999999',version:1,description:'Another record explanation'},{captureId:item.captureId,version:1,description:'This record explanation'}]}})));
+  const result=await read(run,item.key);expect(result.text).toBe('Generated exact original');expect(result.description).toBe('This record explanation');
+});

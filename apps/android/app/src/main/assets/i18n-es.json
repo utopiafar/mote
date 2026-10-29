@@ -8863,5 +8863,15 @@
   "查看全部 →": "Ver todo →",
   "本机采集与同步 →": "Captura y sincronización locales →",
   "对话暂不可读取，请稍后重试。": "Las conversaciones no están disponibles temporalmente. Inténtalo de nuevo más tarde.",
-  "内容暂不可完整读取，请重试。": "Parte del contenido no está disponible temporalmente. Inténtalo de nuevo."
+  "内容暂不可完整读取，请重试。": "Parte del contenido no está disponible temporalmente. Inténtalo de nuevo.",
+  "资料说明最多 12000 个字符位；原草稿未改动。": "La descripción admite hasta 12000 unidades de caracteres. El borrador original no ha cambiado.",
+  "记录内容": "Contenido de la nota",
+  "这条记录的资料说明": "Descripción de esta entrada",
+  "仅用于理解这条记录。": "Se utiliza solo para comprender esta entrada.",
+  "先保存在本机": "Primero se guarda en este dispositivo",
+  "收起": "Minimizar",
+  "收起随手记": "Minimizar nota rápida",
+  "记点什么…": "Escribe algo…",
+  "例如：这是我的日记，记录当天的经历和感受。": "Por ejemplo: Este es mi diario, donde registro las experiencias y emociones del día.",
+  "资料说明": "Descripción"
 }

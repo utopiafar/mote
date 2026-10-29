@@ -110,6 +110,15 @@ it('keeps source time separate from the original and omits absent source separat
   expect(el('content-detail-body').textContent).toBe(remote.text);
 });
 
+it('renders an owner description separately and clears it when the reader closes',async()=>{
+  vi.mocked(api.centralContentDetail).mockResolvedValue({...remote,description:'Generated explanation <script>not executable</script>'});
+  await library.refresh();await open();
+  expect(el('content-detail-body').textContent).toBe(remote.text);
+  expect(el('content-detail-description').textContent).toBe('Generated explanation <script>not executable</script>');
+  expect(el('content-detail-description').querySelector('script')).toBeNull();expect(el('content-description-section').hidden).toBe(false);
+  el('content-detail-close').click();expect(el('content-detail-description').textContent).toBe('');expect(el('content-description-section').hidden).toBe(true);
+});
+
 it('keeps recent content complete without changing the Content workspace filter',async()=>{
   const local={...item,key:'queue:22222222-2222-4222-8222-222222222222',title:'Generated local note'};
   vi.mocked(api.localContent).mockResolvedValue({items:[local],total:1});

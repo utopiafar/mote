@@ -8864,5 +8864,15 @@ export const german: Readonly<Record<string, string>> = {
   "查看全部 →": "Alle anzeigen →",
   "本机采集与同步 →": "Lokale Erfassung und Synchronisierung →",
   "对话暂不可读取，请稍后重试。": "Unterhaltungen sind vorübergehend nicht verfügbar. Bitte versuche es später erneut.",
-  "内容暂不可完整读取，请重试。": "Einige Inhalte sind vorübergehend nicht verfügbar. Bitte versuche es erneut."
+  "内容暂不可完整读取，请重试。": "Einige Inhalte sind vorübergehend nicht verfügbar. Bitte versuche es erneut.",
+  "资料说明最多 12000 个字符位；原草稿未改动。": "Die Beschreibung darf höchstens 12000 Zeicheneinheiten enthalten. Der ursprüngliche Entwurf bleibt unverändert.",
+  "记录内容": "Notizinhalt",
+  "这条记录的资料说明": "Beschreibung dieses Eintrags",
+  "仅用于理解这条记录。": "Wird nur zum Verständnis dieses Eintrags verwendet.",
+  "先保存在本机": "Zunächst lokal gespeichert",
+  "收起": "Minimieren",
+  "收起随手记": "Schnellnotiz minimieren",
+  "记点什么…": "Etwas notieren…",
+  "例如：这是我的日记，记录当天的经历和感受。": "Zum Beispiel: Dies ist mein Tagebuch mit den Erlebnissen und Gefühlen des Tages.",
+  "资料说明": "Beschreibung"
 };

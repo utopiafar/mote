@@ -8863,5 +8863,15 @@
   "查看全部 →": "View all →",
   "本机采集与同步 →": "Local capture & sync →",
   "对话暂不可读取，请稍后重试。": "Conversations are temporarily unavailable. Please try again later.",
-  "内容暂不可完整读取，请重试。": "Some content is temporarily unavailable. Please retry."
+  "内容暂不可完整读取，请重试。": "Some content is temporarily unavailable. Please retry.",
+  "资料说明最多 12000 个字符位；原草稿未改动。": "Description must be at most 12000 character units. The original draft is unchanged.",
+  "记录内容": "Note content",
+  "这条记录的资料说明": "Description for this record",
+  "仅用于理解这条记录。": "Used only to understand this record.",
+  "先保存在本机": "Saved locally first",
+  "收起": "Minimize",
+  "收起随手记": "Minimize quick note",
+  "记点什么…": "Write something…",
+  "例如：这是我的日记，记录当天的经历和感受。": "For example: This is my diary, recording the day’s experiences and feelings.",
+  "资料说明": "Description"
 }

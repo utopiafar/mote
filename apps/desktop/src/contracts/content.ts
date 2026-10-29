@@ -13,10 +13,10 @@ export interface BrowserPage { items: BrowserCapture[]; totalCount: number; next
 export interface BrowserDetail extends BrowserCapture { ocrText: string; deviceName?: string }
 export interface ContentItem { key:string;source:SyncSource;title:string;observedAt:string;preview:string;sourceName?:string;error?:string; }
 export interface LocalContentPage {items:ContentItem[];total:number;nextOffset?:number;}
-export interface ContentDetail {text:string;sourceName:string;metadata:string;hasImage?:boolean;image?:string;metadataOnly?:boolean;retainsOriginal?:boolean;truncated?:boolean;}
+export interface ContentDetail {text:string;description?:string;sourceName:string;metadata:string;hasImage?:boolean;image?:string;metadataOnly?:boolean;retainsOriginal?:boolean;truncated?:boolean;}
 export interface CentralContentPage {items:ContentItem[];total:number;nextCursor?:string;authorizationDenied?:true;}
 export interface SyncContent {
-  item: SyncHistoryItem; location: 'local' | 'central'; text: string; image?: string;
+  item: SyncHistoryItem; location: 'local' | 'central'; text: string; description?:string; image?: string;
   readiness?: 'ready'|'pending'|'failed'|'unknown'|'metadata';
   hasImage?:boolean; retainsOriginal?:boolean; truncated?:boolean;
   processing?: boolean; metadataOnly?: boolean; nextChunkOffset?: number;

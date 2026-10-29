@@ -565,27 +565,31 @@ byId('home-feature-guide').addEventListener('click', () => {
 let draft: import('./note-draft').NoteDraft | undefined;
 let noteSaving = false;
 let noteComposing = false;
-const noteFields = ['note-text', 'save-note'];
-function lockNote(locked: boolean): void { for (const id of noteFields) (byId(id) as HTMLInputElement).disabled = locked; }
+const noteFields = ['note-text', 'note-description', 'save-note'];
+let noteLocked=true;
+function noteControls():void {byId<HTMLButtonElement>('save-note').disabled=noteLocked||!readInput('note-text').trim();}
+function lockNote(locked: boolean): void {noteLocked=locked;for (const id of noteFields) (byId(id) as HTMLInputElement).disabled = locked;noteControls();}
 lockNote(true);
 function renderDraft(value: import('./note-draft').NoteDraft): void {
-  draft = value; byId<HTMLTextAreaElement>('note-text').value = value.text;
-  byId<HTMLTextAreaElement>('note-text').readOnly = Boolean(value.prepared);
+  draft = value; byId<HTMLTextAreaElement>('note-text').value = value.text;byId<HTMLTextAreaElement>('note-description').value=value.description;byId<HTMLDetailsElement>('note-description-panel').open=Boolean(value.description);
+  for(const id of ['note-text','note-description'])byId<HTMLTextAreaElement>(id).readOnly=Boolean(value.prepared);
 }
-void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) byId('note-feedback').textContent = moteText("发现上次未完成的保存，点击保存可用原 ID 重试。"); }).catch(() => feedback(moteText("无法恢复随手记草稿，请重启应用。")));
-for (const id of ['note-text']) {
+void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) {byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("发现上次未完成的保存，点击保存可用原 ID 重试。");} }).catch(() => feedback(moteText("无法恢复随手记草稿，请重启应用。")));
+for (const id of ['note-text','note-description']) {
   byId(id).addEventListener('compositionstart', () => { noteComposing = true; });
   byId(id).addEventListener('compositionend', () => { noteComposing = false; });
 }
-for (const id of ['note-text']) byId(id).addEventListener('input', () => {
+for (const id of ['note-text','note-description']) byId(id).addEventListener('input', () => {
+  noteControls();
   if (!draft || noteSaving) return;
-  draft = { ...draft, text: readInput('note-text'), mood: draft?.mood??'', revision: draft.revision + 1 };
+  draft = { ...draft, text: readInput('note-text'), description:readInput('note-description'), mood: draft?.mood??'', revision: draft.revision + 1 };
   const changed = draft;
-  void desktopApi.updateNoteDraft(changed).then(() => { if (draft?.id === changed.id && draft.revision === changed.revision) byId('note-feedback').textContent = moteText("草稿已保存到本机。"); }).catch(() => { byId('note-feedback').textContent = moteText("草稿暂未保存，请保留正文并重试；如上次保存未完成，请重新打开窗口恢复原稿。"); });
+  void desktopApi.updateNoteDraft(changed).then(() => { if (draft?.id === changed.id && draft.revision === changed.revision) {byId('note-feedback').classList.add('visually-hidden');byId('note-feedback').textContent = moteText("草稿已保存到本机。");} }).catch(() => { byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("草稿暂未保存，请保留正文并重试；如上次保存未完成，请重新打开窗口恢复原稿。"); });
 });
+for(const id of ['note-dismiss','note-collapse'])byId(id).addEventListener('click',()=>{if(quickNote)window.close();else showPage(navigation.backTarget);});
 byId('note-form').addEventListener('submit', event => {
   event.preventDefault(); if (!draft || noteSaving || noteComposing || busy) return;
-  const input = { ...draft, text: readInput('note-text'), mood: draft?.mood??'', revision: draft.revision + 1 };
+  const input = { ...draft, text: readInput('note-text'), description:readInput('note-description'), mood: draft?.mood??'', revision: draft.revision + 1 };
   noteSaving = true; lockNote(true);
   void perform(async () => {
     try {
@@ -594,7 +598,7 @@ byId('note-form').addEventListener('submit', event => {
       byId('note-feedback').textContent = currentStatus.sync.state === 'unconfigured' ? moteText("已保存到本机。连接节点并确认后，再按你的策略同步。") : moteText("已保存到本机 · {0}上传。中央确认后清理待传记录。", syncModeLabels[currentStatus.config.syncMode]);
     } catch (error) {
       const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText("保存未完成，请重试");
-      byId('note-feedback').textContent = message;
+      byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = message;
       const persisted = await desktopApi.noteDraft();
       if (persisted.prepared || persisted.id !== input.id) renderDraft(persisted);
       else draft = { ...input, revision: Math.max(input.revision, persisted.revision) }; // Keep unsaved text visible if disk persistence failed.
@@ -820,7 +824,7 @@ byId('update-install').addEventListener('click', () => {
   void perform(async () => {
     lockNote(true); byId('local-sources').inert = true;
     try {
-      if (draft && !draft.prepared) { draft = await desktopApi.updateNoteDraft({ ...draft, text: readInput('note-text'), mood: draft?.mood??'', revision: draft.revision + 1 }); }
+      if (draft && !draft.prepared) { draft = await desktopApi.updateNoteDraft({ ...draft, text: readInput('note-text'), description:readInput('note-description'), mood: draft?.mood??'', revision: draft.revision + 1 }); }
       await desktopApi.installUpdate();
     } finally { lockNote(false); byId('local-sources').inert = false; }
   });
