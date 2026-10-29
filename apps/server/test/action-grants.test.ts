@@ -15,13 +15,13 @@ import {PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases,pluginManifestSchema,type PluginManifest} from '../src/plugin-release.js';
 import {ActionCapabilities} from '../src/action-capabilities.js';
 
-const capability=calendarPluginCapabilitySchema.parse({id:'calendar.create',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',executionLocation:'device',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredEvent:true,noParticipants:true,noUpdates:true,noDeletes:true}});
+const capability=calendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'device',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,sameDeviceCalendar:true,completionInMoteOnly:true}});
 const command=(expectedRevision:number)=>({operationId:randomUUID(),expectedRevision});
 async function waitFor(check:()=>boolean){const until=Date.now()+5000;while(!check()){assert.ok(Date.now()<until,'generated plugin operation must settle');await delay(5);}}
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-action-grants-')),store=new Store(directory),sources=new SourceStore(store),connections=new Connections(store,sources);await connections.init();
  const executor=new ExecutionEngine(store),archive=zipSync({'device.mjs':strToU8('export function createMemoryProvider(){throw Error("Device declaration must not invoke a worker");}')});
- const manifest:PluginManifest={schemaVersion:1,id:'generated.calendar',name:'Generated calendar declaration',version:'1',runtime:'worker',entry:'device.mjs',archive:{asset:'adapter.zip',sha256:sha256(archive)},capabilities:['calendar.create'],actionCapabilities:[capability],configuration:[],dependencies:[],access:['Owner-selected device calendar']};
+ const manifest:PluginManifest={schemaVersion:1,id:'generated.calendar',name:'Generated calendar declaration',version:'1',runtime:'worker',entry:'device.mjs',archive:{asset:'adapter.zip',sha256:sha256(archive)},capabilities:['calendar.manage'],actionCapabilities:[capability],configuration:[],dependencies:[],access:['Owner-selected device calendar']};
  const base='https://github.com/generated-fixture/calendar/releases/download/v1/';
  const releases=new GitHubPluginReleases(join(directory,'packages'),async url=>{
   if(url==='https://api.github.com/repos/generated-fixture/calendar/releases/tags/v1')return {bytes:strToU8(JSON.stringify({tag_name:'v1',draft:false,assets:[{name:'mote-plugin.json',browser_download_url:base+'mote-plugin.json'},{name:'adapter.zip',browser_download_url:base+'adapter.zip'}]}))};
@@ -39,8 +39,8 @@ async function fixture(t:TestContext){
  plugins.action(instance.id,'enable',command(plugins.instanceView(instance.id).revision));assert.equal(plugins.actionProviders().length,1);assert.deepEqual(capabilities.grants(),[],'enabling does not grant execution');
  sources.register({id:'generated-source',kind:'custom',name:'Generated source',deviceId:'generated-input-device',platform:'import'});
  const invitation=connections.invite({serverUrl:'https://generated.invalid',label:'Generated'},'collector');const paired=await connections.redeem({code:invitation.invitation.code,deviceId:'generated-device',deviceName:'Generated',platform:'android'});const credential=connections.authenticate('Bearer '+paired.token)!;
- capabilities.declare({...command(0),deviceId:'generated-device',capability:{id:'calendar.create',version:1},permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar'}]},credential);
- const draft=capabilities.saveDraft({...command(0),id:randomUUID(),capability:{id:'calendar.create',version:1},target:{deviceId:'generated-device',calendarId:'generated-calendar',declarationRevision:1},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input-device',platform:'import'}],existingArchived:true,futureInputs:true}});
+ capabilities.declare({...command(0),deviceId:'generated-device',capability:{id:'calendar.manage',version:1},permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar'}]},credential);
+ const draft=capabilities.saveDraft({...command(0),id:randomUUID(),capability:{id:'calendar.manage',version:1},target:{deviceId:'generated-device',calendarId:'generated-calendar',declarationRevision:1},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input-device',platform:'import'}],existingArchived:true,futureInputs:true}});
  const grant=()=>({...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:plugins.actionProviders()[0].identity,acknowledgeCalendarWrites:true});
  return {store,sources,connections,executor,plugins,capabilities,credential,draft,grant,instance};
 }
@@ -61,13 +61,13 @@ test('plugin disable/re-enable and device permission changes never inherit the o
  f.plugins.action(f.instance.id,'enable',command(f.plugins.instanceView(f.instance.id).revision));assert.equal(f.capabilities.available(grant),false,'same named plugin with a new instance revision needs a new grant');
  assert.throws(()=>f.capabilities.authorize({...f.grant(),plugin:grant.plugin}),/changed/);
  const next=f.capabilities.authorize(f.grant());assert.equal(f.capabilities.available(next),true);
- f.capabilities.declare({...command(1),deviceId:'generated-device',capability:{id:'calendar.create',version:1},permission:'required',calendars:[]},f.credential);assert.equal(f.capabilities.available(next),false);
+ f.capabilities.declare({...command(1),deviceId:'generated-device',capability:{id:'calendar.manage',version:1},permission:'required',calendars:[]},f.credential);assert.equal(f.capabilities.available(next),false);
  assert.throws(()=>f.capabilities.authorize(f.grant()),/changed/);
 });
 
 test('a plugin manifest cannot add participants, unknown execution locations or an undeclared calendar capability',()=>{
  for(const change of [{constraints:{...capability.constraints,noParticipants:false}},{executionLocation:'central'},{inputSchema:'arbitrary-script'}])assert.equal(calendarPluginCapabilitySchema.safeParse({...capability,...change}).success,false);
- const base={schemaVersion:1,id:'generated.calendar',name:'Generated',version:'2',runtime:'worker',entry:'device.mjs',archive:{asset:'adapter.zip',sha256:'a'.repeat(64)},capabilities:['calendar.create'],configuration:[],dependencies:[],access:[]};
+ const base={schemaVersion:1,id:'generated.calendar',name:'Generated',version:'2',runtime:'worker',entry:'device.mjs',archive:{asset:'adapter.zip',sha256:'a'.repeat(64)},capabilities:['calendar.manage'],configuration:[],dependencies:[],access:[]};
  assert.equal(pluginManifestSchema.safeParse(base).success,false);assert.equal(pluginManifestSchema.safeParse({...base,actionCapabilities:[capability]}).success,true);
 });
 
@@ -77,4 +77,16 @@ test('grant quota failure atomically preserves the retry identity and cannot pub
  f.store.reserveMetadata=(bytes:number)=>{if(++calls===2)throw new StoreError('Generated receipt quota failure',507);reserve(bytes);};
  assert.throws(()=>f.capabilities.authorize(input),/quota/);assert.equal(f.capabilities.grants().length,0);
  f.store.reserveMetadata=reserve;assert.equal(f.capabilities.authorize(input).id,input.id);assert.equal(f.capabilities.grants().length,1);
+});
+
+test('a create-only declaration, draft or grant never acquires the expanded manage authority',async t=>{
+ const f=await fixture(t),grant=f.capabilities.authorize(f.grant()),old={id:'calendar.create',version:1};
+ assert.equal(calendarPluginCapabilitySchema.safeParse({...capability,id:'calendar.create'}).success,false);
+ assert.equal(f.capabilities.available({...grant,capability:old} as any),false);
+ f.store.db.prepare("UPDATE action_capability_drafts SET json=json_set(json,'$.capability',json(?)) WHERE id=?").run(JSON.stringify(old),f.draft.id);
+ assert.throws(()=>f.capabilities.authorize(f.grant()),/changed/);
+ f.store.db.prepare("UPDATE action_device_capabilities SET json=json_set(json,'$.capability',json(?)) WHERE device_id=?").run(JSON.stringify(old),grant.target.deviceId);
+ assert.equal(f.capabilities.available(grant),false);
+ const draft={...f.draft,...command(0),id:randomUUID()};delete (draft as any).revision;delete (draft as any).state;delete (draft as any).executionEnabled;delete (draft as any).createdAt;delete (draft as any).updatedAt;
+ assert.throws(()=>f.capabilities.saveDraft(draft),/unavailable or changed/);
 });

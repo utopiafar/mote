@@ -32,14 +32,14 @@ export class CalendarActions {
   if(managedOperationId)moteActionMarker(managedOperationId);
   const cachedRaw=managedOperationId?await this.io.read('managed-'+managedOperationId):undefined;
   const cached=cachedRaw?JSON.parse(cachedRaw) as ActionProposal:undefined;
-  if(cached&&(cached.id!==id||cached.operationId!==managedOperationId||cached.kind!=='calendar.create'||cached.target?.deviceId!==this.config.deviceId))throw Error(moteText('此操作属于另一台设备'));
+  if(cached&&(cached.id!==id||cached.operationId!==managedOperationId||!['calendar.create','calendar.update','calendar.cancel'].includes(cached.kind)||cached.target?.deviceId!==this.config.deviceId))throw Error(moteText('此操作属于另一台设备'));
   const retained=managedOperationId?await this.io.read(managedOperationId):undefined;
   // A completed local receipt does not need renewed content access or a new grant.
   if(cached&&retained&&retained!=='attempting'){await this.io.request(`/api/managed-calendar/${id}/receipt`,{deviceId:this.config.deviceId,operationId:managedOperationId,status:'succeeded',externalId:retained});return;}
   let action:ActionProposal&{mutationAllowed?:boolean};
   try{action=await this.io.request(`/api/${route}/${id}/claim`,{deviceId:this.config.deviceId});}
   catch(error){if(!cached||retained!=='attempting')throw error;action={...cached,status:'uncertain',mutationAllowed:false};}
-  if(managedOperationId&&(action.operationId!==managedOperationId||action.kind!=='calendar.create'))throw Error(moteText('日程确认信息无效'));
+  if(managedOperationId&&(action.operationId!==managedOperationId||!['calendar.create','calendar.update','calendar.cancel'].includes(action.kind)))throw Error(moteText('日程确认信息无效'));
   if(action.id!==id||!['calendar.create','calendar.update','calendar.cancel'].includes(action.kind)||action.target?.deviceId!==this.config.deviceId||!action.operationId)throw Error(moteText("日程确认信息无效"));
   moteActionMarker(action.operationId);
   if(action.status==='succeeded')return;

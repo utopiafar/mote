@@ -19,8 +19,8 @@ async function fixture(t:TestContext){
  const pair=async(deviceId='generated-phone')=>{const invite=await node.app.inject({method:'POST',url:'/api/connections/collector-invitations',headers:headers(),payload:{serverUrl:'https://generated.invalid',label:'Generated device'}});assert.equal(invite.statusCode,200);const result=await node.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId,deviceName:'Generated phone',platform:'android'}});assert.equal(result.statusCode,200);return result.json() as {token:string;credentialId:string};};
  return {...node,store,restart,pair};
 }
-const declaration=()=>({operationId:randomUUID(),expectedRevision:0,deviceId:'generated-phone',capability:{id:'calendar.create',version:1},permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar'}]});
-const draft=()=>({operationId:randomUUID(),expectedRevision:0,id:randomUUID(),capability:{id:'calendar.create',version:1},target:{deviceId:'generated-phone',calendarId:'generated-calendar',declarationRevision:1},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-source-device',platform:'import'}],existingArchived:true,futureInputs:true}});
+const declaration=()=>({operationId:randomUUID(),expectedRevision:0,deviceId:'generated-phone',capability:{id:'calendar.manage',version:1},permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar'}]});
+const draft=()=>({operationId:randomUUID(),expectedRevision:0,id:randomUUID(),capability:{id:'calendar.manage',version:1},target:{deviceId:'generated-phone',calendarId:'generated-calendar',declarationRevision:1},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-source-device',platform:'import'}],existingArchived:true,futureInputs:true}});
 
 test('real transport separates paired self declarations from owner draft authority and never exposes an active grant',async t=>{
  const f=await fixture(t),paired=await f.pair();await f.app.listen({host:'127.0.0.1',port:0});const origin='http://127.0.0.1:'+(f.app.server.address() as {port:number}).port;

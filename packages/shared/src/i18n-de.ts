@@ -8837,5 +8837,7 @@ export const german: Readonly<Record<string, string>> = {
   "请为下方路径中的当前应用授权，避免选中其他版本。": "Erteilen Sie der App unter folgendem Pfad Zugriff, um eine andere Version zu vermeiden.",
   "完整磁盘访问": "Festplattenvollzugriff",
   "在访达中显示": "Im Finder anzeigen",
-  "正在打开…": "Wird geöffnet…"
+  "正在打开…": "Wird geöffnet…",
+  "授权后，范围内明确的日程会自动创建、更新、取消或标记完成。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大设备和日历范围。": "Nach der Freigabe werden eindeutige Termine im festgelegten Umfang automatisch erstellt, aktualisiert, abgesagt oder als erledigt markiert. Änderungen und Absagen betreffen nur die von Mote erstellten ursprünglichen Ereignisse; der Abschluss wird nur in Mote vermerkt. Es werden keine Teilnehmer eingeladen und keine weiteren Geräte oder Kalender einbezogen.",
+  "我允许此插件按以上资料范围，在指定设备和日历中创建日程、更新或取消原事件，并在 Mote 中标记完成。": "Ich erlaube diesem Plugin, anhand der ausgewählten Quellen im angegebenen Gerät und Kalender Termine zu erstellen, ursprüngliche Ereignisse zu ändern oder abzusagen und Termine in Mote als erledigt zu markieren."
 };

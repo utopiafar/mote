@@ -8836,5 +8836,7 @@
   "切换语言会重新加载页面，请先保存未提交的修改。继续？": "Changing the language reloads this page. Save pending edits first. Continue?",
   "无法保存语言偏好，请检查浏览器存储。": "Could not save language preference. Check browser storage.",
   "切换语言会重新加载界面，请先保存未提交的设置。继续？": "Changing the language reloads this window. Save pending settings first. Continue?",
-  "语言保存失败，请重试。": "Could not save the language. Please retry."
+  "语言保存失败，请重试。": "Could not save the language. Please retry.",
+  "授权后，范围内明确的日程会自动创建、更新、取消或标记完成。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大设备和日历范围。": "After authorization, clear arrangements within the scope are created, updated, cancelled or marked complete automatically. Updates and cancellations affect only the original events created by Mote; completion is recorded only in Mote. Participants are not invited, and the device and calendar scope does not expand.",
+  "我允许此插件按以上资料范围，在指定设备和日历中创建日程、更新或取消原事件，并在 Mote 中标记完成。": "I allow this plugin to create events, update or cancel original events in the selected device and calendar, and mark arrangements complete in Mote, using the selected sources."
 }

@@ -12,16 +12,22 @@ export class ManagedCalendar {
   const grants=this.capabilities.grants().filter(grant=>this.capabilities.available(grant));if(!grants.length)return;
   const rows=this.store.db.prepare("SELECT rowid,id FROM action_proposals WHERE rowid>? AND json_extract(json,'$.status')='proposed' ORDER BY rowid LIMIT 50").all(this.cursor);
   for(const row of rows){this.cursor=Number(row.rowid);const action=this.actions.get(String(row.id));
-   if(action.kind!=='calendar.create'||action.status!=='proposed'||action.managed||action.resolution||action.uncertainty||!calendarEventSchema.safeParse(action.event).success||calendarExpired(action.event))continue;
+   if(action.status!=='proposed'||action.managed||action.resolution||action.uncertainty)continue;
+   if(['calendar.create','calendar.update'].includes(action.kind)&&(!calendarEventSchema.safeParse(action.event).success||calendarExpired(action.event)))continue;
+   if(action.kind!=='calendar.create'&&!action.related)continue;
+   // A native relation can only use its original destination. Unexported
+   // proposals may be resolved locally; this never assigns them a device.
+   if(action.related?.externalId&&!action.related.target)continue;
    const records=this.actions.read(action.evidence.map(item=>item.id));if(records.length!==action.evidence.length||!records.length)continue;
-   const matching=grants.filter(grant=>records.every(record=>this.capabilities.inputs.allows(grant,record)));
+   const matching=grants.filter(grant=>(!action.related?.target||action.related.target.deviceId===grant.target.deviceId&&action.related.target.calendarId===grant.target.calendarId)&&records.every(record=>this.capabilities.inputs.allows(grant,record)));
    // Overlapping grants never silently choose a different plugin or destination.
    if(matching.length!==1)continue;
    const grant=matching[0],db=this.store.db;db.exec('BEGIN IMMEDIATE');
    try{
     if(!this.capabilities.available(grant))throw new StoreError('Action authorization changed',409);
-    this.actions.confirm(action.id,{version:action.version,event:action.event,target:{deviceId:grant.target.deviceId,calendarId:grant.target.calendarId}},true);
-    this.actions.bindManaged(action.id,{grantId:grant.id,grantRevision:grant.revision,connectionId:grant.connectionId,state:'waiting_device'});db.exec('COMMIT');
+    const target=action.related?action.related.target:{deviceId:grant.target.deviceId,calendarId:grant.target.calendarId};
+    const confirmed=this.actions.confirm(action.id,{version:action.version,event:action.event,...(target?{target}:{})},true);
+    this.actions.bindManaged(action.id,{grantId:grant.id,grantRevision:grant.revision,connectionId:grant.connectionId,state:confirmed.status==='succeeded'?'succeeded':'waiting_device'});db.exec('COMMIT');
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');if(!(error instanceof StoreError&&[400,403,404,409].includes(error.statusCode)))throw error;}
   }
   if(rows.length<50)this.cursor=0;
@@ -31,7 +37,7 @@ export class ManagedCalendar {
   if(!action.managed||action.managed.connectionId!==credential.id||action.target?.deviceId!==credential.deviceId)throw new StoreError('Managed action belongs to another connection',403);
   return action;
  }
- private authorized(action:ActionProposal){const meta=action.managed!,grant=this.capabilities.grant(meta.grantId),records=this.actions.read(action.evidence.map(item=>item.id));return !!grant&&grant.revision===meta.grantRevision&&this.capabilities.available(grant)&&records.length>0&&records.length===action.evidence.length&&records.every(record=>this.actions.current(record.id)&&this.capabilities.inputs.allows(grant,record));}
+ private authorized(action:ActionProposal){const meta=action.managed!,grant=this.capabilities.grant(meta.grantId),records=this.actions.read(action.evidence.map(item=>item.id));return !!grant&&grant.revision===meta.grantRevision&&this.capabilities.available(grant)&&action.target?.deviceId===grant.target.deviceId&&action.target.calendarId===grant.target.calendarId&&(!action.related||action.related.target?.deviceId===grant.target.deviceId&&action.related.target.calendarId===grant.target.calendarId)&&records.length>0&&records.length===action.evidence.length&&records.every(record=>this.actions.current(record.id)&&this.capabilities.inputs.allows(grant,record));}
  private atomic<T>(work:()=>T):T{const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{const value=work();db.exec('COMMIT');return value;}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
  manualReviewAllowed(credential:ConnectionCredential){return this.connections.isOwner(credential);}
  deliveries(credential:ConnectionCredential){

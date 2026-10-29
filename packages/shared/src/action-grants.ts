@@ -3,9 +3,10 @@ import {actionCapabilityCommandSchema,type ActionCapabilityDraft} from './action
 
 /** A fixed host adapter contract. Declaring it is never an execution grant. */
 export const calendarPluginCapabilitySchema=z.object({
- id:z.literal('calendar.create'),version:z.literal(1),inputSchema:z.literal('calendar.event.v1'),outputSchema:z.literal('calendar.receipt.v1'),
+ id:z.literal('calendar.manage'),version:z.literal(1),inputSchema:z.literal('calendar.event.v1'),outputSchema:z.literal('calendar.receipt.v1'),
+ operations:z.tuple([z.literal('calendar.create'),z.literal('calendar.update'),z.literal('calendar.cancel'),z.literal('calendar.complete')]),
  executionLocation:z.literal('device'),risk:z.literal('calendar-write'),
- constraints:z.object({writableCalendar:z.literal(true),completeEvent:z.literal(true),currentEvidence:z.literal(true),unexpiredEvent:z.literal(true),noParticipants:z.literal(true),noUpdates:z.literal(true),noDeletes:z.literal(true)}).strict(),
+ constraints:z.object({writableCalendar:z.literal(true),completeEvent:z.literal(true),currentEvidence:z.literal(true),unexpiredCreatesAndUpdates:z.literal(true),noParticipants:z.literal(true),existingMoteEventsOnly:z.literal(true),sameDeviceCalendar:z.literal(true),completionInMoteOnly:z.literal(true)}).strict(),
 }).strict();
 export type CalendarPluginCapability=z.infer<typeof calendarPluginCapabilitySchema>;
 export const actionPluginIdentitySchema=z.object({packageId:z.string().min(1).max(300),releaseDigest:z.string().regex(/^[a-f0-9]{64}$/),instanceId:z.string().min(1).max(128),instanceRevision:z.number().int().positive(),capabilityDigest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();

@@ -15,8 +15,8 @@ const fieldSchema=z.object({id:z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/),label
 export const pluginManifestSchema=z.object({
   schemaVersion:z.literal(1),id:z.string().regex(/^[a-z][a-z0-9.-]{2,127}$/),name:z.string().min(1),version:z.string().min(1),
   runtime:z.literal('worker'),entry:relativePath,archive:z.object({asset:z.string().regex(/^[^/\\]+\.zip$/),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
-  capabilities:z.array(z.enum(['repository','retrieval','engine','calendar.create'])).nonempty(),actionCapabilities:z.array(calendarPluginCapabilitySchema).max(1).optional(),configuration:z.array(fieldSchema),dependencies:z.array(z.string()),access:z.array(z.string()),
-}).strict().superRefine((value,context)=>{if(value.capabilities.includes('calendar.create')!==Boolean(value.actionCapabilities?.length))context.addIssue({code:'custom',message:'Calendar capability requires its complete host execution declaration'});});
+  capabilities:z.array(z.enum(['repository','retrieval','engine','calendar.manage'])).nonempty(),actionCapabilities:z.array(calendarPluginCapabilitySchema).max(1).optional(),configuration:z.array(fieldSchema),dependencies:z.array(z.string()),access:z.array(z.string()),
+}).strict().superRefine((value,context)=>{if(value.capabilities.includes('calendar.manage')!==Boolean(value.actionCapabilities?.length))context.addIssue({code:'custom',message:'Calendar capability requires its complete host execution declaration'});});
 export type PluginManifest=z.infer<typeof pluginManifestSchema>;
 export type ResolvedPluginRelease={preview:PluginReleasePreview;manifest:PluginManifest;archiveUrl:string;hostAdapter?:'mote.mem0@1'|'mote.hindsight@1'};
 export type PluginReleaseTransport=(url:string)=>Promise<{bytes:Uint8Array}>;

@@ -8836,5 +8836,7 @@
   "请为下方路径中的当前应用授权，避免选中其他版本。": "Otorga acceso a la app en la ruta indicada abajo para evitar elegir otra versión.",
   "完整磁盘访问": "Acceso total al disco",
   "在访达中显示": "Mostrar en Finder",
-  "正在打开…": "Abriendo…"
+  "正在打开…": "Abriendo…",
+  "授权后，范围内明确的日程会自动创建、更新、取消或标记完成。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大设备和日历范围。": "Tras la autorización, los compromisos claros dentro del ámbito se crean, actualizan, cancelan o marcan como completados automáticamente. Las actualizaciones y cancelaciones solo afectan a los eventos originales creados por Mote; la finalización se registra solo en Mote. No se invita a participantes ni se amplía el ámbito de dispositivos o calendarios.",
+  "我允许此插件按以上资料范围，在指定设备和日历中创建日程、更新或取消原事件，并在 Mote 中标记完成。": "Permito que este complemento use las fuentes seleccionadas para crear eventos, actualizar o cancelar los eventos originales en el dispositivo y calendario indicados, y marcar los compromisos como completados en Mote."
 }

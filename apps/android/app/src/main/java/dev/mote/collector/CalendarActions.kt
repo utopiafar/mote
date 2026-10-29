@@ -96,7 +96,7 @@ class CalendarActions(private val context: Context, private val foreground: Bool
         fun requirePermission() { check(permissions()) { MoteI18n.text("日历权限不可用，请先连接日历") } }
         val action = if (managedOperationId != null) journal.claim(id, managedOperationId, ::requirePermission) ?: return@sync
             else { requirePermission(); request("/api/actions/$id/claim", JSONObject().put("deviceId", settings.deviceId)) }
-        if (managedOperationId != null) require(action.getString("operationId") == managedOperationId && action.getString("kind") == "calendar.create")
+        if (managedOperationId != null) require(action.getString("operationId") == managedOperationId && action.getString("kind") in listOf("calendar.create", "calendar.update", "calendar.cancel"))
         require(action.getString("id") == id && action.getString("kind") in listOf("calendar.create", "calendar.update", "calendar.cancel"))
         require(action.getJSONObject("target").getString("deviceId") == settings.deviceId)
         if (action.getString("status") == "succeeded") return@sync

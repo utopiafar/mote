@@ -35,3 +35,14 @@ it('loss of the local ledger never grants a second host write for uncertain or r
   await expect(new CalendarActions({deviceId:'mac',deviceName:'fixture'},io).execute(id)).rejects.toThrow();expect(allowed).toEqual([false]);
  }
 });
+
+it('managed update and cancel receipts survive reconstruction without reclaiming a withdrawn grant',async()=>{
+ for(const kind of ['calendar.update','calendar.cancel']){
+  const ledger=new Map<string,string>(),calls:string[]=[];let grantAvailable=true,writes=0;
+  const changed={...action,kind,related:{actionId:id,version:2,status:'succeeded',event:action.event,target:action.target,externalId:'original'}};
+  const io:CalendarActionIO={request:async path=>{calls.push(path);if(path.endsWith('/claim')){if(!grantAvailable)throw Error('revoked');return changed;}if(grantAvailable)throw Error('offline receipt');return {};},native:async()=>{writes++;return {externalId:'original'};},read:async key=>ledger.get(key),write:async(key,value)=>{ledger.set(key,value);}};
+  await expect(new CalendarActions({deviceId:'mac',deviceName:'fixture'},io).execute(id,operationId)).rejects.toThrow();grantAvailable=false;calls.length=0;
+  await new CalendarActions({deviceId:'mac',deviceName:'fixture'},io).execute(id,operationId);
+  expect(writes).toBe(1);expect(calls).toEqual([`/api/managed-calendar/${id}/receipt`]);
+ }
+});

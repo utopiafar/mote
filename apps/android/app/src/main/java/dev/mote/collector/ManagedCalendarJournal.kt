@@ -32,6 +32,6 @@ internal class ManagedCalendarJournal(
         write("managed-${action.getString("operationId")}", action.toString())
     }
     private fun validate(action: JSONObject, id: String, operation: String) {
-        require(action.getString("id") == id && action.getString("operationId") == operation && action.getString("kind") == "calendar.create" && action.getJSONObject("target").getString("deviceId") == deviceId)
+        require(action.getString("id") == id && action.getString("operationId") == operation && action.getString("kind") in listOf("calendar.create", "calendar.update", "calendar.cancel") && action.getJSONObject("target").getString("deviceId") == deviceId)
     }
 }

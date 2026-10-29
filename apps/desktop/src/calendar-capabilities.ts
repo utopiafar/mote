@@ -12,7 +12,7 @@ export async function publishCalendarCapability(deviceId:string,raw:unknown,requ
  const calendars=permission==='granted'?(value.calendars??[]).filter(c=>c.writable===true).map(({id,title})=>({id,title})).sort((a,b)=>a.id.localeCompare(b.id)):[];
  const current=await request('/api/device-action-capabilities') as {connectionId:string;declaration:ActionDeviceCapability|null};
  const declaration=current.declaration;
- const input=actionDeviceDeclarationSchema.parse({operationId:randomUUID(),expectedRevision:declaration?.revision??0,deviceId,capability:{id:'calendar.create',version:1},permission,calendars});
- if(declaration?.connectionActive&&declaration.connectionId===current.connectionId&&declaration.permission===permission&&JSON.stringify([...declaration.calendars].sort((a,b)=>a.id.localeCompare(b.id)))===JSON.stringify(calendars))return declaration;
+ const input=actionDeviceDeclarationSchema.parse({operationId:randomUUID(),expectedRevision:declaration?.revision??0,deviceId,capability:{id:'calendar.manage',version:1},permission,calendars});
+ if(declaration?.connectionActive&&declaration.capability?.id===input.capability.id&&declaration.capability.version===input.capability.version&&declaration.connectionId===current.connectionId&&declaration.permission===permission&&JSON.stringify([...declaration.calendars].sort((a,b)=>a.id.localeCompare(b.id)))===JSON.stringify(calendars))return declaration;
  return request('/api/device-action-capabilities',input);
 }

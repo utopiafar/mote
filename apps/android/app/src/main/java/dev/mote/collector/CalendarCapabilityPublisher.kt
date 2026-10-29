@@ -18,11 +18,11 @@ class CalendarCapabilityPublisher(private val deviceId: String, private val tran
         fun canonical(items: JSONArray): String = (0 until items.length()).map { items.getJSONObject(it) }
             .sortedBy { it.getString("id") }.joinToString("|") { JSONObject().put("id", it.getString("id")).put("title", it.getString("title")).toString() }
         val calendars = available ?: JSONArray()
-        if (declaration != null && declaration.optBoolean("connectionActive") && declaration.optString("connectionId") == current.getString("connectionId") &&
+        if (declaration != null && declaration.optJSONObject("capability")?.optString("id") == "calendar.manage" && declaration.optJSONObject("capability")?.optInt("version") == 1 && declaration.optBoolean("connectionActive") && declaration.optString("connectionId") == current.getString("connectionId") &&
             declaration.optString("permission") == permission && canonical(declaration.getJSONArray("calendars")) == canonical(calendars)) return
         request("/api/device-action-capabilities", JSONObject().put("operationId", UUID.randomUUID().toString())
             .put("expectedRevision", declaration?.getLong("revision") ?: 0).put("deviceId", deviceId)
-            .put("capability", JSONObject().put("id", "calendar.create").put("version", 1))
+            .put("capability", JSONObject().put("id", "calendar.manage").put("version", 1))
             .put("permission", permission).put("calendars", calendars))
     }
 }

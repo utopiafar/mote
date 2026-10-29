@@ -33,4 +33,18 @@ class ManagedCalendarJournalTest {
         val journal=ManagedCalendarJournal("generated-device",{_,_->calls++;JSONObject()},disk::get,{k,v->disk[k]=v})
         assertThrows(IllegalArgumentException::class.java) { journal.claim(id,operation) {} };assertEquals(0,calls)
     }
+    @Test fun updateAndCancelRetainReceiptsWithoutAnotherClaimAfterWithdrawal() {
+        for (kind in listOf("calendar.update", "calendar.cancel")) {
+            val disk = mutableMapOf<String,String>(); val calls = mutableListOf<String>()
+            val journal = ManagedCalendarJournal("generated-device", { path,body -> calls.add(path); assertEquals("original-event",body!!.getString("externalId")); JSONObject() }, disk::get, { key,value -> disk[key]=value })
+            journal.remember(action().put("kind",kind)); disk[operation]="original-event"
+            assertNull(journal.claim(id,operation) { fail("Retained receipt does not reclaim execution permission") })
+            assertEquals(listOf("/api/managed-calendar/$id/receipt"),calls)
+        }
+    }
+    @Test fun completionIsNotADeviceWriteCapability() {
+        val disk = mutableMapOf<String,String>()
+        val journal = ManagedCalendarJournal("generated-device", { _,_ -> JSONObject() }, disk::get, { key,value -> disk[key]=value })
+        assertThrows(IllegalArgumentException::class.java) { journal.remember(action().put("kind","calendar.complete")) }
+    }
 }

@@ -17,14 +17,16 @@ const command=(expectedRevision:number)=>({operationId:randomUUID(),expectedRevi
 async function until(check:()=>boolean){const end=Date.now()+5000;while(!check()){assert.ok(Date.now()<end,'generated installation settles');await delay(5);}}
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-managed-calendar-'));
- const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{const id=input.evidenceIds![0],evidence=[{id,quote:text}],answer=input.skill==='calendar-extraction'?{actions:[{kind:'calendar.create',event,uncertainty:'',sameAs:null,evidence}]}:{summary:'Generated appointment',evidence,events:[],memoryCandidates:[],actionCues:[{kind:'calendar.create',event,uncertainty:'',evidence}]};return {runId:randomUUID(),answer:JSON.stringify(answer),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}],trace:[]};}};
+ let proposal:{kind:'calendar.create'|'calendar.update'|'calendar.cancel'|'calendar.complete';event:typeof event;sameAs:string|null}={kind:'calendar.create',event,sameAs:null};
+ const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{const id=input.evidenceIds![0],evidence=[{id,quote:text}],answer=input.skill==='calendar-extraction'?{actions:[{...proposal,uncertainty:'',evidence}]}:{summary:'Generated appointment',evidence,events:[],memoryCandidates:[],actionCues:[{kind:proposal.kind,event:proposal.event,uncertainty:'',evidence}]};return {runId:randomUUID(),answer:JSON.stringify(answer),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}],trace:[]};}};
  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),profile:'test',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
- let node=await buildApp(config,{agent,backgroundWorker:false});let origin=await node.app.listen({host:'127.0.0.1',port:0});
+ let node=await buildApp(config,{agent,backgroundWorker:false});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+ let origin=await node.app.listen({host:'127.0.0.1',port:0});
  const request=async(path:string,body?:unknown,token=owner,method=body?'POST':'GET')=>{const response=await fetch(origin+path,{method,headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});const value=await response.json();if(!response.ok)throw Object.assign(Error(JSON.stringify(value)),{status:response.status});return value as any;};
  const archive=zipSync({'device.mjs':strToU8('export function createMemoryProvider(){throw Error("Unexpected worker execution")};')}),base='https://github.com/generated-fixture/calendar/releases/download/v1/';
- const capability={id:'calendar.create',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',executionLocation:'device',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredEvent:true,noParticipants:true,noUpdates:true,noDeletes:true}};
- const manifest={schemaVersion:1,id:'generated.calendar',name:'Generated calendar',version:'1',runtime:'worker',entry:'device.mjs',archive:{asset:'adapter.zip',sha256:sha256(archive)},capabilities:['calendar.create'],actionCapabilities:[capability],configuration:[],dependencies:[],access:['Generated fixture calendar']};
+ const capability={id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'device',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,sameDeviceCalendar:true,completionInMoteOnly:true}};
+ const manifest={schemaVersion:1,id:'generated.calendar',name:'Generated calendar',version:'1',runtime:'worker',entry:'device.mjs',archive:{asset:'adapter.zip',sha256:sha256(archive)},capabilities:['calendar.manage'],actionCapabilities:[capability],configuration:[],dependencies:[],access:['Generated fixture calendar']};
  // Only the unavailable GitHub network boundary is substituted. Resolve, hash
  // verification, archive installation, owner routes and feature startup are real.
  const releases=new GitHubPluginReleases(node.pluginCenter.releases.directory,async url=>{
@@ -37,10 +39,12 @@ async function fixture(t:TestContext){
  const instance=await request('/api/plugin-instances',{...command((await request('/api/plugins')).revision),packageId:node.pluginCenter.view().packages[0].id,name:'Generated native calendar',scope:'default',configuration:{}});
  await request('/api/plugin-instances/'+instance.id+'/check',command(instance.revision));await until(()=>node.pluginCenter.instanceView(instance.id).observed!=='checking');await request('/api/plugin-instances/'+instance.id+'/enable',command(node.pluginCenter.instanceView(instance.id).revision));
  const invitation=await request('/api/connections/collector-invitations',{serverUrl:'https://generated.invalid',label:'Generated device'}),paired=await request('/api/connections/redeem',{code:invitation.invitation.code,deviceId:'generated-device',deviceName:'Generated device',platform:'macos'});
- let permission='granted',blockReceipts=false,nativeCalls=0,nativePresent=false,reconciliations=0;let nativeHook:(()=>Promise<void>)|undefined;
+ let permission='granted',blockReceipts=false,nativeCalls=0,nativePresent=false,reconciliations=0,changedNative=false;const nativeChanges:any[]=[];let nativeHook:(()=>Promise<void>)|undefined;
  const io:CalendarActionIO={
   request:async(path,body)=>{if(blockReceipts&&path.endsWith('/receipt'))throw Error('Generated offline receipt transport');return request(path,body,paired.token);},
-  native:async(kind,input:any)=>{if(kind==='calendar-permission'||kind==='calendar-list')return {permission,calendars:permission==='granted'?[{id:'generated-calendar',title:'Generated calendar',writable:true}]:[]};assert.equal(kind,'calendar-create');if(!input.createAllowed){reconciliations++;if(!nativePresent)throw Error('Generated event not found; reconciliation must not create');return {externalId:'generated-event-'+nativeCalls};}nativeCalls++;await nativeHook?.();nativePresent=true;return {externalId:'generated-event-'+nativeCalls};},
+  native:async(kind,input:any)=>{if(kind==='calendar-permission'||kind==='calendar-list')return {permission,calendars:permission==='granted'?[{id:'generated-calendar',title:'Generated calendar',writable:true},{id:'generated-other-calendar',title:'Other generated calendar',writable:true}]:[]};
+   if(kind==='calendar-change'){nativeChanges.push(input);if(changedNative)throw Error('Generated native event identity or content changed');if(!input.mutationAllowed){reconciliations++;return {externalId:input.externalId};}nativeCalls++;await nativeHook?.();return {externalId:input.externalId};}
+   assert.equal(kind,'calendar-create');if(!input.createAllowed){reconciliations++;if(!nativePresent)throw Error('Generated event not found; reconciliation must not create');return {externalId:'generated-event-'+nativeCalls};}nativeCalls++;await nativeHook?.();nativePresent=true;return {externalId:'generated-event-'+nativeCalls};},
   read:async key=>{try{return await readFile(join(directory,'native-'+key),'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}},
   write:async(key,value)=>{await writeFile(join(directory,'native-'+key),value,{mode:0o600,flush:true});},
  };
@@ -52,9 +56,10 @@ async function fixture(t:TestContext){
  await request('/api/model-authorization/commands',{revision:authorization.authorization.revision,operationId:randomUUID(),action:'authorize',connections:authorization.connections,scope:{sourceIds:['generated-source'],dataKinds:['text']}});
  const settings=await request('/api/actions');await request('/api/actions/settings',{revision:settings.revision,authorizationRevision:settings.authorizationRevision,settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]}},owner,'PUT');
  const add=async(id=randomUUID())=>{const record=await node.sources.upsert('generated-source',{externalId:id,revision:'1',observedAt:'2026-01-01T00:00:00Z',text,title:'Generated original',kind:'message',layer:'original'});await node.actions.tick();const action=node.actions.list().find(value=>value.evidence.some(e=>e.id===record.id));assert.ok(action,'real extraction host publishes a validated proposal');return action;};
- const grant=async(existingArchived=true,futureInputs=true)=>{const inventory=await request('/api/action-capabilities'),draft=await request('/api/action-capability-drafts',{...command(0),id:randomUUID(),capability:{id:'calendar.create',version:1},target:{deviceId:'generated-device',calendarId:'generated-calendar',declarationRevision:inventory.declarations[0].revision},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input',platform:'import'}],existingArchived,futureInputs}},owner,'PUT');return request('/api/action-capability-grants',{...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:inventory.providers[0].identity,acknowledgeCalendarWrites:true},owner,'PUT');};
+ const change=async(original:any,kind:'calendar.update'|'calendar.cancel'|'calendar.complete')=>{proposal={kind,sameAs:original.id,event:{...event,start:'2099-09-19T15:00:00Z',end:'2099-09-19T16:00:00Z'}};try{return await add();}finally{proposal={kind:'calendar.create',event,sameAs:null};}};
+ const grant=async(existingArchived=true,futureInputs=true,calendarId='generated-calendar')=>{const inventory=await request('/api/action-capabilities'),draft=await request('/api/action-capability-drafts',{...command(0),id:randomUUID(),capability:{id:'calendar.manage',version:1},target:{deviceId:'generated-device',calendarId,declarationRevision:inventory.declarations[0].revision},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input',platform:'import'}],existingArchived,futureInputs}},owner,'PUT');return request('/api/action-capability-grants',{...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:inventory.providers[0].identity,acknowledgeCalendarWrites:true},owner,'PUT');};
  const restart=async()=>{await node.app.close();node=await buildApp(config,{agent,backgroundWorker:false});origin=await node.app.listen({host:'127.0.0.1',port:0});};
- return {get node(){return node;},restart,request,paired,instance,client,add,grant,get nativeCalls(){return nativeCalls;},get reconciliations(){return reconciliations;},setNativePresent:()=>{nativePresent=true;},setPermission:(value:string)=>{permission=value;},blockReceipts:(value:boolean)=>{blockReceipts=value;},onNative:(hook:()=>Promise<void>)=>{nativeHook=hook;}};
+ return {get node(){return node;},restart,request,paired,instance,client,add,change,grant,nativeChanges,setChangedNative:()=>{changedNative=true;},get nativeCalls(){return nativeCalls;},get reconciliations(){return reconciliations;},setNativePresent:()=>{nativePresent=true;},setPermission:(value:string)=>{permission=value;},blockReceipts:(value:boolean)=>{blockReceipts=value;},onNative:(hook:()=>Promise<void>)=>{nativeHook=hook;}};
 }
 
 test('actual HTTP grant dispatches to the paired native consumer and Central retains the same successful action exactly once',async t=>{
@@ -137,4 +142,53 @@ test('queued expired events and changed original evidence cannot obtain a new na
  const changed=await f.add();await f.request('/api/managed-calendar-deliveries',undefined,f.paired.token);const record=f.node.actions.read([changed.evidence[0].id])[0];
  await f.node.sources.upsert('generated-source',{externalId:record.provenance!.externalId,revision:'2',observedAt:'2026-01-02T00:00:00Z',text:'Generated replacement without an event',title:'Changed original',kind:'message',layer:'original'});
  await assert.rejects(()=>f.request('/api/managed-calendar/'+changed.id+'/claim',{},f.paired.token));assert.equal(f.nativeCalls,0);assert.equal(f.node.actions.get(changed.id).status,'stale');
+});
+
+test('scoped updates and cancellations reach the real device consumer once, always on the original calendar and event',async t=>{
+ const f=await fixture(t);await f.grant();const original=await f.add();await f.client().deliver();
+ const created=f.node.actions.get(original.id);assert.equal(created.status,'succeeded');
+ await f.grant(true,true,'generated-other-calendar');
+ const update=await f.change(created,'calendar.update');await f.client().deliver();
+ const updated=f.node.actions.get(update.id),current=f.node.actions.get(original.id);
+ assert.equal(updated.status,'succeeded');assert.equal(updated.managed?.state,'succeeded');assert.equal(updated.externalId,created.externalId);
+ assert.equal(current.event.start,'2099-09-19T15:00:00Z');assert.equal(current.nativeOperationId,updated.operationId);
+ assert.equal(f.nativeChanges[0].calendarId,created.target!.calendarId);assert.equal(f.nativeChanges[0].externalId,created.externalId);
+ assert.ok(f.nativeChanges[0].description.includes('[Mote:'+original.id+']'));assert.ok(f.nativeChanges[0].expected.description.includes('[Mote-operation:'+created.operationId+']'));
+ const cancel=await f.change(current,'calendar.cancel');f.blockReceipts(true);await assert.rejects(()=>f.client().deliver());assert.equal(f.nativeCalls,3);
+ await f.restart();f.blockReceipts(false);await f.client().deliver();await f.client().deliver();
+ assert.equal(f.nativeCalls,3);assert.equal(f.node.actions.get(original.id).resolution,'cancelled');assert.equal(f.node.actions.get(cancel.id).status,'succeeded');assert.equal(f.node.actions.get(cancel.id).externalId,created.externalId);
+});
+
+test('completion changes only the Mote resolution, and targetless proposals are resolved locally without guessing a device',async t=>{
+ const f=await fixture(t);await f.grant();const native=await f.add();await f.client().deliver();const complete=await f.change(f.node.actions.get(native.id),'calendar.complete');
+ await f.client().deliver();assert.equal(f.node.actions.get(complete.id).status,'succeeded');assert.equal(f.node.actions.get(complete.id).managed?.state,'succeeded');assert.equal(f.node.actions.get(native.id).resolution,'completed');assert.equal(f.nativeCalls,1);assert.equal(f.nativeChanges.length,0);
+ for(const kind of ['calendar.update','calendar.cancel','calendar.complete'] as const){
+  const original=await f.add();f.node.actions.dismiss(original.id,original.version);const before=f.node.actions.get(original.id),change=await f.change(before,kind);
+  const queue=await f.request('/api/managed-calendar-deliveries',undefined,f.paired.token);
+  assert.equal(f.node.actions.get(change.id).status,'succeeded');assert.equal(f.node.actions.get(change.id).target,undefined);assert.equal(f.node.actions.get(original.id).target,undefined);assert.ok(!queue.items.some((item:any)=>item.id===change.id));
+  if(kind==='calendar.update')assert.equal(f.node.actions.get(original.id).event.start,'2099-09-19T15:00:00Z');
+  else assert.equal(f.node.actions.get(original.id).resolution,kind==='calendar.cancel'?'cancelled':'completed');
+ }
+ assert.equal(f.nativeCalls,1);
+});
+
+test('a managed change cannot claim after destination substitution, relation change, grant withdrawal or expiry',async t=>{
+ for(const mutation of ['target','relation','revoke','expiry'] as const){
+  const f=await fixture(t),grant=await f.grant(),original=await f.add();await f.client().deliver();const change=await f.change(f.node.actions.get(original.id),'calendar.update');
+  await f.request('/api/managed-calendar-deliveries',undefined,f.paired.token);const queued=f.node.actions.get(change.id);
+  if(mutation==='target'){queued.target!.calendarId='generated-other-calendar';f.node.store.db.prepare('UPDATE action_proposals SET json=? WHERE id=?').run(JSON.stringify(queued),queued.id);}
+  if(mutation==='relation')f.node.store.db.prepare("UPDATE action_proposals SET json=json_set(json,'$.version',json_extract(json,'$.version')+1) WHERE id=?").run(original.id);
+  if(mutation==='revoke')await f.request('/api/action-capability-grants/'+grant.id+'/revoke',command(grant.revision));
+  if(mutation==='expiry'){queued.event={...queued.event,start:'2000-01-01T12:00:00Z',end:'2000-01-01T13:00:00Z'};f.node.store.db.prepare('UPDATE action_proposals SET json=? WHERE id=?').run(JSON.stringify(queued),queued.id);}
+  await assert.rejects(()=>f.request('/api/managed-calendar/'+change.id+'/claim',{},f.paired.token));assert.equal(f.nativeCalls,1);
+ }
+});
+
+test('native identity or content changes leave cancellation uncertain, while withdrawn scope only reconciles an interrupted change',async t=>{
+ const f=await fixture(t),grant=await f.grant(),original=await f.add();await f.client().deliver();const cancel=await f.change(f.node.actions.get(original.id),'calendar.cancel');f.setChangedNative();
+ await assert.rejects(()=>f.client().deliver());assert.equal(f.node.actions.get(cancel.id).status,'uncertain');assert.equal(f.node.actions.get(original.id).resolution,undefined);assert.equal(f.nativeCalls,1,'the native boundary refused the changed original');
+ await f.request('/api/action-capability-grants/'+grant.id+'/revoke',command(grant.revision));await f.restart();await assert.rejects(()=>f.client().deliver());assert.equal(f.nativeCalls,1);
+ const g=await fixture(t),ggrant=await g.grant(),other=await g.add();await g.client().deliver();const update=await g.change(g.node.actions.get(other.id),'calendar.update');g.onNative(async()=>{throw Error('Generated interruption after native change');});
+ await assert.rejects(()=>g.client().deliver());assert.equal(g.nativeCalls,2);await g.request('/api/action-capability-grants/'+ggrant.id+'/revoke',command(ggrant.revision));await g.restart();g.onNative(async()=>{});await g.client().deliver();
+ assert.equal(g.nativeCalls,2);assert.equal(g.reconciliations,1);assert.equal(g.node.actions.get(update.id).status,'succeeded');assert.equal(g.nativeChanges.at(-1).mutationAllowed,false);
 });

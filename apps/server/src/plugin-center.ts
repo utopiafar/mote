@@ -51,8 +51,8 @@ export class PluginCenter {
         const id=String(step.input.instanceId),pkg=this.packageForInstance(id);
         this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));
         const actions=(pkg.manifest.actionCapabilities??[]).map(value=>{calendarPluginCapabilitySchema.parse(value);return {id:value.id,state:'verified' as const,reason:'Host contract verified; device permission and owner execution grant are still required'};});
-        const health=pkg.manifest.capabilities.every(value=>value==='calendar.create')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
-        signal.throwIfAborted();return {...health,capabilities:[...health.capabilities.filter(value=>value.id!=='calendar.create'),...actions]};
+        const health=pkg.manifest.capabilities.every(value=>value==='calendar.manage')?{capabilities:[],issues:[]}:healthSchema.parse(this.probe?await this.probe(id,signal):await this.runtime(id).call('health',{namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}},signal));
+        signal.throwIfAborted();return {...health,capabilities:[...health.capabilities.filter(value=>value.id!=='calendar.manage'),...actions]};
       },
       commit:(step,result)=>{const instance=this.instance(String(step.input.instanceId)),health=healthSchema.parse(result),pkg=this.package(instance.view.packageId);
         instance.view.capabilities=pkg.manifest.capabilities.map(id=>health.capabilities.find(capability=>capability.id===id)??{id,state:'unknown',reason:'The runtime did not verify this capability'});
@@ -100,7 +100,7 @@ export class PluginCenter {
       if(!instance.desired||instance.observed!=='ready'||instance.issues.length)return [];
       const pkg=this.packageForInstance(instance.id);if(pkg.view.state!=='installed')return [];
       try{this.releases.verifyInstalled(pkg.directory!,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));}catch{return [];}
-      return (pkg.manifest.actionCapabilities??[]).filter(capability=>instance.capabilities.some(value=>value.id===capability.id&&value.state==='verified')).map(capability=>({
+      return (pkg.manifest.actionCapabilities??[]).filter(capability=>calendarPluginCapabilitySchema.safeParse(capability).success&&instance.capabilities.some(value=>value.id===capability.id&&value.state==='verified')).map(capability=>({
         identity:{packageId:pkg.view.id,releaseDigest:pkg.view.source.digest,instanceId:instance.id,instanceRevision:instance.revision,capabilityDigest:sha256(JSON.stringify(calendarPluginCapabilitySchema.parse(capability)))},name:instance.name,capability,
       }));
     });

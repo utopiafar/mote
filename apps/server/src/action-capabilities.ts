@@ -1,6 +1,6 @@
 import {ActionInputScope} from './action-input-scope.js';
 import {actionGrantCommandSchema,type ActionGrant,type ActionPluginProvider,type ActionPluginIdentity} from '@mote/shared';
-import {actionCapabilityCommandSchema,actionCapabilityDraftSchema,actionDeviceDeclarationSchema,calendarCreateCapability,type ActionCapabilityDraft,type ActionDeviceCapability} from '@mote/shared';
+import {actionCapabilityCommandSchema,actionCapabilityDraftSchema,actionDeviceDeclarationSchema,calendarManageCapability,calendarCapabilityIdentitySchema,type ActionCapabilityDraft,type ActionDeviceCapability} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import type {SourceStore} from './sources.js';
 import type {Connections,ConnectionCredential} from './connections.js';
@@ -34,10 +34,10 @@ export class ActionCapabilities {
   });
  }
  declaration(deviceId:string){const value=this.read<ActionDeviceCapability>('action_device_capabilities',deviceId);return value?{...value,connectionActive:this.active(value.connectionId)}:undefined;}
- inventory(){return {providers:this.providers(),grants:this.grants().map(grant=>({...grant,available:this.available(grant)})),sources:this.inputs.catalog(),capabilities:[calendarCreateCapability],executionEnabled:this.grants().some(grant=>this.available(grant)),declarations:this.store.db.prepare('SELECT device_id FROM action_device_capabilities ORDER BY device_id').all().map(row=>this.declaration(String(row.device_id))),drafts:this.store.db.prepare('SELECT json FROM action_capability_drafts ORDER BY id').all().map(row=>JSON.parse(String(row.json)) as ActionCapabilityDraft)};}
+ inventory(){return {providers:this.providers(),grants:this.grants().map(grant=>({...grant,available:this.available(grant)})),sources:this.inputs.catalog(),capabilities:[calendarManageCapability],executionEnabled:this.grants().some(grant=>this.available(grant)),declarations:this.store.db.prepare('SELECT device_id FROM action_device_capabilities ORDER BY device_id').all().map(row=>this.declaration(String(row.device_id))),drafts:this.store.db.prepare('SELECT json FROM action_capability_drafts ORDER BY id').all().map(row=>JSON.parse(String(row.json)) as ActionCapabilityDraft)};}
  saveDraft(raw:unknown){const input=actionCapabilityDraftSchema.parse(raw);return this.command('draft',input,()=>{
   const prior=this.read<ActionCapabilityDraft>('action_capability_drafts',input.id);if((prior?.revision??0)!==input.expectedRevision||prior?.state==='revoked')throw new StoreError('Capability draft changed; refresh before retrying',409);
-  const declaration=this.declaration(input.target.deviceId);if(!declaration?.connectionActive||declaration.permission!=='granted'||declaration.revision!==input.target.declarationRevision||!declaration.calendars.some(item=>item.id===input.target.calendarId))throw new StoreError('The device calendar declaration is unavailable or changed',409);
+  const declaration=this.declaration(input.target.deviceId);if(!declaration?.connectionActive||!calendarCapabilityIdentitySchema.safeParse(declaration.capability).success||declaration.permission!=='granted'||declaration.revision!==input.target.declarationRevision||!declaration.calendars.some(item=>item.id===input.target.calendarId))throw new StoreError('The device calendar declaration is unavailable or changed',409);
   for(const identity of input.inputs.sources)if(!this.inputs.valid(identity))throw new StoreError('Action input source identity changed',409);
   const {operationId:_,expectedRevision:__,...fields}=input,at=new Date().toISOString(),value:ActionCapabilityDraft={...fields,revision:input.expectedRevision+1,state:'draft',executionEnabled:false,createdAt:prior?.createdAt??at,updatedAt:at};
   const json=JSON.stringify(value);this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(JSON.stringify(prior??''))));this.store.db.prepare('INSERT INTO action_capability_drafts VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(input.id,json);return value;
@@ -50,16 +50,16 @@ export class ActionCapabilities {
  grants():ActionGrant[]{return this.store.db.prepare('SELECT json FROM action_capability_grants ORDER BY id').all().map(row=>JSON.parse(String(row.json)));}
  private pluginAvailable(identity:ActionPluginIdentity){return this.providers().some(provider=>JSON.stringify(provider.identity)===JSON.stringify(identity));}
  available(grant:ActionGrant){
-  if(grant.state!=='active'||!this.pluginAvailable(grant.plugin))return false;
+  if(grant.state!=='active'||!calendarCapabilityIdentitySchema.safeParse(grant.capability).success||!this.pluginAvailable(grant.plugin))return false;
   const declaration=this.declaration(grant.target.deviceId);
-  if(!declaration?.connectionActive||declaration.connectionId!==grant.connectionId||declaration.revision!==grant.target.declarationRevision||declaration.permission!=='granted'||!declaration.calendars.some(calendar=>calendar.id===grant.target.calendarId))return false;
+  if(!declaration?.connectionActive||!calendarCapabilityIdentitySchema.safeParse(declaration.capability).success||declaration.connectionId!==grant.connectionId||declaration.revision!==grant.target.declarationRevision||declaration.permission!=='granted'||!declaration.calendars.some(calendar=>calendar.id===grant.target.calendarId))return false;
   if(!grant.inputs.sources.every(identity=>this.inputs.valid(identity)))return false;
   return true;
  }
  authorize(raw:unknown){const input=actionGrantCommandSchema.parse(raw);return this.command('grant',input,()=>{
   const previous=this.grant(input.id);if((previous?.revision??0)!==input.expectedRevision||previous?.state==='revoked')throw new StoreError('Action grant changed; refresh before authorizing',409);
   const draft=this.read<ActionCapabilityDraft>('action_capability_drafts',input.draftId);
-  if(!draft||draft.state!=='draft'||draft.revision!==input.draftRevision)throw new StoreError('Action scope draft changed; review it again',409);
+  if(!draft||!calendarCapabilityIdentitySchema.safeParse(draft.capability).success||draft.state!=='draft'||draft.revision!==input.draftRevision)throw new StoreError('Action scope draft changed; review it again',409);
   const declaration=this.declaration(draft.target.deviceId),at=new Date().toISOString();
   const value:ActionGrant={...draft,id:input.id,draftId:draft.id,draftRevision:draft.revision,revision:input.expectedRevision+1,plugin:input.plugin,connectionId:declaration?.connectionId??'',inputCursor:Number(this.store.db.prepare('SELECT COALESCE(MAX(seq),0) seq FROM changes').get()!.seq),state:'active',executionEnabled:true,createdAt:previous?.createdAt??at,updatedAt:at};
   if(!this.available(value))throw new StoreError('Plugin, device declaration, or source scope changed; review before authorizing',409);
