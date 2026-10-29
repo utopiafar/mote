@@ -153,6 +153,7 @@ export interface DesktopApi {
   setSyncPaused(paused:boolean): Promise<Status>;
   status(): Promise<Status>;
   openQuickNote?(): Promise<void>;
+  resizeQuickNote?(expanded: boolean): Promise<void>;
   noteDraft(): Promise<import('./contracts/note').NoteDraft>;
   updateNoteDraft(input: import('./contracts/note').NoteDraft): Promise<import('./contracts/note').NoteDraft>;
   saveNote(input: import('./contracts/note').NoteDraft): Promise<{ id: string; draft: import('./contracts/note').NoteDraft }>;

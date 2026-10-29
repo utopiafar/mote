@@ -256,7 +256,7 @@ else {
     };
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
-      const noteWindow=new BrowserWindow({width:580,height:620,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
+      const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
       quickNoteWindow=noteWindow;
       noteWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
       noteWindow.webContents.on('will-navigate',event=>event.preventDefault());
@@ -469,6 +469,10 @@ else {
     });
     handle('mote:central-work',async workId=>showCentral('activity',undefined,validateCentralWorkId(workId)));
     handle('mote:quick-note', () => openQuickNote?.());
+    handle('mote:quick-note-size', expanded => {
+      if (typeof expanded !== 'boolean') throw new Error('Invalid quick-note size');
+      if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.setContentSize(quickNoteWindow.getContentSize()[0], expanded ? 594 : 466);
+    });
     handle('mote:note-draft', () => noteDrafts.get());
     handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
     handle('mote:note', input => trackNote(serialize(async () => {

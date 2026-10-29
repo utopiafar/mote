@@ -566,6 +566,9 @@ let draft: import('./note-draft').NoteDraft | undefined;
 let noteSaving = false;
 let noteComposing = false;
 const noteFields = ['note-text', 'note-description', 'save-note'];
+byId<HTMLDetailsElement>('note-description-panel').addEventListener('toggle', () => {
+  if (quickNote) void desktopApi.resizeQuickNote?.(byId<HTMLDetailsElement>('note-description-panel').open);
+});
 let noteLocked=true;
 function noteControls():void {byId<HTMLButtonElement>('save-note').disabled=noteLocked||!readInput('note-text').trim();}
 function lockNote(locked: boolean): void {noteLocked=locked;for (const id of noteFields) (byId(id) as HTMLInputElement).disabled = locked;noteControls();}

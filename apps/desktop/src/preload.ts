@@ -73,6 +73,7 @@ const api: DesktopApi = {
   readRawEvents: () => ipcRenderer.invoke('mote:events-raw'),
   readEvents: () => ipcRenderer.invoke('mote:events-read'),
   openQuickNote: () => ipcRenderer.invoke('mote:quick-note'),
+  resizeQuickNote: expanded => ipcRenderer.invoke('mote:quick-note-size', expanded),
   noteDraft: () => ipcRenderer.invoke('mote:note-draft'),
   updateNoteDraft: input => ipcRenderer.invoke('mote:note-draft-update', input),
   saveNote: input => ipcRenderer.invoke('mote:note', input),

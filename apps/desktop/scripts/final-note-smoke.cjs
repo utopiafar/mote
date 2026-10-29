@@ -1,9 +1,12 @@
 require('../../../scripts/fixture-background.cjs');
 require('../../../scripts/fixture-language.cjs');
 const {app,BrowserWindow,safeStorage}=require('electron');
-const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=require('node:fs');
+const {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync}=require('node:fs');
 const {join,resolve}=require('node:path');
 const {tmpdir}=require('node:os');
+const {execFileSync}=require('node:child_process');
+const {createHash}=require('node:crypto');
+const implementation={revision:execFileSync('git',['rev-parse','HEAD'],{cwd:resolve(__dirname,'../../..')}).toString().trim(),dirty:Boolean(execFileSync('git',['status','--porcelain'],{cwd:resolve(__dirname,'../../..')}).toString().trim()),loadedFiles:Object.fromEntries(['main.js','ui-bundle.js','index.html','styles.css'].map(file=>[file,createHash('sha256').update(readFileSync(resolve(__dirname,'../dist',file))).digest('hex')]))};
 const assert=require('node:assert/strict');
 const {defaultConfig}=require('../dist/config');
 const profile=mkdtempSync(join(tmpdir(),'mote-final-note-'));
@@ -29,9 +32,10 @@ app.on('browser-window-created',(_event,window)=>{
     const shot=async(window,name)=>{await window.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');const image=await window.webContents.capturePage(),file=join(output,name+'.png');writeFileSync(file,image.toPNG());captures.push({name,file,pixels:image.getSize(),viewport:await window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight,dpr:devicePixelRatio})'),at:new Date().toISOString()});};
     await until(()=>js('!!document.querySelector("[data-presentation-nav]")&&!document.querySelector("#settings-fields").disabled'),'main ready');main.setContentSize(1440,936);assert.equal(main.isVisible(),false);
     let note=await openNote();assert.equal(note.isVisible(),false);
-    assert.equal(await note.webContents.executeJavaScript('document.querySelector("#save-note").disabled'),true);await shot(note,'note-empty');
+    assert.equal(await note.webContents.executeJavaScript('document.querySelector("#save-note").disabled'),true);assert.equal(await note.webContents.executeJavaScript('innerHeight'),466);await shot(note,'note-empty');
     await note.webContents.executeJavaScript('document.querySelector("#note-description-panel").open=true;document.querySelector("#note-description").value='+JSON.stringify(description)+';document.querySelector("#note-description").dispatchEvent(new Event("input",{bubbles:true}))');
     assert.equal(await note.webContents.executeJavaScript('document.querySelector("#save-note").disabled'),true,'Description alone is not a note');
+    await until(()=>note.webContents.executeJavaScript('innerHeight===594'),'expanded note size');
     await note.webContents.executeJavaScript('document.querySelector("#note-text").value='+JSON.stringify(original)+';document.querySelector("#note-text").dispatchEvent(new Event("input",{bubbles:true}))');
     await until(()=>note.webContents.executeJavaScript('window.mote.noteDraft().then(d=>d.description==='+JSON.stringify(description)+'&&d.text==='+JSON.stringify(original)+')'),'durable draft');assert(await note.webContents.executeJavaScript('document.querySelector("#save-note").getBoundingClientRect().bottom<=innerHeight'));await shot(note,'note-description');
     await note.webContents.executeJavaScript('document.querySelector("#note-collapse").click()');await until(()=>!quick(),'note collapses');
@@ -43,7 +47,7 @@ app.on('browser-window-created',(_event,window)=>{
     await js('document.querySelector("#home-recent .content-row").click()');await until(()=>js('document.querySelector("#content-detail-description").textContent==='+JSON.stringify(description)),'description reader');
     assert.equal(await js('document.querySelector("#content-detail-body").textContent'),original);assert.equal(await js('document.querySelector("#content-detail-body script")'),null);await shot(main,'note-local-reader');
     await js('document.querySelector("#content-detail-close").click()');note=await openNote();assert.equal(await note.webContents.executeJavaScript('document.querySelector("#note-description").value'),'');note.close();await until(()=>!quick(),'fresh note closes');
-    assert.deepEqual(errors,[]);writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,hidden:true,electron:process.versions.electron,palette:'final light palette 9bf780ac',realRendererPreloadIpc:true,liveModel:false,checks:['description-only cannot save','exact body and independent description durable','collapse and reopen preserve draft','successful save clears next description','local reader keeps description separate','capture remains stopped'],captures},null,2));
+    assert.deepEqual(errors,[]);writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,implementation,generatedOnly:true,hidden:true,electron:process.versions.electron,palette:'final light palette 9bf780ac',realRendererPreloadIpc:true,liveModel:false,checks:['description-only cannot save','exact body and independent description durable','collapse and reopen preserve draft','successful save clears next description','local reader keeps description separate','capture remains stopped'],captures},null,2));
     finished=true;clearTimeout(timeout);console.log(JSON.stringify({passed:true,output,captures:captures.length}));app.quit();
   })().catch(error=>{console.error(error.stack);clearTimeout(timeout);app.exit(1);}));
 });
