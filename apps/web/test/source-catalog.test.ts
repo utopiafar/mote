@@ -193,7 +193,8 @@ test('SourceCatalog and the full Guide render English after a locale switch with
   assert.doesNotMatch(f.d.body.textContent!,/\p{Script=Han}/u);
   await f.render('guide');
   assert.equal(f.d.querySelectorAll('[data-guide-group]').length,16);
-  assert.equal(f.d.querySelectorAll('[data-capability-id]').length,78);
+  assert.equal(f.d.querySelectorAll('[data-capability-id]').length,77);
+  assert.equal(f.d.querySelector('[data-capability-id="A01"]'),null,'server-directory import is retired from the guide');
   assert.doesNotMatch(f.d.body.textContent!,/\p{Script=Han}/u);
   f.setLocale('zh-CN');
   await f.render('guide');
