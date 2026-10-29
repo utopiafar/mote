@@ -2,16 +2,16 @@
 :root {
   color-scheme: light;
   --mote-background: #f7f5f1;
-  --mote-surface: #fffdf9;
+  --mote-surface: #fffdfa;
   --mote-sidebar: #eeebe5;
-  --mote-ink: #292623;
-  --mote-muted: #6b625b;
-  --mote-accent: #71509e;
+  --mote-ink: #2d2a26;
+  --mote-muted: #706a60;
+  --mote-accent: #7651a4;
   --mote-accent-hover: #5f3d8d;
   --mote-tint: #eee7f5;
-  --mote-border: #d8d2c9;
+  --mote-border: #d8d1c6;
   --mote-control-border: #827a71;
-  --mote-divider: #ded8d0;
+  --mote-divider: #d8d1c6;
   --mote-success: #316d45;
   --mote-warning: #815b20;
   --mote-danger: #a73830;
@@ -53,7 +53,7 @@
   --mote-on-accent: #ffffff;
   --mote-shadow: none;
   --mote-shadow-control: none;
-  --mote-surface-raised: #fffdf9;
+  --mote-surface-raised: #fffdfa;
   --mote-surface-hover: #eeebe5;
   --mote-surface-sunken: #f0ede7;
   --mote-sidebar-width: 208px;
@@ -61,17 +61,17 @@
   --mote-row-padding: 12px;
   --mote-section-gap: 28px;
   --mote-panel-background: transparent;
-  --mote-sidebar-ink: #35302a;
-  --mote-sidebar-muted: #6a6259;
+  --mote-sidebar-ink: #2d2a26;
+  --mote-sidebar-muted: #706a60;
   --mote-sidebar-tint: #e2ddd5;
-  --mote-sidebar-border: #d8d2c9;
-  --mote-primary-background: #292623;
+  --mote-sidebar-border: #d8d1c6;
+  --mote-primary-background: #2d2a26;
   --mote-primary-hover: #413a34;
-  --mote-primary-ink: #fffdf9;
+  --mote-primary-ink: #fffdfa;
   --mote-success-tint: #e6f1e8;
   --mote-warning-tint: #f7eddb;
   --mote-danger-tint: #f7e6e3;
-  --mote-focus-ring: #71509e;
+  --mote-focus-ring: #7651a4;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-color-scheme="light"]) { color-scheme: dark;
