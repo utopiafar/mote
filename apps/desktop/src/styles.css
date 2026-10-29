@@ -990,3 +990,5 @@ input,select,textarea { accent-color:var(--mote-accent); }
 .note-footer-copy .note-extra { position: relative; margin: 0; }
 .note-footer-copy .note-extra summary { font-size: 11px; font-weight: 400; }
 .note-footer-copy .note-extra button { position: absolute; bottom: 25px; left: 0; width: max-content; padding: 10px; border: 1px solid var(--mote-divider); border-radius: 5px; background: var(--mote-surface); }
+
+.note-description:not([open]) > summary { min-height: 0; padding: 0; font-size: 12px; line-height: 1.7; }
