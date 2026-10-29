@@ -4,7 +4,7 @@
     <color name="mote_surface">#fffdfa</color>
     <color name="mote_sidebar">#eeebe5</color>
     <color name="mote_ink">#2d2a26</color>
-    <color name="mote_muted">#706a60</color>
+    <color name="mote_muted">#6f695f</color>
     <color name="mote_accent">#7651a4</color>
     <color name="mote_accent_hover">#5f3d8d</color>
     <color name="mote_tint">#eee7f5</color>
@@ -19,7 +19,7 @@
     <color name="mote_surface_hover">#eeebe5</color>
     <color name="mote_surface_sunken">#f0ede7</color>
     <color name="mote_sidebar_ink">#2d2a26</color>
-    <color name="mote_sidebar_muted">#706a60</color>
+    <color name="mote_sidebar_muted">#6f695f</color>
     <color name="mote_sidebar_tint">#e2ddd5</color>
     <color name="mote_sidebar_border">#d8d1c6</color>
     <color name="mote_primary_background">#2d2a26</color>
