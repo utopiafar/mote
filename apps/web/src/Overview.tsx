@@ -1,6 +1,6 @@
 import {useState} from 'react';
 import {featureRequirementsAvailable} from '@mote/shared';
-import {useDiscoveryState} from './DiscoveryLink';
+import {DiscoveryLink,DiscoveryProvider,useDiscoveryState} from './DiscoveryLink';
 import {getLocale,moteText} from '@mote/shared/i18n';
 import {ArrowRight,ArrowUpRight,ChevronRight,Database,Link2,MessageCircle,Sparkles} from 'lucide-react';
 import {answerPreview} from './AnswerMarkdown';
@@ -67,7 +67,7 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
     <details className="central-first-actions" open={!complete}><summary>{moteText('更多')}</summary><div className="button-row"><button className="button subtle" onClick={()=>firstData.refresh()} disabled={firstData.loading}>{moteText('刷新')}</button><button className="text-button" onClick={()=>onPage('archive')}>{moteText('打开资料库')}</button></div></details>
    </div>
   </section>;
- return <div className="home-page central-overview">
+ return <DiscoveryProvider state={availability}><div className="home-page central-overview">
   <div className="page-heading home-heading"><h1>{moteText('首页')}</h1><div className="home-heading-meta"><time>{new Date().toLocaleDateString(getLocale(),{month:'long',day:'numeric'})} · {new Date().toLocaleDateString(getLocale(),{weekday:'short'})}</time><button className="text-button" onClick={()=>onPage('activity')}>{moteText('后台活动')}<ArrowRight size={13}/></button></div></div>
   {!complete&&firstReceipt}
   <form className="home-find" role="search" aria-label={moteText('搜索资料或提问')} onSubmit={event=>{event.preventDefault();if(query.trim())window.location.hash='/search?query='+encodeURIComponent(query.trim());}}>
@@ -83,17 +83,17 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
   {(Boolean(pendingQuestions?.length)||questions.error!==undefined)&&<div className="home-owner-question"><button className="text-button" onClick={()=>onPage('ask')}>{moteText('需要你补充')}{pendingQuestions?.length?<> · {moteText('{0} 条',pendingQuestions.length+(questions.data?.nextCursor?'+':''))}</>:null}<ArrowRight size={13}/></button>{questions.error!==undefined&&<p role="alert">{errorMessage(questions.error)}</p>}</div>}
   {(canActions||canTodos)&&<button className="home-action-entry" onClick={()=>onPage('actions')}><span><strong>{moteText('待办与日程')}</strong><small>{activeActions?moteText('{0} 条日程',activeActions.length):moteText('日程')}{Boolean(actionAttention?.length)&&<> · {moteText('{0} 项需处理',actionAttention!.length)}</>} · {knownTodos?moteText('{0} 项待办',knownTodos.filter(item=>item.status==='open').length):moteText('待办')}</small></span><span>{moteText('查看')}<ArrowRight size={13}/></span></button>}
   {(actions.error!==undefined||todos.error!==undefined)&&<p className="home-read-error" role="alert">{errorMessage(actions.error??todos.error)}<button className="text-button" onClick={()=>{actions.refresh();todos.refresh();}}>{moteText('重新读取')}</button></p>}
-  <section className="home-discovery"><div className="section-heading"><h2>{moteText('精选发现')}</h2><div className="home-section-actions"><a className="text-button" href="#/library/insights?insight=new">{moteText('生成回顾')}</a><button className="text-button" onClick={()=>onPage('insights')}>{moteText('发现历史')}<ArrowRight size={13}/></button></div></div>
-   {discovery?<a className="home-insight" href={'#/library/insights?insight='+encodeURIComponent(discovery.runId)}><Sparkles size={22}/><span><small className="home-discovery-label">{moteText('AI 发现')}</small><strong>{discovery.artifact?.title||moteText('你最近的洞察')}</strong><span className="home-discovery-copy">{answerPreview(discovery,180)}</span><small>{moteText('{0} 份依据',discovery.citations.length)}{discovery.createdAt&&<> · <time dateTime={discovery.createdAt}>{dateTime(discovery.createdAt)}</time></>}</small></span><ChevronRight size={15}/></a>:<p className="home-empty">{moteText('暂无发现')}</p>}
+  <section className="home-discovery"><div className="section-heading"><h2>{moteText('精选发现')}</h2><div className="home-section-actions"><DiscoveryLink className="text-button" target={{pageId:'insights',href:'#/library/insights?insight=new'}}>{moteText('生成回顾')}</DiscoveryLink><button className="text-button" onClick={()=>onPage('insights')}>{moteText('发现历史')}<ArrowRight size={13}/></button></div></div>
+   {discovery?<DiscoveryLink className="home-insight" target={{pageId:'insights',href:'#/library/insights?insight='+encodeURIComponent(discovery.runId)}}><Sparkles size={22}/><span><small className="home-discovery-label">{moteText('AI 发现')}</small><strong>{discovery.artifact?.title||moteText('你最近的洞察')}</strong><span className="home-discovery-copy">{answerPreview(discovery,180)}</span><small>{moteText('{0} 份依据',discovery.citations.length)}{discovery.createdAt&&<> · <time dateTime={discovery.createdAt}>{dateTime(discovery.createdAt)}</time></>}</small></span><ChevronRight size={15}/></DiscoveryLink>:<p className="home-empty">{moteText('暂无发现')}</p>}
   </section>
   <section className="home-recent"><div className="section-heading"><h2>{moteText('最近资料')}</h2><button className="text-button" onClick={()=>onPage('archive')}>{moteText('查看全部')}<ArrowRight size={13}/></button></div>
    <div className="home-material-list">{recentMaterials.map(item=><HomeMaterialRow key={item.ref} api={api} item={item} label={knownCatalog?.sources?.find(source=>source.id===item.origin.sourceId)?.label} deviceName={devices.find(device=>device.deviceId===item.origin.deviceId)?.deviceName} onOpen={onOpen} canRead={canReadMaterial} canPreview={canPreviewMaterial}/>)}</div>
    {catalog.loading&&!catalog.data?<p role="status" className="home-empty">{moteText('正在读取…')}</p>:!catalog.error&&!recentMaterials.length&&<button className="text-button home-empty" onClick={()=>onPage('imports')}>{moteText('导入资料')}<ArrowRight size={13}/></button>}
   </section>
   {canConversations&&<section className="home-conversations"><div className="section-heading"><h2>{moteText('最近对话')}</h2><button className="text-button" onClick={()=>onPage('ask')}>{moteText('查看全部')}<ArrowRight size={13}/></button></div>
-   {recentConversations?.map(item=><a className="home-conversation-row" key={item.id} href={'#/ask?conversation='+encodeURIComponent(item.id)}><MessageCircle size={18}/><span><strong>{item.title}</strong><small>{moteText('{0} 轮对话',item.turnCount)} · <time dateTime={item.updatedAt}>{dateTime(item.updatedAt)}</time></small></span><ChevronRight size={14}/></a>)}
+   {recentConversations?.map(item=><DiscoveryLink className="home-conversation-row" key={item.id} target={{pageId:'ask',href:'#/ask?conversation='+encodeURIComponent(item.id)}}><MessageCircle size={18}/><span><strong>{item.title}</strong><small>{moteText('{0} 轮对话',item.turnCount)} · <time dateTime={item.updatedAt}>{dateTime(item.updatedAt)}</time></small></span><ChevronRight size={14}/></DiscoveryLink>)}
    {conversations.error!==undefined?<p className="home-read-error" role="alert">{errorMessage(conversations.error)}<button className="text-button" onClick={conversations.refresh}>{moteText('重新读取')}</button></p>:conversations.loading&&!conversations.data?<p role="status" className="home-empty">{moteText('正在读取…')}</p>:!recentConversations?.length&&<button className="text-button home-empty" onClick={()=>onPage('ask')}>{moteText('开启一段对话')}<ArrowRight size={13}/></button>}
   </section>}
   <details className="home-extensions"><summary>{moteText('更多上下文视图')}</summary>{complete&&firstReceipt}<FeatureHome api={api} onPage={onPage}/></details>
- </div>;
+ </div></DiscoveryProvider>;
 }

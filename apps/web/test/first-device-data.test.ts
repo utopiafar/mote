@@ -63,7 +63,7 @@ test('Home totals require complete catalog facets and never sum a truncated or f
 
 test('Home only reads optional feature routes while both the local page and exact server capability exist',async t=>{
  const f=await fixture(t),reads:string[]=[];
- const registration=await webFeatures.install({id:'fixture.home-capabilities',version:'1',components:[]},['ask','actions'].map(id=>({surface:'page' as const,entry:{id,featureId:'fixture.home-capabilities',render:()=>null}})));
+ const registration=await webFeatures.install({id:'fixture.home-capabilities',version:'1',components:[]},['ask','actions','insights'].map(id=>({surface:'page' as const,entry:{id,route:id==='insights'?'library/insights':id,featureId:'fixture.home-capabilities',render:()=>null}})));
  t.after(()=>registration.dispose());
  const optional=['/api/conversations','/api/owner-questions','/api/actions','/api/todos'];
  const api=(enabled:boolean)=>apiWith(()=>result(),path=>{
@@ -73,7 +73,8 @@ test('Home only reads optional feature routes while both the local page and exac
  });
  await f.render(api(false));assert.equal(reads.some(path=>optional.some(prefix=>path.startsWith(prefix))),false);assert.equal(f.d.querySelector('.home-conversations'),null);assert.equal(f.d.querySelector('.home-action-entry'),null);
  reads.length=0;await f.render(api(true));assert.ok(optional.every(prefix=>reads.some(path=>path.startsWith(prefix))));assert.ok(f.d.querySelector('.home-conversations'));assert.ok(f.d.querySelector('.home-action-entry'));
- await act(async()=>registration.dispose());assert.equal(f.d.querySelector('.home-conversations'),null);assert.equal(f.d.querySelector('.home-action-entry'),null);
+ assert.ok(f.d.querySelector('a[href="#/library/insights?insight=new"]'));
+ await act(async()=>registration.dispose());assert.equal(f.d.querySelector('.home-conversations'),null);assert.equal(f.d.querySelector('.home-action-entry'),null);assert.equal(f.d.querySelector('a[href="#/library/insights?insight=new"]'),null,'unloaded report entry cannot silently route to a different page');
 });
 
 test('missing originals remain unavailable; another node cannot inherit a pending or retained result',async t=>{
