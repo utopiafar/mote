@@ -134,7 +134,7 @@ export const heartbeatSchema = z.object({
   status: z.enum(['capturing','paused','permission_required','error','offline']),
   queueDepth: z.number().int().min(0).max(1000000), lastCaptureAt: z.string().max(64).datetime({offset:true}).nullable().optional(),
   error: z.string().max(1000).nullable().optional(),
-  metadata: recordMetadataSchema.optional(),
+  metadata: recordMetadataSchema.omit({ownerDescription:true}).strict().optional(),
   sync: z.object({
     mode: z.enum(['realtime','interval','batch','manual']),
     state: z.enum(['unconfigured','idle','waiting','uploading','error','manual']),

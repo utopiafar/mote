@@ -61,6 +61,9 @@ export function captureOcrState(record: {source: string; ocr?: OcrResult; ocrTex
 /** Explicit, bounded fields only: never an arbitrary bag of device identifiers or content. */
 export const memoryScopeRefSchema=z.object({projectName:z.string().max(400).optional(),projectIdentity:z.enum(['workspace','session','unknown']).optional(),sourceId:z.string().max(128).optional(),deviceId:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict();
 export const recordMetadataSchema = z.object({
+  /** Explicit owner input, moved by ingress to private immutable context.
+   * Never captured text, OCR, source facts or a declaration of owner identity. */
+  ownerDescription:z.string().max(12000).optional(),
   memoryCorrection:z.object({memoryId:z.string().uuid(),domain:z.enum(['personal','coding']),scopeRefs:z.array(memoryScopeRefSchema).max(30),coding:z.object({kind:z.enum(['pitfall','decision','principle','preference']),scope:z.enum(['session','project','shared']),applicability:z.string().max(2000),validation:z.literal('user_confirmed')}).strict().optional()}).strict().optional(),
   uiPage: uiPageSchema.optional(),
   captureObservation:z.object({id:z.string().uuid(),objectIndex:z.number().int().min(0).max(63).optional(),selected:z.object({duration:z.boolean(),screenshots:z.boolean(),structured:z.boolean()}).strict()}).strict().optional(),
