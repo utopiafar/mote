@@ -63,7 +63,7 @@ export function WorkspaceNavigation({ page, onPage }: {
     if (page === 'settings')
         return null;
     if (page === 'featureGuide')
-        return <button className="back-link workspace-back" aria-label={moteText('返回{0}',pageLabels.overview)} onClick={()=>onPage('overview')}><ArrowLeft size={16}/>{moteText('返回{0}',pageLabels.overview)}</button>;
+        return null; // The directory owns its source-context return in its heading.
     const parent=parentDestination(page);
     return parent?<button className="back-link workspace-back" aria-label={moteText('返回{0}',pageLabels[parent])} onClick={()=>onPage(parent)}><ArrowLeft size={16}/>{moteText('返回上级')}</button>:null;
 }

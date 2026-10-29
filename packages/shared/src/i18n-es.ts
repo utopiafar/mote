@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "查找功能": "Buscar una función",
+  "想做什么？例如：修改记忆、日历、备份": "¿Qué quieres hacer? Prueba editar recuerdos, calendarios o copias de seguridad",
+  "没有找到匹配的功能。试试更简短的关键词。": "No hay funciones coincidentes. Prueba una palabra más corta.",
   "生成任务": "Tareas de generación",
   "查看发现": "Ver descubrimiento",
   "上次提交结果尚未确认；先重试原要求，当前草稿会保留。": "El envío anterior no está confirmado. Reintenta primero la solicitud original; el borrador actual se conservará.",

@@ -149,7 +149,7 @@ for(const scenario of ['local Coding missing','remote Coding missing','remote Co
   assert.equal(f.reads.some(path=>path.startsWith('/api/coding/uploads')),false,'catalog discovery only reads capability inventory');
   f.workAvailable();
   await f.render('guide');
-  const guide=f.d.querySelector<HTMLElement>('[data-capability-id="A15"] .guide-unit-links')!;
+  const guide=f.d.querySelector<HTMLElement>('[data-capability-id="A15"]')!;
   assert.equal(guide.querySelector('a[href]'),null,'The full Guide preserves the same Coding availability boundary');
   assert.ok(guide.querySelector('[aria-disabled="true"]'));
 });
@@ -170,7 +170,7 @@ test('compatible Coding discovery opens Coding sync status and every internal li
   assert.equal(location.hash,'#/library?view=coding-status');
   assert.deepEqual(f.pageCalls,[]);
   await f.render('guide');
-  const guide=f.d.querySelector<HTMLAnchorElement>('[data-capability-id="A15"] .guide-unit-links a')!;
+  const guide=f.d.querySelector<HTMLAnchorElement>('[data-capability-id="A15"] a.guide-unit-link')!;
   assert.ok(guide,'The full Guide exposes the installed Coding destination');
   await act(async()=>guide.click());
   assert.equal(location.hash,coding.getAttribute('href'),'Both entrypoints reach the same specific status view');

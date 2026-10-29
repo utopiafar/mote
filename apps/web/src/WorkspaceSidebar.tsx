@@ -23,7 +23,7 @@ export function WorkspaceSidebar({ layout, page, onPage, connection, verified, p
     <button className="brand" onClick={() => onPage('overview')} aria-label={moteText(uiDestinationPresentation.home.label)}><span className="mote-symbol" aria-hidden="true">m</span><span>{moteBrand.name}</span></button>
     <nav aria-label={moteText('主导航')}>
       {layout.primary.map(id => {
-        const item=uiDestinationPresentation[id], target=destinationPages[id], active = primaryDestination(page) === target;
+        const item=uiDestinationPresentation[id], target=destinationPages[id], active = page!=='featureGuide'&&primaryDestination(page) === target;
         return <button key={target} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={() => onPage(target)}><span className="nav-glyph" aria-hidden="true">{destinationGlyphs[item.icon]}</span><span>{moteText(item.label)}</span></button>;
       })}
     </nav>

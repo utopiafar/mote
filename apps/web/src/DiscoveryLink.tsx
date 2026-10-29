@@ -17,7 +17,7 @@ export function DiscoveryProvider({state,children}:{state:DiscoveryState;childre
 export function discoveryAvailabilityText(state:'unavailable'|'checking'|'unknown'){
  return state==='checking'?moteText('正在确认当前支持情况…'):state==='unknown'?moteText('当前支持情况暂无法确认'):moteText('当前服务未提供此入口');
 }
-export function DiscoveryLink({target,children,className,arrow=false,disabledAs='span'}:{target:DiscoveryTarget;children:ReactNode;className?:string;arrow?:boolean;disabledAs?:'span'|'div'}){
+export function DiscoveryLink({target,children,className,arrow=false,disabledAs='span',onNavigate}:{target:DiscoveryTarget;children:ReactNode;className?:string;arrow?:boolean;disabledAs?:'span'|'div';onNavigate?:(href:string)=>void}){
  const state=useContext(DiscoveryContext);
  if(!state)throw new Error('DiscoveryLink requires a DiscoveryProvider');
  const availability=resolveDiscoveryTarget(target,state);
@@ -27,7 +27,7 @@ export function DiscoveryLink({target,children,className,arrow=false,disabledAs=
   if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
   const live=resolveDiscoveryTarget(target,{...state!,pages:webFeatures.pages(),collections:webFeatures.collections()});
   if(live.state!=='available'){event.preventDefault();return;}
-  event.preventDefault();window.location.hash=live.href!;
+  event.preventDefault();if(onNavigate)onNavigate(live.href!);else window.location.hash=live.href!;
  }
  return <a href={availability.href} className={className} onClick={navigate}>{children}{arrow&&<ArrowRight size={15} aria-hidden="true"/>}</a>;
 }

@@ -21,7 +21,7 @@ test('the complete directory belongs to Home while installed settings keep their
  assert.equal(isSettingsContext('featureGuide'),false);assert.equal(isSettingsContext('archive'),false);
  assert.equal(primaryDestination('featureGuide'),'overview');assert.equal(parentDestination('featureGuide'),'overview');
  const document=new JSDOM(renderToStaticMarkup(React.createElement(WorkspaceNavigation,{page:'featureGuide',onPage:()=>{}}))).window.document;
- assert.equal(document.querySelector('button[aria-label="返回今天"]')?.textContent,'返回今天');
+ assert.equal(document.querySelector('button'),null,'the final directory owns its context return in its heading instead of duplicating a Home-only back link');
 });
 
 test('the legacy Coding page stays under Library and has a Library parent without a Settings card',async t=>{

@@ -61,13 +61,14 @@ import './library.css';
 import './settings-ui.css';
 import './plugin-center.css';
 import './discovery-ui.css';
-import './feature-guide.css';
 import './art-direction.css';
 import './memory-presentation.css';
 import './presentation.css';
 import './final-web.css';
+import './feature-guide.css';
 import {QuickNoteDialog} from './QuickNoteDialog';
 import {QuickNoteContext} from './quick-note-context';
+import {enterGuide,guideVisit} from './feature-guide-state';
 import { confirmNavigation } from './unsaved';
 
 
@@ -275,6 +276,7 @@ function App() {
     const target=canonicalDestination(next,archiveTabRef.current,collectionIds());
     if(!webFeatures.page(target.page)){setNotice(moteText('当前服务未提供此入口'));return;}
     if ((target.page !== page || (target.page==='archive'&&target.collection!==archiveTabRef.current)) && !confirmNavigation()) return;
+    if(target.page==='featureGuide'&&page!=='featureGuide'&&api)enterGuide(api,location.hash);
     history.pushState(null, '', workspaceHash(routes[target.page],target.page==='archive'?target.collection:undefined));
     currentHash.current=location.hash;
     archiveTabRef.current=target.collection; updateArchiveTab(target.collection);
@@ -320,6 +322,7 @@ function App() {
       navigation={layout => <WorkspaceSidebar layout={layout} page={page} onPage={onPage} connection={connection} verified={verified} profile={status?.profile} onConnect={()=>setShowConnect(true)} onRefresh={refresh} refreshing={loading}/>}
       toolbar={
         <header className="topbar">
+          {api&&verified&&page!=='featureGuide'&&guideVisit(api).returnAvailable&&webFeatures.page('featureGuide')&&<button className="guide-return" onClick={()=>{window.location.hash='#/guide';}}><span aria-hidden="true">← </span>{moteText('全部功能')}</button>}
           <span className="breadcrumb"><strong>{pageLabels[page]??moteText("当前服务未提供此入口")}</strong></span>
           <div className="topbar-actions"><GlobalRetrieval onPage={onPage}/><button className="button quick-note" disabled={!notesAvailable} title={notesAvailable?undefined:moteText('当前服务未提供此入口')} onClick={openQuickNote} aria-haspopup="dialog"><Plus size={16}/>{moteText("随手记")}</button>
             <details className="shell-menu shell-mobile-menu"><summary aria-label={moteText('全部功能')}>{moteText('更多')}</summary><div>

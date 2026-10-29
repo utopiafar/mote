@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "查找功能": "Find a feature",
+  "想做什么？例如：修改记忆、日历、备份": "What would you like to do? Try editing memories, calendars, or backups",
+  "没有找到匹配的功能。试试更简短的关键词。": "No matching features. Try a shorter keyword.",
   "生成任务": "Generation tasks",
   "查看发现": "View discovery",
   "上次提交结果尚未确认；先重试原要求，当前草稿会保留。": "The previous submission is not confirmed. Retry its original request first; your current draft will be kept.",

@@ -1,4 +1,7 @@
 {
+  "查找功能": "Rechercher une fonction",
+  "想做什么？例如：修改记忆、日历、备份": "Que souhaitez-vous faire ? Modifier des souvenirs, calendrier, sauvegarde…",
+  "没有找到匹配的功能。试试更简短的关键词。": "Aucune fonction correspondante. Essayez un mot-clé plus court.",
   "生成任务": "Tâches de génération",
   "查看发现": "Voir la découverte",
   "上次提交结果尚未确认；先重试原要求，当前草稿会保留。": "L'envoi précédent n'est pas confirmé. Réessayez d'abord sa demande d'origine ; votre brouillon actuel sera conservé.",

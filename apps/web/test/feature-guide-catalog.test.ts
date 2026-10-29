@@ -4,7 +4,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {FeatureGuide} from '../src/FeatureGuide.js';
+import {FeatureGuide,matchingGuideGroups} from '../src/FeatureGuide.js';
 import {english} from '../../../packages/shared/src/i18n-en.js';
 import {guideSections,quickLinks,type GuideTarget} from '../src/feature-guide-catalog.js';
 import {settingsCategoryFromHash,validatedReturnTarget} from '../src/route-query.js';
@@ -112,13 +112,17 @@ test('note attachments describe existing files and Coding progress uses the regi
 });
 
 
-test('English Guide terminology labels stay separate from the complete explanations',t=>{
+test('the final English directory keeps every capability as a direct row and searches translated titles and groups',t=>{
   configureLocale(()=> 'en');t.after(()=>configureLocale(()=> 'zh-CN'));
   const dom=new JSDOM(renderToStaticMarkup(React.createElement(FeatureGuide,{api:{} as any,onPage:()=>{}})));
-  const terms=dom.window.document.querySelector('.guide-model-terms')!;
-  assert.equal(terms.querySelectorAll('strong').length,4);
-  for(const label of terms.querySelectorAll('strong'))assert.match(label.nextSibling?.textContent??'',/^\s+\S/,'Complete term label has a word boundary before its explanation');
-  assert.ok(terms.textContent?.includes(english['保存服务地址、凭据与可用模型；']));
-  assert.ok(terms.textContent?.includes(english['是当前运行的整体实现，由可信组件和实例组成。并发、超时及其他执行参数在相应高级设置中按需调整。']));
+  assert.equal(dom.window.document.querySelectorAll('.guide-group').length,16);
+  assert.equal(dom.window.document.querySelectorAll('.guide-group[open]').length,0);
+  assert.equal(dom.window.document.querySelectorAll('[data-capability-id]').length,77);
+  for(const unit of units)assert.ok(dom.window.document.querySelector('[data-capability-id="'+unit.id+'"]')?.textContent?.includes(english[unit.title]??unit.title),unit.id);
+  assert.doesNotMatch(dom.window.document.body.textContent!,/\p{Script=Han}/u);
+  const found=matchingGuideGroups('CODING').flatMap(group=>group.units);
+  assert.ok(found.some(unit=>unit.id==='A15'));
+  assert.ok(found.every(unit=>(english[unit.title]??unit.title).toLocaleLowerCase().includes('coding')));
+  assert.equal(matchingGuideGroups('no-such-feature-generated').length,0);
   dom.window.close();
 });
