@@ -54,6 +54,7 @@ async function run(){
     if(path==='/api/configuration'){json(res,{profile:'generated-fixture',groups:[]});return;}
     if(path==='/api/status'){json(res,{profile:'generated-fixture',agent:{configured:true,model:'generated-model',provider:'custom',agentTimeoutMs:120000},storage:{captures:0,blobs:0,bytes:0,imageBytes:0,logicalBytes:0,imagesEncrypted:false,indexing:[]},index:{mode:'none',model:null},retentionDays:0,insightIntervalHours:0,serverTime:when});return;}
     if(path==='/api/devices'){json(res,{items:[]});return;}
+    if(path==='/api/devices/first-data'){json(res,{state:'waiting',originalAvailable:false,checkedDevices:0,checkedRecords:0,windowLimited:false});return;}
     if(path==='/api/features'){json(res,{schemaVersion:1,revision:1,features:[],capabilities:['/api/owner-questions','/api/capture-browser'].map(path=>({id:'http:GET:'+path,version:'1',surface:'data',featureId:'generated-fixture',state:'active'}))});return;}
     const collection=path==='/api/media-activity'?'media':path==='/api/activity'?'activity':path==='/api/capture-browser'?'records':null;
     if(collection){
@@ -126,7 +127,8 @@ async function run(){
  async function checkLibraryRefresh({id,selector,row,text,release,rolling}){
   await js(`location.hash=${JSON.stringify('#/library?view='+id)}`);
   await until(()=>counts[id]&&js(`document.querySelector(${JSON.stringify(selector)})?.textContent.includes(${JSON.stringify(text)})`),'loaded '+id+' collection');
-  await until(()=>js(`!document.querySelector('button[aria-label="刷新资料"]')?.disabled`),'global refresh available for '+id);
+  await js(`(()=>{const menu=document.querySelector('.workspace-node-menu');if(menu&&!menu.open)menu.querySelector('summary').click();})()`);
+  await until(()=>js(`document.querySelector('button[aria-label="刷新资料"]')?.getClientRects().length&&!document.querySelector('button[aria-label="刷新资料"]').disabled`),'global refresh available for '+id);
   const initialPath=collectionPaths[id][0],before=counts[id];
   await js(`(()=>{const panel=document.querySelector(${JSON.stringify(selector)}),row=document.querySelector(${JSON.stringify(row)});if(!panel||!row)throw Error('Missing generated collection content');const state=window.__frontendRefreshCheck={panel,row,violations:[],active:true};const check=()=>{if(!state.active)return;const loading=[...document.querySelectorAll('.library-content [role="status"],.library-content .loading')].filter(element=>element.getClientRects().length&&/正在读取|正在找回/.test(element.textContent)).map(element=>element.textContent);const reasons=[...loading,...!panel.isConnected||document.querySelector(${JSON.stringify(selector)})!==panel?['loaded panel replaced']:[],...!row.isConnected||document.querySelector(${JSON.stringify(row)})!==row?['loaded row replaced']:[]];if(reasons.length)state.violations.push(reasons);};state.observer=new MutationObserver(check);state.observer.observe(document.body,{subtree:true,childList:true,attributes:true});state.timer=setInterval(check,16);check();document.querySelector('button[aria-label="刷新资料"]').click();})()`);
   await until(()=>counts[id]>before&&(!rolling||collectionPaths[id].some(path=>path!==initialPath))&&[...pending].some(req=>req.url.startsWith(initialPath.split('?')[0])),'delayed global '+id+' refresh');

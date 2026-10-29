@@ -33,7 +33,7 @@ export function WorkspaceSidebar({ layout, page, onPage, connection, verified, p
         {verified&&<p>{moteText('已登录 · {0}',profile||moteText('当前节点'))}</p>}
         <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button>
         <button onClick={event=>{event.currentTarget.closest('details')!.open=false;connection?onPage('about'):onConnect();}}>{connection?moteText('登录会话'):moteText('登录 Mote')}</button>
-        {connection&&onRefresh&&<button disabled={refreshing} onClick={onRefresh}>{moteText('刷新资料')}</button>}
+        {connection&&onRefresh&&<button aria-label={moteText('刷新资料')} disabled={refreshing} onClick={onRefresh}>{moteText('刷新资料')}</button>}
       </div></details>
     </div>
   </aside>;
