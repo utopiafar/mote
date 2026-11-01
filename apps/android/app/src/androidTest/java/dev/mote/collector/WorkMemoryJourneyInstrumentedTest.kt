@@ -115,6 +115,20 @@ class WorkMemoryJourneyInstrumentedTest {
             assertEquals(0,fake.deletes.get());assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
     }
+    @Test fun revokedWorkReadWithdrawsTheCompletedResultsList()=fixture{fake->
+        // A transient detail failure keeps the last confirmed rows and re-arms the withdrawal
+        // cadence; a later denied work read must not leave owner-read titles on screen.
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            openResults(fake,scenario);val id=fake.ids[3];assertTrue(has(fake.title(id)));idle(scenario)
+            val reads=fake.workReads.get()
+            fake.failWork.set(true)
+            until("The terminal results cadence reaches the detail again"){fake.workReads.get()>reads}
+            idle(scenario);assertTrue("A transient detail failure keeps the last confirmed rows",has(fake.title(id)))
+            fake.forbidden=true
+            until("A denied work read withdraws every owner-read result row"){!has(fake.title(id))&&!has(fake.title(fake.ids[4]))&&has("返回活动")}
+            assertFalse(has(fake.statement(id)));assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+        }
+    }
     @Test fun removedResultCannotOpenFromAnAlreadyRenderedRow()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];val old=main{shown().single{it.tag=="work-memory:$id"}};fake.removed.add(id)
@@ -395,7 +409,7 @@ class WorkMemoryJourneyInstrumentedTest {
         }
     }
     private class Fake:AutoCloseable{
-        val token="generated-work-memory-owner-token";val workId="memory:"+UUID.randomUUID();val evidenceId=UUID.randomUUID().toString();val otherEvidence=UUID.randomUUID().toString();val goal="Generated activity memory work";val ids=List(23){UUID.randomUUID().toString()}.sorted();val removed=java.util.concurrent.ConcurrentHashMap.newKeySet<String>();val deletes=AtomicInteger();val corrections=AtomicInteger();val queryWrites=AtomicInteger();val captureWrites=AtomicInteger();val entered=CountDownLatch(1);val release=CountDownLatch(1);val captureEntered=CountDownLatch(1);val captureRelease=CountDownLatch(1);val pageEntered=CountDownLatch(1);val pageRelease=CountDownLatch(1);val captureReads=AtomicInteger();val failMemory=AtomicBoolean();val failCapture=AtomicBoolean();val failPage=AtomicBoolean();val holdPage=AtomicBoolean();@Volatile var holdMemory:String?=null;@Volatile var holdCapture=0;@Volatile var forbidden=false;@Volatile var source="file";@Volatile var mutateStatement=false;@Volatile var swapEvidence=false
+        val token="generated-work-memory-owner-token";val workId="memory:"+UUID.randomUUID();val evidenceId=UUID.randomUUID().toString();val otherEvidence=UUID.randomUUID().toString();val goal="Generated activity memory work";val ids=List(23){UUID.randomUUID().toString()}.sorted();val removed=java.util.concurrent.ConcurrentHashMap.newKeySet<String>();val deletes=AtomicInteger();val corrections=AtomicInteger();val queryWrites=AtomicInteger();val captureWrites=AtomicInteger();val entered=CountDownLatch(1);val release=CountDownLatch(1);val captureEntered=CountDownLatch(1);val captureRelease=CountDownLatch(1);val pageEntered=CountDownLatch(1);val pageRelease=CountDownLatch(1);val captureReads=AtomicInteger();val workReads=AtomicInteger();val failWork=AtomicBoolean();val failMemory=AtomicBoolean();val failCapture=AtomicBoolean();val failPage=AtomicBoolean();val holdPage=AtomicBoolean();@Volatile var holdMemory:String?=null;@Volatile var holdCapture=0;@Volatile var forbidden=false;@Volatile var source="file";@Volatile var mutateStatement=false;@Volatile var swapEvidence=false
         private val listener=ServerSocket(0,10,InetAddress.getByName("127.0.0.1"));val origin="http://127.0.0.1:${listener.localPort}";private val workers=Executors.newCachedThreadPool()
         fun title(id:String)="Generated memory "+(ids.indexOf(id)+1).toString().padStart(2,'0')
         fun statement(id:String)="Generated exact statement "+(ids.indexOf(id)+1).toString().padStart(2,'0')
@@ -410,7 +424,7 @@ class WorkMemoryJourneyInstrumentedTest {
                 forbidden||headers.none{line->line.equals("Authorization: Bearer $token",true)}->{status="403 Forbidden";JSONObject().put("error","forbidden")}
                 path=="/api/work-activity"->JSONObject().put("items",JSONArray().put(work())).put("nextCursor",JSONObject.NULL)
                 path=="/api/work-activity/$workId/memory-results"->{if(holdPage.compareAndSet(true,false)){pageEntered.countDown();pageRelease.await(15,TimeUnit.SECONDS)};if(failPage.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else{val available=ids.filterNot{it in removed};val cursor=params["cursor"];val page=available.filter{cursor==null||it>cursor}.take(20);JSONObject().put("ids",JSONArray(page)).put("total",available.size).put("nextCursor",if(available.count{cursor==null||it>cursor}>page.size)page.last()else JSONObject.NULL)}}
-                path=="/api/work-activity/$workId"->work()
+                path=="/api/work-activity/$workId"->{workReads.incrementAndGet();if(failWork.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else work()}
                 path=="/api/capture-browser/$evidenceId"->{val n=captureReads.incrementAndGet();if(n==holdCapture){captureEntered.countDown();captureRelease.await(15,TimeUnit.SECONDS)};if(failCapture.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else JSONObject().put("id",evidenceId).put("source",source).put("deviceId","generated-device").put("libraryVersion","generated-version").put("appName","Generated evidence").put("capturedAt","2026-10-30T00:00:00Z").put("ocrText","Generated exact Memory evidence").put("metadata",JSONObject())}
                 method=="POST" && path.startsWith("/api/memories/") && path.endsWith("/correct")->{corrections.incrementAndGet();JSONObject().put("id",UUID.randomUUID().toString())}
                 path.startsWith("/api/memories/")->{val id=path.substringAfterLast('/');if(method=="GET"&&holdMemory==id){entered.countDown();release.await(15,TimeUnit.SECONDS)};if(method=="GET"&&failMemory.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else if(method=="DELETE"&&id in ids){removed.add(id);deletes.incrementAndGet();JSONObject().put("externalErase","acknowledged").put("physicalEraseVerified",true)}else if(id in ids&&id !in removed)memory(id)else{status="404 Not Found";JSONObject().put("error","not_found")}}
