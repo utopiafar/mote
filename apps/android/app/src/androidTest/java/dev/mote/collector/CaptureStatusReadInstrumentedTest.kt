@@ -29,7 +29,8 @@ class CaptureStatusReadInstrumentedTest {
         var duringRead: ((Int) -> Unit)? = null
         override fun execute(command: Runnable) { work.add(command) }
         fun read(): CaptureOverview.Facts {
-            duringRead?.invoke(reads.incrementAndGet())
+            val count = reads.incrementAndGet()
+            duringRead?.invoke(count)
             if (failRead) throw java.io.IOException("Generated status read failure")
             return CaptureOverview.Facts(false, "paused", "Generated status", true,
                 false, false, false, null, false, false, false, false,
