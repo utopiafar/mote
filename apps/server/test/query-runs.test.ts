@@ -214,22 +214,37 @@ test('running reads return fresh usage without writes and the completed transiti
 });
 
 test('a held retry deadline returns a fresh countdown without rewriting the row',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-retry-wait-'));
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:3600000});}};
-  const {app,store}=await buildApp(config(dir),{agent});
-  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const id=randomUUID();
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-retry-wait-')),id=randomUUID();
+  let entered!:()=>void,enteredWaiter!:(id:string)=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>entered=resolve),waiterStarted=new Promise<string>(resolve=>enteredWaiter=resolve),gate=new Promise<void>(resolve=>release=resolve);
+  const operations:string[]=[];
+  const agent:QueryAgent={configured:true,close:async()=>release(),query:async input=>{
+    const operationId=input.traceContext?.operationId;assert.ok(operationId?.startsWith('query:'));
+    operations.push(operationId);
+    if(operationId==='query:'+id)entered();else enteredWaiter(operationId.slice('query:'.length));
+    await gate;
+    throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:3600000});
+  }};
+  const {app,store,executor}=await buildApp(config(dir),{agent});
+  t.after(async()=>{release();await app.close();rmSync(dir,{recursive:true,force:true});});
   assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated question'}}})).statusCode,202);
-  const stepOf=()=>store.db.prepare("SELECT state,error,available_at FROM execution_steps WHERE operation_id=? AND kind='delegation.coordinator.query'").get('query:'+id) as {state:string;error?:string;available_at:number}|undefined;
-  for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));const step=stepOf();if(step?.state==='waiting'&&step.error==='rate_limited'&&step.available_at>Date.now())break;}
-  const held=stepOf();assert.equal(held?.state,'waiting');assert.ok(held&&held.available_at>Date.now(),'the coordinator is held at a future retry deadline');
-  const pending=app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Held waiter question'}});
-  let heldRunId='';for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));const row=store.db.prepare('SELECT id FROM query_runs WHERE id!=?').get(id) as {id:string}|undefined;if(row&&JSON.parse(persistedRun(store,row.id)).execution?.status==='retry_wait'){heldRunId=row.id;break;}}
-  assert.ok(heldRunId,'the foreground waiter run reached retry_wait');
-  const detail=(await settleReads(app,store,id) as {execution?:{status?:string}});
-  assert.equal(detail.execution?.status,'retry_wait','the initial retry_wait projection is persisted once');
+  await started;
+  const pending=app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Held waiter question'}}).then(response=>response);
+  const heldRunId=await waiterStarted;assert.notEqual(heldRunId,id);
+  const stepOf=(runId:string)=>store.db.prepare("SELECT id,state,error,available_at FROM execution_steps WHERE operation_id=? AND kind='delegation.coordinator.query'").get('query:'+runId) as {id:string;state:string;error?:string;available_at:number};
+  // Wait for the real worker to settle both provider failures. Counting event
+  // loop turns cannot establish that the 50ms waiter refreshed its projection.
+  const drained=executor.drain([stepOf(id).id,stepOf(heldRunId).id]);release();await drained;
+  assert.deepEqual(operations.sort(),['query:'+id,'query:'+heldRunId].sort());
+  for(const runId of [id,heldRunId]){
+    const held=stepOf(runId);assert.equal(held.state,'waiting');assert.equal(held.error,'rate_limited');
+    assert.ok(held.available_at>Date.now(),'the coordinator is held at a future retry deadline');
+    const detail=(await app.inject({url:`/api/query-runs/${runId}`,headers})).json();
+    assert.equal(detail.execution.status,'retry_wait','the real provider failure reaches the HTTP projection');
+    assert.equal((await settleReads(app,store,runId)).execution.status,'retry_wait');
+  }
   t.mock.timers.enable({apis:['Date'],now:Date.now()});
-  const log=runWrites(t,store),stable=persistedRun(store,id);
+  const log=runWrites(t,store),stable=persistedRun(store,id),stableWaiter=persistedRun(store,heldRunId);
   let countdown=0;
   for(let i=0;i<3;i++){
     t.mock.timers.tick(5000);
@@ -240,9 +255,12 @@ test('a held retry deadline returns a fresh countdown without rewriting the row'
     countdown=next;
   }
   const list=await app.inject({url:'/api/query-runs',headers});assert.equal(list.statusCode,200,list.body);
+  const pollsBefore=log.sql.filter(query=>query==='SELECT json FROM query_runs WHERE id=?').length;
   for(let i=0;i<3;i++){t.mock.timers.tick(2000);await new Promise(r=>setTimeout(r,90));}
+  assert.ok(log.sql.filter(query=>query==='SELECT json FROM query_runs WHERE id=?').length-pollsBefore>=3,'the pending foreground waiter really polled across clock ticks');
   assert.equal(log.updates(),0,'detail, list and waiter polls issue zero updates while the deadline is held');
   assert.equal(persistedRun(store,id),stable,'persisted bytes stay identical across clock ticks');
+  assert.equal(persistedRun(store,heldRunId),stableWaiter,'the foreground waiter row also stays byte-identical');
   await app.inject({method:'POST',url:`/api/query-runs/${heldRunId}/cancel`,headers});
   const waiterResponse=await pending;assert.notEqual(waiterResponse.statusCode,200);
 });
