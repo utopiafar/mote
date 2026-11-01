@@ -6,6 +6,8 @@ import {ApiError,errorMessage,type Api} from './api';
 import {FeatureInventory} from './FeatureInventory';
 import {containDialogFocus} from './dialog-focus';
 import {resources} from './resource-cache';
+import {operationFeed} from './operation-feed';
+import {useForegroundResources} from './useForegroundResources';
 import {confirmNavigation,useUnsavedChanges} from './unsaved';
 import {useResource} from './useResource';
 import {capabilityLabel,memoryAdmissionLabel,moduleLabel,packageStateLabel,preparationLabel,preparationPhaseLabel,preparationFailureLabel} from './plugin-center-presentation';
@@ -18,6 +20,7 @@ import {MemorySettings} from './MemorySettings';
 import {clearQuickAdd} from './plugin-quick-add';
 
 const pluginsPath='/api/plugins',bindingPath='/api/memory-spaces/default/binding';
+const deniedBindingApis=new WeakSet<Api>();
 type Intent={path:string;method:string;body:Record<string,unknown>;after?:(value:unknown)=>void};
 type Dialog={kind:'install';preview:PluginReleasePreview}|{kind:'configure';package:PluginPackageView;instance?:PluginInstanceView}|{kind:'prepare';plan:MemoryPlanView}|{kind:'stop'}|{kind:'uninstall';package:PluginPackageView};
 
@@ -39,19 +42,27 @@ function Capabilities({items}:{items:PluginReleasePreview['capabilities']}){
 export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=>void;viewScope?:string}){
  const pluginResource=useResource<PluginCenterView>(api,pluginsPath,3000),bindingResource=useResource<MemoryBindingView>(api,bindingPath,3000);
  const authorization=useResource<{authorization:{revision:number;state:'unapproved'|'enabled'|'paused'|'stopped'}}>(api,'/api/model-authorization',3000);
+ useForegroundResources(api,[pluginsPath,bindingPath,'/api/model-authorization']);
+ useEffect(()=>operationFeed(api).subscribe(()=>{}),[api]);
  const view=pluginResource.data,binding=bindingResource.data;
+ const [bindingDenied,setBindingDenied]=useState<Api|undefined>(()=>deniedBindingApis.has(api)?api:undefined);
  const [tab,setTab]=useHashChoice('tab',pluginTabFromHash),[selected,setSelected]=useState<string>(),[dialog,setDialog]=useState<Dialog>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[retry,setRetry]=useState<Intent>();
  const [repository,setRepository]=useState(''),[tag,setTag]=useState(''),[scope,setScope]=useState('default'),[fee,setFee]=useState(false),[showInventory,setShowInventory]=useState(false),[rhythmOpened,setRhythmOpened]=useState(false);
  const opener=useRef<HTMLElement|null>(null),identity=useRef(api),controller=useRef<AbortController|undefined>(undefined),busyRef=useRef(false);identity.current=api;
- useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setRepository('');setTag('');return()=>controller.current?.abort();},[api]);
+ useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setRepository('');setTag('');setBindingDenied(deniedBindingApis.has(api)?api:undefined);return()=>controller.current?.abort();},[api]);
  useEffect(()=>{
   const denied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
+  if(bindingResource.error instanceof ApiError&&[401,403,404,410].includes(bindingResource.error.status)){deniedBindingApis.add(api);setBindingDenied(api);}
+  // Resource drops data on owner denial. Later retained data witnesses an
+  // authorized read, including one made by another page before a transient error.
+  else if(bindingResource.data!==undefined){deniedBindingApis.delete(api);setBindingDenied(current=>current===api?undefined:current);}
   if(!denied)return;
   clearQuickAdd();
-  controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');
- },[pluginResource.error,bindingResource.error]);
+  controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');setRepository('');setTag('');
+ },[api,pluginResource.error,bindingResource.error,bindingResource.data,bindingResource.loading]);
  const currentPackage=view?.packages.find(item=>item.id===selected);
- const privateDenied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
+ const privateDenied=bindingResource.data===undefined&&(deniedBindingApis.has(api)||bindingDenied===api)||[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
+ const installReady=!privateDenied&&view!==undefined;
  const latestInstance=dialog?.kind==='configure'&&dialog.instance?view?.instances.find(instance=>instance.id===dialog.instance!.id):undefined;
  function open(next:Dialog,event?:HTMLElement){if(!confirmNavigation())return;opener.current=event??document.activeElement as HTMLElement;setDialog(next);setScope('default');setFee(false);setError('');setNotice('');setRetry(undefined);}
  function close(){if(!busy&&confirmNavigation())setDialog(undefined);}
@@ -66,7 +77,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   void execute({path,method,body:{...body,expectedRevision,operationId:crypto.randomUUID()},after});
  }
  async function resolve(){
-  if(!repository.trim()||busyRef.current)return;const owner=api,signal=new AbortController();controller.current?.abort();controller.current=signal;busyRef.current=true;setBusy(true);setError('');setNotice('');setRetry(undefined);opener.current=document.activeElement as HTMLElement;
+  if(!installReady||!repository.trim()||busyRef.current)return;const owner=api,signal=new AbortController();controller.current?.abort();controller.current=signal;busyRef.current=true;setBusy(true);setError('');setNotice('');setRetry(undefined);opener.current=document.activeElement as HTMLElement;
   try{const preview=await owner.request<PluginReleasePreview>('/api/plugins/resolve',{method:'POST',body:JSON.stringify({repository:repository.trim(),...(tag.trim()?{tag:tag.trim()}:{})}),signal:signal.signal});if(identity.current===owner&&!signal.signal.aborted)setDialog({kind:'install',preview});}
   catch(cause){if(identity.current===owner&&!signal.signal.aborted)setError(errorMessage(cause));}
   finally{if(identity.current===owner&&!signal.signal.aborted){busyRef.current=false;setBusy(false);}}
@@ -83,7 +94,9 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   </nav>
   {error&&<div className="notice error" role="alert">{error}{retry&&<button className="text-button" disabled={busy} onClick={()=>void execute(retry)}>{moteText('重试同一请求')}</button>}</div>}
   {pluginResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(pluginResource.error)}<button className="text-button" onClick={pluginResource.refresh}>{moteText('重试')}</button></p>}
+  {bindingResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(bindingResource.error)}<button className="text-button" onClick={bindingResource.refresh}>{moteText('重试')}</button></p>}
   {pluginResource.loading&&!view&&<p role="status">{moteText('正在读取…')}</p>}
+  {tab==='discover'&&!installReady&&bindingResource.loading&&view&&<p role="status">{moteText('正在读取…')}</p>}
   {tab==='installed'&&<>
    {view&&<div className={"provider-workspace plugin-workspace"+(currentPackage?" has-package":"")}><aside hidden={Boolean(currentPackage)} className="panel provider-sidebar"><div className="section-heading"><h2>{moteText('已安装')}</h2><span className="badge muted">{view.packages.length}</span></div>
 
@@ -108,11 +121,10 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   {tab==='discover'&&!privateDenied&&<PluginQuickAdd api={api} viewScope={viewScope} view={view} binding={binding} refresh={refresh} onManage={id=>{setSelected(id);setTab('installed');}}/>}
   {tab==='discover'&&<details className="plugin-advanced plugin-discovery"><summary>{moteText('从 GitHub 添加其他可信插件')}</summary><p>{moteText('读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。')}</p>
    {view&&!view.installation.supported&&<p className="notice">{view.installation.reason??moteText('当前节点不支持在线安装。')}</p>}
-   <form className="plugin-fields" onSubmit={event=>{event.preventDefault();void resolve();}}><label className="preference-field">{moteText('GitHub 仓库')}<input value={repository} onChange={event=>setRepository(event.target.value)} placeholder="https://github.com/owner/repository" required disabled={busy}/></label><label className="preference-field">{moteText('发布标签（可选）')}<input value={tag} onChange={event=>setTag(event.target.value)} disabled={busy}/></label><div className="plugin-footer"><button className="button primary" disabled={busy||!repository.trim()||!view?.installation.supported}>{busy?moteText('正在解析…'):moteText('预览发布包')}</button></div></form>
-   {Boolean(view?.catalog.length)&&<div className="plugin-catalog">{view?.catalog.map(item=><article key={item.repository}><h3>{item.name}</h3><p>{item.description}</p><small>{item.repository}</small><button className="text-button" onClick={()=>{setRepository(item.repository);setTag('');}}>{moteText('选择仓库')}</button></article>)}</div>}
+   <form className="plugin-fields" onSubmit={event=>{event.preventDefault();void resolve();}}><label className="preference-field">{moteText('GitHub 仓库')}<input value={repository} onChange={event=>setRepository(event.target.value)} placeholder="https://github.com/owner/repository" required disabled={busy||!installReady}/></label><label className="preference-field">{moteText('发布标签（可选）')}<input value={tag} onChange={event=>setTag(event.target.value)} disabled={busy||!installReady}/></label><div className="plugin-footer"><button className="button primary" disabled={busy||!installReady||!repository.trim()||!view?.installation.supported}>{busy?moteText('正在解析…'):moteText('预览发布包')}</button></div></form>
+   {Boolean(view?.catalog.length)&&<div className="plugin-catalog">{view?.catalog.map(item=><article key={item.repository}><h3>{item.name}</h3><p>{item.description}</p><small>{item.repository}</small><button className="text-button" disabled={busy||!installReady} onClick={()=>{setRepository(item.repository);setTag('');}}>{moteText('选择仓库')}</button></article>)}</div>}
   </details>}
   {tab==='memory'&&<>
-   {bindingResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(bindingResource.error)}<button className="text-button" onClick={bindingResource.refresh}>{moteText('重试')}</button></p>}
    {bindingResource.loading&&!binding&&<p role="status">{moteText('正在读取…')}</p>}
    {binding&&<><section className="panel plugin-memory-control"><div className="section-heading"><div><h2>{moteText('自动记忆')}</h2><p role="status">{automaticStatus}</p></div><button type="button" role="switch" aria-checked={admission!.desired} aria-label={moteText('自动记忆')} className={'plugin-memory-switch '+(admission!.desired?'is-on':'')} disabled={busy||!(admission!.desired?memoryActions.includes('pause'):memoryActions.includes('resume'))} onClick={()=>memoryCommand(admission!.desired?'pause':'resume')}>{admission!.desired?moteText('已选择启用'):moteText('已选择暂停')}</button></div>
     {authorization.error!==undefined&&<p className="notice error" role="alert">{errorMessage(authorization.error)}<button className="text-button" onClick={authorization.refresh}>{moteText('重新读取')}</button></p>}{waitingAuthorization&&<p className="plugin-waiting-authorization"><a className="text-button" href="#/system/models?category=processing">{moteText('开启自动处理')} →</a></p>}
