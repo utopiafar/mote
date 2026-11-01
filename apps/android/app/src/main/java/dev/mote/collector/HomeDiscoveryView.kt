@@ -30,8 +30,8 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
         if(access==null){gate.invalidate();clear();return}
         if(gate.adopt(access.generation,access.server)){denied=false;clear()}
         if(access.client==null){denied=false;clear();return}
-        // pause() cleared the denied affordance while the gate kept its stop; re-render it instead of reading.
-        if(denied){denied();return}
+        // pause() cleared the denied affordance while the gate kept its stop; re-render it once instead of reading.
+        if(denied){if(rendered!="denied")denied();return}
         val stamp=if(task.busy||!gate.due(SystemClock.elapsedRealtime()))return else gate.begin(SystemClock.elapsedRealtime())
         task.start("",{}, {
             val page=access.client.get("/api/insights?limit=30")

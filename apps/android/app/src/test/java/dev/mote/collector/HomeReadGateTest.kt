@@ -182,15 +182,19 @@ class HomeReadGateTest {
         assertTrue("a recovered probe can confirm the archive empty again", gate.archiveEmpty(true, stamp, 420_000) { true })
     }
 
-    @Test fun aDeniedProbeFailsTheReadLikeAForbiddenResponse() {
-        // The view takes its failure path on a denied probe, so the read cannot record a success
-        // or render a bogus empty answer; the explicit retry re-arms both the read and the probe.
+    @Test fun aDeniedProbeFailsTheReadWithoutCommittingTheStop() {
+        // The probe rethrows on the worker thread; a pause before the UI callback drops the
+        // outcome and must not strand a stop — the UI failure path applies it instead.
         val gate = HomeReadGate()
         gate.adopt(1, "https://central")
         val stamp = gate.begin(0)
         val thrown = assertThrows(CentralFailure::class.java) { gate.archiveEmpty(true, stamp, 0) { throw CentralFailure(403) } }
         assertEquals(403, thrown.status)
-        assertFalse("a denied probe stops the block's reads", gate.due(60_000))
+        gate.wake()
+        assertTrue("a denied probe dropped by a pause leaves the gate unstopped", gate.due(1))
+        gate.begin(1)
+        gate.failure(60_000, 403)
+        assertFalse("the UI failure path applies the stop", gate.due(60_000))
         assertFalse("the stop survives leaving and returning", run { gate.wake(); gate.due(600_000) })
         assertTrue("the explicit retry re-arms reads and the probe", gate.retry().let { gate.due(600_000) })
         assertTrue(gate.archiveEmpty(true, gate.begin(600_000), 600_000) { true })
