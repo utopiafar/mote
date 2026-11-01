@@ -312,6 +312,19 @@ it('keeps a load-more response that crosses a periodic tick and coalesces the re
  expect(el('source-detail-body').textContent).toContain(second.title);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(4);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
 });
 
+it('keeps a failed load-more retry visible after a queued periodic recheck succeeds',async()=>{
+ await flush();let fail!:(reason:Error)=>void,hold=true;
+ const first={key:'capture:generated-failed-more-one',source:'file' as const,title:'Generated first before failed page',observedAt:'2026-10-30T01:00:00.000Z',preview:''};
+ const second={...first,key:'capture:generated-failed-more-two',title:'Generated retried second page'};
+ vi.mocked(api.sourceArchivedContent).mockImplementation(async(_id,cursor)=>cursor?(hold?await new Promise((_resolve,reject)=>{fail=reject;}):{items:[second]}):{items:[first],nextCursor:'generated-failed-more-cursor'});
+ timedUi();await flush();Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='加载更多')!.click();await flush();
+ await vi.advanceTimersByTimeAsync(15000);fail(Error('Generated load-more timeout'));await flush();
+ const list=el('source-detail-body').querySelector<HTMLElement>('.source-archived-list')!;
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);expect(list.textContent).toContain('内容暂不可完整读取');
+ hold=false;Array.from(list.querySelectorAll('button')).find(button=>button.textContent==='重试')!.click();await flush();
+ expect(list.textContent).toContain(second.title);expect(list.textContent).not.toContain('内容暂不可完整读取');
+});
+
 it('withdraws a remotely deleted row on a loaded second page without removing the unchanged first row',async()=>{
  await flush();let deleted=false;
  const first={key:'capture:generated-page-delete-one',source:'file' as const,title:'Generated retained first row',observedAt:'2026-10-30T01:00:00.000Z',preview:''};

@@ -19,7 +19,8 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
  async function pending(row:SourceStatus,root:HTMLElement,epoch:number){try{const page=await api.sourcePendingContent(row.source.id);if(epoch!==revision||selected!==row.source.id)return;root.replaceChildren();for(const item of page.items){const b=button('',()=>actions.read(item),'source-list-row');const copy=node('span',undefined,'source-list-copy');copy.append(node('strong',item.title),node('small',new Date(item.observedAt).toLocaleString(getLocale())));b.append(node('span','▤','source-symbol'),copy,node('span',moteText('本机待发送'),'source-state'),node('span','›','chevron'));root.append(b);}if(!page.items.length)root.append(node('p',moteText('没有待发送内容'),'helper'));if(page.nextOffset!==undefined)root.append(button(moteText('查看全部待发送内容'),actions.content));}catch{if(epoch===revision)root.replaceChildren(node('p',moteText('本机内容暂不可读取，请重试。'),'helper'),button(moteText('重试'),()=>void pending(row,root,epoch)));}}
  const archiveCurrent=(view:ArchiveView)=>archive===view&&view.epoch===revision&&selected===view.row.source.id;
  function renderArchive(view:ArchiveView){
-  view.root.querySelector('.source-archive-error')?.remove();
+  if(!view.nextCursor||view.denied)view.root.querySelector('.source-archive-more-error')?.remove();
+  const errors=Array.from(view.root.querySelectorAll<HTMLElement>('.source-archive-error'));
   const signature=JSON.stringify([view.items,view.nextCursor,view.denied]);if(signature===view.rendered)return;
   view.rendered=signature;const focused=document.activeElement as HTMLElement|null,nodes=new Map<string,{signature:string;button:HTMLButtonElement}>(),children:HTMLElement[]=[];
   for(const item of view.items){
@@ -29,6 +30,7 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
   }
   if(!children.length)children.push(node('p',view.denied?moteText('无法访问采集记录，请检查中央连接权限'):moteText('暂无中央归档内容'),'helper'));
   if(view.nextCursor)children.push(button(moteText('加载更多'),()=>void archivedContent(view,true)));
+  children.push(...errors);
   view.nodes=nodes;view.root.replaceChildren(...children);
   if(focused&&view.root.contains(focused))focused.focus({preventScroll:true});
  }
@@ -45,12 +47,13 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
     if(index>0&&!cursor)break;
     if(index>0&&!detailVisible()){archiveStale=true;return;}
     const page=await api.sourceArchivedContent(view.row.source.id,cursor);if(!archiveCurrent(view))return;
-    if(page.authorizationDenied){view.items=[];view.pages=0;view.nextCursor=undefined;view.denied=true;renderArchive(view);return;}
+    if(page.authorizationDenied){view.items=[];view.pages=0;view.nextCursor=undefined;view.denied=true;view.root.querySelectorAll('.source-archive-error').forEach(error=>error.remove());renderArchive(view);return;}
     items.push(...page.items);cursor=page.nextCursor;pages++;
    }
-   view.items=items;view.pages=more?view.pages+pages:pages;view.nextCursor=cursor;view.denied=false;renderArchive(view);
+   view.items=items;view.pages=more?view.pages+pages:pages;view.nextCursor=cursor;view.denied=false;
+   view.root.querySelector(more?'.source-archive-more-error':'.source-archive-recheck-error')?.remove();renderArchive(view);
   }catch{
-   if(archiveCurrent(view)){view.root.querySelector('.source-archive-error')?.remove();const error=node('div',undefined,'source-archive-error');error.append(node('p',moteText('内容暂不可完整读取，请重试。'),'helper'),button(moteText('重试'),()=>void archivedContent(view,more)));view.root.append(error);}
+   if(archiveCurrent(view)){const kind=more?'source-archive-more-error':'source-archive-recheck-error';view.root.querySelector('.'+kind)?.remove();const error=node('div',undefined,'source-archive-error '+kind);error.append(node('p',moteText('内容暂不可完整读取，请重试。'),'helper'),button(moteText('重试'),()=>void archivedContent(view,more)));view.root.append(error);}
   }finally{
    loading?.remove();view.busy=false;
    if(archiveCurrent(view)){
