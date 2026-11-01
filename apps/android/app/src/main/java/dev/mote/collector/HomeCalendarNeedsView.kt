@@ -90,7 +90,7 @@ internal class HomeCalendarNeedsView(private val activity: MoteActivity, private
     /** The revoked-read affordance; a resolved refresh re-renders it once instead of reading. */
     private fun denied() {
         clear(); visibility = View.VISIBLE; rendered = "denied"
-        addView(TextView(activity).apply { text = MoteI18n.text("重试"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT); setPadding(0, activity.moteDp(8), 0, activity.moteDp(8)); isClickable = true; isFocusable = true; setOnClickListener { if (active && !closed) { gate.retry(); refresh() } } })
+        addView(TextView(activity).apply { text = MoteI18n.text("重试"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT); setPadding(0, activity.moteDp(8), 0, activity.moteDp(8)); isClickable = true; isFocusable = true; setOnClickListener { if (active && !closed) { denied = false; gate.retry(); refresh() } } })
     }
     private fun row(action: JSONObject) = LinearLayout(activity).apply {
         gravity = Gravity.CENTER_VERTICAL; tag = "home-calendar-need:" + action.optString("id")

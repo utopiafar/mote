@@ -52,10 +52,7 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
                 require(item.get("turnCount") is Number && item.getInt("turnCount") >= 0)
             }
             val emptyArchive = gate.archiveEmpty(rows.length() == 0, stamp, SystemClock.elapsedRealtime()) {
-                val storage = access.client.get("/api/status").getJSONObject("storage")
-                storage.has("captures") && storage.get("captures") is Number && storage.getLong("captures") == 0L &&
-                    access.client.get("/api/library/catalog?limit=1").getJSONArray("items").length() == 0 &&
-                    access.client.get("/api/files?limit=1").getJSONArray("items").length() == 0
+                HomeArchiveProbe.empty(access.client::get)
             }
             rows to emptyArchive
         }) { outcome ->
@@ -119,7 +116,7 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
         addView(TextView(activity).apply {
             text = MoteI18n.text("重试"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT)
             setPadding(0, 0, 0, activity.moteDp(16)); isClickable = true; isFocusable = true
-            setOnClickListener { if (active && !closed) { gate.retry(); refresh() } }
+            setOnClickListener { if (active && !closed) { denied = false; gate.retry(); refresh() } }
         })
     }
     private fun label(value: String) { addView(TextView(activity).apply { text = value; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, activity.moteDp(16), 0, activity.moteDp(16)) }) }

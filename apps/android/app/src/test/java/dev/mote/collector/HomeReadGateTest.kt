@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -198,6 +199,41 @@ class HomeReadGateTest {
         assertFalse("the stop survives leaving and returning", run { gate.wake(); gate.due(600_000) })
         assertTrue("the explicit retry re-arms reads and the probe", gate.retry().let { gate.due(600_000) })
         assertTrue(gate.archiveEmpty(true, gate.begin(600_000), 600_000) { true })
+    }
+
+    @Test fun aMalformedCaptureCountIsInconclusiveAndRetries() {
+        // The production probe: a 200 whose storage.captures is missing or non-numeric throws
+        // instead of claiming the archive is populated, so a later valid answer still applies.
+        val malformed = assertThrows(IllegalStateException::class.java) {
+            HomeArchiveProbe.empty { path ->
+                if (path == "/api/status") JSONObject("""{"storage":{"captures":"unknown"}}""")
+                else error("the probe stops at the malformed count: $path")
+            }
+        }
+        assertTrue(malformed.message!!.contains("captures"))
+        val reads = mutableListOf<String>()
+        val empty = HomeArchiveProbe.empty { path ->
+            reads += path
+            when {
+                path == "/api/status" -> JSONObject("""{"storage":{"captures":0}}""")
+                path.startsWith("/api/library/catalog") || path.startsWith("/api/files") -> JSONObject("""{"items":[]}""")
+                else -> error("unexpected probe read: $path")
+            }
+        }
+        assertTrue("a valid empty archive confirms empty", empty)
+        assertEquals(3, reads.size)
+        assertFalse("a populated archive is not empty", HomeArchiveProbe.empty { path ->
+            if (path == "/api/status") JSONObject("""{"storage":{"captures":0}}""") else JSONObject("""{"items":[{"id":"x"}]}""")
+        })
+        // Through the gate: the malformed probe surfaces as a failure and the next read retries.
+        val gate = HomeReadGate()
+        gate.adopt(1, "https://central")
+        val stamp = gate.begin(0)
+        var malformedCount = 0
+        assertFalse(gate.archiveEmpty(true, stamp, 0) { malformedCount++; throw IllegalStateException("storage.captures missing or not numeric") })
+        assertFalse("the answer stays unknown", gate.archiveEmpty(true, stamp, 59_999) { error("cached, not probed") })
+        assertTrue("the next steady read retries and confirms empty", gate.archiveEmpty(true, stamp, 60_000) { HomeArchiveProbe.empty { if (it == "/api/status") JSONObject("""{"storage":{"captures":0}}""") else JSONObject("""{"items":[]}""") } })
+        assertEquals(1, malformedCount)
     }
 
     @Test fun logicalReadsAreNotTotalHttpRequests() {

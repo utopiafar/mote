@@ -1,5 +1,7 @@
 package dev.mote.collector
 
+import org.json.JSONObject
+
 /**
  * Shared read cadence for the home blocks. While the home is visible a block reads at most once
  * per [steadyMs]; failures back off exponentially up to [maxBackoffMs]; a 403 stops the block
@@ -8,6 +10,20 @@ package dev.mote.collector
  * home otherwise reads at once. Stamps let a late response check whether it still belongs to the
  * current generation.
  */
+/**
+ * Confirms the archive is really empty across storage, library and files. A malformed storage
+ * count throws — an inconclusive probe retries on the next read rather than claiming data exists.
+ */
+internal object HomeArchiveProbe {
+    fun empty(read: (String) -> JSONObject): Boolean {
+        val storage = read("/api/status").getJSONObject("storage")
+        check(storage.get("captures") is Number) { "storage.captures missing or not numeric" }
+        return storage.getLong("captures") == 0L &&
+            read("/api/library/catalog?limit=1").getJSONArray("items").length() == 0 &&
+            read("/api/files?limit=1").getJSONArray("items").length() == 0
+    }
+}
+
 internal class HomeReadGate(private val steadyMs: Long = 60_000, private val maxBackoffMs: Long = 300_000, private val probeRecheckMs: Long = 300_000) {
     @Volatile private var generation = -1L
     @Volatile private var origin = ""
