@@ -35,6 +35,14 @@ class LibraryRecordsRefreshInstrumentedTest {
         val deadline = SystemClock.elapsedRealtime() + 45000
         while (!condition()) { check(SystemClock.elapsedRealtime() < deadline) { label }; Thread.sleep(60) }
     }
+    private fun awaitApplicationRecovery() {
+        waitFor("application recovery and its final record invalidation settle") {
+            // The host preflight proves this dedicated package has no records/stages.
+            // Its first records invalidation is Application's final notification.
+            // Waiting for that as well closes the flags-false -> records+1 boundary.
+            !QueueStorage.recovering && !QueueStorage.maintaining && LocalStateChanges.revisions.value.records > 0
+        }
+    }
     private fun note(id: String, device: String, at: Instant, text: String) = JSONObject()
         .put("id", id).put("deviceId", device).put("deviceName", "Generated refresh phone").put("platform", "android")
         .put("source", "note").put("capturedAt", at.toString()).put("durationMs", 0).put("ocrText", text)
@@ -112,7 +120,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             } finally { check(!temp.exists() || temp.delete()) }
         }
         fun open(server: String, token: String): DurableQueue {
-            waitFor("application recovery settles before the read-only preflight") { !QueueStorage.recovering && !QueueStorage.maintaining }
+            awaitApplicationRecovery()
             requireEmptyGeneratedProfile()
             prefs = context.getSharedPreferences("mote", Context.MODE_PRIVATE).all.toMap()
             pointerBytes = pointer.takeIf { it.exists() }?.readBytes()
@@ -174,6 +182,7 @@ class LibraryRecordsRefreshInstrumentedTest {
     }
     @Test fun realQueueStorageBatchReplayRetentionAndConstructorWritesNeverHideDestructiveChanges() {
         require(context.packageName == "dev.mote.collector.filefixture" && Build.FINGERPRINT.contains("emu64a"))
+        awaitApplicationRecovery()
         val root = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "generated-library-signals-").toFile()
         val generated = PrivateQueueContext(context, root)
         try {
@@ -215,6 +224,7 @@ class LibraryRecordsRefreshInstrumentedTest {
         } finally { generated.dispose() }
     }
     @Test fun retainedQueueSentinelRejectsBeforeReplayAndUnarmedCleanup() {
+        awaitApplicationRecovery()
         requireEmptyGeneratedProfile()
         val dir = File(context.noBackupFilesDir, "queue"); check(dir.isDirectory)
         val sentinel = File(dir, ".capture-stages.inbox"); check(!sentinel.exists())
