@@ -4,9 +4,13 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import Fastify from 'fastify';
+import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {ExecutionEngine,type ExecutionHandler} from '../src/execution-engine.js';
 import {Operations,registerOperations} from '../src/operations.js';
+import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
+import {memorySchema} from '../src/memory-schema.js';
+import {registerMemoryRoutes} from '../src/memory-routes.js';
 const handler:ExecutionHandler={kind:'fixture',pool:'fixture',concurrency:()=>2,validate:()=>true,execute:async()=>null,commit:()=>{}};
 function fixture(t:any,legacy=false){const dir=mkdtempSync(join(tmpdir(),'mote-operations-')),store=new Store(dir);let engine:ExecutionEngine;
  if(!legacy){engine=new ExecutionEngine(store);engine.register(handler);}
@@ -92,6 +96,31 @@ test('205-step detail batches dependency reads without changing per-step limits 
  const app=Fastify();t.after(()=>app.close());registerOperations(app,operations,req=>req.headers.authorization==='Bearer collector');
  const response=await app.inject({url:'/api/operations/file%3Abatch-fixture?limit=100'});assert.equal(response.statusCode,200);for(const step of response.json().steps)assert.deepEqual(step.dependencies,expected.get(step.id));
  assert.equal((await app.inject({url:'/api/operations/file%3Abatch-fixture',headers:{authorization:'Bearer collector'}})).statusCode,403);
+});
+
+test('real memory mutations publish memory change ids through the operations endpoint',async t=>{
+ const {store,operations}=fixture(t),memories=new MemoryStore(store),at='2026-10-12T00:00:00Z';
+ const evidenceId=randomUUID();await store.ingest({id:evidenceId,deviceId:'generated-device',deviceName:'Generated',platform:'import',source:'message',capturedAt:at,durationMs:0,appId:'generated',appName:'Generated',ocrText:'Generated topic input original.',privacy:{excluded:false,redacted:false,mode:'none'}});
+ const seed=(title:string)=>{const memory=memorySchema.parse({id:randomUUID(),version:1,title,statement:'Generated topic input body.',uncertainty:'Generated only',status:'published',domain:'personal',tier:'episode',kind:'episodic',createdAt:at,evidenceIds:[evidenceId],evidence:[],model:'fixture',runId:'fixture',fingerprint:memoryEvidenceFingerprint(store.evidence([evidenceId])[0]),admission:{layer:'memory',reason:'Generated',scope:'Generated fixture',attribution:'observed'}});store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memory.id,at,JSON.stringify(memory));store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memory.id,evidenceId);return memory;};
+ const app=Fastify();t.after(()=>app.close());
+ // Only delete/correct reach the memory store; the remaining route dependencies
+ // stay unused behind the production registrations.
+ registerMemoryRoutes(app,{memories,store} as Parameters<typeof registerMemoryRoutes>[1]);registerOperations(app,operations,()=>false);
+ const changed=async()=>((await app.inject({url:'/api/operations/changes?since=0'})).json() as {ids:string[]}).ids;
+ const deleted=seed('Generated deleted topic input');
+ assert.equal((await app.inject({url:'/api/memories/'+deleted.id,method:'DELETE'})).statusCode,200);
+ assert.ok((await changed()).includes('memory:'+deleted.id),'the real delete route emits a memory change id');
+ const corrected=seed('Generated corrected topic input');
+ assert.equal((await app.inject({url:'/api/memories/'+corrected.id+'/correct',method:'POST',payload:{version:1,title:'Generated corrected title',statement:'Generated corrected statement.'}})).statusCode,200);
+ assert.ok((await changed()).includes('memory:'+corrected.id),'the real correct route emits a memory change id');
+ const staled=seed('Generated stale topic input');
+ store.invalidateSemanticEvidence(evidenceId);
+ assert.equal(memories.get(staled.id).status,'stale');
+ assert.ok((await changed()).includes('memory:'+staled.id),'evidence retirement emits a memory change id for staled inputs');
+ const removed=seed('Generated removed topic input');
+ store.delete(evidenceId);
+ assert.throws(()=>memories.get(removed.id),/not found/);
+ assert.ok((await changed()).includes('memory:'+removed.id),'evidence deletion emits a memory change id for removed inputs');
 });
 
 test('real Memory phase children expose stable extraction and review kinds without their private inputs',async t=>{
