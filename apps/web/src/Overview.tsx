@@ -32,7 +32,7 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
  const canActions=hasPage('actions')&&supports('/api/actions'),canTodos=hasPage('actions')&&supports('/api/todos');
  const canInsightRuns=hasPage('insights')&&supports('/api/insight-runs');
  const canReadMaterial=supports('/api/materials/:id/read');
- const canPreviewMaterial=supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/content');
+ const canPreviewMaterial=supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/thumbnail');
  const sources=useResource<{items:{id:string;name?:string;status?:{state:string}}[]}>(api,'/api/sources');
  const connections=useResource<{items:{scope:string;revokedAt?:string;expiresAt?:string}[]}>(api,'/api/connections');
  const catalog=useResource<OwnerBrowsePage>(api,'/api/library/browse?limit=3');
