@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import android.content.Context
 import android.os.Environment
+import org.json.JSONObject
 import java.io.File
 
 data class QueueStorageChoice(val id: String, val title: String, val base: File, val availableBytes: Long)
@@ -39,6 +40,22 @@ class QueueStorage(private val context: Context) {
     })
     fun selected(): QueueLocation { requireUiReady(); return DurableQueue.exclusive { store().selected() } }
     fun current(): QueueLocation { requireUiReady(); return DurableQueue.exclusive { store().current().also { recoveryFailure = null } } }
+    /** Accepted stage work that still needs replay; a cheap file presence check, never an open. */
+    fun stageRecoveryPending(): Boolean = DurableQueue.exclusive {
+        val path = store().current().path
+        File(path, ".capture-stages.inbox").exists() || File(path, ".capture-stages.journal").exists()
+    }
+    /** Committed record files on the selected location without opening the queue: a failed stage
+     * replay cannot poison the answer, and an unreadable directory still surfaces as a failure. */
+    fun committedStored(): Boolean = DurableQueue.exclusive {
+        File(store().current().path).listFiles()?.any { it.extension == "event" }
+            ?: error(MoteI18n.text("无法读取本机存储目录"))
+    }
+    /** A committed record projection by id without opening the queue, so a still-failing stage
+     * replay cannot take a displayed receipt down; read failures propagate to the caller. */
+    fun committedCapture(id: String): JSONObject? = DurableQueue.exclusive {
+        DurableQueue.readStoredEvent(File(store().current().path), context.localContentCipher(), id)
+    }
     fun migrate(id: String): QueueLocation = DurableQueue.exclusive {
         val target = choices().singleOrNull { it.id == id } ?: error(MoteI18n.text("所选目标存储暂不可用"))
         try { store().migrate(target.id, target.base, RuntimeSettings::reportProgress) } finally { LocalStateChanges.changed(records = true) }
@@ -48,8 +65,13 @@ class QueueStorage(private val context: Context) {
         LocalDataFormat.requireCurrent(context)
         return DurableQueue.exclusive {
         val state = store(); val location = state.current()
-        DurableQueue(File(location.path), context.localContentCipher(), createMissing = false) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }
-            .apply { externalStorageBytes = { recordOriginalDiskBytes(context) }; onMutation = { LocalStateChanges.changed(records = it, storage = true) }; assertCurrent = { state.assertCurrent(location) }; recoveryFailure = null }
+        // The mutation listener is installed at construction so even a replay committed — or a
+        // construction that fails partway — still reports its record writes.
+        DurableQueue(File(location.path), context.localContentCipher(), createMissing = false,
+            initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) }) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }
+            .apply { externalStorageBytes = { recordOriginalDiskBytes(context) }; assertCurrent = { state.assertCurrent(location) }
+                if (unreportedRecordWrites) { unreportedRecordWrites = false; LocalStateChanges.changed(records = true) }
+                recoveryFailure = null }
         }
     }
 }

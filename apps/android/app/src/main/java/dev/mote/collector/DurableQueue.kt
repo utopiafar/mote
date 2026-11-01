@@ -18,6 +18,7 @@ data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes:
 class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true,
                    private val captureStages: CaptureStageRegistry = CaptureStages.default,
                    private val role: Role = Role.ACTIVE,
+                   initialOnMutation: ((Boolean) -> Unit)? = null,
                    private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     enum class Role { ACTIVE, QUARANTINE }
     companion object {
@@ -35,6 +36,32 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         private data class BlobStamp(val bytes: Long, val modified: Long)
         private val validatedBlobs = object : LinkedHashMap<String, BlobStamp>(256, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BlobStamp>?) = size > 4096
+        }
+
+        /** The same projection `capture` returns, read straight from a committed record file:
+         * stage replay failures can never hide a record that is already on disk. A missing file
+         * answers null; an unreadable or malformed one propagates its failure. */
+        internal fun readStoredEvent(dir: File, cipher: ByteCipher, id: String): JSONObject? {
+            val file = File(dir, "${UUID.fromString(id)}.event")
+            if (!file.exists()) return null
+            return display(dir, JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)).also(LocalDataFormat::validateEvent))
+        }
+        private fun display(dir: File, event: JSONObject): JSONObject {
+            val hash = event.optString("_blob")
+            event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
+            event.put("retainedUntil", event.optLong("_retainedUntil"))
+            event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
+            if (event.optBoolean("_uploadConflict")) event.put("syncError", "upload_conflict")
+            if (event.optBoolean("_archiveMissing")) event.put("syncError", "archive_missing").put("ocr", JSONObject().put("status", "failed"))
+            event.optJSONObject("_centralDerived")?.let { result ->
+                event.put("centralProcessing", result.optJSONArray("perceptionJobs"))
+                if (result.optJSONObject("ocr")?.optString("status") == "completed") {
+                    event.put("ocrText", result.optString("textPreview")); event.put("ocr", result.getJSONObject("ocr"))
+                    event.put("centralTextLength", result.optInt("textLength")); event.put("centralPreview", true)
+                }
+            }
+            event.remove("_blob"); localFields.forEach(event::remove)
+            return event
         }
     }
     /** Origin snapshot supplied by the connection-owned queue handle; unbound handles fail closed for pinned records. */
@@ -55,8 +82,15 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             if (!event.has("_archiveOrigin")) atomic(file, event.put("_archiveOrigin", origin.trim().trimEnd('/')).toString().toByteArray())
         }
     }
-    /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
-    internal var onMutation: ((Boolean) -> Unit)? = null
+    /**
+     * Nonblocking invalidation only; listeners must never read storage inside this callback.
+     * Passed at construction it also covers the init-time stage replay, so a record committed
+     * before the object is returned — including a replay that ends in a constructor failure —
+     * is already reported.
+     */
+    internal var onMutation: ((Boolean) -> Unit)? = initialOnMutation
+    /** Record files committed while no mutation listener existed yet, e.g. the init-time stage replay. */
+    internal var unreportedRecordWrites = false
     internal var assertCurrent: (() -> Unit)? = null
     internal var afterStageJournal: (() -> Unit)? = null
     private inline fun <T> guarded(action: () -> T): T = synchronized(lock) { assertCurrent?.invoke(); action() }
@@ -76,7 +110,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error(MoteI18n.text("无法读取本机存储目录"))
     private fun browseIndex() = browseIndexes.getOrPut(dir.absolutePath) { QueueBrowseIndex(dir, cipher) }
-    private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
+    private fun records(): List<File> = browseFiles().sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name })
     private fun metadata(files: List<File> = browseFiles()) = browseIndex().entries(files, ::read, requireStatistics = true)
     fun stats(): QueueStats {
         prepareIndex()
@@ -185,8 +219,19 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         atomic(file, body)
     }
     fun pendingSync(): PendingSync = stats().pendingSync
-    fun depth(): Int = guarded { dir.listFiles()?.count { it.extension == "event" } ?: 0 }
-    fun diskBytes(): Long = guarded { dir.listFiles()?.filter { it.isFile && it.name != ".mote-local-format" }?.sumOf { it.length() } ?: 0L }
+    /** A listing failure surfaces rather than reporting an empty queue. */
+    fun depth(): Int = guarded { browseFiles().size }
+    /**
+     * Whether any record file is stored; a listing failure surfaces rather than reporting
+     * empty. So does unfinished stage recovery: pending inbox work may still commit records,
+     * so the read fails and the next queue open retries the replay instead of caching "empty".
+     */
+    fun anyStored(): Boolean = guarded {
+        if (browseFiles().isNotEmpty()) return@guarded true
+        pendingStageFailure?.let { throw it }
+        false
+    }
+    fun diskBytes(): Long = guarded { (dir.listFiles() ?: error(MoteI18n.text("无法读取本机存储目录"))).filter { it.isFile && it.name != ".mote-local-format" }.sumOf { it.length() } }
     fun reservedOcrBytes(): Long = stats().reservedOcrBytes
     fun bytes(): Long = stats().bytes + externalStorageBytes()
     private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)).also(LocalDataFormat::validateEvent)
@@ -199,7 +244,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             check(temp.renameTo(file)) { MoteI18n.text("无法原子写入队列") }
             if (modifiedAt != null) file.setLastModified(modifiedAt)
             if (file.extension == "blob") validatedBlobs.remove(file.absolutePath)
-            if (file != stageCheckpoint && file != stageJournal && file != stageInbox) onMutation?.invoke(file.extension == "event")
+            if (file != stageCheckpoint && file != stageJournal && file != stageInbox) {
+                if (onMutation == null && file.extension == "event") unreportedRecordWrites = true
+                onMutation?.invoke(file.extension == "event")
+            }
             // Atomic replacements may have the same length and timestamp on coarse filesystems.
             if (file.extension == "event") browseIndex().changed(file, JSONObject(String(bytes, Charsets.UTF_8)))
         } finally { temp.delete() }
@@ -658,29 +706,12 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val image = if (hash.isBlank()) null else verifiedBlob(hash, readBytes = true)
         // Later Central processing must not replace the confirmed original's body.
         event.remove("_centralDerived")
-        display(event) to image
+        display(dir, event) to image
     }
     fun capture(id: String): JSONObject? = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return null
-        display(read(file))
-    }
-    private fun display(event: JSONObject): JSONObject {
-        val hash = event.optString("_blob")
-        event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
-        event.put("retainedUntil", event.optLong("_retainedUntil"))
-        event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
-        if (event.optBoolean("_uploadConflict")) event.put("syncError", "upload_conflict")
-        if (event.optBoolean("_archiveMissing")) event.put("syncError", "archive_missing").put("ocr", JSONObject().put("status", "failed"))
-        event.optJSONObject("_centralDerived")?.let { result ->
-            event.put("centralProcessing", result.optJSONArray("perceptionJobs"))
-            if (result.optJSONObject("ocr")?.optString("status") == "completed") {
-                event.put("ocrText", result.optString("textPreview")); event.put("ocr", result.getJSONObject("ocr"))
-                event.put("centralTextLength", result.optInt("textLength")); event.put("centralPreview", true)
-            }
-        }
-        event.remove("_blob"); localFields.forEach(event::remove)
-        return event
+        display(dir, read(file))
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
     fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null, libraryBindings: Boolean = false, libraryVersion: ((JSONObject, String?) -> String)? = null): JSONObject {
@@ -705,7 +736,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val bindings = JSONObject()
             if (libraryBindings) items.forEach { event -> bindings.put(event.getString("id"), event.optString("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))) }
             // Display projection mutates its input; keep the original facts and blob hash for versioning.
-            items to JSONObject().put("items", JSONArray(items.map { display(JSONObject(it.toString())).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
+            items to JSONObject().put("items", JSONArray(items.map { display(dir, JSONObject(it.toString())).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
                 .apply { if (libraryBindings) put("bindings", bindings) }
                 .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
         }

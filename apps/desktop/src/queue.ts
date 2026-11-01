@@ -30,6 +30,7 @@ export interface QueueRecord {
   syncBlocked?: boolean;
   syncError?: string;
 }
+type ContentSummary = Readonly<Pick<CaptureEvent,'id'|'source'|'appName'|'ocrText'|'capturedAt'|'deviceName'> & Pick<QueueRecord,'syncError'>>;
 export interface QueueLimits { maxQueueBytes: number; maxQueueEvents: number }
 export interface QueueStats { archiveAcknowledgment?:{at:string;origin:string}; depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; blocked: number }
 export interface QueueArchive {
@@ -248,6 +249,10 @@ export class DurableQueue {
   contains(id: string): boolean { return this.records.has(id); }
   recordForHistory(id: string): QueueRecord | undefined { const record = this.records.get(id); return record ? structuredClone(record) : undefined; }
   contentRecords(): QueueRecord[] { return structuredClone([...this.records.values()]); }
+  /** Detached scalar fields only; originals and mutable event metadata stay in the queue. */
+  contentSummaries(): readonly ContentSummary[] {
+    return Array.from(this.records.values(),({event,syncError})=>({id:event.id,source:event.source,appName:event.appName,ocrText:event.ocrText,capturedAt:event.capturedAt,deviceName:event.deviceName,syncError}));
+  }
   historyPending(): {source: CaptureEvent['source']; pending: number; review: number; blocked: number; retrying: number}[] { return ['screen','ui_page','note','activity','notification'].map(source => {const records=[...this.records.values()].filter(record=>record.event.source===source);return {source:source as CaptureEvent['source'],pending:records.length,review:records.filter(r=>r.syncError==='upload_review_pending').length,blocked:records.filter(r=>r.syncBlocked&&r.syncError!=='upload_review_pending').length,retrying:records.filter(r=>!r.syncBlocked&&r.attempts>0).length};}); }
   recordsForBrowser(): QueueRecord[] { return structuredClone([...this.records.values()].filter(r => r.event.source === 'screen')); }
   async pageForBrowser(after: string, before: string, offset: number, limit: number, source: 'screen'|'ui_page' = 'screen'): Promise<{ records: QueueRecord[]; total: number }> {

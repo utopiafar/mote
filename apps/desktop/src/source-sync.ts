@@ -15,6 +15,7 @@ export const sourceHash = (value: string | Buffer): string => createHash('sha256
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
 
 type QueueName = 'realtime' | 'history';
+export type PendingSourceSummary = Readonly<Pick<SourceItem,'title'|'text'|'observedAt'|'externalId'|'revision'>>;
 function isFileCheckpoint(value: SourceCheckpoint | undefined): value is LocalFileCheckpoint {
   return Boolean(value && value.version === 1 && typeof (value as LocalFileCheckpoint).root === 'string');
 }
@@ -59,6 +60,7 @@ export class SourceSync {
   private scheduler=new PriorityScheduler(16*1024*1024);
   private manifestBatch?:boolean;
   private knownItems=0;
+  private pendingContentRevision=0;
   private data: State = { version: DESKTOP_STORAGE_VERSION, ingressVersion:2, adapterVersion:1, known: {}, pendingRealtime: [], pendingHistory: [] };
   private readonly limits: { maxEvents: number; maxBytes: number; batchSize: number; concurrency: number };
   constructor(private readonly path: string, limits?: Partial<{ maxEvents: number; maxBytes: number; batchSize: number; concurrency: number }>) { this.limits = { maxEvents: 4000, maxBytes: 32 * 1024 * 1024, batchSize: 100, concurrency: 4, ...limits }; }
@@ -76,6 +78,10 @@ export class SourceSync {
   }
 
   pendingContent(): SourceItem[] { return structuredClone([...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)]); }
+  /** Detached scalar fields from both outbox lanes and quarantine; no originals or metadata. */
+  pendingSummaries(): readonly PendingSourceSummary[] {
+    return [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].map(({title,text,observedAt,externalId,revision})=>({title,text,observedAt,externalId,revision}));
+  }
   pendingForHistory(versionKey: string): SourceItem | undefined { const item = [...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)].find(item => sourceHash(`${item.externalId}\0${item.revision}`) === versionKey); return item ? structuredClone(item) : undefined; }
   checkpoint(): SourceCheckpoint | undefined { return structuredClone(this.data.checkpoint); }
   /** Scanner borrows immutable catalog rows and records changes in its own draft. */
@@ -87,10 +93,10 @@ export class SourceSync {
   oneTimeCompletedAt(policy:string):string|undefined { return this.data.policy===policy?this.data.oneTimeCompletedAt:undefined; }
   async resetOneTimeCompletion():Promise<void>{await this.mutate(async()=>{if(this.data.oneTimeCompletedAt)await this.commit({...this.data,oneTimeCompletedAt:undefined});});}
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
-  status(): { blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
+  status(): { pendingContentRevision:number; blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
     const pending = this.pendingItems();
     const rejected=Object.values(this.data.quarantined??{});
-    return { blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status})=>({externalId:item.externalId,title:item.title,status})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
+    return { pendingContentRevision:this.pendingContentRevision,blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status})=>({externalId:item.externalId,title:item.title,status})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
   }
   async checkpointTo(path: string): Promise<void> { const previous=await sourceWork.run<Record<string,unknown>|undefined>({kind:'source-state',path});await sourceWork.run({kind:'source-state',path,patches:sourceStatePatch(previous??{},this.data as unknown as Record<string,unknown>)}); }
 
@@ -346,5 +352,11 @@ export class SourceSync {
     for(const item of batch)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true}).catch(()=>{});
   }
 
-  private async commit(next: State, maximum?: number, patches=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>)): Promise<void> { await sourceWork.run({ kind: 'source-state', path: this.path, patches:[...patches,{section:'state',key:'version',value:DESKTOP_STORAGE_VERSION}], maximum }); this.data = next; }
+  private async commit(next: State, maximum?: number, patches=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>)): Promise<void> {
+    await sourceWork.run({kind:'source-state',path:this.path,patches:[...patches,{section:'state',key:'version',value:DESKTOP_STORAGE_VERSION}],maximum});
+    // Existing transaction patches identify real membership/body changes without
+    // a full catalog signature. Metadata-only scans and sync timestamps do not advance it.
+    if(patches.some(patch=>patch.section==='pendingRealtime'||patch.section==='pendingHistory'||patch.section==='quarantined'))this.pendingContentRevision++;
+    this.data=next;
+  }
 }

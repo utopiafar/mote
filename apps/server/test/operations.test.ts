@@ -140,10 +140,26 @@ test('catalog transitions publish context-trees change ids through the operation
  dispose();assert.ok((await changed()).includes('context-trees:registry'),'disposing a contributed tree emits a catalog change');
  const removeClassifier=registry.automatic!.register({id:'fixture.classifier',version:'1',classify:async()=>({trees:[]})});
  assert.ok((await changed()).includes('context-trees:classifier'),'classifier registration emits a catalog change');
+ assert.throws(()=>registry.automatic!.register({id:'fixture.classifier',version:'1',classify:async()=>({trees:[]})}),/Duplicate topic classifier/);
+ assert.deepEqual(await changed(),[],'a rejected registration must not announce a catalog change');
  removeClassifier();assert.ok((await changed()).includes('context-trees:classifier'),'classifier disposal emits a catalog change');
+ removeClassifier();assert.deepEqual(await changed(),[],'repeated cleanup is not another classifier transition');
  const bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),{} as never,engine);
  (bindings as unknown as {saveBinding:(binding:{planId:string;generation:number})=>void}).saveBinding({planId:'mote.builtin',generation:2});
  assert.ok((await changed()).includes('context-trees:provider'),'provider binding activation emits a catalog change');
+ const prepare=store.db.prepare.bind(store.db),fault=t.mock.method(store.db,'prepare',(sql:string)=>{
+  if(sql==='INSERT INTO operation_changes(operation_id) VALUES(?)')throw Error('Generated live notification failure');
+  return prepare(sql);
+ });
+ assert.throws(()=>registry.register({id:'generated.failure',version:'1',label:'Generated failure',nodes:[{id:'one',label:'One',select:{}}]}),/Generated live notification failure/,'live notification errors must propagate');
+ const classifier={id:'generated.failure',version:'1',classify:async()=>({trees:[]})};
+ assert.throws(()=>registry.automatic!.register(classifier),/Generated live notification failure/);
+ assert.equal(registry.automatic!.state().state,'unavailable','failed registration must not strand an active classifier');
+ fault.mock.restore();
+ const retry=registry.automatic!.register(classifier);
+ assert.equal(registry.automatic!.state().state,'ready','the same classifier identity remains retryable after a notification fault');
+ assert.ok((await changed()).includes('context-trees:classifier'));
+ retry();assert.equal(registry.automatic!.state().state,'unavailable');
 });
 
 test('real Memory phase children expose stable extraction and review kinds without their private inputs',async t=>{
