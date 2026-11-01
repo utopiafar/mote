@@ -7,6 +7,7 @@ import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProvid
 import {WorkerMemoryProvider} from './worker-memory-provider.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionStep} from './execution-engine.js';
 import {MemoryAutomation,memoryControlCommandSchema} from './memory-automation.js';
+import {publishOperationChange} from './operation-projection.js';
 import type {MemoryStore} from './memory.js';
 import type {PluginCenter} from './plugin-center.js';
 import {sha256,StoreError,type Store} from './store.js';
@@ -44,7 +45,7 @@ export class MemoryBindings {
     });
   }
   binding():Binding{return JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_plan_binding WHERE id=1').get()!.json));}
-  private saveBinding(value:Binding){this.store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify(value));}
+  private saveBinding(value:Binding){this.store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify(value));publishOperationChange(this.store,'context-trees:provider');}
   private preparation():Preparation|undefined{const row=this.store.db.prepare('SELECT json FROM memory_preparation WHERE id=1').get();return row?JSON.parse(String(row.json)):undefined;}
   private savePreparation(value:Preparation){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO memory_preparation VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(json);}
   private currentRecords(){return this.store.db.prepare('SELECT json FROM memories ORDER BY id').all().map(row=>memorySchema.parse(JSON.parse(String(row.json))));}
