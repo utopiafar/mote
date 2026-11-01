@@ -66,6 +66,7 @@ class LibraryRecordsRefreshInstrumentedTest {
         require(!QueueStorage.recovering && !QueueStorage.maintaining && QueueStorage.recoveryFailure == null)
         val root = context.noBackupFilesDir
         require(!java.nio.file.Files.isSymbolicLink(root.toPath()))
+        require(root.listFiles()?.none { java.nio.file.Files.isSymbolicLink(it.toPath()) } == true)
         require(root.listFiles()?.none { it.name.startsWith("mote-queue-") } == true) { "Generated fixture refuses orphaned private queues" }
         require(!File(root, "queue-migration.json").exists())
         val pointer = File(root, "queue-location.json")
@@ -264,6 +265,14 @@ class LibraryRecordsRefreshInstrumentedTest {
                     .minByOrNull { val rect = android.graphics.Rect(); it.getGlobalVisibleRect(rect); rect.top }?.tag?.toString() }
                 return tag?.removePrefix("library-record:")
             }
+            fun rowY(id: String): Int {
+                var y = 0
+                scenario.onActivity { activity ->
+                    val row = views(activity.window.decorView).single { it.tag == "library-record:$id" }
+                    val point = IntArray(2); row.getLocationInWindow(point); y = point[1]
+                }
+                return y
+            }
             waitFor("first page") { rows(locals[0]) == 1 && remotes.take(20).all { rows(it) == 1 } }
             click("加载更多"); waitFor("second page") { rows(locals[39]) == 1 && remotes.all { rows(it) == 1 } }
             click("加载更多"); waitFor("third page") { rows(locals[59]) == 1 }
@@ -285,6 +294,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             var deepCard: View? = null
             scenario.onActivity { activity -> deepCard = views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" } }
             assertNotNull("a visible record row is required before the burst", anchor)
+            val anchorY = rowY(requireNotNull(anchor))
             api.delete("/api/captures/${remotes.last()}")
             api.post("/api/fixture/library-request-stats", JSONObject())
             val burstStarted = SystemClock.elapsedRealtime()
@@ -299,6 +309,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             assertEquals("loaded deeper pages are preserved", 1, rows(locals[50]))
             scenario.onActivity { activity -> assertSame("unchanged deep cards and thumbnail views are reused", deepCard, views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" }) }
             assertEquals("the anchored row keeps its viewport position", anchor, anchorRowId())
+            assertTrue("the same deep row retains its actual, unclipped window y within one pixel", kotlin.math.abs(rowY(requireNotNull(anchor)) - anchorY) <= 1)
             val stats = api.get("/api/fixture/library-request-stats")
             assertEquals("an insert burst re-reads exactly the first Central page", 1, stats.getInt("deviceView"))
             assertTrue("all Central HTTP during the append burst stays bounded", stats.getInt("centralRequests") <= 2)
