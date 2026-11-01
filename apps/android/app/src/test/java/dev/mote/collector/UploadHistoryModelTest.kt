@@ -73,4 +73,96 @@ class UploadHistoryModelTest {
         assertNotEquals(rows.first().date(ZoneId.of("Pacific/Honolulu")), rows.first().date(ZoneId.of("Pacific/Kiritimati")))
         assertTrue(UploadHistoryModel.filter(rows, 1).isEmpty()); assertEquals(2, UploadHistoryModel.filter(rows, 2).size)
     }
+    @Test fun tenThousandBatchesMatchTheOldAssemblyWithDuplicatesOrphansAndRetries() {
+        val attempts = mutableListOf<CaptureUploadAttempt>()
+        val receipts = mutableListOf<CaptureUploadReceipt>()
+        val itemAttempts = mutableListOf<ItemUploadAttempt>()
+        val itemReceipts = mutableListOf<ItemUploadReceipt>()
+        val scope = CaptureUploadReceipt.scope("https://generated.example", "generated-device")
+        repeat(10_000) { index ->
+            val batch = UUID.randomUUID().toString()
+            val capture = event().put("ocrText", "Generated original $index")
+            val attempt = CaptureUploadAttempt.create(batch, scope, "generated-process", listOf(capture), 128, 1_000L + index % 17)
+            attempts += attempt
+            receipts += CaptureUploadReceipt.create("https://generated.example", "generated-device", capture, capture, batch, 2_000L + index % 23, 30)
+            val identity = ItemUploadIdentity("file", scope, "source", "https://generated.example", "generated-device", "generated-target", "generated-source", "generated-$index", "revision-$index", "fingerprint-$index")
+            val item = ItemUploadAttempt(UUID.randomUUID().toString(), batch, "generated-process", identity, "manifest", 3_000L + index % 13, 64, state = if (index % 3 == 0) "received" else "transferred")
+            itemAttempts += item
+            itemReceipts += ItemUploadReceipt(identity, batch, UUID.randomUUID().toString(), 4_000L + index % 19)
+            if (index % 97 == 0) {
+                attempts += attempt.copy(id = UUID.randomUUID().toString(), startedAt = attempt.startedAt - 1, results = JSONObject().put(capture.getString("id"), 201))
+                itemAttempts += item.copy(id = UUID.randomUUID().toString(), phase = "part", startedAt = item.startedAt - 1)
+                itemAttempts += item.copy(id = UUID.randomUUID().toString(), phase = "commit", state = "received")
+            }
+        }
+        // Receipt-only capture and item batches remain visible, as do an attempt
+        // whose exact identity has conflicting receipts in two other batches.
+        val orphan = event()
+        receipts += CaptureUploadReceipt.create("https://generated.example", "generated-device", orphan, orphan, UUID.randomUUID().toString(), 5_000, 0)
+        val ambiguous = itemReceipts[11]
+        itemReceipts += ambiguous.copy(batchId = UUID.randomUUID().toString(), captureId = UUID.randomUUID().toString(), receivedAt = 5_100)
+        val unconfirmed = itemAttempts.first { it.identity == ambiguous.identity }.copy(id = UUID.randomUUID().toString(), batchId = UUID.randomUUID().toString(), state = "unknown")
+        itemAttempts += unconfirmed
+        val onlyReceipt = itemReceipts[17].copy(identity = itemReceipts[17].identity.copy(externalId = "generated-orphan"), batchId = UUID.randomUUID().toString(), captureId = UUID.randomUUID().toString(), receivedAt = 5_200)
+        itemReceipts += onlyReceipt
+        val expectedCaptures = referenceBatches(attempts, receipts)
+        val captures = UploadHistoryModel.batches(attempts, receipts)
+        assertEquals(expectedCaptures.size, captures.size)
+        expectedCaptures.indices.forEach { assertEquals("capture batch $it", expectedCaptures[it], captures[it]) }
+        val duplicate = captures[19]
+        val inputs = captures + duplicate.copy(items = listOf(HistoryItem("generated-ambiguous-base", "generated-base", true, "generated-version")))
+        val expected = referenceMerge(inputs, itemAttempts, itemReceipts)
+        val actual = UploadHistoryModel.merge(inputs, itemAttempts, itemReceipts)
+        assertTrue("the full 10,000 primary batches plus edge cases are retained", actual.size >= 10_000)
+        assertEquals(expected.size, actual.size)
+        expected.indices.forEach { assertEquals("merged batch $it", expected[it], actual[it]) }
+        assertEquals("a duplicated capture batch has no unique base", 1, actual.single { it.id == duplicate.id }.items.size)
+        val ambiguousItem = actual.single { it.id == unconfirmed.batchId }.items.single()
+        assertEquals("two receipts for an identity are not a single locator", "", ambiguousItem.captureId)
+        assertFalse(ambiguousItem.received)
+        assertEquals(onlyReceipt.captureId, actual.single { it.id == onlyReceipt.batchId }.items.single().captureId)
+    }
+
+    private fun referenceBatches(attempts: List<CaptureUploadAttempt>, receipts: List<CaptureUploadReceipt>): List<HistoryBatch> {
+        val ids = (attempts.map { it.batchId } + receipts.map { it.batchId }).toSet()
+        return ids.map { batch ->
+            val sent = attempts.filter { it.batchId == batch }
+            val confirmed = receipts.filter { it.batchId == batch }
+            val items = linkedMapOf<String, HistoryItem>()
+            sent.forEach { attempt -> for (i in 0 until attempt.captures.length()) {
+                val item = attempt.captures.getJSONObject(i); val id = item.getString("id")
+                val key = id + ":" + item.getString("version")
+                val received = attempt.results.optInt(id) in setOf(200, 201)
+                items[key] = HistoryItem(key, id, received || items[key]?.received == true, item.getString("queueVersion"))
+            } }
+            confirmed.forEach { receipt ->
+                val key = receipt.captureId + ":" + receipt.transportVersion
+                items[key] = HistoryItem(key, receipt.captureId, true, receipt.queueVersion)
+            }
+            HistoryBatch(batch, (sent.map { it.startedAt } + confirmed.map { it.receivedAt }).max(), sent.sortedBy { it.startedAt }, items.values.toList())
+        }.sortedWith(compareByDescending<HistoryBatch> { it.at }.thenBy { it.id })
+    }
+    private fun referenceMerge(captures: List<HistoryBatch>, attempts: List<ItemUploadAttempt>, receipts: List<ItemUploadReceipt>): List<HistoryBatch> {
+        // Cache only the pure serialized identity key; retain the old per-batch
+        // filters and global singleOrNull scans at the full 10,000-batch scale.
+        val receiptKeys = java.util.IdentityHashMap<ItemUploadReceipt, String>()
+        receipts.forEach { receiptKeys[it] = it.identity.key }
+        val ids = (captures.map { it.id } + attempts.map { it.batchId } + receipts.map { it.batchId }).toSet()
+        return ids.map { id ->
+            val base = captures.singleOrNull { it.id == id }
+            val sent = attempts.filter { it.batchId == id }.sortedBy { it.startedAt }
+            val received = receipts.filter { it.batchId == id }
+            val items = linkedMapOf<String, HistoryItem>()
+            base?.items?.forEach { items[it.key] = it }
+            sent.forEach { attempt ->
+                val identity = attempt.identity
+                val identityKey = identity.key
+                val receipt = receipts.singleOrNull { receiptKeys[it] == identityKey }
+                items[identityKey] = HistoryItem(identityKey, receipt?.captureId.orEmpty(), attempt.state == "received" || items[identityKey]?.received == true,
+                    identity.revision, identity)
+            }
+            received.forEach { receipt -> items[receipt.identity.key] = HistoryItem(receipt.identity.key, receipt.captureId, true, receipt.identity.revision, receipt.identity) }
+            HistoryBatch(id, (listOfNotNull(base?.at) + sent.map { it.startedAt } + received.map { it.receivedAt }).max(), base?.attempts.orEmpty(), items.values.toList(), sent)
+        }.sortedWith(compareByDescending<HistoryBatch> { it.at }.thenBy { it.id })
+    }
 }
