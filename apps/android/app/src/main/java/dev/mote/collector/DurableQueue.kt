@@ -18,6 +18,7 @@ data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes:
 class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true,
                    private val captureStages: CaptureStageRegistry = CaptureStages.default,
                    private val role: Role = Role.ACTIVE,
+                   initialOnMutation: ((Boolean) -> Unit)? = null,
                    private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     enum class Role { ACTIVE, QUARANTINE }
     companion object {
@@ -55,8 +56,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             if (!event.has("_archiveOrigin")) atomic(file, event.put("_archiveOrigin", origin.trim().trimEnd('/')).toString().toByteArray())
         }
     }
-    /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
-    internal var onMutation: ((Boolean) -> Unit)? = null
+    /**
+     * Nonblocking invalidation only; listeners must never read storage inside this callback.
+     * Passed at construction it also covers the init-time stage replay, so a record committed
+     * before the object is returned — including a replay that ends in a constructor failure —
+     * is already reported.
+     */
+    internal var onMutation: ((Boolean) -> Unit)? = initialOnMutation
     /** Record files committed while no mutation listener existed yet, e.g. the init-time stage replay. */
     internal var unreportedRecordWrites = false
     internal var assertCurrent: (() -> Unit)? = null
@@ -78,7 +84,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error(MoteI18n.text("无法读取本机存储目录"))
     private fun browseIndex() = browseIndexes.getOrPut(dir.absolutePath) { QueueBrowseIndex(dir, cipher) }
-    private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
+    private fun records(): List<File> = browseFiles().sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name })
     private fun metadata(files: List<File> = browseFiles()) = browseIndex().entries(files, ::read, requireStatistics = true)
     fun stats(): QueueStats {
         prepareIndex()
@@ -187,10 +193,19 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         atomic(file, body)
     }
     fun pendingSync(): PendingSync = stats().pendingSync
-    fun depth(): Int = guarded { dir.listFiles()?.count { it.extension == "event" } ?: 0 }
-    /** Whether any record file is stored; a listing failure surfaces rather than reporting empty. */
-    fun anyStored(): Boolean = guarded { browseFiles().isNotEmpty() }
-    fun diskBytes(): Long = guarded { dir.listFiles()?.filter { it.isFile && it.name != ".mote-local-format" }?.sumOf { it.length() } ?: 0L }
+    /** A listing failure surfaces rather than reporting an empty queue. */
+    fun depth(): Int = guarded { browseFiles().size }
+    /**
+     * Whether any record file is stored; a listing failure surfaces rather than reporting
+     * empty. So does unfinished stage recovery: pending inbox work may still commit records,
+     * so the read fails and the next queue open retries the replay instead of caching "empty".
+     */
+    fun anyStored(): Boolean = guarded {
+        if (browseFiles().isNotEmpty()) return@guarded true
+        pendingStageFailure?.let { throw it }
+        false
+    }
+    fun diskBytes(): Long = guarded { (dir.listFiles() ?: error(MoteI18n.text("无法读取本机存储目录"))).filter { it.isFile && it.name != ".mote-local-format" }.sumOf { it.length() } }
     fun reservedOcrBytes(): Long = stats().reservedOcrBytes
     fun bytes(): Long = stats().bytes + externalStorageBytes()
     private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)).also(LocalDataFormat::validateEvent)

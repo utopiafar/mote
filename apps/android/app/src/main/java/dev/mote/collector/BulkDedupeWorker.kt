@@ -15,7 +15,7 @@ class BulkDedupeStore(context: Context) {
     companion object { private val fileLock = Any() }
     private val dir = requireStorageDirectory(File(context.noBackupFilesDir, "bulk-dedupe"))
     private val cipher = context.localContentCipher()
-    fun quarantine() = DurableQueue(File(dir, "pending"), cipher, role = DurableQueue.Role.QUARANTINE).apply { onMutation = { LocalStateChanges.changed(records = it, storage = true) } }
+    fun quarantine() = DurableQueue(File(dir, "pending"), cipher, role = DurableQueue.Role.QUARANTINE, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
     fun read(name: String): JSONObject = synchronized(fileLock) {
         require(name in listOf("report", "plan"))
         val file = File(dir, "$name.enc")

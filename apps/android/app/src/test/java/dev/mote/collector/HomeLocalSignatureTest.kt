@@ -117,6 +117,68 @@ class HomeLocalSignatureTest {
         assertTrue("the recovered record is seen at the new revision", collect(cache, revisionAfter) { HomeLocalCaptures.exists(recovered) }.getBoolean("hasAnyRecords"))
     }
 
+    private fun crashingStage(crashes: java.util.concurrent.atomic.AtomicInteger) = object : CaptureStage {
+        override val id = "crash-fixture"; override val version = 1
+        override fun consume(inputs: List<StageCapture>, checkpoint: JSONObject?, held: List<StageCapture>, flush: Boolean,
+                             deriveId: (List<String>, String) -> String): StageResult {
+            if (crashes.getAndDecrement() > 0) error("generated stage crash")
+            return StageResult(inputs)
+        }
+    }
+
+    @Test fun aPendingStageFailureFailsTheReadAndRetriesReplayOnTheNextOpen() {
+        // A queue opened while its stage replay still fails must not report "empty": the
+        // cached answer would otherwise stop Home from ever reopening the queue, leaving the
+        // committed inbox unreplayed. The read fails instead; the next open retries.
+        val crashes = java.util.concurrent.atomic.AtomicInteger(2)
+        val registry = CaptureStageRegistry(listOf(crashingStage(crashes)))
+        val dir = folder.newFolder()
+        val revisionBefore = LocalStateChanges.revisions.value.records
+        assertThrows(IllegalStateException::class.java) { DurableQueue(dir, cipher, captureStages = registry).enqueue(note(), null, 1_000_000) }
+        val broken = DurableQueue(dir, cipher, captureStages = registry)
+        assertNotNull("the failed replay stays pending on the queue", broken.pendingStageFailure)
+        assertThrows(Exception::class.java) { HomeLocalCaptures.exists(broken) }
+        assertEquals("the failed open replays nothing", 0, crashes.get())
+        // The same construction QueueStorage.openQueue performs: replay now succeeds and its
+        // record write is reported through the constructor-installed listener itself.
+        val recovered = DurableQueue(dir, cipher, captureStages = registry, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
+        assertNull(recovered.pendingStageFailure)
+        assertFalse("the constructor listener already reported the replay", recovered.unreportedRecordWrites)
+        assertTrue(HomeLocalCaptures.exists(recovered))
+        assertTrue("recovery advanced the records revision without an extra open", LocalStateChanges.revisions.value.records > revisionBefore)
+    }
+
+    @Test fun aConstructionFailureAfterARecoveredWriteStillReportsTheRecord() {
+        // The journal row lands, then a malformed row fails construction: the old flag lived on
+        // the lost object, so the write never reached the records revision. The constructor
+        // listener reports the row as it lands; the next open sees the committed event and
+        // skips its atomic write, so nothing is reported twice.
+        val dir = folder.newFolder()
+        DurableQueue(dir, cipher) // A first open establishes the format marker before the crash.
+        val stored = note()
+        val journal = JSONObject()
+            .put("outputs", JSONArray()
+                .put(JSONObject().put("event", stored).put("image", JSONObject.NULL))
+                .put(JSONObject().put("event", JSONObject().put("id", "not-a-uuid")).put("image", JSONObject.NULL)))
+            .put("checkpoint", JSONObject().put("stages", JSONArray()))
+        java.io.File(dir, ".capture-stages.journal").writeBytes(cipher.open(journal.toString().toByteArray(Charsets.UTF_8)))
+        val revisionBefore = LocalStateChanges.revisions.value.records
+        assertThrows(Exception::class.java) {
+            DurableQueue(dir, cipher, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
+        }
+        assertTrue("the landed row reached the records revision before construction failed", LocalStateChanges.revisions.value.records > revisionBefore)
+        val revisionAfterFailure = LocalStateChanges.revisions.value.records
+        // Drop the malformed row: the next open replays the committed row, sees its matching
+        // event already on disk and skips the atomic write.
+        val committed = JSONObject()
+            .put("outputs", JSONArray().put(JSONObject().put("event", stored).put("image", JSONObject.NULL)))
+            .put("checkpoint", JSONObject().put("stages", JSONArray()))
+        java.io.File(dir, ".capture-stages.journal").writeBytes(cipher.open(committed.toString().toByteArray(Charsets.UTF_8)))
+        val recovered = DurableQueue(dir, cipher, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
+        assertTrue(HomeLocalCaptures.exists(recovered))
+        assertEquals("the already-committed output is not reported twice", revisionAfterFailure, LocalStateChanges.revisions.value.records)
+    }
+
     private fun note() = JSONObject().put("id", UUID.randomUUID().toString())
         .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 1000)
         .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")).put("source", "note")

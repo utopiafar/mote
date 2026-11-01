@@ -48,8 +48,11 @@ class QueueStorage(private val context: Context) {
         LocalDataFormat.requireCurrent(context)
         return DurableQueue.exclusive {
         val state = store(); val location = state.current()
-        DurableQueue(File(location.path), context.localContentCipher(), createMissing = false) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }
-            .apply { externalStorageBytes = { recordOriginalDiskBytes(context) }; onMutation = { LocalStateChanges.changed(records = it, storage = true) }; assertCurrent = { state.assertCurrent(location) }
+        // The mutation listener is installed at construction so even a replay committed — or a
+        // construction that fails partway — still reports its record writes.
+        DurableQueue(File(location.path), context.localContentCipher(), createMissing = false,
+            initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) }) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }
+            .apply { externalStorageBytes = { recordOriginalDiskBytes(context) }; assertCurrent = { state.assertCurrent(location) }
                 if (unreportedRecordWrites) { unreportedRecordWrites = false; LocalStateChanges.changed(records = true) }
                 recoveryFailure = null }
         }
