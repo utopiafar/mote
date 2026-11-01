@@ -38,26 +38,27 @@ internal object CalendarNeeds {
 /** Reads existing suggestions only; it never confirms, dismisses or writes a calendar event. */
 internal class HomeCalendarNeedsView(private val activity: MoteActivity, private val open: () -> Unit) : LinearLayout(activity), HomeSection {
     private val task = UiTask(activity)
-    private var generation = -1L
-    private var origin = ""
-    private var nextRead = 0L
-    private var epoch = 0L
+    private val gate = HomeReadGate()
     private var closed = false
     private var active = false
+    private var denied = false
     private var rendered = ""
     init { orientation = VERTICAL; visibility = View.GONE; tag = "home-calendar-needs" }
     private fun clear() { removeAllViews(); rendered = ""; visibility = View.GONE }
-    override fun pause() { active = false; epoch++; nextRead = 0L }
+    override fun pause() { active = false; gate.wake() }
     override fun close() { closed = true; pause(); clear(); task.close() }
     override fun refresh() {
         if (closed) return
         active = true
         val access = runCatching { CentralAccess.resolve(activity) }.getOrNull()
-        if (access == null) { epoch++; clear(); return }
-        if (access.generation != generation || access.server != origin) { epoch++; clear(); nextRead = 0L; generation = access.generation; origin = access.server }
-        if (access.client == null) { clear(); return }
-        if (task.busy || SystemClock.elapsedRealtime() < nextRead) return
-        val stamp = epoch; nextRead = SystemClock.elapsedRealtime() + 15000
+        // A resolution failure hides the section without dropping `denied`; the next resolved
+        // refresh re-renders the retry instead of stranding the stopped gate without it.
+        if (access == null) { gate.invalidate(); clear(); return }
+        if (gate.adopt(access.generation, access.server)) { denied = false; clear() }
+        if (access.client == null) { denied = false; clear(); return }
+        // A revoked read leaves the gate stopped and its retry the only recovery: never read, keep the affordance.
+        if (denied) { if (rendered != "denied") denied(); return }
+        val stamp = if (task.busy || !gate.due(SystemClock.elapsedRealtime())) return else gate.begin(SystemClock.elapsedRealtime())
         task.start("", {}, {
             CalendarNeeds.scan { cursor ->
                 access.client.get("/api/actions?cursor=$cursor").also {
@@ -66,9 +67,17 @@ internal class HomeCalendarNeedsView(private val activity: MoteActivity, private
                 }
             }
         }) { outcome ->
-            if (closed || !active || stamp != epoch || activity.isDestroyed || activity.isFinishing) return@start
-            // A failed or malformed read keeps the last confirmed rows instead of claiming nothing is waiting.
-            val needs = outcome.getOrNull() ?: return@start
+            if (closed || !active || !gate.current(stamp) || activity.isDestroyed || activity.isFinishing) return@start
+            // A transient failure keeps the last confirmed rows; a revoked read withdraws them and offers an explicit retry.
+            val needs = outcome.getOrNull()
+            if (needs == null) {
+                val status = (outcome.exceptionOrNull() as? CentralFailure)?.status
+                gate.failure(SystemClock.elapsedRealtime(), status)
+                if (status == 401 || status == 403) { denied = true; denied() }
+                return@start
+            }
+            gate.success(SystemClock.elapsedRealtime())
+            denied = false
             val signature = needs.joinToString("|") { it.optString("id") + ":" + it.optInt("version") }
             if (signature == rendered) return@start
             clear(); rendered = signature
@@ -77,6 +86,11 @@ internal class HomeCalendarNeedsView(private val activity: MoteActivity, private
             needs.forEach { action -> addView(row(action), LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(8) }) }
             visibility = View.VISIBLE
         }
+    }
+    /** The revoked-read affordance; a resolved refresh re-renders it once instead of reading. */
+    private fun denied() {
+        clear(); visibility = View.VISIBLE; rendered = "denied"
+        addView(TextView(activity).apply { text = MoteI18n.text("重试"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT); setPadding(0, activity.moteDp(8), 0, activity.moteDp(8)); isClickable = true; isFocusable = true; setOnClickListener { if (active && !closed) { denied = false; gate.retry(); refresh() } } })
     }
     private fun row(action: JSONObject) = LinearLayout(activity).apply {
         gravity = Gravity.CENTER_VERTICAL; tag = "home-calendar-need:" + action.optString("id")

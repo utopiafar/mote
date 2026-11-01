@@ -179,7 +179,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   async memoryAsync(ref:string,scope:Range={},ownerArchive=false,snapshot?:MemoryReadSnapshot,exposure:MemoryExposure={policy:defaultEvidenceExposurePolicy,operation:'expand'}):Promise<Memory|undefined>{
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
-    const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot():undefined,pin=snapshot??owned;
+    const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot([parsed.id]):undefined,pin=snapshot??owned;
     try{
       const args={...scope,query:undefined,cursor:undefined,id:ref,includeStale:true,includeHistory:true,level:'overview' as const,limit:1};
       const visible=()=>{const current=ownerArchive?this.memoryPage(args,true).items[0]:this.agentMemoryPage(args,exposure.policy,exposure.operation).items[0];return current&&(!pin?.lineage[parsed.id]||this.memoryLineageVisible(pin.lineage[parsed.id],scope,ownerArchive,exposure))?current:undefined;};

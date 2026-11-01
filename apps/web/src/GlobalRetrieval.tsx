@@ -24,7 +24,7 @@ type SearchState={owner:Api;query:string;cursor?:string;memoryCursor?:string;sel
 export function SearchWorkspace({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}) {
  useWorkspaceStyle();
  const availability=useDiscoveryState(api),supports=(path:string)=>!availability.inventoryError&&featureRequirementsAvailable(['http:GET:'+path],availability.inventory);
- const preview={read:supports('/api/materials/:id/read'),image:supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/content')};
+ const preview={read:supports('/api/materials/:id/read'),image:supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/thumbnail')};
  const read=():SearchState=>{const q=new URLSearchParams(window.location.hash.split('?')[1]??'');return {owner:api,query:q.get('query')??'',cursor:q.get('cursor')??undefined,memoryCursor:q.get('memoryCursor')??undefined,selected:q.get('evidence')??undefined,deviceId:q.get('deviceId')??'',sourceId:q.get('sourceId')??'',after:q.get('after')??'',before:q.get('before')??''};};
  const empty:SearchState={owner:api,query:'',deviceId:'',sourceId:'',after:'',before:''};
  const [state,setState]=useState(read),previousApi=useRef(api),[input,setInput]=useState(()=>read().query),[filterOpen,setFilterOpen]=useState(false);

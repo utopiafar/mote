@@ -1,3 +1,4 @@
+import '@mote/shared/i18n-all';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { configureLocale, translate, type Locale } from '@mote/shared/i18n';
 export const requestLocale = new AsyncLocalStorage<Locale>();

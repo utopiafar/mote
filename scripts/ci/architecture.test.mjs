@@ -118,6 +118,23 @@ test('Web consumers can import view runtime; bootstrap and builtin assembly stay
   assert.deepEqual(rule(f.check()),['web-runtime-no-builtins']);
 });
 
+test('Web locale boot may load main while consumers and boot cannot bypass main assembly',t=>{
+  const f=fixture(t);
+  f.write('apps/web/src/boot.ts',"void import('./main');");
+  assert.deepEqual(f.check().violations,[]);
+  f.write('apps/web/src/consumer.ts',"void import('./main');");
+  let result=f.check();
+  assert.deepEqual(rule(result),['web-no-bootstrap-import']);
+  assert.equal(result.violations[0].from,'apps/web/src/consumer.ts');
+  f.write('apps/web/src/consumer.ts',"import './boot';");
+  result=f.check();
+  assert.deepEqual(rule(result),['web-no-bootstrap-import']);
+  assert.equal(result.violations[0].to,'apps/web/src/boot.ts');
+  f.write('apps/web/src/consumer.ts','export {};');
+  f.write('apps/web/src/boot.ts',"void import('./features/bootstrap');");
+  assert.deepEqual(rule(f.check()),['web-no-bootstrap-import']);
+});
+
 test('browser export graphs follow runtime barrels to Node builtins while ignoring erased and unused Node-only entries',t=>{
   const f=fixture(t);assert.deepEqual(f.check().violations,[]);
   f.write('packages/shared/src/browser-helper.ts',"export * from './barrel.js';");

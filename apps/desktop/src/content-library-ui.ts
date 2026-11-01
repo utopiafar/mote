@@ -1,7 +1,7 @@
 import {getLocale,moteText} from '@mote/shared/i18n';
 import {appendDiagnostic,renderReadableFailure} from './ui-diagnostic';
 import type {DesktopApi,Status} from './contracts';
-import type {ContentItem,ContentDetail} from './content-library';
+import type {ContentItem,ContentDetail,CentralContentPage} from './content-library';
 import type {SyncContent} from './sync-content';
 /** Home and Content share one evidence reader; no markup from evidence becomes UI. */
 export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,homeContentChanged?:(hasContent:boolean|undefined,rows:readonly ContentItem[],archiveAuthorizationDenied:boolean)=>void,reader?:{open():void;close():void}){
@@ -10,7 +10,10 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   document.getElementById('content-memories')?.addEventListener('click',()=>openMemories?.());
   let generation=0,homeGeneration=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
   let archiveGeneration=0,archiveAuthorizationDenied=false,detailIsCentral=false;
-  let loadedScope='';
+  let archiveRequest=0,archiveResponse=0,archiveConflict=0;
+  let archiveConfirmation:{scope:number}|undefined;
+  let loadedScope='',homeStale=false;
+  const homeVisible=()=>!el('home-recent').closest('[hidden]');
   let items:ContentItem[]=[],homeItems:ContentItem[]=[],selected:ContentItem|undefined,selectedButton:HTMLElement|undefined,chunkOffset=0,centralId:string|undefined;
   const sourceName=(source:ContentItem['source'])=>({screen:moteText('截图'),ui_page:moteText('页面内容采集'),note:moteText('随手记'),activity:moteText('应用活动'),notification:moteText('通知'),media:moteText('媒体状态'),file:moteText('文件'),calendar:moteText('日历'),coding:moteText('编码对话')} as Partial<Record<ContentItem['source'],string>>)[source]??moteText('内容');
   function renderFeed(id:string,rows:ContentItem[],known=true){
@@ -50,24 +53,56 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   function denyArchive(){
     archiveAuthorizationDenied=true;archiveGeneration++;remoteMore=false;remoteCursor=undefined;
     items=items.filter(row=>!row.key.startsWith('capture:'));renderFeed('content-feed',items);if(!items.length)el('content-feed').replaceChildren();
-    renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')));
+    el('content-more').hidden=!localMore;
+    el('content-status').textContent=moteText('无法访问采集记录，请检查中央连接权限');el('content-status').classList.remove('visually-hidden');el('content-status').setAttribute('aria-busy','false');
+    renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')),true);
     if(dialog.open&&(selected?.key.startsWith('capture:')||detailIsCentral))close();
+  }
+  function confirmArchive(repeat=false){
+    if(!repeat)archiveConflict++;
+    const scope=archiveGeneration;if(archiveConfirmation?.scope===scope)return;
+    const confirmation=archiveConfirmation={scope},request=++archiveRequest,conflict=archiveConflict;
+    void(async()=>{
+      try{
+        const page=await api.centralContent();if(scope!==archiveGeneration)return;
+        // A fresh check is causally after the conflicting observations. If a
+        // still newer success arrived while it ran, confirm that pair again.
+        if(page.authorizationDenied?archiveResponse>request:archiveConflict!==conflict){archiveConfirmation=undefined;confirmArchive(true);return;}
+        archiveResponse=Math.max(archiveResponse,request);
+        if(page.authorizationDenied)denyArchive();else archiveAuthorizationDenied=false;
+      }catch{if(scope===archiveGeneration)denyArchive();}
+      finally{if(archiveConfirmation===confirmation)archiveConfirmation=undefined;}
+    })();
+  }
+  // Display generations can be superseded by a local-only read. That does not
+  // replace an in-flight Central authorization check. Conflicting response
+  // order needs a fresh check; old scopes and pre-denial data stay invalid.
+  function observeArchive(result:PromiseSettledResult<CentralContentPage|undefined>,request:number|undefined,scope:number):boolean{
+    if(request===undefined||scope!==archiveGeneration||result.status!=='fulfilled'||!result.value)return false;
+    if(request<=archiveResponse){if(result.value.authorizationDenied)confirmArchive();return false;}
+    archiveResponse=request;
+    if(result.value.authorizationDenied){denyArchive();return true;}
+    archiveAuthorizationDenied=false;return false;
   }
   // The workbench is independent of the Content workspace's selected filter and pagination.
   async function refreshHome(){
-    const version=++homeGeneration,archiveVersion=archiveGeneration;
-    const [local,remote]=await Promise.allSettled([api.localContent(0),status?.config.tokenConfigured?api.centralContent():undefined]);
+    homeStale=false;const version=++homeGeneration,archiveVersion=archiveGeneration,request=status?.config.tokenConfigured?++archiveRequest:undefined;
+    let denied=false;
+    const [local,remote]=await Promise.allSettled([api.localContent(0),request!==undefined?api.centralContent().then(value=>{denied=observeArchive({status:'fulfilled',value},request,archiveVersion);return value;}):undefined]);
     if(version!==homeGeneration)return;
     const rows:ContentItem[]=[];
     if(local.status==='fulfilled')rows.push(...local.value.items);else rows.push(...homeItems.filter(row=>!row.key.startsWith('capture:')));
     if(remote.status==='fulfilled'&&remote.value&&archiveVersion===archiveGeneration){
-      if(remote.value.authorizationDenied)denyArchive();else{archiveAuthorizationDenied=false;rows.push(...remote.value.items);}
+      if(!remote.value.authorizationDenied)rows.push(...remote.value.items);
     }
-    renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected');
+    const ignoredDenial=remote.status==='fulfilled'&&remote.value?.authorizationDenied&&!denied;
+    const discarded=remote.status==='fulfilled'&&remote.value&&!remote.value.authorizationDenied&&archiveVersion!==archiveGeneration;
+    if(ignoredDenial&&!archiveAuthorizationDenied)rows.push(...homeItems.filter(row=>row.key.startsWith('capture:')));
+    renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected'||Boolean(ignoredDenial)||Boolean(discarded)||denied&&!rows.length);
   }
   async function refresh(append=false){
     lastRefresh=Date.now();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=undefined;}
-    const version=++generation,archiveVersion=archiveGeneration;const scope=el<HTMLSelectElement>('content-scope').value,query=el<HTMLInputElement>('content-search').value;
+    const version=++generation,homeVersion=homeGeneration,archiveVersion=archiveGeneration;const scope=el<HTMLSelectElement>('content-scope').value,query=el<HTMLInputElement>('content-search').value;
     for(const button of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-content-scope]')))button.setAttribute('aria-pressed',String(button.dataset.contentScope===scope));
     const scopeKey=JSON.stringify([scope,query.trim()]),previous=loadedScope===scopeKey?items:[];
     if(!append){localOffset=0;remoteCursor=undefined;localMore=false;remoteMore=false;items=[];}
@@ -79,18 +114,24 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       el('content-status').classList.remove('visually-hidden');
     }
     const local=scope==='received'||append&&!localMore?undefined:api.localContent(localOffset,query);
-    const remote=scope==='local'||!status?.config.tokenConfigured||append&&!remoteMore?undefined:api.centralContent(remoteCursor,query);
+    const request=scope==='local'||!status?.config.tokenConfigured||append&&!remoteMore?undefined:++archiveRequest;
+    let denied=false;
+    const remote=request!==undefined?api.centralContent(remoteCursor,query).then(value=>{denied=observeArchive({status:'fulfilled',value},request,archiveVersion);return value;}):undefined;
     const [l,r]=await Promise.allSettled([local,remote]);if(version!==generation)return;
+    const ignoredDenial=r.status==='fulfilled'&&r.value?.authorizationDenied&&!denied;
+    const discarded=r.status==='fulfilled'&&r.value&&!r.value.authorizationDenied&&archiveVersion!==archiveGeneration;
     const rows:ContentItem[]=[];let error='';
     if(l.status==='fulfilled'&&l.value){rows.push(...l.value.items);localMore=l.value.nextOffset!==undefined;localOffset=l.value.nextOffset??localOffset;}else if(l.status==='rejected'){rows.push(...previous.filter(row=>!row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
-    if(r.status==='fulfilled'&&r.value&&archiveVersion===archiveGeneration){
-      if(r.value.authorizationDenied){
-        denyArchive();error=moteText('无法访问采集记录，请检查中央连接权限');
-      }else{archiveAuthorizationDenied=false;rows.push(...r.value.items);remoteMore=Boolean(r.value.nextCursor);remoteCursor=r.value.nextCursor;}
+    if(r.status==='fulfilled'&&r.value){
+      if(denied||discarded&&archiveAuthorizationDenied){
+        error=moteText('无法访问采集记录，请检查中央连接权限');
+      }else if(ignoredDenial||discarded){if(!archiveAuthorizationDenied&&archiveVersion===archiveGeneration)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
+      else if(archiveVersion===archiveGeneration&&!r.value.authorizationDenied){rows.push(...r.value.items);remoteMore=Boolean(r.value.nextCursor);remoteCursor=r.value.nextCursor;}
     }else if(r.status==='rejected'){if(archiveVersion===archiveGeneration&&!archiveAuthorizationDenied)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
+    if(scope!=='local'&&archiveAuthorizationDenied)error=moteText('无法访问采集记录，请检查中央连接权限');
     items=mergeRows([...items,...rows]);loadedScope=scopeKey;renderFeed('content-feed',items);
     if(error&&!items.length)el('content-feed').replaceChildren();
-    if(scope==='all'&&!query.trim()){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}else void refreshHome();
+    if(scope==='all'&&!query.trim()){if(!ignoredDenial&&homeVersion===homeGeneration){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected'||Boolean(discarded)||archiveAuthorizationDenied&&!items.length;renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}}else if(homeVisible())void refreshHome();else{homeStale=true;homeGeneration++;}
     el('content-more').hidden=!localMore&&!remoteMore;
     el('content-status').textContent=error||(!status?.config.tokenConfigured?moteText('本机内容可离线阅读；连接中央后显示已归档内容。'):moteText('接收与整理分别进行，点开内容查看实际状态。'));
     el('content-status').classList.toggle('visually-hidden',!error);
@@ -105,7 +146,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     values.forEach((label,index)=>{const item=document.createElement('li');item.textContent=label;item.className=index===0||index===1&&received||index===2&&(readiness==='pending'||readiness==='ready')||index===3&&readiness==='ready'?'completed':'waiting';list.append(item);});
   }
   async function readSelected(image=false){
-    if(!selected)return;const version=++detailGeneration,archiveVersion=archiveGeneration,item=selected;
+    if(!selected)return;const version=++detailGeneration,archiveVersion=archiveGeneration,request=++archiveRequest,item=selected;
     el('content-detail-status').setAttribute('aria-busy','true');
     el('content-detail-title').textContent=item.title||sourceName(item.source);el('content-detail-source').textContent=sourceName(item.source);el('content-detail-facts').textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale())].filter(Boolean).join(' · ');
     el('content-detail-range').hidden=true;el('content-detail-body').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-metadata').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');el('content-detail-status').textContent=moteText('正在读取内容…');el('content-detail-next').hidden=true;el('content-detail-central').hidden=true;el('content-original').hidden=true;
@@ -115,7 +156,9 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       if(version!==detailGeneration||!dialog.open)return;
       const remote='location'in result&&result.location==='central';const readiness='readiness'in result?result.readiness:undefined;
       // A receipt resolved from a local row must also respect a denial observed while it was loading.
-      if(remote&&(archiveAuthorizationDenied||archiveVersion!==archiveGeneration)){close();return;}detailIsCentral=remote;
+      if(remote&&(archiveAuthorizationDenied||archiveVersion!==archiveGeneration)){close();return;}
+      if(remote)observeArchive({status:'fulfilled',value:{items:[]}},request,archiveVersion);
+      detailIsCentral=remote;
       const bytes='sizeBytes'in result?result.sizeBytes:undefined;el('content-detail-source').textContent=[sourceName(item.source),remote?moteText('中央已收到'):moteText('本机待传副本'),typeof bytes==='number'?bytes<1024?bytes+' B':bytes<1024*1024?(bytes/1024).toFixed(1)+' KiB':(bytes/1024/1024).toFixed(1)+' MiB':''].filter(Boolean).join(' · ');
       stages(remote,readiness);centralId='captureId'in result?result.captureId:undefined;
       el('content-detail-body').textContent=result.text||(result.metadataOnly?moteText('此记录仅同步目录信息，未上传正文或原件。'):remote?moteText('正文尚未就绪，原件与来源信息仍可核对。'):moteText('原件已保存在本机，解析或识别会在中央进行。'));
@@ -142,5 +185,5 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   let searchTimer:ReturnType<typeof setTimeout>|undefined;
   el('content-search').addEventListener('input',()=>{generation++;if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{searchTimer=undefined;void refresh();},180);});
   let signature='',lastRefresh=0,refreshTimer:ReturnType<typeof setTimeout>|undefined;
-  return {open(item:ContentItem){selectedButton=undefined;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();},refresh,refreshHome,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];homeItems=[];loadedScope='';generation++;homeGeneration++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);renderFeed('home-recent',[],false);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}},close};
+  return {open(item:ContentItem){selectedButton=undefined;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();},refresh,refreshHome,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];homeItems=[];loadedScope='';generation++;homeGeneration++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);renderFeed('home-recent',[],false);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}if(homeStale&&homeVisible())void refreshHome();},close};
 }

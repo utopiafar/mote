@@ -1,3 +1,4 @@
+import '../dist/i18n-all.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {responseFailureCode,httpFailureMessage} from '../dist/http-failure.js';

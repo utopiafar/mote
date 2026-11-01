@@ -104,6 +104,12 @@
     "./config-file": {
       "types": "./dist/config-file.d.ts",
       "import": "./dist/config-file.js"
+    },
+    "./i18n-all": {
+      "types": "./dist/i18n-all.d.ts",
+      "import": "./dist/i18n-all.js",
+      "require": "./dist/i18n-all.js",
+      "default": "./dist/i18n-all.js"
     }
   },
   "typesVersions": {
@@ -155,6 +161,9 @@
       ],
       "config-file": [
         "dist/config-file.d.ts"
+      ],
+      "i18n-all": [
+        "dist/i18n-all.d.ts"
       ]
     }
   },

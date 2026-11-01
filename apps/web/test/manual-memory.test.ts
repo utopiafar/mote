@@ -1,3 +1,4 @@
+import '@mote/shared/i18n-all';
 import {modelView} from './fixtures/model-settings';
 import test from 'node:test';
 import assert from 'node:assert/strict';

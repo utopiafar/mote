@@ -25,7 +25,7 @@ import { useResource } from './useResource';
 import {useImportReturnRead} from './useImportReturnRead';
 import {captureImportSnapshot,importSnapshot} from './import-navigation';
 import {readPage} from './navigation';
-import { useMaterialPreview } from './HomeMaterialRow';
+import { useMaterialPreview, useNearViewport } from './HomeMaterialRow';
 function libraryTypeLabel(value:string){
     const labels:Record<LibraryMaterialType,string>={note:moteText('随手记'),document:moteText('文档'),image:moteText('图片'),coding:moteText('Coding 会话'),transcript:moteText('转写'),email:moteText('邮件'),calendar:moteText('日程'),reference:moteText('引用')};
     return labels[value as LibraryMaterialType]??value;
@@ -113,11 +113,12 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
 }
 
 export function LibraryMaterialRow({api,item,type,source,device,selected,onSelect,preview,presentationText}:{api:Api;item:Material;type?:LibraryTypeDescriptor;source?:string;device?:string;selected:boolean;onSelect:(ref:string)=>void;preview?:{read:boolean;image:boolean};presentationText?:string}){
-    const {image,clearImage,kindLabel,text}=useMaterialPreview(api,item,Boolean(preview?.read),Boolean(preview?.image));
+    const rowRef=useRef<HTMLDivElement>(null),near=useNearViewport(rowRef);
+    const {image,clearImage,kindLabel,text}=useMaterialPreview(api,item,Boolean(preview?.read),Boolean(preview?.image),near);
     const value={kind:item.kind,schemaVersion:item.schemaVersion,representation:'owner-material',ref:item.ref,revision:item.revision,title:item.title,text:''};
     const at=item.origin.lastAt??item.origin.firstAt??item.updatedAt;
     const sourceLabel=sourceDisplay(item.origin.sourceId,source);
     const shownText=presentationText??text;
     const fallback=<span className="library-record-copy"><strong>{item.title}</strong><small>{type?.label?materialKind(item.kind,type.label):kindLabel} · {sourceLabel}{device&&device!==sourceLabel?' · '+device:''}</small>{shownText&&<span className="library-record-preview">{shownText}</span>}{item.coverage.state!=='complete'&&<small>{item.coverage.state==='pending'?moteText('仍在整理'):moteText('部分内容')}</small>}{item.retention.original==='reference'&&!shownText&&<small>{moteText('仅保留引用')}</small>}{item.artifacts?.some(artifact=>artifact.state!=='ready')&&<small>{moteText('部分产物仍在处理，可先阅读已有内容。')}</small>}</span>;
-    return <div className="library-catalog-row"><button data-reference={item.ref} className={'library-record'+(selected?' selected':'')} aria-current={selected?'true':undefined} onClick={()=>onSelect(item.ref)}><span className="library-record-icon">{image?<img src={image} alt="" onError={clearImage}/>:<FileText size={18}/>}</span><FeatureCard value={value} api={api} onOpen={onSelect} fallback={fallback} catalog={type}/><span className="library-record-trailing">{at&&Number.isFinite(Date.parse(at))&&<time dateTime={at}>{dateTime(at,{hour:'2-digit',minute:'2-digit',hour12:false})}</time>}<ChevronRight size={14}/></span></button><FeatureActions position="card" value={value} api={api} onOpen={onSelect} catalog={type}/></div>;
+    return <div className="library-catalog-row" ref={rowRef}><button data-reference={item.ref} className={'library-record'+(selected?' selected':'')} aria-current={selected?'true':undefined} onClick={()=>onSelect(item.ref)}><span className="library-record-icon">{image?<img src={image} alt="" onError={clearImage}/>:<FileText size={18}/>}</span><FeatureCard value={value} api={api} onOpen={onSelect} fallback={fallback} catalog={type}/><span className="library-record-trailing">{at&&Number.isFinite(Date.parse(at))&&<time dateTime={at}>{dateTime(at,{hour:'2-digit',minute:'2-digit',hour12:false})}</time>}<ChevronRight size={14}/></span></button><FeatureActions position="card" value={value} api={api} onOpen={onSelect} catalog={type}/></div>;
 }
