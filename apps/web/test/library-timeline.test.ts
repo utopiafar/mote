@@ -98,6 +98,25 @@ test('real Central grouping reaches the exact original and returning keeps the o
  assert.ok(d.querySelector('.library-time-group')===expanded,'a real host revision preserves the mounted conceptual group');assert.equal(expanded.open,true);assert.notEqual(expanded.getAttribute('data-group-id'),oldGroup,'the real producer issued a new sealed locator');
  const freshMembers=new URL('http://localhost'+paths.filter(path=>path.includes('/timeline/members?')).at(-1)).searchParams;
  assert.equal(freshMembers.get('group'),expanded.getAttribute('data-group-id'));assert.equal(freshMembers.has('cursor'),false);assert.match(expanded.textContent!,/第 1 页/);assert.equal(d.querySelectorAll('.library-time-observation').length,24);assert.match(d.querySelector('.library-time-count')!.textContent!,/26 条记录/);
+ // JSDOM has no viewport observer. These offscreen images are not part of the
+ // session identity contract; keep their lazy image transport unobserved.
+ const priorObserver=Object.getOwnPropertyDescriptor(globalThis,'IntersectionObserver');Object.defineProperty(globalThis,'IntersectionObserver',{value:class{observe(){}unobserve(){}disconnect(){}},configurable:true});t.after(()=>{if(priorObserver)Object.defineProperty(globalThis,'IntersectionObserver',priorObserver);else Reflect.deleteProperty(globalThis,'IntersectionObserver');});
+ const sharp=(await import('sharp')).default,image=(await sharp({create:{width:8,height:8,channels:3,background:'#718294'}}).png().toBuffer()).toString('base64'),screenAt=new Date();screenAt.setHours(11,0,0,0);
+ const screenIds=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','ffffffff-ffff-4fff-8fff-ffffffffffff'];
+ const addScreen=async(id:string)=>{const response=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id,deviceId:'generated-tied-screens',deviceName:'Generated tied screens',platform:'macos',capturedAt:screenAt.toISOString(),durationMs:0,appId:'',appName:'',windowTitle:'Generated tied screenshot',source:'screen',imageMime:'image/png',imageBase64:image,ocrText:'Generated image text',ocr:{status:'completed'},privacy:{collection:'content',mode:'none'}}});assert.equal(response.statusCode,201,response.body);};
+ await addScreen(screenIds[0]!);await addScreen(screenIds[1]!);
+ const screenProps={...props,devices:[{deviceId:'generated-tied-screens',deviceName:'Generated tied screens',platform:'macos',status:'capturing',queueDepth:0,lastSeenAt:screenAt.toISOString()}]};
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:2})));await change(d,w,'筛选设备','generated-tied-screens');
+ const produced=await api.request<CaptureTimelinePage>(paths.filter(path=>path.startsWith('/api/capture-browser/timeline?')).at(-1)!);
+ assert.equal(produced.items.length,2);assert.ok(produced.items.every(item=>item.type==='group'&&item.kind==='screen-session'&&item.appId===''&&item.firstAt===screenAt.toISOString()),'actual empty-app segmentation produces two tied public anchors');
+ await open(d,w);const removed=d.querySelector('.library-time-frame')!.getAttribute('data-reference')!.slice(8),remaining=screenIds.slice(0,2).find(id=>id!==removed)!;
+ const erased=await node.app.inject({method:'DELETE',url:'/api/captures/'+removed,headers});assert.equal(erased.statusCode,200,erased.body);
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:3})));
+ assert.equal(d.querySelectorAll('.library-time-group').length,1);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,false,'a real deletion cannot transfer the erased session disclosure to its survivor');
+ await open(d,w);assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+remaining);
+ await addScreen(screenIds[2]!);await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:4})));
+ const reordered=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')];assert.equal(reordered.length,2);assert.ok(reordered.every(item=>!item.open),'a new tied session moving the existing session down cannot inherit its expanded ownership');
+ await act(async()=>{reordered[0]!.open=true;reordered[0]!.dispatchEvent(new w.Event('toggle'));});assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+screenIds[2]);
 });
 
 
@@ -199,15 +218,29 @@ test('scope and API changes close the retained group and late members cannot cro
  assert.ok(nextPaths.every(path=>!new URL('http://localhost'+path).searchParams.has('deviceId')));await open(d,w);assert.ok(d.querySelector('.library-time-observation'));
 });
 
-test('simultaneous screen sessions have unique mounted identities across sealed-locator updates',async t=>{
+test('simultaneous screen sessions preserve only unambiguous mounted identities across sealed-locator updates',async t=>{
  const {root,d,w}=await fixture(t),paths:string[]=[],warnings:string[]=[];let refreshed=false;
  const before=[group({id:'screen-one',kind:'screen-session',source:'screen',appId:'generated.one'}),group({id:'screen-two',kind:'screen-session',source:'screen',appId:'generated.two'}),group({id:'screen-tie',kind:'screen-session',source:'screen',appId:'generated.two'})];
  const after=before.map(item=>({...item,id:'next-'+item.id})),originalError=console.error;t.mock.method(console,'error',(...values:unknown[])=>{warnings.push(values.map(String).join(' '));originalError(...values);});
  const api=apiWith(path=>{paths.push(path);if(!path.includes('/members?'))return{...page(refreshed?after:before),revision:refreshed?'next-revision':'exact-revision'};const selected=(refreshed?after:before).find(item=>item.id===new URL('http://localhost'+path).searchParams.get('group'))!;return{...members(selected,[member(refreshed?other:id)]),revision:refreshed?'next-revision':'exact-revision'};});
  await act(async()=>root.render(view(api)));const nodes=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')];await open(d,w);
  refreshed=true;await act(async()=>root.render(view(api,()=>{},1)));
- assert.equal(nodes.length,3);for(let index=0;index<3;index++){assert.ok(d.querySelector('[data-group-id="'+after[index]!.id+'"]')===nodes[index]);assert.equal(nodes[index]!.open,index===0);}
+ assert.equal(nodes.length,3);assert.ok(d.querySelector('[data-group-id="'+after[0]!.id+'"]')===nodes[0]);assert.equal(nodes[0]!.open,true);
+ for(let index=1;index<3;index++){const next=d.querySelector<HTMLDetailsElement>('[data-group-id="'+after[index]!.id+'"]')!;assert.ok(next!==nodes[index],'ambiguous session anchors do not preserve mounted ownership across sealed revisions');assert.equal(next.open,false);}
  assert.equal(nodes[0]!.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+other);
  assert.ok(paths.some(path=>path.includes('/members?')&&new URL('http://localhost'+path).searchParams.get('group')===after[0]!.id));
  assert.ok(warnings.every(message=>!/same key|unique.*key/i.test(message)),'even tied public session anchors have distinct React keys');
+});
+
+for(const changeKind of ['remove','reorder'] as const)test(`tied screen sessions cannot inherit another session's expansion after ${changeKind}`,async t=>{
+ const {root,d,w}=await fixture(t),paths:string[]=[];let refreshed=false;
+ const before=[group({id:'tied-first',kind:'screen-session',source:'screen',appId:''}),group({id:'tied-second',kind:'screen-session',source:'screen',appId:''})];
+ const after=(changeKind==='remove'?[before[1]!]:[before[1]!,before[0]!]).map(item=>({...item,id:'next-'+item.id}));
+ const api=apiWith(path=>{paths.push(path);if(!path.includes('/members?'))return{...page(refreshed?after:before),revision:refreshed?'next-revision':'exact-revision'};const requested=new URL('http://localhost'+path).searchParams.get('group');if(refreshed&&before.some(item=>item.id===requested))throw new ApiError('Generated expired session locator',409);const selected=(refreshed?after:before).find(item=>item.id===requested)!;return{...members(selected,[member(refreshed?other:id)]),revision:refreshed?'next-revision':'exact-revision'};});
+ await act(async()=>root.render(view(api)));await open(d,w);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,true);
+ refreshed=true;await act(async()=>root.render(view(api,()=>{},1)));
+ assert.ok([...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')].every(node=>!node.open),'an ambiguous public anchor cannot carry an expanded state into a different session');
+ assert.ok(paths.every(path=>!path.includes('/members?')||!new URL('http://localhost'+path).searchParams.get('group')?.startsWith('next-')),'new ambiguous sessions wait for an explicit open');
+ await open(d,w);assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+other);
+ assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.get('group'),after[0]!.id);
 });
