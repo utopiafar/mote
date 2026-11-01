@@ -45,7 +45,7 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
                 java.time.Instant.parse(item.getString("updatedAt"))
                 require(item.get("turnCount") is Number && item.getInt("turnCount") >= 0)
             }
-            val emptyArchive = gate.archiveEmpty(rows.length() == 0, SystemClock.elapsedRealtime()) {
+            val emptyArchive = gate.archiveEmpty(rows.length() == 0, stamp, SystemClock.elapsedRealtime()) {
                 val storage = access.client.get("/api/status").getJSONObject("storage")
                 storage.has("captures") && storage.get("captures") is Number && storage.getLong("captures") == 0L &&
                     access.client.get("/api/library/catalog?limit=1").getJSONArray("items").length() == 0 &&

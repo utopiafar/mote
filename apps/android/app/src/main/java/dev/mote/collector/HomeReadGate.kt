@@ -23,7 +23,7 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
      * generation changed: pending stamps are dropped, a 403 stop is cleared and the next due
      * check reads at once.
      */
-    fun adopt(accessGeneration: Long, server: String): Boolean {
+    @Synchronized fun adopt(accessGeneration: Long, server: String): Boolean {
         if (accessGeneration == generation && server == origin) return false
         generation = accessGeneration; origin = server
         epoch++; nextRead = 0; failures = 0; stopped = false
@@ -34,7 +34,7 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
     fun due(now: Long) = !stopped && now >= nextRead
 
     /** Marks a read as started and returns the stamp its late result must still match. */
-    fun begin(now: Long): Long {
+    @Synchronized fun begin(now: Long): Long {
         nextRead = now + steadyMs
         return epoch
     }
@@ -42,32 +42,39 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
     /** A delayed result only applies while the generation that started it is still current. */
     fun current(stamp: Long) = stamp == epoch
 
-    fun success(now: Long) { failures = 0; nextRead = now + steadyMs }
-    fun failure(now: Long, status: Int?) {
+    @Synchronized fun success(now: Long) { failures = 0; nextRead = now + steadyMs }
+    @Synchronized fun failure(now: Long, status: Int?) {
         if (status == 403) { stopped = true; return }
         failures++; nextRead = now + minOf(maxBackoffMs, steadyMs shl minOf(failures, 3))
     }
 
     /** The home is no longer visible: in-flight results are stale and the next refresh reads at once. A 403 stop survives. */
-    fun wake() { epoch++; nextRead = 0 }
+    @Synchronized fun wake() { epoch++; nextRead = 0 }
 
     /** The connection could not be resolved or drifted mid-read: in-flight results are stale and the next refresh re-adopts identity. */
-    fun invalidate() { epoch++; nextRead = 0 }
+    @Synchronized fun invalidate() { epoch++; nextRead = 0 }
 
     /**
      * Empty-archive probe used while [rowsEmpty] holds. Once data is found the probe is not run
      * again this generation; an empty answer is rechecked at most every [probeRecheckMs]; an
      * inconclusive read retries on the next steady read. The last answer is reused between probes.
+     * [probe] runs off the gate lock so a slow read cannot block [adopt]; its answer is committed
+     * only while [stamp] is still current, so a probe from an old generation can never mark the
+     * new generation done.
      */
-    fun archiveEmpty(rowsEmpty: Boolean, now: Long, probe: () -> Boolean): Boolean {
+    fun archiveEmpty(rowsEmpty: Boolean, stamp: Long, now: Long, probe: () -> Boolean): Boolean {
         if (!rowsEmpty) return false
-        if (!probeDone && now >= probeNext) {
-            when (runCatching { probe() }.getOrNull()) {
-                null -> probeNext = now + steadyMs
-                false -> { probeDone = true; probeEmpty = false }
-                true -> { probeNext = now + probeRecheckMs; probeEmpty = true }
+        val due = synchronized(this) { stamp == epoch && !probeDone && now >= probeNext }
+        val result = if (due) runCatching { probe() }.getOrNull() else null
+        return synchronized(this) {
+            if (due && stamp == epoch) {
+                when (result) {
+                    null -> probeNext = now + steadyMs
+                    false -> { probeDone = true; probeEmpty = false }
+                    true -> { probeNext = now + probeRecheckMs; probeEmpty = true }
+                }
             }
+            probeEmpty
         }
-        return probeEmpty
     }
 }

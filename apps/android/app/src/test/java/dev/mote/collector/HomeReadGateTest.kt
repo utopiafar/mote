@@ -100,36 +100,55 @@ class HomeReadGateTest {
     @Test fun emptyArchiveProbeRunsOnceUntilItFindsData() {
         val gate = HomeReadGate()
         gate.adopt(1, "https://central")
+        val stamp = gate.begin(0)
         var probes = 0
         val probe = { probes++; true }
-        assertTrue(gate.archiveEmpty(true, 0, probe))
+        assertTrue(gate.archiveEmpty(true, stamp, 0, probe))
         assertEquals(1, probes)
-        repeat(10) { assertTrue("the empty answer is reused between probes", gate.archiveEmpty(true, 299_999, probe)) }
+        repeat(10) { assertTrue("the empty answer is reused between probes", gate.archiveEmpty(true, stamp, 299_999, probe)) }
         assertEquals("an empty archive is rechecked at most every five minutes", 1, probes)
-        assertTrue(gate.archiveEmpty(true, 300_000, probe))
+        assertTrue(gate.archiveEmpty(true, stamp, 300_000, probe))
         assertEquals(2, probes)
         probes = 0
         val populated = { probes++; false }
-        assertFalse("a populated archive is not empty", gate.archiveEmpty(true, 600_000, populated))
+        assertFalse("a populated archive is not empty", gate.archiveEmpty(true, stamp, 600_000, populated))
         assertEquals(1, probes)
-        repeat(10) { assertFalse(gate.archiveEmpty(true, 700_000 + it * 300_000L, populated)) }
+        repeat(10) { assertFalse(gate.archiveEmpty(true, stamp, 700_000 + it * 300_000L, populated)) }
         assertEquals("once data exists the probe never runs again this generation", 1, probes)
         probes = 0
         gate.adopt(2, "https://central")
-        assertTrue(gate.archiveEmpty(true, 800_000, probe))
+        assertTrue(gate.archiveEmpty(true, gate.begin(800_000), 800_000, probe))
         assertEquals("a generation change probes again", 1, probes)
+    }
+
+    @Test fun anInFlightProbeCannotCommitIntoTheNextGeneration() {
+        // Mirrors a worker thread running the archive probe while the UI thread adopts a new
+        // connection: the old probe's answer must not mark the new generation done.
+        val gate = HomeReadGate()
+        gate.adopt(1, "https://central")
+        var probes = 0
+        assertFalse(gate.archiveEmpty(true, gate.begin(0), 0) {
+            probes++
+            gate.adopt(2, "https://central")
+            false
+        })
+        assertEquals(1, probes)
+        probes = 0
+        assertTrue("the populated answer must not mark the new generation done", gate.archiveEmpty(true, gate.begin(1_000), 1_000) { probes++; true })
+        assertEquals("the new generation runs its own probe", 1, probes)
     }
 
     @Test fun anInconclusiveProbeRetriesOnTheNextRead() {
         val gate = HomeReadGate()
         gate.adopt(1, "https://central")
+        val stamp = gate.begin(0)
         var probes = 0
         val failing = { probes++; error("offline") }
-        assertFalse(gate.archiveEmpty(true, 0, failing))
-        assertFalse("an inconclusive probe does not claim an empty archive", gate.archiveEmpty(true, 59_999, failing))
-        gate.archiveEmpty(true, 60_000, failing)
+        assertFalse(gate.archiveEmpty(true, stamp, 0, failing))
+        assertFalse("an inconclusive probe does not claim an empty archive", gate.archiveEmpty(true, stamp, 59_999, failing))
+        gate.archiveEmpty(true, stamp, 60_000, failing)
         assertEquals("the probe retries on the next steady read", 2, probes)
-        assertFalse("non-empty rows never probe", gate.archiveEmpty(false, 60_000) { error("must not run") })
+        assertFalse("non-empty rows never probe", gate.archiveEmpty(false, stamp, 60_000) { error("must not run") })
     }
 
     @Test fun logicalReadsAreNotTotalHttpRequests() {
@@ -139,7 +158,7 @@ class HomeReadGateTest {
         for (tick in 0L..60_000L step 2_000L) {
             conversations.refresh(tick)?.let { stamp ->
                 http += 1
-                if (conversations.gate.archiveEmpty(true, tick) { http += 3; true }) Unit
+                if (conversations.gate.archiveEmpty(true, stamp, tick) { http += 3; true }) Unit
                 conversations.finish(stamp, tick)
             }
             discovery.refresh(tick)?.let { stamp -> http += 1; discovery.finish(stamp, tick) }
