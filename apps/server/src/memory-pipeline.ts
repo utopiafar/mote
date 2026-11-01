@@ -777,6 +777,7 @@ export class MemoryPipeline {
   }
   private refreshJob(id:string){
     const job=this.storedJob(id),counts=this.counts(id);
+    const before=JSON.stringify({...job,updatedAt:undefined});
     if(job.status==='pausing'&&Number(counts.running)===0)job.status='paused';
     {
       const steps=this.store.db.prepare("SELECT state,error,available_at FROM execution_steps WHERE operation_id=? AND kind='memory.input'").all('memory:'+id),inputWaiting=steps.some(step=>['waiting','running'].includes(String(step.state))),inputFailure=steps.some(step=>['blocked','failed','stale','cancelled'].includes(String(step.state)));
@@ -788,7 +789,8 @@ export class MemoryPipeline {
     }
     if(!['waiting_for_model','waiting_for_input'].includes(job.status))job.errorCode=job.errorCode||String(this.store.db.prepare("SELECT json_extract(json,'$.errorCode') error FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','invalidated') LIMIT 1").get(id)?.error??'')||undefined;
     if(job.status!=='waiting_for_input')job.availableAt=Number(this.store.db.prepare("SELECT max(json_extract(json,'$.availableAt')) at FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','pending')").get(id)?.at)||undefined;
-    job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);this.saveJob(job);
+    job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);
+    if(JSON.stringify({...job,updatedAt:undefined})!==before)this.saveJob(job);
   }
   private assertStrategies(batch:StoredBatch){
     for(const chunk of batch.chunks){

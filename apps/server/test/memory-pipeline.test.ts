@@ -5,6 +5,11 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {randomBytes} from 'node:crypto';
+import {setImmediate as nextTurn,setTimeout as delay} from 'node:timers/promises';
+import {buildApp} from '../src/app.js';
+import type {Config} from '../src/config.js';
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
@@ -23,6 +28,50 @@ function fixture(t:TestContext,beforeStoreClose?:()=>Promise<void>){
 const item=(externalId='a',text='合成原文：我计划学习 TypeScript，尚未开始。',revision='1',observedAt='2026-09-15T01:00:00Z')=>({externalId,text,revision,observedAt,title:'Generated record',kind:'file',layer:'original'});
 const result=(id:string,quote?:{offset:number;quote:string})=>({answer:JSON.stringify({memories:[{title:'合成候选',statement:`尚未开始的计划 [${id}]`,uncertainty:'没有完成证据',evidenceIds:[id],...(quote?{evidence:[{id,...quote}]}:{})}]}),citations:[{id,capturedAt:'2026-09-15T01:00:00Z',appName:'Generated',excerpt:'合成'}],trace:[],runId:'generated-run'});
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'});
+test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-unchanged-wake-'));
+ const config:Config={dataDir:directory,token:'generated-memory-wake-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent',contentEncryptionEnabled:true,dataKey:randomBytes(32).toString('hex')};
+ let calls=0;
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>{calls++;throw Error('Unauthorized originals must not reach the model');}})});
+ t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
+ await node.app.ready();await authorizeFixtureModels(node,{sourceIds:['generated-approved'],dataKinds:['text']});
+ node.sources.register({id:'generated-denied',name:'Generated denied source',kind:'custom',deviceId:'generated',platform:'import'});
+ // Each original exceeds half the transport budget, so the real intake creates
+ // 20 independent jobs rather than combining the generated members into one.
+ for(let i=0;i<20;i++)await node.sources.upsert('generated-denied',item('wait-'+i,'Generated private original '+i+' x'.repeat(3200)));
+ await node.materialOrganizer.tick();await node.sourcePipelines.tick();node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();
+ assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,20),20);
+ const jobs=node.memoryPipeline.list(30);assert.equal(jobs.length,20);
+ const waiting=()=>node.store.db.prepare("SELECT state,error,attempts,available_at FROM execution_steps WHERE kind='memory.batch'").all();
+ const deadline=Date.now()+10000;
+ while(Date.now()<deadline){const steps=waiting();if(steps.length===20&&steps.every(step=>step.state==='waiting'&&step.error==='background_model_authorization_required'))break;await delay(20);}
+ assert.equal(waiting().length,20);assert.ok(waiting().every(step=>step.state==='waiting'&&step.error==='background_model_authorization_required'&&step.attempts===0&&Number(step.available_at)>Date.now()));
+ const flush=async()=>{await nextTurn();await node.executor.tick();await nextTurn();};
+ await flush();
+ const snapshot=()=>node.store.db.prepare('SELECT j.id,j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id ORDER BY j.id').all().map(row=>({...row}));
+ const before=snapshot();assert.equal(before.length,20);assert.ok(before.every(row=>typeof JSON.parse(String(row.json)).private==='string'),'exercise encrypted work packages as well as logical job state');
+ const updated:string[]=[],prepare=node.store.db.prepare.bind(node.store.db);
+ const spy=t.mock.method(node.store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[1]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ for(let i=0;i<10;i++){node.memoryPipeline.wake();await flush();}
+ t.diagnostic(`20 authorization-wait jobs, 10 unchanged wakes: ${updated.length} job UPDATEs`);
+ assert.equal(updated.length,0,'unchanged wakes must not write any Memory job');assert.deepEqual(snapshot(),before);assert.equal(calls,0);
+ const selected=jobs[0].id,completion=node.memoryPipeline.run(selected);
+ node.memoryPipeline.cancel(selected);assert.equal((await completion).status,'cancelled');await flush();
+ assert.deepEqual([...new Set(updated)],[selected],'cancellation must write only the selected job');
+ const after=snapshot(),old=before.find(row=>row.id===selected)!,stopped=after.find(row=>row.id===selected)!;
+ assert.equal(JSON.parse(String(stopped.json)).status,'cancelled');assert.equal(JSON.parse(String(stopped.json)).cancellationCause,'owner');
+ assert.notEqual(JSON.parse(String(stopped.json)).updatedAt,JSON.parse(String(old.json)).updatedAt);assert.notEqual(stopped.updated_at,old.updated_at);
+ assert.deepEqual(after.filter(row=>row.id!==selected),before.filter(row=>row.id!==selected));assert.equal(calls,0);assert.equal(node.memories.list().length,0);
+ spy.mock.restore();
+});
+
 test('job summaries count distinct surviving batch memories without exposing their IDs',async t=>{
  const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());
  const pipeline=fixtureMemoryPipeline({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>result(record.id)}});t.after(()=>pipeline.close());
