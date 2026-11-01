@@ -32,7 +32,9 @@ class LocalStateInstrumentedTest {
         val collect = {
             HomeLocalCaptures.collect(cache, revision, context.recordDraftStore().draft(), null,
                 pendingRecovery = { QueueStorage(context).stageRecoveryPending() }) {
-                HomeLocalCaptures.exists(QueueStorage(context).openQueue())
+                HomeLocalCaptures.exists(
+                    queue = { QueueStorage(context).openQueue() },
+                    committedProbe = { QueueStorage(context).committedStored() })
             }
         }
         val inbox = File(dir, ".capture-stages.inbox")

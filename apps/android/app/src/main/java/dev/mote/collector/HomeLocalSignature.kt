@@ -45,19 +45,21 @@ internal object HomeLocalCaptures {
      * exclude future-dated records while its revision-keyed cache answer never expires, so the
      * home could stick in first-use mode as the clock catches up. [DurableQueue.anyStored] has
      * no clock input and reports a listing failure rather than inventing an empty inventory.
+     *
+     * Opening the queue can itself fail while replaying stage work: a failed replay then reads
+     * the committed inventory through [committedProbe] instead of reporting an empty archive,
+     * while an unreadable directory still propagates its listing failure.
      */
-    fun exists(queue: DurableQueue) = queue.anyStored()
+    fun exists(queue: () -> DurableQueue, committedProbe: () -> Boolean): Boolean =
+        runCatching { queue().anyStored() }.getOrElse { committedProbe() }
 
     fun collect(cache: RevisionCache, recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, pendingRecovery: () -> Boolean, exists: () -> Boolean): JSONObject {
         val captures = JSONObject()
         captures.put("hasDraft", draft.optString("text").isNotBlank() || draft.optString("description").isNotBlank() || (draft.optJSONArray("attachments")?.length() ?: 0) > 0 || draft.optJSONObject("origin")?.optString("text").orEmpty().isNotBlank())
         // Pending stage recovery bypasses the revision cache: an unchanged records revision
         // cannot see the accepted inbox, and only opening the queue retries its replay. The
-        // bypassed answer is never cached, so each cycle re-checks until recovery commits. A
-        // replay that still fails reports the committed inventory — false when nothing has
-        // landed yet — so the independently readable draft, receipt and source rows keep
-        // publishing while recovery retries instead of freezing the whole home task.
-        captures.put("hasAnyRecords", if (pendingRecovery()) runCatching(exists).getOrDefault(false) else cache.hasRecords(recordsRevision, exists))
+        // bypassed answer is never cached, so each cycle re-checks until recovery commits.
+        captures.put("hasAnyRecords", if (pendingRecovery()) exists() else cache.hasRecords(recordsRevision, exists))
         savedReceipt?.let { captures.put("savedReceipt", it) }
         return captures
     }

@@ -44,6 +44,12 @@ class QueueStorage(private val context: Context) {
         val path = store().current().path
         File(path, ".capture-stages.inbox").exists() || File(path, ".capture-stages.journal").exists()
     }
+    /** Committed record files on the selected location without opening the queue: a failed stage
+     * replay cannot poison the answer, and an unreadable directory still surfaces as a failure. */
+    fun committedStored(): Boolean = DurableQueue.exclusive {
+        File(store().current().path).listFiles()?.any { it.extension == "event" }
+            ?: error(MoteI18n.text("无法读取本机存储目录"))
+    }
     fun migrate(id: String): QueueLocation = DurableQueue.exclusive {
         val target = choices().singleOrNull { it.id == id } ?: error(MoteI18n.text("所选目标存储暂不可用"))
         try { store().migrate(target.id, target.base, RuntimeSettings::reportProgress) } finally { LocalStateChanges.changed(records = true) }

@@ -60,15 +60,21 @@ class HomeLocalSignatureTest {
         override fun seal(bytes: ByteArray) = bytes.map { (it.toInt() xor 91).toByte() }.toByteArray()
         override fun open(bytes: ByteArray) = seal(bytes)
     }
+    /** The committed-inventory probe `QueueStorage.committedStored` performs: `.event` presence,
+     * never an open; an unreadable directory surfaces its failure. */
+    private fun committed(dir: java.io.File): () -> Boolean = {
+        dir.listFiles()?.any { it.extension == "event" } ?: error("unreadable generated directory")
+    }
 
     @Test fun aFutureDatedRecordStillCountsAsExisting() {
         // A record saved while the clock ran fast is stored the moment it arrives; the existence
         // check the home caches by revision must see it without waiting for the clock to pass.
-        val queue = DurableQueue(folder.newFolder(), cipher)
+        val dir = folder.newFolder()
+        val queue = DurableQueue(dir, cipher)
         val cache = RevisionCache()
-        assertFalse(collect(cache, 3) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
+        assertFalse(collect(cache, 3) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
         queue.enqueue(note().put("capturedAt", java.time.Instant.now().plusSeconds(3600).toString()), null, 16L * 1024 * 1024)
-        assertTrue("a future-dated record is a stored record", collect(cache, 4) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
+        assertTrue("a future-dated record is a stored record", collect(cache, 4) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
     }
 
     @Test fun aFailedListingDoesNotCacheAsEmpty() {
@@ -77,15 +83,15 @@ class HomeLocalSignatureTest {
         val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
         queue.enqueue(note(), null, 16L * 1024 * 1024)
         val cache = RevisionCache()
-        assertTrue(collect(cache, 5) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
+        assertTrue(collect(cache, 5) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
         val hidden = java.io.File(dir.parentFile, dir.name + ".hidden")
         check(dir.renameTo(hidden)); check(java.io.File(dir.path).createNewFile())
         try {
-            assertThrows(Exception::class.java) { collect(cache, 6) { HomeLocalCaptures.exists(queue) } }
+            assertThrows(Exception::class.java) { collect(cache, 6) { HomeLocalCaptures.exists({ queue }, committed(dir)) } }
         } finally {
             check(java.io.File(dir.path).delete()); check(hidden.renameTo(dir))
         }
-        assertTrue("the failed read never cached, so the same revision rechecks", collect(cache, 6) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
+        assertTrue("the failed read never cached, so the same revision rechecks", collect(cache, 6) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
     }
 
     @Test fun anInterruptedCaptureRecoveredOnOpenAdvancesTheRecordRevision() {
@@ -105,17 +111,17 @@ class HomeLocalSignatureTest {
         val dir = folder.newFolder()
         val cache = RevisionCache()
         val revisionBefore = LocalStateChanges.revisions.value.records
-        assertFalse(collect(cache, revisionBefore) { HomeLocalCaptures.exists(DurableQueue(dir, cipher)) }.getBoolean("hasAnyRecords"))
+        assertFalse(collect(cache, revisionBefore) { HomeLocalCaptures.exists({ DurableQueue(dir, cipher) }, committed(dir)) }.getBoolean("hasAnyRecords"))
         val queue = DurableQueue(dir, cipher, captureStages = registry)
         assertThrows(IllegalStateException::class.java) { queue.enqueue(note(), null, 1_000_000) }
         val recovered = DurableQueue(dir, cipher, captureStages = registry)
         assertTrue("the replay committed a record while no listener existed", recovered.unreportedRecordWrites)
-        assertTrue(HomeLocalCaptures.exists(recovered))
+        assertTrue(HomeLocalCaptures.exists({ recovered }, committed(dir)))
         // The same wiring QueueStorage.openQueue performs after installing onMutation.
         if (recovered.unreportedRecordWrites) { recovered.unreportedRecordWrites = false; LocalStateChanges.changed(records = true) }
         val revisionAfter = LocalStateChanges.revisions.value.records
         assertTrue("recovery advanced the record revision", revisionAfter > revisionBefore)
-        assertTrue("the recovered record is seen at the new revision", collect(cache, revisionAfter) { HomeLocalCaptures.exists(recovered) }.getBoolean("hasAnyRecords"))
+        assertTrue("the recovered record is seen at the new revision", collect(cache, revisionAfter) { HomeLocalCaptures.exists({ recovered }, committed(dir)) }.getBoolean("hasAnyRecords"))
     }
 
     private fun crashingStage(crashes: java.util.concurrent.atomic.AtomicInteger) = object : CaptureStage {
@@ -138,14 +144,15 @@ class HomeLocalSignatureTest {
         assertThrows(IllegalStateException::class.java) { DurableQueue(dir, cipher, captureStages = registry).enqueue(note(), null, 1_000_000) }
         val broken = DurableQueue(dir, cipher, captureStages = registry)
         assertNotNull("the failed replay stays pending on the queue", broken.pendingStageFailure)
-        assertThrows(Exception::class.java) { HomeLocalCaptures.exists(broken) }
+        assertFalse("the failed replay reads the committed inventory instead of throwing",
+            HomeLocalCaptures.exists({ broken }, committed(dir)))
         assertEquals("the failed open replays nothing", 0, crashes.get())
         // The same construction QueueStorage.openQueue performs: replay now succeeds and its
         // record write is reported through the constructor-installed listener itself.
         val recovered = DurableQueue(dir, cipher, captureStages = registry, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
         assertNull(recovered.pendingStageFailure)
         assertFalse("the constructor listener already reported the replay", recovered.unreportedRecordWrites)
-        assertTrue(HomeLocalCaptures.exists(recovered))
+        assertTrue(HomeLocalCaptures.exists({ recovered }, committed(dir)))
         assertTrue("recovery advanced the records revision without an extra open", LocalStateChanges.revisions.value.records > revisionBefore)
     }
 
@@ -176,8 +183,28 @@ class HomeLocalSignatureTest {
             .put("checkpoint", JSONObject().put("stages", JSONArray()))
         java.io.File(dir, ".capture-stages.journal").writeBytes(cipher.open(committed.toString().toByteArray(Charsets.UTF_8)))
         val recovered = DurableQueue(dir, cipher, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
-        assertTrue(HomeLocalCaptures.exists(recovered))
+        assertTrue(HomeLocalCaptures.exists({ recovered }, committed(dir)))
         assertEquals("the already-committed output is not reported twice", revisionAfterFailure, LocalStateChanges.revisions.value.records)
+    }
+
+    @Test fun aFailedJournalReplayStillReadsTheCommittedInventory() {
+        // A committed record plus a journal whose replay fails during construction: the queue
+        // can never open, but the archive is not empty — the boundary answers through the
+        // committed probe, while a probe that cannot read still surfaces its failure.
+        val dir = folder.newFolder()
+        DurableQueue(dir, cipher).enqueue(note(), null, 1_000_000)
+        val journal = JSONObject()
+            .put("outputs", JSONArray().put(JSONObject().put("event", JSONObject().put("id", "not-a-uuid")).put("image", JSONObject.NULL)))
+            .put("checkpoint", JSONObject().put("stages", JSONArray()))
+        java.io.File(dir, ".capture-stages.journal").writeBytes(cipher.open(journal.toString().toByteArray(Charsets.UTF_8)))
+        assertThrows(Exception::class.java) { DurableQueue(dir, cipher) }
+        assertTrue("a failed replay reads the committed inventory instead of reporting empty",
+            HomeLocalCaptures.exists({ DurableQueue(dir, cipher) }, committed(dir)))
+        assertFalse("an empty committed view stays false through the same probe",
+            HomeLocalCaptures.exists({ error("generated replay failure") }, committed(folder.newFolder())))
+        assertThrows(Exception::class.java) {
+            HomeLocalCaptures.exists({ error("generated replay failure") }) { error("generated unreadable directory") }
+        }
     }
 
     @Test fun aPendingStageInputRetriesRecoveryPastACachedEmptyAnswer() {
@@ -192,18 +219,18 @@ class HomeLocalSignatureTest {
         val pending = { java.io.File(dir, ".capture-stages.inbox").exists() || java.io.File(dir, ".capture-stages.journal").exists() }
         val cache = RevisionCache()
         val revision = LocalStateChanges.revisions.value.records
-        assertFalse(collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+        assertFalse(collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null, 1_000_000) }
         crashes.incrementAndGet()
         // The pending inbox reopens and its replay still fails: the payload keeps publishing the
         // truthful committed answer — nothing yet — while the inbox stays pending for the retry,
         // so the same refresh's draft/source state still reaches the home.
         assertFalse("a still-failing replay reports the committed inventory, not a freeze",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertTrue("the failed input remains pending for the next cycle", pending())
         crashes.set(0)
         assertTrue("the next cycle replays the inbox into a committed record",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertTrue("the recovered write advanced the records revision", LocalStateChanges.revisions.value.records > revision)
     }
 
@@ -223,11 +250,11 @@ class HomeLocalSignatureTest {
         assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null, 1_000_000) }
         val revision = LocalStateChanges.revisions.value.records
         assertTrue("the committed record answers truthfully while the failed inbox retries",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertTrue("the first reopen still failed, so the input remains pending", pending())
         crashes.set(0)
         assertTrue("the retried replay commits the second record",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertEquals(2, openQueue().depth())
         assertTrue("the second commit advanced the records revision", LocalStateChanges.revisions.value.records > revision)
     }
