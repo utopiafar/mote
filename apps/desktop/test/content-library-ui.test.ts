@@ -282,3 +282,36 @@ it.each([401,403])('honors delayed Home HTTP %s after a local-only refresh with 
   expectCleared();expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();
   expect(el('content-feed').querySelector('[data-content-key^="capture:"]')).toBeNull();
 });
+
+it('observes newer Central success before its held local read so an older Home denial cannot clear it',async()=>{
+  await flush();await open(item.key);
+  let deny!:(value:CentralContentPage)=>void,finishLocal!:(value:{items:ContentItem[];total:number})=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();
+  (el('content-scope') as HTMLSelectElement).value='all';(el('content-search') as HTMLInputElement).value='newer';
+  vi.mocked(api.localContent).mockImplementationOnce(()=>new Promise(resolve=>{finishLocal=resolve;}));
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[{...item,title:'Generated newer successful match'}]});const search=library.refresh();await flush();
+  deny({items:[],authorizationDenied:true});await home;expect(dialog.open).toBe(true);
+  finishLocal({items:[],total:0});await search;await flush();
+  expect(el('content-feed').textContent).toContain('Generated newer successful match');expect(dialog.open).toBe(true);
+});
+
+it('keeps a newer successful Home snapshot when the older unfiltered Content request denies access',async()=>{
+  await flush();let finish!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));const content=library.refresh();await flush();
+  page={items:[{...item,title:'Generated newer Home row'}]};await library.refreshHome();
+  finish({items:[],authorizationDenied:true});await content;await flush();
+  expect(el('home-recent').textContent).toContain('Generated newer Home row');expect(el('home-onboarding').hidden).toBe(true);
+  expect(el('content-status').textContent).toContain('内容暂不可完整读取');
+});
+
+it.each(['central','local-receipt'])('keeps a newer successful %s reader when a superseded list denial arrives',async kind=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();
+  if(kind==='local-receipt')vi.mocked(api.localContentDetail).mockResolvedValueOnce(remote);
+  library.open({...item,key:kind==='central'?item.key:'queue:22222222-2222-4222-8222-222222222222'});await flush();
+  expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
+  deny({items:[],authorizationDenied:true});await home;await flush();
+  expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
+});

@@ -67,19 +67,21 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   // The workbench is independent of the Content workspace's selected filter and pagination.
   async function refreshHome(){
     homeStale=false;const version=++homeGeneration,archiveVersion=archiveGeneration,request=status?.config.tokenConfigured?++archiveRequest:undefined;
-    const [local,remote]=await Promise.allSettled([api.localContent(0),request!==undefined?api.centralContent():undefined]);
-    observeArchive(remote,request,archiveVersion);
+    let denied=false;
+    const [local,remote]=await Promise.allSettled([api.localContent(0),request!==undefined?api.centralContent().then(value=>{denied=observeArchive({status:'fulfilled',value},request,archiveVersion);return value;}):undefined]);
     if(version!==homeGeneration)return;
     const rows:ContentItem[]=[];
     if(local.status==='fulfilled')rows.push(...local.value.items);else rows.push(...homeItems.filter(row=>!row.key.startsWith('capture:')));
     if(remote.status==='fulfilled'&&remote.value&&archiveVersion===archiveGeneration){
       if(!remote.value.authorizationDenied)rows.push(...remote.value.items);
     }
-    renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected');
+    const ignoredDenial=remote.status==='fulfilled'&&remote.value?.authorizationDenied&&!denied;
+    if(ignoredDenial&&!archiveAuthorizationDenied)rows.push(...homeItems.filter(row=>row.key.startsWith('capture:')));
+    renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected'||Boolean(ignoredDenial));
   }
   async function refresh(append=false){
     lastRefresh=Date.now();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=undefined;}
-    const version=++generation,archiveVersion=archiveGeneration;const scope=el<HTMLSelectElement>('content-scope').value,query=el<HTMLInputElement>('content-search').value;
+    const version=++generation,homeVersion=homeGeneration,archiveVersion=archiveGeneration;const scope=el<HTMLSelectElement>('content-scope').value,query=el<HTMLInputElement>('content-search').value;
     for(const button of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-content-scope]')))button.setAttribute('aria-pressed',String(button.dataset.contentScope===scope));
     const scopeKey=JSON.stringify([scope,query.trim()]),previous=loadedScope===scopeKey?items:[];
     if(!append){localOffset=0;remoteCursor=undefined;localMore=false;remoteMore=false;items=[];}
@@ -92,18 +94,21 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     }
     const local=scope==='received'||append&&!localMore?undefined:api.localContent(localOffset,query);
     const request=scope==='local'||!status?.config.tokenConfigured||append&&!remoteMore?undefined:++archiveRequest;
-    const remote=request!==undefined?api.centralContent(remoteCursor,query):undefined;
-    const [l,r]=await Promise.allSettled([local,remote]);const denied=observeArchive(r,request,archiveVersion);if(version!==generation)return;
+    let denied=false;
+    const remote=request!==undefined?api.centralContent(remoteCursor,query).then(value=>{denied=observeArchive({status:'fulfilled',value},request,archiveVersion);return value;}):undefined;
+    const [l,r]=await Promise.allSettled([local,remote]);if(version!==generation)return;
+    const ignoredDenial=r.status==='fulfilled'&&r.value?.authorizationDenied&&!denied;
     const rows:ContentItem[]=[];let error='';
     if(l.status==='fulfilled'&&l.value){rows.push(...l.value.items);localMore=l.value.nextOffset!==undefined;localOffset=l.value.nextOffset??localOffset;}else if(l.status==='rejected'){rows.push(...previous.filter(row=>!row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
     if(r.status==='fulfilled'&&r.value){
       if(denied){
         error=moteText('无法访问采集记录，请检查中央连接权限');
-      }else if(archiveVersion===archiveGeneration&&!r.value.authorizationDenied){rows.push(...r.value.items);remoteMore=Boolean(r.value.nextCursor);remoteCursor=r.value.nextCursor;}
+      }else if(ignoredDenial){if(!archiveAuthorizationDenied&&archiveVersion===archiveGeneration)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
+      else if(archiveVersion===archiveGeneration&&!r.value.authorizationDenied){rows.push(...r.value.items);remoteMore=Boolean(r.value.nextCursor);remoteCursor=r.value.nextCursor;}
     }else if(r.status==='rejected'){if(archiveVersion===archiveGeneration&&!archiveAuthorizationDenied)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
     items=mergeRows([...items,...rows]);loadedScope=scopeKey;renderFeed('content-feed',items);
     if(error&&!items.length)el('content-feed').replaceChildren();
-    if(scope==='all'&&!query.trim()){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}else if(homeVisible())void refreshHome();else{homeStale=true;homeGeneration++;}
+    if(scope==='all'&&!query.trim()){if(!ignoredDenial&&homeVersion===homeGeneration){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}}else if(homeVisible())void refreshHome();else{homeStale=true;homeGeneration++;}
     el('content-more').hidden=!localMore&&!remoteMore;
     el('content-status').textContent=error||(!status?.config.tokenConfigured?moteText('本机内容可离线阅读；连接中央后显示已归档内容。'):moteText('接收与整理分别进行，点开内容查看实际状态。'));
     el('content-status').classList.toggle('visually-hidden',!error);
@@ -118,7 +123,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     values.forEach((label,index)=>{const item=document.createElement('li');item.textContent=label;item.className=index===0||index===1&&received||index===2&&(readiness==='pending'||readiness==='ready')||index===3&&readiness==='ready'?'completed':'waiting';list.append(item);});
   }
   async function readSelected(image=false){
-    if(!selected)return;const version=++detailGeneration,archiveVersion=archiveGeneration,item=selected;
+    if(!selected)return;const version=++detailGeneration,archiveVersion=archiveGeneration,request=++archiveRequest,item=selected;
     el('content-detail-status').setAttribute('aria-busy','true');
     el('content-detail-title').textContent=item.title||sourceName(item.source);el('content-detail-source').textContent=sourceName(item.source);el('content-detail-facts').textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale())].filter(Boolean).join(' · ');
     el('content-detail-range').hidden=true;el('content-detail-body').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-metadata').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');el('content-detail-status').textContent=moteText('正在读取内容…');el('content-detail-next').hidden=true;el('content-detail-central').hidden=true;el('content-original').hidden=true;
@@ -128,7 +133,9 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       if(version!==detailGeneration||!dialog.open)return;
       const remote='location'in result&&result.location==='central';const readiness='readiness'in result?result.readiness:undefined;
       // A receipt resolved from a local row must also respect a denial observed while it was loading.
-      if(remote&&(archiveAuthorizationDenied||archiveVersion!==archiveGeneration)){close();return;}detailIsCentral=remote;
+      if(remote&&(archiveAuthorizationDenied||archiveVersion!==archiveGeneration)){close();return;}
+      if(remote)observeArchive({status:'fulfilled',value:{items:[]}},request,archiveVersion);
+      detailIsCentral=remote;
       const bytes='sizeBytes'in result?result.sizeBytes:undefined;el('content-detail-source').textContent=[sourceName(item.source),remote?moteText('中央已收到'):moteText('本机待传副本'),typeof bytes==='number'?bytes<1024?bytes+' B':bytes<1024*1024?(bytes/1024).toFixed(1)+' KiB':(bytes/1024/1024).toFixed(1)+' MiB':''].filter(Boolean).join(' · ');
       stages(remote,readiness);centralId='captureId'in result?result.captureId:undefined;
       el('content-detail-body').textContent=result.text||(result.metadataOnly?moteText('此记录仅同步目录信息，未上传正文或原件。'):remote?moteText('正文尚未就绪，原件与来源信息仍可核对。'):moteText('原件已保存在本机，解析或识别会在中央进行。'));
