@@ -47,7 +47,7 @@ export function useNearViewport(ref:RefObject<Element|null>,margin='200px'){
 
 /** Preview only a retained, bounded original from this material's exact membership. */
 export function useMaterialPreview(api:Api,item:Material,canRead:boolean,canPreview:boolean,near:boolean){
- const inventory=useResource<FeatureInventory>(api,canRead&&item.kind==='mote.file'?'/api/features':null,5000);
+ const inventory=useResource<FeatureInventory>(api,(canRead||canPreview)&&item.kind==='mote.file'?'/api/features':null,5000);
  const sourceView=canRead&&item.kind==='mote.file'&&inventory.error===undefined&&featureRequirementsAvailable(['http:GET:/api/materials/:id/source-view'],inventory.data);
  const thumbnails=inventory.error===undefined&&featureRequirementsAvailable(['http:GET:/api/files/:id/thumbnail'],inventory.data);
  const [source,setSource]=useState<{api:Api;ref:string;text?:string}>();

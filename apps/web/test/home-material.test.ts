@@ -15,7 +15,7 @@ async function fixture(t:TestContext){
  const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')!);
  t.after(async()=>{await act(async()=>root.unmount());URL.createObjectURL=create;URL.revokeObjectURL=revoke;for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
  function ObserveCommit(){React.useLayoutEffect(()=>{commits.push(dom.window.document.querySelector('img')?.getAttribute('src')??null);});return null;}
- const render=async(api:Api,canPreview=true,material=item)=>{await act(async()=>root.render(React.createElement(React.Fragment,null,React.createElement(HomeMaterialRow,{api,item:material,canPreview,canRead:true,onOpen:ref=>opened.push(ref)}),React.createElement(ObserveCommit))));};
+ const render=async(api:Api,canPreview=true,material=item,canRead=true)=>{await act(async()=>root.render(React.createElement(React.Fragment,null,React.createElement(HomeMaterialRow,{api,item:material,canPreview,canRead,onOpen:ref=>opened.push(ref)}),React.createElement(ObserveCommit))));};
  return {d:dom.window.document,root,render,opened,urls,revoked,commits};
 }
 function apiFor(reads:string[],options:{size?:number;retained?:boolean;capabilities?:string[];featuresError?:boolean;raw?:Api['raw']}={}){
@@ -162,4 +162,12 @@ test('file rows without the thumbnail capability or with a failed inventory keep
   assert.equal(rawCalls.length,0);assert.equal(reads.some(path=>path.endsWith('/content')||path.endsWith('/thumbnail')),false);
   assert.equal(f.d.querySelector('img'),null);assert.ok(f.d.querySelector('.home-material-icon svg'),'the type icon stands in for the image');
  }
+});
+
+test('image-only permission still reaches the shared inventory for thumbnails without enabling text reads',async t=>{
+ const f=await fixture(t),reads:string[]=[],rawCalls:string[]=[];
+ await f.render(apiFor(reads,{raw:async(path)=>{rawCalls.push(path);return new Response(new Uint8Array([1]),{headers:{'Content-Type':'image/jpeg'}});}}),true,item,false);
+ assert.ok(rawCalls.some(path=>path.endsWith('/thumbnail')),'thumbnail access does not depend on the material-read capability');
+ assert.ok(f.d.querySelector('img'));
+ assert.equal(reads.some(path=>path.includes('/read?')||path.includes('/source-view?')),false,'text reads stay gated on canRead');
 });
