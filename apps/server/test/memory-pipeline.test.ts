@@ -130,6 +130,45 @@ test('the first refresh of a job persisted without derived counters does not wri
  spy.mock.restore();
 });
 
+test('a batch update rolled back with its transaction leaves no transition signal for an unchanged refresh',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('rollback-a','a'.repeat(600)));
+ let allowed=true;
+ const pipeline=fixtureMemoryPipeline({store,memories,admission:{evidenceAllowedForMemory:()=>allowed},models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{throw new ProviderFailure({category:'permanent',code:'provider_timeout',retryAfterMs:0});}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id]}),failed=await pipeline.run(job.id);
+ assert.equal(failed.status,'failed');assert.equal(failed.failedBatches,1);
+ // acceptRetry invalidates the failed batch inside its transaction; failing the job
+ // write then rolls the batch update back while an in-memory signal would linger.
+ allowed=false;
+ const prepare=store.db.prepare.bind(store.db);let thrown=false;
+ const spy=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{if(!thrown){thrown=true;throw new Error('generated write failure');}return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ assert.throws(()=>pipeline.acceptRetry(job.id,true));
+ spy.mock.restore();
+ const batchStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_batches WHERE job_id=?').get(job.id) as {json:string}).json)).status);
+ assert.equal(batchStatus(),'failed','the rollback must restore the persisted batch status');
+ const snapshot=()=>store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ const before=snapshot();
+ const updated:string[]=[];
+ const spy2=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ const settled=await pipeline.run(job.id);assert.equal(settled.status,'failed');
+ assert.equal(updated.length,0,'an unchanged refresh after a rolled-back batch update must not write the job row');
+ assert.deepEqual(snapshot(),before,'Activity ordering must not move after a rolled-back transition');
+ spy2.mock.restore();
+});
+
 test('job summaries count distinct surviving batch memories without exposing their IDs',async t=>{
  const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());
  const pipeline=fixtureMemoryPipeline({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>result(record.id)}});t.after(()=>pipeline.close());

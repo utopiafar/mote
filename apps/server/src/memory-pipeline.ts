@@ -155,7 +155,7 @@ export class MemoryPipeline {
   private drafts:MemoryExtractionDrafts;
   private inputPlans:MemoryInputPlans;
   private active=new Map<string,Promise<MemoryJobDetail>>();
-  private batchTransitions=new Set<string>();
+  private batchTransitions=new Map<string,Map<string,string>>();
   readonly engine:ExecutionEngine;
   private owned:boolean;
   private completions=new Map<string,{resolve:(job:MemoryJobDetail)=>void;reject:(error:unknown)=>void}>();
@@ -327,7 +327,7 @@ export class MemoryPipeline {
   private saveBatch(batch:StoredBatch){
     const priorRow=this.store.db.prepare('SELECT job_id,json FROM memory_batches WHERE id=?').get(batch.id) as {job_id:string;json:string}|undefined,prior=priorRow?JSON.parse(String(priorRow.json)) as StoredBatch&{privateRetired?:boolean}:undefined;
     const json=encodeMemoryBatch(this.store,batch,Boolean(prior?.privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(priorRow?.json??''))));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);
-    if(prior&&prior.status!==batch.status)this.batchTransitions.add(String(priorRow!.job_id));
+    if(prior&&prior.status!==batch.status){const jobId=String(priorRow!.job_id),markers=this.batchTransitions.get(jobId)??new Map<string,string>();markers.set(batch.id,batch.status);this.batchTransitions.set(jobId,markers);}
   }
   private checkpoint(chunk:Chunk){return Boolean(this.store.db.prepare('SELECT key FROM memory_checkpoints WHERE key=?').get(chunk.key));}
   get(id:string):MemoryJobDetail {
@@ -782,7 +782,11 @@ export class MemoryPipeline {
   }
   private refreshJob(id:string){
     const job=this.storedJob(id),counts=this.counts(id);
-    const transitioned=this.batchTransitions.delete(id);
+    // saveBatch may run inside a larger SQLite transaction, so a recorded marker only
+    // counts once the new batch status is visible in committed state; a rolled-back
+    // update leaves a stale marker that the persisted status discards here.
+    const markers=this.batchTransitions.get(id);this.batchTransitions.delete(id);
+    const transitioned=markers?[...markers].some(([batchId,status])=>this.store.db.prepare("SELECT json_extract(json,'$.status') status FROM memory_batches WHERE id=?").get(batchId)?.status===status):false;
     // Jobs persisted before the derived counters existed take the current projection as
     // their baseline; only a real batch transition above makes an unchanged refresh a write.
     job.runningBatches??=Number(counts.running);job.pendingBatches??=Number(counts.pending);
