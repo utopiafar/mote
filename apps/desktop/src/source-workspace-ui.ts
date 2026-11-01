@@ -40,12 +40,12 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
  const archived=node('section',undefined,'source-detail-section'),heading=node('div',undefined,'section-heading');heading.append(node('h2',moteText('中央已归档')),button(moteText('查看中央资料'),()=>{archiveStale=true;void api.openCentral('library');}));const archivedRows=node('div',undefined,'source-list source-archived-list');archived.append(heading,archivedRows);root.append(archived);void archivedContent(row,archivedRows,epoch);
  root.append(syncDetails(row,false));
  }
- // Central deletions leave no local signal; once the owner has opened Central
- // from this detail, revalidate the archive once on the next visible update or
- // window focus instead of rereading on every poll.
+ // Central deletions leave no local signal. Each window return rechecks the
+ // archive once, even if a local update rendered it during the browser visit.
+ // Hidden pages defer that read; unrelated source polls never rearm it.
  function revalidateArchive(){const row=rows.find(row=>row.source.id===selected),list=el('source-detail-body').querySelector<HTMLElement>('.source-archived-list');if(!row||!list)return;const fresh=node('div',undefined,'source-list source-archived-list');list.replaceWith(fresh);void archivedContent(row,fresh,revision);}
  function consumeArchiveStale(awake=document.hasFocus()){if(archiveStale&&detailVisible()&&awake){archiveStale=false;revalidateArchive();}}
- document.defaultView?.addEventListener('focus',()=>consumeArchiveStale(true));
+ document.defaultView?.addEventListener('focus',()=>{if(selected)archiveStale=true;consumeArchiveStale(true);});
  function open(id:string){selected=id;renderedContent='';renderedCard='';renderDetail(true);actions.openDetail();}
  function lockContext(value:boolean){contextBusy=value;for(const id of ['source-context-save','source-context-refresh'])el<HTMLButtonElement>(id).disabled=value;}
  function displayContext(value:SourceContextState,preserveDraft=false){contextState=value;if(!preserveDraft)el<HTMLTextAreaElement>('source-context-description').value=value.pending?.description??value.snapshot.description;el('source-context-message').textContent=value.error?moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。'):value.conflict?moteText('中央说明已改变。你的输入已保留，请核对当前说明后再保存。'):value.pending?moteText('说明已保存在本机，按当前发送设置同步。'):moteText('说明独立于原文，用于理解这个来源的资料。');el('source-context-current').hidden=Boolean(value.error)||!value.conflict;el('source-context-current-text').textContent=value.error?'':value.snapshot.description||moteText('尚未填写');el<HTMLButtonElement>('source-context-save').disabled=contextBusy||Boolean(value.error);}

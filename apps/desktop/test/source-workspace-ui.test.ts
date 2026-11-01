@@ -176,6 +176,43 @@ it('keeps the archive revalidation armed while the owner is still in the browser
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(el('source-detail-body').textContent).toContain('Generated current archive');
 });
 
+it('rechecks on return even if a local content update rendered the archive before the Central deletion',async()=>{
+ await flush();
+ const archived={key:'capture:generated-deleted',source:'file' as const,title:'Generated deleted after local update',observedAt:'2026-10-30T01:00:00.000Z',preview:''};
+ vi.mocked(api.sourceArchivedContent).mockResolvedValue({items:[archived]});
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='查看中央资料')!.click();
+ vi.spyOn(document,'hasFocus').mockReturnValue(false);
+ const changed={...structuredClone(source),pending:1,lastAcknowledgedAt:'2026-11-01T05:30:00.000Z'};
+ ui.update([changed]);await flush();
+ expect(el('source-detail-body').textContent).toContain(archived.title);
+ vi.mocked(api.sourceArchivedContent).mockResolvedValue({items:[]});
+ dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);
+ expect(el('source-detail-body').textContent).not.toContain(archived.title);
+ for(let index=0;index<5;index++)ui.update([{...changed,message:`Generated poll ${index}`}]);
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
+});
+
+it('defers a window-return recheck while hidden even without the Central entrypoint',async()=>{
+ await flush();detailPage().hidden=true;
+ dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+ detailPage().hidden=false;vi.spyOn(document,'hasFocus').mockReturnValue(true);
+ ui.update([structuredClone(source)]);await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+});
+
+it('withdraws the displayed archive when the return-time read reports denied authorization',async()=>{
+ await flush();
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[{key:'capture:generated-private',source:'file',title:'Generated private archive',observedAt:'2026-10-30T01:00:00.000Z',preview:''}]});
+ ui.open(id);await flush();expect(el('source-detail-body').textContent).toContain('Generated private archive');
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[],authorizationDenied:true});
+ dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
+ expect(el('source-detail-body').textContent).not.toContain('Generated private archive');
+ expect(el('source-detail-body').textContent).toContain('无法访问采集记录，请检查中央连接权限');
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
+});
+
 it('defers the Central archive revalidation while hidden and folds it into the next visible read',async()=>{
  await flush();
  Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='查看中央资料')!.click();
