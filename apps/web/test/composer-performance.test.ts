@@ -8,6 +8,7 @@ import {unified} from 'unified';
 import {configureLocale} from '@mote/shared/i18n';
 import type {Answer,Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
+import {queryRecovery} from '../src/query-recovery.js';
 
 const when='2026-10-20T00:00:00Z',citation='11111111-1111-4111-8111-111111111111';
 const summary=(id='A')=>({id,title:'Generated '+id,createdAt:when,updatedAt:when,turnCount:1,scope:{},status:'completed'});
@@ -40,19 +41,56 @@ async function fixture(t:any){
  return {dom,d,root,render,input,type,press,click,opened,get renders(){return renders;},locale:(next:'zh-CN'|'en')=>locale=next};
 }
 
-for(const count of [1,20,100])test(`typing 10 updates with ${count} loaded answers adds no AnswerView renders or Markdown parses`,async t=>{
- const f=await fixture(t),api=apiWith(path=>path==='/api/conversations?limit=30'?{items:[summary()]}:path==='/api/conversations/A'?{...summary(),turns:Array.from({length:count},(_,i)=>turn('turn-'+i)),revision:1,nextCursor:null}:{items:[]},'A');
+for(const count of [1,20,100])test(`typing 10 updates with ${count} loaded answers adds no AnswerView renders, Markdown parses or model-selector snapshots`,async t=>{
+ const f=await fixture(t),api=apiWith(path=>path==='/api/conversations?limit=30'?{items:[summary()]}:path==='/api/conversations/A'?{...summary(),turns:Array.from({length:count},(_,i)=>turn('turn-'+i)),revision:1,nextCursor:null}:path.endsWith('/models')?{items:Array.from({length:300},(_,i)=>({id:'generated-model-'+i,name:'Generated model '+i}))}:{items:[]},'A');
+ const modelSettings=resources(api).get('/api/model-settings'),getSnapshot=modelSettings.getSnapshot;let modelSnapshots=0;
+ t.mock.method(modelSettings,'getSnapshot',()=>{modelSnapshots++;return getSnapshot();});
  // Observe the real unified parse method; retain its exact implementation.
  const prototype=Object.getPrototypeOf(unified()),parse=prototype.parse;let parses=0;
  t.mock.method(prototype,'parse',function(this:unknown,...args:unknown[]){parses++;return parse.apply(this,args);});
  await f.render(api);await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
  const loaded=f.d.querySelectorAll('.conversation-turn');assert.equal(loaded.length,count);assert.equal(f.d.querySelectorAll('.answer-table-scroll').length,count);assert.ok(parses>=count,'actual Markdown parser instrumentation is active');
- const rendersBefore=f.renders,parsesBefore=parses,textarea=f.input(),first=loaded[0],citationButton=f.d.querySelector<HTMLButtonElement>('.inline-citation')!;
+ assert.ok(modelSnapshots>0,'real model-selector subscription instrumentation is active');assert.equal(f.d.querySelectorAll('datalist option').length,300);
+ const rendersBefore=f.renders,parsesBefore=parses,snapshotsBefore=modelSnapshots,textarea=f.input(),selector=f.d.querySelector('.model-selector')!,first=loaded[0],citationButton=f.d.querySelector<HTMLButtonElement>('.inline-citation')!;
  textarea.focus();
  for(let i=0;i<10;i++)await f.type('Generated draft '+i);
- const measured={loaded:count,inputUpdates:10,answerRenders:f.renders-rendersBefore,markdownParses:parses-parsesBefore};t.diagnostic(JSON.stringify(measured));
+ const measured={loaded:count,inputUpdates:10,answerRenders:f.renders-rendersBefore,markdownParses:parses-parsesBefore,modelSnapshots:modelSnapshots-snapshotsBefore};t.diagnostic(JSON.stringify(measured));
  assert.equal(f.input(),textarea);assert.equal(f.input().value,'Generated draft 9');assert.equal(first.isConnected,true);assert.equal(citationButton.isConnected,true);assert.equal(f.d.activeElement,textarea);
  assert.equal(f.renders-rendersBefore,0);assert.equal(parses-parsesBefore,0);
+ assert.equal(modelSnapshots-snapshotsBefore,0);assert.ok(f.d.querySelector('.model-selector')===selector,'the model selector stays in its existing DOM position');
+});
+
+test('model selection and override input keep draft edit ordering, live settings updates and the current API owner',async t=>{
+ const f=await fixture(t),posts:any[]=[],poll=deferred();let settings=modelView();
+ settings={...settings,profiles:[...settings.profiles,{...settings.profiles[0]!,id:'generated-second-provider',name:'Generated second provider',readOnly:false}]};
+ const transport=apiWith((path,init)=>{
+  if(path.endsWith('/models'))return{items:[{id:'generated-catalog-model',name:'Generated catalog model'}]};
+  if(path==='/api/query-runs'&&init?.method==='POST'){const body=JSON.parse(String(init.body));posts.push(body);return{id:body.id,status:'running',createdAt:when,updatedAt:when,events:[]};}
+  if(path.startsWith('/api/query-runs/'))return poll.promise;
+  return{items:[]};
+ });
+ const api={...transport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:transport.request(path,init)} as Api;
+ await f.render(api);const selector=f.d.querySelector('.model-selector')!,options=f.d.querySelector<HTMLDetailsElement>('.chat-model-options')!;
+ await act(async()=>{options.open=true;});
+ const inputModel=async(value:string)=>act(async()=>{const field=f.d.querySelector<HTMLInputElement>('[aria-label="临时模型 ID"]')!;field.focus();Object.getOwnPropertyDescriptor(f.dom.window.HTMLInputElement.prototype,'value')!.set!.call(field,value);field.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));});
+ const version=(owner=api)=>queryRecovery.versions(owner).draftVersion;let expected=version();
+ await f.type('Generated selected-model question');assert.equal(version(),++expected);
+ await inputModel('generated-initial-override');assert.equal(version(),++expected);
+ const select=f.d.querySelector<HTMLSelectElement>('[aria-label="本次模型"]')!;
+ await act(async()=>{select.value='generated-second-provider';select.dispatchEvent(new f.dom.window.Event('change',{bubbles:true}));});
+ expected+=2;assert.equal(version(),expected,'profile change and clearing the old override each mark the draft at their original time');
+ assert.equal(f.d.querySelector<HTMLInputElement>('[aria-label="临时模型 ID"]')!.value,'');assert.equal(f.input().value,'Generated selected-model question');
+ await inputModel('generated-final-override');assert.equal(version(),++expected);assert.ok(f.d.querySelector('.model-selector')===selector);
+ settings={...settings,revision:2,profiles:settings.profiles.map(profile=>profile.id==='generated-second-provider'?{...profile,name:'Generated refreshed provider'}:profile)};
+ await act(async()=>resources(api).get('/api/model-settings').invalidate());
+ assert.match(selector.textContent!,/Generated refreshed provider/,'memo still consumes real shared resource updates');assert.equal(version(),expected,'settings refresh does not edit the draft');
+ await act(async()=>f.input().focus());await f.press('Enter');
+ assert.equal(posts.length,1);assert.equal(posts[0].input.question,'Generated selected-model question');assert.equal(posts[0].input.modelProfileId,'generated-second-provider');assert.equal(posts[0].input.modelOverride,'generated-final-override');
+ assert.equal((queryRecovery.get(api) as import('../src/query-recovery.js').OwnedQuery).draftVersion,expected,'admission freezes the version after the model edits');
+ assert.equal(f.d.querySelector<HTMLInputElement>('[aria-label="临时模型 ID"]')!.disabled,true);
+ const nextTransport=apiWith(()=>({items:[]})),next={...nextTransport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:nextTransport.request(path,init)} as Api;
+ await f.render(next);const oldVersion=version(),nextVersion=version(next);await inputModel('generated-next-owner-model');
+ assert.equal(version(next),nextVersion+1,'the stable callback belongs to the new API');assert.equal(version(),oldVersion,'the prior owner receives no new draft edit');
 });
 
 test('composer keeps current controlled input, IME, Shift+Enter, submit, pending draft and terminal timing',async t=>{
