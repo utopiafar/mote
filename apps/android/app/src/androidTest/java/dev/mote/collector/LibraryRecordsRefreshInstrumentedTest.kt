@@ -48,6 +48,17 @@ class LibraryRecordsRefreshInstrumentedTest {
         .put("source", "note").put("capturedAt", at.toString()).put("durationMs", 0).put("ocrText", text)
         .put("privacy", JSONObject().put("excluded", false))
 
+    // Exact current RecordDraftStore default serialization (95 bytes). Retention
+    // may write this empty state even when the generated profile has never edited.
+    private val emptyRecordState = """{"draft":{"text":"","description":"","attachments":[],"origin":{"kind":"manual"}},"records":{}}""".toByteArray(Charsets.UTF_8)
+    private fun requireEmptyRecordDraft(dir: File) {
+        require(!java.nio.file.Files.isSymbolicLink(dir.toPath()))
+        require(!dir.exists() || dir.isDirectory && dir.listFiles()?.all { entry ->
+            entry.name == "record.enc" && entry.isFile && !java.nio.file.Files.isSymbolicLink(entry.toPath()) &&
+                entry.length() == emptyRecordState.size.toLong() && entry.readBytes().contentEquals(emptyRecordState)
+        } == true) { "Generated fixture accepts only the exact default empty record draft" }
+    }
+
     /** Raw preflight never opens/replays the selected queue or deletes a prior origin. */
     private fun emptyStoredCredential(value: String?): Boolean {
         if (value.isNullOrEmpty()) return true
@@ -85,10 +96,11 @@ class LibraryRecordsRefreshInstrumentedTest {
         } else File(root, "queue")
         require(!java.nio.file.Files.isSymbolicLink(queue.toPath()))
         require(!queue.exists() || queue.listFiles()?.all { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) && it.name in setOf(".mote-storage-id", ".mote-local-format") } == true) { "Generated fixture refuses every retained event, stage, checkpoint and unknown queue entry" }
-        for (name in listOf("central-native", "file-archives", "note-draft", "record-draft", "local-sources", "capture-context")) {
+        for (name in listOf("central-native", "file-archives", "note-draft", "local-sources", "capture-context")) {
             val dir = File(root, name)
             require(!java.nio.file.Files.isSymbolicLink(dir.toPath()) && (!dir.exists() || dir.isDirectory && dir.listFiles()?.isEmpty() == true)) { "Generated fixture refuses retained $name" }
         }
+        requireEmptyRecordDraft(File(root, "record-draft"))
         val pending = File(context.filesDir, "record-pending")
         require(!java.nio.file.Files.isSymbolicLink(pending.toPath()) && (!pending.exists() || pending.isDirectory && pending.listFiles()?.isEmpty() == true))
         val dedupe = File(root, "bulk-dedupe")
@@ -226,6 +238,35 @@ class LibraryRecordsRefreshInstrumentedTest {
     @Test fun retainedQueueSentinelRejectsBeforeReplayAndUnarmedCleanup() {
         awaitApplicationRecovery()
         requireEmptyGeneratedProfile()
+        val generated = java.nio.file.Files.createTempDirectory(context.cacheDir.toPath(), "generated-empty-record-guard-").toFile()
+        try {
+            val draft = File(generated, "draft").apply { check(mkdir()) }
+            val record = File(draft, "record.enc")
+            requireEmptyRecordDraft(draft)
+            record.writeBytes(emptyRecordState); requireEmptyRecordDraft(draft)
+            val retained = listOf(
+                JSONObject(String(emptyRecordState, Charsets.UTF_8)).apply { getJSONObject("draft").put("text", "Generated retained text") },
+                JSONObject(String(emptyRecordState, Charsets.UTF_8)).apply { getJSONObject("draft").put("description", "Generated retained description") },
+                JSONObject(String(emptyRecordState, Charsets.UTF_8)).apply { getJSONObject("draft").getJSONArray("attachments").put(JSONObject().put("id", "generated")) },
+                JSONObject(String(emptyRecordState, Charsets.UTF_8)).apply { getJSONObject("draft").put("prepared", JSONObject()) },
+                JSONObject(String(emptyRecordState, Charsets.UTF_8)).put("pendingMedia", org.json.JSONArray()),
+                JSONObject(String(emptyRecordState, Charsets.UTF_8)).apply { getJSONObject("records").put("generated", JSONObject()) },
+                JSONObject(String(emptyRecordState, Charsets.UTF_8)).put("unknown", true)
+            )
+            retained.forEach { value ->
+                val bytes = value.toString().toByteArray(); record.writeBytes(bytes)
+                assertThrows(IllegalArgumentException::class.java) { requireEmptyRecordDraft(draft) }
+                assertArrayEquals("rejection preserves every retained byte", bytes, record.readBytes())
+            }
+            record.writeBytes(emptyRecordState)
+            val unknown = File(draft, "unknown").apply { writeText("Generated retained entry") }
+            assertThrows(IllegalArgumentException::class.java) { requireEmptyRecordDraft(draft) }; check(unknown.delete())
+            check(record.delete())
+            val target = File(generated, "link-target").apply { writeBytes(emptyRecordState) }
+            java.nio.file.Files.createSymbolicLink(record.toPath(), target.toPath())
+            assertThrows(IllegalArgumentException::class.java) { requireEmptyRecordDraft(draft) }
+            assertArrayEquals(emptyRecordState, target.readBytes())
+        } finally { check(generated.deleteRecursively()) }
         val dir = File(context.noBackupFilesDir, "queue"); check(dir.isDirectory)
         val sentinel = File(dir, ".capture-stages.inbox"); check(!sentinel.exists())
         val bytes = "Generated accepted input must survive rejection".toByteArray()
