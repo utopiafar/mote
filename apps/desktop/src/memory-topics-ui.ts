@@ -5,33 +5,44 @@ import {memoryTopicSnapshot} from './memory-topic-identity';
 /** Host labels are untrusted text. Navigation is local; every reopen reads current authority. */
 export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  let generation=0,timer:ReturnType<typeof setTimeout>|undefined,signature='',catalog:TopicDirectory|undefined;
- let detailSnapshot:string|undefined;
+ let detailSnapshot:string|undefined,classificationState:string|undefined,detailTimer:ReturnType<typeof setTimeout>|undefined;
  let treeId='',nodeId:string|undefined,cursors:(string|undefined)[]=[undefined],selected:string|undefined,originButton:HTMLElement|undefined;
  const text=(tag:string,value:string)=>{const node=document.createElement(tag);node.textContent=value;if(tag==='pre')node.className='content-reading-body';return node;};
  const button=(label:string,run:()=>void)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.style.margin='4px 8px 4px 0';b.textContent=label;b.onclick=run;root.append(b);return b;};
  const valid=(directory:TopicDirectory)=>!nodeId||directory.items.some(tree=>tree.id===treeId&&tree.nodes.some(node=>node.id===nodeId));
- function schedule(){if(timer)clearTimeout(timer);if(root.open)timer=setTimeout(()=>void poll(),5000);}
- function clear(){generation++;if(timer)clearTimeout(timer);root.replaceChildren();}
+ function schedule(){if(timer)clearTimeout(timer);if(root.open)timer=setTimeout(()=>void poll(),classificationState==='running'?5000:60000);scheduleDetail();}
+ function scheduleDetail(){if(detailTimer)clearTimeout(detailTimer);if(root.open&&selected!==undefined&&classificationState!=='running')detailTimer=setTimeout(()=>void recheck(),5000);}
+ function clear(){generation++;if(timer)clearTimeout(timer);if(detailTimer)clearTimeout(detailTimer);root.replaceChildren();}
  function heading(){root.append(text('h2',moteText('记忆主题')));button(moteText('关闭详情'),close);}
  function close(){clear();root.close();originButton?.focus();}
- function unavailable(){clear();heading();root.append(text('p',moteText('此主题已不可用，请返回全部记忆。')));button(moteText('全部记忆'),()=>{nodeId=undefined;selected=undefined;cursors=[undefined];void show();});schedule();}
+ function unavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('此主题已不可用，请返回全部记忆。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
  function failed(error:unknown){clear();heading();const message=text('p',error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''):moteText('操作失败'));message.setAttribute('role','alert');root.append(message);button(moteText('重试'),()=>void show());button(moteText('全部记忆'),()=>{nodeId=undefined;selected=undefined;cursors=[undefined];void show();});schedule();}
  function detailUnavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('所选记忆已变化，请刷新后重新选择。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
  async function poll(){
-  const stamp=generation,id=selected,snapshot=detailSnapshot;
+  const stamp=generation,id=selected;
   try{
-   const next=await api.memoryTopics();if(stamp!==generation||!root.open)return;
+   const next=await api.memoryTopics();if(stamp!==generation||!root.open)return;classificationState=next.classification?.state;
    if(!valid(next)){unavailable();return;}
    if(id){
     const current=await api.memoryTopicDetail(id);if(stamp!==generation||!root.open||selected!==id)return;
     const identity=memoryTopicSnapshot(current,id);
-    if(!identity||snapshot!==undefined&&identity!==snapshot){detailUnavailable();return;}
+    if(!identity||detailSnapshot!==undefined&&identity!==detailSnapshot){detailUnavailable();return;}
     if(detailSnapshot===undefined)detailSnapshot=identity;
    }
    if(JSON.stringify(catalog)!==JSON.stringify(next)&&!selected){catalog=next;await list();}else catalog=next;
   }catch(error){if(stamp===generation&&root.open)failed(error);}finally{schedule();}
  }
- async function show(){clear();heading();root.append(text('p',moteText('正在读取…')));const stamp=generation;try{const next=await api.memoryTopics();if(stamp!==generation||!root.open)return;catalog=next;if(!valid(next)){unavailable();return;}if(selected)await detail(selected);else await list();}catch(error){if(stamp===generation&&root.open)failed(error);}finally{schedule();}}
+ async function recheck(){
+  const stamp=generation,id=selected;
+  if(id===undefined)return;
+  try{
+   const current=await api.memoryTopicDetail(id);if(stamp!==generation||!root.open||selected!==id)return;
+   const identity=memoryTopicSnapshot(current,id);
+   if(!identity||detailSnapshot!==undefined&&identity!==detailSnapshot){detailUnavailable();return;}
+   if(detailSnapshot===undefined)detailSnapshot=identity;
+  }catch(error){if(stamp===generation&&root.open)failed(error);}finally{scheduleDetail();}
+ }
+ async function show(){clear();heading();root.append(text('p',moteText('正在读取…')));const stamp=generation;try{const next=await api.memoryTopics();if(stamp!==generation||!root.open)return;catalog=next;classificationState=next.classification?.state;if(!valid(next)){unavailable();return;}if(selected)await detail(selected);else await list();}catch(error){if(stamp===generation&&root.open)failed(error);}finally{schedule();}}
  async function list(){
   if(!catalog)return;clear();heading();const stamp=generation;
   const directory=catalog;const state=directory.classification?.state;
