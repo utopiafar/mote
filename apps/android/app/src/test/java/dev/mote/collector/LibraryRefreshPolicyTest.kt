@@ -36,6 +36,16 @@ class LibraryRefreshPolicyTest {
         assertFalse("a larger burst cannot fit in one page", policy.firstPageCovers(21, 20))
         assertTrue(policy.firstPageCovers(5, 5))
     }
+    @Test fun openingReplayDoesNotReserveAFullRefreshBeforeTheFirstInsertion() {
+        val policy = LibraryRefreshPolicy(10, 65)
+        policy.baseline(10, 65)
+        assertEquals("opening Library replays the consumed snapshot", LibraryRefreshPolicy.Action.NONE, policy.recordsChanged(10, 65))
+        assertEquals(0, policy.insertions)
+        assertEquals("an insertion in that first debounce window stays incremental", LibraryRefreshPolicy.Action.INCREMENTAL, policy.recordsChanged(15, 70))
+        assertEquals(5, policy.insertions)
+        assertEquals("a delayed older snapshot cannot move the baseline back", LibraryRefreshPolicy.Action.NONE, policy.recordsChanged(10, 65))
+        assertEquals(LibraryRefreshPolicy.Action.INCREMENTAL, policy.recordsChanged(16, 71))
+    }
     @Test fun remotePrefixMustReachTheOldCursorNotMerelyOverlapItsHead() {
         val policy = LibraryRefreshPolicy()
         val boundary = LibraryRefreshPolicy.Position("2026-01-01T00:00:00Z", "c")

@@ -113,6 +113,7 @@ internal class LibraryCaptureView(
     /** Every committed record change lands here; only a proven pure-insert burst merges into the loaded pages. */
     fun recordsChanged(revision: Long, count: Int?) {
         when (refreshPolicy.recordsChanged(revision, count)) {
+            LibraryRefreshPolicy.Action.NONE -> return
             LibraryRefreshPolicy.Action.FULL -> pendingFullRefresh = true
             LibraryRefreshPolicy.Action.INCREMENTAL -> pendingInsertions += refreshPolicy.insertions
         }

@@ -306,6 +306,14 @@ class LibraryRecordsRefreshInstrumentedTest {
             scenario.onActivity { activity -> deepCard = views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" } }
             assertNotNull("a visible record row is required before the burst", anchor)
             val anchorY = rowY(requireNotNull(anchor))
+            scenario.onActivity { activity ->
+                val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity) as LibraryCaptureView
+                val snapshot = repository.state.value
+                // Deterministically replay the opening snapshot already consumed
+                // by refresh(), immediately before the actual five-write burst.
+                view.recordsChanged(snapshot.revision.records, snapshot.active?.records)
+                assertFalse("a consumed snapshot must not start an early full-refresh timer", LibraryCaptureView::class.java.getDeclaredField("incrementalScheduled").apply { isAccessible = true }.getBoolean(view))
+            }
             api.delete("/api/captures/${remotes.last()}")
             api.post("/api/fixture/library-request-stats", JSONObject())
             val burstStarted = SystemClock.elapsedRealtime()
@@ -343,6 +351,26 @@ class LibraryRecordsRefreshInstrumentedTest {
                     !shown("Generated library record 51") && fresh.all { rows(it) == 1 } && mixedAdded.all { rows(it) == 1 }
             }
 
+            waitFor("mixed refresh is idle before the bounded denial probe") { readIdle() }
+            api.post("/api/fixture/library-denial", JSONObject().put("mode", "forbidden"))
+            api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
+            try {
+                val probe = UUID.randomUUID().toString()
+                assertEquals(probe, queue.enqueue(note(probe, device, Instant.now(), "Generated denial probe"), null, 64_000_000))
+                waitFor("denied device-view is held before replying") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 }
+                waitFor("local publication does not wait for the pending denial", timeout = 5_000) { rows(probe) == 1 }
+                assertFalse(readIdle())
+                assertTrue("retained Central rows remain until the held denial is delivered", remotes.dropLast(1).all { rows(it) == 1 })
+                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
+                waitFor("fresh denial after local publication withdraws every Central reference") { remotes.all { rows(it) == 0 } && readIdle() && rows(probe) == 1 && shown("中央状态未知") }
+            } finally {
+                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
+                api.post("/api/fixture/library-denial", JSONObject().put("mode", "none"))
+            }
+
+            click("刷新")
+            waitFor("fresh authorization restores the loaded generated Central range") { remotes.dropLast(1).all { rows(it) == 1 } && rows(locals[64]) == 1 && readIdle() }
+
             waitFor("mixed refresh has delivered before holding the next real request") { readIdle() }
             val concurrent = mutableListOf<String>()
             api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
@@ -362,22 +390,6 @@ class LibraryRecordsRefreshInstrumentedTest {
                 }
             } finally { api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release")) }
             waitFor("every concurrent head and deep backfill is present exactly once") { concurrent.all { rows(it) == 1 } && rows(remotes[23]) == 1 && readIdle() }
-
-
-            api.post("/api/fixture/library-denial", JSONObject().put("mode", "forbidden"))
-            api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
-            try {
-                val probe = UUID.randomUUID().toString()
-                assertEquals(probe, queue.enqueue(note(probe, device, Instant.now(), "Generated denial probe"), null, 64_000_000))
-                waitFor("denied device-view is held before replying") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 }
-                waitFor("local publication does not wait for the pending denial", timeout = 5_000) { rows(probe) == 1 }
-                assertFalse(readIdle())
-                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
-                waitFor("fresh denial after local publication withdraws every Central reference") { (remotes + concurrent).all { rows(it) == 0 } && rows(probe) == 1 && shown("中央状态未知") }
-            } finally {
-                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
-                api.post("/api/fixture/library-denial", JSONObject().put("mode", "none"))
-            }
 
 
         }

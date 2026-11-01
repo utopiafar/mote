@@ -11,12 +11,16 @@ package dev.mote.collector
  * every candidate insertion. Backdated or larger bursts otherwise need a full read.
  */
 internal class LibraryRefreshPolicy(revision: Long? = null, count: Int? = null) {
-    enum class Action { INCREMENTAL, FULL }
+    enum class Action { NONE, INCREMENTAL, FULL }
     private var lastRevision: Long? = revision
     private var lastCount: Int? = count
     var insertions: Int = 0; private set
     fun baseline(revision: Long, count: Int?) { lastRevision = revision; lastCount = count }
     fun recordsChanged(revision: Long, count: Int?): Action {
+        insertions = 0
+        // StateFlow replays the snapshot already consumed by refresh(). A replay
+        // is not an invalidation and must not start (or advance) the debounce.
+        if (lastRevision?.let { revision <= it } == true) return Action.NONE
         val previousRevision = lastRevision; val previousCount = lastCount
         lastRevision = revision; lastCount = count
         val mutations = if (previousRevision == null) null else revision - previousRevision
