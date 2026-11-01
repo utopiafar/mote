@@ -1,3 +1,4 @@
+import '@mote/shared/i18n-all';
 import { afterAll, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
