@@ -22,6 +22,35 @@ async function fixture(t:TestContext,transcriptionProvider?:TranscriptionProvide
 const when='2026-10-01T10:00:00.000Z';
 const note=(patch:Record<string,unknown>={})=>({id:randomUUID(),deviceId:'generated-owner-device',deviceName:'Generated device',platform:'android',capturedAt:when,text:'',...patch});
 
+test('context tree and classifier disposers after app close never query the closed Store',async t=>{
+ const {app,store,featureServices,headers}=await fixture(t);await app.ready();
+ const trees=featureServices.contextTrees;
+ const cursor=Number(store.db.prepare('SELECT max(seq) seq FROM operation_changes').get()!.seq)||0;
+ const disposeTree=trees.register({id:'generated.close',version:'1',label:'Generated close',nodes:[{id:'one',label:'One',select:{}}]});
+ const disposeClassifier=trees.automatic!.register({id:'generated.close',version:'1',classify:async()=>({trees:[]})});
+ const changes=await app.inject({url:'/api/operations/changes?since='+cursor,headers});assert.equal(changes.statusCode,200);
+ assert.deepEqual(new Set(changes.json().ids),new Set(['context-trees:registry','context-trees:classifier']),'real runtime registrations must still invalidate catalog readers');
+ await app.close();assert.equal(store.db.isOpen,false);
+ const prepare=t.mock.method(store.db,'prepare',()=>{throw Error('A disposer queried the closed Store');});
+ assert.doesNotThrow(()=>{disposeTree();disposeClassifier();disposeTree();disposeClassifier();});
+ assert.equal(prepare.mock.callCount(),0,'closed disposers must only release their in-memory registrations');
+ prepare.mock.restore();
+});
+
+test('a real app restart without catalog changes preserves operation notifications and logical bytes',async t=>{
+ const dataDir=mkdtempSync(join(tmpdir(),'mote-catalog-restart-'));
+ const config:Config={dataDir,token:'generated-catalog-restart',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,agentTraceEnabled:false};
+ const dependencies={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model in generated restart fixture');},close:async()=>{}}};
+ let node=await buildApp(config,dependencies);
+ t.after(async()=>{try{await node.app.close();}finally{rmSync(dataDir,{recursive:true,force:true});}});
+ await node.app.ready();
+ const snapshot=()=>({bytes:node.store.logicalBytes(),changes:node.store.db.prepare('SELECT * FROM operation_changes ORDER BY seq').all().map(row=>({...row}))});
+ const before=snapshot();
+ assert.equal(before.changes.length,0,'the built-in classifier bootstrap must not publish a change');
+ await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();
+ assert.deepEqual(snapshot(),before,'bootstrap and teardown of the same built-in classifier are not catalog changes');
+});
+
 test('attachment-only record survives resumable binary transfer and ACK retry; deleted original leaves its material',async t=>{
  const {app,store,materials,materialOrganizer,headers}=await fixture(t);
  const source={id:'generated-note-attachments',name:'Generated attachments',kind:'local-files',deviceId:'generated-owner-device',platform:'android',retention:'archive'};
