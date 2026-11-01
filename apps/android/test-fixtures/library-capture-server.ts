@@ -33,6 +33,10 @@ value.app.addHook('onRequest',async(req,reply)=>{
   if(req.url==='/api/library/source-view'&&delayMs)await new Promise(resolve=>setTimeout(resolve,delayMs));
   if(denial&&['/api/library/device-view','/api/library/source-view'].includes(req.url))return reply.code(denial.status).send({error:denial.code});
 });
+value.app.addHook('onResponse',async(req,reply)=>{
+  if(['/api/connections/self','/api/library/device-view','/api/library/source-view'].includes(req.url))
+    console.log(JSON.stringify({event:'generated-library-response',path:req.url,status:reply.statusCode}));
+});
 value.app.post('/api/fixture/library-request-stats',async()=>{deviceViewRequests=0;selfRequests=0;centralRequests=0;return {deviceView:0,connectionsSelf:0,centralRequests:0};});
 value.app.get('/api/fixture/library-request-stats',async()=>({deviceView:deviceViewRequests,connectionsSelf:selfRequests,centralRequests}));
 value.app.post('/api/fixture/library-device-hold',async req=>{

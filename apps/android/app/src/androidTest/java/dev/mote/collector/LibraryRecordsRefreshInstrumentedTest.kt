@@ -305,7 +305,13 @@ class LibraryRecordsRefreshInstrumentedTest {
         val repository = LocalStateRepository.get(context); repository.refresh()
         waitFor("paired generated inventory before opening the library") { repository.state.value.let { it.error == null && it.active?.records == 65 } }
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
+            scenario.onActivity { activity ->
+                val controls = views(activity.window.decorView)
+                if (controls.single { it.tag == "library-filters:content" }.visibility != View.VISIBLE)
+                    controls.single { it.tag == "library-filters" }.performClick()
+            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
             fun shown(text: String): Boolean { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains(text) } }; return found }
             fun rows(id: String): Int { var count = 0; scenario.onActivity { activity -> count = views(activity.window.decorView).count { it.isShown && it.tag == "library-record:$id" } }; return count }
             fun click(label: String) { scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text == MoteI18n.text(label) && it.isClickable }.performClick() } }
@@ -325,8 +331,21 @@ class LibraryRecordsRefreshInstrumentedTest {
                 }
                 return value
             }
+            fun busyDeadlinePending(): Boolean {
+                var value = false
+                scenario.onActivity { activity ->
+                    val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
+                    value = LibraryCaptureView::class.java.getDeclaredField("incrementalPending").apply { isAccessible = true }.getBoolean(view)
+                }
+                return value
+            }
+            var stoppedActivity: MainActivity? = null
+            var stoppedTaskId = -1
+            var stoppedIdentity: Pair<String, Long>? = null
             fun stopPastRecordDeadline() {
                 waitFor("the real records change has scheduled its debounce") { scheduled() }
+                scenario.onActivity { stoppedActivity = it; stoppedTaskId = it.taskId }
+                stoppedIdentity = CentralAccess.resolve(context).let { it.server to it.generation }
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 waitFor("the actual Activity window is hidden") {
                     var hidden = false
@@ -335,6 +354,16 @@ class LibraryRecordsRefreshInstrumentedTest {
                 }
                 waitFor("the production debounce deadline is consumed while hidden") { !scheduled() }
                 assertTrue("no Library read begins while its Activity is stopped", readIdle())
+            }
+            fun resumeStoppedTask() {
+                // The platform invoker's cover Activity alone does not bring the
+                // original task forward. Use the same real task, not recreation.
+                context.getSystemService(android.app.ActivityManager::class.java).appTasks.single { it.taskInfo.taskId == stoppedTaskId }.moveToFront()
+                waitFor("the OS resumes the original Library task", timeout = 10_000) {
+                    runCatching { scenario.state }.getOrNull() == androidx.lifecycle.Lifecycle.State.RESUMED
+                }
+                scenario.onActivity { assertSame(stoppedActivity, it); assertEquals(stoppedTaskId, it.taskId) }
+                assertEquals("return does not change the authorization generation", stoppedIdentity, CentralAccess.resolve(context).let { it.server to it.generation })
             }
             fun anchorRowId(): String? {
                 var tag: String? = null
@@ -351,7 +380,20 @@ class LibraryRecordsRefreshInstrumentedTest {
                 }
                 return y
             }
-            waitFor("first page") { rows(locals[0]) == 1 && remotes.take(20).all { rows(it) == 1 } }
+            fun firstPageDiagnostic(): String {
+                var detail = ""
+                scenario.onActivity { activity ->
+                    val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
+                    val projection = LibraryCaptureView::class.java.getDeclaredField("projection").apply { isAccessible = true }.get(view) as LibraryCaptureProjection
+                    val selected = LibraryCaptureView::class.java.getDeclaredField("location").apply { isAccessible = true }.get(view)
+                    val status = LibraryCaptureView::class.java.getDeclaredField("status").apply { isAccessible = true }.get(view) as TextView
+                    val page = MainActivity::class.java.getDeclaredField("currentPage").apply { isAccessible = true }.get(activity)
+                    detail = "page=$page location=$selected local=${projection.localIdentities().size} remote=${projection.remoteVersions(server).size} window=${activity.window.decorView.windowVisibility} status=${status.text.take(500)}"
+                }
+                return detail
+            }
+            try { waitFor("first page") { rows(locals[0]) == 1 && remotes.take(20).all { rows(it) == 1 } } }
+            catch (failure: IllegalStateException) { throw AssertionError("first page: ${runCatching(::firstPageDiagnostic).getOrDefault("diagnostic unavailable")}", failure) }
             click("加载更多"); waitFor("second page") { rows(locals[39]) == 1 && remotes.all { rows(it) == 1 } }
             click("加载更多"); waitFor("third page") { rows(locals[59]) == 1 }
             waitFor("all accepted page work has reached its production UI delivery") { readIdle() }
@@ -395,13 +437,40 @@ class LibraryRecordsRefreshInstrumentedTest {
             assertEquals("the owner-scope check is cached per connection generation", 0, stats.getInt("connectionsSelf"))
             click("加载更多"); waitFor("pagination continues after the cursor") { rows(locals[64]) == 1 }
 
+            waitFor("pagination is idle before holding the in-flight insertion read") { readIdle() }
+            var busyDeepCard: View? = null
+            scenario.onActivity { activity -> busyDeepCard = views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" } }
+            val busyIds = (0 until 3).map { UUID.randomUUID().toString() }
+            api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
+            var newerDeadline = 0L
+            try {
+                queue.enqueue(note(busyIds[0], device, Instant.now(), "Generated in-flight insert"), null, 64_000_000)
+                waitFor("the real incremental HTTP read is held") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 && rows(busyIds[0]) == 1 }
+                queue.enqueue(note(busyIds[1], device, Instant.now(), "Generated busy-deadline insert"), null, 64_000_000)
+                waitFor("the first production debounce expires against the busy read") { busyDeadlinePending() && !scheduled() }
+                queue.enqueue(note(busyIds[2], device, Instant.now(), "Generated younger-deadline insert"), null, 64_000_000)
+                waitFor("the second insertion has queued its real younger timer") { scheduled() }
+                newerDeadline = SystemClock.uptimeMillis() + LibraryRefreshPolicy.DEBOUNCE_MILLIS
+            } finally { api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release")) }
+            waitFor("busy completion drains both pending insertions before the younger timer", timeout = LibraryRefreshPolicy.DEBOUNCE_MILLIS) { busyIds.all { rows(it) == 1 } && readIdle() }
+            assertTrue("the controlled drain precedes the younger deadline", SystemClock.uptimeMillis() < newerDeadline)
+            assertFalse("draining the burst retires its younger queued timer", scheduled())
+            val drainedHttp = api.get("/api/fixture/library-request-stats").getInt("centralRequests")
+            waitFor("the retired younger timer's original deadline passes") { SystemClock.uptimeMillis() > newerDeadline }
+            instrumentation.waitForIdleSync()
+            assertTrue("an empty retired tick cannot start another read", readIdle())
+            assertEquals("no extra HTTP/full reload after consuming the busy burst", drainedHttp, api.get("/api/fixture/library-request-stats").getInt("centralRequests"))
+            scenario.onActivity { activity -> assertSame("the deep card survives past the younger deadline", busyDeepCard, views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" }) }
+            queue.withDeferredIndexWrites { busyIds.forEach { queue.acknowledge(it) } }
+            waitFor("remove only the three generated timing records before the later bounded cases") { busyIds.all { rows(it) == 0 } && rows(locals[64]) == 1 && readIdle() }
+
             waitFor("all page reads finish before the stopped insert") { readIdle() }
             val stoppedInsert = UUID.randomUUID().toString()
             val beforeStop = api.get("/api/fixture/library-request-stats").getInt("centralRequests")
             queue.enqueue(note(stoppedInsert, device, Instant.now(), "Generated stopped insert"), null, 64_000_000)
             stopPastRecordDeadline()
             assertEquals("the hidden insert tick starts no HTTP", beforeStop, api.get("/api/fixture/library-request-stats").getInt("centralRequests"))
-            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+            resumeStoppedTask()
             waitFor("same connection resumes the pending insert with no additional writes") { rows(stoppedInsert) == 1 && rows(locals[50]) == 1 && readIdle() }
 
             val mixedAdded = mutableListOf<String>()
@@ -418,7 +487,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             }
             stopPastRecordDeadline()
             assertEquals("the hidden destructive tick starts no HTTP", beforeMixedStop, api.get("/api/fixture/library-request-stats").getInt("centralRequests"))
-            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+            resumeStoppedTask()
             waitFor("a net-positive mixed batch removes deep deleted content and replaces the deep preview") {
                 rows(locals[50]) == 0 && rows(locals[51]) == 1 && shown("Generated replaced deep preview") &&
                     !shown("Generated library record 51") && fresh.all { rows(it) == 1 } && mixedAdded.all { rows(it) == 1 }

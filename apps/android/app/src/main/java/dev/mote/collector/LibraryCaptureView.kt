@@ -120,7 +120,7 @@ internal class LibraryCaptureView(
         if (session != (current.server to current.generation)) refresh()
         else if (!incrementalScheduled && hasPendingRecords()) waitForRecordsVisibility()
     }
-    private fun hasPendingRecords() = pendingFullRefresh || pendingInsertions > 0 || incrementalPending
+    private fun hasPendingRecords() = pendingFullRefresh || pendingInsertions > 0
     private fun waitForRecordsVisibility() {
         // onResume can precede window visibility. Consume the invalidation at
         // the next visible frame, without background polling or hidden reads.
@@ -146,6 +146,7 @@ internal class LibraryCaptureView(
     }
     private fun cancelIncremental() { incrementalScheduled = false; incrementalPending = false; pendingFullRefresh = false; pendingInsertions = 0; uiHandler.removeCallbacks(incrementalTick); stopWaitingForVisibility() }
     private fun incrementalRefresh() {
+        if (!hasPendingRecords()) { incrementalPending = false; stopWaitingForVisibility(); return }
         if (!host.isShown || host.windowVisibility != android.view.View.VISIBLE) {
             if (hasPendingRecords()) waitForRecordsVisibility()
             return
@@ -155,6 +156,11 @@ internal class LibraryCaptureView(
         if (task.busy) { incrementalPending = true; return }
         if (pendingFullRefresh || pendingInsertions !in 1..20) { refresh(); return }
         if (projection.scopedIdentities(current.server).size + pendingInsertions > 100) { refresh(); return }
+        // A busy completion can drain a burst before its newer debounce tick.
+        // Retire that tick before consuming, so it cannot later reload an empty
+        // batch. A subsequent mutation starts its own fresh five-second window.
+        incrementalScheduled = false; uiHandler.removeCallbacks(incrementalTick)
+        incrementalPending = false; stopWaitingForVisibility()
         if (pages > 0) { val saved = saveState(); anchor = saved.getString("anchor"); anchorTop = saved.getInt("anchorTop") }
         val insertions = pendingInsertions; pendingInsertions = 0
         incrementalLoad(insertions)
