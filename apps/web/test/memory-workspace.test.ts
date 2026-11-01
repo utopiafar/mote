@@ -5,11 +5,12 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import {ManualMemoryWorkspace,type MemoryWorkLaunch} from '../src/ManualMemoryWorkspace';
-import {MemoryDetailPage} from '../src/Memories';
+import {MemoryDetailPage,Memories} from '../src/Memories';
 import {MemoryWorkChoices} from '../src/MemoryWorkChoices';
 import type {MemoryJob} from '../src/MemoryProgress';
 import {ApiError,type Api} from '../src/api';
 import {resources} from '../src/resource-cache';
+import {useResource} from '../src/useResource';
 import {modelView} from './fixtures/model-settings';
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',at='2026-10-29T00:00:00.000Z',recipe={id:'mote.personal-memory',version:'2'};
 const choice={kind:'capture' as const,ref:'capture:'+id,title:'Generated original',revision:'pin-one'};
@@ -75,4 +76,104 @@ test('a completed integration opened from Search returns to the selected Memory 
 test('a selected capture without a current opaque pin stays disabled and cannot admit a request',async t=>{
  const{root,d}=await fixture(t),seen:Seen[]=[],api=owner(path=>path.startsWith('/api/capture-browser/')?{id,source:'note',windowTitle:'Generated missing pin',ocrText:'Literal generated text'}:undefined,seen);
  await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api))));const button=[...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='开始提取')!;assert.equal(button.disabled,true);await act(async()=>button.click());assert.equal(seen.some(read=>read.method==='POST'),false);
+});
+test('a hidden integration view never polls memory settings and resumes exactly while visible',async t=>{
+ const{root,d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const seen:Seen[]=[],api=owner(undefined,seen),reads=()=>seen.filter(read=>read.path==='/api/memory-settings'&&read.method==='GET').length;
+ await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api,{kind:'integrate'}))));
+ assert.equal(reads(),0,'a hidden integration cannot initiate even its first settings read');
+ await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ for(let step=0;step<20;step++)await act(async()=>t.mock.timers.tick(3000));
+ assert.equal(reads(),0,'hidden subscriptions cannot read on invalidation or over sixty seconds');
+ await click(d,'查看最近的处理');assert.equal(reads(),1,'activation reads immediately');const visible=reads();
+ for(let step=0;step<20;step++)await act(async()=>t.mock.timers.tick(3000));
+ assert.equal(reads()-visible,20,'the visible integration view polls once every three seconds over sixty seconds');
+ await click(d,'← 返回');const folded=reads();
+ await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ for(let step=0;step<20;step++)await act(async()=>t.mock.timers.tick(3000));
+ assert.equal(reads(),folded,'leaving the view stops all its active reads again without losing mounted state');
+});
+
+test('integration activates with a fresh shared read without treating another subscriber as hidden polling',async t=>{
+ const{root,d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const seen:Seen[]=[],reads=()=>seen.filter(read=>read.path==='/api/memory-settings').length;
+ const api=owner(path=>path==='/api/memory-settings'?{settings:{consolidation:{enabled:false,maxItems:5}},extensions:[],marker:reads()}:undefined,seen);
+ function SharedReader(){const state=useResource<{marker:number}>(api,'/api/memory-settings');return React.createElement('output',{'data-shared-settings':true},state.data?.marker);}
+ const render=(shared:boolean)=>act(async()=>root.render(React.createElement(React.Fragment,null,shared&&React.createElement(SharedReader,{key:'shared'}),React.createElement(ManualMemoryWorkspace,{...props(api,{kind:'integrate'}),key:'work'}))));
+ await render(true);assert.equal(reads(),1,'the other reader owns the initial request');
+ await render(false);await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.equal(reads(),1,'after the other subscriber leaves, the hidden integration is not a reader');
+ await render(true);const cached=reads();assert.equal(cached,2);
+ await click(d,'查看最近的处理');assert.equal(reads(),cached+1,'an already observed, warm cache still gets a fresh activation read');
+ await act(async()=>t.mock.timers.tick(3000));assert.equal(reads(),cached+2);
+ await click(d,'← 返回');const hidden=reads();
+ await act(async()=>t.mock.timers.tick(60000));assert.equal(reads(),hidden,'the remaining shared reader has no integration polling timer');
+ await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.equal(reads(),hidden+1,'the other visible subscriber can still revalidate its shared resource');
+ assert.equal(d.querySelector('[data-shared-settings]')!.textContent,String(reads()));
+});
+
+test('closing the actual Memories integration workspace stops reads while retaining recipe draft and action error',async t=>{
+ const{root,d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const seen:Seen[]=[],api=owner((path,init)=>{
+  if(path.startsWith('/api/memories?'))return{items:[memory(id)],nextCursor:null};
+  if(path==='/api/memory-integration-recipes')return{items:[{id:'generated.first',version:'1',available:true},{id:'generated.second',version:'2',available:true}]};
+  if(path==='/api/memory-integrations'&&init?.method==='POST')throw Error('Generated integration action failed');
+ },seen),reads=()=>seen.filter(read=>read.path==='/api/memory-settings').length;
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());await click(d,'更多');await click(d,'从这条记忆开始整理');
+ const panel=d.querySelector('#manual-memory-integration')!,select=panel.querySelector<HTMLSelectElement>('select')!;
+ await act(async()=>{select.value='generated.second@2';select.dispatchEvent(new d.defaultView!.Event('change',{bubbles:true}));});
+ await click(d,'开始整理',panel);assert.match(panel.textContent!,/Generated integration action failed/);
+ await click(d,'← 返回');assert.equal(d.querySelector('.memory-work-stage')!.hasAttribute('hidden'),true);
+ assert.equal(d.querySelector('#manual-memory-integration'),panel,'the hidden work page retains the actual integration component');
+ const hidden=reads();await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ for(let step=0;step<20;step++)await act(async()=>t.mock.timers.tick(3000));
+ assert.equal(reads(),hidden,'closing the outer workspace also stops integration reads for sixty seconds');
+ await click(d,'从这条记忆开始整理');assert.equal(reads(),hidden+1);
+ assert.equal(d.querySelector('#manual-memory-integration'),panel);
+ assert.equal(panel.querySelector('select')!.value,'generated.second@2');
+ assert.match(panel.textContent!,/Generated integration action failed/,'visibility alone does not discard the existing action error');
+});
+
+test('hiding or switching owner aborts integration reads and late old results cannot cross the API generation',async t=>{
+ const{root,d}=await fixture(t);let finish!:(value:unknown)=>void,oldSignal:AbortSignal|undefined;
+ const oldSeen:Seen[]=[],old=owner((path,init)=>path==='/api/memory-settings'?(oldSignal=init?.signal as AbortSignal,new Promise(resolve=>finish=resolve)):undefined,oldSeen);
+ await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,{...props(old,{kind:'integrate',candidate:memory(id)}),active:true})));
+ assert.ok(oldSignal);assert.equal(oldSignal.aborted,false);
+ await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,{...props(old,{kind:'integrate',candidate:memory(id)}),active:false})));
+ assert.equal(oldSignal.aborted,true,'the hidden integration releases its last subscription');
+ let forbidden=true;const nextId='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',next=owner(path=>{if(path==='/api/memory-settings'&&forbidden)throw new ApiError('Generated next-owner denial',403);});
+ await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,{...props(next,{kind:'integrate',candidate:memory(nextId)}),active:true})));
+ await act(async()=>finish({settings:{consolidation:{enabled:false,maxItems:5}},extensions:[{id:'consolidation',status:'running',active:{id:'old-private-run',manual:true,items:1}}]}));
+ assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/Generated next-owner denial/);
+ assert.doesNotMatch(d.querySelector('.memory-workspace-final')!.textContent!,/Generated Memory a|old-private-run/);
+ assert.equal([...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='开始整理')!.disabled,true);
+ forbidden=false;await act(async()=>resources(next).invalidate(path=>path==='/api/memory-settings'));
+ assert.equal([...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='开始整理')!.disabled,false);
+ assert.equal(oldSeen.some(read=>read.method==='POST'),false);
+});
+
+test('a candidate revalidation completed after hiding cannot submit an integration',async t=>{
+ const{root,d}=await fixture(t);let finish!:(value:unknown)=>void;
+ const seen:Seen[]=[],api=owner(path=>path==='/api/memories/'+id?new Promise(resolve=>finish=resolve):undefined,seen);
+ const render=(active:boolean)=>act(async()=>root.render(React.createElement(ManualMemoryWorkspace,{...props(api,{kind:'integrate',candidate:memory(id)}),active})));
+ await render(true);await click(d,'开始整理');await render(false);
+ await act(async()=>finish(memory(id)));
+ assert.equal(seen.some(read=>read.method==='POST'),false,'a hidden candidate check cannot become a late admission');
+});
+
+test('an admitted integration receipt can arrive while hidden without initiating a settings read',async t=>{
+ const{root,d}=await fixture(t);let finish!:(value:unknown)=>void,completed=false;
+ const seen:Seen[]=[],api=owner((path,init)=>{
+  if(path==='/api/memory-integrations'&&init?.method==='POST')return new Promise(resolve=>finish=resolve);
+  if(path==='/api/memory-settings')return{settings:{consolidation:{enabled:false,maxItems:5}},extensions:completed?[{id:'consolidation',status:'waiting_for_increment',lastRun:{id:'generated-late-admission',completedAt:Date.parse(at)}}]:[]};
+ },seen),reads=()=>seen.filter(read=>read.path==='/api/memory-settings').length;
+ const render=(active:boolean)=>act(async()=>root.render(React.createElement(ManualMemoryWorkspace,{...props(api,{kind:'integrate',candidate:memory(id)}),active})));
+ await render(true);await click(d,'开始整理');await render(false);const hidden=reads();
+ completed=true;await act(async()=>finish({id:'generated-late-admission'}));
+ assert.equal(reads(),hidden,'the admitted action completion does not refresh an inactive resource');
+ await render(true);assert.equal(reads(),hidden+1);
+ assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/本次手动整理已完成/);
+ assert.equal(seen.filter(read=>read.method==='POST').length,1);
 });

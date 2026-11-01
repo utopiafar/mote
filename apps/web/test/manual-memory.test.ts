@@ -11,6 +11,8 @@ import type {Api} from '../src/api.js';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import {failureMessage} from '../src/failure-message.js';
 import {captureDateRange,localDateInput} from '../src/capture-presentation';
+import {resources} from '../src/resource-cache';
+import {webFeatures} from '../src/features/registry';
 
 async function fixture(t:import('node:test').TestContext){
   const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();
@@ -186,4 +188,63 @@ test('proposed status filters the current server page and resets its previous cu
  const selected=new URL('http://localhost'+paths.at(-1)).searchParams;assert.equal(selected.get('status'),'proposed');assert.equal(selected.has('cursor'),false);
  assert.equal(d.querySelector('.workspace-list-heading h2')?.textContent,'待重新处理');assert.match(d.body.textContent!,/当前筛选下没有匹配/);assert.equal(d.querySelector('#memory-search')!.closest('[hidden]'),null);
  await click('待重新处理 ×');assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.has('status'),false);
+});
+
+test('closed developer tools never mount an execution reader and opening starts its five-second reads',async t=>{
+ const{root,d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const paths:string[]=[],api={request:async(path:string)=>{
+  paths.push(path);
+  if(path==='/api/model-settings')return modelView();
+  if(path==='/api/execution-settings')return{queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};
+  if(path.startsWith('/api/operations/changes'))return{ids:[],cursor:0,hasMore:false,reset:false};
+  return{items:[],nextCursor:null};
+ }} as Api,reads=()=>paths.filter(path=>path==='/api/execution-settings').length;
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
+ assert.equal(reads(),0);
+ for(let step=0;step<12;step++)await act(async()=>t.mock.timers.tick(5000));
+ assert.equal(reads(),0,'a closed developer panel performs no execution reads over sixty seconds');
+ const toggle=()=>act(async()=>[...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='历史与管理')!.click());
+ await toggle();assert.equal(reads(),1,'opening the actual developer panel reads immediately');
+ assert.equal(d.querySelector<HTMLDetailsElement>('.memory-developer-tools')!.open,true);
+ await act(async()=>t.mock.timers.tick(5000));assert.equal(reads(),2);
+ await toggle();const closed=reads();
+ await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));
+ for(let step=0;step<12;step++)await act(async()=>t.mock.timers.tick(5000));
+ assert.equal(reads(),closed,'closing unmounts the reader, including change-triggered reads');
+});
+
+test('ten actual correction inputs reuse detail JSON and a changed detail updates the consumed formatted value',async t=>{
+ const{root,d}=await fixture(t),id='generated-detail-json';
+ const initial={id,title:'Generated JSON detail',statement:'Generated initial statement',status:'published',version:1,createdAt:'2026-10-01T00:00:00Z',evidence:[],evidenceIds:[]};
+ const updated={...initial,title:'Generated updated JSON detail',statement:'Generated updated statement',version:2};let detail=initial;
+ const stringify=JSON.stringify,serialized:{value:unknown;replacer:unknown;space:unknown}[]=[];
+ t.mock.method(JSON,'stringify',((value:unknown,replacer?:any,space?:any)=>{if(value===initial||value===updated)serialized.push({value,replacer,space});return stringify(value,replacer,space);}) as typeof JSON.stringify);
+ const registration=await webFeatures.install({id:'generated.memo-consumer',version:'1',components:[]},[{surface:'panel',entry:{id:'generated.memo-consumer',kind:'mote.memory',schemaVersion:1,representation:'saved-record',render:({value})=>React.createElement('pre',{'data-detail-json':true},value.text)}}]);
+ t.after(()=>registration.dispose());
+ const api={request:async(path:string)=>{
+  if(path==='/api/model-settings')return modelView();
+  if(path.startsWith('/api/memories/'+id))return detail;
+  if(path.startsWith('/api/memories?'))return{items:[detail],nextCursor:null};
+  if(path.startsWith('/api/operations/changes'))return{ids:[],cursor:0,hasMore:false,reset:false};
+  return{items:[],nextCursor:null};
+ }} as Api;
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='更多')!.click());
+ assert.equal(d.querySelector('[data-detail-json]')!.textContent,stringify(initial,null,2));
+ assert.equal(serialized.length,1);
+ await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='纠正这条记忆')!.click());
+ const input=d.querySelector<HTMLTextAreaElement>('.memory-correction textarea')!;
+ await act(async()=>input.focus());
+ for(let index=0;index<10;index++)await act(async()=>{
+  Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'Generated correction '+index);
+  input.dispatchEvent(new window.Event('input',{bubbles:true}));input.dispatchEvent(new window.Event('change',{bubbles:true}));input.dispatchEvent(new window.KeyboardEvent('keyup',{bubbles:true,key:'x'}));
+ });
+ assert.equal([...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='保存纠正')!.disabled,false,'real correction state received the input events');
+ assert.equal(serialized.length,1,'typing ten times does not serialize an unchanged detail');
+ detail=updated;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+id)));
+ assert.equal(d.querySelector('[data-detail-json]')!.textContent,stringify(updated,null,2));
+ assert.equal(serialized.length,2,'a changed detail is serialized once for its real panel consumer');
+ assert.ok(serialized.every(call=>call.replacer===null&&call.space===2),'the original JSON format is retained');
+ assert.equal(input.value,'Generated correction 9','refreshing detail does not discard the correction draft');
 });
