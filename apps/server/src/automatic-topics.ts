@@ -44,19 +44,12 @@ export class AutomaticTopics {
     try{
       const result:Memory[]=[];
       for(const id of ids){
-        const memory=await this.readPinned(id,snapshot);
+        const memory=await this.reader.memoryAsync(formatEvidenceRef('memory',id),{},false,snapshot);
         if(!memory||memory.status!=='published'||memory.supersededBy)throw new StoreError('Topic input is no longer current',409);
         result.push(memory);
       }
       this.assertInputs(result);return result;
     }finally{snapshot?.release();}
-  }
-  private async readPinned(id:string,snapshot?:MemoryReadSnapshot){
-    try{return await this.reader.memoryAsync(formatEvidenceRef('memory',id),{},false,snapshot);}
-    catch(error){
-      if(snapshot&&error instanceof StoreError&&error.statusCode===502&&error.message==='The bound Memory body does not match its pinned revision')throw new StoreError('Topic input is no longer current',409);
-      throw error;
-    }
   }
   private assertInputs(memories:readonly Memory[]){
     this.reader.assertMemoryReadable(memories);
