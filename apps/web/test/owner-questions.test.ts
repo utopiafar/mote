@@ -32,6 +32,10 @@ const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButton
 const send=(d:Document)=>d.querySelector<HTMLButtonElement>('button[aria-label="回答并继续"]')!;
 async function type(d:Document,w:JSDOM['window'],text:string){await act(async()=>{const input=d.querySelector('textarea')!;Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype,'value')!.set!.call(input,text);input.dispatchEvent(new w.Event('input',{bubbles:true}));});}
 function deferred(){let resolve!:(value:any)=>void;return {promise:new Promise<any>(done=>resolve=done),resolve:(value:any)=>resolve(value)};}
+function questionClock(t:import('node:test').TestContext,d:Document){
+ let hidden=false;Object.defineProperty(d,'hidden',{get:()=>hidden,configurable:true});t.mock.timers.enable({apis:['setTimeout']});
+ return {tick:async(ms=0)=>act(async()=>{t.mock.timers.tick(ms);await new Promise<void>(resolve=>setImmediate(resolve));}),visibility:async(value:boolean)=>{hidden=value;await act(async()=>{d.dispatchEvent(new d.defaultView!.Event('visibilitychange'));});}};
+}
 
 test('owner question links keep scope and identifiers separate from answer interpretation',()=>{
  const id='generated question & choice=owner';assert.equal(readOwnerQuestion(ownerQuestionRoute(id)),id);
@@ -278,4 +282,86 @@ test('question A then B returns consume their own scroll ticket once and later l
  const view=(id='')=>React.createElement(OwnerQuestionWorkspace,{api,id,onOpen:()=>{}}),list=ownerQuestionRoute();
  const trip=async(question:OwnerQuestion,y:number)=>{w.history.replaceState(null,'',list);await act(async()=>root.render(view()));(w as any).scrollY=y;await act(async()=>{const link=[...d.querySelectorAll<HTMLAnchorElement>('.owner-question-history a')].find(link=>link.getAttribute('href')===ownerQuestionRoute(question.id))!;link.focus();link.click();w.history.replaceState(null,'',ownerQuestionRoute(question.id));root.render(view(question.id));});await act(async()=>{d.querySelector<HTMLAnchorElement>('.owner-question-workspace-header a')!.click();w.history.replaceState(null,'',list);root.render(view());});await act(async()=>new Promise(resolve=>setTimeout(resolve,25)));assert.equal(scrolls.at(-1),y);assert.equal((d.activeElement as HTMLAnchorElement).getAttribute('href'),ownerQuestionRoute(question.id));};
  await trip(generated,100);await trip(other,500);const count=scrolls.length;(w as any).scrollY=700;await act(async()=>resources(api).get(ownerQuestionListPath({},undefined,'open,deferred')).refresh());await act(async()=>new Promise(resolve=>setTimeout(resolve,25)));assert.equal(scrolls.length,count,'a fresh poll cannot replay an already consumed return ticket');
+});
+
+test('foreground shared question lists discover a remote question once after hidden 60s and keep the 5s fallback',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d),reads:string[]=[];let items:OwnerQuestion[]=[];
+ const api={request:async(path:string)=>{reads.push(path);return {items,nextCursor:null};}} as Api;
+ await act(async()=>root.render(React.createElement(React.Fragment,null,...[1,2].map(key=>React.createElement(OwnerQuestionLinks,{key,api,history:true,materialId:'generated-material'})))));
+ assert.equal(reads.length,1);assert.equal(d.querySelectorAll('.owner-question-history a').length,0);
+ await clock.visibility(true);items=[generated];await clock.tick(60000);assert.equal(reads.length,1,'hidden timers do not read lists');
+ await clock.visibility(false);await clock.visibility(false);await clock.tick();assert.equal(reads.length,2,'both observers share one foreground read');assert.equal(d.querySelectorAll('.owner-question-history a').length,2);
+ await clock.tick(4999);assert.equal(reads.length,2);await clock.tick(1);assert.equal(reads.length,3,'visible empty/open lists retain 5s safety reads');
+ assert.ok(reads.every(path=>path===ownerQuestionListPath({materialId:'generated-material'})));
+});
+
+test('foreground terminal question recheck observes remote obsolescence and retains 3s polling',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d),reads:string[]=[];let current:OwnerQuestion={...generated,state:'closed',revision:2};
+ const api={request:async(path:string)=>{reads.push(path);return current;}} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api,id:generated.id,onOpen:()=>{}})));assert.ok(button(d,'我有新信息了'));
+ await clock.visibility(true);await clock.tick(60000);assert.equal(reads.length,1);current={...current,state:'obsolete',revision:3};
+ await clock.visibility(false);await clock.tick();assert.equal(reads.length,2);assert.match(d.body.textContent!,/这个问题已失效/);assert.equal(Boolean(button(d,'我有新信息了')),false);assert.equal(Boolean(d.querySelector('textarea')),false);
+ await clock.tick(2999);assert.equal(reads.length,2);await clock.tick(1);assert.equal(reads.length,3,'terminal questions still discover remote state changes');
+});
+
+for(const status of [401,403,404])test('foreground question '+status+' clears references and remembered draft before authorized recovery',async t=>{
+ const {root,d,w}=await fixture(t),clock=questionClock(t,d);let denied=false;
+ const api={request:async()=>{if(denied)throw new ApiError('Generated revoked question',status);return generated;}} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api,id:generated.id,onOpen:()=>{}})));
+ await act(async()=>button(d,'我是讲述者').click());await type(d,w,'Generated private draft');assert.match(d.body.textContent!,/说话人1/);
+ await clock.visibility(true);denied=true;await clock.visibility(false);await clock.tick();assert.match(d.body.textContent!,/Generated revoked question/);assert.doesNotMatch(d.body.textContent!,/说话人1/);assert.equal(Boolean(d.querySelector('textarea')),false);assert.equal(Boolean(button(d,'查看原始记录')),false);
+ await clock.visibility(true);denied=false;await clock.visibility(false);await clock.tick();assert.equal(d.querySelector('textarea')!.value,'');assert.equal(send(d).disabled,true);assert.equal(button(d,'我是讲述者').getAttribute('aria-pressed'),'false');
+});
+
+test('foreground hints coalesce behind a shared held question read without aborting or starving it',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d),pending=deferred(),reads:{path:string;signal?:AbortSignal|null}[]=[];let held=false;
+ const api={request:async(path:string,init?:RequestInit)=>{reads.push({path,signal:init?.signal});return held?pending.promise:{items:[],nextCursor:null};}} as Api;
+ await act(async()=>root.render(React.createElement(React.Fragment,null,...[1,2].map(key=>React.createElement(OwnerQuestionLinks,{key,api,history:true})))));
+ held=true;await clock.tick(5000);assert.equal(reads.length,2);await clock.visibility(true);await clock.tick(60000);await clock.visibility(false);await clock.visibility(false);assert.equal(reads.length,2);assert.equal(reads[1].signal?.aborted,false);
+ held=false;await act(async()=>pending.resolve({items:[generated],nextCursor:null}));await clock.tick();assert.equal(reads.length,3,'one fresh follow-up for the shared exact key');
+});
+
+test('foreground question paging refreshes only the current exact host and cursor key',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d),reads:string[]=[];
+ const api={request:async(path:string)=>{reads.push(path);return {items:[generated],nextCursor:path.includes('cursor=')?null:'generated-next'};}} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionLinks,{api,history:true,workId:'generated-work',materialId:'generated-material'})));
+ await act(async()=>button(d,'继续展开').click());const current=reads.at(-1)!;assert.equal(new URLSearchParams(current.split('?')[1]).get('cursor'),'generated-next');
+ await clock.visibility(true);const before=reads.length;await clock.visibility(false);await clock.tick();assert.deepEqual(reads.slice(before),[current]);assert.equal(new URLSearchParams(current.split('?')[1]).get('workId'),'generated-work');
+});
+
+test('foreground old-Api question responses and queued refreshes cannot replace the new owner',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d),pending=deferred();let held=false,oldReads=0,signal:AbortSignal|undefined;
+ const first={request:async(_path:string,init?:RequestInit)=>{oldReads++;signal=init?.signal as AbortSignal;return held?pending.promise:generated;}} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api:first,id:generated.id,onOpen:()=>{}})));
+ held=true;await clock.tick(3000);await clock.visibility(true);await clock.visibility(false);const oldSignal=signal;
+ const other={...generated,title:'Generated new owner question'},second={request:async()=>other} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api:second,id:generated.id,onOpen:()=>{}})));assert.equal(oldSignal?.aborted,true);
+ await act(async()=>pending.resolve({...generated,title:'LATE OLD QUESTION'}));await clock.tick(60000);assert.equal(oldReads,2);assert.match(d.body.textContent!,/Generated new owner question/);assert.doesNotMatch(d.body.textContent!,/LATE OLD QUESTION/);assert.equal(d.querySelector('textarea')!.value,'');
+});
+
+test('foreground checked questions retain literal draft and request identity when the reply provider refuses',async t=>{
+ const {root,d,w}=await fixture(t),clock=questionClock(t,d),writes:any[]=[];let gets=0;
+ const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw new ApiError('Generated provider unavailable',503);}gets++;return generated;}} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api,id:generated.id,onOpen:()=>{}})));
+ await clock.visibility(true);await clock.visibility(false);await clock.tick();assert.equal(gets,2);await type(d,w,'Generated literal reply');
+ await act(async()=>send(d).click());assert.match(d.body.textContent!,/Generated provider unavailable/);assert.equal(d.querySelector('textarea')!.value,'Generated literal reply');assert.doesNotMatch(d.body.textContent!,/回答已记录/);
+ await act(async()=>send(d).click());assert.equal(writes.length,2);assert.equal(writes[0].requestId,writes[1].requestId);assert.equal(writes[0].answer,'Generated literal reply');
+});
+
+test('foreground question list 503 stays visibly incomplete and a later foreground recovers',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d);let failed=false,items:OwnerQuestion[]=[];
+ const api={request:async()=>{if(failed)throw new ApiError('Generated list unavailable',503);return {items,nextCursor:null};}} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionLinks,{api,history:true})));await clock.visibility(true);failed=true;await clock.visibility(false);await clock.tick();
+ assert.match(d.querySelector('[role=alert]')!.textContent!,/Generated list unavailable/);assert.doesNotMatch(d.body.textContent!,/没有待回答的问题/);
+ await clock.visibility(true);failed=false;items=[generated];await clock.visibility(false);await clock.tick();assert.equal(Boolean(d.querySelector('[role=alert]')),false);assert.equal(d.querySelector('a')!.getAttribute('href'),ownerQuestionRoute(generated.id));
+});
+
+test('a late provider ACK cannot restore question references after foreground authorization denial',async t=>{
+ const {root,d}=await fixture(t),clock=questionClock(t,d),reply=deferred(),recheck=deferred();let mode:'authorized'|'denied'|'held'='authorized',replySignal:AbortSignal|undefined;
+ const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method==='POST'){replySignal=init.signal as AbortSignal;return reply.promise;}if(mode==='denied')throw new ApiError('Generated revoked question',403);return mode==='held'?recheck.promise:generated;}} as Api;
+ await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api,id:generated.id,onOpen:()=>{}})));await act(async()=>button(d,'我是讲述者').click());await act(async()=>send(d).click());
+ await clock.visibility(true);mode='denied';await clock.visibility(false);await clock.tick();assert.doesNotMatch(d.body.textContent!,/说话人1/);
+ mode='held';await act(async()=>reply.resolve({...generated,state:'answered',revision:2,outcome:'LATE REVOKED ACK'}));
+ await clock.visibility(true);await clock.visibility(false);await clock.tick();assert.doesNotMatch(d.body.textContent!,/说话人1|LATE REVOKED ACK/,'clearing the read error while rechecking must not expose a late accepted copy');assert.equal(Boolean(d.querySelector('textarea')),false);assert.equal(replySignal?.aborted,true);
+ await act(async()=>recheck.resolve({...generated,revision:3}));assert.equal(d.querySelector('textarea')!.value,'');assert.equal(send(d).disabled,true);
 });

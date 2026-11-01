@@ -21,6 +21,21 @@ function draftFor(api:Api,id:string){let all=questionDrafts.get(api);if(!all){al
 type QuestionPage={items:OwnerQuestion[];nextCursor:string|null};
 const presentationHref=new URL('./owner-question-final.css',import.meta.url).href;
 function useOwnerQuestionStyle(){useEffect(()=>{if(document.head.querySelector('link[data-mote-owner-question-final]'))return;const link=document.createElement('link');link.rel='stylesheet';link.href=presentationHref;link.dataset.moteOwnerQuestionFinal='true';document.head.append(link);},[]);}
+const foregroundQuestions=new WeakSet<object>();
+function useQuestionForeground(api:Api,path:string){
+ useEffect(()=>{
+  const resource=resources(api).get(path);let hidden=document.hidden;
+  const visibility=()=>{
+   if(hidden===document.hidden)return;hidden=document.hidden;
+   if(hidden||foregroundQuestions.has(resource))return;
+   foregroundQuestions.add(resource);
+   // One hint per Api/key, including when several question views share it.
+   queueMicrotask(()=>{foregroundQuestions.delete(resource);if(!document.hidden&&resource.observed)resource.invalidate();});
+  };
+  document.addEventListener('visibilitychange',visibility);
+  return()=>document.removeEventListener('visibilitychange',visibility);
+ },[api,path]);
+}
 const stateLabel=(state:OwnerQuestion['state'])=>({open:moteText('待回答'),deferred:moteText('稍后处理'),answered:moteText('已回答'),closed:moteText('已结束'),obsolete:moteText('已失效')}[state]);
 
 export function OwnerQuestionWorkspace({api,id,onOpen}:{api:Api;id:string;onOpen:(ref:string)=>void}){
@@ -41,6 +56,7 @@ export function OwnerQuestionLinks({api,workId,materialId,operationIds,history=f
   useEffect(()=>{if(standalone)questionVisits.set(api,{filter,cursor});},[api,standalone,filter,cursor]);
   const path=ownerQuestionListPath({...(workId?{workId}:{}),...(materialId?{materialId}:{}),...(operationScope?{operationIds:JSON.parse(operationScope) as string[]}:{})},cursor,history?(filter==='pending'?'open,deferred':'open,deferred,answered,closed,obsolete'):'open,deferred,closed,answered');
   const page=useResource<QuestionPage>(api,path,5000);
+  useQuestionForeground(api,path);
   const items=page.error===undefined&&Array.isArray(page.data?.items)?page.data.items:[];
   useLayoutEffect(()=>{
     const position=questionReturns.get(api);if(!standalone||!page.data||page.error||!position||position.hash!==window.location.hash)return;
@@ -67,6 +83,7 @@ function QuestionSource({api,reference}:{api:Api;reference?:string}){
 export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:Api;id:string;onOpen:(ref:string)=>void;standalone?:boolean}){
   useOwnerQuestionStyle();
   const path='/api/owner-questions/'+encodeURIComponent(id),detail=useResource<OwnerQuestion>(api,path,3000);
+  useQuestionForeground(api,path);
   const [accepted,setAccepted]=useState<{api:Api;id:string;value:OwnerQuestion}>(),[draftState,setDraftState]=useState(()=>({api,id,...draftFor(api,id)})),[busy,setBusy]=useState(false),[error,setError]=useState(''),[workBusy,setWorkBusy]=useState(false),[workError,setWorkError]=useState('');
   const retained=draftState.api===api&&draftState.id===id?draftState:draftFor(api,id);
   const {draft,choiceId,reopened}=retained;
@@ -77,7 +94,7 @@ export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:
   const copied=accepted?.api===api&&accepted.id===id?accepted.value:undefined;
   const question=detail.error===undefined?(copied&&(!detail.data||copied.revision>=detail.data.revision)?copied:detail.data):undefined;
   useEffect(()=>{setAccepted(undefined);setDraftState({api,id,...draftFor(api,id)});setBusy(false);setError('');setWorkBusy(false);setWorkError('');pending.current=draftFor(api,id).pending;return()=>{controller.current?.abort();controller.current=null;workController.current?.abort();workController.current=null;};},[api,id]);
-  useEffect(()=>{if(detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status)){setAccepted(undefined);edit({draft:'',choiceId:undefined,reopened:false,pending:undefined});pending.current=undefined;}},[detail.error]);
+  useEffect(()=>{if(detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status)){controller.current?.abort();controller.current=null;setBusy(false);setError('');setAccepted(undefined);edit({draft:'',choiceId:undefined,reopened:false,pending:undefined});pending.current=undefined;}},[detail.error]);
   const latestQuestion=useRef(question);latestQuestion.current=question;
   useEffect(()=>{workController.current?.abort();workController.current=null;setWorkBusy(false);setWorkError('');},[api,id,question?.revision,question?.state]);
   const showComposer=question&&(['open','deferred'].includes(question.state)||question.state==='closed'&&reopened);
