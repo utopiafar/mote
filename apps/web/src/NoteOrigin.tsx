@@ -16,14 +16,19 @@ export function ConversationOrigin({api,conversationId,turnId,text,onOpen,onSett
  const latest=useRef({api,conversationId,turnId,text,turn:undefined as OriginTurn|undefined,onOpen});
  useEffect(()=>{setCitationError('');return()=>{pendingCitation.current?.abort();pendingCitation.current=null;};},[api,conversationId,turnId,text]);
  useEffect(()=>{
-  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
+  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined,reading=false,again=false,hidden=document.hidden;
   setState(undefined);
+  function schedule(){clearTimeout(timer);if(!controller.signal.aborted&&!document.hidden)timer=setTimeout(()=>{if(!document.hidden)void read();},5000);}
   async function read(){
+   if(controller.signal.aborted)return;
+   if(reading){again=true;return;}reading=true;
    try{const turn=await readOriginTurn(api,conversationId,turnId,controller.signal);if(!controller.signal.aborted)setState({owner:api,turn,failed:!turn});}
    catch{if(!controller.signal.aborted)setState({owner:api,failed:true});}
-   if(!controller.signal.aborted)timer=setTimeout(()=>void read(),5000);
+   finally{reading=false;const fresh=again&&!document.hidden;again=false;if(!controller.signal.aborted){if(fresh)void read();else schedule();}}
   }
-  void read();return()=>{controller.abort();clearTimeout(timer);};
+  function visibility(){if(hidden===document.hidden)return;hidden=document.hidden;clearTimeout(timer);if(hidden)again=false;else void read();}
+  document.addEventListener('visibilitychange',visibility);
+  void read();return()=>{controller.abort();clearTimeout(timer);document.removeEventListener('visibilitychange',visibility);};
  },[api,conversationId,turnId,revision]);
  const current=state?.owner===api?state:undefined,turn=current?.turn;
  useEffect(()=>{if(current)onSettled?.(instance.current);},[current,onSettled]);
