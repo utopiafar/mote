@@ -26,7 +26,7 @@ function initial(api:Api,launch:MemoryWorkLaunch,range:Range):Work {
 }
 function selectedModelPin(view:ModelSettingsView,profileId:string|undefined){const id=profileId||view.defaults.memory,profile=view.profiles.find(profile=>profile.id===id);return JSON.stringify({id,settings:profile?.settings,defaultModel:profileId?undefined:view.defaultModels?.memory});}
 /** The existing commands in a separate work page. A new admission never resurrects a cancelled job. */
-export function ManualMemoryWorkspace({api,launch,range,onClose,onOpen,onViewMemory,onBusyChange,verificationPending=false}:{api:Api;launch:MemoryWorkLaunch;range:Range;onClose:()=>void;onOpen:(ref:string)=>void;onViewMemory:(id:string)=>void;onBusyChange?:(api:Api,busy:boolean)=>void;verificationPending?:boolean}){
+export function ManualMemoryWorkspace({api,launch,range,onClose,onOpen,onViewMemory,onBusyChange,verificationPending=false,active=true}:{api:Api;launch:MemoryWorkLaunch;range:Range;onClose:()=>void;onOpen:(ref:string)=>void;onViewMemory:(id:string)=>void;onBusyChange?:(api:Api,busy:boolean)=>void;verificationPending?:boolean;active?:boolean}){
  const [stored,setStored]=useState(()=>initial(api,launch,range)),work=stored.api===api&&stored.token===launch.token?stored:initial(api,launch,range);
  const [settings,setSettings]=useState<{api:Api;model:string;recipes:MemoryRecipeRef[]}>({api,model:'',recipes:[]});
  const options=settings.api===api?settings:{api,model:'',recipes:[]};
@@ -106,7 +106,7 @@ export function ManualMemoryWorkspace({api,launch,range,onClose,onOpen,onViewMem
    {Boolean(models.error)&&<p role="alert">{errorMessage(models.error)}<button type="button" className="text-button" onClick={models.refresh}>{moteText('重新读取')}</button></p>}
    <button className="button primary" type="submit" disabled={busy||running||!!choice&&!readable||!models.data||!!models.error||models.loading}>{busy?moteText('正在提交…'):moteText('开始提取')}</button>
   </form>}
-  <div hidden={work.view!=='integration'}><MemoryIntegration api={api} candidate={work.candidate} verificationPending={verificationPending} presentation="workspace" onBusyChange={(owner,busy)=>{if(visit.current.api===owner){setIntegrationActivity({api:owner,busy});onBusyChange?.(owner,busy);}}}/></div>
+  <div hidden={work.view!=='integration'}><MemoryIntegration api={api} candidate={work.candidate} verificationPending={verificationPending} presentation="workspace" active={active&&work.view==='integration'} onBusyChange={(owner,busy)=>{if(visit.current.api===owner){setIntegrationActivity({api:owner,busy});onBusyChange?.(owner,busy);}}}/></div>
   {work.view==='job'&&<section className="memory-work-job">
    {jobError&&<p role="alert">{moteText('记忆进度暂时无法更新：')}{jobError}<button className="text-button" onClick={reloadJob}>{moteText('重新读取')}</button></p>}
    {!work.jobId&&<p>{moteText('暂无处理任务')}</p>}{work.jobId&&!currentJob&&!jobError&&<p role="status">{moteText('正在读取…')}</p>}
