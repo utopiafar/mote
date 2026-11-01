@@ -6,6 +6,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {FILE_PART_BYTES,formatEvidenceRef,fileDiarizationOptionsSchema} from '@mote/shared';
 import {FileStore} from './files.js';
+import {FILE_THUMBNAIL_MAX_ORIGINAL_BYTES,FILE_THUMBNAIL_TYPES,createFileThumbnails,readAll,renderFileThumbnail} from './file-thumbnails.js';
 import {FileReviews} from './file-reviews.js';
 import {fileExportEntries,exportTar} from './file-export.js';
 import {isLoopback,requestLocalJson} from './local-http.js';
@@ -18,6 +19,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
   const attachments=new FileAttachments(files);
+  const thumbnails=createFileThumbnails();
   const grants=new Map<string,{id:string;until:number;check:()=>void}>();
   const cookieName=(id:string)=>'mote_file_'+id.replace(/-/g,'');
   const id=(req:FastifyRequest)=>(req.params as {id:string}).id;
@@ -60,6 +62,15 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
     const mime=v.item.mimeType?.startsWith('audio/')?v.item.mimeType:'application/octet-stream';
     return reply.header('Accept-Ranges','bytes').header('Content-Length',Math.max(0,end-start+1)).header('Content-Disposition',`${mime==='application/octet-stream'||(req.query as {download?:string}).download==='1'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(v.item.title).replace(/'/g,'%27')}`).type(mime).send(files.stream(fileId(req),start,end));
   });
+  app.get('/api/files/:id/thumbnail',async(req,reply)=>{
+    const v=file(req);
+    if(!v.hasOriginal||!FILE_THUMBNAIL_TYPES.has(v.item.mimeType??''))throw new StoreError('Thumbnail is unavailable',404);
+    if(v.sizeBytes>FILE_THUMBNAIL_MAX_ORIGINAL_BYTES)throw new StoreError('Original is too large for a thumbnail',413);
+    const bytes=await thumbnails.get(`${v.captureId}:${v.sha256??v.item.revision}`,async()=>renderFileThumbnail(await readAll(files.stream(fileId(req),0,v.sizeBytes-1))));
+    file(req); // Re-check authorization, visibility and retention after asynchronous processing.
+    return reply.type('image/jpeg').send(bytes);
+  });
+  app.addHook('onClose',async()=>{thumbnails.clear();});
   // Owner-only routes are excluded from the collector route allowlist.
   app.post('/api/records/:id/attachments/:attachmentId/processing',{bodyLimit:1024},async req=>attachments.prepare(id(req),(req.params as {attachmentId:string}).attachmentId,req.body,check(req)));
   app.delete('/api/files/:id',async req=>files.forget(fileId(req)));
