@@ -207,6 +207,14 @@ test('closed developer tools never mount an execution reader and opening starts 
  await toggle();assert.equal(reads(),1,'opening the actual developer panel reads immediately');
  assert.equal(d.querySelector<HTMLDetailsElement>('.memory-developer-tools')!.open,true);
  await act(async()=>t.mock.timers.tick(5000));assert.equal(reads(),2);
+ const disclosure=d.querySelector<HTMLDetailsElement>('.memory-developer-tools')!;
+ const summary=()=>act(async()=>{disclosure.querySelector<HTMLElement>(':scope > summary')!.click();disclosure.dispatchEvent(new window.Event('toggle'));});
+ await summary();assert.equal(disclosure.open,false);const collapsed=reads();
+ await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));
+ for(let step=0;step<12;step++)await act(async()=>t.mock.timers.tick(5000));
+ assert.equal(reads(),collapsed,'closing through the native summary also releases the execution reader');
+ await summary();assert.equal(disclosure.open,true);assert.equal(reads(),collapsed+1,'reopening through the summary reads immediately');
+ await act(async()=>t.mock.timers.tick(5000));assert.equal(reads(),collapsed+2);
  await toggle();const closed=reads();
  await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));
  for(let step=0;step<12;step++)await act(async()=>t.mock.timers.tick(5000));
