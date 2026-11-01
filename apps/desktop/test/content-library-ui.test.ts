@@ -267,3 +267,18 @@ it('discards a delayed hidden-Home denial that lands after a newer filtered sear
   expect(el('content-feed').querySelector(`[data-content-key="${item.key}"]`)).not.toBeNull();
   expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
 });
+
+it.each([401,403])('honors delayed Home HTTP %s after a local-only refresh with no newer Central authorization result',async code=>{
+  await flush();await library.refreshHome();await open(item.key);
+  expect(dialog.open).toBe(true);expect(el('home-recent').querySelector(`[data-content-key="${item.key}"]`)).not.toBeNull();
+  let finish!:(value:Response)=>void;
+  vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;})));
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>centralContentPage({...defaultConfig(),serverUrl:status.config.serverUrl,token:'generated-token',deviceId:id}));
+  const home=library.refreshHome();await flush();
+  const centralReads=vi.mocked(api.centralContent).mock.calls.length;
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();
+  expect(api.centralContent).toHaveBeenCalledTimes(centralReads);
+  finish(new Response('{}',{status:code}));await home;await flush();
+  expectCleared();expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();
+  expect(el('content-feed').querySelector('[data-content-key^="capture:"]')).toBeNull();
+});

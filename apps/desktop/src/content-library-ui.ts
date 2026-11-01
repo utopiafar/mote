@@ -1,7 +1,7 @@
 import {getLocale,moteText} from '@mote/shared/i18n';
 import {appendDiagnostic,renderReadableFailure} from './ui-diagnostic';
 import type {DesktopApi,Status} from './contracts';
-import type {ContentItem,ContentDetail} from './content-library';
+import type {ContentItem,ContentDetail,CentralContentPage} from './content-library';
 import type {SyncContent} from './sync-content';
 /** Home and Content share one evidence reader; no markup from evidence becomes UI. */
 export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,homeContentChanged?:(hasContent:boolean|undefined,rows:readonly ContentItem[],archiveAuthorizationDenied:boolean)=>void,reader?:{open():void;close():void}){
@@ -10,6 +10,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   document.getElementById('content-memories')?.addEventListener('click',()=>openMemories?.());
   let generation=0,homeGeneration=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
   let archiveGeneration=0,archiveAuthorizationDenied=false,detailIsCentral=false;
+  let archiveRequest=0,archiveResponse=0;
   let loadedScope='',homeStale=false;
   const homeVisible=()=>!el('home-recent').closest('[hidden]');
   let items:ContentItem[]=[],homeItems:ContentItem[]=[],selected:ContentItem|undefined,selectedButton:HTMLElement|undefined,chunkOffset=0,centralId:string|undefined;
@@ -54,15 +55,25 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')));
     if(dialog.open&&(selected?.key.startsWith('capture:')||detailIsCentral))close();
   }
+  // Display generations can be superseded by a local-only read. That does not
+  // replace an in-flight Central authorization check; only a newer valid
+  // Central response can supersede it. Old scopes and pre-denial data stay invalid.
+  function observeArchive(result:PromiseSettledResult<CentralContentPage|undefined>,request:number|undefined,scope:number):boolean{
+    if(request===undefined||scope!==archiveGeneration||request<=archiveResponse||result.status!=='fulfilled'||!result.value)return false;
+    archiveResponse=request;
+    if(result.value.authorizationDenied){denyArchive();return true;}
+    archiveAuthorizationDenied=false;return false;
+  }
   // The workbench is independent of the Content workspace's selected filter and pagination.
   async function refreshHome(){
-    homeStale=false;const version=++homeGeneration,archiveVersion=archiveGeneration;
-    const [local,remote]=await Promise.allSettled([api.localContent(0),status?.config.tokenConfigured?api.centralContent():undefined]);
+    homeStale=false;const version=++homeGeneration,archiveVersion=archiveGeneration,request=status?.config.tokenConfigured?++archiveRequest:undefined;
+    const [local,remote]=await Promise.allSettled([api.localContent(0),request!==undefined?api.centralContent():undefined]);
+    observeArchive(remote,request,archiveVersion);
     if(version!==homeGeneration)return;
     const rows:ContentItem[]=[];
     if(local.status==='fulfilled')rows.push(...local.value.items);else rows.push(...homeItems.filter(row=>!row.key.startsWith('capture:')));
     if(remote.status==='fulfilled'&&remote.value&&archiveVersion===archiveGeneration){
-      if(remote.value.authorizationDenied)denyArchive();else{archiveAuthorizationDenied=false;rows.push(...remote.value.items);}
+      if(!remote.value.authorizationDenied)rows.push(...remote.value.items);
     }
     renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected');
   }
@@ -80,14 +91,15 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       el('content-status').classList.remove('visually-hidden');
     }
     const local=scope==='received'||append&&!localMore?undefined:api.localContent(localOffset,query);
-    const remote=scope==='local'||!status?.config.tokenConfigured||append&&!remoteMore?undefined:api.centralContent(remoteCursor,query);
-    const [l,r]=await Promise.allSettled([local,remote]);if(version!==generation)return;
+    const request=scope==='local'||!status?.config.tokenConfigured||append&&!remoteMore?undefined:++archiveRequest;
+    const remote=request!==undefined?api.centralContent(remoteCursor,query):undefined;
+    const [l,r]=await Promise.allSettled([local,remote]);const denied=observeArchive(r,request,archiveVersion);if(version!==generation)return;
     const rows:ContentItem[]=[];let error='';
     if(l.status==='fulfilled'&&l.value){rows.push(...l.value.items);localMore=l.value.nextOffset!==undefined;localOffset=l.value.nextOffset??localOffset;}else if(l.status==='rejected'){rows.push(...previous.filter(row=>!row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
-    if(r.status==='fulfilled'&&r.value&&archiveVersion===archiveGeneration){
-      if(r.value.authorizationDenied){
-        denyArchive();error=moteText('无法访问采集记录，请检查中央连接权限');
-      }else{archiveAuthorizationDenied=false;rows.push(...r.value.items);remoteMore=Boolean(r.value.nextCursor);remoteCursor=r.value.nextCursor;}
+    if(r.status==='fulfilled'&&r.value){
+      if(denied){
+        error=moteText('无法访问采集记录，请检查中央连接权限');
+      }else if(archiveVersion===archiveGeneration&&!r.value.authorizationDenied){rows.push(...r.value.items);remoteMore=Boolean(r.value.nextCursor);remoteCursor=r.value.nextCursor;}
     }else if(r.status==='rejected'){if(archiveVersion===archiveGeneration&&!archiveAuthorizationDenied)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
     items=mergeRows([...items,...rows]);loadedScope=scopeKey;renderFeed('content-feed',items);
     if(error&&!items.length)el('content-feed').replaceChildren();
