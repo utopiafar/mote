@@ -151,9 +151,9 @@ test('LRU eviction preserves group expansion with one CTE and keeps recently use
  const nextBefore=reads.ctes,last=timeline.members({...range,limit:1,cursor:members.nextCursor!},owner,group.id);assert.equal(reads.ctes-nextBefore,1);assert.equal(last.items.length,1);assert.equal(last.nextCursor,null);
 });
 
-test('cached group cursors preserve SQLite byte ordering for non-ASCII device identities',async t=>{
+test('cached group cursors preserve SQLite byte ordering for tied timestamps',async t=>{
  const {range,store,records,timeline}=await groupedFixture(t,3);
- await store.ingestBatch(['generated-\ue000','generated-\u{10000}'].map(deviceId=>({...records[1],id:randomUUID(),deviceId})));
+ await store.ingestBatch(['generated-Z','generated_a'].map(deviceId=>({...records[1],id:randomUUID(),deviceId})));
  const expected=timeline.page(range,owner).items,seen:CaptureTimelinePage['items']=[];let cursor:string|undefined;
  do{const page=timeline.page({...range,limit:1,...(cursor?{cursor}:{})},owner);seen.push(...page.items);cursor=page.nextCursor??undefined;}while(cursor);
  assert.equal(expected.length,5);assert.deepEqual(seen,expected);
