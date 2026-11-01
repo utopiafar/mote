@@ -19,6 +19,8 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
     private val previous = mutableListOf<Int>()
     private var selected: String? = null
     private var section = "overview"
+    private var detailKind = ""
+    private var detailLive = false
     private var branchCursor = 0
     private val branchPrevious = mutableListOf<Int>()
     private val memoryResults by lazy { CentralWorkMemoryResults(screens, { id->screens.isWorkActivityPage && selected==id && section=="results" }, { id->detail(id) }) }
@@ -90,7 +92,23 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
     private fun detail(id: String) {
         if (screens.body.childCount == 0) button(MoteI18n.text("重试")) { detail(id) }
         val api = screens.client
-        ui.work(MoteI18n.text("正在读取…"), { api.get("/api/work-activity/" + enc(id) + "?limit=20&cursor=$branchCursor") }) { work ->
+        ui.work(MoteI18n.text("正在读取…"), { runCatching { api.get("/api/work-activity/" + enc(id) + "?limit=20&cursor=$branchCursor") } }) { result ->
+            result.onFailure { error ->
+                val status = (error as? CentralFailure)?.status
+                if (status in setOf(401, 403, 404, 410)) {
+                    // A denied or missing work must not leave owner-read rows on screen.
+                    memoryResults.clear(); clear("withdrawn:$id:$section:$branchCursor")
+                    text(if (status == 404 || status == 410) MoteI18n.text("请求的资源不存在或已删除。") else error.message.orEmpty())
+                    button(MoteI18n.text("返回活动")) { selected = null; section = "overview"; screens.clearBack(); list() }
+                }
+                ui.requestFailure(error)
+                // A transient failure keeps the last confirmed rows; while the memory results
+                // pane is open it keeps its withdrawal cadence so a later removal is still seen.
+                if (status !in setOf(401, 403, 404, 410) && detailKind == "memory" && section == "results") WorkPolling.rearmResults(detailLive, ui::scheduleActivityPoll)
+                return@work
+            }
+            val work = result.getOrThrow()
+            detailKind = work.optString("kind"); detailLive = WorkPolling.live(work.getString("state"))
             val previousScroll=clear("detail:$id:$section:$branchCursor"); screens.setBack { selected = null; section = "overview";memoryResults.clear(); list() }
             button(MoteI18n.text("返回活动")) { selected = null; section = "overview";memoryResults.clear(); screens.clearBack(); list() }
             button(MoteI18n.text("刷新")) { detail(id) }
@@ -127,7 +145,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
                 "evidence" -> evidence(work)
                 "technical" -> technical(work)
             }
-            WorkPolling.rearmDetail(work, ui::scheduleActivityPoll)
+            WorkPolling.rearm(work, ui::scheduleActivityPoll)
         }
     }
     private fun overview(work: JSONObject) {

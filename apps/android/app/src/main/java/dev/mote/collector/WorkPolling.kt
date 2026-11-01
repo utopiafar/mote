@@ -30,10 +30,4 @@ internal object WorkPolling {
 
     /** The saved-results list never stops while visible; a terminal work only slows it down. */
     fun rearmResults(live: Boolean, schedule: (Long) -> Unit) = schedule(if (live) MS else RESULTS_TERMINAL_MS)
-
-    /** Non-memory detail stops at terminal; a memory detail keeps its slower results withdrawal. */
-    fun rearmDetail(work: JSONObject, schedule: (Long) -> Unit) {
-        if (live(work.getString("state"))) schedule(MS)
-        else if (work.optString("kind") == "memory") schedule(RESULTS_TERMINAL_MS)
-    }
 }

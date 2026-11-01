@@ -71,15 +71,14 @@ class WorkPollingTest {
         assertEquals(listOf(WorkPolling.MS, WorkPolling.RESULTS_TERMINAL_MS), delays)
     }
 
-    @Test fun onlyMemoryDetailKeepsPollingAfterTerminal() {
-        // The detail re-arm covers the embedded results list: a completed memory work keeps
-        // its withdrawal cadence while every other terminal kind sleeps.
-        val delays = mutableListOf<Long>()
-        WorkPolling.rearmDetail(JSONObject("""{"state":"completed","kind":"memory"}""")) { delays.add(it) }
-        WorkPolling.rearmDetail(JSONObject("""{"state":"completed","kind":"capture"}""")) { delays.add(it) }
-        WorkPolling.rearmDetail(JSONObject("""{"state":"running","kind":"capture"}""")) { delays.add(it) }
-        WorkPolling.rearmDetail(JSONObject("""{"state":"running","kind":"memory"}""")) { delays.add(it) }
-        assertEquals(listOf(WorkPolling.RESULTS_TERMINAL_MS, WorkPolling.MS, WorkPolling.MS), delays)
+    @Test fun terminalDetailStopsOutsideTheResultsPane() {
+        // A completed memory work's Overview, Evidence or Technical section shows no
+        // withdrawable rows, so the generic detail re-arm stops like every terminal work;
+        // only the results pane carries its own slower rearmResults cadence.
+        var polls = 0
+        WorkPolling.rearm(JSONObject("""{"state":"completed","kind":"memory"}""")) { polls++ }
+        WorkPolling.rearm(JSONObject("""{"state":"running","kind":"memory"}""")) { polls++ }
+        assertEquals("only live work keeps the detail cadence, whatever its kind", 1, polls)
     }
 
     @Test fun detailAndListUseTheSameTerminalGate() {

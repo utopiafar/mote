@@ -108,8 +108,9 @@ class WorkMemoryJourneyInstrumentedTest {
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];assertTrue(has(fake.title(id)));idle(scenario)
             fake.removed.add(id)
-            until("A removed Memory withdraws its results row while the completed work stays open"){!has(fake.title(id))&&has(fake.goal)}
-            assertTrue("Other results stay on the same page",has(fake.title(fake.ids[4])))
+            // The detail rebuilds while its results read is still in flight: assert the removed
+            // row is gone only after the surviving row is present in the same refreshed view.
+            until("A removed Memory withdraws its results row while the completed work stays open"){!has(fake.title(id))&&has(fake.title(fake.ids[4]))&&has(fake.goal)}
             tag("work-memory:"+fake.ids[4]);until("A surviving result still opens"){has(fake.statement(fake.ids[4]))}
             assertEquals(0,fake.deletes.get());assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }

@@ -28,6 +28,8 @@ internal class CentralWorkMemoryResults(
     private var restoringSelection=false
     /** Last state the results list reported; feeds only the results-list rearm, never the open reader. */
     private var live = false
+    /** The fully rendered page's id set: an unchanged terminal page needs no per-row Memory reads. */
+    private var renderedIds = ""
     private fun current(work: String, cursor: String?) = workId==work && cursors.lastOrNull()==cursor && isCurrentWork(work)
     private fun path(work: String, cursor: String?) = "/api/work-activity/"+CentralScreens.encode(work)+"/memory-results?limit=20"+(cursor?.let{"&cursor="+CentralScreens.encode(it)}?:"")
     private fun read(api: CentralClient, work: String, cursor: String?) = WorkMemoryPage.read(api.get(path(work,cursor)),cursor)
@@ -45,7 +47,7 @@ internal class CentralWorkMemoryResults(
         memoryScroll=ui.contentScroll()
         WorkMemoryDrafts.remember(key,fields.filter { (edit,value)->edit.forceDirty||edit.initial!=value }.associate { (edit,value)->edit.key to value },memoryScroll)
     }
-    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false;live=false }
+    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false;live=false;renderedIds="" }
     fun save(out: Bundle) {
         rememberDrafts();out.putString("memoryResultWork",workId);out.putString("memoryResultSelected",selected);out.putInt("memoryResultScroll",returnScroll)
         out.putString("memoryResultSnapshot",identity);out.putInt("memoryResultDetailScroll",memoryScroll)
@@ -68,6 +70,10 @@ internal class CentralWorkMemoryResults(
         target.removeAllViews()
         ui.work(MoteI18n.text("正在读取…"), { runCatching {
             val page=read(api,work,cursor)
+            // Terminal polls only re-validate membership: an unchanged page needs no per-row
+            // Memory reads, and the existing rows stay on screen untouched. An empty page keeps
+            // the full path so its empty-state label still renders.
+            if(!live&&renderedIds.isNotEmpty()&&page.ids.joinToString(" ")==renderedIds)return@runCatching page to null
             val rows=page.ids.map { id ->
                 val value=runCatching { api.get("/api/memories/"+CentralScreens.encode(id)).also { row->check(row.getString("id")==id);row.getString("title") } }
                 value.exceptionOrNull()?.let { error->if(error is CentralFailure && error.status in setOf(401,403))throw error }
@@ -77,8 +83,10 @@ internal class CentralWorkMemoryResults(
             page to rows
         } }) { result ->
             if(!current(work,cursor)||selected!=null||screens.client!==api)return@work
-            target.removeAllViews()
             result.onSuccess { (page,rows) ->
+                if(rows==null)return@onSuccess
+                target.removeAllViews()
+                renderedIds=if(rows.all{it.second!=null})page.ids.joinToString(" ")else ""
                 if(rows.isEmpty())ui.text(MoteI18n.text("没有符合条件的内容"),parent=target)
                 rows.forEach { (id,row) ->
                     if(row==null){ui.text(MoteI18n.text("暂不可用"),parent=target);ui.button(MoteI18n.text("重试"),parent=target){refreshWork(work)}}
@@ -93,6 +101,7 @@ internal class CentralWorkMemoryResults(
                 page.next?.let { next->ui.button(MoteI18n.text("下一页"),parent=target){if(next !in cursors){cursors.add(next);pendingScroll=0;refreshWork(work)}} }
                 ui.restoreContentScroll(pendingScroll ?: previousScroll);pendingScroll=null
             }.onFailure { error ->
+                target.removeAllViews()
                 ui.text(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("中央响应格式无效，请刷新后重试。"),parent=target)
                 ui.button(MoteI18n.text("重试"),parent=target){refreshWork(work)}
             }
