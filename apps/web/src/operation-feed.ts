@@ -36,5 +36,6 @@ export function affectedResource(key:string,ids:Set<string>,reset:boolean){
  if(/^\/api\/(insights|insight-runs)(\/|$)/.test(path))return changed('insight','workflow','capture','file','import');
  if(/^\/api\/actions(\/|$)/.test(path))return reset||[...ids].some(id=>id.startsWith('workflow:actions:'));
  if(/^\/api\/imports(\/|$)/.test(path))return changed('import');
+ if(/^\/api\/context-trees(\/|$)/.test(path))return changed('memory','workflow');
  return false;
 }

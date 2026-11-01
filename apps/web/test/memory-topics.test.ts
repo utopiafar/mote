@@ -4,6 +4,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {MemoryTopics} from '../src/MemoryTopics.js';
+import {useOperationUpdates} from '../src/useOperationUpdates.js';
 import {resources} from '../src/resource-cache.js';
 import {ApiError,type Api} from '../src/api.js';
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
@@ -20,4 +21,61 @@ test('topic loading, offline retry, untrusted labels and unavailable selection r
  mode='revoked';await act(async()=>resources(api).get('/api/context-trees').refresh());assert.equal(d.querySelector('.memory-topic-nodes'),null);
  mode='ready';data.items=[];await act(async()=>resources(api).get('/api/context-trees').refresh());assert.match(d.body.textContent!,/此主题已不可用/);
  await act(async()=>Array.from(d.querySelectorAll('button')).find(x=>x.textContent==='全部记忆')!.click());assert.deepEqual(selected,[['topics','']]);
+});
+
+// The Memories page holds the shared change subscription for the mounted topic
+// browser; this harness subscribes through the same real entrypoint so tests
+// deliver serialized /api/operations/changes responses, never direct cache hints.
+function LiveTopics({api,treeId,nodeId}:{api:Api;treeId:string;nodeId:string}){useOperationUpdates(api);return React.createElement(MemoryTopics,{api,treeId,nodeId,onChange:()=>{}});}
+function countingApi(catalog:()=>unknown){
+ const reads:string[]=[],changes:string[]=[];let pending:string[]=[],cursor=0;
+ const api={request:async(path:string)=>{
+  if(path==='/api/context-trees'){reads.push(path);return catalog();}
+  if(path.startsWith('/api/operations/changes')){changes.push(path);const ids=pending;pending=[];return {ids,cursor:++cursor,hasMore:false,reset:false};}
+  return {items:[]};
+ }} as unknown as Api;
+ return {api,reads,changes,push:(ids:string[])=>{pending.push(...ids);}};
+}
+const catalogReads=(reads:string[])=>reads.filter(path=>path==='/api/context-trees').length;
+
+test('a ready topic catalog never repolls, live memory changes reread it once and hide withdrawn topics',async t=>{
+ const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ const data={classification:{state:'ready'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[{id:'one',label:'Generated node'}]}]};
+ const {api,reads,changes,push}=countingApi(()=>data);
+ await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:'one'})));
+ assert.equal(catalogReads(reads),1);assert.ok(changes.length>=1,'mounting starts the shared change subscription');
+ await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),1,'a ready catalog issues no periodic reads');
+ push(['capture:generated']);await act(async()=>t.mock.timers.tick(1500));assert.equal(catalogReads(reads),1,'unrelated capture changes never reread the catalog');
+ data.items=[];push(['memory:job-1']);await act(async()=>t.mock.timers.tick(1500));
+ assert.equal(catalogReads(reads),2,'the delivered memory change coalesces into one re-read');
+ assert.match(d.body.textContent!,/此主题已不可用/,'the withdrawn topic becomes hidden');
+ await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),2,'no polling resumes after the delivered change');
+});
+
+test('running classification polls every five seconds and stops when the delivered catalog is ready',async t=>{
+ const {root}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ let state='running';const data={classification:{state:'running'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[]}]};
+ const {api,reads,changes,push}=countingApi(()=>({...data,classification:{state}}));
+ await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:''})));
+ assert.equal(catalogReads(reads),1);
+ for(let index=0;index<2;index++){await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),index+2,'one re-read per five seconds while classification runs');}
+ state='ready';push(['memory:job-2']);await act(async()=>t.mock.timers.tick(1500));assert.equal(catalogReads(reads),4,'a memory change rereads once and observes the ready state');
+ await act(async()=>t.mock.timers.tick(30000));assert.equal(catalogReads(reads),4,'the ready state stops the five-second timer');
+ assert.ok(changes.length>0,'the shared subscription remains live for later changes');
+});
+
+test('a hidden view pauses both catalog reads and the feed, and unmounting cleans every subscription',async t=>{
+ const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ let state='running';const {api,reads,changes}=countingApi(()=>({classification:{state},items:[]}));
+ await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:''})));
+ await act(async()=>t.mock.timers.tick(5000));assert.ok(changes.length>=2,'the feed keeps polling while visible');
+ Object.defineProperty(d,'hidden',{configurable:true,value:true});
+ const catalogBase=catalogReads(reads),feedBase=changes.length;await act(async()=>t.mock.timers.tick(15000));
+ assert.equal(catalogReads(reads),catalogBase,'a hidden page issues no catalog reads');assert.equal(changes.length,feedBase,'a hidden page issues no feed requests');
+ Object.defineProperty(d,'hidden',{configurable:true,value:false});
+ await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),catalogBase+1,'recovery resumes the running poll once');
+ assert.ok(changes.length>feedBase&&changes.length-feedBase<=2,'recovery resumes the feed without duplicating subscriptions');
+ await act(async()=>root.unmount());
+ const finalCatalog=catalogReads(reads),finalFeed=changes.length;await act(async()=>t.mock.timers.tick(30000));
+ assert.equal(catalogReads(reads),finalCatalog,'unmount stops the catalog timer');assert.equal(changes.length,finalFeed,'unmount releases the shared subscription');
 });
