@@ -790,6 +790,7 @@ export class MemoryPipeline {
     if(!['waiting_for_model','waiting_for_input'].includes(job.status))job.errorCode=job.errorCode||String(this.store.db.prepare("SELECT json_extract(json,'$.errorCode') error FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','invalidated') LIMIT 1").get(id)?.error??'')||undefined;
     if(job.status!=='waiting_for_input')job.availableAt=Number(this.store.db.prepare("SELECT max(json_extract(json,'$.availableAt')) at FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','pending')").get(id)?.at)||undefined;
     job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);
+    job.runningBatches=Number(counts.running);job.pendingBatches=Number(counts.pending);
     if(JSON.stringify({...job,updatedAt:undefined})!==before)this.saveJob(job);
   }
   private assertStrategies(batch:StoredBatch){
@@ -886,7 +887,7 @@ export class MemoryPipeline {
     let chunks:Chunk[]=[];
     if(!observeCurrent(()=>{
       if(batch.chunks.every(c=>!c.strategy&&c.profile!=='coding')&&job.skillVersion!==currentSkill){batch.skillVersion=currentSkill;batch.chunks=batch.chunks.map(c=>({...c,key:sha256(JSON.stringify([c.id,c.fingerprint,c.offset,c.length,currentSkill,c.reviewFingerprint]))}));this.saveBatch(batch);}
-      chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));const currentJob=this.storedJob(id);currentJob.skippedChunks+=batch.chunks.length-chunks.length;this.saveJob(currentJob);
+      chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));const skipped=batch.chunks.length-chunks.length;if(skipped>0){const currentJob=this.storedJob(id);currentJob.skippedChunks+=skipped;this.saveJob(currentJob);}
     }))throw new ExecutionFailure('waiting','interrupted');
     if(batch.chunks.some(chunk=>{const record=this.options.memories.readEvidence([chunk.id])[0];return !chunk.strategy&&record&&chunk.profile==='coding'&&chunk.profileVersion&&chunk.profileVersion!==memoryProfile(record).version;}))throw new ExecutionFailure('stale','skill_changed');
     if(!chunks.length)return;

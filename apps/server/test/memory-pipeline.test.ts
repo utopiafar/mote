@@ -72,6 +72,36 @@ test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity
  spy.mock.restore();
 });
 
+test('a second batch starting while one already runs still rewrites the job and advances Activity ordering',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('derived-a','a'.repeat(600))),b=await sources.upsert('generated',item('derived-b','b'.repeat(600)));
+ let slots=1;const releases:(()=>void)[]=[];
+ const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>slots,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{if(releases.length>=2)return empty();await new Promise<void>(r=>releases.push(r));return empty();}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);
+ const storedStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id) as {json:string}).json)).status);
+ while(releases.length<1||storedStatus()!=='running')await nextTurn();
+ assert.equal(pipeline.get(job.id).runningBatches,1,'the first batch occupies the only slot while the second waits');
+ const snapshot=()=>store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ const before=snapshot();assert.equal(JSON.parse(before.json).status,'running');
+ const updated:string[]=[],prepare=store.db.prepare.bind(store.db);
+ const spy=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ await delay(5);slots=2;pipeline.wake();
+ while(releases.length<2)await nextTurn();
+ for(let i=0;i<3;i++)await nextTurn();
+ assert.equal(updated.length,1,'a pending->running batch with unchanged job aggregates must still write the job row once');
+ const after=snapshot(),afterJson=JSON.parse(after.json);
+ assert.notEqual(afterJson.updatedAt,JSON.parse(before.json).updatedAt);assert.notEqual(after.updated_at,before.updated_at);
+ assert.equal(afterJson.runningBatches,2);assert.equal(pipeline.get(job.id).runningBatches,2);
+ for(const release of releases)release();const finished=await done;assert.equal(finished.status,'completed');assert.equal(finished.completedBatches,finished.totalBatches);
+ spy.mock.restore();
+});
+
 test('job summaries count distinct surviving batch memories without exposing their IDs',async t=>{
  const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());
  const pipeline=fixtureMemoryPipeline({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>result(record.id)}});t.after(()=>pipeline.close());
