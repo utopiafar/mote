@@ -12,6 +12,7 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
     private val gate = HomeReadGate()
     private var closed = false
     private var active = false
+    private var denied = false
     private var rendered = ""
 
     init { orientation = VERTICAL; tag = "home-recent-conversations" }
@@ -23,13 +24,18 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
         if (closed) return
         active = true
         val access = runCatching { CentralAccess.resolve(activity) }.getOrElse {
+            // A resolution failure replaces the retry with a plain label, but `denied` survives;
+            // when resolution recovers the denied affordance is re-rendered below.
             clear(); label(MoteI18n.text("对话暂不可读取，请稍后重试。")); return
         }
-        if (gate.adopt(access.generation, access.server)) { clear(); archiveEmpty(false) }
+        if (gate.adopt(access.generation, access.server)) { denied = false; clear(); archiveEmpty(false) }
         if (access.client == null) {
+            denied = false
             message(if (access.server.isBlank()) MoteI18n.text("连接中央后查看对话。") else MoteI18n.text("登录中央后查看对话。"))
             return
         }
+        // A revoked read leaves the gate stopped and its retry the only recovery: never read, keep the affordance.
+        if (denied) { retryMessage(MoteI18n.text("对话暂不可读取，请稍后重试。")); return }
         val stamp = if (task.busy || !gate.due(SystemClock.elapsedRealtime())) return else gate.begin(SystemClock.elapsedRealtime())
         if (childCount == 0) label(MoteI18n.text("正在读取对话…"))
         task.start("", {}, {
@@ -58,6 +64,7 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
             if (current == null || current.generation != access.generation || current.server != access.server || current.client == null) { clear(); gate.invalidate(); return@start }
             outcome.onSuccess { (rows, emptyArchive) ->
                 gate.success(SystemClock.elapsedRealtime())
+                denied = false
                 archiveEmpty(emptyArchive)
                 if (rendered == rows.toString()) return@onSuccess
                 clear(); rendered = rows.toString()
@@ -97,7 +104,7 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
                 gate.failure(SystemClock.elapsedRealtime(), status)
                 // A failed or revoked read is not an empty history, and must not expose old-target rows.
                 archiveEmpty(false)
-                if (status == 401 || status == 403) retryMessage(MoteI18n.text("对话暂不可读取，请稍后重试。"))
+                if (status == 401 || status == 403) { denied = true; retryMessage(MoteI18n.text("对话暂不可读取，请稍后重试。")) }
                 else message(MoteI18n.text("对话暂不可读取，请稍后重试。"))
             }
         }
