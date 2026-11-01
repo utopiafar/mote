@@ -189,7 +189,10 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
     if(runtime&&inside(edge.from,'packages/agent/src')&&edge.to==='packages/agent/src/index.ts')rule='agent-no-assembly-import';
     if(runtime&&inside(edge.from,'apps/server/src')&&['apps/server/src/index.ts','apps/server/src/app.ts'].includes(edge.to)&&!(edge.from==='apps/server/src/index.ts'&&edge.to==='apps/server/src/app.ts'))rule='server-no-assembly-import';
     if(desktopContract(edge.from)&&inside(edge.to,'apps/desktop/src')&&!desktopContract(edge.to))rule='desktop-contract-leaf';
-    if(runtime&&inside(edge.from,'apps/web/src')&&edge.from!=='apps/web/src/main.tsx'&&['apps/web/src/main.tsx','apps/web/src/features/bootstrap.tsx','apps/web/src/features/bootstrap.ts'].includes(edge.to))rule='web-no-bootstrap-import';
+    if(runtime&&inside(edge.from,'apps/web/src')){
+      const ownsAssembly=edge.from==='apps/web/src/main.tsx'||edge.from==='apps/web/src/boot.ts'&&edge.to==='apps/web/src/main.tsx';
+      if(!ownsAssembly&&['apps/web/src/boot.ts','apps/web/src/main.tsx','apps/web/src/features/bootstrap.tsx','apps/web/src/features/bootstrap.ts'].includes(edge.to))rule='web-no-bootstrap-import';
+    }
     if(runtime&&edge.from==='apps/web/src/features/runtime.tsx'&&['apps/web/src/features/entries.ts','apps/web/src/features/collections.ts','apps/web/src/features/collections.tsx','apps/web/src/features/agent-view.tsx','apps/web/src/features/agent-view.ts'].includes(edge.to))rule='web-runtime-no-builtins';
     if(rule)issues.push({...edge,rule});
   }

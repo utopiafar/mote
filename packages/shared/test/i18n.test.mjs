@@ -1,3 +1,4 @@
+import '../dist/i18n-all.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -55,6 +56,7 @@ test('catalog placeholders match across locales and Android uses the same transl
 test('retained status messages re-render from every authored catalog',()=>{
   configureLocale(()=>'zh-CN');
   assert.equal(statusMessage(french['设置']),'设置');
+  for(const catalog of Object.values(catalogs)) assert.equal(statusMessage(catalog['正在校验备份']),'正在校验备份');
   configureLocale(()=>'fr');
   assert.equal(statusMessage('Settings'),french['设置']);
 });
