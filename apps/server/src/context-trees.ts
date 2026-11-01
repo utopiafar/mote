@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {AutomaticTopics,type TopicMemoryRead} from './automatic-topics.js';
+import {publishOperationChange} from './operation-projection.js';
 import type {Store} from './store.js';
 import {moteText} from './i18n.js';
 import type {FastifyInstance} from 'fastify';
@@ -22,8 +23,15 @@ const positionSchema=z.object({signature:z.string(),start:z.string().nullable(),
 export class ContextTreeRegistry {
   private readonly trees=new Map<string,ContextTree>();
   private revision=0;
+  private store?:Store;
   automatic?:AutomaticTopics;
-  initializeAutomatic(store:Store,reader:TopicMemoryRead){return this.automatic??=new AutomaticTopics(store,reader);}
+  initializeAutomatic(store:Store,reader:TopicMemoryRead){
+    this.store=store;
+    if(this.automatic)return this.automatic;
+    const automatic=this.automatic=new AutomaticTopics(store,reader),register=automatic.register.bind(automatic);
+    automatic.register=(classifier)=>{publishOperationChange(store,'context-trees:classifier');const dispose=register(classifier);return()=>{dispose();publishOperationChange(store,'context-trees:classifier');};};
+    return automatic;
+  }
   register(raw:ContextTree){
     const tree=treeSchema.parse(raw);if(tree.id.startsWith('auto.'))throw new StoreError('Automatic topic namespace is reserved');const ids=new Set(tree.nodes.map(node=>node.id));
     if(this.trees.has(tree.id)||ids.size!==tree.nodes.length)throw new StoreError('Duplicate context tree identity');
@@ -31,8 +39,9 @@ export class ContextTreeRegistry {
       const seen=new Set([node.id]);let parent=node.parentId;
       while(parent){if(!ids.has(parent)||seen.has(parent))throw new StoreError('Invalid context tree ancestry');seen.add(parent);parent=tree.nodes.find(item=>item.id===parent)!.parentId;}
     }
-    this.trees.set(tree.id,tree);this.revision++;let removed=false;
-    return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;}};
+    this.trees.set(tree.id,tree);this.revision++;const store=this.store;let removed=false;
+    if(store)publishOperationChange(store,'context-trees:registry');
+    return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;if(store)publishOperationChange(store,'context-trees:registry');}};
   }
   async catalog(){return {classification:this.automatic?.state()??{state:'unavailable'},items:[...(await this.automatic?.trees()??[]),...this.trees.values()].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};}
   async page(reader:TreeMemoryRead,treeId:string,nodeId:string,raw:unknown,ownerArchive=true){

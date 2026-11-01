@@ -50,6 +50,10 @@ test('a ready topic catalog never repolls, live memory changes reread it once an
  assert.equal(catalogReads(reads),2,'the delivered memory change coalesces into one re-read');
  assert.match(d.body.textContent!,/此主题已不可用/,'the withdrawn topic becomes hidden');
  await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),2,'no polling resumes after the delivered change');
+ Object.defineProperty(d,'hidden',{configurable:true,value:true});d.dispatchEvent(new d.defaultView!.Event('visibilitychange'));
+ Object.defineProperty(d,'hidden',{configurable:true,value:false});await act(async()=>d.dispatchEvent(new d.defaultView!.Event('visibilitychange')));
+ assert.equal(catalogReads(reads),3,'returning to the view revalidates the ready catalog once');
+ await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),3,'the revalidation does not restart periodic reads');
 });
 
 test('running classification polls every five seconds and stops when the delivered catalog is ready',async t=>{
@@ -69,11 +73,13 @@ test('a hidden view pauses both catalog reads and the feed, and unmounting clean
  let state='running';const {api,reads,changes}=countingApi(()=>({classification:{state},items:[]}));
  await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:''})));
  await act(async()=>t.mock.timers.tick(5000));assert.ok(changes.length>=2,'the feed keeps polling while visible');
- Object.defineProperty(d,'hidden',{configurable:true,value:true});
+ Object.defineProperty(d,'hidden',{configurable:true,value:true});d.dispatchEvent(new d.defaultView!.Event('visibilitychange'));
  const catalogBase=catalogReads(reads),feedBase=changes.length;await act(async()=>t.mock.timers.tick(15000));
  assert.equal(catalogReads(reads),catalogBase,'a hidden page issues no catalog reads');assert.equal(changes.length,feedBase,'a hidden page issues no feed requests');
  Object.defineProperty(d,'hidden',{configurable:true,value:false});
- await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),catalogBase+1,'recovery resumes the running poll once');
+ await act(async()=>d.dispatchEvent(new d.defaultView!.Event('visibilitychange')));
+ assert.equal(catalogReads(reads),catalogBase+1,'a visible return revalidates the catalog once');
+ await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),catalogBase+2,'the running poll resumes afterwards');
  assert.ok(changes.length>feedBase&&changes.length-feedBase<=2,'recovery resumes the feed without duplicating subscriptions');
  await act(async()=>root.unmount());
  const finalCatalog=catalogReads(reads),finalFeed=changes.length;await act(async()=>t.mock.timers.tick(30000));

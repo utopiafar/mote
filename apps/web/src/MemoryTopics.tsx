@@ -1,12 +1,19 @@
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from './api';
 import {useEffect,useState} from 'react';
+import {resources} from './resource-cache';
 import {useResource} from './useResource';
 export interface ContextTree {id:string;version:string;label:string;nodes:{id:string;label:string;parentId?:string}[]}
 export function MemoryTopics({api,treeId,nodeId,onChange}:{api:Api;treeId:string;nodeId:string;onChange:(treeId:string,nodeId:string)=>void}){
  const [running,setRunning]=useState(false);
  const trees=useResource<{items:ContextTree[];classification?:{state:'unavailable'|'ready'|'running'|'failed'}}>(api,'/api/context-trees',running?5000:undefined);
  useEffect(()=>setRunning(trees.data?.classification?.state==='running'),[trees.data]);
+ useEffect(()=>{
+  if(typeof document==='undefined')return;
+  const revalidate=()=>{if(!document.hidden)resources(api).get('/api/context-trees').refresh();};
+  document.addEventListener('visibilitychange',revalidate);
+  return()=>document.removeEventListener('visibilitychange',revalidate);
+ },[api]);
  const tree=trees.data?.items.find(item=>item.id===treeId);
  const missing=trees.data!==undefined&&(!tree||(nodeId&&!tree.nodes.some(node=>node.id===nodeId)));
  const automatic=trees.data?.items.some(item=>item.id.startsWith('auto.'));

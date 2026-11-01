@@ -1,5 +1,8 @@
 import type {Store} from './store.js';
 const states=['waiting','running','blocked','succeeded','failed','cancelled','stale'] as const;
+export function publishOperationChange(store:Store,operationId:string){
+ if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operation_changes'").get())store.db.prepare('INSERT INTO operation_changes(operation_id) VALUES(?)').run(operationId);
+}
 export type OperationMembership={generation?:{slot:string;version:string};optional?:boolean};
 /** Fresh current-definition projections. Step state and historical links remain durable. */
 export function installOperationProjection(store:Store){

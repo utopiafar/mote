@@ -11,6 +11,9 @@ import {Operations,registerOperations} from '../src/operations.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {memorySchema} from '../src/memory-schema.js';
 import {registerMemoryRoutes} from '../src/memory-routes.js';
+import {ContextTreeRegistry} from '../src/context-trees.js';
+import {MemoryBindings} from '../src/memory-bindings.js';
+import {MemoryAutomation} from '../src/memory-automation.js';
 const handler:ExecutionHandler={kind:'fixture',pool:'fixture',concurrency:()=>2,validate:()=>true,execute:async()=>null,commit:()=>{}};
 function fixture(t:any,legacy=false){const dir=mkdtempSync(join(tmpdir(),'mote-operations-')),store=new Store(dir);let engine:ExecutionEngine;
  if(!legacy){engine=new ExecutionEngine(store);engine.register(handler);}
@@ -121,6 +124,25 @@ test('real memory mutations publish memory change ids through the operations end
  store.delete(evidenceId);
  assert.throws(()=>memories.get(removed.id),/not found/);
  assert.ok((await changed()).includes('memory:'+removed.id),'evidence deletion emits a memory change id for removed inputs');
+});
+
+test('catalog transitions publish context-trees change ids through the operations endpoint',async t=>{
+ const {store,engine,operations}=fixture(t),memories=new MemoryStore(store);
+ const app=Fastify();t.after(()=>app.close());registerOperations(app,operations,()=>false);
+ let cursor=0;const changed=async()=>{const page=(await app.inject({url:'/api/operations/changes?since='+cursor})).json() as {ids:string[];cursor:number};cursor=page.cursor;return page.ids;};
+ const registry=new ContextTreeRegistry();
+ registry.register({id:'fixture',version:'1',label:'Generated',nodes:[{id:'one',label:'One',select:{}}]});
+ registry.initializeAutomatic(store,{memoryAsync:async()=>undefined,assertMemoryReadable:()=>{},memories});
+ assert.equal((await changed()).some(id=>id.startsWith('context-trees:')),false,'construction-time contributions predate any reader');
+ const dispose=registry.register({id:'plugin',version:'1',label:'Generated plugin tree',nodes:[{id:'one',label:'One',select:{}}]});
+ assert.ok((await changed()).includes('context-trees:registry'),'registering a contributed tree emits a catalog change');
+ dispose();assert.ok((await changed()).includes('context-trees:registry'),'disposing a contributed tree emits a catalog change');
+ const removeClassifier=registry.automatic!.register({id:'fixture.classifier',version:'1',classify:async()=>({trees:[]})});
+ assert.ok((await changed()).includes('context-trees:classifier'),'classifier registration emits a catalog change');
+ removeClassifier();assert.ok((await changed()).includes('context-trees:classifier'),'classifier disposal emits a catalog change');
+ const bindings=new MemoryBindings(store,memories,new MemoryAutomation(store),{} as never,engine);
+ (bindings as unknown as {saveBinding:(binding:{planId:string;generation:number})=>void}).saveBinding({planId:'mote.builtin',generation:2});
+ assert.ok((await changed()).includes('context-trees:provider'),'provider binding activation emits a catalog change');
 });
 
 test('real Memory phase children expose stable extraction and review kinds without their private inputs',async t=>{
