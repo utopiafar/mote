@@ -95,6 +95,23 @@ test('attribution dimensions preserve totals, intersect filters, distinguish leg
   assert.equal(ledger.summary('2026-09-16','2026-09-16','Asia/Shanghai',{skillId:'__unknown__'}).total.runs,21);
 });
 
+test('operation lookups use the expression index and preserve exact count and ordering',t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-usage-operation-index-')),store=new Store(dir),ledger=new UsageLedger(store);
+ t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+ const base=Date.parse('2026-10-20T00:00:00Z');
+ for(let i=0;i<500;i++){
+  const receipt=ledger.start('fixture','fixture-model','query',{operationId:'generated-op-'+(i%50)}).finish('completed');
+  receipt.createdAt=new Date(base+i*1000).toISOString();
+  store.db.prepare('UPDATE model_usage SET created_at=?,json=? WHERE id=?').run(receipt.createdAt,JSON.stringify(receipt),receipt.id);
+ }
+ const plan=store.db.prepare("EXPLAIN QUERY PLAN SELECT json FROM model_usage WHERE json_extract(json,'$.attribution.operationId')=? ORDER BY created_at,id").all('generated-op-7').map(row=>String((row as {detail:string}).detail)).join(';');
+ assert.match(plan,/model_usage_operation/,plan);assert.doesNotMatch(plan,/SCAN model_usage\b/,plan);
+ const result=ledger.operation('generated-op-7');
+ const manual=(store.db.prepare('SELECT json FROM model_usage').all() as {json:string}[]).map(row=>JSON.parse(String(row.json))).filter(receipt=>receipt.attribution?.operationId==='generated-op-7').sort((a,b)=>a.createdAt===b.createdAt?a.id.localeCompare(b.id):a.createdAt.localeCompare(b.createdAt));
+ assert.equal(manual.length,10);assert.equal(result.items.length,manual.length);
+ assert.deepEqual(result.items.map(item=>item.id),manual.map(item=>item.id));
+});
+
 test('detail pages cover all receipts without changing aggregates; providers drill down to models',t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-usage-pages-')),store=new Store(directory),ledger=new UsageLedger(store);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
