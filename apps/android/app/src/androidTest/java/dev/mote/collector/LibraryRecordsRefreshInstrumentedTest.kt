@@ -65,9 +65,11 @@ class LibraryRecordsRefreshInstrumentedTest {
         require(!ProjectionService.running && !CaptureAccessibilityService.connected)
         require(!QueueStorage.recovering && !QueueStorage.maintaining && QueueStorage.recoveryFailure == null)
         val root = context.noBackupFilesDir
+        require(!java.nio.file.Files.isSymbolicLink(root.toPath()))
         require(root.listFiles()?.none { it.name.startsWith("mote-queue-") } == true) { "Generated fixture refuses orphaned private queues" }
         require(!File(root, "queue-migration.json").exists())
         val pointer = File(root, "queue-location.json")
+        require(!java.nio.file.Files.isSymbolicLink(pointer.toPath()))
         val queue = if (pointer.exists()) QueueLocation.parse(JSONObject(pointer.readText())).let {
             require(it.baseId == "internal" && File(it.path).canonicalFile == File(root, "queue").canonicalFile)
             File(it.path)
@@ -79,10 +81,11 @@ class LibraryRecordsRefreshInstrumentedTest {
             require(!java.nio.file.Files.isSymbolicLink(dir.toPath()) && (!dir.exists() || dir.isDirectory && dir.listFiles()?.isEmpty() == true)) { "Generated fixture refuses retained $name" }
         }
         val pending = File(context.filesDir, "record-pending")
-        require(!pending.exists() || pending.isDirectory && pending.listFiles()?.isEmpty() == true)
+        require(!java.nio.file.Files.isSymbolicLink(pending.toPath()) && (!pending.exists() || pending.isDirectory && pending.listFiles()?.isEmpty() == true))
         val dedupe = File(root, "bulk-dedupe")
+        require(!java.nio.file.Files.isSymbolicLink(dedupe.toPath()))
         require(!dedupe.exists() || dedupe.listFiles()?.all { entry ->
-            entry.name == "pending" && entry.isDirectory && entry.listFiles()?.all { it.isFile && it.name == ".mote-local-format" } == true
+            entry.name == "pending" && !java.nio.file.Files.isSymbolicLink(entry.toPath()) && entry.isDirectory && entry.listFiles()?.all { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) && it.name == ".mote-local-format" } == true
         } == true) { "Generated fixture refuses retained dedupe plans and quarantine" }
         val prefs = context.getSharedPreferences("mote", Context.MODE_PRIVATE).all
         require(listOf("server", "token", "dataOrigin").all { prefs[it] == null || prefs[it] is String })
@@ -229,7 +232,7 @@ class LibraryRecordsRefreshInstrumentedTest {
     @Test fun insertBurstMergesFirstPageWhileDeletesRewritesAndDenialStaySafe() {
         val args = InstrumentationRegistry.getArguments()
         require(args.getString("libraryRecordsRefreshFixture") == "true" && Build.FINGERPRINT.contains("emu64a") && context.packageName == "dev.mote.collector.filefixture")
-        require(!Settings(context).enabled && !ProjectionService.running && CaptureAccessibilityService.instance == null)
+        require(!ProjectionService.running && CaptureAccessibilityService.instance == null)
         val server = requireNotNull(args.getString("uiJourneyServer")); val token = requireNotNull(args.getString("uiJourneyToken"))
         require(java.net.URI(server).host in setOf("10.0.2.2", "127.0.0.1", "localhost"))
         GeneratedProfile().use { profile ->
