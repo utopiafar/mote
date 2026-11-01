@@ -10,11 +10,11 @@ type Snapshot={api:Api;workId:string;cursor:string|undefined;revision:number;pag
 
 /** The activity receipt identifies results, but is not authorization to read
  * their content. Every visible row and every open receives a fresh owner read. */
-export function ActivityMemoryResults({api,workId,cursors,onCursors,onOpen,revision,onSettled,active=true}:{
- api:Api;workId:string;cursors:(string|undefined)[];onCursors:(value:(string|undefined)[])=>void;onOpen:(id:string)=>void;revision:number;onSettled:()=>void;active?:boolean;
+export function ActivityMemoryResults({api,workId,cursors,onCursors,onOpen,revision,onSettled,live,version,active=true}:{
+ api:Api;workId:string;cursors:(string|undefined)[];onCursors:(value:(string|undefined)[])=>void;onOpen:(id:string)=>void;revision:number;onSettled:()=>void;live:boolean;version:string;active?:boolean;
 }){
  const cursor=cursors.at(-1),[retry,setRetry]=useState(0),[snapshot,setSnapshot]=useState<Snapshot>(),[opening,setOpening]=useState<string>();
- const sequence=useRef(0),openingRead=useRef<AbortController|undefined>(undefined),errorFocus=useRef<HTMLElement|undefined>(undefined),retryButton=useRef<HTMLButtonElement>(null),section=useRef<HTMLElement>(null),rowHeights=useRef(new Map<string,number>()),identity=useRef({api,workId,cursor,revision});identity.current={api,workId,cursor,revision};
+ const sequence=useRef(0),openingRead=useRef<AbortController|undefined>(undefined),errorFocus=useRef<HTMLElement|undefined>(undefined),retryButton=useRef<HTMLButtonElement>(null),section=useRef<HTMLElement>(null),rowHeights=useRef(new Map<string,number>()),identity=useRef({api,workId,cursor,revision,version});identity.current={api,workId,cursor,revision,version};
  const path='/api/work-activity/'+encodeURIComponent(workId)+'/memory-results?'+new URLSearchParams({limit:'20',...(cursor?{cursor}:{})});
  const visible=snapshot?.api===api&&snapshot.workId===workId&&snapshot.cursor===cursor&&snapshot.revision===revision?snapshot:undefined;
  useEffect(()=>{
@@ -32,13 +32,19 @@ export function ActivityMemoryResults({api,workId,cursors,onCursors,onOpen,revis
    if(current()){const focused=document.activeElement;if(focused instanceof HTMLElement&&focused.dataset.activityResultId&&!page.ids.includes(focused.dataset.activityResultId))errorFocus.current=focused;setSnapshot({api,workId,cursor,revision,page,rows,loading:false});}
   }catch(error){if(current()){const focused=document.activeElement;if(focused instanceof HTMLElement&&focused.hasAttribute('data-activity-result-id'))errorFocus.current=focused;setSnapshot({api,workId,cursor,revision,rows:[],error,loading:false});}}})();
   return()=>{controller.abort();openingRead.current?.abort();++sequence.current;};
- },[api,workId,cursor,revision,retry,active]);
+ },[api,workId,cursor,revision,version,retry,active]);
  useEffect(()=>{if(active&&visible&&!visible.loading)onSettled();},[visible,active]);
  useLayoutEffect(()=>{const previous=errorFocus.current;if(!previous||!visible||visible.loading)return;errorFocus.current=undefined;if(!previous.isConnected&&(document.activeElement===document.body||!document.activeElement))(retryButton.current??section.current?.querySelector<HTMLElement>('h2')??document.querySelector<HTMLElement>('.activity-detail h1'))?.focus({preventScroll:true});},[visible]);
- useEffect(()=>{if(!active||!visible||visible.loading||opening)return;const timer=setTimeout(()=>{if(!openingRead.current)setRetry(value=>value+1);},3000);return()=>clearTimeout(timer);},[visible,active,opening]);
+ useEffect(()=>{
+  if(!live||!active||!visible||visible.loading||opening)return;
+  const refresh=()=>{if(!document.hidden&&!openingRead.current)setRetry(value=>value+1);};
+  const timer=setTimeout(refresh,3000);
+  document.addEventListener('visibilitychange',refresh);
+  return()=>{clearTimeout(timer);document.removeEventListener('visibilitychange',refresh);};
+ },[visible,active,opening,live]);
  const open=async(id:string)=>{
-  openingRead.current?.abort();const controller=new AbortController();openingRead.current=controller;const serial=sequence.current,origin={api,workId,cursor,revision};setOpening(id);
-  const current=()=>!controller.signal.aborted&&serial===sequence.current&&identity.current.api===origin.api&&identity.current.workId===origin.workId&&identity.current.cursor===origin.cursor&&identity.current.revision===origin.revision;
+  openingRead.current?.abort();const controller=new AbortController();openingRead.current=controller;const serial=sequence.current,origin={api,workId,cursor,revision,version};setOpening(id);
+  const current=()=>!controller.signal.aborted&&serial===sequence.current&&identity.current.api===origin.api&&identity.current.workId===origin.workId&&identity.current.cursor===origin.cursor&&identity.current.revision===origin.revision&&identity.current.version===origin.version;
   try{
    const page=await api.request<ResultPage>(path,{signal:controller.signal});if(!Array.isArray(page.ids)||!page.ids.includes(id))throw Error(moteText('请求的操作或资源已失效，请重新读取后再确认。'));
    const memory=await api.request<Memory>('/api/memories/'+encodeURIComponent(id),{signal:controller.signal});if(memory.id!==id)throw Error('Memory identity mismatch');
