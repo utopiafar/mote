@@ -1,5 +1,8 @@
 package dev.mote.collector
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
@@ -15,6 +18,26 @@ import java.util.concurrent.atomic.AtomicReference
 /** Generated status snapshots only; no capture service or personal data. */
 @RunWith(AndroidJUnit4::class)
 class LocalStateInstrumentedTest {
+    /** Every disk/prefs path used by QueueStorage, format checks and its callbacks stays private. */
+    private class GeneratedQueueContext(base: Context, private val root: File) : ContextWrapper(base) {
+        private val preferences = mutableSetOf<String>()
+        private val prefix = "generated-queue-${root.name}-"
+        private val backup = File(root, "no-backup").apply { check(mkdir()) }
+        private val files = File(root, "files").apply { check(mkdir()) }
+        override fun getApplicationContext(): Context = this
+        override fun getNoBackupFilesDir(): File = backup
+        override fun getFilesDir(): File = files
+        override fun getExternalFilesDirs(type: String?): Array<File> = emptyArray()
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val generatedName = prefix + name
+            preferences.add(generatedName)
+            return baseContext.getSharedPreferences(generatedName, mode)
+        }
+        fun dispose() {
+            preferences.forEach { check(baseContext.deleteSharedPreferences(it)) }
+            check(root.deleteRecursively())
+        }
+    }
     /**
      * The real Home wiring: `QueueStorage.stageRecoveryPending` on the selected location
      * bypasses `RevisionCache` even at an unchanged records revision, and each cycle reopens
@@ -22,35 +45,38 @@ class LocalStateInstrumentedTest {
      * accepted input keeps the truthful committed answer publishing; a repaired input commits.
      */
     @Test fun pendingStageRecoveryRetriesThroughTheSelectedQueueStorage() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        require(context.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
-        val storage = QueueStorage(context)
-        val dir = File(storage.current().path)
-        // Isolation before any mutation: the stage files this test writes must not already hold
-        // a real pending capture (depth() == 0 cannot see one), and the queue must stay empty.
-        require(!storage.stageRecoveryPending() && !File(dir, ".capture-stages.checkpoint").exists())
-        require(!Settings(context).enabled && !CaptureAccessibilityService.connected && !ProjectionService.running && context.queue().depth() == 0)
-        val baseline = dir.list()?.toSet() ?: emptySet()
-        val revision = LocalStateChanges.revisions.value.records
-        val cache = RevisionCache()
-        val collect = {
-            HomeLocalCaptures.collect(cache, revision, context.recordDraftStore().draft(), null,
-                pendingRecovery = { QueueStorage(context).stageRecoveryPending() }) {
-                HomeLocalCaptures.exists(
-                    queue = { QueueStorage(context).openQueue() },
-                    committedProbe = { QueueStorage(context).committedStored() })
-            }
-        }
-        val inbox = File(dir, ".capture-stages.inbox")
-        val event = JSONObject().put("id", UUID.randomUUID().toString())
-            .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 1000)
-            .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")).put("source", "note")
-        fun sealedInbox(input: JSONObject?) = context.localContentCipher().seal(JSONObject()
-            .put("operation", UUID.randomUUID().toString())
-            .put("input", input ?: JSONObject.NULL)
-            .put("maxBytes", 16L * 1024 * 1024).put("reviewHeld", false).put("flush", false)
-            .toString().toByteArray(Charsets.UTF_8))
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        require(app.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        // Atomic fresh directory: neither the selected queue nor its location/pending files are
+        // opened, inspected or cleaned up, even when a preflight or assertion below fails.
+        val root = java.nio.file.Files.createTempDirectory(app.cacheDir.toPath(), "generated-stage-").toFile()
+        val context = GeneratedQueueContext(app, root)
         try {
+            val storage = QueueStorage(context)
+            val dir = File(storage.current().path)
+            assertEquals(File(context.noBackupFilesDir, "queue").canonicalFile, dir.canonicalFile)
+            assertTrue("The real location pointer belongs to this generated profile", File(context.noBackupFilesDir,"queue-location.json").isFile)
+            assertFalse(storage.stageRecoveryPending())
+            assertFalse(storage.committedStored())
+            val revision = LocalStateChanges.revisions.value.records
+            val cache = RevisionCache()
+            val collect = {
+                HomeLocalCaptures.collect(cache, revision, JSONObject(), null,
+                    pendingRecovery = { QueueStorage(context).stageRecoveryPending() }) {
+                    HomeLocalCaptures.exists(
+                        queue = { QueueStorage(context).openQueue() },
+                        committedProbe = { QueueStorage(context).committedStored() })
+                }
+            }
+            val inbox = File(dir, ".capture-stages.inbox")
+            val event = JSONObject().put("id", UUID.randomUUID().toString())
+                .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 1000)
+                .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")).put("source", "note")
+            fun sealedInbox(input: JSONObject?) = context.localContentCipher().seal(JSONObject()
+                .put("operation", UUID.randomUUID().toString())
+                .put("input", input ?: JSONObject.NULL)
+                .put("maxBytes", 16L * 1024 * 1024).put("reviewHeld", false).put("flush", false)
+                .toString().toByteArray(Charsets.UTF_8))
             assertFalse("the empty generated archive caches false at this revision", collect().getBoolean("hasAnyRecords"))
             // An accepted input that fails validation on replay; the file survives for the next open.
             inbox.writeBytes(sealedInbox(JSONObject().put("event", JSONObject().put("id", "not-a-uuid")).put("image", JSONObject.NULL)))
@@ -61,11 +87,22 @@ class LocalStateInstrumentedTest {
             inbox.writeBytes(sealedInbox(JSONObject().put("event", event).put("image", JSONObject.NULL)))
             assertTrue("the retried replay commits the accepted record", collect().getBoolean("hasAnyRecords"))
             assertFalse("recovery cleared the pending stage input", storage.stageRecoveryPending())
-            assertNotNull("the replayed record landed in the real queue", context.queue().capture(event.getString("id")))
+            assertNotNull("the replayed record landed in the real queue", storage.openQueue().capture(event.getString("id")))
+            assertTrue("The independent committed probe reads the replayed record", storage.committedStored())
+            assertTrue("Real QueueStorage replay reports the record revision", LocalStateChanges.revisions.value.records > revision)
+            // A later journal can fail before openQueue returns. The same production committed
+            // readers used by Home must still retain the saved receipt and truthful inventory.
+            val journal = JSONObject().put("outputs", org.json.JSONArray().put(JSONObject()
+                .put("event", JSONObject().put("id", "not-a-uuid")).put("image", JSONObject.NULL)))
+                .put("checkpoint", JSONObject().put("stages", org.json.JSONArray()))
+            File(dir, ".capture-stages.journal").writeBytes(context.localContentCipher().seal(journal.toString().toByteArray(Charsets.UTF_8)))
+            assertThrows(Exception::class.java) { storage.openQueue() }
+            assertTrue(storage.stageRecoveryPending())
+            assertTrue(storage.committedStored())
+            assertEquals("A failed reopen cannot withdraw the committed receipt", event.getString("id"), storage.committedCapture(event.getString("id"))?.getString("id"))
+            assertTrue("Home still publishes the committed inventory while retrying", collect().getBoolean("hasAnyRecords"))
         } finally {
-            // Restore the baseline exactly: remove only files this test created, never a
-            // pre-existing stage file or record.
-            (dir.list()?.toSet() ?: emptySet()).minus(baseline).forEach { File(dir, it).delete() }
+            context.dispose()
         }
     }
     @Test fun localStateRefreshNeverHoldsQueueWhileWaitingForConfiguration() {

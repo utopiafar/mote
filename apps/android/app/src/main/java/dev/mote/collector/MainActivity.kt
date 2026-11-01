@@ -515,7 +515,9 @@ class MainActivity : MoteActivity() {
         }) { result ->
             result.onSuccess { (sources, capturePage, files) ->
                 navigation.updateDraft(capturePage.optBoolean("hasDraft"))
-                homeHasRecords = capturePage.getBoolean("hasAnyRecords") || files.isNotEmpty() || sources.any { it.first.syncContinuously }
+                // Unknown inventory must not invent an empty archive/first-use handoff, but it
+                // must still let independently readable drafts and source rows reach Home.
+                homeHasRecords = capturePage.isNull("hasAnyRecords") || capturePage.getBoolean("hasAnyRecords") || files.isNotEmpty() || sources.any { it.first.syncContinuously }
                 firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
                 val receipt = capturePage.optJSONObject("savedReceipt")
                 homeReceiptAvailable = receipt != null

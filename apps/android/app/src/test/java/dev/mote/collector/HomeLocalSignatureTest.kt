@@ -271,7 +271,17 @@ class HomeLocalSignatureTest {
         assertTrue("an undetermined read keeps the last known answer, not a false empty",
             collect(cache, 9, draft = JSONObject().put("text", "draft"), pendingRecovery = pending, exists = broken).getBoolean("hasAnyRecords"))
         val fresh = RevisionCache()
-        assertThrows(Exception::class.java) { collect(fresh, 9, pendingRecovery = pending, exists = broken) }
+        var attempts = 0
+        repeat(2) {
+            val snapshot = collect(fresh, 9, draft = JSONObject().put("text", "draft"), pendingRecovery = pending) {
+                attempts++; broken()
+            }
+            assertTrue("an undetermined inventory is explicit unknown, never false empty", snapshot.isNull("hasAnyRecords"))
+            assertTrue("independent draft state still publishes", snapshot.getBoolean("hasDraft"))
+            assertNull("unknown inventory is never cached as a determined answer", fresh.lastOrNull())
+        }
+        assertEquals("pending recovery keeps retrying despite an unchanged revision", 2, attempts)
+        assertFalse("a later confirmed empty archive replaces unknown", collect(fresh, 9) { false }.getBoolean("hasAnyRecords"))
     }
 
     private fun note() = JSONObject().put("id", UUID.randomUUID().toString())

@@ -62,9 +62,10 @@ internal object HomeLocalCaptures {
         // cannot see the accepted inbox, and only opening the queue retries its replay. The
         // bypassed answer is never cached, so each cycle re-checks until recovery commits. When
         // the read itself cannot determine the inventory, the last known answer stands instead
-        // of a false empty; with no known answer the failure still propagates as unknown.
+        // of a false empty. With no known answer, publish explicit unknown alongside the
+        // independently readable draft/receipt; the next cycle must still retry recovery.
         captures.put("hasAnyRecords", if (pendingRecovery()) {
-            try { exists() } catch (error: Exception) { cache.lastOrNull() ?: throw error }
+            try { exists() } catch (_: Exception) { cache.lastOrNull() ?: JSONObject.NULL }
         } else cache.hasRecords(recordsRevision, exists))
         savedReceipt?.let { captures.put("savedReceipt", it) }
         return captures
