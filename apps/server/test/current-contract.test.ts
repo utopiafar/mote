@@ -44,10 +44,16 @@ test('current resource IDs, typed readers, explicit policies and frozen Memory j
 
 test('current model registry persists in mote.yaml and ignores the retired JSON source',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-profile-contract-')),node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false,createModelAgent:async()=>inactive});
- t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ let restarted:Awaited<ReturnType<typeof buildApp>>|undefined;
+ t.after(async()=>{
+  const errors:unknown[]=[];
+  for(const runtime of [restarted,node])try{await runtime?.app.close();}catch(error){errors.push(error);}
+  if(errors.length)throw new AggregateError(errors,'Current model registry fixture cleanup failed');
+  rmSync(directory,{recursive:true,force:true});
+ });
  await node.modelSettings.update({revision:0,settings:{...node.modelSettings.current(),model:'generated-model'}});
  const path=join(directory,'mote.yaml'),saved=parse(readFileSync(path,'utf8'));assert.equal(saved.version,1);assert.ok(saved.models.profiles.some((profile:{id:string})=>profile.id==='primary'));assert.ok(saved.models.defaults);assert.ok(saved.models.defaultModels);assert.equal(saved.models.settings,undefined);
  const retired=JSON.stringify({version:1,revision:999,settings:{...node.modelSettings.current(),model:'retired-model'}});writeFileSync(join(directory,'model-settings.json'),retired);
- await node.app.close();const restarted=await buildApp(config(directory),{agent:inactive,backgroundWorker:false,createModelAgent:async()=>inactive});t.after(()=>restarted.app.close());
+ await node.app.close();restarted=await buildApp(config(directory),{agent:inactive,backgroundWorker:false,createModelAgent:async()=>inactive});
  assert.equal(restarted.modelSettings.current().model,'generated-model');assert.equal(readFileSync(join(directory,'model-settings.json'),'utf8'),retired);
 });
