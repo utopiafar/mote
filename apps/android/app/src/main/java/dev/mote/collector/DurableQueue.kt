@@ -57,6 +57,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
     internal var onMutation: ((Boolean) -> Unit)? = null
+    /** Record files committed while no mutation listener existed yet, e.g. the init-time stage replay. */
+    internal var unreportedRecordWrites = false
     internal var assertCurrent: (() -> Unit)? = null
     internal var afterStageJournal: (() -> Unit)? = null
     private inline fun <T> guarded(action: () -> T): T = synchronized(lock) { assertCurrent?.invoke(); action() }
@@ -186,6 +188,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     fun pendingSync(): PendingSync = stats().pendingSync
     fun depth(): Int = guarded { dir.listFiles()?.count { it.extension == "event" } ?: 0 }
+    /** Whether any record file is stored; a listing failure surfaces rather than reporting empty. */
+    fun anyStored(): Boolean = guarded { browseFiles().isNotEmpty() }
     fun diskBytes(): Long = guarded { dir.listFiles()?.filter { it.isFile && it.name != ".mote-local-format" }?.sumOf { it.length() } ?: 0L }
     fun reservedOcrBytes(): Long = stats().reservedOcrBytes
     fun bytes(): Long = stats().bytes + externalStorageBytes()
@@ -199,7 +203,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             check(temp.renameTo(file)) { MoteI18n.text("无法原子写入队列") }
             if (modifiedAt != null) file.setLastModified(modifiedAt)
             if (file.extension == "blob") validatedBlobs.remove(file.absolutePath)
-            if (file != stageCheckpoint && file != stageJournal && file != stageInbox) onMutation?.invoke(file.extension == "event")
+            if (file != stageCheckpoint && file != stageJournal && file != stageInbox) {
+                if (onMutation == null && file.extension == "event") unreportedRecordWrites = true
+                onMutation?.invoke(file.extension == "event")
+            }
             // Atomic replacements may have the same length and timestamp on coarse filesystems.
             if (file.extension == "event") browseIndex().changed(file, JSONObject(String(bytes, Charsets.UTF_8)))
         } finally { temp.delete() }

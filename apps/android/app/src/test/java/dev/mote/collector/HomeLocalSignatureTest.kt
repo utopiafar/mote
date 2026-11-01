@@ -66,12 +66,60 @@ class HomeLocalSignatureTest {
         val queue = DurableQueue(folder.newFolder(), cipher)
         val cache = RevisionCache()
         assertFalse(collect(cache, 3) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
-        queue.enqueue(JSONObject().put("id", UUID.randomUUID().toString())
-            .put("capturedAt", java.time.Instant.now().plusSeconds(3600).toString())
-            .put("platform", "android").put("durationMs", 1000)
-            .put("privacy", JSONObject().put("excluded", false)).put("source", "note"), null, 16L * 1024 * 1024)
+        queue.enqueue(note().put("capturedAt", java.time.Instant.now().plusSeconds(3600).toString()), null, 16L * 1024 * 1024)
         assertTrue("a future-dated record is a stored record", collect(cache, 4) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
     }
+
+    @Test fun aFailedListingDoesNotCacheAsEmpty() {
+        // A directory-listing failure must surface: it can neither report an empty archive nor
+        // be retained by the revision cache once storage is readable again.
+        val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
+        queue.enqueue(note(), null, 16L * 1024 * 1024)
+        val cache = RevisionCache()
+        assertTrue(collect(cache, 5) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
+        val hidden = java.io.File(dir.parentFile, dir.name + ".hidden")
+        check(dir.renameTo(hidden)); check(java.io.File(dir.path).createNewFile())
+        try {
+            assertThrows(Exception::class.java) { collect(cache, 6) { HomeLocalCaptures.exists(queue) } }
+        } finally {
+            check(java.io.File(dir.path).delete()); check(hidden.renameTo(dir))
+        }
+        assertTrue("the failed read never cached, so the same revision rechecks", collect(cache, 6) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
+    }
+
+    @Test fun anInterruptedCaptureRecoveredOnOpenAdvancesTheRecordRevision() {
+        // enqueue crashes inside a stage, leaving its committed inbox; the next queue open
+        // replays it before any mutation listener exists, and openQueue then reports the write
+        // to the records revision — so a revision-keyed cache can never stay on "empty".
+        var crash = true
+        val stage = object : CaptureStage {
+            override val id = "crash-fixture"; override val version = 1
+            override fun consume(inputs: List<StageCapture>, checkpoint: JSONObject?, held: List<StageCapture>, flush: Boolean,
+                                 deriveId: (List<String>, String) -> String): StageResult {
+                if (crash) { crash = false; error("generated stage crash") }
+                return StageResult(inputs)
+            }
+        }
+        val registry = CaptureStageRegistry(listOf(stage))
+        val dir = folder.newFolder()
+        val cache = RevisionCache()
+        val revisionBefore = LocalStateChanges.revisions.value.records
+        assertFalse(collect(cache, revisionBefore) { HomeLocalCaptures.exists(DurableQueue(dir, cipher)) }.getBoolean("hasAnyRecords"))
+        val queue = DurableQueue(dir, cipher, captureStages = registry)
+        assertThrows(IllegalStateException::class.java) { queue.enqueue(note(), null, 1_000_000) }
+        val recovered = DurableQueue(dir, cipher, captureStages = registry)
+        assertTrue("the replay committed a record while no listener existed", recovered.unreportedRecordWrites)
+        assertTrue(HomeLocalCaptures.exists(recovered))
+        // The same wiring QueueStorage.openQueue performs after installing onMutation.
+        if (recovered.unreportedRecordWrites) { recovered.unreportedRecordWrites = false; LocalStateChanges.changed(records = true) }
+        val revisionAfter = LocalStateChanges.revisions.value.records
+        assertTrue("recovery advanced the record revision", revisionAfter > revisionBefore)
+        assertTrue("the recovered record is seen at the new revision", collect(cache, revisionAfter) { HomeLocalCaptures.exists(recovered) }.getBoolean("hasAnyRecords"))
+    }
+
+    private fun note() = JSONObject().put("id", UUID.randomUUID().toString())
+        .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 1000)
+        .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")).put("source", "note")
 
     @Test fun theSavedReceiptPassesThroughWhenPresent() {
         val cache = RevisionCache()

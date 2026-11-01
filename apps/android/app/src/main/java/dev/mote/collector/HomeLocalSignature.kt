@@ -42,9 +42,10 @@ internal object HomeLocalCaptures {
     /**
      * The existence check must cover every stored record: a timestamp-bounded page query would
      * exclude future-dated records while its revision-keyed cache answer never expires, so the
-     * home could stick in first-use mode as the clock catches up. File depth has no clock input.
+     * home could stick in first-use mode as the clock catches up. [DurableQueue.anyStored] has
+     * no clock input and reports a listing failure rather than inventing an empty inventory.
      */
-    fun exists(queue: DurableQueue) = queue.depth() > 0
+    fun exists(queue: DurableQueue) = queue.anyStored()
 
     fun collect(cache: RevisionCache, recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, exists: () -> Boolean): JSONObject {
         val captures = JSONObject()
