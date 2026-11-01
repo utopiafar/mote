@@ -368,6 +368,21 @@ it('shows a confirmed denial and hides obsolete Central pagination while preserv
   expect(el('content-more').hidden).toBe(true);expect(el('content-feed').querySelector(`[data-content-key="${local.key}"]`)).not.toBeNull();
 });
 
+it('keeps the confirmed All-view denial visible while loading the next local page until a fresh Central success',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  const first={...item,key:'queue:22222222-2222-4222-8222-222222222222',title:'Generated first local page'},second={...first,key:'queue:33333333-3333-4333-8333-333333333333',title:'Generated second local page'};
+  vi.mocked(api.localContent).mockImplementation(async offset=>offset?{items:[second],total:31}:{items:[first],total:31,nextOffset:30});
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  page={items:[item],nextCursor:'generated-old-central-page'};await library.refresh();
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});deny({items:[],authorizationDenied:true});await home;await flush();
+  expect(el('content-more').hidden).toBe(false);const reads=vi.mocked(api.centralContent).mock.calls.length;
+  el('content-more').click();await flush();
+  expect(api.centralContent).toHaveBeenCalledTimes(reads);expect(el('content-feed').textContent).toContain(first.title);expect(el('content-feed').textContent).toContain(second.title);
+  expect(el('content-status').textContent).toContain('无法访问采集记录');expect(el('content-status').classList.contains('visually-hidden')).toBe(false);
+  await library.refresh();expect(el('content-feed').querySelector(`[data-content-key="${item.key}"]`)).not.toBeNull();
+  expect(el('content-status').textContent).not.toContain('无法访问采集记录');expect(el('content-status').classList.contains('visually-hidden')).toBe(true);
+});
+
 it.each(['all','search'])('marks an invalidated successful %s page incomplete after a Home denial whose local read is held',async scope=>{
   await flush();let finish!:(value:CentralContentPage)=>void,finishLocal!:(value:{items:ContentItem[];total:number})=>void;
   if(scope==='search')(el('content-search') as HTMLInputElement).value='generated';
