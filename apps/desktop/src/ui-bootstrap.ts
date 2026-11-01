@@ -1,3 +1,4 @@
+import '@mote/shared/i18n-all';
 import {mountCaptureWorkspace} from './capture-workspace';
 import {mountSettingsWorkspace} from './settings-workspace';
 import {desktopAppearance,receiveAppearance} from './appearance';

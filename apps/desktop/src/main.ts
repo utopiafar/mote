@@ -1,3 +1,4 @@
+import '@mote/shared/i18n-all';
 import {canSendFromTray,showTraySendFailure} from './tray-send';
 import {centralMemoryTopics,centralMemoryTopicPage,centralMemoryTopicDetail,centralMemoryTopicEvidence} from './memory-topics';
 import {describeBackupFile} from './queue-backup-identity';
