@@ -331,6 +331,16 @@ class LibraryRecordsRefreshInstrumentedTest {
                 }
                 return value
             }
+            fun paginationState(): List<Any?> {
+                var value = emptyList<Any?>()
+                scenario.onActivity { activity ->
+                    val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
+                    value = listOf("pages", "localCursor", "remoteCursor", "remoteBoundary", "localMore", "remoteMore").map {
+                        LibraryCaptureView::class.java.getDeclaredField(it).apply { isAccessible = true }.get(view)
+                    }
+                }
+                return value
+            }
             fun busyDeadlinePending(): Boolean {
                 var value = false
                 scenario.onActivity { activity ->
@@ -435,6 +445,36 @@ class LibraryRecordsRefreshInstrumentedTest {
             assertEquals("an insert burst reads one bounded Central prefix", 1, stats.getInt("deviceView"))
             assertTrue("all Central HTTP during the append burst stays bounded", stats.getInt("centralRequests") <= 2)
             assertEquals("the owner-scope check is cached per connection generation", 0, stats.getInt("connectionsSelf"))
+
+            waitFor("the successful append is idle before the controlled offline transition") { readIdle() }
+            val beforeOffline = paginationState()
+            assertNotNull("this transition retains an actual local continuation cursor", beforeOffline[1])
+            val offlineIds = (0 until 2).map { UUID.randomUUID().toString() }
+            api.post("/api/fixture/library-denial", JSONObject().put("mode", "offline"))
+            api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
+            try {
+                queue.enqueue(note(offlineIds[0], device, Instant.now(), "Generated offline append"), null, 64_000_000)
+                waitFor("the real 503 request is held after local-first publication") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 && rows(offlineIds[0]) == 1 }
+                assertFalse(readIdle())
+                assertTrue("the previously authorized Central rows remain until the held response", remotes.dropLast(1).all { rows(it) == 1 })
+                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
+                waitFor("a delivered transient failure withdraws stale Central claims while keeping local originals") {
+                    readIdle() && remotes.all { rows(it) == 0 } && rows(offlineIds[0]) == 1 && rows(locals[50]) == 1 && shown("中央状态未知")
+                }
+                assertEquals("offline append preserves every pagination continuation", beforeOffline, paginationState())
+                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(2) }
+                waitFor("stale remote availability cannot appear in the Central-readable filter") { rows(locals[50]) == 0 && rows(offlineIds[0]) == 0 && remotes.all { rows(it) == 0 } }
+            } finally {
+                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
+                api.post("/api/fixture/library-denial", JSONObject().put("mode", "none"))
+                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
+            }
+            waitFor("returning from the Central filter still keeps the local original") { rows(locals[50]) == 1 && rows(offlineIds[0]) == 1 }
+            queue.enqueue(note(offlineIds[1], device, Instant.now(), "Generated recovered append"), null, 64_000_000)
+            waitFor("a later successful incremental read restores the generated Central rows exactly once") { readIdle() && remotes.dropLast(1).all { rows(it) == 1 } && rows(offlineIds[0]) == 1 && rows(offlineIds[1]) == 1 }
+            assertEquals("recovery keeps the same pagination continuations", beforeOffline, paginationState())
+            queue.withDeferredIndexWrites { offlineIds.forEach { queue.acknowledge(it) } }
+            waitFor("only the two generated offline probes are removed before continuing") { readIdle() && offlineIds.all { rows(it) == 0 } && rows(locals[50]) == 1 && remotes.dropLast(1).all { rows(it) == 1 } }
             click("加载更多"); waitFor("pagination continues after the cursor") { rows(locals[64]) == 1 }
 
             waitFor("pagination is idle before holding the in-flight insertion read") { readIdle() }

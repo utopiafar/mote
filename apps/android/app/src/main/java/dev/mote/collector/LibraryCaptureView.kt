@@ -276,10 +276,13 @@ internal class LibraryCaptureView(
                         repeat(matches.length()) { val match = matches.getJSONObject(it); projection.availability(selection.server, match.getString("deviceId"), match.getString("id"), match.getString("state") == "readable", match.optInt("observationCount"), match.optString("libraryVersion")) }
                         if (page.optString("nextCursor").let { it.isBlank() || it == "null" }) { remoteCursor = null; remoteBoundary = null; remoteMore = false }
                     }?.onFailure {
-                        // Denial and epoch conflicts still withdraw stale remote rows; a transient failure keeps the loaded pages reachable.
+                        // A previous successful read cannot claim current Central
+                        // availability after this read failed. Keep local originals
+                        // and the cursors so a later append can revalidate the range.
+                        projection.clearCentral(selection.server)
                         if (it is CentralFailure && (it.status in setOf(401, 403) || it.code == "connection_revoked")) {
                             deniedOrigin = selection.server; sourceView.clearRemote()
-                            projection.clearCentral(selection.server); remoteCursor = null; remoteMore = false
+                            remoteCursor = null; remoteMore = false
                         }
                         if (it is CentralFailure && it.status == 409) { refreshPending = true; pages = 0; restorePages = 1 }
                         remoteNotice = if (it is java.io.IOException) MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试") else it.message.orEmpty()
