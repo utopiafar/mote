@@ -12,10 +12,12 @@ internal data class HistoryBatch(val id: String, val at: Long, val attempts: Lis
 }
 internal object UploadHistoryModel {
     fun batches(attempts: List<CaptureUploadAttempt>, receipts: List<CaptureUploadReceipt>): List<HistoryBatch> {
+        val attemptsByBatch = attempts.groupBy { it.batchId }
+        val receiptsByBatch = receipts.groupBy { it.batchId }
         val ids = (attempts.map { it.batchId } + receipts.map { it.batchId }).toSet()
         return ids.map { batch ->
-            val sent = attempts.filter { it.batchId == batch }
-            val confirmed = receipts.filter { it.batchId == batch }
+            val sent = attemptsByBatch[batch].orEmpty()
+            val confirmed = receiptsByBatch[batch].orEmpty()
             val items = linkedMapOf<String, HistoryItem>()
             sent.forEach { attempt -> for (i in 0 until attempt.captures.length()) {
                 val item = attempt.captures.getJSONObject(i); val id = item.getString("id")
@@ -31,16 +33,21 @@ internal object UploadHistoryModel {
         }.sortedWith(compareByDescending<HistoryBatch> { it.at }.thenBy { it.id })
     }
     fun merge(captures: List<HistoryBatch>, attempts: List<ItemUploadAttempt>, receipts: List<ItemUploadReceipt>): List<HistoryBatch> {
+        // Preserve singleOrNull: a duplicate identity is ambiguous, not last-write-wins.
+        val capturesById = captures.groupBy { it.id }.mapValues { it.value.singleOrNull() }
+        val attemptsByBatch = attempts.groupBy { it.batchId }
+        val receiptsByBatch = receipts.groupBy { it.batchId }
+        val receiptsByIdentity = receipts.groupBy { it.identity.key }.mapValues { it.value.singleOrNull() }
         val ids = (captures.map { it.id } + attempts.map { it.batchId } + receipts.map { it.batchId }).toSet()
         return ids.map { id ->
-            val base = captures.singleOrNull { it.id == id }
-            val sent = attempts.filter { it.batchId == id }.sortedBy { it.startedAt }
-            val received = receipts.filter { it.batchId == id }
+            val base = capturesById[id]
+            val sent = attemptsByBatch[id].orEmpty().sortedBy { it.startedAt }
+            val received = receiptsByBatch[id].orEmpty()
             val items = linkedMapOf<String, HistoryItem>()
             base?.items?.forEach { items[it.key] = it }
             sent.forEach { attempt ->
                 val identity = attempt.identity
-                val receipt = receipts.singleOrNull { it.identity.key == identity.key }
+                val receipt = receiptsByIdentity[identity.key]
                 items[identity.key] = HistoryItem(identity.key, receipt?.captureId.orEmpty(), attempt.state == "received" || items[identity.key]?.received == true,
                     identity.revision, identity)
             }
