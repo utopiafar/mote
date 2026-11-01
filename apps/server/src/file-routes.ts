@@ -66,9 +66,14 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
     const v=file(req),mime=v.item.mimeType??'';
     if(!v.hasOriginal||!FILE_THUMBNAIL_TYPES.has(mime))throw new StoreError('Thumbnail is unavailable',404);
     if(v.sizeBytes>FILE_THUMBNAIL_MAX_ORIGINAL_BYTES)throw new StoreError('Original is too large for a thumbnail',413);
-    const bytes=await thumbnails.get(`${v.captureId}:${v.sha256??v.item.revision}`,async()=>renderFileThumbnail(await readAll(files.stream(fileId(req),0,v.sizeBytes-1)),mime));
-    file(req); // Re-check authorization, visibility and retention after asynchronous processing.
-    return reply.type('image/jpeg').send(bytes);
+    const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};
+    req.raw.once('aborted',abort);reply.raw.once('close',abort);
+    try{
+      let bytes:Buffer;
+      try{bytes=await thumbnails.get(`${v.captureId}:${v.sha256??v.item.revision}`,async()=>renderFileThumbnail(await readAll(files.stream(fileId(req),0,v.sizeBytes-1)),mime),controller.signal);}
+      finally{file(req);} // Fresh access overrides both cached results and read/render failures.
+      return reply.type('image/jpeg').send(bytes);
+    }finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
   });
   app.addHook('onClose',async()=>{thumbnails.clear();});
   // Owner-only routes are excluded from the collector route allowlist.

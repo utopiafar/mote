@@ -4,6 +4,7 @@ import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
+import {get as httpGet} from 'node:http';
 import sharp from 'sharp';
 import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
 import {sha256} from '../src/store.js';
@@ -199,4 +200,117 @@ test('file thumbnail re-checks access when a held render finishes after revocati
   const deleteResponse=await deleteRequest;
   assert.equal(deleteResponse.statusCode,(await app.inject({url:`/api/files/${ack2.id}/content`,headers})).statusCode);
   assert.equal(deleteResponse.statusCode,404,'a deleted original must not return the rendered JPEG');
+});
+
+test('file thumbnail re-checks each requester after a held render fails',async t=>{
+  const {app,connections,files,headers}=await setup(t);
+  const oversized=await sharp({create:{width:5000,height:5000,channels:3,background:'#123456'}}).png().toBuffer();
+  const samples=[['malformed',Buffer.from('not a PNG')],['over-pixel-limit',oversized]] as const;
+  const control:{position:'start'|'end';gate:Promise<void>}={position:'end',gate:Promise.resolve()};
+  const {stats,restore}=gateOriginalReads(files,control);
+  try{
+    for(const [name,bytes] of samples){
+      const ack=await upload(app,headers,manifest(bytes,'image/png',name+'.png','content://generated/'+name),bytes);
+      const {invitation}=connections.invite({label:'Generated device',serverUrl:'http://127.0.0.1:57569',deviceId:'phone'});
+      const device=await connections.redeem({code:invitation.code,deviceId:'phone',deviceName:'Generated',platform:'android'});
+      const deviceHeaders={authorization:`Bearer ${device.token}`},gate=defer(),heldBefore=stats.held;
+      control.gate=gate.promise;
+      const ownerRequest=app.inject({url:`/api/files/${ack.id}/thumbnail`,headers});
+      const deviceRequest=app.inject({url:`/api/files/${ack.id}/thumbnail`,headers:deviceHeaders});
+      try{
+        await until(()=>stats.held>heldBefore,'failed image read held before decode');
+        await connections.revoke(device.credentialId);
+      }finally{gate.resolve();}
+      const [ownerResponse,deviceResponse]=await Promise.all([ownerRequest,deviceRequest]);
+      assert.equal(ownerResponse.statusCode,404,name+' retains the decode error for the authorized owner');
+      const content=await app.inject({url:`/api/files/${ack.id}/content`,headers:deviceHeaders});
+      assert.equal(content.statusCode,401);
+      assert.equal(deviceResponse.statusCode,content.statusCode,name+' must return current authorization failure');
+      assert.doesNotMatch(String(deviceResponse.headers['content-type']),/image\/jpeg/);
+      assert.equal(stats.byId.get(ack.id),1,'both requesters share the failing render');
+    }
+  }finally{restore();}
+});
+
+test('file thumbnail keeps black marks visible on transparent PNG, WebP and GIF originals',async t=>{
+  const {app,headers}=await setup(t);
+  const width=120,height=80,rgba=Buffer.alloc(width*height*4);
+  for(let y=20;y<60;y++)for(let x=40;x<80;x++)rgba[(y*width+x)*4+3]=255;
+  for(const format of ['png','webp','gif'] as const){
+    const bytes=await sharp(rgba,{raw:{width,height,channels:4}}).toFormat(format).toBuffer();
+    const ack=await upload(app,headers,manifest(bytes,'image/'+format,'mark.'+format,'content://generated/mark.'+format),bytes);
+    const response=await app.inject({url:`/api/files/${ack.id}/thumbnail`,headers});
+    assert.equal(response.statusCode,200,response.body);
+    const {data,info}=await sharp(response.rawPayload).raw().toBuffer({resolveWithObject:true});
+    const pixel=(x:number,y:number)=>Array.from(data.subarray((y*info.width+x)*info.channels,(y*info.width+x)*info.channels+3));
+    assert.ok(pixel(10,10).every(v=>v>235),format+' transparent background must become light');
+    assert.ok(pixel(60,40).every(v=>v<20),format+' black mark must remain dark and visible');
+  }
+});
+
+function thumbnailOverTcp(base:string,id:string,headers:Record<string,string>){
+  let cancel!:()=>void;
+  const response=new Promise<{status:number;bytes:Buffer}|null>((resolve,reject)=>{
+    let cancelled=false;
+    const request=httpGet(`${base}/api/files/${id}/thumbnail`,{headers,agent:false},res=>{
+      const parts:Buffer[]=[];
+      res.on('data',part=>parts.push(part));
+      res.on('end',()=>resolve({status:res.statusCode!,bytes:Buffer.concat(parts)}));
+      res.on('error',error=>cancelled?resolve(null):reject(error));
+    });
+    request.on('error',error=>cancelled?resolve(null):reject(error));
+    cancel=()=>{cancelled=true;request.destroy();};
+  });
+  return {response,cancel};
+}
+
+test('file thumbnail discards disconnected queued HTTP work and retains coalesced live requesters',async t=>{
+  const {app,files,headers}=await setup(t);
+  const ids:string[]=[];
+  for(let n=0;n<12;n++){
+    const bytes=await sharp({create:{width:40+n,height:30,channels:3,background:'#123456'}}).png().toBuffer();
+    ids.push((await upload(app,headers,manifest(bytes,'image/png',`tcp-${n}.png`,`content://generated/tcp-${n}`),bytes)).id);
+  }
+  const base=await app.listen({host:'127.0.0.1',port:0});
+  const seen=new Map<string,number>(),closed=new Map<string,number>();
+  const observe=(req:any,res:any)=>{
+    const id=req.url.split('/')[3];seen.set(id,(seen.get(id)??0)+1);
+    res.once('close',()=>closed.set(id,(closed.get(id)??0)+1));
+  };
+  app.server.on('request',observe);
+  const blockers=defer(),later=defer();
+  const control:{position:'start'|'end';gate:Promise<void>}={position:'start',gate:blockers.promise};
+  const {stats,restore}=gateOriginalReads(files,control);
+  const clients:ReturnType<typeof thumbnailOverTcp>[]=[];
+  const request=(id:string)=>{const client=thumbnailOverTcp(base,id,headers);clients.push(client);return client;};
+  try{
+    const active=ids.slice(0,4).map(request);
+    await until(()=>stats.held===4,'four active TCP renders');
+    control.gate=later.promise;
+    const abandonedIds=ids.slice(4,10),abandoned=abandonedIds.map(request);
+    const sharedGone=request(ids[10]),sharedLive=request(ids[10]);
+    await until(()=>abandonedIds.every(id=>seen.has(id))&&seen.get(ids[10])===2,'all queued HTTP requests to reach the server');
+    assert.equal(stats.byId.size,4,'queued requests must not read originals');
+    for(const client of [...abandoned,sharedGone])client.cancel();
+    await until(()=>abandonedIds.every(id=>closed.has(id))&&closed.get(ids[10])===1,'server observes actual TCP disconnects');
+    const visible=request(ids[11]),retry=request(abandonedIds[0]);
+    await until(()=>seen.has(ids[11])&&seen.get(abandonedIds[0])===2,'new visible requests arrive');
+    blockers.resolve();
+    await until(()=>stats.byId.has(ids[11])&&stats.byId.has(abandonedIds[0])&&stats.byId.has(ids[10]),'visible and shared requests get freed slots');
+    for(const id of abandonedIds.slice(1))assert.equal(stats.byId.has(id),false,'disconnected job must never read its original');
+    assert.equal(stats.byId.get(ids[10]),1,'one disconnect must retain work for its live coalesced requester');
+    assert.equal(stats.byId.get(abandonedIds[0]),1,'a fresh requester can recreate an abandoned job');
+    assert.ok(stats.peak<=FILE_THUMBNAIL_MAX_CONCURRENT,'TCP lifecycle keeps the four-render limit');
+    later.resolve();
+    for(const result of await Promise.all([...active,sharedLive,visible,retry].map(client=>client.response)))assert.equal(result?.status,200);
+    // After draining the queue, a new distinct miss must still have a usable slot.
+    const extra=await sharp({create:{width:55,height:20,channels:3,background:'#abcdef'}}).png().toBuffer();
+    const extraAck=await upload(app,headers,manifest(extra,'image/png','after-drain.png','content://generated/after-drain'),extra);
+    assert.equal((await request(extraAck.id).response)?.status,200);
+  }finally{
+    blockers.resolve();later.resolve();
+    for(const client of clients)client.cancel();
+    await Promise.allSettled(clients.map(client=>client.response));
+    app.server.off('request',observe);restore();
+  }
 });
