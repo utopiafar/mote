@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {ProviderFailure} from '@mote/shared';
 import {Store} from '../src/store.js';
+import {perceptionSchema} from '../src/perception-schema.js';
 import {Perception} from '../src/perception.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 import {MediaAssets,MEDIA_CATALOG} from '../src/media-assets.js';
@@ -152,4 +153,24 @@ test('missing OCR metadata stays unknown without deriving status from text or di
  const original=store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id);
  for(const state of ['running','cancelled']){store.db.prepare("UPDATE perception_jobs SET state=?,error=NULL WHERE capture_id=? AND kind='ocr'").run(state,input.id);assert.equal(store.evidence([input.id])[0].ocr,undefined);assert.equal(store.previews({ocrStatus:'unknown'}).items[0]?.id,input.id);assert.equal(store.previews({ocrStatus:'disabled'}).items.length,0);}
  assert.deepEqual(store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id),original);
+});
+
+
+test('per-capture OCR reads use the composite perception_results index',async t=>{
+ const {store,input}=await setup(t);
+ for(let i=0;i<200;i++){const id=randomUUID();await store.ingest({...input,id});store.db.prepare('INSERT INTO perception_results VALUES(?,?,?,?,?,1)').run(randomUUID(),id,'ocr',createHash('sha256').update('result-'+id).digest('hex'),JSON.stringify({id:randomUUID(),fingerprint:createHash('sha256').update('json-'+id).digest('hex'),text:'Generated OCR text',inputHash:'',engine:'fixture',engineVersion:'1',configRevision:'1',generatedAt:'2026-09-18T00:00:01Z'}));}
+ const captureId=String(store.db.prepare("SELECT capture_id FROM perception_results WHERE kind='ocr' AND current=1 LIMIT 1").get()!.capture_id);
+ for(const sql of ["SELECT fingerprint FROM perception_results p WHERE p.capture_id=? AND p.kind='ocr' AND p.current=1","SELECT json FROM perception_results WHERE capture_id=? AND kind='ocr' AND current=1"]){
+  const plan=store.db.prepare('EXPLAIN QUERY PLAN '+sql).all(captureId).map(row=>String(row.detail));
+  assert.ok(plan.some(row=>row.includes('perception_current')),`plan must use perception_current: ${plan.join('; ')}`);
+  assert.ok(!plan.some(row=>/\bSCAN\b/.test(row)),`plan must not scan perception_results: ${plan.join('; ')}`);
+ }
+});
+
+test('an existing database gains the composite index when the schema runs again',async t=>{
+ const {store,input}=await setup(t);await store.ingest(input);
+ store.db.exec('DROP INDEX perception_current');
+ assert.equal(store.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='perception_current'").get(),undefined);
+ perceptionSchema(store.db);
+ assert.equal(store.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='perception_current'").get()!.name,'perception_current');
 });
