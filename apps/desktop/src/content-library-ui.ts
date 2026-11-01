@@ -10,7 +10,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   document.getElementById('content-memories')?.addEventListener('click',()=>openMemories?.());
   let generation=0,homeGeneration=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
   let archiveGeneration=0,archiveAuthorizationDenied=false,detailIsCentral=false;
-  let archiveRequest=0,archiveResponse=0;
+  let archiveRequest=0,archiveResponse=0,archiveConflict=0;
   let archiveConfirmation:{scope:number}|undefined;
   let loadedScope='',homeStale=false;
   const homeVisible=()=>!el('home-recent').closest('[hidden]');
@@ -53,21 +53,24 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   function denyArchive(){
     archiveAuthorizationDenied=true;archiveGeneration++;remoteMore=false;remoteCursor=undefined;
     items=items.filter(row=>!row.key.startsWith('capture:'));renderFeed('content-feed',items);if(!items.length)el('content-feed').replaceChildren();
+    el('content-more').hidden=!localMore;
+    el('content-status').textContent=moteText('无法访问采集记录，请检查中央连接权限');el('content-status').classList.remove('visually-hidden');el('content-status').setAttribute('aria-busy','false');
     renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')),true);
     if(dialog.open&&(selected?.key.startsWith('capture:')||detailIsCentral))close();
   }
-  function confirmArchive(){
+  function confirmArchive(repeat=false){
+    if(!repeat)archiveConflict++;
     const scope=archiveGeneration;if(archiveConfirmation?.scope===scope)return;
-    const confirmation=archiveConfirmation={scope},request=++archiveRequest;
+    const confirmation=archiveConfirmation={scope},request=++archiveRequest,conflict=archiveConflict;
     void(async()=>{
       try{
         const page=await api.centralContent();if(scope!==archiveGeneration)return;
         // A fresh check is causally after the conflicting observations. If a
         // still newer success arrived while it ran, confirm that pair again.
-        if(page.authorizationDenied&&archiveResponse>request){archiveConfirmation=undefined;confirmArchive();return;}
+        if(page.authorizationDenied?archiveResponse>request:archiveConflict!==conflict){archiveConfirmation=undefined;confirmArchive(true);return;}
         archiveResponse=Math.max(archiveResponse,request);
         if(page.authorizationDenied)denyArchive();else archiveAuthorizationDenied=false;
-      }catch{if(scope===archiveGeneration){denyArchive();el('content-status').textContent=moteText('无法访问采集记录，请检查中央连接权限');el('content-status').classList.remove('visually-hidden');}}
+      }catch{if(scope===archiveGeneration)denyArchive();}
       finally{if(archiveConfirmation===confirmation)archiveConfirmation=undefined;}
     })();
   }
