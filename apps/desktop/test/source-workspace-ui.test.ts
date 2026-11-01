@@ -11,14 +11,15 @@ const status=(generation:number)=>({authorizationGeneration:generation,config:{s
 const context=(description:string):SourceContextState=>({snapshot:{sourceId:id,version:0,description}});
 const source:SourceStatus={source:{id,name:'Generated folder',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'snapshot',enabled:true,intervalSeconds:60,trackDeletions:false,extensions:[],excludedPaths:[],redactLiterals:[]},state:'idle',message:'Generated status',items:1,skipped:0,pending:0,scanComplete:true};
 const flush=()=>new Promise<void>(resolve=>setImmediate(resolve));
-let dom:JSDOM,api:DesktopApi,ui:ReturnType<typeof createSourceWorkspaceUi>;
+let dom:JSDOM,api:DesktopApi,ui:ReturnType<typeof createSourceWorkspaceUi>,toggle:ReturnType<typeof vi.fn>;
 const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const openDescription=()=>document.querySelector<HTMLButtonElement>('#source-detail-body .source-detail-context button')!.click();
 beforeEach(()=>{
  dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'));vi.stubGlobal('document',dom.window.document);
  const dialog=el<HTMLDialogElement>('source-context-dialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
  api={sourcePendingContent:vi.fn(async()=>({items:[],total:0})),sourceArchivedContent:vi.fn(async()=>({items:[]})),sourceContext:vi.fn(async()=>context('New node description')),saveSourceContext:vi.fn(async(_id,write)=>({...context('New node description'),pending:write}))} as unknown as DesktopApi;
- ui=createSourceWorkspaceUi(api,{openDetail:()=>true,edit:()=>{},toggle:async()=>{},content:()=>{},read:()=>{}});ui.status(status(1));ui.update([structuredClone(source)]);ui.open(id);
+ toggle=vi.fn(async()=>{});
+ ui=createSourceWorkspaceUi(api,{openDetail:()=>true,edit:()=>{},toggle,content:()=>{},read:()=>{}});ui.status(status(1));ui.update([structuredClone(source)]);ui.open(id);
  document.querySelector<HTMLElement>('[data-page=source-detail]')!.hidden=false;
 });
 const detailPage=()=>document.querySelector<HTMLElement>('[data-page=source-detail]')!;
@@ -109,6 +110,26 @@ it('catches up once when the detail becomes visible again after hidden updates',
  detailPage().hidden=false;ui.update([{...structuredClone(source),pending:7,message:'Generated while hidden'}]);
  expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
  expect(el('source-detail-body').textContent).toContain('本机待发送 · 7');expect(el('source-detail-body').textContent).toContain('Generated while hidden');
+});
+
+it('rereads both lists when an upload acknowledgement advances without a count change',async()=>{
+ await flush();expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ ui.update([{...structuredClone(source),lastAcknowledgedAt:'2026-11-01T05:30:00.000Z'}]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
+ ui.update([{...structuredClone(source),pending:1,lastAcknowledgedAt:'2026-11-01T05:31:00.000Z'}]);
+ ui.update([{...structuredClone(source),pending:1,lastAcknowledgedAt:'2026-11-01T05:32:00.000Z'}]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(4);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(4);
+ expect(el('source-detail-body').textContent).toContain('本机待发送 · 1');
+});
+
+it('acts on the current source options when a privacy option changed without a visible update',()=>{
+ const edited={...structuredClone(source),source:{...source.source,excludedPaths:['generated-secret'],redactLiterals:['generated-redact'],allowRead:true}};
+ ui.update([edited]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='暂停这个来源')!.click();
+ expect(toggle).toHaveBeenCalledTimes(1);
+ const acted=toggle.mock.calls[0][0] as SourceStatus;
+ expect(acted.source.excludedPaths).toEqual(['generated-secret']);expect(acted.source.redactLiterals).toEqual(['generated-redact']);expect(acted.source.allowRead).toBe(true);expect(acted.source.enabled).toBe(true);
 });
 
 it('keeps loaded archive pages when only status fields change',async()=>{
