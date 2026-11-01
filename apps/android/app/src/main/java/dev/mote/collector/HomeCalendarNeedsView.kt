@@ -38,26 +38,22 @@ internal object CalendarNeeds {
 /** Reads existing suggestions only; it never confirms, dismisses or writes a calendar event. */
 internal class HomeCalendarNeedsView(private val activity: MoteActivity, private val open: () -> Unit) : LinearLayout(activity), HomeSection {
     private val task = UiTask(activity)
-    private var generation = -1L
-    private var origin = ""
-    private var nextRead = 0L
-    private var epoch = 0L
+    private val gate = HomeReadGate()
     private var closed = false
     private var active = false
     private var rendered = ""
     init { orientation = VERTICAL; visibility = View.GONE; tag = "home-calendar-needs" }
     private fun clear() { removeAllViews(); rendered = ""; visibility = View.GONE }
-    override fun pause() { active = false; epoch++; nextRead = 0L }
+    override fun pause() { active = false; gate.wake() }
     override fun close() { closed = true; pause(); clear(); task.close() }
     override fun refresh() {
         if (closed) return
         active = true
         val access = runCatching { CentralAccess.resolve(activity) }.getOrNull()
-        if (access == null) { epoch++; clear(); return }
-        if (access.generation != generation || access.server != origin) { epoch++; clear(); nextRead = 0L; generation = access.generation; origin = access.server }
+        if (access == null) { gate.invalidate(); clear(); return }
+        if (gate.adopt(access.generation, access.server)) clear()
         if (access.client == null) { clear(); return }
-        if (task.busy || SystemClock.elapsedRealtime() < nextRead) return
-        val stamp = epoch; nextRead = SystemClock.elapsedRealtime() + 15000
+        val stamp = if (task.busy || !gate.due(SystemClock.elapsedRealtime())) return else gate.begin(SystemClock.elapsedRealtime())
         task.start("", {}, {
             CalendarNeeds.scan { cursor ->
                 access.client.get("/api/actions?cursor=$cursor").also {
@@ -66,9 +62,11 @@ internal class HomeCalendarNeedsView(private val activity: MoteActivity, private
                 }
             }
         }) { outcome ->
-            if (closed || !active || stamp != epoch || activity.isDestroyed || activity.isFinishing) return@start
+            if (closed || !active || !gate.current(stamp) || activity.isDestroyed || activity.isFinishing) return@start
             // A failed or malformed read keeps the last confirmed rows instead of claiming nothing is waiting.
-            val needs = outcome.getOrNull() ?: return@start
+            val needs = outcome.getOrNull()
+            if (needs == null) { gate.failure(SystemClock.elapsedRealtime(), (outcome.exceptionOrNull() as? CentralFailure)?.status); return@start }
+            gate.success(SystemClock.elapsedRealtime())
             val signature = needs.joinToString("|") { it.optString("id") + ":" + it.optInt("version") }
             if (signature == rendered) return@start
             clear(); rendered = signature
