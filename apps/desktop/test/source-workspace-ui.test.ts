@@ -19,7 +19,9 @@ beforeEach(()=>{
  const dialog=el<HTMLDialogElement>('source-context-dialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
  api={sourcePendingContent:vi.fn(async()=>({items:[],total:0})),sourceArchivedContent:vi.fn(async()=>({items:[]})),sourceContext:vi.fn(async()=>context('New node description')),saveSourceContext:vi.fn(async(_id,write)=>({...context('New node description'),pending:write}))} as unknown as DesktopApi;
  ui=createSourceWorkspaceUi(api,{openDetail:()=>true,edit:()=>{},toggle:async()=>{},content:()=>{},read:()=>{}});ui.status(status(1));ui.update([structuredClone(source)]);ui.open(id);
+ document.querySelector<HTMLElement>('[data-page=source-detail]')!.hidden=false;
 });
+const detailPage=()=>document.querySelector<HTMLElement>('[data-page=source-detail]')!;
 afterEach(()=>{ui.clear();dom.window.close();vi.unstubAllGlobals();});
 
 it.each([undefined,'2026-10-30T23:59:59.000Z'])('does not present upload time %s as the time of a completed local scan',lastSyncAt=>{
@@ -69,4 +71,52 @@ it('shows an enabled but centrally paused source as paused in the list and detai
 it('keeps rejected files visible as attention items instead of claiming they are waiting to send',()=>{
  ui.update([{...structuredClone(source),pending:0,blocked:1,failures:[{externalId:'generated-blocked',title:'Generated <script>literal</script>.txt',status:410}]}]);
  const detail=el('source-detail-body'),failure=detail.querySelector('.source-failures')!;expect(failure.textContent).toContain('本机待处理 1 项');expect(failure.textContent).toContain('中央已删除此文件');expect(failure.textContent).toContain('<script>literal</script>');expect(failure.querySelector('script')).toBeNull();expect(detail.textContent).toContain('本机待发送 · 0');expect(detail.textContent).not.toContain('本机待发送 · 1');
+});
+
+it('updates only the status card when non-content fields change, without rereading lists',async()=>{
+ await flush();expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ const pendingList=el('source-detail-body').querySelector('.source-detail-section .source-list')!;
+ ui.update([{...structuredClone(source),lastSyncAt:'2026-11-01T05:00:00.000Z',message:'Generated newer status',items:42,skipped:3}]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ expect(el('source-detail-body').querySelector('.source-detail-section .source-list')).toBe(pendingList);
+ const card=el('source-detail-body').querySelector('.source-state-card')!;
+ expect(card.textContent).toContain('Generated newer status');expect(card.textContent).not.toContain('Generated status');
+ const facts=Array.from(el('source-detail-body').querySelectorAll('dt'));
+ expect(facts.find(node=>node.textContent==='已清点')!.nextElementSibling!.textContent).toBe('42');
+ expect(facts.find(node=>node.textContent==='已跳过')!.nextElementSibling!.textContent).toBe('3');
+ expect(el('source-detail-body').textContent).toContain('本机待发送 · 0');
+});
+
+it('rereads local pending and central archive once when content fields change',()=>{
+ ui.update([{...structuredClone(source),pending:2}]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
+ expect(el('source-detail-body').textContent).toContain('本机待发送 · 2');
+});
+
+it('does not read while the detail page is hidden and rereads once when reopened',()=>{
+ detailPage().hidden=true;
+ for(let index=0;index<5;index++)ui.update([{...structuredClone(source),pending:index,message:`Generated status ${index}`}]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ ui.open(id);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
+ expect(el('source-detail-body').textContent).toContain('本机待发送 · 4');expect(el('source-detail-body').textContent).toContain('Generated status 4');
+});
+
+it('catches up once when the detail becomes visible again after hidden updates',()=>{
+ detailPage().hidden=true;
+ ui.update([{...structuredClone(source),pending:7,message:'Generated while hidden'}]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ detailPage().hidden=false;ui.update([{...structuredClone(source),pending:7,message:'Generated while hidden'}]);
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
+ expect(el('source-detail-body').textContent).toContain('本机待发送 · 7');expect(el('source-detail-body').textContent).toContain('Generated while hidden');
+});
+
+it('keeps loaded archive pages when only status fields change',async()=>{
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[{key:'capture:generated-page-one',source:'file',title:'Generated page one',observedAt:'2026-10-30T01:00:00.000Z',preview:''}],nextCursor:'generated-cursor'}).mockResolvedValueOnce({items:[{key:'capture:generated-page-two',source:'file',title:'Generated page two',observedAt:'2026-10-29T01:00:00.000Z',preview:''}]});
+ ui.open(id);await flush();
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='加载更多')!.click();await flush();
+ expect(el('source-detail-body').textContent).toContain('Generated page one');expect(el('source-detail-body').textContent).toContain('Generated page two');
+ ui.update([{...structuredClone(source),message:'Generated status change',lastSyncAt:'2026-11-01T05:00:00.000Z'}]);
+ expect(el('source-detail-body').textContent).toContain('Generated page one');expect(el('source-detail-body').textContent).toContain('Generated page two');
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
 });
