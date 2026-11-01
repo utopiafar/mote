@@ -18,6 +18,7 @@ internal class LibraryCaptureProjection {
         fun observations(item: JSONObject) = if (item.has("observationCount")) item.getInt("observationCount") else item.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 0
     }
     private val rows = linkedMapOf<Identity, Row>()
+    fun localIdentities() = rows.values.filter { it.local != null }.mapTo(mutableSetOf()) { it.identity.deviceId to it.identity.id }
     fun clear() = rows.clear()
     /** Permission loss invalidates every remote body and availability claim for this origin. */
     fun clearCentral(scope: String) {
@@ -40,6 +41,7 @@ internal class LibraryCaptureProjection {
     fun availability(scope: String, deviceId: String, id: String, readable: Boolean, observationCount: Int = 0, libraryVersion: String = "") {
         val identity = Identity(scope, deviceId, id)
         rows[identity]?.let {
+            if (!readable && it.local == null) { rows.remove(identity); return }
             val reference = if (!readable) null else if (it.local != null && (it.central == null || version(it.central) != libraryVersion)) JSONObject()
                 .put("id", id).put("deviceId", deviceId).put("capturedAt", it.local.getString("capturedAt"))
                 .put("source", it.local.getString("source")).put("observationCount", observationCount).put("libraryVersion", libraryVersion) else it.central
@@ -48,5 +50,8 @@ internal class LibraryCaptureProjection {
     fun visible(location: String) = rows.values.filter {
         when (location) { "local" -> it.local != null; "central" -> it.readableCentral; else -> true }
     }.sortedWith(compareByDescending<Row> { Instant.parse(it.sortAt) }.thenByDescending { it.identity.id }.thenBy { it.identity.scope }.thenBy { it.identity.deviceId })
-    fun candidates(scope: String) = rows.values.filter { it.local != null && it.identity.scope == scope }.map { it.identity }.take(100)
+    fun scopedIdentities(scope: String) = rows.keys.filter { it.scope == scope }
+    fun remoteVersions(scope: String) = rows.values.filter { it.identity.scope == scope && it.local == null }
+        .associate { (it.identity.deviceId to it.identity.id) to it.central?.let(::version) }
+    fun candidates(scope: String) = scopedIdentities(scope).take(100)
 }

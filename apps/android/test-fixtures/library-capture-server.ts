@@ -19,12 +19,37 @@ const value=await buildApp(config,{agent:{configured:false,query:async()=>{throw
 value.materialOrganizer.tick=async()=>0;
 let delayMs=0;
 let memberDelayMs=0,memberRequests=0;
+let deviceViewRequests=0,selfRequests=0,centralRequests=0;
+let deviceHold:{entered:number;release:()=>void;ready:Promise<void>}|undefined;
 let denial:{status:401|403|503;code:string}|undefined;
 value.app.addHook('onRequest',async(req,reply)=>{
+  if(req.url.startsWith('/api/')&&!req.url.startsWith('/api/fixture/'))centralRequests++;
+  if(req.url==='/api/library/device-view'&&req.method==='POST'){
+    deviceViewRequests++;
+    const hold=deviceHold;if(hold){hold.entered++;await hold.ready;}
+  }
+  if(req.url==='/api/connections/self')selfRequests++;
   if(req.url.startsWith('/api/capture-browser/')&&memberDelayMs){memberRequests++;await new Promise(resolve=>setTimeout(resolve,memberDelayMs));}
   if(req.url==='/api/library/source-view'&&delayMs)await new Promise(resolve=>setTimeout(resolve,delayMs));
   if(denial&&['/api/library/device-view','/api/library/source-view'].includes(req.url))return reply.code(denial.status).send({error:denial.code});
 });
+value.app.addHook('onResponse',async(req,reply)=>{
+  if(['/api/connections/self','/api/library/device-view','/api/library/source-view'].includes(req.url))
+    console.log(JSON.stringify({event:'generated-library-response',path:req.url,status:reply.statusCode}));
+});
+value.app.post('/api/fixture/library-request-stats',async()=>{deviceViewRequests=0;selfRequests=0;centralRequests=0;return {deviceView:0,connectionsSelf:0,centralRequests:0};});
+value.app.get('/api/fixture/library-request-stats',async()=>({deviceView:deviceViewRequests,connectionsSelf:selfRequests,centralRequests}));
+value.app.post('/api/fixture/library-device-hold',async req=>{
+  const {action}=z.object({action:z.enum(['hold','release'])}).strict().parse(req.body);
+  if(action==='release'){deviceHold?.release();deviceHold=undefined;}
+  else {
+    if(deviceHold)throw Error('Device-view request is already held');
+    let release!:()=>void;const ready=new Promise<void>(resolve=>{release=resolve;});
+    deviceHold={entered:0,release,ready};
+  }
+  return {held:Boolean(deviceHold),entered:deviceHold?.entered??0};
+});
+value.app.get('/api/fixture/library-device-hold',async()=>({held:Boolean(deviceHold),entered:deviceHold?.entered??0}));
 value.app.post('/api/fixture/library-denial',async req=>{
   const input=z.object({mode:z.enum(['none','forbidden','revoked','offline']),delayMs:z.number().int().min(0).max(3000).default(0)}).strict().parse(req.body);
   delayMs=input.delayMs;
@@ -45,4 +70,4 @@ const address=value.app.server.address();if(!address||typeof address==='string')
 await writeFile(readyPath,JSON.stringify({port:address.port,token,generatedOnly:true}),{mode:0o600});
 console.log('Generated library fixture ready');
 let closing=false;
-for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>{void (async()=>{if(closing)return;closing=true;await value.app.close();await rm(dataDir,{recursive:true,force:true});process.exit(0);})();});
+for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>{void (async()=>{if(closing)return;closing=true;deviceHold?.release();await value.app.close();await rm(dataDir,{recursive:true,force:true});process.exit(0);})();});
