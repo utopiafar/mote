@@ -14,7 +14,7 @@ export function estimateCost(tokens:TokenUsage|undefined,price:ModelPrice|undefi
 export type OperationUsage={operationId:string;wallDurationMs:number;modelDurationMs:number;total:UsageTotals;items:UsageReceipt[]};
 export class UsageLedger {
   constructor(private readonly store:Store){
-    store.db.exec('CREATE TABLE IF NOT EXISTS model_usage(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS model_usage_created ON model_usage(created_at); CREATE TABLE IF NOT EXISTS model_prices(id TEXT PRIMARY KEY,json TEXT NOT NULL)');
+    store.db.exec("CREATE TABLE IF NOT EXISTS model_usage(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS model_usage_created ON model_usage(created_at); CREATE INDEX IF NOT EXISTS model_usage_operation ON model_usage(json_extract(json,'$.attribution.operationId'),created_at,id); CREATE TABLE IF NOT EXISTS model_prices(id TEXT PRIMARY KEY,json TEXT NOT NULL)");
     for(const row of store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.status')='running'").all() as {json:string}[]){
       const receipt=JSON.parse(row.json) as UsageReceipt;
       // An interrupted process cannot confirm that its last cumulative sample was final.

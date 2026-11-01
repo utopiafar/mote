@@ -62,7 +62,8 @@ test('sample totals stay unknown for mixed series and all cursors stay attached 
  await node.request('/api/capture-browser/timeline/members',{...scope,group:groups[1].id,cursor:first.nextCursor!},owner,409);
  await node.request('/api/capture-browser/timeline/members',{...scope,timeZone:'Asia/Shanghai',group:groups[0].id},owner,409);
  await node.request('/api/capture-browser/timeline/members',{...scope,source:'notification',group:groups[0].id},owner,409);
- await node.request('/api/capture-browser/timeline/members',{...scope,group:groups[0].id.slice(0,-1)+'x'},owner,400);
+ const [sealedBody,sealedSignature]=groups[0].id.split('.');const tamperedSignature=(sealedSignature[0]==='A'?'B':'A')+sealedSignature.slice(1);assert.notDeepEqual(Buffer.from(tamperedSignature,'base64url'),Buffer.from(sealedSignature,'base64url'),'Tampering a fully significant signature character must change the decoded bytes');
+ await node.request('/api/capture-browser/timeline/members',{...scope,group:sealedBody+'.'+tamperedSignature},owner,400);
  const denied=await node.app.inject({url:'/api/capture-browser/timeline?'+new URLSearchParams(scope)});assert.equal(denied.statusCode,401);
 });
 
