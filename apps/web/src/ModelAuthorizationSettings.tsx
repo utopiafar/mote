@@ -3,6 +3,7 @@ import {moteText} from '@mote/shared/i18n';
 import type {ModelSettingsView} from '@mote/shared/models';
 import {ApiError,type Api,errorMessage} from './api';
 import {useResource} from './useResource';
+import {useForegroundResources} from './useForegroundResources';
 import {useUnsavedChanges} from './unsaved';
 
 type Connection={id:string;fingerprint:string};
@@ -22,6 +23,7 @@ export function ModelAuthorizationSettings({api}:{api:Api}){
  const media=useResource<{policy:{services:{id:string;name:string}[]};processors:{id:string;name:string}[]}>(api,'/api/file-processing');
  const sources=useResource<{items:{id:string;name:string}[]}>(api,'/api/sources');
  const devices=useResource<{items:{deviceId:string;deviceName:string}[]}>(api,'/api/devices');
+ useForegroundResources(api,[path,'/api/model-settings','/api/file-processing','/api/sources','/api/devices']);
  const [draft,setDraft]=useState<Draft>(),[baseline,setBaseline]=useState<Draft>(),[revision,setRevision]=useState<number>();
  const [consent,setConsent]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const pending=useRef<{encoded:string;operationId:string}|undefined>(undefined);

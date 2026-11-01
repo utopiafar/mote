@@ -5,6 +5,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
+import {AutomaticProcessing} from '../src/AutomaticProcessing.js';
 import {createApi} from '../src/api.js';
 import {buildApp} from '../../server/src/app.js';
 import {defaultModelSettings} from '../../server/src/model-settings.js';
@@ -123,6 +124,14 @@ test('two real authorization components share initial and foreground reads, pres
  const before=authorityKeys.map(key=>f.count(key));await f.visibility(true);for(let i=0;i<12;i++)await f.advance(5000);assert.deepEqual(authorityKeys.map(key=>f.count(key)),before,'60s hidden starts no timer resource GET');
  await f.visibility(false);await f.visibility(false);await f.advance();await f.settle(f.settled,'foreground resources');assert.deepEqual(authorityKeys.map(key=>f.count(key)),before.map(value=>value+1),'both components and duplicate visible events merge one read per exact resource');assert.equal(f.count(unrelated),1);
  await f.advance(4999);assert.equal(f.count(path),before[0]+1);await f.advance(1);assert.equal(f.count(path),before[0]+2,'visible fallback remains five seconds');
+});
+
+test('the actual automatic-processing parent and nested authorization share one foreground read per dependency',async t=>{
+ const f=await httpAuthorityFixture(t),keys=[...authorityKeys,'/api/perception'];
+ await act(async()=>f.root.render(React.createElement(AutomaticProcessing,{api:f.api})));await f.advance();await f.settle(()=>keys.every(key=>!resources(f.api).get(key).getSnapshot().loading)&&Boolean(f.container.querySelector('.automatic-control-main button:not([disabled])')),'actual parent and child ready');
+ assert.equal(f.container.querySelectorAll('.model-authorization-settings').length,1);keys.forEach(key=>assert.equal(f.count(key),1,key));const before=keys.map(key=>f.count(key));
+ await f.visibility(true);await f.visibility(false);await f.visibility(false);await f.advance();await f.settle(()=>keys.every(key=>!resources(f.api).get(key).getSnapshot().loading),'actual composition foreground');
+ assert.deepEqual(keys.map(key=>f.count(key)),before.map(value=>value+1),'parent-only perception proves the parent listener runs while shared resources coalesce with the nested listener');assert.equal(f.writes.length,0);assert.equal(Boolean(f.container.querySelector('.automatic-review-dialog')),false);assert.equal(f.node!.modelAuthorization.view().state,'unapproved');
 });
 
 test('a clean foreground authorization form adopts the actual remote scope and revision without adding cost consent',async t=>{
