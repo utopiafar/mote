@@ -57,6 +57,30 @@ class LibraryRefreshPolicyTest {
         assertFalse("a formerly complete domain with a truncated new prefix is unknown", policy.centralRangeCovers(null, false, boundary, true))
         assertTrue("an untruncated response proves the whole filtered domain", policy.centralRangeCovers(null, false, boundary, false))
     }
+    @Test fun successivePrefixesCoverTheDeepestMergedRangeEvenAfterAnOverlappingOrdinaryPage() {
+        val policy = LibraryRefreshPolicy()
+        val remote = (1..70).map { LibraryRefreshPolicy.Position(java.time.Instant.ofEpochSecond(1_000_000L - it).toString(), "record-$it") }
+        var frontier = remote[19]
+        assertTrue(policy.centralRangeCovers(frontier, true, remote[59], true))
+        frontier = requireNotNull(policy.extendCentralCoverage(frontier, remote[59]))
+        assertEquals("the first append displays sixty rows while its continuation cursor remains at twenty", remote[59], frontier)
+        frontier = requireNotNull(policy.extendCentralCoverage(frontier, remote[39]))
+        assertEquals("an overlapping ordinary page cannot shorten the displayed coverage", remote[59], frontier)
+        assertTrue("the old cursor frontier would wrongly accept five new heads", policy.centralRangeCovers(remote[39], true, remote[54], true))
+        assertFalse("a backfill between R57 and R58 remains unproved by a prefix ending at R55", policy.centralRangeCovers(frontier, true, remote[54], true))
+        assertTrue(policy.centralRangeCovers(frontier, true, remote[59], true))
+    }
+    @Test fun coverageFrontierKeepsTheDeepestDescendingTimestampAndId() {
+        val policy = LibraryRefreshPolicy()
+        val boundary = LibraryRefreshPolicy.Position("2026-01-01T00:00:00Z", "c")
+        assertNull(policy.extendCentralCoverage(null, null))
+        assertEquals(boundary, policy.extendCentralCoverage(null, boundary))
+        assertEquals(boundary, policy.extendCentralCoverage(boundary, null))
+        assertEquals(boundary, policy.extendCentralCoverage(boundary, boundary.copy(at = "2026-01-02T00:00:00Z")))
+        assertEquals(boundary, policy.extendCentralCoverage(boundary, boundary.copy(id = "d")))
+        assertEquals(boundary.copy(id = "b"), policy.extendCentralCoverage(boundary, boundary.copy(id = "b")))
+        assertEquals(boundary.copy(at = "2025-12-31T00:00:00Z"), policy.extendCentralCoverage(boundary, boundary.copy(at = "2025-12-31T00:00:00Z")))
+    }
     @Test fun pureInsertBurstTakesTheIncrementalPath() {
         val policy = LibraryRefreshPolicy()
         assertEquals(LibraryRefreshPolicy.Action.FULL, policy.recordsChanged(0, 100))

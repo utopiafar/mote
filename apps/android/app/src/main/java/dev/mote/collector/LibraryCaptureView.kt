@@ -35,6 +35,7 @@ internal class LibraryCaptureView(
     private var day = state?.getString("day").orEmpty()
     private var localCursor: String? = null
     private var remoteCursor: String? = null
+    // Deepest range merged into the projection, independent of remoteCursor.
     private var remoteBoundary: LibraryRefreshPolicy.Position? = null
     private var localMore = true
     private var remoteMore = true
@@ -214,7 +215,7 @@ internal class LibraryCaptureView(
                         val matches = page.getJSONArray("matches")
                         repeat(matches.length()) { val match = matches.getJSONObject(it); projection.availability(selection.server, match.getString("deviceId"), match.getString("id"), match.getString("state") == "readable", match.optInt("observationCount"), match.optString("libraryVersion")) }
                         remoteCursor = page.optString("nextCursor").takeUnless { it.isBlank() || it == "null" }; remoteMore = remoteCursor != null
-                        remoteBoundary = if (remoteMore) remotePosition(items) else null
+                        remoteBoundary = if (remoteMore) refreshPolicy.extendCentralCoverage(remoteBoundary, remotePosition(items)) else null
                     }?.onFailure {
                         if (it is CentralFailure && (it.status in setOf(401, 403) || it.code == "connection_revoked")) {
                             deniedOrigin = selection.server; sourceView.clearRemote()
@@ -275,6 +276,7 @@ internal class LibraryCaptureView(
                         val matches = page.getJSONArray("matches")
                         repeat(matches.length()) { val match = matches.getJSONObject(it); projection.availability(selection.server, match.getString("deviceId"), match.getString("id"), match.getString("state") == "readable", match.optInt("observationCount"), match.optString("libraryVersion")) }
                         if (page.optString("nextCursor").let { it.isBlank() || it == "null" }) { remoteCursor = null; remoteBoundary = null; remoteMore = false }
+                        else remoteBoundary = refreshPolicy.extendCentralCoverage(remoteBoundary, remotePosition(items))
                     }?.onFailure {
                         // A previous successful read cannot claim current Central
                         // availability after this read failed. Keep local originals

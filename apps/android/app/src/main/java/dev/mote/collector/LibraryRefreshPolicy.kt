@@ -38,6 +38,10 @@ internal class LibraryRefreshPolicy(revision: Long? = null, count: Int? = null) 
         val order = java.time.Instant.parse(last.at).compareTo(java.time.Instant.parse(previous.at))
         return order < 0 || order == 0 && last.id <= previous.id
     }
+    /** Coverage follows every merged row, independently of the ordinary-page cursor.
+     * An overlapping continuation page must not move this frontier toward the head. */
+    fun extendCentralCoverage(previous: Position?, last: Position?): Position? =
+        if (last != null && (previous == null || centralRangeCovers(previous, true, last, true))) last else previous
     /** New records must not restart a refresh loop for every single capture commit. */
     companion object { const val DEBOUNCE_MILLIS: Long = 5_000 }
 }

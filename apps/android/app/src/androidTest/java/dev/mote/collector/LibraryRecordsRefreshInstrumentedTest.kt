@@ -619,4 +619,86 @@ class LibraryRecordsRefreshInstrumentedTest {
         }
         }
     }
+
+    @Test fun successiveTruncatedAppendsAndOverlappingPagesDoNotSkipADeepBackfill() {
+        val args = InstrumentationRegistry.getArguments()
+        require(args.getString("libraryRecordsRefreshFixture") == "true" && Build.FINGERPRINT.contains("emu64a") && context.packageName == "dev.mote.collector.filefixture")
+        require(!ProjectionService.running && CaptureAccessibilityService.instance == null)
+        val server = requireNotNull(args.getString("uiJourneyServer")); val token = requireNotNull(args.getString("uiJourneyToken"))
+        require(java.net.URI(server).host in setOf("10.0.2.2", "127.0.0.1", "localhost"))
+        GeneratedProfile().use { profile ->
+            val queue = profile.open(server, token)
+            val device = Settings(context).deviceId; val api = CentralClient(server, token)
+            val base = Instant.now().minusSeconds(4000)
+            val locals = (0 until 20).map { index -> UUID.randomUUID().toString().also {
+                assertEquals(it, queue.enqueue(note(it, device, base.minusSeconds(index.toLong()), "Generated frontier local $index"), null, 64_000_000))
+            } }
+            val remotes = (0 until 70).map { index -> UUID.randomUUID().toString().also {
+                api.post("/api/captures", note(it, "generated-frontier-remote", base.minusSeconds(index.toLong()), "Generated frontier R${index + 1}"))
+            } }
+            val repository = LocalStateRepository.get(context); repository.refresh()
+            waitFor("the frontier fixture has exactly twenty local originals") { repository.state.value.let { it.error == null && it.active?.records == 20 } }
+            ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
+                scenario.onActivity { activity ->
+                    val controls = views(activity.window.decorView)
+                    if (controls.single { it.tag == "library-filters:content" }.visibility != View.VISIBLE) controls.single { it.tag == "library-filters" }.performClick()
+                }
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
+                fun rows(id: String): Int {
+                    var count = 0
+                    scenario.onActivity { activity -> count = views(activity.window.decorView).count { it.isShown && it.tag == "library-record:$id" } }
+                    return count
+                }
+                fun readIdle(): Boolean {
+                    var idle = false
+                    scenario.onActivity { activity ->
+                        val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
+                        idle = !(LibraryCaptureView::class.java.getDeclaredField("task").apply { isAccessible = true }.get(view) as UiTask).busy
+                    }
+                    return idle
+                }
+                fun loadMore() {
+                    val before = api.get("/api/fixture/library-request-stats").getInt("deviceView")
+                    scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isEnabled && it.isClickable && it.text == MoteI18n.text("加载更多") }.performClick() }
+                    waitFor("an actual continuation page is delivered") { readIdle() && api.get("/api/fixture/library-request-stats").getInt("deviceView") > before }
+                }
+                waitFor("the first ordinary page contains R1 through R20") { readIdle() && locals.all { rows(it) == 1 } && remotes.take(20).all { rows(it) == 1 } }
+                assertEquals("R21 has not been paged yet", 0, rows(remotes[20]))
+                api.post("/api/fixture/library-request-stats", JSONObject())
+                val firstInsert = UUID.randomUUID().toString()
+                val firstStarted = SystemClock.elapsedRealtime()
+                queue.enqueue(note(firstInsert, device, Instant.now(), "Generated first frontier append"), null, 64_000_000)
+                waitFor("the first truncated append actually merges R1 through R60") { readIdle() && rows(firstInsert) == 1 && remotes.take(60).all { rows(it) == 1 } }
+                assertTrue(SystemClock.elapsedRealtime() - firstStarted >= LibraryRefreshPolicy.DEBOUNCE_MILLIS)
+                assertEquals("R61 remains behind the ordinary continuation", 0, rows(remotes[60]))
+                val firstStats = api.get("/api/fixture/library-request-stats")
+                assertEquals(1, firstStats.getInt("deviceView")); assertEquals(0, firstStats.getInt("connectionsSelf"))
+                assertTrue("the proved first append preserves the ordinary HTTP budget", firstStats.getInt("centralRequests") <= 2)
+                loadMore() // The retained cursor reads R21–R40, overlapping the merged prefix.
+                assertTrue("the overlapping ordinary page keeps all sixty already displayed identities", remotes.take(60).all { rows(it) == 1 })
+                assertEquals(0, rows(remotes[60]))
+
+                val heads = (0 until 5).map { index -> UUID.randomUUID().toString().also {
+                    api.post("/api/captures", note(it, "generated-frontier-remote", Instant.now().minusSeconds(10), "Generated new frontier head $index"))
+                } }
+                val backfill = UUID.randomUUID().toString()
+                api.post("/api/captures", note(backfill, "generated-frontier-remote", base.minusSeconds(56).minusMillis(500), "Generated backfill between R57 and R58"))
+                val secondInsert = UUID.randomUUID().toString()
+                val secondStarted = SystemClock.elapsedRealtime()
+                queue.enqueue(note(secondInsert, device, Instant.now(), "Generated second frontier append"), null, 64_000_000)
+                waitFor("the second insertion and its successful remote read finish") { readIdle() && rows(secondInsert) == 1 && heads.all { rows(it) == 1 } }
+                assertTrue(SystemClock.elapsedRealtime() - secondStarted >= LibraryRefreshPolicy.DEBOUNCE_MILLIS)
+                if (rows(remotes[59]) == 1) assertEquals("a successful refresh cannot retain R60 across an undisplayed R57/R58 backfill gap", 1, rows(backfill))
+                // Unproved coverage may safely restart the ordinary loaded range.
+                // Its extra HTTP is allowed; the original five-insert budget is unchanged.
+                repeat(4) { if (remotes.any { rows(it) == 0 } || rows(backfill) == 0) loadMore() }
+                assertTrue("ordinary continuation reaches every original remote exactly once", remotes.all { rows(it) == 1 })
+                assertTrue("all five new heads occur exactly once", heads.all { rows(it) == 1 })
+                assertEquals("the deep backfill is neither skipped nor duplicated", 1, rows(backfill))
+                assertTrue("all local originals remain usable after the fallback and pagination", locals.all { rows(it) == 1 })
+                assertEquals(1, rows(firstInsert)); assertEquals(1, rows(secondInsert))
+            }
+        }
+    }
 }
