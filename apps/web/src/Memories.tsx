@@ -186,7 +186,7 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
 
     </article>:<div className="panel workspace-empty"><Layers3 size={32}/><h2>{moteText("把有用的事实和经验，留给下一次。")}</h2><p>{moteText("选择一条记忆，查看内容、来源和判断的边界。")}</p></div>}</div></div>
     <details className="memory-developer-tools" hidden={!historyManagementOpen} open={historyManagementOpen&&developerOpen} onToggle={event=>{if(historyManagementOpen)setDeveloperOpen(event.currentTarget.open);}}><summary>{moteText("开发者选项")}</summary>
-    {historyManagementOpen&&developerOpen&&<ExecutionQueueOverview api={api}/>}
+    {!manualOpen&&historyManagementOpen&&developerOpen&&<ExecutionQueueOverview api={api}/>}
     {jobs.length>0&&<details className="memory-job-history"><summary>{moteText("整理任务与排队（")}{jobs.length}）</summary><div className="evidence-buttons">{jobs.map(item=><button className="button subtle" key={item.id} onClick={()=>{setJobId(item.id);openManual('current',undefined,item.id);}}>{item.importJobId?.startsWith('lifecycle:')?moteText('自动整理'):moteText('手动整理')} · {memoryJobLabel(item)} · {item.completedBatches}/{item.totalBatches} · {dateTime(item.createdAt)}{<> · {item.memoryCount}{' '}{moteText("条记忆")}</>}</button>)}</div></details>}
     </details>
     </div>

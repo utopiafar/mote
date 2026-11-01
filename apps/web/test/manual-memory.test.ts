@@ -215,6 +215,14 @@ test('closed developer tools never mount an execution reader and opening starts 
  assert.equal(reads(),collapsed,'closing through the native summary also releases the execution reader');
  await summary();assert.equal(disclosure.open,true);assert.equal(reads(),collapsed+1,'reopening through the summary reads immediately');
  await act(async()=>t.mock.timers.tick(5000));assert.equal(reads(),collapsed+2);
+ await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='手动整理记忆')!.click());
+ assert.equal(d.querySelector('.memory-browse-stage')!.hasAttribute('hidden'),true);assert.equal(disclosure.open,true,'the disclosure state is retained behind the work page');
+ const workspace=reads();await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));
+ for(let step=0;step<12;step++)await act(async()=>t.mock.timers.tick(5000));
+ assert.equal(reads(),workspace,'the hidden browse stage owns no queue reader during the manual workspace visit');
+ await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('.memory-work-stage button')].find(button=>button.textContent==='← 返回')!.click());
+ assert.equal(d.querySelector('.memory-browse-stage')!.hasAttribute('hidden'),false);assert.equal(disclosure.open,true);
+ assert.equal(reads(),workspace+1,'returning to the still-open disclosure reads fresh immediately');
  await toggle();const closed=reads();
  await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));
  for(let step=0;step<12;step++)await act(async()=>t.mock.timers.tick(5000));
