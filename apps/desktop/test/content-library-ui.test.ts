@@ -253,3 +253,17 @@ it('defers the Home read while hidden and catches up once the overview is visibl
   expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+2);
   expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
 });
+
+it('discards a delayed hidden-Home denial that lands after a newer filtered search succeeds',async()=>{
+  await flush();
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;
+  let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));
+  const home=library.refreshHome();await flush();
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=true;
+  (el('content-search') as HTMLInputElement).value='generated query';await library.refresh();await flush();
+  await open(item.key);expect(dialog.open).toBe(true);
+  deny({items:[],total:0,authorizationDenied:true});await home;await flush();
+  expect(el('content-feed').querySelector(`[data-content-key="${item.key}"]`)).not.toBeNull();
+  expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
+});

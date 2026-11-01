@@ -91,7 +91,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     }else if(r.status==='rejected'){if(archiveVersion===archiveGeneration&&!archiveAuthorizationDenied)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
     items=mergeRows([...items,...rows]);loadedScope=scopeKey;renderFeed('content-feed',items);
     if(error&&!items.length)el('content-feed').replaceChildren();
-    if(scope==='all'&&!query.trim()){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}else if(homeVisible())void refreshHome();else homeStale=true;
+    if(scope==='all'&&!query.trim()){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}else if(homeVisible())void refreshHome();else{homeStale=true;homeGeneration++;}
     el('content-more').hidden=!localMore&&!remoteMore;
     el('content-status').textContent=error||(!status?.config.tokenConfigured?moteText('本机内容可离线阅读；连接中央后显示已归档内容。'):moteText('接收与整理分别进行，点开内容查看实际状态。'));
     el('content-status').classList.toggle('visually-hidden',!error);
