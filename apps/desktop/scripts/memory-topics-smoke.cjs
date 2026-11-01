@@ -50,7 +50,7 @@ app.on('browser-window-created',(_event,window)=>{if(main)return;main=window;win
  if(process.env.MOTE_TOPICS_LAYOUT_ONLY==='1'){
   window.setSize(820,620);await shot('compact-final');
   assert(await js('document.documentElement.scrollWidth<=innerWidth'));
-  await post('mode',{mode:'offline'});await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'offline');
+  await post('mode',{mode:'offline'});await click('刷新');await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'offline');
   assert(!(await js(`document.querySelector('#memory-topics-dialog [role=alert]').textContent`)).includes('Error invoking remote method'));
   await shot('offline-final');await post('mode',{mode:'online'});await click('重试');await count(30);
   console.log('PASS fresh Mac process, compact layout and clean offline error');clearTimeout(timeout);app.exit(0);return;
@@ -63,9 +63,9 @@ app.on('browser-window-created',(_event,window)=>{if(main)return;main=window;win
  await click('返回');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('查看原文依据 1')`,'detail back');await click('返回');await count(1);
  await tree('合成实践');await wait(`Boolean(document.querySelector('[data-topic="reuse"]'))`,'tree two');await js(`document.querySelector('[data-topic="reuse"]').click()`);await count(1);assert.equal(await js(`document.querySelector('[data-memory]').dataset.memory`),fixture.firstMemory);await shot('second-tree');
  await tree('合成项目');await wait(`Boolean(document.querySelector('[data-topic="planning"]'))`,'tree paging');await js(`document.querySelector('[data-topic="planning"]').click()`);await count(30);await click('下一页');await count(2);await click('关闭详情');await js(`document.querySelector('#content-memories').click()`);await count(2);await click('上一页');await count(30);
- await post('mode',{mode:'offline'});await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'offline');assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('offline');await post('mode',{mode:'online'});await click('重试');await count(30);
- await post('mode',{mode:'denied'});await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'denied');assert.equal(await js(`document.querySelectorAll('[data-topic]').length`),0);await post('mode',{mode:'online'});await click('重试');await count(30);
- await post('invalidate');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('此主题已不可用')`,'invalidated');assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('invalidated');await click('全部记忆');await count(30);
+ await post('mode',{mode:'offline'});await click('刷新');await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'offline');assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('offline');await post('mode',{mode:'online'});await click('重试');await count(30);
+ await post('mode',{mode:'denied'});await click('刷新');await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'denied');assert.equal(await js(`document.querySelectorAll('[data-topic]').length`),0);await post('mode',{mode:'online'});await click('重试');await count(30);
+ await post('invalidate');await click('刷新');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('此主题已不可用')`,'invalidated');assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('invalidated');await click('全部记忆');await count(30);
  await post('empty');await click('刷新');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('当前筛选下没有匹配')`,'empty');await shot('empty');await click('关闭详情');
  await post('reset');await js(`location.reload()`);await wait(`Boolean(window.mote)&&!document.querySelector('#settings-fields').disabled`,'reload');await js(`document.querySelector('aside [data-nav="records"]').click();document.querySelector('.content-more-tools').open=true;document.querySelector('#content-memories').focus();document.querySelector('#content-memories').click()`);await count(30);
  assert.equal((await js('window.mote.status()')).running,false);

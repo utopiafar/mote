@@ -20,7 +20,7 @@ it.each(['version','stale','superseded','wrong-id','denied'])('rechecks the open
  const current={id,title:'Memory',status:'published',version:1,statement:'GENERATED BODY',evidenceIds:[]};
  if(change==='denied')vi.mocked(api.memoryTopicDetail).mockRejectedValue(Error('403'));
  else vi.mocked(api.memoryTopicDetail).mockResolvedValue({...current,...change==='version'?{version:2}:change==='stale'?{status:'stale'}:change==='superseded'?{supersededBy:id}:{id:'22222222-2222-4222-8222-222222222222'}});
- await vi.advanceTimersByTimeAsync(60000);await flush();expect(root.textContent).not.toContain('GENERATED BODY');expect(root.querySelector('[data-memory]')).toBeNull();
+ await vi.advanceTimersByTimeAsync(5000);await flush();expect(root.textContent).not.toContain('GENERATED BODY');expect(root.querySelector('[data-memory]')).toBeNull();
 });
 it('invalidation rejects a late original response, without returning its old body',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});vi.mocked(api.memoryTopicDetail).mockResolvedValue({id,title:'Memory',version:1,status:'published',statement:'BODY',evidenceIds:[id]});
@@ -28,7 +28,13 @@ it('invalidation rejects a late original response, without returning its old bod
  ui.open();await flush();(root.querySelector('[data-memory]') as HTMLElement).click();await flush();click('查看原文依据 1');await flush();
  // The original request is pending while a directory/Memory validation invalidates this view.
  vi.mocked(api.memoryTopicDetail).mockResolvedValue({id,title:'Memory',version:2,status:'published'});
- await vi.advanceTimersByTimeAsync(60000);await flush();finish({id,text:'LATE ORIGINAL',metadata:''});await flush();expect(root.textContent).not.toContain('LATE ORIGINAL');
+ await vi.advanceTimersByTimeAsync(5000);await flush();await vi.advanceTimersByTimeAsync(1000);finish({id,text:'LATE ORIGINAL',metadata:''});await flush();expect(root.textContent).not.toContain('LATE ORIGINAL');expect(root.textContent).toContain('所选记忆已变化');
+});
+it('keeps revalidating an open Memory every 5s while the directory idles',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();(root.querySelector('[data-memory]') as HTMLElement).click();await flush();
+ expect(api.memoryTopics).toHaveBeenCalledTimes(2);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(3);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(4);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(3);
 });
 it('polls the directory once per 60s while classification is not running',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
