@@ -3,9 +3,10 @@ package dev.mote.collector
 /**
  * Shared read cadence for the home blocks. While the home is visible a block reads at most once
  * per [steadyMs]; failures back off exponentially up to [maxBackoffMs]; a 403 stops the block
- * until the session or authorization generation changes. Leaving and returning to the home reads
- * at once, but never revives a block that a 403 stopped. Stamps let a late response check whether
- * it still belongs to the current generation.
+ * until the session or authorization generation changes or the owner explicitly retries through
+ * [retry] — leaving and returning to the home never revives the stop on its own. Returning to the
+ * home otherwise reads at once. Stamps let a late response check whether it still belongs to the
+ * current generation.
  */
 internal class HomeReadGate(private val steadyMs: Long = 60_000, private val maxBackoffMs: Long = 300_000, private val probeRecheckMs: Long = 300_000) {
     @Volatile private var generation = -1L
@@ -55,23 +56,33 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
     @Synchronized fun invalidate() { epoch++; nextRead = 0 }
 
     /**
+     * Explicit owner retry (the failure affordance): clears a 403 stop so a permission repaired
+     * server-side under the same session is re-checked on the next refresh, and re-arms the
+     * empty-archive probe so a recovered probe may run again.
+     */
+    @Synchronized fun retry() { stopped = false; nextRead = 0; probeNext = 0; probeDone = false; probeEmpty = false }
+
+    /**
      * Empty-archive probe used while [rowsEmpty] holds. Once data is found the probe is not run
      * again this generation; an empty answer is rechecked at most every [probeRecheckMs]; an
-     * inconclusive read retries on the next steady read. The last answer is reused between probes.
-     * [probe] runs off the gate lock so a slow read cannot block [adopt]; its answer is committed
-     * only while [stamp] is still current, so a probe from an old generation can never mark the
-     * new generation done.
+     * inconclusive answer clears the empty confirmation and retries on the next steady read; a
+     * forbidden answer stops the block like any other 403. The last answer is reused between
+     * probes. [probe] runs off the gate lock so a slow read cannot block [adopt]; its answer is
+     * committed only while [stamp] is still current, so a probe from an old generation can never
+     * mark the new generation done.
      */
     fun archiveEmpty(rowsEmpty: Boolean, stamp: Long, now: Long, probe: () -> Boolean): Boolean {
         if (!rowsEmpty) return false
         val due = synchronized(this) { stamp == epoch && !probeDone && now >= probeNext }
-        val result = if (due) runCatching { probe() }.getOrNull() else null
+        val result = if (due) runCatching { probe() } else null
         return synchronized(this) {
-            if (due && stamp == epoch) {
-                when (result) {
-                    null -> probeNext = now + steadyMs
-                    false -> { probeDone = true; probeEmpty = false }
-                    true -> { probeNext = now + probeRecheckMs; probeEmpty = true }
+            if (due && stamp == epoch && result != null) {
+                val forbidden = (result.exceptionOrNull() as? CentralFailure)?.status == 403
+                when {
+                    forbidden -> { stopped = true; probeNext = 0; probeDone = false; probeEmpty = false }
+                    result.isFailure -> { probeNext = now + steadyMs; probeEmpty = false }
+                    result.getOrThrow() -> { probeNext = now + probeRecheckMs; probeEmpty = true }
+                    else -> { probeDone = true; probeEmpty = false }
                 }
             }
             probeEmpty

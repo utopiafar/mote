@@ -93,15 +93,28 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
                     addView(row); divider()
                 }
             }.onFailure { error ->
-                gate.failure(SystemClock.elapsedRealtime(), (error as? CentralFailure)?.status)
+                val status = (error as? CentralFailure)?.status
+                gate.failure(SystemClock.elapsedRealtime(), status)
                 // A failed or revoked read is not an empty history, and must not expose old-target rows.
                 archiveEmpty(false)
-                message(MoteI18n.text("对话暂不可读取，请稍后重试。"))
+                if (status == 401 || status == 403) retryMessage(MoteI18n.text("对话暂不可读取，请稍后重试。"))
+                else message(MoteI18n.text("对话暂不可读取，请稍后重试。"))
             }
         }
     }
     private fun clear() { removeAllViews(); rendered = "" }
     private fun message(value: String) { if (rendered == value) return; clear(); rendered = value; label(value) }
+    /** A revoked read offers an explicit retry that re-arms the gate; transient failures keep auto-retrying. */
+    private fun retryMessage(value: String) {
+        if (rendered == "$value\u0000retry") return
+        clear(); rendered = "$value\u0000retry"
+        label(value)
+        addView(TextView(activity).apply {
+            text = MoteI18n.text("重试"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT)
+            setPadding(0, 0, 0, activity.moteDp(16)); isClickable = true; isFocusable = true
+            setOnClickListener { if (active && !closed) { gate.retry(); refresh() } }
+        })
+    }
     private fun label(value: String) { addView(TextView(activity).apply { text = value; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, activity.moteDp(16), 0, activity.moteDp(16)) }) }
     private fun divider() { addView(View(activity).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LayoutParams(-1, activity.moteDp(1))) }
 }

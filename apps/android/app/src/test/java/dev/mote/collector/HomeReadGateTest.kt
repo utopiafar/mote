@@ -65,7 +65,7 @@ class HomeReadGateTest {
         assertFalse(section.gate.due(now + 59_999))
     }
 
-    @Test fun a403StopsUntilTheSessionOrAuthorizationChanges() {
+    @Test fun a403StopsUntilRetryOrAnAuthorizationChange() {
         val section = Section()
         section.gate.adopt(1, "https://central")
         section.finish(section.refresh(0), 0, 403)
@@ -80,6 +80,22 @@ class HomeReadGateTest {
         assertTrue("a new session or authorization generation resumes reading", section.gate.adopt(2, "https://central"))
         assertTrue(section.gate.due(600_000))
         section.finish(section.refresh(600_000), 600_000)
+    }
+
+    @Test fun anExplicitRetryRecoversA403WithTheSameSession() {
+        // Same session, server-side permission repaired: only the explicit retry entry re-arms the block.
+        val section = Section()
+        section.gate.adopt(1, "https://central")
+        section.finish(section.refresh(0), 0, 403)
+        assertFalse("a repaired permission alone does not resume the stopped block", section.gate.due(600_000))
+        section.gate.retry()
+        assertTrue("the owner retry re-reads at once", section.gate.due(600_000))
+        section.finish(section.refresh(600_000), 600_000)
+        assertEquals(2, section.reads)
+        assertFalse("a recovered read returns to the steady cadence", section.gate.due(659_999))
+        assertTrue(section.gate.due(660_000))
+        section.finish(section.refresh(660_000), 660_000, 403)
+        assertFalse("a still-denied retry stops again", section.gate.due(1_000_000))
     }
 
     @Test fun lateResultsDoNotCrossGenerations() {
@@ -149,6 +165,32 @@ class HomeReadGateTest {
         gate.archiveEmpty(true, stamp, 60_000, failing)
         assertEquals("the probe retries on the next steady read", 2, probes)
         assertFalse("non-empty rows never probe", gate.archiveEmpty(false, stamp, 60_000) { error("must not run") })
+    }
+
+    @Test fun anInconclusiveProbeRecheckClearsTheEmptyConfirmation() {
+        // A confirmed-empty archive whose recheck fails is unknown, not empty.
+        val gate = HomeReadGate()
+        gate.adopt(1, "https://central")
+        val stamp = gate.begin(0)
+        assertTrue(gate.archiveEmpty(true, stamp, 0) { true })
+        assertTrue("the confirmed answer is reused until the recheck", gate.archiveEmpty(true, stamp, 299_999) { error("must not run") })
+        var probes = 0
+        val failing = { probes++; error("offline") }
+        assertFalse("a failed recheck withdraws the empty confirmation", gate.archiveEmpty(true, stamp, 300_000, failing))
+        assertEquals(1, probes)
+        assertFalse("the inventory stays unknown while the failure repeats", gate.archiveEmpty(true, stamp, 360_000, failing))
+        assertTrue("a recovered probe can confirm the archive empty again", gate.archiveEmpty(true, stamp, 420_000) { true })
+    }
+
+    @Test fun aDeniedProbeStopsTheBlockLikeAForbiddenRead() {
+        val gate = HomeReadGate()
+        gate.adopt(1, "https://central")
+        val stamp = gate.begin(0)
+        assertFalse(gate.archiveEmpty(true, stamp, 0) { throw CentralFailure(403) })
+        assertFalse("a denied probe stops the block's reads", gate.due(60_000))
+        assertFalse("the stop survives leaving and returning", run { gate.wake(); gate.due(600_000) })
+        assertTrue("the explicit retry re-arms reads and the probe", gate.retry().let { gate.due(600_000) })
+        assertTrue(gate.archiveEmpty(true, gate.begin(600_000), 600_000) { true })
     }
 
     @Test fun logicalReadsAreNotTotalHttpRequests() {

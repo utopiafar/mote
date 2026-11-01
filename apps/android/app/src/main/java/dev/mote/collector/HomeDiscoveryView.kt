@@ -42,7 +42,12 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
             val now=SystemClock.elapsedRealtime()
             outcome.onSuccess{gate.success(now)}.onFailure{gate.failure(now,(it as? CentralFailure)?.status)}
             val finding=outcome.getOrNull()
-            if(finding==null){clear();return@start}
+            if(finding==null){
+                // A revoked read offers an explicit retry that re-arms the gate; a transient failure stays hidden and auto-retries.
+                if((outcome.exceptionOrNull() as? CentralFailure)?.status in setOf(401,403)){clear();visibility=View.VISIBLE;rendered="\u0000denied";label(MoteI18n.text("暂不可读取"),NativeFontRole.META).also{addView(it)};addView(TextView(activity).apply{text=MoteI18n.text("重试");MoteUi.type(this,11);MoteUi.textColor(this,NativeColorRole.ACCENT);setPadding(0,activity.moteDp(5),0,activity.moteDp(5));isClickable=true;isFocusable=true;setOnClickListener{if(active&&!closed){gate.retry();refresh()}}})}
+                else clear()
+                return@start
+            }
             if(rendered==finding.toString())return@start
             clear();rendered=finding.toString()
             val id=requireNotNull(InsightPresentation.id(finding))
