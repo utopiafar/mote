@@ -63,10 +63,10 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
     return reply.header('Accept-Ranges','bytes').header('Content-Length',Math.max(0,end-start+1)).header('Content-Disposition',`${mime==='application/octet-stream'||(req.query as {download?:string}).download==='1'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(v.item.title).replace(/'/g,'%27')}`).type(mime).send(files.stream(fileId(req),start,end));
   });
   app.get('/api/files/:id/thumbnail',async(req,reply)=>{
-    const v=file(req);
-    if(!v.hasOriginal||!FILE_THUMBNAIL_TYPES.has(v.item.mimeType??''))throw new StoreError('Thumbnail is unavailable',404);
+    const v=file(req),mime=v.item.mimeType??'';
+    if(!v.hasOriginal||!FILE_THUMBNAIL_TYPES.has(mime))throw new StoreError('Thumbnail is unavailable',404);
     if(v.sizeBytes>FILE_THUMBNAIL_MAX_ORIGINAL_BYTES)throw new StoreError('Original is too large for a thumbnail',413);
-    const bytes=await thumbnails.get(`${v.captureId}:${v.sha256??v.item.revision}`,async()=>renderFileThumbnail(await readAll(files.stream(fileId(req),0,v.sizeBytes-1))));
+    const bytes=await thumbnails.get(`${v.captureId}:${v.sha256??v.item.revision}`,async()=>renderFileThumbnail(await readAll(files.stream(fileId(req),0,v.sizeBytes-1)),mime));
     file(req); // Re-check authorization, visibility and retention after asynchronous processing.
     return reply.type('image/jpeg').send(bytes);
   });
