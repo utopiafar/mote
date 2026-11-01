@@ -26,6 +26,7 @@ internal class CentralWorkMemoryResults(
     private var readerPendingScroll: Int? = null
     private var memoryScroll=0
     private var restoringSelection=false
+    private var live=false
     private fun current(work: String, cursor: String?) = workId==work && cursors.lastOrNull()==cursor && isCurrentWork(work)
     private fun path(work: String, cursor: String?) = "/api/work-activity/"+CentralScreens.encode(work)+"/memory-results?limit=20"+(cursor?.let{"&cursor="+CentralScreens.encode(it)}?:"")
     private fun read(api: CentralClient, work: String, cursor: String?) = WorkMemoryPage.read(api.get(path(work,cursor)),cursor)
@@ -43,7 +44,7 @@ internal class CentralWorkMemoryResults(
         memoryScroll=ui.contentScroll()
         WorkMemoryDrafts.remember(key,fields.filter { (edit,value)->edit.forceDirty||edit.initial!=value }.associate { (edit,value)->edit.key to value },memoryScroll)
     }
-    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false }
+    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false;live=false }
     fun save(out: Bundle) {
         rememberDrafts();out.putString("memoryResultWork",workId);out.putString("memoryResultSelected",selected);out.putInt("memoryResultScroll",returnScroll)
         out.putString("memoryResultSnapshot",identity);out.putInt("memoryResultDetailScroll",memoryScroll)
@@ -59,8 +60,9 @@ internal class CentralWorkMemoryResults(
     fun hasSelection(work: String) = workId==work && selected!=null
     fun showSelected(work: String) { selected?.takeIf{current(work,cursors.last())}?.let{open(work,it,cursors.last(),returnScroll,preserveIdentity=restoringSelection)} }
     fun restoreAfterReader(work: String, scroll: Int) { if(hasSelection(work)){readerPendingScroll=scroll;poll(work)} else { screens.body.removeAllViews();screens.body.visibility=View.VISIBLE } }
-    fun render(work: String, target: LinearLayout, previousScroll: Int) {
+    fun render(work: String, target: LinearLayout, previousScroll: Int, live: Boolean) {
         if(workId!=work){clear();workId=work}
+        this.live=live
         val cursor=cursors.last();val api=screens.client
         target.removeAllViews()
         ui.work(MoteI18n.text("正在读取…"), { runCatching {
@@ -93,7 +95,7 @@ internal class CentralWorkMemoryResults(
                 ui.text(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("中央响应格式无效，请刷新后重试。"),parent=target)
                 ui.button(MoteI18n.text("重试"),parent=target){refreshWork(work)}
             }
-            ui.scheduleActivityPoll()
+            if(live)ui.scheduleActivityPoll()
         }
     }
     private fun open(work: String, id: String, cursor: String?, scroll: Int, preserveIdentity: Boolean = false) {
@@ -115,7 +117,7 @@ internal class CentralWorkMemoryResults(
                 children(screens.body).filterIsInstance<EditText>().forEach { field -> saved?.edits?.get((field.tag as? MemoryTopicEdit)?.key)?.let(field::setText) }
                 ui.restoreContentScroll(saved?.scroll ?: memoryScroll);restoringSelection=false
             }
-            ui.scheduleActivityPoll()
+            if(live)ui.scheduleActivityPoll()
         }, { error -> failure(work,error) })
     }
     private fun back(work: String) {
@@ -155,7 +157,7 @@ internal class CentralWorkMemoryResults(
                 if(retryingReader) { unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"),true);return }
                 if(identity==null)selected=null
                 ui.notice(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"))
-                ui.scheduleActivityPoll()
+                if(live)ui.scheduleActivityPoll()
             }
         }
     }
@@ -168,7 +170,7 @@ internal class CentralWorkMemoryResults(
             if(afterReaderScroll!=null)readerPendingScroll=null
             result.onSuccess { row ->
                 if(identity(id,row)!=identity)unavailable(work)
-                else { if(afterReaderScroll!=null)screens.body.visibility=View.VISIBLE;afterReaderScroll?.let(ui::restoreContentScroll);ui.scheduleActivityPoll() }
+                else { if(afterReaderScroll!=null)screens.body.visibility=View.VISIBLE;afterReaderScroll?.let(ui::restoreContentScroll);if(live)ui.scheduleActivityPoll() }
             }
                 .onFailure { error ->
                     if(afterReaderScroll!=null && error !is WorkMemoryUnavailable && !(error is CentralFailure && error.status in setOf(401,403,404,410)))
