@@ -118,8 +118,8 @@ async function groupedFixture(t:TestContext,groups:number){
  const records=Array.from({length:groups*2},(_,index)=>{const group=Math.floor(index/2),day=group%3,at=new Date(Date.parse(scope.after)+day*86400000+3600000+(index%2)*1000).toISOString();return {id:randomUUID(),deviceId:'generated-group-'+group,deviceName:'Generated device',platform:'android',capturedAt:at,durationMs:1000,appId:'generated.app',appName:'Generated app',windowTitle:'',source:'activity',ocrText:'',metadata:{version:1,observedAt:at},privacy:{collection:'activity',mode:'none'}};});
  for(let index=0;index<records.length;index+=500)await store.ingestBatch(records.slice(index,index+500));
  const range={...scope,before:'2026-11-01T00:00:00.000Z',limit:100};
- const reads={grouped:0,ctes:0},prepare=store.db.prepare.bind(store.db);
- store.db.prepare=sql=>new Proxy(prepare(sql),{get(target,key){const value=Reflect.get(target,key,target);if(typeof value!=='function')return value;return (...args:unknown[])=>{if(key==='all'||key==='get'){if(/SELECT \* FROM grouped\b/.test(sql))reads.grouped++;if(sql.includes('member_rows AS'))reads.ctes++;}return value.apply(target,args);};}});
+ const reads={grouped:0,ctes:0,groupRows:[] as number[],pagedRows:[] as number[]},prepare=store.db.prepare.bind(store.db);
+ store.db.prepare=sql=>new Proxy(prepare(sql),{get(target,key){const value=Reflect.get(target,key,target);if(typeof value!=='function')return value;return (...args:unknown[])=>{if(key==='all'||key==='get'){if(/SELECT \* FROM grouped\b/.test(sql))reads.grouped++;if(sql.includes('member_rows AS'))reads.ctes++;}const result=value.apply(target,args);if(key==='all'&&/SELECT \* FROM grouped\b/.test(sql)){reads.groupRows.push(result.length);if(sql.endsWith('LIMIT ?'))reads.pagedRows.push(result.length);}return result;};}});
  return {store,range,reads,records,timeline:new CaptureTimeline(store)};
 }
 const comparablePage=(page:CaptureTimelinePage)=>({...page,items:page.items.map(item=>({...item,id:item.id.split('.')[0]})),nextCursor:page.nextCursor?.split('.')[0]??null});
@@ -160,9 +160,10 @@ test('cached group cursors preserve SQLite byte ordering for tied timestamps',as
 });
 
 test('a range above 5000 groups never enters the cache or evicts a reusable small scope',async t=>{
- const {range,reads,timeline}=await groupedFixture(t,5001),small={...range,deviceId:'generated-group-0'};
- timeline.page(small,owner);const first=timeline.page(range,owner),before=reads.grouped;assert.ok(first.nextCursor);
- timeline.page(range,owner);assert.equal(reads.grouped,before+1,'Oversized grouping is recomputed');
+ const {range,reads,timeline}=await groupedFixture(t,5002),small={...range,deviceId:'generated-group-0'},large={...range,limit:1};
+ timeline.page(small,owner);const first=timeline.page(large,owner),before=reads.grouped;assert.ok(first.nextCursor);
+ assert.ok(reads.groupRows.every(count=>count<=5001),'Admission never materializes more than 5001 grouped rows');assert.deepEqual(reads.pagedRows,[2],'Oversized page retains SQL limit + 1');
+ const second=timeline.page({...large,cursor:first.nextCursor!},owner);assert.equal(reads.grouped,before+2,'Oversized grouping probes and then uses bounded SQL pagination');assert.notEqual(second.items[0].id,first.items[0].id);assert.deepEqual(reads.pagedRows,[2,2]);
  const beforeSmall=reads.grouped;timeline.page(small,owner);assert.equal(reads.grouped,beforeSmall,'Oversized range does not displace a cached scope');
  const group=first.items[0] as CaptureTimelineGroup,cteBefore=reads.ctes,members=timeline.members(range,owner,group.id);assert.equal(reads.ctes-cteBefore,1,'Uncached expansion uses one CTE');assert.equal(members.items.length,2);assert.equal(members.group.recordCount,2);
 });

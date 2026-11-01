@@ -92,8 +92,9 @@ export class CaptureTimeline {
  }
  private groupedRows(context:ReturnType<CaptureTimeline['prepare']>){
   const hit=this.cachedGroups(context);if(hit)return hit;
-  const rows=this.store.db.prepare(context.sql+' SELECT * FROM grouped ORDER BY last_at DESC,group_key DESC').all(...context.values) as unknown as GroupRow[];
-  if(rows.length<=5000){this.grouped.set(context.scope+':'+context.revision,rows);while(this.grouped.size>8)this.grouped.delete(this.grouped.keys().next().value!);}
+  const rows=this.store.db.prepare(context.sql+' SELECT * FROM grouped ORDER BY last_at DESC,group_key DESC LIMIT 5001').all(...context.values) as unknown as GroupRow[];
+  if(rows.length>5000)return undefined;
+  this.grouped.set(context.scope+':'+context.revision,rows);while(this.grouped.size>8)this.grouped.delete(this.grouped.keys().next().value!);
   return rows;
  }
  private group(row:GroupRow,context:ReturnType<CaptureTimeline['prepare']>):CaptureTimelineGroup{
@@ -103,8 +104,8 @@ export class CaptureTimeline {
  page(input:TimelineRange,ownerIdentity:string):CaptureTimelinePage{return this.snapshot(()=>{
   const context=this.prepare(input,ownerIdentity),position=input.cursor?this.open(input.cursor,'groups-page'):undefined;if(position)this.current(position,context);
   if(position&&(!position.at||!position.key))throw new StoreError('Invalid timeline cursor');
-  const grouped=this.groupedRows(context),key=position?Buffer.from(position.key!):undefined,start=position?grouped.findIndex(row=>row.last_at<position.at!||row.last_at===position.at&&Buffer.compare(Buffer.from(row.group_key),key!)<0):0;
-  const rows=start<0?[]:grouped.slice(start,start+input.limit+1);
+  const grouped=this.groupedRows(context),key=position?Buffer.from(position.key!):undefined,start=position&&grouped?grouped.findIndex(row=>row.last_at<position.at!||row.last_at===position.at&&Buffer.compare(Buffer.from(row.group_key),key!)<0):0;
+  const rows=grouped?(start<0?[]:grouped.slice(start,start+input.limit+1)):this.store.db.prepare(context.sql+` SELECT * FROM grouped ${position?'WHERE last_at<? OR (last_at=? AND group_key<?)':''} ORDER BY last_at DESC,group_key DESC LIMIT ?`).all(...context.values,...(position?[position.at!,position.at!,position.key!]:[]),input.limit+1) as unknown as GroupRow[];
   const selected=rows.slice(0,input.limit),items:CaptureTimelinePage['items']=selected.map(row=>row.kind==='record'?{type:'record',id:this.seal({type:'group',scope:context.scope,revision:context.revision,key:row.group_key}),day:row.day,firstAt:row.first_at,lastAt:row.last_at,sampleCount:row.sample_count===null?null:Number(row.sample_count),record:this.store.preview(this.store.evidence([row.representative])[0])}:this.group(row,context)),last=selected.at(-1);
   return {revision:context.revision,items,nextCursor:rows.length>input.limit&&last?this.seal({type:'groups-page',scope:context.scope,revision:context.revision,at:last.last_at,key:last.group_key}):null};
  });}
