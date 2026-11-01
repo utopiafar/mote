@@ -38,6 +38,14 @@ it('keeps revalidating an open Memory every 5s while the directory idles',async(
  await vi.advanceTimersByTimeAsync(49000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(2);
  await vi.advanceTimersByTimeAsync(1000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(3);
 });
+it('revalidates an open Memory once per 5s while classification runs',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
+ vi.mocked(api.memoryTopics).mockResolvedValue({items:[{id:'auto.one',label:'One',nodes:[{id:'a',label:'Topic'}]}],classification:{state:'running'}});
+ ui.open();await flush();(root.querySelector('[data-memory]') as HTMLElement).click();await flush();
+ expect(api.memoryTopics).toHaveBeenCalledTimes(2);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(3);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(4);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(3);
+});
 it('polls the directory once per 60s while classification is not running',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
  await vi.advanceTimersByTimeAsync(59999);expect(api.memoryTopics).toHaveBeenCalledTimes(1);

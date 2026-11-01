@@ -11,7 +11,7 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  const button=(label:string,run:()=>void)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.style.margin='4px 8px 4px 0';b.textContent=label;b.onclick=run;root.append(b);return b;};
  const valid=(directory:TopicDirectory)=>!nodeId||directory.items.some(tree=>tree.id===treeId&&tree.nodes.some(node=>node.id===nodeId));
  function schedule(){if(timer)clearTimeout(timer);if(root.open)timer=setTimeout(()=>void poll(),classificationState==='running'?5000:60000);scheduleDetail();}
- function scheduleDetail(){if(detailTimer)clearTimeout(detailTimer);if(root.open&&selected!==undefined)detailTimer=setTimeout(()=>void recheck(),5000);}
+ function scheduleDetail(){if(detailTimer)clearTimeout(detailTimer);if(root.open&&selected!==undefined&&classificationState!=='running')detailTimer=setTimeout(()=>void recheck(),5000);}
  function clear(){generation++;if(timer)clearTimeout(timer);if(detailTimer)clearTimeout(detailTimer);root.replaceChildren();}
  function heading(){root.append(text('h2',moteText('记忆主题')));button(moteText('关闭详情'),close);}
  function close(){clear();root.close();originButton?.focus();}
