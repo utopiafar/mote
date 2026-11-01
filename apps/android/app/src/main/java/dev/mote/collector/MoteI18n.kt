@@ -13,25 +13,39 @@ object MoteI18n {
     val supported = listOf("zh-CN", "en", "ja", "fr", "de", "es", "ru")
     @Volatile private var application: Context? = null
     private val catalogs = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
+    private val statusTranslations = java.util.concurrent.ConcurrentHashMap<Set<String>, Map<String, Set<String>>>()
+    @Volatile internal var assetReader: ((String) -> String?)? = null
+        set(value) { field = value; catalogs.clear(); statusTranslations.clear() }
     @Volatile private var selected = "system"
     private val argument = Regex("\\{(\\d+)\\}")
     fun initialize(context: Context) {
         application = context.applicationContext
         selected = context.getSharedPreferences("mote.language", Context.MODE_PRIVATE).getString("language", "system") ?: "system"
     }
-    private fun load(name: String): Map<String, String> {
-        val context = application ?: return emptyMap()
+    private fun load(name: String, keys: Set<String>? = null): Map<String, String> {
         return try {
-            val json = context.assets.open(name).bufferedReader().use { JSONObject(it.readText()) }
-            json.keys().asSequence().associateWith { json.getString(it) }
+            val reader = assetReader
+            val content = if (reader != null) reader(name) else application?.assets?.open(name)?.bufferedReader()?.use { it.readText() }
+            val json = JSONObject(content ?: return emptyMap())
+            (keys?.asSequence() ?: json.keys().asSequence()).filter(json::has).associateWith { json.getString(it) }
         } catch (_: Exception) { emptyMap() }
     }
     private fun catalog(language: String): Map<String, String> = catalogs.getOrPut(language) { load("i18n-$language.json") }
     /** Match an authored status persisted before a language change without treating other messages as status codes. */
     internal fun translations(sources: Collection<String>): Map<String, Set<String>> {
-        val catalogs = supported.filter { it != "zh-CN" }.map(::catalog)
-        check(catalogs.all { catalog -> sources.all(catalog::containsKey) }) { "Sync status translations are unavailable" }
-        return sources.associateWith { source -> setOf(source) + catalogs.mapNotNull { it[source] } }
+        val active = language()
+        // Keep the active UI cache, releasing a previous UI language or its English fallback.
+        catalogs.keys.removeIf { it != active }
+        val values = statusTranslations.computeIfAbsent(sources.toSet()) { keys ->
+            val selectedCatalogs = supported.filter { it != "zh-CN" }.map { language ->
+                if (language == active) catalogs[language] ?: load("i18n-$language.json", keys)
+                else load("i18n-$language.json", keys)
+            }
+            check(selectedCatalogs.all { catalog -> keys.all(catalog::containsKey) }) { "Sync status translations are unavailable" }
+            keys.associateWith { source -> setOf(source) + selectedCatalogs.mapNotNull { it[source] } }
+        }
+        // Request order and caller-owned collections must not change or expose the cached entry.
+        return sources.associateWith { values.getValue(it).toSet() }
     }
     fun preference() = selected
     fun language(): String {
