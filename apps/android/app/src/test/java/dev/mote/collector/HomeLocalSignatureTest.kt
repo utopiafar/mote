@@ -195,10 +195,12 @@ class HomeLocalSignatureTest {
         assertFalse(collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
         assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null, 1_000_000) }
         crashes.incrementAndGet()
-        // The pending inbox reopens and its failed replay surfaces rather than caching "empty".
-        assertThrows(Exception::class.java) {
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }
-        }
+        // The pending inbox reopens and its replay still fails: the payload keeps publishing the
+        // truthful committed answer — nothing yet — while the inbox stays pending for the retry,
+        // so the same refresh's draft/source state still reaches the home.
+        assertFalse("a still-failing replay reports the committed inventory, not a freeze",
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+        assertTrue("the failed input remains pending for the next cycle", pending())
         crashes.set(0)
         assertTrue("the next cycle replays the inbox into a committed record",
             collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
@@ -215,11 +217,14 @@ class HomeLocalSignatureTest {
         val pending = { java.io.File(dir, ".capture-stages.inbox").exists() || java.io.File(dir, ".capture-stages.journal").exists() }
         val cache = RevisionCache()
         openQueue().enqueue(note(), null, 1_000_000)
-        crashes.set(1)
+        // Two crashes: the enqueue consumes one, so the first reopening collect still replays
+        // into a failure — the existing record must stay truthful while recovery remains pending.
+        crashes.set(2)
         assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null, 1_000_000) }
         val revision = LocalStateChanges.revisions.value.records
         assertTrue("the committed record answers truthfully while the failed inbox retries",
             collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+        assertTrue("the first reopen still failed, so the input remains pending", pending())
         crashes.set(0)
         assertTrue("the retried replay commits the second record",
             collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))

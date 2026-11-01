@@ -53,9 +53,11 @@ internal object HomeLocalCaptures {
         captures.put("hasDraft", draft.optString("text").isNotBlank() || draft.optString("description").isNotBlank() || (draft.optJSONArray("attachments")?.length() ?: 0) > 0 || draft.optJSONObject("origin")?.optString("text").orEmpty().isNotBlank())
         // Pending stage recovery bypasses the revision cache: an unchanged records revision
         // cannot see the accepted inbox, and only opening the queue retries its replay. The
-        // bypassed answer is never cached, so each cycle re-checks until recovery commits or
-        // reports its failure — and an existing-record answer stays truthful meanwhile.
-        captures.put("hasAnyRecords", if (pendingRecovery()) exists() else cache.hasRecords(recordsRevision, exists))
+        // bypassed answer is never cached, so each cycle re-checks until recovery commits. A
+        // replay that still fails reports the committed inventory — false when nothing has
+        // landed yet — so the independently readable draft, receipt and source rows keep
+        // publishing while recovery retries instead of freezing the whole home task.
+        captures.put("hasAnyRecords", if (pendingRecovery()) runCatching(exists).getOrDefault(false) else cache.hasRecords(recordsRevision, exists))
         savedReceipt?.let { captures.put("savedReceipt", it) }
         return captures
     }

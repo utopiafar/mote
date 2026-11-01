@@ -2,9 +2,12 @@ package dev.mote.collector
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -12,6 +15,51 @@ import java.util.concurrent.atomic.AtomicReference
 /** Generated status snapshots only; no capture service or personal data. */
 @RunWith(AndroidJUnit4::class)
 class LocalStateInstrumentedTest {
+    /**
+     * The real Home wiring: `QueueStorage.stageRecoveryPending` on the selected location
+     * bypasses `RevisionCache` even at an unchanged records revision, and each cycle reopens
+     * the queue through `openQueue` — which is also what retries the replay. A malformed
+     * accepted input keeps the truthful committed answer publishing; a repaired input commits.
+     */
+    @Test fun pendingStageRecoveryRetriesThroughTheSelectedQueueStorage() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        require(context.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        require(!Settings(context).enabled && !CaptureAccessibilityService.connected && !ProjectionService.running && context.queue().depth() == 0)
+        val storage = QueueStorage(context)
+        val dir = File(storage.current().path)
+        val revision = LocalStateChanges.revisions.value.records
+        val cache = RevisionCache()
+        val collect = {
+            HomeLocalCaptures.collect(cache, revision, context.recordDraftStore().draft(), null,
+                pendingRecovery = { QueueStorage(context).stageRecoveryPending() }) {
+                HomeLocalCaptures.exists(QueueStorage(context).openQueue())
+            }
+        }
+        val inbox = File(dir, ".capture-stages.inbox")
+        val event = JSONObject().put("id", UUID.randomUUID().toString())
+            .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 1000)
+            .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")).put("source", "note")
+        fun sealedInbox(input: JSONObject?) = context.localContentCipher().seal(JSONObject()
+            .put("operation", UUID.randomUUID().toString())
+            .put("input", input ?: JSONObject.NULL)
+            .put("maxBytes", 16L * 1024 * 1024).put("reviewHeld", false).put("flush", false)
+            .toString().toByteArray(Charsets.UTF_8))
+        try {
+            assertFalse("the empty generated archive caches false at this revision", collect().getBoolean("hasAnyRecords"))
+            // An accepted input that fails validation on replay; the file survives for the next open.
+            inbox.writeBytes(sealedInbox(JSONObject().put("event", JSONObject().put("id", "not-a-uuid")).put("image", JSONObject.NULL)))
+            assertTrue("the selected location reports pending recovery", storage.stageRecoveryPending())
+            assertFalse("the failed replay still publishes the committed answer", collect().getBoolean("hasAnyRecords"))
+            assertTrue("the rejected input stays pending for the next cycle", storage.stageRecoveryPending())
+            // A repaired accepted input commits on the next cycle's real openQueue replay.
+            inbox.writeBytes(sealedInbox(JSONObject().put("event", event).put("image", JSONObject.NULL)))
+            assertTrue("the retried replay commits the accepted record", collect().getBoolean("hasAnyRecords"))
+            assertFalse("recovery cleared the pending stage input", storage.stageRecoveryPending())
+            assertNotNull("the replayed record landed in the real queue", context.queue().capture(event.getString("id")))
+        } finally {
+            listOf(".capture-stages.inbox", ".capture-stages.journal", ".capture-stages.checkpoint", "${event.getString("id")}.event").forEach { File(dir, it).delete() }
+        }
+    }
     @Test fun localStateRefreshNeverHoldsQueueWhileWaitingForConfiguration() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         require(context.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
