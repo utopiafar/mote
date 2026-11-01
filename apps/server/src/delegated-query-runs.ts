@@ -159,11 +159,15 @@ export class DelegatedQueryRuns {
     const executionStatus=run.status==='running'&&work.status==='waiting'?(work.wait?'waiting':step?.error?'retry_wait':'queued'):run.status;
     const attempts=Number(this.store.db.prepare("SELECT coalesce(sum(attempts),0) n FROM execution_steps WHERE operation_id=? AND kind='delegation.coordinator.query'").get(work.operationId)?.n??0);
     run.execution=executionEnvelope({status:executionStatus,attempts,errorCode:run.error?.code??step?.error,availableAt:step?.availableAt,updatedAt:run.updatedAt});
-    // A running usage moves with the wall clock and is returned, not persisted;
-    // once terminal it is written exactly once with the rest of the receipt.
-    const changed=JSON.stringify({...run,operationUsage:undefined})!==before
+    // The returned envelope keeps the live countdown, but retryAfterMs is
+    // clock-derived from step.availableAt; persist the deadline as an offset
+    // from run creation so unchanged waits compare equal across clock ticks
+    // while a moved deadline, status or attempt still writes once.
+    const persistedExecution=JSON.parse(JSON.stringify(run.execution)) as typeof run.execution,createdAt=Date.parse(run.createdAt);
+    for(const slot of [persistedExecution?.failure,persistedExecution?.waiting])if(slot?.retryAfterMs!==undefined)slot.retryAfterMs=Math.max(0,(step?.availableAt??createdAt)-createdAt);
+    const changed=JSON.stringify({...run,operationUsage:undefined,execution:persistedExecution})!==before
       ||run.status!=='running'&&JSON.stringify(run.operationUsage)!==beforeUsage;
-    if(changed)this.save(run);return run;
+    if(changed)this.save({...run,execution:persistedExecution});return run;
   }
   list(){return this.store.db.prepare("SELECT id FROM query_runs ORDER BY json_extract(json,'$.createdAt') DESC,id DESC LIMIT 100").all().map(row=>this.get(String(row.id)));}
   start(id:string,input:unknown,deadline:RunDeadline={}){

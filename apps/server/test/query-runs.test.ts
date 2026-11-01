@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
+import {ProviderFailure} from '@mote/shared';
 import type {Config} from '../src/config.js';
 const token='generated-query-owner-token',headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
@@ -210,4 +211,38 @@ test('running reads return fresh usage without writes and the completed transiti
   for(let i=0;i<5;i++){const detail=await app.inject({url:`/api/query-runs/${id}`,headers});assert.equal(detail.json().status,'completed');}
   assert.equal(log.updates(),0,'stable terminal reads stop writing');
   assert.equal(persistedRun(store,id),stable);
+});
+
+test('a held retry deadline returns a fresh countdown without rewriting the row',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-retry-wait-'));
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:3600000});}};
+  const {app,store}=await buildApp(config(dir),{agent});
+  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  const id=randomUUID();
+  assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated question'}}})).statusCode,202);
+  const stepOf=()=>store.db.prepare("SELECT state,error,available_at FROM execution_steps WHERE operation_id=? AND kind='delegation.coordinator.query'").get('query:'+id) as {state:string;error?:string;available_at:number}|undefined;
+  for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));const step=stepOf();if(step?.state==='waiting'&&step.error==='rate_limited'&&step.available_at>Date.now())break;}
+  const held=stepOf();assert.equal(held?.state,'waiting');assert.ok(held&&held.available_at>Date.now(),'the coordinator is held at a future retry deadline');
+  const pending=app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Held waiter question'}});
+  let heldRunId='';for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));const row=store.db.prepare('SELECT id FROM query_runs WHERE id!=?').get(id) as {id:string}|undefined;if(row&&JSON.parse(persistedRun(store,row.id)).execution?.status==='retry_wait'){heldRunId=row.id;break;}}
+  assert.ok(heldRunId,'the foreground waiter run reached retry_wait');
+  const detail=(await settleReads(app,store,id) as {execution?:{status?:string}});
+  assert.equal(detail.execution?.status,'retry_wait','the initial retry_wait projection is persisted once');
+  t.mock.timers.enable({apis:['Date'],now:Date.now()});
+  const log=runWrites(t,store),stable=persistedRun(store,id);
+  let countdown=0;
+  for(let i=0;i<3;i++){
+    t.mock.timers.tick(5000);
+    const run=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();
+    assert.equal(run.status,'running');assert.equal(run.execution.status,'retry_wait');
+    const next=Number(run.execution.failure?.retryAfterMs);
+    assert.ok(next>0&&(!countdown||next<countdown),'each read returns the live remaining countdown');
+    countdown=next;
+  }
+  const list=await app.inject({url:'/api/query-runs',headers});assert.equal(list.statusCode,200,list.body);
+  for(let i=0;i<3;i++){t.mock.timers.tick(2000);await new Promise(r=>setTimeout(r,90));}
+  assert.equal(log.updates(),0,'detail, list and waiter polls issue zero updates while the deadline is held');
+  assert.equal(persistedRun(store,id),stable,'persisted bytes stay identical across clock ticks');
+  await app.inject({method:'POST',url:`/api/query-runs/${heldRunId}/cancel`,headers});
+  const waiterResponse=await pending;assert.notEqual(waiterResponse.statusCode,200);
 });
