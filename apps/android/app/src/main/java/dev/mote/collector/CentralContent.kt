@@ -548,7 +548,7 @@ internal class CentralContent(
     }
     internal fun scheduleAskPoll(delay: Long = 1500) { handler.removeCallbacks(refreshRun); if (resumed && page == "ask") handler.postDelayed(refreshRun, delay) }
     internal fun scheduleMemoryTopicsPoll() { handler.removeCallbacks(refreshRun); if (resumed && page == "memories") handler.postDelayed(refreshRun, 5000) }
-    internal fun scheduleActivityPoll() { handler.removeCallbacks(refreshRun); if (resumed && page == "activity") handler.postDelayed(refreshRun, 3000) }
+    internal fun scheduleActivityPoll(delay: Long = 3000) { handler.removeCallbacks(refreshRun); if (resumed && page == "activity") handler.postDelayed(refreshRun, delay) }
     internal fun scheduleInsightPoll(delay: Long = 5000) { handler.removeCallbacks(refreshRun); if (resumed && page == "insights") handler.postDelayed(refreshRun, delay) }
     private data class WorkValue<T>(val value: T, val generation: Long)
     internal fun <T> work(label: String, job: (UiTask.Progress) -> T, done: (T) -> Unit) = work(label, job, false, done)

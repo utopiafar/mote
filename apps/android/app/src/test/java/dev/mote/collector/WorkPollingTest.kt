@@ -59,21 +59,41 @@ class WorkPollingTest {
 
     @Test fun aRestoredReaderReArmsOnlyForLiveWork() {
         // Mirrors showSelected(): recreation clears `live`, a fresh work-state read refreshes
-        // it, and the reader's rearm call decides whether polling resumes.
-        var live = false
+        // it, and the reader's rearm call schedules its next revalidation.
+        var live: Boolean? = null
         var polls = 0
         fun restoreReader(stateRead: () -> String) {
             runCatching(stateRead).onSuccess { live = WorkPolling.live(it) }
-            WorkPolling.rearm(live) { polls++ }
+            WorkPolling.rearmReader(live) { polls++ }
         }
         restoreReader { "running" }
         assertEquals("a still-running work resumes the reader poll", 1, polls)
-        live = false
+        live = null
         restoreReader { "completed" }
-        assertEquals("a work that completed during recreation does not re-arm", 1, polls)
-        live = false
+        assertEquals("a completed work keeps the slower withdrawal revalidation", 2, polls)
+        live = null
         restoreReader { error("offline") }
-        assertEquals("a failed state read leaves polling off", 1, polls)
+        assertEquals("an unknown state is not terminal: the reader retries it", 3, polls)
+        assertTrue("an unknown state stays on the live cadence", WorkPolling.recheckState(live, 0, 1))
+    }
+
+    @Test fun theOpenReaderRevalidatesSlowerAfterTheWorkTerminates() {
+        // running -> revalidation every three seconds; a fresh state read reports completed ->
+        // the same production rearm drops to the fifteen-second withdrawal cadence.
+        var live: Boolean? = WorkPolling.live("running")
+        val delays = mutableListOf<Long>()
+        WorkPolling.rearmReader(live) { delays.add(it) }
+        live = WorkPolling.live("completed")
+        WorkPolling.rearmReader(live) { delays.add(it) }
+        WorkPolling.rearmReader(null) { delays.add(it) }
+        assertEquals(listOf(3_000L, 15_000L, 3_000L), delays)
+    }
+
+    @Test fun theReaderRefreshesTheWorkStateOnItsOwnClock() {
+        assertTrue("an unknown state is re-read on every poll", WorkPolling.recheckState(null, 0, 0))
+        assertFalse("a fresh state answer is reused", WorkPolling.recheckState(true, 0, WorkPolling.READER_STATE_MS - 1))
+        assertTrue("the state is re-checked once it ages out", WorkPolling.recheckState(true, 0, WorkPolling.READER_STATE_MS))
+        assertTrue("a terminal state still re-checks for a restart", WorkPolling.recheckState(false, 0, WorkPolling.READER_STATE_MS))
     }
 
     @Test fun detailAndListUseTheSameTerminalGate() {

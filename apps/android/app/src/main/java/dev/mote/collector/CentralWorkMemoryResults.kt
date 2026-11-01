@@ -1,6 +1,7 @@
 package dev.mote.collector
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -26,7 +27,9 @@ internal class CentralWorkMemoryResults(
     private var readerPendingScroll: Int? = null
     private var memoryScroll=0
     private var restoringSelection=false
-    private var live=false
+    /** Last known work state for the open reader: true live, false terminal, null unknown (state read pending/failed). */
+    private var live: Boolean? = null
+    private var stateCheckedAt = 0L
     private fun current(work: String, cursor: String?) = workId==work && cursors.lastOrNull()==cursor && isCurrentWork(work)
     private fun path(work: String, cursor: String?) = "/api/work-activity/"+CentralScreens.encode(work)+"/memory-results?limit=20"+(cursor?.let{"&cursor="+CentralScreens.encode(it)}?:"")
     private fun read(api: CentralClient, work: String, cursor: String?) = WorkMemoryPage.read(api.get(path(work,cursor)),cursor)
@@ -44,7 +47,7 @@ internal class CentralWorkMemoryResults(
         memoryScroll=ui.contentScroll()
         WorkMemoryDrafts.remember(key,fields.filter { (edit,value)->edit.forceDirty||edit.initial!=value }.associate { (edit,value)->edit.key to value },memoryScroll)
     }
-    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false;live=false }
+    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false;live=null;stateCheckedAt=0 }
     fun save(out: Bundle) {
         rememberDrafts();out.putString("memoryResultWork",workId);out.putString("memoryResultSelected",selected);out.putInt("memoryResultScroll",returnScroll)
         out.putString("memoryResultSnapshot",identity);out.putInt("memoryResultDetailScroll",memoryScroll)
@@ -65,7 +68,7 @@ internal class CentralWorkMemoryResults(
         // deciding whether its polling re-arms, then run the normal fresh open reads.
         ui.work("", { runCatching { api.get("/api/work-activity/"+CentralScreens.encode(work)+"?limit=1&cursor=0").getString("state") } }) { result ->
             if(!current(work,cursors.last())||selected!=id||screens.client!==api)return@work
-            result.onSuccess { live=WorkPolling.live(it) }
+            result.onSuccess { live=WorkPolling.live(it);stateCheckedAt=SystemClock.elapsedRealtime() }
             open(work,id,cursors.last(),returnScroll,preserveIdentity=restoringSelection)
         }
     }
@@ -73,6 +76,7 @@ internal class CentralWorkMemoryResults(
     fun render(work: String, target: LinearLayout, previousScroll: Int, live: Boolean) {
         if(workId!=work){clear();workId=work}
         this.live=live
+        stateCheckedAt=SystemClock.elapsedRealtime()
         val cursor=cursors.last();val api=screens.client
         target.removeAllViews()
         ui.work(MoteI18n.text("正在读取…"), { runCatching {
@@ -105,7 +109,7 @@ internal class CentralWorkMemoryResults(
                 ui.text(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("中央响应格式无效，请刷新后重试。"),parent=target)
                 ui.button(MoteI18n.text("重试"),parent=target){refreshWork(work)}
             }
-            WorkPolling.rearm(live, ui::scheduleActivityPoll)
+            WorkPolling.rearm(live ?: false, ui::scheduleActivityPoll)
         }
     }
     private fun open(work: String, id: String, cursor: String?, scroll: Int, preserveIdentity: Boolean = false) {
@@ -127,7 +131,7 @@ internal class CentralWorkMemoryResults(
                 children(screens.body).filterIsInstance<EditText>().forEach { field -> saved?.edits?.get((field.tag as? MemoryTopicEdit)?.key)?.let(field::setText) }
                 ui.restoreContentScroll(saved?.scroll ?: memoryScroll);restoringSelection=false
             }
-            WorkPolling.rearm(live, ui::scheduleActivityPoll)
+            WorkPolling.rearmReader(live) { ui.scheduleActivityPoll(it) }
         }, { error -> failure(work,error) })
     }
     private fun back(work: String) {
@@ -167,20 +171,27 @@ internal class CentralWorkMemoryResults(
                 if(retryingReader) { unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"),true);return }
                 if(identity==null)selected=null
                 ui.notice(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"))
-                WorkPolling.rearm(live, ui::scheduleActivityPoll)
+                WorkPolling.rearmReader(live) { ui.scheduleActivityPoll(it) }
             }
         }
     }
     fun poll(work: String) {
         val id=selected ?: return;val cursor=cursors.last();val api=screens.client;val afterReaderScroll=readerPendingScroll
+        // An open reader keeps the work state fresh: unknown state retries every poll, a known
+        // state is re-checked periodically so a running-to-terminal transition downgrades the
+        // cadence and a terminal-to-live transition restores it.
+        val checkState=WorkPolling.recheckState(live,stateCheckedAt,SystemClock.elapsedRealtime())
         ui.work("", { runCatching {
-            if(!contains(api,work,cursor,id))throw WorkMemoryUnavailable();val row=api.get("/api/memories/"+CentralScreens.encode(id));if(!contains(api,work,cursor,id))throw WorkMemoryUnavailable();row
+            if(!contains(api,work,cursor,id))throw WorkMemoryUnavailable();val row=api.get("/api/memories/"+CentralScreens.encode(id));if(!contains(api,work,cursor,id))throw WorkMemoryUnavailable()
+            val state=if(checkState)runCatching{api.get("/api/work-activity/"+CentralScreens.encode(work)+"?limit=1&cursor=0").getString("state")}else null
+            row to state
         } }) { result ->
             if(!current(work,cursor)||selected!=id||screens.client!==api)return@work
             if(afterReaderScroll!=null)readerPendingScroll=null
-            result.onSuccess { row ->
+            result.onSuccess { (row,state) ->
+                state?.onSuccess { live=WorkPolling.live(it);stateCheckedAt=SystemClock.elapsedRealtime() }
                 if(identity(id,row)!=identity)unavailable(work)
-                else { if(afterReaderScroll!=null)screens.body.visibility=View.VISIBLE;afterReaderScroll?.let(ui::restoreContentScroll);WorkPolling.rearm(live, ui::scheduleActivityPoll) }
+                else { if(afterReaderScroll!=null)screens.body.visibility=View.VISIBLE;afterReaderScroll?.let(ui::restoreContentScroll);WorkPolling.rearmReader(live) { ui.scheduleActivityPoll(it) } }
             }
                 .onFailure { error ->
                     if(afterReaderScroll!=null && error !is WorkMemoryUnavailable && !(error is CentralFailure && error.status in setOf(401,403,404,410)))
