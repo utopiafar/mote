@@ -6,6 +6,8 @@ import {ApiError,errorMessage,type Api} from './api';
 import {FeatureInventory} from './FeatureInventory';
 import {containDialogFocus} from './dialog-focus';
 import {resources} from './resource-cache';
+import {operationFeed} from './operation-feed';
+import {useForegroundResources} from './useForegroundResources';
 import {confirmNavigation,useUnsavedChanges} from './unsaved';
 import {useResource} from './useResource';
 import {capabilityLabel,memoryAdmissionLabel,moduleLabel,packageStateLabel,preparationLabel,preparationPhaseLabel,preparationFailureLabel} from './plugin-center-presentation';
@@ -39,6 +41,8 @@ function Capabilities({items}:{items:PluginReleasePreview['capabilities']}){
 export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=>void;viewScope?:string}){
  const pluginResource=useResource<PluginCenterView>(api,pluginsPath,3000),bindingResource=useResource<MemoryBindingView>(api,bindingPath,3000);
  const authorization=useResource<{authorization:{revision:number;state:'unapproved'|'enabled'|'paused'|'stopped'}}>(api,'/api/model-authorization',3000);
+ useForegroundResources(api,[pluginsPath,bindingPath,'/api/model-authorization']);
+ useEffect(()=>operationFeed(api).subscribe(()=>{}),[api]);
  const view=pluginResource.data,binding=bindingResource.data;
  const [tab,setTab]=useHashChoice('tab',pluginTabFromHash),[selected,setSelected]=useState<string>(),[dialog,setDialog]=useState<Dialog>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[retry,setRetry]=useState<Intent>();
  const [repository,setRepository]=useState(''),[tag,setTag]=useState(''),[scope,setScope]=useState('default'),[fee,setFee]=useState(false),[showInventory,setShowInventory]=useState(false),[rhythmOpened,setRhythmOpened]=useState(false);
@@ -48,7 +52,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   const denied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
   if(!denied)return;
   clearQuickAdd();
-  controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');
+  controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');setRepository('');setTag('');
  },[pluginResource.error,bindingResource.error]);
  const currentPackage=view?.packages.find(item=>item.id===selected);
  const privateDenied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
