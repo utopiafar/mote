@@ -54,7 +54,7 @@ test('topic directory and node browsing materialize one Memory snapshot per batc
  assert.ok(nodeSnapshots<=3,`node browsing materialized ${nodeSnapshots} snapshots for one batch`);
 });
 
-test('pinned body mismatch hides topic labels while provider failures propagate and read leases are released',async t=>{
+test('pinned body mismatch surfaces an explicit error while provider failures propagate and read leases are released',async t=>{
  const f=await fixture(t),a=await f.seed('Synthetic provider input'),service=f.n.featureServices.contextTrees.automatic!;let calls=0;
  service.register({id:'fixture',version:'1',classify:async()=>{calls++;return output([a.id]);}});
  const input={operationId:'provider-original',classifierId:'fixture',memoryIds:[a.id]};await service.classify(input,authority());
@@ -65,13 +65,13 @@ test('pinned body mismatch hides topic labels while provider failures propagate 
   if(mode==='offline')throw new MemoryProviderError('unavailable','Generated provider unavailable');
   return mode==='mismatch'?{...a,statement:'Generated body with a different immutable digest'}:a;
  });
- for(const [next,status,trees] of [['valid',200,2],['mismatch',200,0],['invalid',502,0],['offline',503,0],['valid',200,2]] as const){
+ for(const [next,status,trees] of [['valid',200,2],['mismatch',502,0],['invalid',502,0],['offline',503,0],['valid',200,2]] as const){
   mode=next;const response=await f.n.app.inject({url:'/api/context-trees',headers:f.headers});assert.equal(response.statusCode,status,response.body);
   if(status===200)assert.equal(response.json().items.filter((tree:any)=>tree.id.startsWith('auto.')).length,trees);
-  else await assert.rejects(service.trees(),{statusCode:status,message:next==='invalid'?'Generated provider invalid record':'Generated provider unavailable'});
+  else await assert.rejects(service.trees(),{statusCode:status,message:next==='invalid'?'Generated provider invalid record':next==='mismatch'?'The bound Memory body does not match its pinned revision':'Generated provider unavailable'});
   assert.equal(retained(),false,'success, hidden labels and provider errors all release the read lease');
  }
- mode='mismatch';await assert.rejects(service.classify({...input,operationId:'provider-mismatch'},authority()),{statusCode:409});
+ mode='mismatch';await assert.rejects(service.classify({...input,operationId:'provider-mismatch'},authority()),{statusCode:502});
  assert.equal(calls,1,'a stale pinned body never reaches the classifier');assert.equal(retained(),false);
 });
 
