@@ -17,7 +17,7 @@ const openDescription=()=>document.querySelector<HTMLButtonElement>('#source-det
 beforeEach(()=>{
  dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'));vi.stubGlobal('document',dom.window.document);
  const dialog=el<HTMLDialogElement>('source-context-dialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
- api={sourcePendingContent:vi.fn(async()=>({items:[],total:0})),sourceArchivedContent:vi.fn(async()=>({items:[]})),sourceContext:vi.fn(async()=>context('New node description')),saveSourceContext:vi.fn(async(_id,write)=>({...context('New node description'),pending:write}))} as unknown as DesktopApi;
+ api={sourcePendingContent:vi.fn(async()=>({items:[],total:0})),sourceArchivedContent:vi.fn(async()=>({items:[]})),sourceContext:vi.fn(async()=>context('New node description')),saveSourceContext:vi.fn(async(_id,write)=>({...context('New node description'),pending:write})),openCentral:vi.fn(async()=>{})} as unknown as DesktopApi;
  toggle=vi.fn(async()=>{});
  ui=createSourceWorkspaceUi(api,{openDetail:()=>true,edit:()=>{},toggle,content:()=>{},read:()=>{}});ui.status(status(1));ui.update([structuredClone(source)]);ui.open(id);
  document.querySelector<HTMLElement>('[data-page=source-detail]')!.hidden=false;
@@ -140,4 +140,37 @@ it('keeps loaded archive pages when only status fields change',async()=>{
  ui.update([{...structuredClone(source),message:'Generated status change',lastSyncAt:'2026-11-01T05:00:00.000Z'}]);
  expect(el('source-detail-body').textContent).toContain('Generated page one');expect(el('source-detail-body').textContent).toContain('Generated page two');
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
+});
+
+it('revalidates the archive once after the owner returns from Central while local counts stay fixed',async()=>{
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[{key:'capture:generated-deleted',source:'file',title:'Generated archived row',observedAt:'2026-10-30T01:00:00.000Z',preview:''}]});
+ ui.open(id);await flush();
+ expect(el('source-detail-body').textContent).toContain('Generated archived row');
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='查看中央资料')!.click();
+ expect(api.openCentral).toHaveBeenCalledWith('library');
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[]});
+ dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);
+ expect(el('source-detail-body').textContent).not.toContain('Generated archived row');expect(el('source-detail-body').textContent).toContain('暂无中央归档内容');
+});
+
+it('revalidates the archive on the next status update after opening Central, not on every poll',async()=>{
+ await flush();
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='查看中央资料')!.click();
+ ui.update([{...structuredClone(source),message:'Generated later poll'}]);await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+ ui.update([{...structuredClone(source),message:'Generated another poll'}]);await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+});
+
+it('defers the Central archive revalidation while hidden and folds it into the next visible read',async()=>{
+ await flush();
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='查看中央资料')!.click();
+ detailPage().hidden=true;
+ ui.update([{...structuredClone(source),message:'Generated hidden poll'}]);await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ detailPage().hidden=false;
+ ui.update([{...structuredClone(source),message:'Generated hidden poll'}]);await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
 });
