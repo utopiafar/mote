@@ -3,6 +3,7 @@ package dev.mote.collector
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import java.time.Instant
 
 class LibraryCaptureProjectionTest {
     private fun record(id: String = "same", device: String = "phone", at: String = "2026-10-01T10:00:00Z") = JSONObject()
@@ -99,6 +100,26 @@ class LibraryCaptureProjectionTest {
         projection.availability("central", "phone", "retained-local", false)
         assertEquals(setOf("retained-local", "other-origin"), projection.visible("").map { it.identity.id }.toSet())
         assertEquals(LibraryCaptureProjection.Remote.UNAVAILABLE, projection.visible("local").single().remote)
+    }
+
+    @Test fun laterLocalPageGetsItsFirstAvailabilityOnlyOnTheNextMatchResponse() {
+        val projection = LibraryCaptureProjection()
+        val locals = (0 until 60).map { record("local-$it", at = Instant.ofEpochSecond(1_000_000L - it).toString()) }
+        repeat(25) { projection.central(record("remote-$it", device = "other"), "central") }
+        // Central's two pages end before local page three. The earlier local
+        // pages receive missing matches; page three has no remote read yet.
+        locals.take(40).forEach { projection.local(it, "central", "phone"); projection.availability("central", "phone", it.getString("id"), false) }
+        locals.drop(40).forEach { projection.local(it, "central", "phone") }
+        val before = projection.visible("local").single { it.identity.id == "local-50" }
+        assertEquals(LibraryCaptureProjection.Remote.UNKNOWN, before.remote)
+        val original = SourceRules.canonical(before.item)
+
+        projection.candidates("central").filter { it.deviceId == "phone" }.forEach { projection.availability("central", it.deviceId, it.id, false) }
+        val after = projection.visible("local").single { it.identity.id == "local-50" }
+        assertSame(before.item, after.item)
+        assertEquals(original, SourceRules.canonical(after.item))
+        assertEquals("the first real missing match legitimately changes the row's displayed availability", LibraryCaptureProjection.Remote.UNAVAILABLE, after.remote)
+        assertEquals(25, projection.visible("central").size)
     }
 
 }

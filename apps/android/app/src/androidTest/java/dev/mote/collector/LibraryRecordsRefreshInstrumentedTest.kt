@@ -302,6 +302,11 @@ class LibraryRecordsRefreshInstrumentedTest {
             api.post("/api/captures", note(id, "generated-remote-device", base.minusSeconds(index.toLong()), "Generated remote-only record $index"))
             id
         }
+        // Keep all 65 locals and 25 remote-only records. This additional exact
+        // overlap gives the deep-card identity check an already verified status;
+        // an unprobed third-page local would legitimately change UNKNOWN to
+        // UNAVAILABLE when the first append supplies its missing match.
+        api.post("/api/captures", note(locals[50], device, base.minusSeconds(50), "Generated library record 50"))
         val repository = LocalStateRepository.get(context); repository.refresh()
         waitFor("paired generated inventory before opening the library") { repository.state.value.let { it.error == null && it.active?.records == 65 } }
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
@@ -322,6 +327,33 @@ class LibraryRecordsRefreshInstrumentedTest {
                     idle = !(LibraryCaptureView::class.java.getDeclaredField("task").apply { isAccessible = true }.get(view) as UiTask).busy
                 }
                 return idle
+            }
+            fun awaitLibraryFrame() {
+                val drawn = java.util.concurrent.CountDownLatch(1)
+                scenario.onActivity { activity ->
+                    val root = activity.window.decorView
+                    val observer = root.viewTreeObserver
+                    observer.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+                        override fun onPreDraw(): Boolean {
+                            if (observer.isAlive) observer.removeOnPreDrawListener(this)
+                            root.post { drawn.countDown() }
+                            return true
+                        }
+                    })
+                    root.postInvalidateOnAnimation()
+                }
+                check(drawn.await(45, java.util.concurrent.TimeUnit.SECONDS)) { "the actual Library layout reaches pre-draw" }
+                instrumentation.waitForIdleSync()
+            }
+            fun rowState(id: String): Triple<String, String?, LibraryCaptureProjection.Remote> {
+                var value: Triple<String, String?, LibraryCaptureProjection.Remote>? = null
+                scenario.onActivity { activity ->
+                    val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
+                    val projection = LibraryCaptureView::class.java.getDeclaredField("projection").apply { isAccessible = true }.get(view) as LibraryCaptureProjection
+                    val row = projection.visible("").single { it.identity.id == id }
+                    value = Triple(SourceRules.canonical(row.item), row.central?.let(SourceRules::canonical), row.remote)
+                }
+                return requireNotNull(value)
             }
             fun scheduled(): Boolean {
                 var value = false
@@ -407,13 +439,17 @@ class LibraryRecordsRefreshInstrumentedTest {
             click("加载更多"); waitFor("second page") { rows(locals[39]) == 1 && remotes.all { rows(it) == 1 } }
             click("加载更多"); waitFor("third page") { rows(locals[59]) == 1 }
             waitFor("all accepted page work has reached its production UI delivery") { readIdle() }
+            awaitLibraryFrame()
             // Scroll a third-page row to the top so the anchor compensation can be observed.
             scenario.onActivity { activity ->
                 val row = views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" }
                 var parent = row.parent; while (parent is View && parent !is android.widget.ScrollView) parent = parent.parent
                 val position = IntArray(2); row.getLocationInWindow(position); (parent as android.widget.ScrollView).scrollBy(0, position[1] - 300)
             }
+            awaitLibraryFrame()
             val anchor = anchorRowId()
+            val deepBaseline = rowState(locals[50])
+            assertEquals("the unchanged deep card already has a real authorized exact-version baseline", LibraryCaptureProjection.Remote.READABLE, deepBaseline.third)
             var deepCard: View? = null
             scenario.onActivity { activity -> deepCard = views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" } }
             assertNotNull("a visible record row is required before the burst", anchor)
@@ -436,8 +472,11 @@ class LibraryRecordsRefreshInstrumentedTest {
             }
             waitFor("insert burst merges into the first page and withdraws a deleted Central deep row") { fresh.all { rows(it) == 1 } && rows(remotes.last()) == 0 }
             assertTrue("record refresh is coalesced for at least five seconds", SystemClock.elapsedRealtime() - burstStarted >= 5_000)
+            waitFor("the burst has completed production UI delivery") { readIdle() }
+            awaitLibraryFrame()
             assertEquals("other loaded Central pages remain", 1, rows(remotes[23]))
             assertEquals("loaded deeper pages are preserved", 1, rows(locals[50]))
+            assertEquals("the deep card's original facts, Central version and availability really remain unchanged", deepBaseline, rowState(locals[50]))
             scenario.onActivity { activity -> assertSame("unchanged deep cards and thumbnail views are reused", deepCard, views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" }) }
             assertEquals("the anchored row keeps its viewport position", anchor, anchorRowId())
             assertTrue("the same deep row retains its actual, unclipped window y within one pixel", kotlin.math.abs(rowY(requireNotNull(anchor)) - anchorY) <= 1)
@@ -514,6 +553,9 @@ class LibraryRecordsRefreshInstrumentedTest {
             waitFor("same connection resumes the pending insert with no additional writes") { rows(stoppedInsert) == 1 && rows(locals[50]) == 1 && readIdle() }
 
             val mixedAdded = mutableListOf<String>()
+            // The exact-overlap setup is fixture-only; remove its Central copy
+            // too so the existing mixed deletion still requires no remaining row.
+            api.delete("/api/captures/${locals[50]}")
             val beforeMixedStop = api.get("/api/fixture/library-request-stats").getInt("centralRequests")
             queue.withDeferredIndexWrites {
                 repeat(3) { index ->
