@@ -152,7 +152,14 @@ test('catalog transitions publish context-trees change ids through the operation
   return prepare(sql);
  });
  assert.throws(()=>registry.register({id:'generated.failure',version:'1',label:'Generated failure',nodes:[{id:'one',label:'One',select:{}}]}),/Generated live notification failure/,'live notification errors must propagate');
+ const classifier={id:'generated.failure',version:'1',classify:async()=>({trees:[]})};
+ assert.throws(()=>registry.automatic!.register(classifier),/Generated live notification failure/);
+ assert.equal(registry.automatic!.state().state,'unavailable','failed registration must not strand an active classifier');
  fault.mock.restore();
+ const retry=registry.automatic!.register(classifier);
+ assert.equal(registry.automatic!.state().state,'ready','the same classifier identity remains retryable after a notification fault');
+ assert.ok((await changed()).includes('context-trees:classifier'));
+ retry();assert.equal(registry.automatic!.state().state,'unavailable');
 });
 
 test('real Memory phase children expose stable extraction and review kinds without their private inputs',async t=>{

@@ -34,7 +34,9 @@ export class ContextTreeRegistry {
     if(this.automatic)return this.automatic;
     const automatic=this.automatic=new AutomaticTopics(store,reader),register=automatic.register.bind(automatic);
     automatic.register=(classifier)=>{
-      const dispose=register(classifier);this.publishChange('classifier');let removed=false;
+      const dispose=register(classifier);
+      try{this.publishChange('classifier');}catch(error){dispose();throw error;}
+      let removed=false;
       return()=>{if(removed)return;removed=true;dispose();this.publishChange('classifier');};
     };
     return automatic;
