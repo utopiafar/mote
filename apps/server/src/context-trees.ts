@@ -39,9 +39,9 @@ export class ContextTreeRegistry {
       const seen=new Set([node.id]);let parent=node.parentId;
       while(parent){if(!ids.has(parent)||seen.has(parent))throw new StoreError('Invalid context tree ancestry');seen.add(parent);parent=tree.nodes.find(item=>item.id===parent)!.parentId;}
     }
-    this.trees.set(tree.id,tree);this.revision++;const store=this.store;let removed=false;
-    if(store)publishOperationChange(store,'context-trees:registry');
-    return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;if(store)publishOperationChange(store,'context-trees:registry');}};
+    this.trees.set(tree.id,tree);this.revision++;let removed=false;
+    if(this.store)publishOperationChange(this.store,'context-trees:registry');
+    return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;if(this.store)publishOperationChange(this.store,'context-trees:registry');}};
   }
   async catalog(){return {classification:this.automatic?.state()??{state:'unavailable'},items:[...(await this.automatic?.trees()??[]),...this.trees.values()].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};}
   async page(reader:TreeMemoryRead,treeId:string,nodeId:string,raw:unknown,ownerArchive=true){

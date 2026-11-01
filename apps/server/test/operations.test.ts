@@ -131,9 +131,10 @@ test('catalog transitions publish context-trees change ids through the operation
  const app=Fastify();t.after(()=>app.close());registerOperations(app,operations,()=>false);
  let cursor=0;const changed=async()=>{const page=(await app.inject({url:'/api/operations/changes?since='+cursor})).json() as {ids:string[];cursor:number};cursor=page.cursor;return page.ids;};
  const registry=new ContextTreeRegistry();
- registry.register({id:'fixture',version:'1',label:'Generated',nodes:[{id:'one',label:'One',select:{}}]});
+ const earlyDispose=registry.register({id:'fixture',version:'1',label:'Generated',nodes:[{id:'one',label:'One',select:{}}]});
  registry.initializeAutomatic(store,{memoryAsync:async()=>undefined,assertMemoryReadable:()=>{},memories});
  assert.equal((await changed()).some(id=>id.startsWith('context-trees:')),false,'construction-time contributions predate any reader');
+ earlyDispose();assert.ok((await changed()).includes('context-trees:registry'),'disposing a pre-initialization contribution emits after binding');
  const dispose=registry.register({id:'plugin',version:'1',label:'Generated plugin tree',nodes:[{id:'one',label:'One',select:{}}]});
  assert.ok((await changed()).includes('context-trees:registry'),'registering a contributed tree emits a catalog change');
  dispose();assert.ok((await changed()).includes('context-trees:registry'),'disposing a contributed tree emits a catalog change');

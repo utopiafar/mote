@@ -5,9 +5,9 @@ import {resources} from './resource-cache';
 import {useResource} from './useResource';
 export interface ContextTree {id:string;version:string;label:string;nodes:{id:string;label:string;parentId?:string}[]}
 export function MemoryTopics({api,treeId,nodeId,onChange}:{api:Api;treeId:string;nodeId:string;onChange:(treeId:string,nodeId:string)=>void}){
- const [running,setRunning]=useState(false);
- const trees=useResource<{items:ContextTree[];classification?:{state:'unavailable'|'ready'|'running'|'failed'}}>(api,'/api/context-trees',running?5000:undefined);
- useEffect(()=>setRunning(trees.data?.classification?.state==='running'),[trees.data]);
+ const [pollMs,setPollMs]=useState<number|undefined>(undefined);
+ const trees=useResource<{items:ContextTree[];classification?:{state:'unavailable'|'ready'|'running'|'failed'}}>(api,'/api/context-trees',pollMs);
+ useEffect(()=>{const data=trees.data;setPollMs(data?.classification?.state==='running'?5000:data?.items.some(item=>item.id.startsWith('auto.'))?10000:undefined);},[trees.data]);
  useEffect(()=>{
   if(typeof document==='undefined')return;
   const revalidate=()=>{if(!document.hidden)resources(api).get('/api/context-trees').refresh();};
