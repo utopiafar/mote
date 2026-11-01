@@ -8,6 +8,8 @@ import type {CaptureTimelineGroup,CaptureTimelineMember,CaptureTimelinePage} fro
 import {LibraryTimeline} from '../src/LibraryTimeline.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
+import {affectedResource,OperationFeed} from '../src/operation-feed.js';
+import {clearImportReturn,markImportReturn,rememberImportOrigin} from '../src/import-navigation.js';
 configureLocale(()=> 'zh-CN');
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',other='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const originalAt='2026-10-28T23:59:00.000Z',firstAt='2026-10-29T00:00:10.000Z',lastAt='2026-10-29T00:00:20.000Z';
@@ -90,7 +92,176 @@ test('real Central grouping reaches the exact original and returning keeps the o
  await act(async()=>buttons(d,'下一页',d.querySelector('.library-time-member-pagination')!)[0]!.click());assert.equal(d.querySelectorAll('.library-time-observation').length,1);
  const opener=d.querySelector<HTMLButtonElement>('.library-time-observation')!,exact=opener.getAttribute('data-reference')!;opener.focus();await act(async()=>opener.click());assert.ok(paths.includes('/api/capture-browser/'+exact.slice(8)));assert.ok(d.querySelector('.library-master')!.hasAttribute('hidden'));assert.match(d.querySelector('.library-detail')!.textContent!,/Generated exact activity/);
  await act(async()=>buttons(d,'返回资料列表')[0]!.click());assert.equal(d.querySelector('.library-time-group')!.hasAttribute('open'),true);assert.match(d.querySelector('.library-time-member-pagination')!.textContent!,/第 2 页/);assert.equal(d.activeElement,opener);assert.equal(d.querySelector('.library-time-observation')!.getAttribute('data-reference'),exact);
+ const expanded=d.querySelector<HTMLDetailsElement>('.library-time-group')!,oldGroup=expanded.getAttribute('data-group-id');
+ const addedAt=new Date();addedAt.setHours(10,0,26,0);const added=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:crypto.randomUUID(),deviceId:'generated',deviceName:'Generated Mac',platform:'macos',capturedAt:addedAt.toISOString(),durationMs:1000,appId:'generated.app',appName:'Generated exact activity 26',windowTitle:'',source:'activity',ocrText:'',metadata:{version:1,observedAt:addedAt.toISOString()},privacy:{collection:'activity',mode:'none'}}});assert.equal(added.statusCode,201,added.body);
+ await act(async()=>root.render(React.createElement(Archive,{...props,revision:1})));
+ assert.ok(d.querySelector('.library-time-group')===expanded,'a real host revision preserves the mounted conceptual group');assert.equal(expanded.open,true);assert.notEqual(expanded.getAttribute('data-group-id'),oldGroup,'the real producer issued a new sealed locator');
+ const freshMembers=new URL('http://localhost'+paths.filter(path=>path.includes('/timeline/members?')).at(-1)).searchParams;
+ assert.equal(freshMembers.get('group'),expanded.getAttribute('data-group-id'));assert.equal(freshMembers.has('cursor'),false);assert.match(expanded.textContent!,/第 1 页/);assert.equal(d.querySelectorAll('.library-time-observation').length,24);assert.match(d.querySelector('.library-time-count')!.textContent!,/26 条记录/);
+ // JSDOM has no viewport observer. These offscreen images are not part of the
+ // session identity contract; keep their lazy image transport unobserved.
+ const priorObserver=Object.getOwnPropertyDescriptor(globalThis,'IntersectionObserver');Object.defineProperty(globalThis,'IntersectionObserver',{value:class{observe(){}unobserve(){}disconnect(){}},configurable:true});t.after(()=>{if(priorObserver)Object.defineProperty(globalThis,'IntersectionObserver',priorObserver);else Reflect.deleteProperty(globalThis,'IntersectionObserver');});
+ const sharp=(await import('sharp')).default,image=(await sharp({create:{width:8,height:8,channels:3,background:'#718294'}}).png().toBuffer()).toString('base64'),screenAt=new Date();screenAt.setHours(11,0,0,0);
+ const screenIds=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','ffffffff-ffff-4fff-8fff-ffffffffffff'];
+ const addScreen=async(id:string)=>{const response=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id,deviceId:'generated-tied-screens',deviceName:'Generated tied screens',platform:'macos',capturedAt:screenAt.toISOString(),durationMs:0,appId:'',appName:'',windowTitle:'Generated tied screenshot',source:'screen',imageMime:'image/png',imageBase64:image,ocrText:'Generated image text',ocr:{status:'completed'},privacy:{collection:'content',mode:'none'}}});assert.equal(response.statusCode,201,response.body);};
+ await addScreen(screenIds[0]!);await addScreen(screenIds[1]!);
+ const screenProps={...props,devices:[{deviceId:'generated-tied-screens',deviceName:'Generated tied screens',platform:'macos',status:'capturing',queueDepth:0,lastSeenAt:screenAt.toISOString()}]};
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:2})));await change(d,w,'筛选设备','generated-tied-screens');
+ const produced=await api.request<CaptureTimelinePage>(paths.filter(path=>path.startsWith('/api/capture-browser/timeline?')).at(-1)!);
+ assert.equal(produced.items.length,2);assert.ok(produced.items.every(item=>item.type==='group'&&item.kind==='screen-session'&&item.appId===''&&item.firstAt===screenAt.toISOString()),'actual empty-app segmentation produces two tied public anchors');
+ await open(d,w);const removed=d.querySelector('.library-time-frame')!.getAttribute('data-reference')!.slice(8),remaining=screenIds.slice(0,2).find(id=>id!==removed)!;
+ const erased=await node.app.inject({method:'DELETE',url:'/api/captures/'+removed,headers});assert.equal(erased.statusCode,200,erased.body);
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:3})));
+ assert.equal(d.querySelectorAll('.library-time-group').length,1);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,false,'a real deletion cannot transfer the erased session disclosure to its survivor');
+ await open(d,w);assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+remaining);
+ await addScreen(screenIds[2]!);await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:4})));
+ const reordered=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')];assert.equal(reordered.length,2);assert.ok(reordered.every(item=>!item.open),'a new tied session moving the existing session down cannot inherit its expanded ownership');
+ await act(async()=>{reordered[0]!.open=true;reordered[0]!.dispatchEvent(new w.Event('toggle'));});assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+screenIds[2]);
+ // The tied anchors now straddle the actual host's 24-item boundary. A page
+ // occurrence count of one must not claim global session uniqueness.
+ for(let index=0;index<23;index++){const at=new Date(screenAt);at.setHours(12,0,index,0);const response=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:crypto.randomUUID(),deviceId:'generated-tied-screens',deviceName:'Generated tied screens',platform:'macos',capturedAt:at.toISOString(),durationMs:0,appId:'',appName:'',windowTitle:'Generated newer screenshot '+index,source:'screen',imageMime:'image/png',imageBase64:image,ocrText:'Generated newer screenshot',ocr:{status:'completed'},privacy:{collection:'content',mode:'none'}}});assert.equal(response.statusCode,201,response.body);}
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:5})));
+ const boundary=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')];assert.equal(boundary.length,24);assert.equal(buttons(d,'下一页',d.querySelector('.library-pagination')!)[0]!.disabled,false);
+ await act(async()=>{boundary[23]!.open=true;boundary[23]!.dispatchEvent(new w.Event('toggle'));});assert.equal(boundary[23]!.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+screenIds[2]);
+ const deletedBoundary=await node.app.inject({method:'DELETE',url:'/api/captures/'+screenIds[2],headers});assert.equal(deletedBoundary.statusCode,200,deletedBoundary.body);
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:6})));
+ const survivor=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')][23]!;assert.ok(survivor);assert.equal(survivor.open,false,'the real 25th session cannot inherit the removed 24th session expansion');assert.equal(survivor.querySelector('.library-time-frame'),null);
+ await act(async()=>{survivor.open=true;survivor.dispatchEvent(new w.Event('toggle'));});assert.equal(survivor.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+remaining);
 });
 
 
 test('unknown protocol failures remain readable by default and retain complete explicit diagnostics',async t=>{const {root,d}=await fixture(t);const api=apiWith(()=>{throw new ApiError('Internal protocol secret_fixture_code',503,'generated-request-id','unrecognized_fixture_read');});await act(async()=>root.render(view(api)));const alert=d.querySelector('[role="alert"]')!;assert.match(alert.querySelector('span')!.textContent!,/中央服务暂不可用/);assert.doesNotMatch(alert.textContent!,/secret_fixture_code|unrecognized_fixture_read/);const diagnostics=d.querySelector<HTMLDetailsElement>('.library-time-failure details')!;assert.equal(diagnostics.open,false);assert.match(diagnostics.textContent!,/503/);assert.match(diagnostics.textContent!,/unrecognized_fixture_read/);assert.match(diagnostics.textContent!,/generated-request-id/);});
+
+test('capture events leave the real timeline alone, a revision reads once, and reset still withdraws forbidden data',async t=>{
+ const {root,d,w}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ const paths:string[]=[];let reset=false,forbidden=false;
+ const api=apiWith(path=>{paths.push(path);if(path.startsWith('/api/operations/changes?'))return{cursor:1,ids:reset?[]:['capture:generated'],reset,hasMore:false};if(forbidden)throw new ApiError('Generated reset permission withdrawal',403);return path.includes('/members?')?members():page();});
+ const timelineReads=()=>paths.filter(path=>path.startsWith('/api/capture-browser/timeline?')).length;
+ const memberReads=()=>paths.filter(path=>path.includes('/members?')).length;
+ await act(async()=>root.render(view(api)));await open(d,w);assert.equal(timelineReads(),1);assert.equal(memberReads(),1);
+ let stop!:()=>void;await act(async()=>{stop=new OperationFeed(api,1500).subscribe(()=>{});});t.after(()=>stop());
+ assert.equal(timelineReads(),1,'a real capture change does not recompute the whole timeline');assert.equal(memberReads(),1);
+ for(const path of ['/api/capture-browser/timeline?limit=24','/api/capture-browser/timeline/members?group=sealed']){
+  for(const kind of ['capture','file','import'])assert.equal(affectedResource(path,new Set([kind+':generated']),false),false,path+' '+kind);
+  assert.equal(affectedResource(path,new Set(),true),true,path+' reset');
+ }
+ await act(async()=>root.render(view(api,()=>{},1)));assert.equal(timelineReads(),2,'the production revision input revalidates exactly once');assert.equal(memberReads(),2);
+ forbidden=true;reset=true;await act(async()=>t.mock.timers.tick(1500));
+ assert.equal(timelineReads(),3,'reset is still an immediate invalidation');assert.equal(memberReads(),3);
+ assert.equal(d.querySelector('.library-time-group'),null);assert.equal(d.querySelector('.library-time-observation'),null);
+ assert.ok(d.querySelector('[role="alert"]'),'the reset permission failure is not hidden behind cached evidence');
+});
+
+test('a refreshed conceptual group stays expanded while its new sealed identity resets member cursors and fences late old members',async t=>{
+ const {root,d,w}=await fixture(t),paths:string[]=[],late=deferred();let refreshed=false,oldSignal:AbortSignal|undefined;
+ const initial=group(),next=group({id:'new-sealed-activity',firstAt:'2026-10-28T23:59:50.000Z',lastAt:'2026-10-29T00:00:30.000Z'}),media=group({id:'sealed-media',source:'media'}),nextMedia={...media,id:'new-sealed-media'};
+ const api=apiWith((path,init)=>{
+  paths.push(path);const query=new URL('http://localhost'+path).searchParams;
+  if(path.includes('/members?')){
+   if(query.get('group')===initial.id&&refreshed){oldSignal=init?.signal as AbortSignal;return late.promise;}
+   if(query.get('group')===next.id){assert.equal(query.has('cursor'),false,'the old member cursor cannot be sent with the new group');return{...members(next,[{...member(other),record:{...member(other).record,windowTitle:'Generated current members'}}]),revision:'next-revision'};}
+   return members(initial,[member(query.has('cursor')?other:id)],query.has('cursor')?null:'old-member-page-2');
+  }
+  return refreshed?{...page([nextMedia,next]),revision:'next-revision'}:page([initial,media]);
+ });
+ await act(async()=>root.render(view(api)));await open(d,w);
+ const expanded=d.querySelector<HTMLDetailsElement>('[data-group-id="'+initial.id+'"]')!,folded=d.querySelector('[data-group-id="'+media.id+'"]');
+ await act(async()=>buttons(d,'下一页',expanded.querySelector('.library-time-member-pagination')!)[0]!.click());assert.match(expanded.textContent!,/第 2 页/);
+ refreshed=true;await act(async()=>root.render(view(api,()=>{},1)));
+ assert.ok(d.querySelector('[data-group-id="'+next.id+'"]')===expanded,'the conceptual source group keeps its actual mounted disclosure despite an earlier first observation');
+ assert.equal(expanded.open,true);assert.ok(d.querySelector('[data-group-id="'+nextMedia.id+'"]')===folded,'the other source at the same instant has its own stable identity');
+ assert.equal((folded as HTMLDetailsElement).open,false);assert.match(expanded.textContent!,/第 1 页/);assert.match(expanded.textContent!,/Generated current members/);
+ assert.equal(oldSignal?.aborted,true,'switching to the new locator releases the old member request');
+ await act(async()=>late.resolve(members(initial,[{...member(),record:{...member().record,windowTitle:'STALE SEALED MEMBERS'}}])));
+ assert.doesNotMatch(d.body.textContent!,/STALE SEALED MEMBERS/);assert.equal(expanded.querySelector('.library-time-observation')!.getAttribute('data-reference'),'capture:'+other);
+});
+
+test('a second timeline page 409 automatically reads the first page and retains the changed-timeline notice through recovery',async t=>{
+ const {root,d}=await fixture(t),paths:string[]=[],recovery=deferred();let firstReads=0;
+ const api=apiWith(path=>{paths.push(path);if(new URL('http://localhost'+path).searchParams.has('cursor'))throw new ApiError('Generated stale timeline cursor',409,'generated-page-conflict');return ++firstReads===1?page([group()],'stale-page-2'):recovery.promise;});
+ await act(async()=>root.render(view(api)));await act(async()=>buttons(d,'下一页',d.querySelector('.library-pagination')!)[0]!.click());
+ assert.equal(firstReads,2,'a stale later cursor starts a real new first-page request');assert.match(d.querySelector('.library-pagination')!.textContent!,/第 1 页/);
+ assert.match(d.querySelector('[role="alert"]')!.textContent!,/时间回看内容已变化，请重新读取当前范围/);
+ assert.equal(d.querySelector('.workspace-empty'),null,'an unresolved recovery is not rendered as an empty successful page');
+ await act(async()=>recovery.resolve(page([group({id:'recovered-page',deviceName:'Generated recovered first page'})],'current-page-2')));
+ assert.equal(d.querySelector('.library-time-group')!.getAttribute('data-group-id'),'recovered-page');
+ assert.match(d.querySelector('[role="alert"]')!.textContent!,/时间回看内容已变化/,'the original conflict remains visible after the successful first page');
+ assert.match(d.querySelector('.library-time-failure details')!.textContent!,/generated-page-conflict/);
+ assert.equal(paths.filter(path=>new URL('http://localhost'+path).searchParams.has('cursor')).length,1,'the invalid cursor is not retried');
+});
+
+test('a transient later-page failure remains on that page and never becomes an empty success',async t=>{
+ const {root,d}=await fixture(t);let firstReads=0;
+ const api=apiWith(path=>{if(new URL('http://localhost'+path).searchParams.has('cursor'))throw new ApiError('Generated temporary page failure',503);firstReads++;return page([group()],'page-2');});
+ await act(async()=>root.render(view(api)));await act(async()=>buttons(d,'下一页',d.querySelector('.library-pagination')!)[0]!.click());
+ assert.equal(firstReads,1);assert.match(d.querySelector('.library-pagination')!.textContent!,/第 2 页/);assert.ok(d.querySelector('[role="alert"]'));assert.equal(d.querySelector('.workspace-empty'),null);
+});
+
+test('import return refreshes the same shared timeline and members consumed by the real view',async t=>{
+ const {root,d,w}=await fixture(t),paths:string[]=[],freshPage=deferred(),freshMembers=deferred();let returning=false,updated=false;
+ const currentPage=page([group({recordCount:72})]),currentMembers=members(group({recordCount:72}),[{...member(other),record:{...member(other).record,windowTitle:'Generated import return member'}}]);
+ const api=apiWith(path=>{paths.push(path);if(path.includes('/members?'))return returning?updated?{...currentMembers,items:[{...member(),record:{...member().record,windowTitle:'Generated shared member update'}}]}:freshMembers.promise:members();return returning?updated?page([group({recordCount:73})]):freshPage.promise:page();});
+ await act(async()=>root.render(view(api)));await open(d,w);
+ const origin=rememberImportOrigin(api,w.location.hash,0,null);t.after(()=>clearImportReturn(api,origin));
+ await act(async()=>root.render(React.createElement('p',null,'Generated import work')));returning=true;markImportReturn(api,origin);
+ await act(async()=>root.render(view(api)));assert.equal(d.querySelector('.library-time-final')!.getAttribute('data-import-return-ready'),'false');assert.equal(d.querySelector('.library-time-group'),null);
+ await act(async()=>freshPage.resolve(currentPage));assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,true);assert.equal(d.querySelector('.library-time-observation'),null,'return waits for this visit\'s member read');
+ await act(async()=>freshMembers.resolve(currentMembers));assert.match(d.querySelector('.library-time-observation')!.textContent!,/Generated import return member/);
+ assert.equal(d.querySelector('.library-time-group')!.getAttribute('data-import-return-ready'),'true');
+ const timelinePath=paths.find(path=>path.startsWith('/api/capture-browser/timeline?'))!,memberPath=paths.find(path=>path.includes('/members?'))!;
+ assert.ok(resources(api).get(timelinePath).getSnapshot().data===currentPage);assert.ok(resources(api).get(memberPath).getSnapshot().data===currentMembers);
+ clearImportReturn(api,origin);updated=true;await act(async()=>{resources(api).get(timelinePath).invalidate();resources(api).get(memberPath).invalidate();});
+ assert.match(d.querySelector('.library-time-count')!.textContent!,/73 条记录/);assert.match(d.querySelector('.library-time-observation')!.textContent!,/Generated shared member update/,'later shared invalidation still reaches the mounted member consumer');
+ await act(async()=>d.querySelector<HTMLButtonElement>('[aria-label="刷新记录"]')!.click());assert.match(d.querySelector('.library-time-count')!.textContent!,/73 条记录/);
+ const beforeDate=paths.length;await act(async()=>d.querySelector<HTMLButtonElement>('[aria-label="查看前一天"]')!.click());assert.ok(paths.length>beforeDate);assert.notEqual(new URL('http://localhost'+paths.at(-1)).searchParams.get('after'),new URL('http://localhost'+timelinePath).searchParams.get('after'));
+});
+
+test('scope and API changes close the retained group and late members cannot cross either boundary',async t=>{
+ const {root,d,w}=await fixture(t),lateScope=deferred(),lateOwner=deferred();let scopeSignal:AbortSignal|undefined,ownerSignal:AbortSignal|undefined;
+ const api=apiWith((path,init)=>{if(!path.includes('/members?'))return page();if(new URL('http://localhost'+path).searchParams.has('deviceId')){ownerSignal=init?.signal as AbortSignal;return lateOwner.promise;}scopeSignal=init?.signal as AbortSignal;return lateScope.promise;});
+ await act(async()=>root.render(view(api)));await open(d,w);await change(d,w,'筛选设备','generated');
+ assert.equal(scopeSignal?.aborted,true);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,false);await open(d,w);
+ const nextPaths:string[]=[],next=apiWith(path=>{nextPaths.push(path);return path.includes('/members?')?members():page();});
+ await act(async()=>root.render(view(next)));assert.equal(ownerSignal?.aborted,true);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,false);
+ await act(async()=>{lateScope.resolve(members(group(),[{...member(),record:{...member().record,windowTitle:'STALE SCOPE MEMBERS'}}]));lateOwner.resolve(members(group(),[{...member(),record:{...member().record,windowTitle:'STALE OWNER MEMBERS'}}]));});
+ assert.doesNotMatch(d.body.textContent!,/STALE SCOPE MEMBERS|STALE OWNER MEMBERS/);assert.equal(d.querySelector('.library-time-observation'),null);
+ assert.ok(nextPaths.every(path=>!new URL('http://localhost'+path).searchParams.has('deviceId')));await open(d,w);assert.ok(d.querySelector('.library-time-observation'));
+});
+
+test('simultaneous screen sessions preserve only unambiguous mounted identities across sealed-locator updates',async t=>{
+ const {root,d,w}=await fixture(t),paths:string[]=[],warnings:string[]=[];let refreshed=false;
+ const before=[group({id:'screen-one',kind:'screen-session',source:'screen',appId:'generated.one'}),group({id:'screen-two',kind:'screen-session',source:'screen',appId:'generated.two'}),group({id:'screen-tie',kind:'screen-session',source:'screen',appId:'generated.two'})];
+ const after=before.map(item=>({...item,id:'next-'+item.id})),originalError=console.error;t.mock.method(console,'error',(...values:unknown[])=>{warnings.push(values.map(String).join(' '));originalError(...values);});
+ const api=apiWith(path=>{paths.push(path);if(!path.includes('/members?'))return{...page(refreshed?after:before),revision:refreshed?'next-revision':'exact-revision'};const selected=(refreshed?after:before).find(item=>item.id===new URL('http://localhost'+path).searchParams.get('group'))!;return{...members(selected,[member(refreshed?other:id)]),revision:refreshed?'next-revision':'exact-revision'};});
+ await act(async()=>root.render(view(api)));const nodes=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')];await open(d,w);
+ refreshed=true;await act(async()=>root.render(view(api,()=>{},1)));
+ assert.equal(nodes.length,3);assert.ok(d.querySelector('[data-group-id="'+after[0]!.id+'"]')===nodes[0]);assert.equal(nodes[0]!.open,true);
+ for(let index=1;index<3;index++){const next=d.querySelector<HTMLDetailsElement>('[data-group-id="'+after[index]!.id+'"]')!;assert.ok(next!==nodes[index],'ambiguous session anchors do not preserve mounted ownership across sealed revisions');assert.equal(next.open,false);}
+ assert.equal(nodes[0]!.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+other);
+ assert.ok(paths.some(path=>path.includes('/members?')&&new URL('http://localhost'+path).searchParams.get('group')===after[0]!.id));
+ assert.ok(warnings.every(message=>!/same key|unique.*key/i.test(message)),'even tied public session anchors have distinct React keys');
+});
+
+for(const changeKind of ['remove','reorder'] as const)test(`tied screen sessions cannot inherit another session's expansion after ${changeKind}`,async t=>{
+ const {root,d,w}=await fixture(t),paths:string[]=[];let refreshed=false;
+ const before=[group({id:'tied-first',kind:'screen-session',source:'screen',appId:''}),group({id:'tied-second',kind:'screen-session',source:'screen',appId:''})];
+ const after=(changeKind==='remove'?[before[1]!]:[before[1]!,before[0]!]).map(item=>({...item,id:'next-'+item.id}));
+ const api=apiWith(path=>{paths.push(path);if(!path.includes('/members?'))return{...page(refreshed?after:before),revision:refreshed?'next-revision':'exact-revision'};const requested=new URL('http://localhost'+path).searchParams.get('group');if(refreshed&&before.some(item=>item.id===requested))throw new ApiError('Generated expired session locator',409);const selected=(refreshed?after:before).find(item=>item.id===requested)!;return{...members(selected,[member(refreshed?other:id)]),revision:refreshed?'next-revision':'exact-revision'};});
+ await act(async()=>root.render(view(api)));await open(d,w);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,true);
+ refreshed=true;await act(async()=>root.render(view(api,()=>{},1)));
+ assert.ok([...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')].every(node=>!node.open),'an ambiguous public anchor cannot carry an expanded state into a different session');
+ assert.ok(paths.every(path=>!path.includes('/members?')||!new URL('http://localhost'+path).searchParams.get('group')?.startsWith('next-')),'new ambiguous sessions wait for an explicit open');
+ await open(d,w);assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+other);
+ assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.get('group'),after[0]!.id);
+});
+
+test('a screen-session anchor seen once on a partial page is not proof of identity after another session moves onto that page',async t=>{
+ const {root,d,w}=await fixture(t);let refreshed=false;
+ const initial=group({id:'visible-screen',kind:'screen-session',source:'screen',appId:'generated.same-app'}),replacement={...initial,id:'previously-hidden-screen'};
+ const newer:CaptureTimelinePage['items']=Array.from({length:23},(_,index)=>({type:'record',id:'generated-newer-'+index,day:initial.day,...member(crypto.randomUUID())}));
+ const api=apiWith(path=>path.includes('/members?')?{...members(refreshed?replacement:initial,[member(refreshed?other:id)]),revision:refreshed?'next-revision':'exact-revision'}:{...page([...newer,refreshed?replacement:initial],refreshed?null:'real-hidden-second-anchor'),revision:refreshed?'next-revision':'exact-revision'});
+ await act(async()=>root.render(view(api)));await open(d,w);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,true);
+ refreshed=true;await act(async()=>root.render(view(api,()=>{},1)));
+ assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,false,'a same-app anchor can also be ambiguous beyond the current page');assert.equal(d.querySelector('.library-time-frame'),null);
+ await open(d,w);assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+other);
+});

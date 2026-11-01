@@ -7,7 +7,6 @@ import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.StateListDrawable
 import android.view.View
 import android.view.ViewGroup
-import java.util.WeakHashMap
 
 internal enum class NativeColorRole(val key: String?) {
     BACKGROUND("background"), SURFACE("surface"), SIDEBAR("sidebar"), INK("ink"), MUTED("muted"), ACCENT("accent"), TINT("tint"),
@@ -27,14 +26,19 @@ internal enum class NativeRadiusRole(val key: String) {
 
 /** A View keeps its business listeners and values. Only explicitly registered style roles are replayed. */
 internal object NativePresentationStyles {
-    private val styles = WeakHashMap<View, MutableMap<String, (View) -> Unit>>()
-    fun remember(view: View, role: String, apply: (View) -> Unit) { styles.getOrPut(view) { linkedMapOf() }[role] = apply }
+    @Suppress("UNCHECKED_CAST")
+    private fun roles(view: View) = view.getTag(R.id.mote_presentation_styles) as? MutableMap<String, (View) -> Unit>
+    fun remember(view: View, role: String, apply: (View) -> Unit) {
+        // The View owns callbacks that may themselves capture the View or its Activity.
+        val registered = roles(view) ?: linkedMapOf<String, (View) -> Unit>().also { view.setTag(R.id.mote_presentation_styles, it) }
+        registered[role] = apply
+    }
     fun bind(view: View, role: String, apply: (View) -> Unit) { remember(view, role, apply); apply(view) }
     fun refresh(root: View) {
         fun collect(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { collect(view.getChildAt(it)) } else emptyList()
         val tree = collect(root)
         tree.forEach { view ->
-            styles[view]?.values?.toList()?.forEach { it(view) }
+            roles(view)?.values?.toList()?.forEach { it(view) }
             refreshDrawable(view.background)
             if (view is android.widget.TextView) view.compoundDrawables.filterNotNull().forEach(::refreshDrawable)
             view.invalidate()

@@ -30,9 +30,13 @@ export function affectedResource(key:string,ids:Set<string>,reset:boolean){
  if(/^\/api\/(plugins|plugin-instances)(\/|$)/.test(path))return changed('plugin','memory');
  if(/^\/api\/memory-spaces(\/|$)/.test(path))return changed('memory','plugin','workflow');
  if(/^\/api\/(memories|memory-jobs)(\/|$)/.test(path))return changed('memory','import','capture','file','workflow');
+ if(path==='/api/capture-browser/timeline'||path==='/api/capture-browser/timeline/members')return reset;
  if(/^\/api\/(files|capture-browser|captures|source-items|sources)(\/|$)/.test(path))return changed('file','capture','import');
  if(/^\/api\/(materials|agent-view\/materials|agent-view\/material-read)(\/|$)/.test(path))return changed('material-index','workflow','file','capture','import');
  if(/^\/api\/(query-runs|conversations)(\/|$)/.test(path))return changed('query','capture','file','import');
+ // The collection contains fixed execution receipts. Details and saved reports
+ // below also read current evidence/results and must retain withdrawal hints.
+ if(path==='/api/insight-runs')return changed('insight','workflow','import');
  if(/^\/api\/(insights|insight-runs)(\/|$)/.test(path))return changed('insight','workflow','capture','file','import');
  if(/^\/api\/actions(\/|$)/.test(path))return reset||[...ids].some(id=>id.startsWith('workflow:actions:'));
  if(/^\/api\/imports(\/|$)/.test(path))return changed('import');
