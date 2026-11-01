@@ -117,6 +117,16 @@ test('real Central grouping reaches the exact original and returning keeps the o
  await addScreen(screenIds[2]!);await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:4})));
  const reordered=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')];assert.equal(reordered.length,2);assert.ok(reordered.every(item=>!item.open),'a new tied session moving the existing session down cannot inherit its expanded ownership');
  await act(async()=>{reordered[0]!.open=true;reordered[0]!.dispatchEvent(new w.Event('toggle'));});assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+screenIds[2]);
+ // The tied anchors now straddle the actual host's 24-item boundary. A page
+ // occurrence count of one must not claim global session uniqueness.
+ for(let index=0;index<23;index++){const at=new Date(screenAt);at.setHours(12,0,index,0);const response=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:crypto.randomUUID(),deviceId:'generated-tied-screens',deviceName:'Generated tied screens',platform:'macos',capturedAt:at.toISOString(),durationMs:0,appId:'',appName:'',windowTitle:'Generated newer screenshot '+index,source:'screen',imageMime:'image/png',imageBase64:image,ocrText:'Generated newer screenshot',ocr:{status:'completed'},privacy:{collection:'content',mode:'none'}}});assert.equal(response.statusCode,201,response.body);}
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:5})));
+ const boundary=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')];assert.equal(boundary.length,24);assert.equal(buttons(d,'下一页',d.querySelector('.library-pagination')!)[0]!.disabled,false);
+ await act(async()=>{boundary[23]!.open=true;boundary[23]!.dispatchEvent(new w.Event('toggle'));});assert.equal(boundary[23]!.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+screenIds[2]);
+ const deletedBoundary=await node.app.inject({method:'DELETE',url:'/api/captures/'+screenIds[2],headers});assert.equal(deletedBoundary.statusCode,200,deletedBoundary.body);
+ await act(async()=>root.render(React.createElement(Archive,{...screenProps,revision:6})));
+ const survivor=[...d.querySelectorAll<HTMLDetailsElement>('.library-time-group')][23]!;assert.ok(survivor);assert.equal(survivor.open,false,'the real 25th session cannot inherit the removed 24th session expansion');assert.equal(survivor.querySelector('.library-time-frame'),null);
+ await act(async()=>{survivor.open=true;survivor.dispatchEvent(new w.Event('toggle'));});assert.equal(survivor.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+remaining);
 });
 
 
@@ -243,4 +253,15 @@ for(const changeKind of ['remove','reorder'] as const)test(`tied screen sessions
  assert.ok(paths.every(path=>!path.includes('/members?')||!new URL('http://localhost'+path).searchParams.get('group')?.startsWith('next-')),'new ambiguous sessions wait for an explicit open');
  await open(d,w);assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+other);
  assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.get('group'),after[0]!.id);
+});
+
+test('a screen-session anchor seen once on a partial page is not proof of identity after another session moves onto that page',async t=>{
+ const {root,d,w}=await fixture(t);let refreshed=false;
+ const initial=group({id:'visible-screen',kind:'screen-session',source:'screen',appId:'generated.same-app'}),replacement={...initial,id:'previously-hidden-screen'};
+ const newer:CaptureTimelinePage['items']=Array.from({length:23},(_,index)=>({type:'record',id:'generated-newer-'+index,day:initial.day,...member(crypto.randomUUID())}));
+ const api=apiWith(path=>path.includes('/members?')?{...members(refreshed?replacement:initial,[member(refreshed?other:id)]),revision:refreshed?'next-revision':'exact-revision'}:{...page([...newer,refreshed?replacement:initial],refreshed?null:'real-hidden-second-anchor'),revision:refreshed?'next-revision':'exact-revision'});
+ await act(async()=>root.render(view(api)));await open(d,w);assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,true);
+ refreshed=true;await act(async()=>root.render(view(api,()=>{},1)));
+ assert.equal((d.querySelector('.library-time-group') as HTMLDetailsElement).open,false,'a same-app anchor can also be ambiguous beyond the current page');assert.equal(d.querySelector('.library-time-frame'),null);
+ await open(d,w);assert.equal(d.querySelector('.library-time-frame')!.getAttribute('data-reference'),'capture:'+other);
 });

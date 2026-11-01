@@ -52,9 +52,11 @@ export function LibraryTimeline({api,devices,onOpen,revision,onBrowseChanged,vie
  const data=!returnReadReady||blocked(page.error)||page.data===withdrawn.current?undefined:page.data,items=data?.items??[];
  const days=new Map<string,{item:CaptureTimelinePage['items'][number];key:string}[]>(),identities=new Map<string,number>();
  for(const item of items){const identity=stableKey(item);identities.set(identity,(identities.get(identity)??0)+1);}
- // Public session anchors can tie. A sealed locator is safe within that exact
- // response; across revisions ambiguous groups close instead of retargeting.
- for(const item of items){const identity=stableKey(item),key=JSON.stringify([identity,identities.get(identity)!>1?item.id:null]);days.set(item.day,[...(days.get(item.day)??[]),{item,key}]);}
+ const completeQuery=cursors.length===1&&data?.nextCursor===null;
+ // A single page cannot prove session uniqueness across the query, and empty
+ // app IDs always create separate sessions. Unknown identities close on a new
+ // sealed locator rather than inheriting another session's disclosure state.
+ for(const item of items){const identity=stableKey(item),unknownSession=item.type==='group'&&item.kind==='screen-session'&&(!item.appId||!completeQuery),key=JSON.stringify([identity,identities.get(identity)!>1||unknownSession?item.id:null]);days.set(item.day,[...(days.get(item.day)??[]),{item,key}]);}
  const snapshot=useRef<TimelineSnapshot>({filters:stored,filterOpen,paging});snapshot.current={filters:stored,filterOpen,paging};
  useEffect(()=>captureImportSnapshot(api,'records',()=>snapshot.current),[api]);
  const filterOwner=useRef(api);useEffect(()=>{if(filterOwner.current===api)return;filterOwner.current=api;setStored(defaults(api));setFilterOpen(false);setPaging({api,scope:'',cursors:[undefined]});},[api]);
