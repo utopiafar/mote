@@ -121,6 +121,9 @@ internal class LibraryCaptureView(
     }
     private fun cancelIncremental() { incrementalScheduled = false; incrementalPending = false; pendingFullRefresh = false; pendingInsertions = 0; uiHandler.removeCallbacks(incrementalTick) }
     private fun incrementalRefresh() {
+        // A deferred records tick may outlive navigation away from Library. Returning
+        // through the existing page refresh will consume the pending invalidation.
+        if (!host.isShown || host.windowVisibility != android.view.View.VISIBLE) return
         val current = CentralAccess.resolve(activity)
         if (session != (current.server to current.generation)) { refresh(); return }
         if (task.busy) { incrementalPending = true; return }

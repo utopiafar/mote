@@ -41,44 +41,72 @@ class LibraryRecordsRefreshInstrumentedTest {
         .put("privacy", JSONObject().put("excluded", false))
 
     /** Raw preflight never opens/replays the selected queue or deletes a prior origin. */
+    private fun emptyStoredCredential(value: String?): Boolean {
+        if (value.isNullOrEmpty()) return true
+        // Read the existing TEST-profile key only. SecretBox's key factory may create
+        // a missing key, which is inappropriate before the profile is proven empty.
+        val store = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val key = requireNotNull(store.getKey("mote.private.v1", null)) as javax.crypto.SecretKey
+        val readOnlyCipher = object : ByteCipher {
+            override fun seal(bytes: ByteArray): ByteArray = error("preflight cannot write credentials")
+            override fun open(bytes: ByteArray): ByteArray {
+                require(bytes.isNotEmpty())
+                val size = bytes[0].toInt(); require(size in 12..16 && bytes.size > size + 1)
+                return javax.crypto.Cipher.getInstance("AES/GCM/NoPadding").run {
+                    init(javax.crypto.Cipher.DECRYPT_MODE, key, javax.crypto.spec.GCMParameterSpec(128, bytes.copyOfRange(1, size + 1)))
+                    doFinal(bytes.copyOfRange(size + 1, bytes.size))
+                }
+            }
+        }
+        return CredentialValue(RuntimeProfile.TEST, readOnlyCipher).decode(value).isEmpty()
+    }
     private fun requireEmptyGeneratedProfile() {
         require(context.packageName == "dev.mote.collector.filefixture" && Build.FINGERPRINT.contains("emu64a"))
         require(!ProjectionService.running && !CaptureAccessibilityService.connected)
         require(!QueueStorage.recovering && !QueueStorage.maintaining && QueueStorage.recoveryFailure == null)
         val root = context.noBackupFilesDir
+        require(root.listFiles()?.none { it.name.startsWith("mote-queue-") } == true) { "Generated fixture refuses orphaned private queues" }
         require(!File(root, "queue-migration.json").exists())
         val pointer = File(root, "queue-location.json")
         val queue = if (pointer.exists()) QueueLocation.parse(JSONObject(pointer.readText())).let {
             require(it.baseId == "internal" && File(it.path).canonicalFile == File(root, "queue").canonicalFile)
             File(it.path)
         } else File(root, "queue")
-        require(!queue.exists() || queue.listFiles()?.all { it.isFile && it.name in setOf(".mote-storage-id", ".mote-local-format") } == true) { "Generated fixture refuses every retained event, stage, checkpoint and unknown queue entry" }
-        for (name in listOf("central-native", "file-archives")) {
+        require(!java.nio.file.Files.isSymbolicLink(queue.toPath()))
+        require(!queue.exists() || queue.listFiles()?.all { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) && it.name in setOf(".mote-storage-id", ".mote-local-format") } == true) { "Generated fixture refuses every retained event, stage, checkpoint and unknown queue entry" }
+        for (name in listOf("central-native", "file-archives", "note-draft", "record-draft", "local-sources", "capture-context")) {
             val dir = File(root, name)
-            require(!dir.exists() || dir.isDirectory && dir.listFiles()?.isEmpty() == true) { "Generated fixture refuses retained $name" }
+            require(!java.nio.file.Files.isSymbolicLink(dir.toPath()) && (!dir.exists() || dir.isDirectory && dir.listFiles()?.isEmpty() == true)) { "Generated fixture refuses retained $name" }
         }
-        require(!File(root, "capture-context/contexts.enc").exists()) { "Generated fixture refuses retained source context" }
+        val pending = File(context.filesDir, "record-pending")
+        require(!pending.exists() || pending.isDirectory && pending.listFiles()?.isEmpty() == true)
         val dedupe = File(root, "bulk-dedupe")
         require(!dedupe.exists() || dedupe.listFiles()?.all { entry ->
             entry.name == "pending" && entry.isDirectory && entry.listFiles()?.all { it.isFile && it.name == ".mote-local-format" } == true
         } == true) { "Generated fixture refuses retained dedupe plans and quarantine" }
-        val settings = Settings(context); val config = settings.read()
-        require(!settings.enabled && settings.lastCapture() == null && config.token.isEmpty() && config.server in setOf("", BuildConfig.DEFAULT_SERVER))
-        require(settings.dataOrigin().isBlank())
-        val note = QuickNotes.draft(context).read()
-        require(note.text.isEmpty() && note.mood.isEmpty() && note.prepared == null)
-        val records = context.recordDraftStore(); val draft = records.draft()
-        require(draft.optString("text").isEmpty() && draft.optString("description").isEmpty() && draft.optJSONObject("origin")?.optString("text").orEmpty().isEmpty() && draft.optJSONArray("attachments")?.length() == 0 && !draft.has("prepared") && records.pendingMedia().length() == 0)
-        require(context.localSources().sources().isEmpty() && context.localFileContents(8).isEmpty())
+        val prefs = context.getSharedPreferences("mote", Context.MODE_PRIVATE).all
+        require(listOf("server", "token", "dataOrigin").all { prefs[it] == null || prefs[it] is String })
+        require(prefs["enabled"] != true && prefs["lastCapture"] == null)
+        require((prefs["server"] as? String).orEmpty() in setOf("", BuildConfig.DEFAULT_SERVER))
+        require((prefs["dataOrigin"] as? String).orEmpty().isBlank())
+        require(emptyStoredCredential(prefs["token"] as? String))
     }
     private inner class GeneratedProfile : AutoCloseable {
         private var armed = false
         private var directory: File? = null
         private var pointerBytes: ByteArray? = null
+        private var pointerChanged = false
         private var prefs: Map<String, Any?> = emptyMap()
         private var language = "system"
         private var appearance = AppearancePreference.AUTO
         private val pointer get() = File(context.noBackupFilesDir, "queue-location.json")
+        private fun writePointer(bytes: ByteArray) {
+            val temp = File.createTempFile("generated-library-pointer-", ".tmp", context.noBackupFilesDir)
+            try {
+                java.io.FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }
+                check(temp.renameTo(pointer))
+            } finally { check(!temp.exists() || temp.delete()) }
+        }
         fun open(server: String, token: String): DurableQueue {
             waitFor("application recovery settles before the read-only preflight") { !QueueStorage.recovering && !QueueStorage.maintaining }
             requireEmptyGeneratedProfile()
@@ -91,7 +119,10 @@ class LibraryRecordsRefreshInstrumentedTest {
             check(privateQueue.mkdir()); directory = privateQueue; armed = true
             LocalDataFormat.requireCurrent(privateQueue)
             File(privateQueue, ".mote-storage-id").writeText(id)
-            DurableQueue.exclusive { pointer.writeText(QueueLocation(id, "internal", privateQueue.absolutePath).json().toString()) }
+            DurableQueue.exclusive {
+                writePointer(QueueLocation(id, "internal", privateQueue.absolutePath).json().toString().toByteArray())
+                pointerChanged = true
+            }
             MoteI18n.select(context, "zh-CN")
             MoteAppearance.select(context, AppearancePreference.LIGHT)
             val settings = Settings(context)
@@ -102,7 +133,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             if (!armed) return
             armed = false
             DurableQueue.exclusive {
-                pointerBytes?.let(pointer::writeBytes) ?: check(!pointer.exists() || pointer.delete())
+                if (pointerChanged) { pointerBytes?.let(::writePointer) ?: check(!pointer.exists() || pointer.delete()) }
                 check(requireNotNull(directory).deleteRecursively())
             }
             val originalPrefs = context.getSharedPreferences("mote", Context.MODE_PRIVATE)
@@ -130,6 +161,7 @@ class LibraryRecordsRefreshInstrumentedTest {
         override fun getNoBackupFilesDir() = backup
         override fun getFilesDir() = files
         override fun getExternalFilesDirs(type: String?): Array<File> = emptyArray()
+        override fun getExternalFilesDir(type: String?): File? = null
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
             val generated = prefix + name; names += generated
             return baseContext.getSharedPreferences(generated, mode)
