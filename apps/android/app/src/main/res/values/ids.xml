@@ -2,4 +2,5 @@
     <item type="id" name="mote_primary" />
     <item type="id" name="mote_type" />
     <item type="id" name="mote_button_role" />
+    <item type="id" name="mote_presentation_styles" />
 </resources>
