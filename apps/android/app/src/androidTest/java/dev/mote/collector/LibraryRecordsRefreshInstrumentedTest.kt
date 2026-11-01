@@ -276,6 +276,25 @@ class LibraryRecordsRefreshInstrumentedTest {
                 }
                 return idle
             }
+            fun scheduled(): Boolean {
+                var value = false
+                scenario.onActivity { activity ->
+                    val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
+                    value = LibraryCaptureView::class.java.getDeclaredField("incrementalScheduled").apply { isAccessible = true }.getBoolean(view)
+                }
+                return value
+            }
+            fun stopPastRecordDeadline() {
+                waitFor("the real records change has scheduled its debounce") { scheduled() }
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+                waitFor("the actual Activity window is hidden") {
+                    var hidden = false
+                    scenario.onActivity { hidden = it.window.decorView.windowVisibility != View.VISIBLE }
+                    hidden
+                }
+                waitFor("the production debounce deadline is consumed while hidden") { !scheduled() }
+                assertTrue("no Library read begins while its Activity is stopped", readIdle())
+            }
             fun anchorRowId(): String? {
                 var tag: String? = null
                 scenario.onActivity { activity -> tag = views(activity.window.decorView).filter { it.tag?.toString()?.startsWith("library-record:") == true }
@@ -335,7 +354,17 @@ class LibraryRecordsRefreshInstrumentedTest {
             assertEquals("the owner-scope check is cached per connection generation", 0, stats.getInt("connectionsSelf"))
             click("加载更多"); waitFor("pagination continues after the cursor") { rows(locals[64]) == 1 }
 
+            waitFor("all page reads finish before the stopped insert") { readIdle() }
+            val stoppedInsert = UUID.randomUUID().toString()
+            val beforeStop = api.get("/api/fixture/library-request-stats").getInt("centralRequests")
+            queue.enqueue(note(stoppedInsert, device, Instant.now(), "Generated stopped insert"), null, 64_000_000)
+            stopPastRecordDeadline()
+            assertEquals("the hidden insert tick starts no HTTP", beforeStop, api.get("/api/fixture/library-request-stats").getInt("centralRequests"))
+            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+            waitFor("same connection resumes the pending insert with no additional writes") { rows(stoppedInsert) == 1 && rows(locals[50]) == 1 && readIdle() }
+
             val mixedAdded = mutableListOf<String>()
+            val beforeMixedStop = api.get("/api/fixture/library-request-stats").getInt("centralRequests")
             queue.withDeferredIndexWrites {
                 repeat(3) { index ->
                     val id = UUID.randomUUID().toString(); mixedAdded += id
@@ -346,6 +375,9 @@ class LibraryRecordsRefreshInstrumentedTest {
                 queue.enqueue(note(locals[51], device, base.minusSeconds(51), "Generated replaced deep preview"), null, 64_000_000)
                 queue.archiveMissing(locals[52])
             }
+            stopPastRecordDeadline()
+            assertEquals("the hidden destructive tick starts no HTTP", beforeMixedStop, api.get("/api/fixture/library-request-stats").getInt("centralRequests"))
+            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
             waitFor("a net-positive mixed batch removes deep deleted content and replaces the deep preview") {
                 rows(locals[50]) == 0 && rows(locals[51]) == 1 && shown("Generated replaced deep preview") &&
                     !shown("Generated library record 51") && fresh.all { rows(it) == 1 } && mixedAdded.all { rows(it) == 1 }

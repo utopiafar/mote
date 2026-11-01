@@ -54,6 +54,15 @@ internal class LibraryCaptureView(
     private var pendingInsertions = 0
     private val renderedRows = mutableMapOf<LibraryCaptureProjection.Identity, Pair<String, android.view.View>>()
     private val incrementalTick = Runnable { incrementalScheduled = false; incrementalRefresh() }
+    private var visibilityObserver: android.view.ViewTreeObserver? = null
+    private val recordsVisible = android.view.ViewTreeObserver.OnPreDrawListener {
+        if (!hasPendingRecords()) stopWaitingForVisibility()
+        else if (host.isShown && host.windowVisibility == android.view.View.VISIBLE) {
+            stopWaitingForVisibility()
+            if (!incrementalScheduled) { incrementalScheduled = true; uiHandler.post(incrementalTick) }
+        }
+        true
+    }
     private var before = Instant.now().plusSeconds(1).toString()
     private var pages = 0
     private var restorePages = state?.getInt("pages", 1)?.coerceIn(1, 50) ?: 1
@@ -109,6 +118,20 @@ internal class LibraryCaptureView(
     fun resume() {
         val current = CentralAccess.resolve(activity)
         if (session != (current.server to current.generation)) refresh()
+        else if (!incrementalScheduled && hasPendingRecords()) waitForRecordsVisibility()
+    }
+    private fun hasPendingRecords() = pendingFullRefresh || pendingInsertions > 0 || incrementalPending
+    private fun waitForRecordsVisibility() {
+        // onResume can precede window visibility. Consume the invalidation at
+        // the next visible frame, without background polling or hidden reads.
+        if (visibilityObserver?.isAlive != true) {
+            visibilityObserver = host.viewTreeObserver.also { it.addOnPreDrawListener(recordsVisible) }
+        }
+        host.postInvalidateOnAnimation()
+    }
+    private fun stopWaitingForVisibility() {
+        visibilityObserver?.takeIf { it.isAlive }?.removeOnPreDrawListener(recordsVisible)
+        visibilityObserver = null
     }
     /** Every committed record change lands here; only a proven pure-insert burst merges into the loaded pages. */
     fun recordsChanged(revision: Long, count: Int?) {
@@ -121,11 +144,12 @@ internal class LibraryCaptureView(
             incrementalScheduled = true; uiHandler.postDelayed(incrementalTick, LibraryRefreshPolicy.DEBOUNCE_MILLIS)
         }
     }
-    private fun cancelIncremental() { incrementalScheduled = false; incrementalPending = false; pendingFullRefresh = false; pendingInsertions = 0; uiHandler.removeCallbacks(incrementalTick) }
+    private fun cancelIncremental() { incrementalScheduled = false; incrementalPending = false; pendingFullRefresh = false; pendingInsertions = 0; uiHandler.removeCallbacks(incrementalTick); stopWaitingForVisibility() }
     private fun incrementalRefresh() {
-        // A deferred records tick may outlive navigation away from Library. Returning
-        // through the existing page refresh will consume the pending invalidation.
-        if (!host.isShown || host.windowVisibility != android.view.View.VISIBLE) return
+        if (!host.isShown || host.windowVisibility != android.view.View.VISIBLE) {
+            if (hasPendingRecords()) waitForRecordsVisibility()
+            return
+        }
         val current = CentralAccess.resolve(activity)
         if (session != (current.server to current.generation)) { refresh(); return }
         if (task.busy) { incrementalPending = true; return }
