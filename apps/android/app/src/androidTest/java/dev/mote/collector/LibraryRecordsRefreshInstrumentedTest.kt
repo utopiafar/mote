@@ -31,8 +31,8 @@ class LibraryRecordsRefreshInstrumentedTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private fun views(root: View): List<View> = listOf(root) + if (root is ViewGroup) (0 until root.childCount).flatMap { views(root.getChildAt(it)) } else emptyList()
-    private fun waitFor(label: String, condition: () -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + 45000
+    private fun waitFor(label: String, timeout: Long = 45000, condition: () -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + timeout
         while (!condition()) { check(SystemClock.elapsedRealtime() < deadline) { label }; Thread.sleep(60) }
     }
     private fun awaitApplicationRecovery() {
@@ -268,6 +268,14 @@ class LibraryRecordsRefreshInstrumentedTest {
             fun shown(text: String): Boolean { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains(text) } }; return found }
             fun rows(id: String): Int { var count = 0; scenario.onActivity { activity -> count = views(activity.window.decorView).count { it.isShown && it.tag == "library-record:$id" } }; return count }
             fun click(label: String) { scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text == MoteI18n.text(label) && it.isClickable }.performClick() } }
+            fun readIdle(): Boolean {
+                var idle = false
+                scenario.onActivity { activity ->
+                    val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
+                    idle = !(LibraryCaptureView::class.java.getDeclaredField("task").apply { isAccessible = true }.get(view) as UiTask).busy
+                }
+                return idle
+            }
             fun anchorRowId(): String? {
                 var tag: String? = null
                 scenario.onActivity { activity -> tag = views(activity.window.decorView).filter { it.tag?.toString()?.startsWith("library-record:") == true }
@@ -286,14 +294,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             waitFor("first page") { rows(locals[0]) == 1 && remotes.take(20).all { rows(it) == 1 } }
             click("加载更多"); waitFor("second page") { rows(locals[39]) == 1 && remotes.all { rows(it) == 1 } }
             click("加载更多"); waitFor("third page") { rows(locals[59]) == 1 }
-            waitFor("all accepted page work has reached its production UI delivery") {
-                var idle = false
-                scenario.onActivity { activity ->
-                    val view = MainActivity::class.java.getDeclaredField("libraryView").apply { isAccessible = true }.get(activity)
-                    idle = !(LibraryCaptureView::class.java.getDeclaredField("task").apply { isAccessible = true }.get(view) as UiTask).busy
-                }
-                idle
-            }
+            waitFor("all accepted page work has reached its production UI delivery") { readIdle() }
             // Scroll a third-page row to the top so the anchor compensation can be observed.
             scenario.onActivity { activity ->
                 val row = views(activity.window.decorView).single { it.tag == "library-record:${locals[50]}" }
@@ -321,7 +322,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             assertEquals("the anchored row keeps its viewport position", anchor, anchorRowId())
             assertTrue("the same deep row retains its actual, unclipped window y within one pixel", kotlin.math.abs(rowY(requireNotNull(anchor)) - anchorY) <= 1)
             val stats = api.get("/api/fixture/library-request-stats")
-            assertEquals("an insert burst re-reads exactly the first Central page", 1, stats.getInt("deviceView"))
+            assertEquals("an insert burst reads one bounded Central prefix", 1, stats.getInt("deviceView"))
             assertTrue("all Central HTTP during the append burst stays bounded", stats.getInt("centralRequests") <= 2)
             assertEquals("the owner-scope check is cached per connection generation", 0, stats.getInt("connectionsSelf"))
             click("加载更多"); waitFor("pagination continues after the cursor") { rows(locals[64]) == 1 }
@@ -342,12 +343,43 @@ class LibraryRecordsRefreshInstrumentedTest {
                     !shown("Generated library record 51") && fresh.all { rows(it) == 1 } && mixedAdded.all { rows(it) == 1 }
             }
 
+            waitFor("mixed refresh has delivered before holding the next real request") { readIdle() }
+            val concurrent = mutableListOf<String>()
+            api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
+            try {
+                val localFirst = UUID.randomUUID().toString()
+                assertEquals(localFirst, queue.enqueue(note(localFirst, device, Instant.now(), "Generated local-first probe"), null, 64_000_000))
+                waitFor("production device-view request is inside the server barrier") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 }
+                waitFor("committed local capture appears while Central is still blocked", timeout = 5_000) { rows(localFirst) == 1 }
+                assertTrue(api.get("/api/fixture/library-device-hold").getBoolean("held"))
+                assertFalse("the production read still awaits the actual HTTP response", readIdle())
+                // Twenty-four new heads plus one late backfill exceed page one.
+                // An overlap with the old head alone cannot prove this range complete.
+                repeat(25) { index ->
+                    val id = UUID.randomUUID().toString(); concurrent += id
+                    val at = if (index == 24) base.minusSeconds(22).plusMillis(500) else Instant.now().minusSeconds(10)
+                    api.post("/api/captures", note(id, "generated-remote-device", at, "Generated concurrent remote record $index"))
+                }
+            } finally { api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release")) }
+            waitFor("every concurrent head and deep backfill is present exactly once") { concurrent.all { rows(it) == 1 } && rows(remotes[23]) == 1 && readIdle() }
+
+
             api.post("/api/fixture/library-denial", JSONObject().put("mode", "forbidden"))
+            api.post("/api/fixture/library-device-hold", JSONObject().put("action", "hold"))
             try {
                 val probe = UUID.randomUUID().toString()
                 assertEquals(probe, queue.enqueue(note(probe, device, Instant.now(), "Generated denial probe"), null, 64_000_000))
-                waitFor("denial still withdraws remote rows on the incremental path") { remotes.all { rows(it) == 0 } && rows(probe) == 1 && shown("中央状态未知") }
-            } finally { api.post("/api/fixture/library-denial", JSONObject().put("mode", "none")) }
+                waitFor("denied device-view is held before replying") { api.get("/api/fixture/library-device-hold").getInt("entered") == 1 }
+                waitFor("local publication does not wait for the pending denial", timeout = 5_000) { rows(probe) == 1 }
+                assertFalse(readIdle())
+                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
+                waitFor("fresh denial after local publication withdraws every Central reference") { (remotes + concurrent).all { rows(it) == 0 } && rows(probe) == 1 && shown("中央状态未知") }
+            } finally {
+                api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
+                api.post("/api/fixture/library-denial", JSONObject().put("mode", "none"))
+            }
+
+
         }
         }
     }

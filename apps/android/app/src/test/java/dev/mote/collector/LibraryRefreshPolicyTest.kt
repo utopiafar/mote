@@ -36,6 +36,17 @@ class LibraryRefreshPolicyTest {
         assertFalse("a larger burst cannot fit in one page", policy.firstPageCovers(21, 20))
         assertTrue(policy.firstPageCovers(5, 5))
     }
+    @Test fun remotePrefixMustReachTheOldCursorNotMerelyOverlapItsHead() {
+        val policy = LibraryRefreshPolicy()
+        val boundary = LibraryRefreshPolicy.Position("2026-01-01T00:00:00Z", "c")
+        assertFalse(policy.centralRangeCovers(boundary, true, LibraryRefreshPolicy.Position("2026-01-02T00:00:00Z", "a"), true))
+        assertFalse("same-time UUIDs use descending order", policy.centralRangeCovers(boundary, true, boundary.copy(id = "d"), true))
+        assertTrue(policy.centralRangeCovers(boundary, true, boundary.copy(id = "b"), true))
+        assertTrue(policy.centralRangeCovers(boundary, true, boundary, true))
+        assertTrue(policy.centralRangeCovers(boundary, true, boundary.copy(at = "2025-12-31T00:00:00Z"), true))
+        assertFalse("a formerly complete domain with a truncated new prefix is unknown", policy.centralRangeCovers(null, false, boundary, true))
+        assertTrue("an untruncated response proves the whole filtered domain", policy.centralRangeCovers(null, false, boundary, false))
+    }
     @Test fun pureInsertBurstTakesTheIncrementalPath() {
         val policy = LibraryRefreshPolicy()
         assertEquals(LibraryRefreshPolicy.Action.FULL, policy.recordsChanged(0, 100))

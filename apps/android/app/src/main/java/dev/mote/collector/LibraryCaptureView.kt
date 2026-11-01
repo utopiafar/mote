@@ -35,6 +35,7 @@ internal class LibraryCaptureView(
     private var day = state?.getString("day").orEmpty()
     private var localCursor: String? = null
     private var remoteCursor: String? = null
+    private var remoteBoundary: LibraryRefreshPolicy.Position? = null
     private var localMore = true
     private var remoteMore = true
     private var stamp = 0
@@ -144,17 +145,19 @@ internal class LibraryCaptureView(
             val saved = saveState(); anchor = saved.getString("anchor"); anchorTop = saved.getInt("anchorTop"); restorePages = pages
         }
         deniedOrigin = null
-        stamp++; projection.clear(); files = emptyList(); localCursor = null; remoteCursor = null
+        stamp++; projection.clear(); files = emptyList(); localCursor = null; remoteCursor = null; remoteBoundary = null
         localMore = true; remoteMore = true; pages = 0; before = Instant.now().plusSeconds(1).toString()
         remoteNotice = ""; sourceView.refresh(source, day); render()
         if (task.busy) refreshPending = true else load()
     }
-    private data class Loaded(val local: JSONObject?, val central: Result<JSONObject>?, val files: List<JSONObject>)
+    private data class Loaded(val local: JSONObject?, val central: Result<JSONObject>?, val files: List<JSONObject>, val needsFullRefresh: Boolean = false)
+    private data class AppendRead(val insertions: Int, val priorLocal: Set<Pair<String, String>>)
+    private fun remotePosition(items: JSONArray) = if (items.length() == 0) null else items.getJSONObject(items.length() - 1).let { LibraryRefreshPolicy.Position(it.getString("capturedAt"), it.getString("id")) }
     private fun load() {
         if (task.busy) return
         val selection = CentralAccess.resolve(activity)
         val identity = selection.server to selection.generation
-        if (session != identity) { session = identity; projection.clear(); localCursor = null; remoteCursor = null; localMore = true; remoteMore = true; pages = 0 }
+        if (session != identity) { session = identity; projection.clear(); localCursor = null; remoteCursor = null; remoteBoundary = null; localMore = true; remoteMore = true; pages = 0 }
         val generation = stamp
         val filter = source; val selectedDay = day; activeFilter = filter; activeDay = selectedDay; val bound = before
         val after = selectedDay.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: "1970-01-01T00:00:00Z"
@@ -166,7 +169,7 @@ internal class LibraryCaptureView(
         val priorCandidates = projection.candidates(selection.server)
         more.isEnabled = false
         task.start(MoteI18n.text("正在读取…"), { status.text = it }, {
-            requestPage(selection, identity, generation, filter, after, until, nextLocal, nextRemote, readLocal, readRemote, priorCandidates, incremental = false)
+            requestPage(selection, identity, generation, filter, after, until, nextLocal, nextRemote, readLocal, readRemote, priorCandidates)
         }) { result ->
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && identity == (current.server to current.generation)) {
@@ -180,6 +183,7 @@ internal class LibraryCaptureView(
                         val matches = page.getJSONArray("matches")
                         repeat(matches.length()) { val match = matches.getJSONObject(it); projection.availability(selection.server, match.getString("deviceId"), match.getString("id"), match.getString("state") == "readable", match.optInt("observationCount"), match.optString("libraryVersion")) }
                         remoteCursor = page.optString("nextCursor").takeUnless { it.isBlank() || it == "null" }; remoteMore = remoteCursor != null
+                        remoteBoundary = if (remoteMore) remotePosition(items) else null
                     }?.onFailure {
                         if (it is CentralFailure && (it.status in setOf(401, 403) || it.code == "connection_revoked")) {
                             deniedOrigin = selection.server; sourceView.clearRemote()
@@ -197,7 +201,7 @@ internal class LibraryCaptureView(
             else if (incrementalPending) { incrementalPending = false; incrementalRefresh() }
         }
     }
-    /** A proven pure-insert burst re-reads only the first page and upserts it; deeper pages, cursors and scroll stay. */
+    /** A proven insert burst merges a fresh local page and a Central prefix that covers the retained range. */
     private fun incrementalLoad(insertions: Int) {
         if (task.busy) return
         val selection = CentralAccess.resolve(activity)
@@ -210,20 +214,20 @@ internal class LibraryCaptureView(
         val priorCandidates = projection.candidates(selection.server)
         val priorLocal = projection.localIdentities()
         val priorRemote = projection.remoteVersions(selection.server)
+        val boundary = remoteBoundary; val hadMore = remoteMore
         more.isEnabled = false
         task.start(MoteI18n.text("正在读取…"), { status.text = it }, {
-            requestPage(selection, identity, generation, filter, after, until, null, null, readLocal = true, readRemote = true, priorCandidates, incremental = true)
+            requestPage(selection, identity, generation, filter, after, until, null, null, readLocal = true, readRemote = true, priorCandidates, AppendRead(insertions, priorLocal))
         }) { result ->
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && identity == (current.server to current.generation)) {
                 result.onSuccess { loaded ->
-                    val items = loaded.local?.getJSONArray("items")
-                    val added = if (items == null) 0 else (0 until items.length()).map { items.getJSONObject(it) }
-                        .count { (it.optString("deviceId").ifBlank { Settings(activity).deviceId } to it.getString("id")) !in priorLocal }
-                    if (!refreshPolicy.firstPageCovers(insertions, added)) { refreshPending = true; return@onSuccess }
+                    if (loaded.needsFullRefresh) { refreshPending = true; return@onSuccess }
                     val remotePage = loaded.central?.getOrNull()
                     if (remotePage != null) {
                         val remoteItems = remotePage.getJSONArray("items")
+                        val hasMore = remotePage.optString("nextCursor").let { it.isNotBlank() && it != "null" }
+                        if (!refreshPolicy.centralRangeCovers(boundary, hadMore, remotePosition(remoteItems), hasMore)) { refreshPending = true; return@onSuccess }
                         val supplied = (0 until remoteItems.length()).map { remoteItems.getJSONObject(it) }.associateBy { it.getString("deviceId") to it.getString("id") }
                         val matches = remotePage.getJSONArray("matches")
                         val observations = (0 until matches.length()).map { matches.getJSONObject(it) }.associateBy { it.getString("deviceId") to it.getString("id") }
@@ -239,6 +243,7 @@ internal class LibraryCaptureView(
                         repeat(items.length()) { projection.central(items.getJSONObject(it), selection.server) }
                         val matches = page.getJSONArray("matches")
                         repeat(matches.length()) { val match = matches.getJSONObject(it); projection.availability(selection.server, match.getString("deviceId"), match.getString("id"), match.getString("state") == "readable", match.optInt("observationCount"), match.optString("libraryVersion")) }
+                        if (page.optString("nextCursor").let { it.isBlank() || it == "null" }) { remoteCursor = null; remoteBoundary = null; remoteMore = false }
                     }?.onFailure {
                         // Denial and epoch conflicts still withdraw stale remote rows; a transient failure keeps the loaded pages reachable.
                         if (it is CentralFailure && (it.status in setOf(401, 403) || it.code == "connection_revoked")) {
@@ -255,18 +260,27 @@ internal class LibraryCaptureView(
             else if (incrementalPending) { incrementalPending = false; incrementalRefresh() }
         }
     }
-    private fun requestPage(selection: CentralAccess.Selection, identity: Pair<String, Long>, generation: Int, filter: String, after: String, until: String, nextLocal: String?, nextRemote: String?, readLocal: Boolean, readRemote: Boolean, priorCandidates: List<LibraryCaptureProjection.Identity>, incremental: Boolean): Loaded {
+    private fun requestPage(selection: CentralAccess.Selection, identity: Pair<String, Long>, generation: Int, filter: String, after: String, until: String, nextLocal: String?, nextRemote: String?, readLocal: Boolean, readRemote: Boolean, priorCandidates: List<LibraryCaptureProjection.Identity>, append: AppendRead? = null): Loaded {
         val context = activity.applicationContext
         val local = if (readLocal && filter !in setOf("file", "source", "material")) context.withNativeNotePreviews(context.queue().capturePage(after, until, nextLocal, source = filter, libraryBindings = true, libraryVersion = context::captureLibraryVersion)) else null
         val localFiles = emptyList<JSONObject>()
+        if (append != null) {
+            val items = local?.getJSONArray("items")
+            val deviceId = Settings(context).deviceId
+            val added = if (items == null) 0 else (0 until items.length()).map { items.getJSONObject(it) }
+                .count { (it.optString("deviceId").ifBlank { deviceId } to it.getString("id")) !in append.priorLocal }
+            if (!refreshPolicy.firstPageCovers(append.insertions, added)) return Loaded(local, null, localFiles, needsFullRefresh = true)
+        }
         // Local originals remain usable while an offline Central request waits.
         activity.runOnUiThread {
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && identity == (current.server to current.generation)) {
-                if (!incremental) {
+                if (append == null) {
                     files = localFiles
                     applyLocal(local); render()
                     status.append("\n" + MoteI18n.text("正在读取…"))
+                } else {
+                    applyLocal(local, updateCursor = false); render(); restoreAnchor(keep = true)
                 }
             }
         }
@@ -285,7 +299,9 @@ internal class LibraryCaptureView(
                 if (api.get("/api/connections/self").getJSONObject("credential").getString("scope") != "owner") throw CentralFailure(403, "connection_scope_denied")
                 verifiedConnection = identity
             }
-            val body = JSONObject().put("after", after).put("before", until).put("limit", 20).put("candidates", candidates)
+            // A bounded fresh prefix must cover the retained remote cursor range;
+            // overlap alone cannot account for cross-device backfills into deep pages.
+            val body = JSONObject().put("after", after).put("before", until).put("limit", if (append == null) 20 else 60).put("candidates", candidates)
             if (filter.isNotBlank()) body.put("source", filter)
             nextRemote?.let { body.put("cursor", it) }
             api.post("/api/library/device-view", body)
@@ -335,7 +351,7 @@ internal class LibraryCaptureView(
         sourceView.render(rows, location)
         more.isEnabled = !task.busy && (localMore || remoteMore)
     }
-    private fun restoreAnchor() {
+    private fun restoreAnchor(keep: Boolean = false) {
         restorePages = 1
         anchor?.let { value -> rows.post {
             (0 until rows.childCount).map { rows.getChildAt(it) }.firstOrNull { it.transitionName == value }?.let { row ->
@@ -344,7 +360,7 @@ internal class LibraryCaptureView(
                 (parent as? ScrollView)?.let { scroll -> val position = IntArray(2); row.getLocationInWindow(position); scroll.scrollBy(0, position[1] - anchorTop) }
             }
         } }
-        anchor = null
+        if (!keep) anchor = null
     }
     fun close() { cancelIncremental(); stamp++; task.close(); sourceView.close() }
 }

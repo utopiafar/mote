@@ -25,6 +25,15 @@ internal class LibraryRefreshPolicy(revision: Long? = null, count: Int? = null) 
         return if (insertions > 0) Action.INCREMENTAL else Action.FULL
     }
     fun firstPageCovers(insertions: Int, newIdentities: Int) = insertions in 1..20 && newIdentities == insertions
+    data class Position(val at: String, val id: String)
+    /** device-view orders captured_at DESC, id DESC and seeks strictly below its cursor.
+     * Cover the whole retained range, including backfills, rather than just an overlap. */
+    fun centralRangeCovers(previous: Position?, previouslyMore: Boolean, last: Position?, hasMore: Boolean): Boolean {
+        if (!hasMore) return true // The response contains the whole current filtered domain.
+        if (!previouslyMore || previous == null || last == null) return false
+        val order = java.time.Instant.parse(last.at).compareTo(java.time.Instant.parse(previous.at))
+        return order < 0 || order == 0 && last.id <= previous.id
+    }
     /** New records must not restart a refresh loop for every single capture commit. */
     companion object { const val DEBOUNCE_MILLIS: Long = 5_000 }
 }
