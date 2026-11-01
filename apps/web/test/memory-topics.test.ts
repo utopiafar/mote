@@ -38,22 +38,40 @@ function countingApi(catalog:()=>unknown){
 }
 const catalogReads=(reads:string[])=>reads.filter(path=>path==='/api/context-trees').length;
 
-test('a ready topic catalog revalidates automatic topics every ten seconds and hides withdrawn topics once',async t=>{
+test('a ready topic catalog revalidates every ten seconds and recovers eventless suppression',async t=>{
  const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
- const data={classification:{state:'ready'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[{id:'one',label:'Generated node'}]}]};
+ const auto={id:'auto.fixture',version:'1',label:'Generated auto',nodes:[{id:'one',label:'Generated node'}]};
+ const data={classification:{state:'ready'},items:[auto]};
  const {api,reads,changes,push}=countingApi(()=>data);
  await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:'one'})));
  assert.equal(catalogReads(reads),1);assert.ok(changes.length>=1,'mounting starts the shared change subscription');
- for(let i=0;i<6;i++)await act(async()=>t.mock.timers.tick(10000));assert.equal(catalogReads(reads),7,'provider-backed topics revalidate once per ten seconds while visible');
+ for(let i=0;i<6;i++)await act(async()=>t.mock.timers.tick(10000));assert.equal(catalogReads(reads),7,'a ready catalog revalidates once per ten seconds while visible');
  push(['capture:generated']);await act(async()=>t.mock.timers.tick(1500));assert.equal(catalogReads(reads),7,'unrelated capture changes never reread the catalog');
  data.items=[];push(['memory:job-1']);await act(async()=>t.mock.timers.tick(1500));
  assert.equal(catalogReads(reads),8,'the delivered memory change coalesces into one re-read');
  assert.match(d.body.textContent!,/此主题已不可用/,'the withdrawn topic becomes hidden');
- await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),8,'a catalog without automatic topics issues no periodic reads');
+ for(let i=0;i<6;i++)await act(async()=>t.mock.timers.tick(10000));assert.equal(catalogReads(reads),14,'a ready catalog keeps the bounded revalidation while reads may suppress trees');
+ // A source pipeline or recipe reinstall emits no matching event; the next
+ // bounded read rediscovers the recovered topic while the page stays visible.
+ data.items=[auto];await act(async()=>t.mock.timers.tick(10000));
+ assert.equal(catalogReads(reads),15,'the bounded read rediscovers the recovered topic without an event');
+ assert.ok(d.querySelector('.memory-topic-nodes'),'the recovered automatic topic is selectable again');
  Object.defineProperty(d,'hidden',{configurable:true,value:true});d.dispatchEvent(new d.defaultView!.Event('visibilitychange'));
  Object.defineProperty(d,'hidden',{configurable:true,value:false});await act(async()=>d.dispatchEvent(new d.defaultView!.Event('visibilitychange')));
- assert.equal(catalogReads(reads),9,'returning to the view revalidates the ready catalog once');
- await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),9,'the revalidation does not restart periodic reads');
+ assert.equal(catalogReads(reads),16,'returning to the view revalidates the ready catalog once');
+ for(let i=0;i<6;i++)await act(async()=>t.mock.timers.tick(10000));assert.equal(catalogReads(reads),22,'the bounded revalidation continues while visible');
+});
+
+test('a failed first catalog read retries at the bounded interval and recovers while visible',async t=>{
+ const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ let status=503;const {api,reads}=countingApi(()=>{if(status)throw new ApiError('Generated provider failure',status);return {classification:{state:'ready'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[{id:'one',label:'Generated node'}]}]}});
+ await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:'one'})));
+ assert.equal(catalogReads(reads),1);assert.ok(d.querySelector('[role=alert]'),'the initial failure surfaces');assert.equal(d.querySelector('.memory-topic-nodes'),null);
+ await act(async()=>t.mock.timers.tick(10000));assert.equal(catalogReads(reads),2,'a failed first read retries on the bounded interval');
+ assert.ok(d.querySelector('[role=alert]'));
+ status=0;await act(async()=>t.mock.timers.tick(10000));
+ assert.equal(catalogReads(reads),3,'the next retry discovers the recovered provider without a visibility change');
+ assert.equal(d.querySelector('[role=alert]'),null);assert.ok(d.querySelector('.memory-topic-nodes'));
 });
 
 test('a provider failure surfaces while the view stays visible and recovers on the next revalidation',async t=>{
@@ -73,7 +91,7 @@ test('a provider failure surfaces while the view stays visible and recovers on t
  assert.equal(catalogReads(reads),5,'each ten-second revalidation issues exactly one read');
 });
 
-test('running classification polls every five seconds and stops when the delivered catalog is ready',async t=>{
+test('running classification polls every five seconds and falls back to the bounded revalidation when ready',async t=>{
  const {root}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
  let state='running';const data={classification:{state:'running'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[]}]};
  const {api,reads,changes,push}=countingApi(()=>({...data,classification:{state}}));
@@ -81,8 +99,21 @@ test('running classification polls every five seconds and stops when the deliver
  assert.equal(catalogReads(reads),1);
  for(let index=0;index<2;index++){await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),index+2,'one re-read per five seconds while classification runs');}
  state='ready';data.items=[];push(['memory:job-2']);await act(async()=>t.mock.timers.tick(1500));assert.equal(catalogReads(reads),4,'a memory change rereads once and observes the ready state');
- await act(async()=>t.mock.timers.tick(30000));assert.equal(catalogReads(reads),4,'the ready state without automatic topics stops the timer entirely');
+ for(let i=0;i<3;i++)await act(async()=>t.mock.timers.tick(10000));assert.equal(catalogReads(reads),7,'a ready catalog keeps the bounded ten-second revalidation');
  assert.ok(changes.length>0,'the shared subscription remains live for later changes');
+});
+
+test('an unavailable classifier has no external dependency and issues no periodic reads',async t=>{
+ const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ const {api,reads,changes}=countingApi(()=>({classification:{state:'unavailable'},items:[{id:'manual',version:'1',label:'Generated manual',nodes:[]}]}));
+ await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'manual',nodeId:''})));
+ assert.equal(catalogReads(reads),1);
+ await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),1,'a catalog with no classifier has no provider dependency to revalidate');
+ Object.defineProperty(d,'hidden',{configurable:true,value:true});d.dispatchEvent(new d.defaultView!.Event('visibilitychange'));
+ Object.defineProperty(d,'hidden',{configurable:true,value:false});await act(async()=>d.dispatchEvent(new d.defaultView!.Event('visibilitychange')));
+ assert.equal(catalogReads(reads),2,'returning to the view revalidates once');
+ await act(async()=>t.mock.timers.tick(60000));assert.equal(catalogReads(reads),2,'the return revalidation does not start periodic reads');
+ assert.ok(changes.length>0,'the feed stays live for classifier registration events');
 });
 
 test('a hidden view pauses both catalog reads and the feed, and unmounting cleans every subscription',async t=>{

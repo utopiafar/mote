@@ -7,7 +7,12 @@ export interface ContextTree {id:string;version:string;label:string;nodes:{id:st
 export function MemoryTopics({api,treeId,nodeId,onChange}:{api:Api;treeId:string;nodeId:string;onChange:(treeId:string,nodeId:string)=>void}){
  const [pollMs,setPollMs]=useState<number|undefined>(undefined);
  const trees=useResource<{items:ContextTree[];classification?:{state:'unavailable'|'ready'|'running'|'failed'}}>(api,'/api/context-trees',pollMs);
- useEffect(()=>{const data=trees.data;setPollMs(data?.classification?.state==='running'?5000:data?.items.some(item=>item.id.startsWith('auto.'))?10000:undefined);},[trees.data]);
+ // A catalog can only stop periodic reads when it provably has no external
+ // dependency: 'unavailable' means no classifier is registered, so no
+ // provider-backed batch exists and classifier lifecycle transitions already
+ // publish feed events. Every other state may hide provider-suppressed trees
+ // whose recovery emits no local event, so it keeps a bounded revalidation.
+ useEffect(()=>{const state=trees.data?.classification?.state;setPollMs(state==='running'?5000:trees.error===undefined&&state==='unavailable'?undefined:10000);},[trees.data,trees.error]);
  useEffect(()=>{
   if(typeof document==='undefined')return;
   const revalidate=()=>{if(!document.hidden)resources(api).get('/api/context-trees').refresh();};
