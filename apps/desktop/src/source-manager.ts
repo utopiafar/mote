@@ -8,7 +8,7 @@ import { type EventJournal, failureCode, safeErrorName, httpFailure, TransportFa
 import { randomUUID } from 'node:crypto';
 import { join, basename, isAbsolute, dirname } from 'node:path';
 import { stat,readdir,rm } from 'node:fs/promises';
-import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
+import { atomicSourceJson, sourceHash, SourceSync, type PendingSourceSummary } from './source-sync';
 import { readLocalContent } from './local-content';
 import { codingRoot, codingProviders, type CodingProvider } from './coding-agents';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices } from './source-calendar';
@@ -101,6 +101,10 @@ export class LocalSourceManager {
   saveCaptureContext(channel:CaptureContextChannel,input:unknown):Promise<SourceContextState>{return this.saveContext(captureContextIdentity(this.connection.deviceId,channel),input);}
   status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), context:this.contexts?.get(source.id), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.blocked?moteText("中央记录冲突或已删除，本机副本保留待处理。"):row.message), facts:nativeStatusView({pending:row.pending+(row.blocked??0),lastAcknowledgedAt:row.lastAcknowledgedAt,syncState:!this.connection.serverUrl||!connectionToken(this.connection)?'unconfigured':row.blocked&&row.state!=='syncing'?'blocked':row.state==='permission_required'?'blocked':row.state==='syncing'?'uploading':row.state==='idle'&&row.pending>0?'waiting':row.state,errorCode:row.blocked?'retained_conflict':row.state==='permission_required'?'permission_required':row.state==='error'?'source_unavailable':null,scanComplete:row.scanComplete,knownItems:row.items,skipped:row.skipped})})); }
   pendingContent(): {source:LocalSource;item:import('./source-types').SourceItem;key:string}[] { return this.sources.flatMap(source => this.engines.get(source.id)?.pendingContent().map(item => ({source:structuredClone(source),item,key:sourceHash(`${item.externalId}\0${item.revision}`)})) ?? []); }
+  /** Call-scoped projections never expose the mutable source configuration or original bodies. */
+  pendingContentSummaries(): readonly Readonly<{sourceId:string;sourceKind:LocalSource['kind'];sourceName:string;item:PendingSourceSummary;key:string}>[] {
+    return this.sources.flatMap(source=>this.engines.get(source.id)?.pendingSummaries().map(item=>({sourceId:source.id,sourceKind:source.kind,sourceName:source.name,item,key:sourceHash(`${item.externalId}\0${item.revision}`)}))??[]);
+  }
   async sourceContext(id:string):Promise<SourceContextState>{
     if(!this.sources.some(source=>source.id===id))throw Error(moteText('来源不存在'));
     return this.readContext(id);
