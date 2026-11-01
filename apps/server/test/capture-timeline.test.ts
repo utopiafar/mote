@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
+import {Store} from '../src/store.js';
+import {CaptureTimeline} from '../src/capture-timeline.js';
 import type {CaptureTimelineGroup,CaptureTimelinePage,CaptureTimelineMembers} from '@mote/shared';
 
 const owner='generated-timeline-owner-token-123456789';
@@ -108,4 +110,59 @@ test('a retained metadata-only screen series has distinct date rows when its ori
  assert.equal(new Set(page.items.map(item=>item.id)).size,2,'Projection identities stay distinct while original identity stays exact');
  for(const [index,day] of ['2026-10-29','2026-10-28'].entries()){const item=page.items[index];assert.equal(item.type,'record');if(item.type!=='record')assert.fail('Expected one original row per observed date');assert.equal(item.record.id,id);assert.equal(item.day,day);assert.equal(item.sampleCount,1);assert.equal(item.firstAt,item.lastAt);assert.ok(item.firstAt.startsWith(day));}
  const first=await node.request('/api/capture-browser/timeline',{...range,limit:1}) as CaptureTimelinePage;assert.ok(first.nextCursor);const next=await node.request('/api/capture-browser/timeline',{...range,limit:1,cursor:first.nextCursor!}) as CaptureTimelinePage;assert.equal(next.items[0].day,'2026-10-28');assert.equal(next.nextCursor,null);
+});
+
+async function groupedFixture(t:TestContext,groups:number){
+ const dir=await mkdtemp(join(tmpdir(),'mote-timeline-group-reuse-')),store=new Store(dir,{maxStorageBytes:50_000_000,maintenance:false});
+ t.after(async()=>{store.close();await rm(dir,{recursive:true,force:true});});
+ const records=Array.from({length:groups*2},(_,index)=>{const group=Math.floor(index/2),day=group%3,at=new Date(Date.parse(scope.after)+day*86400000+3600000+(index%2)*1000).toISOString();return {id:randomUUID(),deviceId:'generated-group-'+group,deviceName:'Generated device',platform:'android',capturedAt:at,durationMs:1000,appId:'generated.app',appName:'Generated app',windowTitle:'',source:'activity',ocrText:'',metadata:{version:1,observedAt:at},privacy:{collection:'activity',mode:'none'}};});
+ for(let index=0;index<records.length;index+=500)await store.ingestBatch(records.slice(index,index+500));
+ const range={...scope,before:'2026-11-01T00:00:00.000Z',limit:100};
+ const reads={grouped:0,ctes:0},prepare=store.db.prepare.bind(store.db);
+ store.db.prepare=sql=>new Proxy(prepare(sql),{get(target,key){const value=Reflect.get(target,key,target);if(typeof value!=='function')return value;return (...args:unknown[])=>{if(key==='all'||key==='get'){if(/SELECT \* FROM grouped\b/.test(sql))reads.grouped++;if(sql.includes('member_rows AS'))reads.ctes++;}return value.apply(target,args);};}});
+ return {store,range,reads,records,timeline:new CaptureTimeline(store)};
+}
+const comparablePage=(page:CaptureTimelinePage)=>({...page,items:page.items.map(item=>({...item,id:item.id.split('.')[0]})),nextCursor:page.nextCursor?.split('.')[0]??null});
+
+test('three days and 300 groups reuse grouping across pages and expansion with identical cold and warm results',async t=>{
+ const {store,range,reads,timeline,records}=await groupedFixture(t,300),pages:CaptureTimelinePage[]=[];let cursor:string|undefined;
+ do{const page=timeline.page({...range,...(cursor?{cursor}:{})},owner);pages.push(page);cursor=page.nextCursor??undefined;}while(cursor);
+ assert.equal(pages.length,3);assert.equal(pages.flatMap(page=>page.items).length,300);assert.equal(new Set(pages.flatMap(page=>page.items.map(item=>item.id))).size,300);
+ assert.deepEqual(new Set(pages.flatMap(page=>page.items.map(item=>item.day))),new Set(['2026-10-29','2026-10-30','2026-10-31']));
+ const group=pages[0].items[0] as CaptureTimelineGroup,before=reads.ctes,members=timeline.members(range,owner,group.id);
+ assert.equal(reads.ctes-before,1,'Expansion executes one member CTE');assert.equal(members.group.recordCount,2);assert.equal(members.items.length,2);
+ assert.deepEqual(new Set(members.items.map(item=>item.record.id)),new Set(records.filter(record=>record.deviceId===group.deviceId).map(record=>record.id)));
+ assert.equal(reads.grouped,1,'Pagination and expansion calculate grouped rows once');
+ for(const [index,page] of pages.entries()){const hit=timeline.page({...range,...(index?{cursor:pages[index-1].nextCursor!}:{})},owner);assert.deepEqual(hit,page);}
+ const cold=new CaptureTimeline(store);cursor=undefined;
+ for(const expected of pages){const page=cold.page({...range,...(cursor?{cursor}:{})},owner);assert.deepEqual(comparablePage(page),comparablePage(expected));cursor=page.nextCursor??undefined;}
+});
+
+test('LRU eviction preserves group expansion with one CTE and keeps recently used scopes',async t=>{
+ const {range,reads,timeline}=await groupedFixture(t,9),first=timeline.page(range,owner),group=first.items[0] as CaptureTimelineGroup;
+ for(let i=0;i<7;i++)timeline.page({...range,deviceId:'generated-group-'+i},owner);
+ const beforeHit=reads.grouped;timeline.page(range,owner);assert.equal(reads.grouped,beforeHit,'Touch the full range before adding a ninth scope');
+ timeline.page({...range,deviceId:'generated-group-7'},owner);
+ const beforeRecent=reads.grouped;timeline.page(range,owner);assert.equal(reads.grouped,beforeRecent,'Recent range survives eviction');
+ const beforeEvicted=reads.grouped;timeline.page({...range,deviceId:'generated-group-0'},owner);assert.equal(reads.grouped,beforeEvicted+1,'Least recent scope must be recomputed');
+ for(let i=0;i<9;i++)timeline.page({...range,deviceId:'generated-group-'+i},owner);
+ const before=reads.ctes,members=timeline.members({...range,limit:1},owner,group.id);
+ assert.equal(reads.ctes-before,1,'An evicted summary and its member page use one CTE');assert.equal(members.group.recordCount,2);assert.equal(members.items.length,1);assert.ok(members.nextCursor);
+ const nextBefore=reads.ctes,last=timeline.members({...range,limit:1,cursor:members.nextCursor!},owner,group.id);assert.equal(reads.ctes-nextBefore,1);assert.equal(last.items.length,1);assert.equal(last.nextCursor,null);
+});
+
+test('cached group cursors preserve SQLite byte ordering for non-ASCII device identities',async t=>{
+ const {range,store,records,timeline}=await groupedFixture(t,3);
+ await store.ingestBatch(['generated-\ue000','generated-\u{10000}'].map(deviceId=>({...records[1],id:randomUUID(),deviceId})));
+ const expected=timeline.page(range,owner).items,seen:CaptureTimelinePage['items']=[];let cursor:string|undefined;
+ do{const page=timeline.page({...range,limit:1,...(cursor?{cursor}:{})},owner);seen.push(...page.items);cursor=page.nextCursor??undefined;}while(cursor);
+ assert.equal(expected.length,5);assert.deepEqual(seen,expected);
+});
+
+test('a range above 5000 groups never enters the cache or evicts a reusable small scope',async t=>{
+ const {range,reads,timeline}=await groupedFixture(t,5001),small={...range,deviceId:'generated-group-0'};
+ timeline.page(small,owner);const first=timeline.page(range,owner),before=reads.grouped;assert.ok(first.nextCursor);
+ timeline.page(range,owner);assert.equal(reads.grouped,before+1,'Oversized grouping is recomputed');
+ const beforeSmall=reads.grouped;timeline.page(small,owner);assert.equal(reads.grouped,beforeSmall,'Oversized range does not displace a cached scope');
+ const group=first.items[0] as CaptureTimelineGroup,cteBefore=reads.ctes,members=timeline.members(range,owner,group.id);assert.equal(reads.ctes-cteBefore,1,'Uncached expansion uses one CTE');assert.equal(members.items.length,2);assert.equal(members.group.recordCount,2);
 });

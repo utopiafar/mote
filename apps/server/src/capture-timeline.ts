@@ -28,6 +28,7 @@ function dayBuckets(after:string,before:string,timeZone:string){
 /** Read-only grouping of existing observations; no inferred document identity. */
 export class CaptureTimeline {
  private secret=randomBytes(32);
+ private grouped=new Map<string,GroupRow[]>();
  constructor(private store:Store){}
  private seal(value:Position){const body=Buffer.from(JSON.stringify(value)).toString('base64url');return body+'.'+createHmac('sha256',this.secret).update(body).digest('base64url');}
  private open(raw:string,type:Position['type']){
@@ -85,6 +86,16 @@ export class CaptureTimeline {
   return {scope,revision,sql,values:[...screenArgs,...dayValues,...filter.values]};
  }
  private current(value:Position,context:ReturnType<CaptureTimeline['prepare']>){if(value.scope!==context.scope||value.revision!==context.revision)throw new StoreError('Timeline changed; reload the selected range',409);}
+ private cachedGroups(context:ReturnType<CaptureTimeline['prepare']>){
+  const key=context.scope+':'+context.revision,hit=this.grouped.get(key);
+  if(hit){this.grouped.delete(key);this.grouped.set(key,hit);}return hit;
+ }
+ private groupedRows(context:ReturnType<CaptureTimeline['prepare']>){
+  const hit=this.cachedGroups(context);if(hit)return hit;
+  const rows=this.store.db.prepare(context.sql+' SELECT * FROM grouped ORDER BY last_at DESC,group_key DESC').all(...context.values) as unknown as GroupRow[];
+  if(rows.length<=5000){this.grouped.set(context.scope+':'+context.revision,rows);while(this.grouped.size>8)this.grouped.delete(this.grouped.keys().next().value!);}
+  return rows;
+ }
  private group(row:GroupRow,context:ReturnType<CaptureTimeline['prepare']>):CaptureTimelineGroup{
   const record=this.store.evidence([row.representative])[0];if(!record)throw new StoreError('Timeline changed; reload the selected range',409);
   return {type:'group',id:this.seal({type:'group',scope:context.scope,revision:context.revision,key:row.group_key}),kind:row.kind==='screen-session'?'screen-session':'source',source:row.source,deviceId:row.device_id,deviceName:record.deviceName,day:row.day,firstAt:row.first_at,lastAt:row.last_at,recordCount:Number(row.record_count),imageCount:Number(row.image_count),sampleCount:row.sample_count===null?null:Number(row.sample_count),...(row.kind==='screen-session'?{appId:record.appId,appName:record.appName}:{})};
@@ -92,16 +103,22 @@ export class CaptureTimeline {
  page(input:TimelineRange,ownerIdentity:string):CaptureTimelinePage{return this.snapshot(()=>{
   const context=this.prepare(input,ownerIdentity),position=input.cursor?this.open(input.cursor,'groups-page'):undefined;if(position)this.current(position,context);
   if(position&&(!position.at||!position.key))throw new StoreError('Invalid timeline cursor');
-  const rows=this.store.db.prepare(context.sql+` SELECT * FROM grouped ${position?'WHERE last_at<? OR (last_at=? AND group_key<?)':''} ORDER BY last_at DESC,group_key DESC LIMIT ?`).all(...context.values,...(position?[position.at!,position.at!,position.key!]:[]),input.limit+1) as unknown as GroupRow[];
+  const grouped=this.groupedRows(context),key=position?Buffer.from(position.key!):undefined,start=position?grouped.findIndex(row=>row.last_at<position.at!||row.last_at===position.at&&Buffer.compare(Buffer.from(row.group_key),key!)<0):0;
+  const rows=start<0?[]:grouped.slice(start,start+input.limit+1);
   const selected=rows.slice(0,input.limit),items:CaptureTimelinePage['items']=selected.map(row=>row.kind==='record'?{type:'record',id:this.seal({type:'group',scope:context.scope,revision:context.revision,key:row.group_key}),day:row.day,firstAt:row.first_at,lastAt:row.last_at,sampleCount:row.sample_count===null?null:Number(row.sample_count),record:this.store.preview(this.store.evidence([row.representative])[0])}:this.group(row,context)),last=selected.at(-1);
   return {revision:context.revision,items,nextCursor:rows.length>input.limit&&last?this.seal({type:'groups-page',scope:context.scope,revision:context.revision,at:last.last_at,key:last.group_key}):null};
  });}
  members(input:TimelineRange,ownerIdentity:string,groupId:string):CaptureTimelineMembers{return this.snapshot(()=>{
   const context=this.prepare(input,ownerIdentity),group=this.open(groupId,'group');this.current(group,context);
   const position=input.cursor?this.open(input.cursor,'members-page'):undefined;if(position){this.current(position,context);if(position.key!==group.key||!position.at||!position.id)throw new StoreError('Timeline member cursor does not match this group',409);}
-  const row=this.store.db.prepare(context.sql+' SELECT * FROM grouped WHERE group_key=?').get(...context.values,group.key!) as unknown as GroupRow|undefined;
+  const cached=this.cachedGroups(context),memberSql=` SELECT * FROM member_rows WHERE group_key=? ${position?'AND (last_at<? OR (last_at=? AND id<?))':''} ORDER BY last_at DESC,id DESC LIMIT ?`,memberValues=[group.key!,...(position?[position.at!,position.at!,position.id!]:[]),input.limit+1];
+  // A group locator can outlive its LRU entry, or refer to an oversized range.
+  // On that path read the summary and page together, preserving empty pages.
+  const combined=cached?undefined:this.store.db.prepare(context.sql+` SELECT grouped.*,page.id member_id,page.first_at member_first_at,page.last_at member_last_at,page.sample_count member_sample_count
+   FROM grouped LEFT JOIN (${memberSql}) page ON page.group_key=grouped.group_key WHERE grouped.group_key=? ORDER BY page.last_at DESC,page.id DESC`).all(...context.values,...memberValues,group.key!);
+  const row=(cached?cached.find(row=>row.group_key===group.key):combined?.[0]) as GroupRow|undefined;
   if(!row||row.kind==='record')throw new StoreError('Timeline group is unavailable',404);
-  const rows=this.store.db.prepare(context.sql+` SELECT * FROM member_rows WHERE group_key=? ${position?'AND (last_at<? OR (last_at=? AND id<?))':''} ORDER BY last_at DESC,id DESC LIMIT ?`).all(...context.values,group.key!,...(position?[position.at!,position.at!,position.id!]:[]),input.limit+1);
+  const rows=cached?this.store.db.prepare(context.sql+memberSql).all(...context.values,...memberValues):combined!.filter(row=>row.member_id!==null).map(row=>({id:row.member_id,first_at:row.member_first_at,last_at:row.member_last_at,sample_count:row.member_sample_count}));
   const selected=rows.slice(0,input.limit),items=selected.map(row=>({record:this.store.preview(this.store.evidence([String(row.id)])[0]),firstAt:String(row.first_at),lastAt:String(row.last_at),sampleCount:row.sample_count===null?null:Number(row.sample_count)})),last=selected.at(-1);
   return {revision:context.revision,group:this.group(row,context),items,nextCursor:rows.length>input.limit&&last?this.seal({type:'members-page',scope:context.scope,revision:context.revision,key:group.key,at:String(last.last_at),id:String(last.id)}):null};
  });}
