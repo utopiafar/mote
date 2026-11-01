@@ -5,7 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {ActionCapabilitySettings} from '../src/ActionCapabilitySettings.js';
-import {ApiError,type Api} from '../src/api.js';
+import {ApiError,createApi,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 configureLocale(()=> 'zh-CN');
 const turn=()=>new Promise<void>(resolve=>setImmediate(resolve));
@@ -111,4 +111,33 @@ test('switching APIs aborts old commands and fences late responses even after re
  await render(old.api);await act(async()=>button(d,'保存范围草稿').click());assert.deepEqual(writes[1],writes[0]);const before=old.gets();
  await act(async()=>{first.resolve(draft({id:writes[0].id,revision:99}));await turn();});assert.equal(old.gets(),before,'late old command cannot force a new GET');assert.equal(button(d,'保存范围草稿').matches(':disabled'),true,'late completion cannot release the current command');
  current=inventory({drafts:[draft({id:writes[1].id})]});await act(async()=>{second.resolve(current.drafts[0]);await turn();});assert.equal(old.gets(),before+1);assert.equal(button(d,'保存范围草稿').matches(':disabled'),false);assert.equal(fresh.gets(),1);assert.equal(d.querySelectorAll('fieldset select').length,2);
+});
+
+test('real createApi management deadline releases stalled commands at180s and retains uncertain-delivery identity',async t=>{
+ const {d,render,advance}=await fixture(t);let current=inventory({drafts:[]}),stall=true,gets=0;
+ const durations:number[]=[],writes:{body:any;signal:AbortSignal}[]=[];
+ t.mock.method(AbortSignal,'timeout',(ms:number)=>{durations.push(ms);const controller=new AbortController();setTimeout(()=>controller.abort(new DOMException('Generated management deadline','TimeoutError')),ms);return controller.signal;});
+ t.mock.method(globalThis,'fetch',async(input:any,init?:RequestInit)=>{
+  if(init?.method){const body=JSON.parse(String(init.body)),signal=init.signal as AbortSignal;writes.push({body,signal});
+   if(stall)return new Promise<Response>((_resolve,reject)=>{if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});});
+   const saved=draft({...body,revision:1});current={...current,drafts:[saved]};return Response.json(saved);
+  }
+  assert.equal(String(input),'/api/action-capabilities');gets++;return Response.json(current);
+ });
+ await render(createApi({token:'generated-deadline-owner'}));await advance(1);
+ await select(d,0,JSON.stringify(target));await act(async()=>d.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!.click());await act(async()=>button(d,'保存范围草稿').click());
+ // Align the retained 15s fallback independently of the command's t=1 start.
+ await advance(14999);await advance(165000);assert.equal(writes[0].signal.aborted,false);assert.equal(button(d,'保存范围草稿').matches(':disabled'),true);
+ const before=gets;await advance(1);assert.equal(writes[0].signal.aborted,true,'caller cancellation must not replace the management deadline');assert.equal(writes[0].signal.reason.name,'TimeoutError');assert.equal(button(d,'保存范围草稿').matches(':disabled'),false);assert.equal(gets,before+1);assert.ok(d.querySelector('[role="alert"]'));
+ stall=false;await act(async()=>button(d,'保存范围草稿').click());assert.deepEqual(writes[1].body,writes[0].body);assert.deepEqual(durations,[180000,180000]);
+});
+
+test('missing selected sources can be explicitly discarded after remount without reusing a cached wider scope',async t=>{
+ const {d,render,advance}=await fixture(t),sourceB={...source,sourceId:'generated-source-b'};let current=inventory({drafts:[],sources:[{...source,name:'Generated source A'},{...sourceB,name:'Generated source B'}]});const writes:any[]=[];
+ const remote=client((_path,init)=>{if(init?.method){const body=JSON.parse(String(init.body));writes.push(body);if(writes.length===1)throw new ApiError('Generated uncertain delivery',503);const saved=draft({...body,revision:1});current={...current,drafts:[saved]};return saved;}return structuredClone(current);});
+ await render(remote.api);await select(d,0,JSON.stringify(target));await act(async()=>{const inputs=d.querySelectorAll<HTMLInputElement>('fieldset input[type="checkbox"]');inputs[0].click();inputs[1].click();});await act(async()=>button(d,'保存范围草稿').click());assert.equal(writes[0].inputs.sources.length,2);
+ current={...current,sources:[{...sourceB,name:'Generated source B'}]};await advance(15000);assert.equal(button(d,'保存范围草稿').matches(':disabled'),true);
+ await render(client(()=>empty()).api);await render(remote.api);assert.equal(button(d,'保存范围草稿').matches(':disabled'),true,'stale selections survive navigation until explicitly discarded');
+ await act(async()=>button(d,'清空').click());assert.equal(d.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!.checked,false);noGrant(d);
+ await act(async()=>d.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!.click());await act(async()=>button(d,'保存范围草稿').click());assert.equal(writes.length,2);assert.deepEqual(writes[1].inputs.sources,[sourceB]);assert.notEqual(writes[1].operationId,writes[0].operationId);assert.notEqual(writes[1].id,writes[0].id);noGrant(d);
 });
