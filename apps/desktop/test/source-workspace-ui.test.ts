@@ -1,7 +1,11 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {JSDOM} from 'jsdom';
 import {readFileSync} from 'node:fs';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {createSourceWorkspaceUi} from '../src/source-workspace-ui';
+import {SourceSync,sourceHash} from '../src/source-sync';
 import type {DesktopApi,Status} from '../src/contracts';
 import type {SourceStatus} from '../src/contracts/sources';
 import type {SourceContextState} from '../src/source-context-outbox';
@@ -23,7 +27,7 @@ beforeEach(()=>{
  document.querySelector<HTMLElement>('[data-page=source-detail]')!.hidden=false;
 });
 const detailPage=()=>document.querySelector<HTMLElement>('[data-page=source-detail]')!;
-afterEach(()=>{ui.clear();dom.window.close();vi.restoreAllMocks();vi.unstubAllGlobals();});
+afterEach(()=>{ui.clear();dom.window.close();vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers();});
 
 it.each([undefined,'2026-10-30T23:59:59.000Z'])('does not present upload time %s as the time of a completed local scan',lastSyncAt=>{
  ui.update([{...structuredClone(source),scanComplete:true,lastSyncAt}]);
@@ -132,6 +136,30 @@ it('acts on the current source options when a privacy option changed without a v
  expect(acted.source.excludedPaths).toEqual(['generated-secret']);expect(acted.source.redactLiterals).toEqual(['generated-redact']);expect(acted.source.allowRead).toBe(true);expect(acted.source.enabled).toBe(true);
 });
 
+it('rereads a policy-restaged revision with unchanged count and ACK using the real outbox status',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-source-ui-revision-'));
+ try{
+  const engine=new SourceSync(join(directory,'outbox.json'));await engine.initialize();
+  const item={externalId:'generated-policy-file',title:'Generated private title',text:'Generated private body',kind:'file' as const,layer:'snapshot' as const};
+  const scan=(value:typeof item)=>({items:[value],seen:[value.externalId],complete:true,skipped:0});
+  await engine.stage(scan(item),false);
+  vi.mocked(api.sourcePendingContent).mockImplementation(async()=>({items:engine.pendingContent().map(value=>({key:`source:${id}:${sourceHash(`${value.externalId}\0${value.revision}`)}`,source:'file' as const,title:value.title,observedAt:value.observedAt,preview:value.text})),total:engine.status().pending}));
+  const edited={...structuredClone(source),source:{...source.source,redactLiterals:['Generated private']}};
+  ui.update([{...edited,...engine.status()}]);ui.open(id);await flush();
+  expect(el('source-detail-body').textContent).toContain(item.title);
+  const reads=vi.mocked(api.sourcePendingContent).mock.calls.length,ack=engine.status().lastAcknowledgedAt;
+  await engine.ensurePolicy('generated-redaction-policy');await engine.stage(scan({...item,title:'[已遮盖] title',text:'[已遮盖] body'}),false);
+  expect(engine.status().pending).toBe(1);expect(engine.status().lastAcknowledgedAt).toBe(ack);
+  ui.update([{...edited,...engine.status()}]);await flush();
+  expect(api.sourcePendingContent).toHaveBeenCalledTimes(reads+1);
+  expect(el('source-detail-body').textContent).not.toContain(item.title);expect(el('source-detail-body').textContent).toContain('[已遮盖] title');
+  const version=engine.status().pendingContentRevision;
+  await engine.stage(scan({...item,title:'[已遮盖] title',text:'[已遮盖] body'}),false);
+  expect(engine.status().pendingContentRevision).toBe(version);
+  ui.update([{...edited,...engine.status()}]);await flush();expect(api.sourcePendingContent).toHaveBeenCalledTimes(reads+1);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
 it('keeps loaded archive pages when only status fields change',async()=>{
  vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[{key:'capture:generated-page-one',source:'file',title:'Generated page one',observedAt:'2026-10-30T01:00:00.000Z',preview:''}],nextCursor:'generated-cursor'}).mockResolvedValueOnce({items:[{key:'capture:generated-page-two',source:'file',title:'Generated page two',observedAt:'2026-10-29T01:00:00.000Z',preview:''}]});
  ui.open(id);await flush();
@@ -211,6 +239,36 @@ it('withdraws the displayed archive when the return-time read reports denied aut
  expect(el('source-detail-body').textContent).not.toContain('Generated private archive');
  expect(el('source-detail-body').textContent).toContain('无法访问采集记录，请检查中央连接权限');
  expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
+});
+
+it('consumes the deferred Central denial when the reader returns to detail without another source poll',async()=>{
+ await flush();
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[{key:'capture:generated-reader-private',source:'file',title:'Generated reader archive',observedAt:'2026-10-30T01:00:00.000Z',preview:''}]});
+ ui.open(id);await flush();expect(el('source-detail-body').textContent).toContain('Generated reader archive');
+ detailPage().hidden=true;document.querySelector<HTMLElement>('[data-page=content-reader]')!.hidden=false;await flush();
+ dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[],authorizationDenied:true});
+ document.querySelector<HTMLElement>('[data-page=content-reader]')!.hidden=true;detailPage().hidden=false;await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);
+ expect(el('source-detail-body').textContent).not.toContain('Generated reader archive');
+ expect(el('source-detail-body').textContent).toContain('无法访问采集记录，请检查中央连接权限');
+});
+
+it('withdraws a remote deletion while Mac stays visible, with four archive-only reads per minute and none hidden',async()=>{
+ ui.clear();vi.useFakeTimers({toFake:['setTimeout','clearTimeout','setInterval','clearInterval','Date']});
+ vi.mocked(api.sourcePendingContent).mockClear();vi.mocked(api.sourceArchivedContent).mockClear();
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[{key:'capture:generated-remote-delete',source:'file',title:'Generated deleted on other device',observedAt:'2026-10-30T01:00:00.000Z',preview:''}]}).mockResolvedValue({items:[]});
+ ui=createSourceWorkspaceUi(api,{openDetail:()=>true,edit:()=>{},toggle,content:()=>{},read:()=>{}});ui.status(status(1));ui.update([structuredClone(source)]);ui.open(id);await flush();
+ expect(el('source-detail-body').textContent).toContain('Generated deleted on other device');
+ await vi.advanceTimersByTimeAsync(14999);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(1);
+ expect(el('source-detail-body').textContent).not.toContain('Generated deleted on other device');
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(45000);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(5);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+ detailPage().hidden=true;await flush();await vi.advanceTimersByTimeAsync(60000);
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(5);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+ detailPage().hidden=false;await flush();expect(api.sourceArchivedContent).toHaveBeenCalledTimes(6);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
 });
 
 it('defers the Central archive revalidation while hidden and folds it into the next visible read',async()=>{
