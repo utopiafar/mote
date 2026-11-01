@@ -36,7 +36,6 @@ errorMessage,
 queryString,
 type Activity,
 type Answer,
-type Capture,
 type Connection,
 type Device,
 type Range,
@@ -166,7 +165,6 @@ function App() {
     totalDurationMs: 0,
     captures: 0,
   });
-  const [recent, setRecent] = useState<Capture[]>([]);
   const [insights, setInsights] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -199,7 +197,6 @@ function App() {
     setLoading(false);
     setStatus(null);
     setDevices([]);
-    setRecent([]);
     setInsights([]);
   }, []);
   useEffect(()=>{
@@ -306,8 +303,7 @@ function App() {
     void Promise.allSettled([
       load<Status>("/api/status", value => {setStatus(value);}),
       load<{items: Device[]}>("/api/devices", value => setDevices(value.items)),
-      ...(["overview", "activity"].includes(page) ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
-      ...(page === "overview" ? [load<{items: Capture[]}>(`/api/captures${queryString(range, {limit: 4})}`, value => setRecent(value.items))] : []),
+      ...(page === "activity" ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
       ...(page === "overview" ? [load<{items: Answer[]}>(INSIGHT_HISTORY_PATH, value => setInsights(value.items))] : []),
     ]).then(results => {
       if (!active) return;
@@ -383,7 +379,7 @@ function App() {
     setPeriod(readPeriod(next));
     setVerified(false);
     setStatus(null);
-    setDevices([]); setRecent([]); setInsights([]);
+    setDevices([]); setInsights([]);
     updateEvidenceId(readEvidenceRoute(window.location.hash));
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
     setShowConnect(false);
@@ -512,7 +508,7 @@ function App() {
                 : api && (
                     <>
                       {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <Spinner label={moteText("正在读取节点状态…")}/>}
-                      <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,recent,insights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision,refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
+                      <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,insights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision,refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
                     </>
                   )}
             </>

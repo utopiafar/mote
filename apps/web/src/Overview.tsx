@@ -6,7 +6,7 @@ import {DiscoveryLink,DiscoveryProvider,useDiscoveryState} from './DiscoveryLink
 import {getLocale,moteText} from '@mote/shared/i18n';
 import {ArrowRight,ArrowUpRight,ChevronRight,Database,Link2,MessageCircle,Sparkles} from 'lucide-react';
 import {answerPreview} from './AnswerMarkdown';
-import {dateTime,errorMessage,type Activity,type Answer,type Api,type Capture,type Device,type Range,type Status} from './api';
+import {dateTime,errorMessage,type Answer,type Api,type Device,type Range,type Status} from './api';
 import {type Page} from './navigation';
 import {FeatureHome} from './features/home';
 import {useResource} from './useResource';
@@ -19,7 +19,7 @@ import type {InsightRun} from './InsightProgress';
 type Conversation={id:string;title:string;updatedAt:string;turnCount:number};
 
 export function Overview({api,status,devices,insights,onPage,onOpen}: {
- api:Api;status:Status;devices:Device[];activity:Activity;recent:Capture[];insights:Answer[];
+ api:Api;status:Status;devices:Device[];insights:Answer[];
  onPage:(page:Page)=>void;onOpen:(id:string)=>void;range:Range;onMedia:()=>void;
 }){
  useWorkspaceStyle();
@@ -37,7 +37,9 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
  const catalog=useResource<OwnerBrowsePage>(api,'/api/library/browse?limit=3');
  const conversations=useResource<{items:Conversation[]}>(api,canConversations?'/api/conversations?limit=3':null);
  const questions=useResource<{items:{id:string}[];nextCursor?:string|null}>(api,canQuestions?ownerQuestionListPath():null);
- const insightRuns=useResource<{items:InsightRun[]}>(api,canInsightRuns?'/api/insight-runs':null,5000);
+ const [runsActive,setRunsActive]=useState(false);
+ const insightRuns=useResource<{items:InsightRun[]}>(api,canInsightRuns?'/api/insight-runs':null,runsActive?5000:undefined);
+ useEffect(()=>setRunsActive(Boolean(insightRuns.data?.items.some(run=>run.status==='running'))),[insightRuns.data]);
  const actions=useResource<{items:{status:string;resolution?:string;event?:{start?:string|null;end?:string|null}}[];nextCursor:number|null}>(api,canActions?'/api/actions?cursor=0':null);
  const todos=useResource<{items:{status:string}[];nextCursor:string|null}>(api,canTodos?'/api/todos?status=open':null);
  const firstData=useResource<FirstDeviceData>(api,'/api/devices/first-data',undefined,String(status.storage?.captures??0)+':'+devices.map(device=>device.deviceId).sort().join(','));
