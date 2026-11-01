@@ -1797,7 +1797,7 @@ class MainActivity : MoteActivity() {
             loadHomeContent()
             if (snapshot.revision.records != libraryRecordsRevision) {
                 libraryRecordsRevision = snapshot.revision.records
-                if (currentPage == Page.LIBRARY) loadLocalLibrary()
+                if (currentPage == Page.LIBRARY) libraryView?.recordsChanged(snapshot.revision.records, snapshot.active?.records?.takeIf { snapshot.error == null })
             }
         }
         handler.post(refresh)

@@ -19,12 +19,18 @@ const value=await buildApp(config,{agent:{configured:false,query:async()=>{throw
 value.materialOrganizer.tick=async()=>0;
 let delayMs=0;
 let memberDelayMs=0,memberRequests=0;
+let deviceViewRequests=0,selfRequests=0,centralRequests=0;
 let denial:{status:401|403|503;code:string}|undefined;
 value.app.addHook('onRequest',async(req,reply)=>{
+  if(req.url.startsWith('/api/')&&!req.url.startsWith('/api/fixture/'))centralRequests++;
+  if(req.url==='/api/library/device-view'&&req.method==='POST')deviceViewRequests++;
+  if(req.url==='/api/connections/self')selfRequests++;
   if(req.url.startsWith('/api/capture-browser/')&&memberDelayMs){memberRequests++;await new Promise(resolve=>setTimeout(resolve,memberDelayMs));}
   if(req.url==='/api/library/source-view'&&delayMs)await new Promise(resolve=>setTimeout(resolve,delayMs));
   if(denial&&['/api/library/device-view','/api/library/source-view'].includes(req.url))return reply.code(denial.status).send({error:denial.code});
 });
+value.app.post('/api/fixture/library-request-stats',async()=>{deviceViewRequests=0;selfRequests=0;centralRequests=0;return {deviceView:0,connectionsSelf:0,centralRequests:0};});
+value.app.get('/api/fixture/library-request-stats',async()=>({deviceView:deviceViewRequests,connectionsSelf:selfRequests,centralRequests}));
 value.app.post('/api/fixture/library-denial',async req=>{
   const input=z.object({mode:z.enum(['none','forbidden','revoked','offline']),delayMs:z.number().int().min(0).max(3000).default(0)}).strict().parse(req.body);
   delayMs=input.delayMs;

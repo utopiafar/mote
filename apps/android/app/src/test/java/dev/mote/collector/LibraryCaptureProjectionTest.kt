@@ -23,7 +23,7 @@ class LibraryCaptureProjectionTest {
         projection.local(record(), "https://old.invalid", "phone"); projection.local(record(), "", "phone")
         projection.central(record(), "https://new.invalid"); projection.central(record(device = "other"), "https://new.invalid")
         assertEquals(4, projection.visible("").size); assertEquals(2, projection.visible("local").size)
-        assertTrue(projection.candidates("https://new.invalid").isEmpty())
+        assertEquals(setOf(LibraryCaptureProjection.Identity("https://new.invalid", "phone", "same"), LibraryCaptureProjection.Identity("https://new.invalid", "other", "same")), projection.candidates("https://new.invalid").toSet())
         assertTrue(projection.visible("local").all { it.remote == LibraryCaptureProjection.Remote.UNKNOWN })
         projection.clear(); assertTrue(projection.visible("").isEmpty())
     }
@@ -60,6 +60,19 @@ class LibraryCaptureProjectionTest {
         projection.central(record().put("libraryVersion", "metadata-a"), "central")
         assertEquals(LibraryCaptureProjection.Remote.OTHER_VERSION, projection.visible("").single().remote)
     }
+    @Test fun firstPageUpsertKeepsDeeperRowsAndStaysIdempotent() {
+        val projection = LibraryCaptureProjection()
+        val pageOne = record("p1", at = "2026-10-01T10:00:00Z"); val pageTwo = record("p2", at = "2026-09-30T10:00:00Z")
+        projection.local(pageOne, "", "phone"); projection.local(pageTwo, "", "phone")
+        val fresh = record("n1", at = "2026-10-02T10:00:00Z")
+        projection.local(fresh, "", "phone")
+        assertEquals(listOf("n1", "p1", "p2"), projection.visible("local").map { it.identity.id })
+        projection.local(record("n1", at = "2026-10-02T10:00:00Z"), "", "phone")
+        projection.local(record("p1", at = "2026-10-01T10:00:00Z"), "", "phone")
+        assertEquals("Re-reading the first page never duplicates identities", listOf("n1", "p1", "p2"), projection.visible("local").map { it.identity.id })
+        assertSame(pageTwo, projection.visible("local").single { it.identity.id == "p2" }.local)
+    }
+
     @Test fun accessLossDropsRemoteBodiesAndClaimsWhileKeepingLocalOriginals() {
         val projection = LibraryCaptureProjection(); val original = record()
         projection.local(original, "central", "phone")
@@ -74,6 +87,18 @@ class LibraryCaptureProjectionTest {
         assertFalse(projection.visible("").any { it.identity.id == "remote-only" })
         projection.central(record(), "central")
         assertEquals(LibraryCaptureProjection.Remote.READABLE, projection.visible("local").single().remote)
+    }
+    @Test fun freshMatchesWithdrawRemoteOnlyDeepRowsWithoutLosingLocalOriginals() {
+        val projection = LibraryCaptureProjection()
+        projection.central(record("deleted-deep"), "central")
+        projection.local(record("retained-local"), "central", "phone")
+        projection.central(record("other-origin"), "other")
+        assertEquals(setOf("deleted-deep", "retained-local"), projection.candidates("central").map { it.id }.toSet())
+        assertEquals("version-a", projection.remoteVersions("central")["phone" to "deleted-deep"])
+        projection.availability("central", "phone", "deleted-deep", false)
+        projection.availability("central", "phone", "retained-local", false)
+        assertEquals(setOf("retained-local", "other-origin"), projection.visible("").map { it.identity.id }.toSet())
+        assertEquals(LibraryCaptureProjection.Remote.UNAVAILABLE, projection.visible("local").single().remote)
     }
 
 }
