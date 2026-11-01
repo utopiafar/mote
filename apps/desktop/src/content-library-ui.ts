@@ -11,6 +11,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   let generation=0,homeGeneration=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
   let archiveGeneration=0,archiveAuthorizationDenied=false,detailIsCentral=false;
   let archiveRequest=0,archiveResponse=0;
+  let archiveConfirmation:{scope:number}|undefined;
   let loadedScope='',homeStale=false;
   const homeVisible=()=>!el('home-recent').closest('[hidden]');
   let items:ContentItem[]=[],homeItems:ContentItem[]=[],selected:ContentItem|undefined,selectedButton:HTMLElement|undefined,chunkOffset=0,centralId:string|undefined;
@@ -52,14 +53,30 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   function denyArchive(){
     archiveAuthorizationDenied=true;archiveGeneration++;remoteMore=false;remoteCursor=undefined;
     items=items.filter(row=>!row.key.startsWith('capture:'));renderFeed('content-feed',items);if(!items.length)el('content-feed').replaceChildren();
-    renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')));
+    renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')),true);
     if(dialog.open&&(selected?.key.startsWith('capture:')||detailIsCentral))close();
   }
+  function confirmArchive(){
+    const scope=archiveGeneration;if(archiveConfirmation?.scope===scope)return;
+    const confirmation=archiveConfirmation={scope},request=++archiveRequest;
+    void(async()=>{
+      try{
+        const page=await api.centralContent();if(scope!==archiveGeneration)return;
+        // A fresh check is causally after the conflicting observations. If a
+        // still newer success arrived while it ran, confirm that pair again.
+        if(page.authorizationDenied&&archiveResponse>request){archiveConfirmation=undefined;confirmArchive();return;}
+        archiveResponse=Math.max(archiveResponse,request);
+        if(page.authorizationDenied)denyArchive();else archiveAuthorizationDenied=false;
+      }catch{if(scope===archiveGeneration){denyArchive();el('content-status').textContent=moteText('无法访问采集记录，请检查中央连接权限');el('content-status').classList.remove('visually-hidden');}}
+      finally{if(archiveConfirmation===confirmation)archiveConfirmation=undefined;}
+    })();
+  }
   // Display generations can be superseded by a local-only read. That does not
-  // replace an in-flight Central authorization check; only a newer valid
-  // Central response can supersede it. Old scopes and pre-denial data stay invalid.
+  // replace an in-flight Central authorization check. Conflicting response
+  // order needs a fresh check; old scopes and pre-denial data stay invalid.
   function observeArchive(result:PromiseSettledResult<CentralContentPage|undefined>,request:number|undefined,scope:number):boolean{
-    if(request===undefined||scope!==archiveGeneration||request<=archiveResponse||result.status!=='fulfilled'||!result.value)return false;
+    if(request===undefined||scope!==archiveGeneration||result.status!=='fulfilled'||!result.value)return false;
+    if(request<=archiveResponse){if(result.value.authorizationDenied)confirmArchive();return false;}
     archiveResponse=request;
     if(result.value.authorizationDenied){denyArchive();return true;}
     archiveAuthorizationDenied=false;return false;
@@ -76,8 +93,9 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       if(!remote.value.authorizationDenied)rows.push(...remote.value.items);
     }
     const ignoredDenial=remote.status==='fulfilled'&&remote.value?.authorizationDenied&&!denied;
+    const discarded=remote.status==='fulfilled'&&remote.value&&!remote.value.authorizationDenied&&archiveVersion!==archiveGeneration;
     if(ignoredDenial&&!archiveAuthorizationDenied)rows.push(...homeItems.filter(row=>row.key.startsWith('capture:')));
-    renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected'||Boolean(ignoredDenial));
+    renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected'||Boolean(ignoredDenial)||Boolean(discarded)||denied&&!rows.length);
   }
   async function refresh(append=false){
     lastRefresh=Date.now();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=undefined;}
@@ -98,17 +116,18 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     const remote=request!==undefined?api.centralContent(remoteCursor,query).then(value=>{denied=observeArchive({status:'fulfilled',value},request,archiveVersion);return value;}):undefined;
     const [l,r]=await Promise.allSettled([local,remote]);if(version!==generation)return;
     const ignoredDenial=r.status==='fulfilled'&&r.value?.authorizationDenied&&!denied;
+    const discarded=r.status==='fulfilled'&&r.value&&!r.value.authorizationDenied&&archiveVersion!==archiveGeneration;
     const rows:ContentItem[]=[];let error='';
     if(l.status==='fulfilled'&&l.value){rows.push(...l.value.items);localMore=l.value.nextOffset!==undefined;localOffset=l.value.nextOffset??localOffset;}else if(l.status==='rejected'){rows.push(...previous.filter(row=>!row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
     if(r.status==='fulfilled'&&r.value){
-      if(denied){
+      if(denied||discarded&&archiveAuthorizationDenied){
         error=moteText('无法访问采集记录，请检查中央连接权限');
-      }else if(ignoredDenial){if(!archiveAuthorizationDenied&&archiveVersion===archiveGeneration)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
+      }else if(ignoredDenial||discarded){if(!archiveAuthorizationDenied&&archiveVersion===archiveGeneration)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
       else if(archiveVersion===archiveGeneration&&!r.value.authorizationDenied){rows.push(...r.value.items);remoteMore=Boolean(r.value.nextCursor);remoteCursor=r.value.nextCursor;}
     }else if(r.status==='rejected'){if(archiveVersion===archiveGeneration&&!archiveAuthorizationDenied)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
     items=mergeRows([...items,...rows]);loadedScope=scopeKey;renderFeed('content-feed',items);
     if(error&&!items.length)el('content-feed').replaceChildren();
-    if(scope==='all'&&!query.trim()){if(!ignoredDenial&&homeVersion===homeGeneration){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}}else if(homeVisible())void refreshHome();else{homeStale=true;homeGeneration++;}
+    if(scope==='all'&&!query.trim()){if(!ignoredDenial&&homeVersion===homeGeneration){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected'||Boolean(discarded)||denied&&!items.length;renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}}else if(homeVisible())void refreshHome();else{homeStale=true;homeGeneration++;}
     el('content-more').hidden=!localMore&&!remoteMore;
     el('content-status').textContent=error||(!status?.config.tokenConfigured?moteText('本机内容可离线阅读；连接中央后显示已归档内容。'):moteText('接收与整理分别进行，点开内容查看实际状态。'));
     el('content-status').classList.toggle('visually-hidden',!error);

@@ -315,3 +315,56 @@ it.each(['central','local-receipt'])('keeps a newer successful %s reader when a 
   deny({items:[],authorizationDenied:true});await home;await flush();
   expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
 });
+
+it('confirms an apparently older denial after a newer reader success and honors current remote revocation',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();library.open(item);await flush();
+  expect(dialog.open).toBe(true);
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});
+  const reads=vi.mocked(api.centralContent).mock.calls.length;deny({items:[],authorizationDenied:true});await home;await flush();
+  expect(api.centralContent).toHaveBeenCalledTimes(reads+1);expectCleared();
+  expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();
+});
+
+it('withdraws private rows when confirmation of an ambiguous denial fails',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();library.open(item);await flush();
+  vi.mocked(api.centralContent).mockRejectedValueOnce(Error('Generated confirmation transport failure'));
+  deny({items:[],authorizationDenied:true});await home;await flush();expectCleared();
+  expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();expect(el('home-onboarding').hidden).toBe(true);
+});
+
+it('does not apply an old node confirmation denial after a new node reader succeeds',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void,confirm!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();library.open(item);await flush();
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{confirm=resolve;}));deny({items:[],authorizationDenied:true});await home;await flush();
+  library.update({...status,authorizationGeneration:2,config:{...status.config,serverUrl:'http://127.0.0.1:9998'}});await flush();
+  library.open({...item,title:'Generated new node reader'});await flush();confirm({items:[],authorizationDenied:true});await flush();
+  expect(dialog.open).toBe(true);expect(el('content-detail-title').textContent).toBe('Generated new node reader');expect(el('content-detail-body').textContent).toBe(remote.text);
+});
+
+it.each(['all','search'])('marks an invalidated successful %s page incomplete after a Home denial whose local read is held',async scope=>{
+  await flush();let finish!:(value:CentralContentPage)=>void,finishLocal!:(value:{items:ContentItem[];total:number})=>void;
+  if(scope==='search')(el('content-search') as HTMLInputElement).value='generated';
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));const content=library.refresh();await flush();
+  vi.mocked(api.localContent).mockImplementationOnce(()=>new Promise(resolve=>{finishLocal=resolve;}));
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});const home=library.refreshHome();await flush();
+  finish({items:[item]});await content;await flush();
+  expect(el('content-status').textContent).toContain('无法访问采集记录');expect(el('content-feed').textContent).not.toContain('没有符合');
+  expect(el('home-onboarding').hidden).toBe(true);
+  finishLocal({items:[],total:0});await home;await flush();expect(el('home-onboarding').hidden).toBe(true);
+  expect(el('home-recent').textContent).toContain('内容暂不可完整读取');
+});
+
+it('does not call a held Home read complete when its successful Central page was invalidated by confirmed revocation',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void,finishLocal!:(value:{items:ContentItem[];total:number})=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const content=library.refresh();await flush();
+  vi.mocked(api.localContent).mockImplementationOnce(()=>new Promise(resolve=>{finishLocal=resolve;}));const home=library.refreshHome();await flush();
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});deny({items:[],authorizationDenied:true});await content;await flush();
+  finishLocal({items:[],total:0});await home;await flush();
+  expect(el('home-onboarding').hidden).toBe(true);expect(el('home-recent').textContent).toContain('内容暂不可完整读取');
+  expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();
+});
