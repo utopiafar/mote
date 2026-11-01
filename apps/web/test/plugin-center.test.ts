@@ -192,7 +192,7 @@ async function pluginClock(t:import('node:test').TestContext,api:Api,hash='#/sys
  const flush=async(ms=0)=>act(async()=>{t.mock.timers.tick(ms);await new Promise<void>(resolve=>setImmediate(resolve));});
  const render=(owner:Api)=>act(async()=>root.render(React.createElement(React.Fragment,null,...Array.from({length:copies},(_,key)=>React.createElement(PluginCenter,{key,api:owner,onPage:()=>{}})))));
  await render(api);await flush();
- return{element,render,tick:flush,visibility:async(value:boolean)=>{hidden=value;await act(async()=>{document.dispatchEvent(new dom.window.Event('visibilitychange'));});},click:async(name:string)=>{await act(async()=>button(element,name).click());await flush();},installed:async()=>{await act(async()=>button(element,'已安装插件').click());await act(async()=>element.querySelector<HTMLButtonElement>('.provider-card')!.click());await flush();}};
+ return{element,render,leave:()=>act(async()=>root.render(null)),tick:flush,visibility:async(value:boolean)=>{hidden=value;await act(async()=>{document.dispatchEvent(new dom.window.Event('visibilitychange'));});},click:async(name:string)=>{await act(async()=>button(element,name).click());await flush();},installed:async()=>{await act(async()=>button(element,'已安装插件').click());await act(async()=>element.querySelector<HTMLButtonElement>('.provider-card')!.click());await flush();}};
 }
 
 test('plugin foreground coalesces three idle shared resources after hidden 60s and preserves all 3s fallbacks',async t=>{
@@ -287,4 +287,23 @@ test('plugin binding authorization denial stays fenced through a later 503 but d
  await ui.visibility(true);first.read(path=>{if(path===bindingPath)throw new ApiError('Generated old owner denied',403);});await ui.visibility(false);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true);
  first.read(path=>{if(path===bindingPath)throw new ApiError('Generated provider503 after denial',503);});await ui.tick(3000);assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true,'a transport/provider failure is not authorization recovery');
  const other=generatedPluginApi();other.read(path=>{if(path===bindingPath)throw new ApiError('Generated new owner provider503',503);});await ui.render(other.api);await ui.tick();const field=ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!;assert.equal(field.disabled,false);assert.equal(field.value,'');assert.doesNotMatch(ui.element.textContent!,/Generated old owner denied/);
+});
+
+test('plugin binding403 evidence survives same-Api 503 leave/reopen and clears only after authorized recovery',async t=>{
+ const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');
+ await ui.visibility(true);f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding403',403);});await ui.visibility(false);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true);
+ f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding503',503);});await ui.tick(3000);assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true);
+ await ui.leave();await ui.render(f.api);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true,'unmount must not erase denial while the same Api cache only has a later503');assert.equal(button(ui.element,'预览发布包').disabled,true);
+ f.read(undefined);await ui.visibility(true);await ui.visibility(false);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,false,'authorized binding read releases the fence');
+ f.read(path=>{if(path===bindingPath)throw new ApiError('Generated later binding503',503);});await ui.leave();await ui.render(f.api);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,false,'an earlier successful recovery survives navigation too');
+ await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());await input(ui.element,'GitHub 仓库',source.repository);f.write(path=>path==='/api/plugins/resolve'?structuredClone(preview):undefined);await ui.click('预览发布包');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);
+});
+
+test('plugin revisit recognizes an authorized shared binding read made by another consumer before a later503',async t=>{
+ const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');
+ await ui.visibility(true);f.read(path=>{if(path===bindingPath)throw new ApiError('Generated binding403',403);});await ui.visibility(false);await ui.tick();await ui.leave();
+ // Another page uses the same public Resource subscription and its ordinary poll.
+ f.read(undefined);const shared=resources(f.api).get<MemoryBindingView>(bindingPath),stop=shared.poll(3000),off=shared.subscribe(()=>{});t.after(()=>{stop();off();});await ui.tick();assert.notEqual(shared.getSnapshot().data,undefined);
+ f.read(path=>{if(path===bindingPath)throw new ApiError('Generated provider unavailable after authorized read',503);});await ui.tick(3000);assert.equal((shared.getSnapshot().error as ApiError).status,503);assert.notEqual(shared.getSnapshot().data,undefined,'transient503 retains the intervening authorized snapshot');stop();off();
+ await ui.render(f.api);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,false,'an observed authorized cache snapshot supersedes the old denial across visits');
 });

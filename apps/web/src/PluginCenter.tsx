@@ -20,6 +20,7 @@ import {MemorySettings} from './MemorySettings';
 import {clearQuickAdd} from './plugin-quick-add';
 
 const pluginsPath='/api/plugins',bindingPath='/api/memory-spaces/default/binding';
+const deniedBindingApis=new WeakSet<Api>();
 type Intent={path:string;method:string;body:Record<string,unknown>;after?:(value:unknown)=>void};
 type Dialog={kind:'install';preview:PluginReleasePreview}|{kind:'configure';package:PluginPackageView;instance?:PluginInstanceView}|{kind:'prepare';plan:MemoryPlanView}|{kind:'stop'}|{kind:'uninstall';package:PluginPackageView};
 
@@ -44,21 +45,23 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
  useForegroundResources(api,[pluginsPath,bindingPath,'/api/model-authorization']);
  useEffect(()=>operationFeed(api).subscribe(()=>{}),[api]);
  const view=pluginResource.data,binding=bindingResource.data;
- const [bindingDenied,setBindingDenied]=useState<Api>();
+ const [bindingDenied,setBindingDenied]=useState<Api|undefined>(()=>deniedBindingApis.has(api)?api:undefined);
  const [tab,setTab]=useHashChoice('tab',pluginTabFromHash),[selected,setSelected]=useState<string>(),[dialog,setDialog]=useState<Dialog>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[retry,setRetry]=useState<Intent>();
  const [repository,setRepository]=useState(''),[tag,setTag]=useState(''),[scope,setScope]=useState('default'),[fee,setFee]=useState(false),[showInventory,setShowInventory]=useState(false),[rhythmOpened,setRhythmOpened]=useState(false);
  const opener=useRef<HTMLElement|null>(null),identity=useRef(api),controller=useRef<AbortController|undefined>(undefined),busyRef=useRef(false);identity.current=api;
- useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setRepository('');setTag('');setBindingDenied(undefined);return()=>controller.current?.abort();},[api]);
+ useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setRepository('');setTag('');setBindingDenied(deniedBindingApis.has(api)?api:undefined);return()=>controller.current?.abort();},[api]);
  useEffect(()=>{
   const denied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
-  if(bindingResource.error instanceof ApiError&&[401,403,404,410].includes(bindingResource.error.status))setBindingDenied(api);
-  else if(bindingResource.error===undefined&&!bindingResource.loading&&bindingResource.data!==undefined)setBindingDenied(undefined);
+  if(bindingResource.error instanceof ApiError&&[401,403,404,410].includes(bindingResource.error.status)){deniedBindingApis.add(api);setBindingDenied(api);}
+  // Resource drops data on owner denial. Later retained data witnesses an
+  // authorized read, including one made by another page before a transient error.
+  else if(bindingResource.data!==undefined){deniedBindingApis.delete(api);setBindingDenied(current=>current===api?undefined:current);}
   if(!denied)return;
   clearQuickAdd();
   controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');setRepository('');setTag('');
  },[api,pluginResource.error,bindingResource.error,bindingResource.data,bindingResource.loading]);
  const currentPackage=view?.packages.find(item=>item.id===selected);
- const privateDenied=bindingDenied===api||[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
+ const privateDenied=bindingResource.data===undefined&&(deniedBindingApis.has(api)||bindingDenied===api)||[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
  const installReady=!privateDenied&&view!==undefined;
  const latestInstance=dialog?.kind==='configure'&&dialog.instance?view?.instances.find(instance=>instance.id===dialog.instance!.id):undefined;
  function open(next:Dialog,event?:HTMLElement){if(!confirmNavigation())return;opener.current=event??document.activeElement as HTMLElement;setDialog(next);setScope('default');setFee(false);setError('');setNotice('');setRetry(undefined);}
