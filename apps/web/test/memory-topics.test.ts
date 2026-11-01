@@ -58,14 +58,19 @@ test('a ready topic catalog revalidates automatic topics every ten seconds and h
 
 test('a provider failure surfaces while the view stays visible and recovers on the next revalidation',async t=>{
  const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
- let offline=false;const {api,reads}=countingApi(()=>{if(offline)throw new ApiError('Generated provider offline',503);return {classification:{state:'ready'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[{id:'one',label:'Generated node'}]}]}});
+ let status=0;const {api,reads}=countingApi(()=>{if(status)throw new ApiError('Generated provider failure',status);return {classification:{state:'ready'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[{id:'one',label:'Generated node'}]}]}});
  await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:'one'})));
  assert.equal(catalogReads(reads),1);assert.ok(d.querySelector('.memory-topic-nodes'));
- offline=true;await act(async()=>t.mock.timers.tick(10000));
- assert.equal(catalogReads(reads),2,'one ten-second revalidation reaches the failing provider');
- assert.ok(d.querySelector('[role=alert]'),'the offline transition surfaces without leaving the view');
- offline=false;await act(async()=>t.mock.timers.tick(10000));
- assert.equal(catalogReads(reads),3,'the next revalidation recovers');assert.equal(d.querySelector('[role=alert]'),null);assert.ok(d.querySelector('.memory-topic-nodes'));
+ // The current server contract returns an explicit 502 for a pinned-body
+ // mismatch and 503 when the provider is offline; neither suppresses a batch
+ // into a successful catalog, so retained data keeps revalidating to recovery.
+ for(const failure of [502,503]){
+  status=failure;await act(async()=>t.mock.timers.tick(10000));
+  assert.ok(d.querySelector('[role=alert]'),'the '+failure+' transition surfaces without leaving the view');assert.ok(d.querySelector('.memory-topic-nodes'),'the failure retains the last delivered topics');
+  status=0;await act(async()=>t.mock.timers.tick(10000));
+  assert.equal(d.querySelector('[role=alert]'),null,'the next revalidation recovers from '+failure);assert.ok(d.querySelector('.memory-topic-nodes'));
+ }
+ assert.equal(catalogReads(reads),5,'each ten-second revalidation issues exactly one read');
 });
 
 test('running classification polls every five seconds and stops when the delivered catalog is ready',async t=>{
