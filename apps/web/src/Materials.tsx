@@ -84,14 +84,19 @@ function NoteMaterialQuote({api,page,span,text,onOpen,onSettled}:{api:Api;page:R
  const [state,setState]=useState<{owner:Api;ref:string;id:string;capture?:Capture;failed?:boolean}>(),[expandedKey,setExpandedKey]=useState(''),[busy,setBusy]=useState(false),[expandError,setExpandError]=useState(false);
  useEffect(()=>{
   if(!id)return;
-  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
+  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined,reading=false,again=false,hidden=document.hidden;
   setState(undefined);
+  function schedule(){clearTimeout(timer);if(!controller.signal.aborted&&!document.hidden)timer=setTimeout(()=>{if(!document.hidden)void read();},5000);}
   async function read(){
+   if(controller.signal.aborted)return;
+   if(reading){again=true;return;}reading=true;
    try{const capture=await api.request<Capture>('/api/capture-browser/'+encodeURIComponent(id!),{signal:controller.signal});if(!controller.signal.aborted)setState({owner:api,ref,id:id!,capture});}
    catch{if(!controller.signal.aborted)setState({owner:api,ref,id:id!,failed:true});}
-   if(!controller.signal.aborted)timer=setTimeout(()=>void read(),5000);
+   finally{reading=false;const fresh=again&&!document.hidden;again=false;if(!controller.signal.aborted){if(fresh)void read();else schedule();}}
   }
-  void read();return()=>{controller.abort();clearTimeout(timer);};
+  function visibility(){if(hidden===document.hidden)return;hidden=document.hidden;clearTimeout(timer);if(hidden)again=false;else void read();}
+  document.addEventListener('visibilitychange',visibility);
+  void read();return()=>{controller.abort();clearTimeout(timer);document.removeEventListener('visibilitychange',visibility);};
  },[api,ref,id]);
  const current=state?.owner===api&&state.ref===ref&&state.id===id?state:undefined,capture=current?.capture,origin=capture?.metadata?.noteOrigin,blockStart=span.materialRange.start-(span.evidenceOffset??0);
  const ownerOrigin=capture&&id&&capture.id===id&&capture.source==='note'&&origin?.kind==='conversation'&&origin.conversationId&&origin.messageIds?.length===1&&typeof origin.text==='string'?origin:undefined;
