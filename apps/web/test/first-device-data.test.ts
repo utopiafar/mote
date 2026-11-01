@@ -19,7 +19,7 @@ async function fixture(t:TestContext){
  const root=createRoot(dom.window.document.querySelector('#root')!);
  t.after(async()=>{await act(async()=>root.unmount());configureLocale(()=>locale);for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
  const opened:string[]=[],pages:string[]=[];
- const render=async(api:Api)=>{await act(async()=>root.render(React.createElement(Overview,{api,status:{agent:{configured:false},storage:{captures:0}} as Status,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},recent:[],insights:[],range:{},onMedia:()=>{},onPage:page=>pages.push(page),onOpen:ref=>opened.push(ref)})));};
+ const render=async(api:Api)=>{await act(async()=>root.render(React.createElement(Overview,{api,status:{agent:{configured:false},storage:{captures:0}} as Status,devices:[],insights:[],range:{},onMedia:()=>{},onPage:page=>pages.push(page),onOpen:ref=>opened.push(ref)})));};
  return {root,d:dom.window.document,render,opened,pages,tick:async()=>{await act(async()=>new Promise(done=>setTimeout(done,0)));}};
 }
 function apiWith(first:()=>unknown,other?:(path:string)=>unknown){return {request:async(path:string)=>path==='/api/devices/first-data'?first():path.startsWith('/api/operations/changes')?{ids:[],cursor:0,hasMore:false,reset:false}:other?.(path)??{items:[]},setAgentTimeout:()=>{}} as Api;}

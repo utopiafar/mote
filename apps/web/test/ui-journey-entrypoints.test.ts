@@ -65,7 +65,7 @@ test('a Home finding opens that exact report, reaches its evidence and does not 
     if (path.startsWith('/api/library/browse')) return {items: [],nextCursor:null};
     return {items: []};
   });
-  await act(async () => root.render(React.createElement(Overview, {api, status: {} as Status, devices: [], recent: [], insights: [other, report], activity: {apps: [], devices: [], totalDurationMs: 0, captures: 0}, onPage: () => {}, onOpen: ref => opened.push(ref), range: {}, onMedia: () => {}})));
+  await act(async () => root.render(React.createElement(Overview, {api, status: {} as Status, devices: [], insights: [other, report], onPage: () => {}, onOpen: ref => opened.push(ref), range: {}, onMedia: () => {}})));
   const card = d.querySelector<HTMLAnchorElement>('.home-insight')!;
   assert.match(card.textContent!, /Generated chosen finding/);
   await act(async () => card.click()); await tick();
