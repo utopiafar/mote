@@ -39,6 +39,7 @@ async function fixture(t:import('node:test').TestContext){
 }
 async function until(check:()=>boolean,label:string){const deadline=Date.now()+15000;while(Date.now()<deadline){if(check())return;await act(async()=>new Promise(resolve=>setTimeout(resolve,5)));}throw Error('Timed out '+label);}
 const button=(d:Document,label:string)=>[...d.querySelectorAll<HTMLButtonElement>('button')].find(value=>value.textContent?.trim()===label)!;
+const freshAutomaticReview=(d:Document)=>!!d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')&&!d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled;
 async function click(d:Document,label:string){assert.ok(button(d,label),label);await act(async()=>button(d,label).click());}
 const label=(d:Document,text:string)=>[...d.querySelectorAll<HTMLLabelElement>('.material-processing-form label')].find(value=>value.childNodes[0]?.textContent===text)!;
 async function select(d:Document,text:string,value:string){await act(async()=>{const control=label(d,text).querySelector('select')!;control.value=value;control.dispatchEvent(new window.Event('change',{bubbles:true}));});}
@@ -113,7 +114,7 @@ for(const state of ['enabled','paused','stopped'] as const)test('saved '+state+'
 test('the ordinary automatic-processing control requires a real review, cancel sends nothing, and pause and stop keep their distinct commands',async t=>{
  const f=await fixture(t);await act(async()=>f.root.render(React.createElement(AutomaticProcessing,{api:f.api})));await until(()=>!!button(f.d,'开启自动处理')&&!button(f.d,'开启自动处理').disabled,'automatic control');
  assert.equal(f.writes.length,0);await click(f.d,'开启自动处理');assert.ok(f.d.querySelector('[role=dialog]'));await click(f.d,'暂不开启');assert.equal(f.writes.length,0);assert.equal(f.node.modelAuthorization.view().state,'unapproved');
- await click(f.d,'开启自动处理');await act(async()=>f.d.querySelector<HTMLButtonElement>('[role=dialog] footer .primary')!.click());await until(()=>f.node.modelAuthorization.view().state==='enabled','explicit authority');
+ await click(f.d,'开启自动处理');await until(()=>freshAutomaticReview(f.d),'fresh automatic review');await act(async()=>f.d.querySelector<HTMLButtonElement>('[role=dialog] footer .primary')!.click());await until(()=>f.node.modelAuthorization.view().state==='enabled','explicit authority');
  assert.equal(f.writes.length,1);assert.equal(f.writes[0].path,'/api/model-authorization/commands');assert.ok(f.writes[0].body.operationId);assert.ok(f.writes[0].body.scope.sourceIds.includes('mote.conversations'));
  await until(()=>!!button(f.d,'暂停新任务'),'enabled status');await click(f.d,'暂停新任务');assert.equal(f.writes.at(-1)!.body.action,'pause');assert.equal('scope' in f.writes.at(-1)!.body,false);
  await until(()=>!!button(f.d,'恢复自动处理'),'paused status');await click(f.d,'立即停止全部自动任务');await until(()=>f.node.modelAuthorization.view().state==='stopped','stop acknowledged');assert.equal(f.writes.at(-1)!.body.action,'stop');assert.equal(f.node.modelAuthorization.view().state,'stopped');
@@ -123,7 +124,7 @@ test('an unconfirmed automatic-processing command retries the identical operatio
  const f=await fixture(t),real=f.api.request.bind(f.api),attempts:any[]=[];let fail=true;
  f.api.request=async(path,init)=>{if(path==='/api/model-authorization/commands'&&init?.method==='POST'){attempts.push(JSON.parse(String(init.body)));if(fail)throw new ApiError('Generated command response unavailable',503);}return real(path,init);};
  await act(async()=>f.root.render(React.createElement(AutomaticProcessing,{api:f.api})));await until(()=>!!button(f.d,'开启自动处理')&&!button(f.d,'开启自动处理').disabled,'automatic control');await click(f.d,'开启自动处理');
- await act(async()=>f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.click());await until(()=>!!f.d.querySelector('.automatic-review-dialog [role=alert]')&&!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,'unconfirmed command');
+ await until(()=>freshAutomaticReview(f.d),'fresh automatic review');await act(async()=>f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.click());await until(()=>!!f.d.querySelector('.automatic-review-dialog [role=alert]')&&!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,'unconfirmed command');
  assert.equal(f.node.modelAuthorization.view().state,'unapproved');fail=false;await act(async()=>f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.click());await until(()=>f.node.modelAuthorization.view().state==='enabled','command retry');assert.equal(attempts.length,2);assert.deepEqual(attempts[1],attempts[0]);
 });
 
@@ -138,7 +139,7 @@ test('a committed automatic command with lost ACK remains explicitly recoverable
  const f=await fixture(t),real=f.api.request.bind(f.api),attempts:any[]=[];let lose=true;
  f.api.request=async(path,init)=>{if(path==='/api/model-authorization/commands'&&init?.method==='POST'){attempts.push(JSON.parse(String(init.body)));const result=await real(path,init);if(lose){lose=false;throw new ApiError('Generated ACK lost after actual commit',503);}return result;}return real(path,init);};
  await act(async()=>f.root.render(React.createElement(AutomaticProcessing,{api:f.api})));await until(()=>!!button(f.d,'开启自动处理')&&!button(f.d,'开启自动处理').disabled,'automatic control');await click(f.d,'开启自动处理');
- await act(async()=>{const submit=f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!;submit.click();submit.click();});await until(()=>f.node.modelAuthorization.view().state==='enabled'&&!!f.d.querySelector('.automatic-review-dialog [role=alert]'),'actual commit but no ACK');
+ await until(()=>freshAutomaticReview(f.d),'fresh automatic review');await act(async()=>{const submit=f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!;submit.click();submit.click();});await until(()=>f.node.modelAuthorization.view().state==='enabled'&&!!f.d.querySelector('.automatic-review-dialog [role=alert]'),'actual commit but no ACK');
  const revision=f.node.modelAuthorization.view().revision;assert.equal(attempts.length,1);assert.ok(button(f.d,'重试'),'The frozen command remains explicitly recoverable after the authoritative revision advances');assert.equal(button(f.d,'重试').disabled,false);await click(f.d,'重试');await until(()=>!f.d.querySelector('.automatic-review-dialog'),'same operation acknowledged');assert.equal(attempts.length,2);assert.deepEqual(attempts[1],attempts[0]);assert.equal(f.node.modelAuthorization.view().revision,revision);assert.match(f.d.body.textContent!,/已保存后续任务的授权范围/);
 });
 
@@ -149,4 +150,168 @@ test('a real historical image preview can be cancelled without granting or sched
 });
 test('a late historical preview for the previous Api cannot become the new owner confirmation',async t=>{
  const f=await fixture(t),real=f.api.request.bind(f.api);let release!:(value:any)=>void,previous:any;f.api.request=async(path,init)=>{const value=await real(path,init);if(path==='/api/perception/ocr/historical-preview'){previous=value;return new Promise(resolve=>{release=resolve;});}return value;};await act(async()=>f.root.render(React.createElement(PerceptionSettings,{api:f.api})));await until(()=>!!button(f.d,'预览处理范围'),'historical controls');await click(f.d,'预览处理范围');await until(()=>Boolean(release),'actual previous preview pending');const next={request:real} as Api;await act(async()=>f.root.render(React.createElement(PerceptionSettings,{api:next})));await until(()=>!!button(f.d,'预览处理范围'),'new owner controls');await act(async()=>release(previous));assert.equal(f.d.body.textContent!.includes('范围内共'),false,'Previous owner preview must not become a new confirmation');
+});
+
+const automaticKeys=['/api/model-authorization','/api/model-settings','/api/file-processing','/api/perception','/api/sources','/api/devices'];
+async function automaticClockFixture(t:import('node:test').TestContext){
+ const f=await fixture(t),reads:{path:string;signal?:AbortSignal|null}[]=[];let hidden=false;
+ let hold:((path:string,value:any,init?:RequestInit)=>Promise<any>|undefined)|undefined;
+ Object.defineProperty(f.d,'hidden',{get:()=>hidden,configurable:true});
+ f.api.request=async(path,init)=>{if(!init?.method||init.method==='GET')reads.push({path,signal:init?.signal});const value=await f.call(path,init);return hold?.(path,value,init)??value;};
+ t.mock.timers.enable({apis:['setTimeout']});
+ const restoreClock=()=>t.mock.timers.reset();
+ const tick=async(ms=0)=>act(async()=>{t.mock.timers.tick(ms);await new Promise<void>(resolve=>setImmediate(resolve));});
+ const settle=async(check:()=>boolean,label:string)=>{const deadline=Date.now()+15000;while(Date.now()<deadline){if(check())return;await tick();}throw Error('Timed out '+label);};
+ const render=async(owner=f.api)=>{await act(async()=>f.root.render(React.createElement(AutomaticProcessing,{api:owner})));await tick();};
+ const visibility=async(value:boolean)=>{hidden=value;await act(async()=>f.d.dispatchEvent(new f.d.defaultView!.Event('visibilitychange')));};
+ const count=(path:string)=>reads.filter(value=>value.path===path).length;
+ const ready=()=>!!f.d.querySelector<HTMLButtonElement>('.automatic-control-main button')&&!f.d.querySelector<HTMLButtonElement>('.automatic-control-main button')!.disabled;
+ const authorize=async()=>{await click(f.d,'开启自动处理');await settle(()=>!!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')&&!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,'fresh automatic review');await act(async()=>f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.click());await settle(()=>f.node.modelAuthorization.view().state==='enabled'&&!f.d.querySelector('.automatic-review-dialog'),'automatic authorization acknowledged');};
+ return {...f,reads,tick,settle,render,visibility,count,ready,authorize,restoreClock,hold:(next:typeof hold)=>hold=next};
+}
+
+test('automatic processing keeps visible 5s authority, no hidden timer GETs for 60s, and one exact foreground dependency refresh',async t=>{
+ const f=await automaticClockFixture(t);let unsubscribe:(()=>void)|undefined;
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');automaticKeys.forEach(path=>assert.equal(f.count(path),1,path));
+  const unrelated='/api/sources?generated=unrelated',resource=resources(f.api).get(unrelated);unsubscribe=resource.subscribe(()=>{});await f.settle(()=>!resource.getSnapshot().loading,'unrelated observed resource');
+  await f.tick(4999);assert.equal(f.count(automaticKeys[0]),1);await f.tick(1);await f.settle(()=>!resources(f.api).get(automaticKeys[0]).getSnapshot().loading,'visible 5s authority');assert.equal(f.count(automaticKeys[0]),2);
+  const before=automaticKeys.map(f.count);await f.visibility(true);for(let i=0;i<12;i++)await f.tick(5000);assert.deepEqual(automaticKeys.map(f.count),before,'hidden 60s creates no timer resource GET');
+  await f.visibility(false);await f.visibility(false);await f.tick();await f.settle(()=>automaticKeys.every(path=>!resources(f.api).get(path).getSnapshot().loading),'foreground dependencies settled');
+  assert.deepEqual(automaticKeys.map(f.count),before.map(value=>value+1),'duplicate visible events merge one fresh read for every exact dependency');assert.equal(f.count(unrelated),1,'foreground does not invalidate a prefix-related resource');
+  await f.tick(4999);assert.equal(f.count(automaticKeys[0]),before[0]+1);await f.tick(1);assert.equal(f.count(automaticKeys[0]),before[0]+2,'the original visible authority interval continues');
+ }finally{unsubscribe?.();f.restoreClock();}
+});
+
+test('opening automatic review rereads all dependencies and cannot authorize while a real fresh model response is held',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');
+  const media=await f.call('/api/file-processing');media.policy.services.find((value:any)=>value.id==='central-image-ocr').name='Generated refreshed OCR';await f.call('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:media.revision,settings:media.settings,policy:media.policy})});f.writes.length=0;
+  let release!:(value:any)=>void,held:any;f.hold((path,value)=>{if(path==='/api/model-settings'){held=value;return new Promise(resolve=>release=resolve);}});
+  const before=automaticKeys.map(f.count);await click(f.d,'开启自动处理');await f.tick();assert.ok(release,'opening review starts an actual fresh model-settings read');
+  assert.deepEqual(automaticKeys.map(f.count),before.map(value=>value+1));assert.equal(f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,true);assert.equal(f.writes.length,0);
+  f.hold(undefined);await act(async()=>release(held));await f.settle(()=>!!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')&&!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,'fresh review ready');
+  assert.match(f.d.querySelector('.automatic-review-dialog')!.textContent!,/Generated refreshed OCR/);await click(f.d,'暂不开启');assert.equal(f.writes.length,0);assert.equal(f.node.modelAuthorization.view().state,'unapproved');
+ }finally{f.restoreClock();}
+});
+
+test('a fresh first-authorization proposal uses the current catalog rather than aliases retained by its loading review',async t=>{
+ const f=await automaticClockFixture(t),real=f.api.request.bind(f.api);let items=[{id:'generated-retired-source',name:'Generated retired source'}];
+ f.api.request=async(path,init)=>{const value=await real(path,init);return path==='/api/sources'?{...value,items:structuredClone(items)}:value;};
+ try{
+  await f.render();await f.settle(f.ready,'initial catalog');items=[];await click(f.d,'开启自动处理');await f.settle(()=>freshAutomaticReview(f.d),'fresh first-authorization review');await click(f.d,'调整资料范围');
+  const selected=[...f.d.querySelectorAll<HTMLLabelElement>('.automatic-source-options label')].filter(label=>label.querySelector('input')!.checked).map(label=>label.textContent);
+  assert.deepEqual(selected,['已提交对话'],'fresh unapproved scope excludes a source removed before review opens');assert.equal(f.writes.length,0);
+ }finally{f.restoreClock();}
+});
+
+test('opening the saved automatic scope rereads dependencies and closing a held review cannot reopen or change its grant',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await f.authorize();const grant=structuredClone(f.node.modelAuthorization.view());f.writes.length=0;
+  let release!:(value:any)=>void,held:any;f.hold((path,value)=>{if(path==='/api/devices'){held=value;return new Promise(resolve=>release=resolve);}});
+  const before=automaticKeys.map(f.count);await act(async()=>f.d.querySelector<HTMLElement>('.automatic-control-more > summary')!.click());await click(f.d,'资料处理范围');await f.tick();assert.ok(release,'saved-scope review also rereads devices');assert.deepEqual(automaticKeys.map(f.count),before.map(value=>value+1));
+  assert.match(f.d.querySelector('.automatic-review-dialog')!.textContent!,/当前自动处理范围/);assert.equal(Boolean(f.d.querySelector('.automatic-review-dialog footer .primary')),false);assert.equal(button(f.d,'调整资料范围').disabled,true,'fresh review cannot edit the old dependency snapshot');
+  await click(f.d,'关闭');f.hold(undefined);await act(async()=>release(held));await f.tick();assert.equal(Boolean(f.d.querySelector('.automatic-review-dialog')),false);assert.equal(f.writes.length,0);assert.deepEqual(f.node.modelAuthorization.view(),grant);
+ }finally{f.restoreClock();}
+});
+
+test('foreground observes a real remote processing connection change without approving the new provider',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  const image=await f.call('/api/perception');await f.call('/api/perception',{method:'PUT',body:JSON.stringify({revision:image.revision,settings:{...image.settings,enabled:true}})});
+  const initial=await f.call('/api/file-processing');await f.call('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:initial.revision,settings:{...initial.settings,enabled:true},policy:initial.policy})});
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await f.authorize();const grant=structuredClone(f.node.modelAuthorization.view());
+  const media=await f.call('/api/file-processing');media.policy.services.push({id:'generated-foreground-ocr',name:'Generated changed provider',kind:'image',execution:'remote',endpoint:'https://generated.invalid/new-ocr',model:''});media.policy.profiles.find((value:any)=>value.id==='central-image').serviceId='generated-foreground-ocr';await f.call('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:media.revision,settings:media.settings,policy:media.policy})});f.writes.length=0;
+  await f.visibility(true);await f.visibility(false);await f.tick();await f.settle(()=>automaticKeys.every(path=>!resources(f.api).get(path).getSnapshot().loading),'changed provider dependencies');assert.equal(f.d.querySelector('.automatic-control-main button')?.textContent,'确认新设置');assert.deepEqual(f.node.modelAuthorization.view().connections,grant.connections,'fresh reads never authorize the replacement provider');
+  await click(f.d,'确认新设置');await f.settle(()=>freshAutomaticReview(f.d),'fresh changed-provider review');assert.match(f.d.querySelector('.automatic-review-dialog')!.textContent!,/Generated changed provider/);assert.match(f.d.querySelector('.automatic-review-dialog')!.textContent!,/https:\/\/generated.invalid\/new-ocr/);await click(f.d,'取消');assert.equal(f.writes.length,0);assert.deepEqual(f.node.modelAuthorization.view().scope,grant.scope);
+ }finally{f.restoreClock();}
+});
+
+test('remote pause and stop remain observable on the original visible five-second authority fallback',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await f.authorize();
+  for(const [action,label] of [['pause','恢复自动处理'],['stop','重新开启']] as const){
+   const current=f.node.modelAuthorization.view(),reads=f.count(automaticKeys[0]);await f.call(automaticKeys[0]+'/commands',{method:'POST',body:JSON.stringify({revision:current.revision,action,operationId:randomUUID()})});
+   await f.tick(4999);assert.equal(f.count(automaticKeys[0]),reads);await f.tick(1);await f.settle(()=>f.d.querySelector('.automatic-control-main button')?.textContent===label,'remote '+action);assert.equal(f.count(automaticKeys[0]),reads+1);
+  }
+ }finally{f.restoreClock();}
+});
+
+test('a remote stop advances authority without replacing an edited automatic scope or bypassing its review revision',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await f.authorize();await click(f.d,'资料处理范围');await f.settle(()=>!!button(f.d,'调整资料范围')&&!button(f.d,'调整资料范围').disabled,'fresh saved scope');await click(f.d,'调整资料范围');
+  const all=f.d.querySelector<HTMLInputElement>('.automatic-source-options input')!;assert.equal(all.checked,false);await act(async()=>all.click());assert.equal(all.checked,true);const selected=[...f.d.querySelectorAll<HTMLInputElement>('.automatic-source-options input')].map(value=>value.checked);
+  const grant=f.node.modelAuthorization.view();await f.call(automaticKeys[0]+'/commands',{method:'POST',body:JSON.stringify({revision:grant.revision,action:'stop',operationId:randomUUID()})});f.writes.length=0;
+  await f.tick(5000);await f.settle(()=>f.d.querySelector('.automatic-review-dialog [role=alert]')?.textContent?.includes('设置已变化')===true,'remote revision in open review');
+  assert.deepEqual([...f.d.querySelectorAll<HTMLInputElement>('.automatic-source-options input')].map(value=>value.checked),selected,'the owner draft is not silently replaced by remote scope');const submit=f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!;assert.equal(submit.disabled,true);await act(async()=>submit.click());assert.equal(f.writes.length,0);assert.equal(f.node.modelAuthorization.view().state,'stopped');assert.deepEqual(f.node.modelAuthorization.view().scope,grant.scope);
+ }finally{f.restoreClock();}
+});
+
+for(const status of [403,503])test('automatic foreground '+status+' cannot leave a confirmable stale review or claim success',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await click(f.d,'开启自动处理');await f.settle(()=>!!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')&&!f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,'initial review');
+  f.hold((path)=>{if(path==='/api/model-authorization')throw new ApiError('Generated authority response unavailable',status);});
+  await f.visibility(true);await f.visibility(false);await f.tick();await f.settle(()=>!resources(f.api).get(automaticKeys[0]).getSnapshot().loading,'foreground authority response');
+  if(status===403)assert.equal(Boolean(f.d.querySelector('.automatic-review-dialog')),false,'withdrawal closes the former source-scope review');
+  else assert.equal(f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,true,'a provider outage cannot confirm the stale grant');
+  assert.equal(f.d.querySelector<HTMLButtonElement>('.automatic-control-main button')!.disabled,true);assert.equal(f.writes.length,0);assert.equal(f.node.modelAuthorization.view().state,'unapproved');assert.doesNotMatch(f.d.body.textContent!,/已保存后续任务的授权范围/);
+  if(status===503){
+   let release!:(value:any)=>void,held:any;f.hold((path,value)=>{if(path===automaticKeys[0]){held=value;return new Promise(resolve=>release=resolve);}});
+   await f.visibility(true);await f.visibility(false);await f.tick();assert.ok(release,'outage recovery starts a real fresh authority read');assert.equal(f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.disabled,true,'clearing the old error while a recovery read is held is not success');
+   f.hold(undefined);await act(async()=>release(held));await f.settle(()=>freshAutomaticReview(f.d),'authoritative recovery completed');assert.equal(f.writes.length,0);assert.equal(f.node.modelAuthorization.view().state,'unapproved');
+  }
+ }finally{f.restoreClock();}
+});
+
+test('foreground hints coalesce behind a held authority HTTP response without aborting it or missing a remote pause',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await f.authorize();
+  let release!:(value:any)=>void,held:any,signal:AbortSignal|null|undefined;f.hold((path,value,init)=>{if(path===automaticKeys[0]){held=value;signal=init?.signal;return new Promise(resolve=>release=resolve);}});
+  await f.tick(5000);await f.settle(()=>!!release,'held actual authority response');const reads=f.count(automaticKeys[0]);
+  const current=f.node.modelAuthorization.view();await f.call(automaticKeys[0]+'/commands',{method:'POST',body:JSON.stringify({revision:current.revision,action:'pause',operationId:randomUUID()})});f.hold(undefined);
+  await f.visibility(true);await f.visibility(false);await f.visibility(false);assert.equal(f.count(automaticKeys[0]),reads,'foreground does not replace the held read');assert.equal(signal?.aborted,false);
+  await act(async()=>release(held));await f.tick();await f.settle(()=>!resources(f.api).get(automaticKeys[0]).getSnapshot().loading,'coalesced authority followup');assert.equal(f.count(automaticKeys[0]),reads+1,'one actual followup follows the held read');assert.equal(f.d.querySelector('.automatic-control-main button')?.textContent,'恢复自动处理');
+ }finally{f.restoreClock();}
+});
+
+test('a late previous Api dependency cannot publish after owner replacement or receive its foreground reads',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  let release!:(value:any)=>void,held:any;f.hold((path,value)=>{if(path==='/api/model-settings'){held=value;return new Promise(resolve=>release=resolve);}});await f.render();await f.settle(()=>!!release,'old owner model HTTP held');
+  const nextReads:string[]=[],next={request:async(path:string,init?:RequestInit)=>{nextReads.push(path);return f.call(path,init);}} as Api;
+  await f.render(next);await f.settle(f.ready,'new Api dependencies');const oldReads=f.reads.length;
+  await f.visibility(true);await f.visibility(false);await f.tick();await f.settle(()=>automaticKeys.every(path=>!resources(next).get(path).getSnapshot().loading),'current Api foreground');
+  automaticKeys.forEach(path=>assert.equal(nextReads.filter(value=>value===path).length,2,path));assert.equal(f.reads.length,oldReads,'old Api receives no foreground GET');
+  await act(async()=>release(held));await f.tick();assert.equal(f.ready(),true);assert.equal(f.writes.length,0);assert.equal(Boolean(f.d.querySelector('.automatic-review-dialog')),false);assert.doesNotMatch(f.d.body.textContent!,/已保存后续任务的授权范围/);
+ }finally{f.restoreClock();}
+});
+
+test('an edited open review exposes a non-polled foreground failure and retries through the modal without discarding scope',async t=>{
+ const f=await automaticClockFixture(t);
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await click(f.d,'开启自动处理');await f.settle(()=>freshAutomaticReview(f.d),'initial fresh review');await click(f.d,'调整资料范围');await act(async()=>f.d.querySelector<HTMLInputElement>('.automatic-source-options input')!.click());const selected=[...f.d.querySelectorAll<HTMLInputElement>('.automatic-source-options input')].map(value=>value.checked);assert.deepEqual(selected,[true]);
+  f.hold((path)=>{if(path==='/api/model-settings')throw new ApiError('Generated non-polled model catalog unavailable',503);});await f.visibility(true);await f.visibility(false);await f.tick();await f.settle(()=>automaticKeys.every(path=>!resources(f.api).get(path).getSnapshot().loading),'foreground model failure');
+  assert.equal(Boolean(f.d.querySelector('.automatic-review-dialog [role=alert]')),true,'the active modal visibly explains a foreground dependency failure');assert.match(f.d.querySelector('.automatic-review-dialog')!.textContent!,/Generated non-polled model catalog unavailable/);assert.equal(freshAutomaticReview(f.d),false);assert.equal(f.writes.length,0);
+  const failedReads=f.count('/api/model-settings');await f.tick(5000);await f.settle(()=>!resources(f.api).get(automaticKeys[0]).getSnapshot().loading,'authority fallback while model settings are unavailable');assert.equal(f.count('/api/model-settings'),failedReads,'a non-polled dependency needs an explicit UI retry');
+  let release!:(value:any)=>void,held:any;f.hold((path,value)=>{if(path==='/api/model-settings'){held=value;return new Promise(resolve=>release=resolve);}});const retry=[...f.d.querySelectorAll<HTMLButtonElement>('.automatic-review-dialog button')].find(value=>value.textContent==='重新读取');assert.ok(retry,'retry is available inside the modal');await act(async()=>retry.click());await f.tick();await f.settle(()=>Boolean(release),'held model recovery');assert.equal(freshAutomaticReview(f.d),false);assert.deepEqual([...f.d.querySelectorAll<HTMLInputElement>('.automatic-source-options input')].map(value=>value.checked),selected);
+  f.hold(undefined);await act(async()=>release(held));await f.settle(()=>freshAutomaticReview(f.d),'model recovery acknowledged');assert.deepEqual([...f.d.querySelectorAll<HTMLInputElement>('.automatic-source-options input')].map(value=>value.checked),selected,'resource retry preserves the edited draft');assert.equal(f.writes.length,0);
+  await act(async()=>f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.click());await f.settle(()=>f.node.modelAuthorization.view().state==='enabled'&&!f.d.querySelector('.automatic-review-dialog'),'edited scope explicitly authorized');assert.equal(f.writes.length,1);assert.equal(f.writes[0].body.scope.sourceIds,null);assert.equal(f.node.modelAuthorization.view().scope.sourceIds,null);
+ }finally{f.restoreClock();}
+});
+
+test('modal dependency recovery preserves a committed command frozen for same-operation retry',async t=>{
+ const f=await automaticClockFixture(t),real=f.api.request.bind(f.api),attempts:any[]=[];let lose=true;
+ f.api.request=async(path,init)=>{if(path==='/api/model-authorization/commands'&&init?.method==='POST'){attempts.push(JSON.parse(String(init.body)));const result=await real(path,init);if(lose){lose=false;throw new ApiError('Generated committed command ACK unavailable',503);}return result;}return real(path,init);};
+ try{
+  await f.render();await f.settle(f.ready,'initial automatic dependencies');await click(f.d,'开启自动处理');await f.settle(()=>freshAutomaticReview(f.d),'initial fresh review');await act(async()=>f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.click());await f.settle(()=>f.node.modelAuthorization.view().state==='enabled'&&Boolean(f.d.querySelector('.automatic-review-dialog [role=alert]'))&&automaticKeys.every(path=>!resources(f.api).get(path).getSnapshot().loading),'lost committed ACK');const grant=structuredClone(f.node.modelAuthorization.view());assert.equal(attempts.length,1);
+  f.hold((path)=>{if(path==='/api/model-settings')throw new ApiError('Generated frozen-command model catalog unavailable',503);});await f.visibility(true);await f.visibility(false);await f.tick();await f.settle(()=>automaticKeys.every(path=>!resources(f.api).get(path).getSnapshot().loading),'model dependency failure');assert.match(f.d.querySelector('.automatic-review-dialog')!.textContent!,/Generated frozen-command model catalog unavailable/);assert.equal(freshAutomaticReview(f.d),false);
+  f.hold(undefined);const retry=[...f.d.querySelectorAll<HTMLButtonElement>('.automatic-review-dialog button')].find(value=>value.textContent==='重新读取');assert.ok(retry,'resource recovery is separate from the frozen command retry');await act(async()=>retry.click());await f.tick();await f.settle(()=>automaticKeys.every(path=>!resources(f.api).get(path).getSnapshot().loading)&&freshAutomaticReview(f.d),'model dependency recovered');assert.equal(attempts.length,1);assert.equal(f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.textContent,'重试');assert.match(f.d.querySelector('.automatic-review-dialog [role=alert]')!.textContent!,/请求结果尚未确认/);
+  await act(async()=>f.d.querySelector<HTMLButtonElement>('.automatic-review-dialog footer .primary')!.click());await f.settle(()=>!f.d.querySelector('.automatic-review-dialog'),'same operation acknowledged');assert.equal(attempts.length,2);assert.deepEqual(attempts[1],attempts[0]);assert.deepEqual(f.node.modelAuthorization.view(),grant);
+ }finally{f.restoreClock();}
 });
