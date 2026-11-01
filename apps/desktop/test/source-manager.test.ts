@@ -82,10 +82,13 @@ describe('native source lifecycle with local HTTP fixtures', () => {
   });
   it('a controlled watcher retry legitimately acknowledges the same lost-ACK revision before restart',async()=>{
     const server=await endpoint(true),file=join(directory,'watcher-ack.md');await writeFile(file,'Generated ACK retry body');
-    const app=await manager(server.url,undefined,undefined,true);await app.addFiles(file,DEFAULT_SOURCE_OPTIONS);await app.sync();
-    expect(app.status()[0].pending).toBe(1);expect(server.acknowledgements()).toBe(0);const sourceId=app.status()[0].source.id;
-    (app as any).onFileWatchEvent({sourceId,root:file,path:file,backend:'fsevents',kind:'change'});await app.sync(false);
-    expect(app.status()[0].pending).toBe(0);expect(server.acknowledgements()).toBe(1);expect(server.items).toHaveLength(2);expect(server.items[1]).toEqual(server.items[0]);
+    vi.useFakeTimers({toFake:['setInterval','clearInterval']});let app:LocalSourceManager|undefined;
+    try{
+      app=await manager(server.url,undefined,undefined,true);await app.addFiles(file,DEFAULT_SOURCE_OPTIONS);await app.sync();
+      expect(app.status()[0].pending).toBe(1);expect(server.acknowledgements()).toBe(0);const sourceId=app.status()[0].source.id;
+      (app as any).onFileWatchEvent({sourceId,root:file,path:file,backend:'fsevents',kind:'change'});await app.sync(false);
+      expect(app.status()[0].pending).toBe(0);expect(server.acknowledgements()).toBe(1);expect(server.items).toHaveLength(2);expect(server.items[1]).toEqual(server.items[0]);
+    }finally{await app?.close();vi.useRealTimers();}
   });
   it('keeps old queued data bound to its original node and respects local pause', async () => {
     const first = await endpoint(true); const second = await endpoint(); const file = join(directory, 'synthetic.md'); await writeFile(file, '旧节点私有合成内容');
