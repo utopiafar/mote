@@ -196,6 +196,16 @@ test('opening automatic review rereads all dependencies and cannot authorize whi
  }finally{f.restoreClock();}
 });
 
+test('a fresh first-authorization proposal uses the current catalog rather than aliases retained by its loading review',async t=>{
+ const f=await automaticClockFixture(t),real=f.api.request.bind(f.api);let items=[{id:'generated-retired-source',name:'Generated retired source'}];
+ f.api.request=async(path,init)=>{const value=await real(path,init);return path==='/api/sources'?{...value,items:structuredClone(items)}:value;};
+ try{
+  await f.render();await f.settle(f.ready,'initial catalog');items=[];await click(f.d,'开启自动处理');await f.settle(()=>freshAutomaticReview(f.d),'fresh first-authorization review');await click(f.d,'调整资料范围');
+  const selected=[...f.d.querySelectorAll<HTMLLabelElement>('.automatic-source-options label')].filter(label=>label.querySelector('input')!.checked).map(label=>label.textContent);
+  assert.deepEqual(selected,['已提交对话'],'fresh unapproved scope excludes a source removed before review opens');assert.equal(f.writes.length,0);
+ }finally{f.restoreClock();}
+});
+
 test('opening the saved automatic scope rereads dependencies and closing a held review cannot reopen or change its grant',async t=>{
  const f=await automaticClockFixture(t);
  try{

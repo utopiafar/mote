@@ -3,6 +3,7 @@ import {moteText} from '@mote/shared/i18n';
 import type {ModelSettingsView} from '@mote/shared/models';
 import {ApiError,type Api,errorMessage} from './api';
 import {useResource} from './useResource';
+import {useForegroundResources} from './useForegroundResources';
 import {RecordingTools} from './RecordingTools';
 import {ModelAuthorizationSettings} from './ModelAuthorizationSettings';
 import type {FileSettingsView} from './processing-settings-view';
@@ -14,6 +15,7 @@ type Command={owner:Api;encoded:string;id:string;controller:AbortController;send
 type Review={owner:Api;revision:number;plan:ProcessingGrant;viewOnly:boolean;editing:boolean;refreshing?:boolean};
 export function AutomaticProcessing({api}:{api:Api}){
  const authority=useResource<{authorization:ProcessingAuthority;connections:ProcessingConnection[]}>(api,path,5000),models=useResource<ModelSettingsView>(api,'/api/model-settings'),media=useResource<FileSettingsView>(api,'/api/file-processing'),perception=useResource<{settings:{enabled:boolean}}>(api,'/api/perception'),sources=useResource<{items:{id:string;name:string}[]}>(api,'/api/sources'),devices=useResource<{items:{deviceId:string;deviceName:string}[]}>(api,'/api/devices');
+ useForegroundResources(api,[path,'/api/model-settings','/api/file-processing','/api/perception','/api/sources','/api/devices']);
  const [review,setReview]=useState<Review>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const reviewError=useRef<HTMLParagraphElement>(null);
  const active=useRef(api);active.current=api;
@@ -27,8 +29,9 @@ export function AutomaticProcessing({api}:{api:Api}){
  const ready=authority.data&&models.data&&media.data&&perception.data&&sources.data&&devices.data&&failure===undefined;
  const revalidating=[authority,models,media,perception,sources,devices].some(value=>value.loading);
  const sourceOptions=[...new Map([...(sources.data?.items??[]),...(devices.data?.items??[]).map(value=>({id:'device:'+value.deviceId,name:value.deviceName})),{id:'mote.conversations',name:moteText('已提交对话')}].map(value=>[value.id,value])).values()];
+ const currentSourceIds=sourceOptions.map(value=>value.id);
  for(const id of review?.owner===api?review.plan.scope.sourceIds??[]:[])if(!sourceOptions.some(value=>value.id===id))sourceOptions.push({id,name:id});
- const proposal=ready?automaticProcessingPlan(authority.data!.authorization,authority.data!.connections,models.data!,media.data!,perception.data!.settings.enabled,sourceOptions.map(value=>value.id)):undefined;
+ const proposal=ready?automaticProcessingPlan(authority.data!.authorization,authority.data!.connections,models.data!,media.data!,perception.data!.settings.enabled,currentSourceIds):undefined;
  const current=authority.data?.authorization,dialog=review?.owner===api&&!withdrawn?review:undefined;
  useEffect(()=>{
   if(!dialog?.refreshing||active.current!==api||revalidating||busy||hasPending)return;
