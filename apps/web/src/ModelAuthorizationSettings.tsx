@@ -63,7 +63,8 @@ export function ModelAuthorizationSettings({api}:{api:Api}){
   return connection.id;
  };
  const failed=media.error!==undefined||read.error!==undefined||sources.error!==undefined||devices.error!==undefined||models.error!==undefined;
- const canAuthorize=draft&&consent&&draft.connections.length>0&&draft.scope.dataKinds.length>0&&(draft.scope.sourceIds===null||draft.scope.sourceIds.length>0)&&!unavailable&&!failed;
+ const revalidating=[read,models,media,sources,devices].some(value=>value.loading);
+ const canAuthorize=draft&&consent&&draft.connections.length>0&&draft.scope.dataKinds.length>0&&(draft.scope.sourceIds===null||draft.scope.sourceIds.length>0)&&!unavailable&&!failed&&!revalidating;
  return <section className="panel runtime-settings model-authorization-settings" aria-busy={busy}>
   <h2>{moteText('后台 AI 处理授权')}</h2>
   <p>{moteText('未授权或未配置模型，也可以保存资料。保存模型连接不会自动授权后台处理。')}</p>
