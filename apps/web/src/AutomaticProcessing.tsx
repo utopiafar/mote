@@ -24,6 +24,7 @@ export function AutomaticProcessing({api}:{api:Api}){
  const hasPending=pending?.owner===api&&operation.current===pending;
  useEffect(()=>{setReview(undefined);setPending(undefined);setBusy(false);setError('');setNotice('');return()=>{operation.current?.controller.abort();operation.current=undefined;};},[api]);
  const failure=[authority,models,media,perception,sources,devices].find(value=>value.error!==undefined)?.error;
+ const failureDetails=[...new Set([error,failure!==undefined?errorMessage(failure):''])].filter(Boolean).join('\n');
  const withdrawn=[authority,models,media,perception,sources,devices].some(value=>value.error instanceof ApiError&&[401,403,404,410].includes(value.error.status));
  useEffect(()=>{if(withdrawn){setReview(undefined);operation.current?.controller.abort();operation.current=undefined;setPending(undefined);setBusy(false);}},[withdrawn]);
  const ready=authority.data&&models.data&&media.data&&perception.data&&sources.data&&devices.data&&failure===undefined;
@@ -81,10 +82,11 @@ export function AutomaticProcessing({api}:{api:Api}){
   openReview(false);
  }
  const changed=dialog&&current&&dialog.revision!==current.revision;
- useEffect(()=>{if(error&&dialog)reviewError.current?.scrollIntoView?.({block:'nearest'});},[error,Boolean(dialog)]);
+ useEffect(()=>{if((error||failure!==undefined)&&dialog)reviewError.current?.scrollIntoView?.({block:'nearest'});},[error,failure,Boolean(dialog)]);
  const valid=dialog&&dialog.plan.connections.length>0&&dialog.plan.scope.dataKinds.length>0&&(dialog.plan.scope.sourceIds===null||dialog.plan.scope.sourceIds.length>0)&&dialog.plan.connections.every(value=>authority.data?.connections.some(available=>processingConnectionKey(available)===processingConnectionKey(value)));
+ const recheckReview=()=>{if(!dialog||busy||revalidating||active.current!==api)return;if(!hasPending)setError('');[authority,models,media,perception,sources,devices].forEach(value=>value.refresh());};
  const refresh=()=>{setReview(undefined);setError('');[authority,models,media,perception,sources,devices].forEach(value=>value.refresh());};
- return <section className="automatic-processing-control" aria-label={moteText('自动处理新资料')} aria-busy={busy||Boolean(dialog?.refreshing)}>
+ return <section className="automatic-processing-control" aria-label={moteText('自动处理新资料')} aria-busy={busy||revalidating||Boolean(dialog?.refreshing)}>
   <div className="automatic-control-main"><div><h2>{moteText('自动处理新资料')}</h2><p role="status">{state}</p></div><button type="button" className={'button '+(current?.state!=='enabled'?'primary':'')} disabled={!ready||busy||hasPending||Boolean(dialog?.refreshing)} onClick={start}>{label}</button></div>
   {(error||failure!==undefined)&&!dialog&&<div><p role="alert">{moteText(hasPending?'请求结果尚未确认，请重试同一请求。':'操作未完成，请重试')}</p><details><summary>{moteText('技术详情')}</summary><pre>{error||errorMessage(failure)}</pre></details></div>}{notice&&<p role="status">{notice}</p>}{hasPending&&!dialog&&<button className="button" disabled={busy||!ready} onClick={()=>void send(pending!)}>{moteText('重试')}</button>}
   <details className="automatic-control-more"><summary>{moteText('更多')}</summary><button type="button" className="text-button" disabled={!ready||busy||hasPending||!current?.connections.length} onClick={()=>openReview(true)}>{moteText('资料处理范围')}</button><button type="button" className="text-button" disabled={!ready||busy||hasPending||!['enabled','paused'].includes(current?.state??'')} onClick={()=>void command('stop')}>{moteText('立即停止全部自动任务')}</button><p>{moteText('暂停后，已受理任务继续完成。立即停止会撤销在途自动任务，已保存资料保留。')}</p><button type="button" className="text-button" disabled={busy||hasPending} onClick={refresh}>{moteText('重新读取')}</button><details><summary>{moteText('高级：模型与资料范围')}</summary><ModelAuthorizationSettings api={api}/></details></details>
@@ -99,7 +101,7 @@ export function AutomaticProcessing({api}:{api:Api}){
    </details>
    {!dialog.viewOnly&&dialog.plan.scope.sourceIds!==null&&<p className="automatic-review-note">{moteText('新增来源需另行加入处理范围。')}</p>}
    {!dialog.viewOnly&&Boolean(current?.connections.length)&&<p className="automatic-review-note">{moteText('现有来源范围保留；本次将确认当前选择的服务与所需内容类型。已受理任务沿用原范围。')}</p>}
-   {changed&&!hasPending&&<p role="alert">{moteText('设置已变化，请重新读取并核对后继续。')}</p>}{error&&<div><p ref={reviewError} role="alert">{moteText(hasPending?'请求结果尚未确认，请重试同一请求。':'操作未完成，请重试')}</p><details><summary>{moteText('技术详情')}</summary><pre>{error}</pre></details></div>}
+   {changed&&!hasPending&&<p role="alert">{moteText('设置已变化，请重新读取并核对后继续。')}</p>}{(error||failure!==undefined)&&<div><p ref={reviewError} role="alert">{moteText(hasPending?'请求结果尚未确认，请重试同一请求。':'操作未完成，请重试')}</p>{failure!==undefined&&<button type="button" className="text-button" disabled={busy||revalidating} onClick={recheckReview}>{moteText('重新读取')}</button>}<details><summary>{moteText('技术详情')}</summary><pre>{failureDetails}</pre></details></div>}
   </RecordingTools>}
  </section>;
 }
