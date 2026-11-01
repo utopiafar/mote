@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
  * keep separate pauses; resuming or restarting goes back to the app's preview and system consent.
  */
 class CaptureStatusActivity : MoteActivity() {
+    internal data class ReadHooks(val execute: java.util.concurrent.Executor, val read: () -> CaptureOverview.Facts, val post: (Runnable) -> Unit)
+    internal companion object { @Volatile var readHooks: ReadHooks? = null }
+    private val instanceReadHooks = readHooks
     private val worker = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var line: HomeCaptureRow
@@ -29,6 +32,17 @@ class CaptureStatusActivity : MoteActivity() {
     private lateinit var all: Button
     private var facts: CaptureOverview.Facts? = null
     private var working = false
+    private var closed = false
+    // One in-flight read and one merged follow-up; close() is the hard delivery boundary for destruction.
+    private val reader = CoalescingRead<CaptureOverview.Facts>(instanceReadHooks?.execute ?: worker, { result ->
+        val callback = Runnable { if (!closed && !isDestroyed) result.onSuccess(::present) }
+        instanceReadHooks?.post?.invoke(callback) ?: runOnUiThread(callback)
+    }) {
+        instanceReadHooks?.read?.invoke() ?: run {
+            val settings = Settings(applicationContext); val config = settings.read()
+            CaptureOverview.facts(applicationContext, settings, config, LocalStateRepository.get(applicationContext).state.value)
+        }
+    }
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 2500) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,7 +67,7 @@ class CaptureStatusActivity : MoteActivity() {
     }
     override fun onResume() { super.onResume(); handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
-    override fun onDestroy() { worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { closed = true; handler.removeCallbacks(refresh); reader.close(); worker.shutdown(); super.onDestroy() }
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Deprecated("Native back navigation") override fun onBackPressed() = leave()
 
@@ -85,15 +99,9 @@ class CaptureStatusActivity : MoteActivity() {
         return state to action
     }
 
-    private fun render() {
-        if (isDestroyed || worker.isShutdown) return
-        worker.execute {
-            val read = runCatching {
-                val settings = Settings(applicationContext); val config = settings.read()
-                CaptureOverview.facts(applicationContext, settings, config, LocalStateRepository.get(applicationContext).state.value)
-            }
-            runOnUiThread { if (!isDestroyed) read.onSuccess(::present) }
-        }
+    internal fun render() {
+        if (closed || isDestroyed || worker.isShutdown) return
+        reader.request()
     }
 
     private fun present(f: CaptureOverview.Facts) {
