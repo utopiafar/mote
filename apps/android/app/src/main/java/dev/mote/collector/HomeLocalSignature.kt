@@ -39,6 +39,13 @@ internal class RevisionCache {
  * so an unchanged local archive never opens the queue.
  */
 internal object HomeLocalCaptures {
+    /**
+     * The existence check must cover every stored record: a timestamp-bounded page query would
+     * exclude future-dated records while its revision-keyed cache answer never expires, so the
+     * home could stick in first-use mode as the clock catches up. File depth has no clock input.
+     */
+    fun exists(queue: DurableQueue) = queue.depth() > 0
+
     fun collect(cache: RevisionCache, recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, exists: () -> Boolean): JSONObject {
         val captures = JSONObject()
         captures.put("hasDraft", draft.optString("text").isNotBlank() || draft.optString("description").isNotBlank() || (draft.optJSONArray("attachments")?.length() ?: 0) > 0 || draft.optJSONObject("origin")?.optString("text").orEmpty().isNotBlank())

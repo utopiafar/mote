@@ -506,7 +506,7 @@ class MainActivity : MoteActivity() {
             val captures = HomeLocalCaptures.collect(homeRecordsCache, LocalStateRepository.get(applicationContext).state.value.revision.records,
                 applicationContext.recordDraftStore().draft(),
                 NativeRecordReceipt.recordId?.let { id -> applicationContext.queue().capture(id)?.let { applicationContext.withNativeNotePreview(it) } }) {
-                applicationContext.queue().capturePage("1970-01-01T00:00:00Z", java.time.Instant.now().plusSeconds(1).toString(), limit = 1, source = "").getInt("totalCount") > 0
+                HomeLocalCaptures.exists(applicationContext.queue())
             }
             Triple(sources, captures, applicationContext.localFileContents(3))
         }) { result ->

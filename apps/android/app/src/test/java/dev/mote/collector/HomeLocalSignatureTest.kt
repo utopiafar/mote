@@ -3,7 +3,10 @@ package dev.mote.collector
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.util.UUID
 
 /**
  * Drives the same `HomeLocalCaptures.collect` call `MainActivity.loadHomeContent` issues each
@@ -49,6 +52,25 @@ class HomeLocalSignatureTest {
         assertTrue(collect(cache, 1, JSONObject().put("attachments", JSONArray().put("a.jpg"))) { true }.getBoolean("hasDraft"))
         assertTrue(collect(cache, 1, JSONObject().put("origin", JSONObject().put("text", "source"))) { true }.getBoolean("hasDraft"))
         assertFalse("a draft of empty fields is not a draft", collect(cache, 1, JSONObject().put("text", "  ").put("description", "")) { true }.getBoolean("hasDraft"))
+    }
+
+    @get:Rule val folder = TemporaryFolder()
+    private val cipher = object : ByteCipher {
+        override fun seal(bytes: ByteArray) = bytes.map { (it.toInt() xor 91).toByte() }.toByteArray()
+        override fun open(bytes: ByteArray) = seal(bytes)
+    }
+
+    @Test fun aFutureDatedRecordStillCountsAsExisting() {
+        // A record saved while the clock ran fast is stored the moment it arrives; the existence
+        // check the home caches by revision must see it without waiting for the clock to pass.
+        val queue = DurableQueue(folder.newFolder(), cipher)
+        val cache = RevisionCache()
+        assertFalse(collect(cache, 3) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
+        queue.enqueue(JSONObject().put("id", UUID.randomUUID().toString())
+            .put("capturedAt", java.time.Instant.now().plusSeconds(3600).toString())
+            .put("platform", "android").put("durationMs", 1000)
+            .put("privacy", JSONObject().put("excluded", false)).put("source", "note"), null, 16L * 1024 * 1024)
+        assertTrue("a future-dated record is a stored record", collect(cache, 4) { HomeLocalCaptures.exists(queue) }.getBoolean("hasAnyRecords"))
     }
 
     @Test fun theSavedReceiptPassesThroughWhenPresent() {
