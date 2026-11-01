@@ -10,7 +10,8 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   document.getElementById('content-memories')?.addEventListener('click',()=>openMemories?.());
   let generation=0,homeGeneration=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
   let archiveGeneration=0,archiveAuthorizationDenied=false,detailIsCentral=false;
-  let loadedScope='';
+  let loadedScope='',homeStale=false;
+  const homeVisible=()=>!el('home-recent').closest('[hidden]');
   let items:ContentItem[]=[],homeItems:ContentItem[]=[],selected:ContentItem|undefined,selectedButton:HTMLElement|undefined,chunkOffset=0,centralId:string|undefined;
   const sourceName=(source:ContentItem['source'])=>({screen:moteText('截图'),ui_page:moteText('页面内容采集'),note:moteText('随手记'),activity:moteText('应用活动'),notification:moteText('通知'),media:moteText('媒体状态'),file:moteText('文件'),calendar:moteText('日历'),coding:moteText('编码对话')} as Partial<Record<ContentItem['source'],string>>)[source]??moteText('内容');
   function renderFeed(id:string,rows:ContentItem[],known=true){
@@ -55,7 +56,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   }
   // The workbench is independent of the Content workspace's selected filter and pagination.
   async function refreshHome(){
-    const version=++homeGeneration,archiveVersion=archiveGeneration;
+    homeStale=false;const version=++homeGeneration,archiveVersion=archiveGeneration;
     const [local,remote]=await Promise.allSettled([api.localContent(0),status?.config.tokenConfigured?api.centralContent():undefined]);
     if(version!==homeGeneration)return;
     const rows:ContentItem[]=[];
@@ -90,7 +91,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     }else if(r.status==='rejected'){if(archiveVersion===archiveGeneration&&!archiveAuthorizationDenied)rows.push(...previous.filter(row=>row.key.startsWith('capture:')));error=moteText('内容暂不可完整读取，请重试。');}
     items=mergeRows([...items,...rows]);loadedScope=scopeKey;renderFeed('content-feed',items);
     if(error&&!items.length)el('content-feed').replaceChildren();
-    if(scope==='all'&&!query.trim()){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}else void refreshHome();
+    if(scope==='all'&&!query.trim()){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected';renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}else if(homeVisible())void refreshHome();else homeStale=true;
     el('content-more').hidden=!localMore&&!remoteMore;
     el('content-status').textContent=error||(!status?.config.tokenConfigured?moteText('本机内容可离线阅读；连接中央后显示已归档内容。'):moteText('接收与整理分别进行，点开内容查看实际状态。'));
     el('content-status').classList.toggle('visually-hidden',!error);
@@ -142,5 +143,5 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   let searchTimer:ReturnType<typeof setTimeout>|undefined;
   el('content-search').addEventListener('input',()=>{generation++;if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{searchTimer=undefined;void refresh();},180);});
   let signature='',lastRefresh=0,refreshTimer:ReturnType<typeof setTimeout>|undefined;
-  return {open(item:ContentItem){selectedButton=undefined;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();},refresh,refreshHome,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];homeItems=[];loadedScope='';generation++;homeGeneration++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);renderFeed('home-recent',[],false);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}},close};
+  return {open(item:ContentItem){selectedButton=undefined;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();},refresh,refreshHome,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];homeItems=[];loadedScope='';generation++;homeGeneration++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);renderFeed('home-recent',[],false);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}if(homeStale&&homeVisible())void refreshHome();},close};
 }

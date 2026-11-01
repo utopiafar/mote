@@ -135,6 +135,7 @@ it('renders an owner description separately and clears it when the reader closes
 });
 
 it('keeps recent content complete without changing the Content workspace filter',async()=>{
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;
   const local={...item,key:'queue:22222222-2222-4222-8222-222222222222',title:'Generated local note'};
   vi.mocked(api.localContent).mockResolvedValue({items:[local],total:1});
   (el('content-scope') as HTMLSelectElement).value='received';
@@ -167,7 +168,7 @@ it('does not turn a local read failure into an empty first-use screen and still 
 
 
 it('keeps search results independent from Home and invalidates a late older query',async()=>{
-  await flush();const search=el('content-search') as HTMLInputElement;
+  await flush();document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;const search=el('content-search') as HTMLInputElement;
   let finish!:(value:CentralContentPage)=>void;
   vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
   search.value='older';const pending=library.refresh();await flush();
@@ -228,4 +229,27 @@ it('does not restore retained central rows when a pre-denial content request fai
   vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise((_resolve,fail)=>{reject=fail;}));const pending=library.refresh();await flush();
   page={items:[],total:0,authorizationDenied:true};await library.refreshHome();reject(Error('Generated delayed transport failure'));await pending;await flush();
   expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();expect(el('content-feed').querySelector('[data-content-key^="capture:"]')).toBeNull();
+});
+
+it('reads local and central once for a search while the hidden Home is not refreshed',async()=>{
+  await flush();
+  const before={local:vi.mocked(api.localContent).mock.calls.length,central:vi.mocked(api.centralContent).mock.calls.length};
+  (el('content-search') as HTMLInputElement).value='generated query';await library.refresh();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+1);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
+  expect(vi.mocked(api.localContent).mock.calls.at(-1)).toEqual([0,'generated query']);
+  expect(vi.mocked(api.centralContent).mock.calls.at(-1)).toEqual([undefined,'generated query']);
+});
+
+it('defers the Home read while hidden and catches up once the overview is visible again',async()=>{
+  await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';
+  const before={local:vi.mocked(api.localContent).mock.calls.length,central:vi.mocked(api.centralContent).mock.calls.length};
+  await library.refresh();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+1);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central);
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;
+  library.update({...status});await flush();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+2);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
 });
