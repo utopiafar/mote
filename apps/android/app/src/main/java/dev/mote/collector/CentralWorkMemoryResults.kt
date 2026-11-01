@@ -28,6 +28,8 @@ internal class CentralWorkMemoryResults(
     private var restoringSelection=false
     /** Last state the results list reported; feeds only the results-list rearm, never the open reader. */
     private var live = false
+    /** The pane currently on screen; lets the terminal revalidation refresh rows in place. */
+    private var resultsTarget: LinearLayout? = null
     private fun current(work: String, cursor: String?) = workId==work && cursors.lastOrNull()==cursor && isCurrentWork(work)
     private fun path(work: String, cursor: String?) = "/api/work-activity/"+CentralScreens.encode(work)+"/memory-results?limit=20"+(cursor?.let{"&cursor="+CentralScreens.encode(it)}?:"")
     private fun read(api: CentralClient, work: String, cursor: String?) = WorkMemoryPage.read(api.get(path(work,cursor)),cursor)
@@ -45,7 +47,7 @@ internal class CentralWorkMemoryResults(
         memoryScroll=ui.contentScroll()
         WorkMemoryDrafts.remember(key,fields.filter { (edit,value)->edit.forceDirty||edit.initial!=value }.associate { (edit,value)->edit.key to value },memoryScroll)
     }
-    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false;live=false }
+    fun clear() { draftKey()?.let(WorkMemoryDrafts::take);workId=null;cursors.clear();cursors.add(null);selected=null;returnScroll=0;pendingScroll=null;identity=null;retryingReader=false;retryDrafts=emptyList();readerPendingScroll=null;memoryScroll=0;restoringSelection=false;live=false;resultsTarget=null }
     fun save(out: Bundle) {
         rememberDrafts();out.putString("memoryResultWork",workId);out.putString("memoryResultSelected",selected);out.putInt("memoryResultScroll",returnScroll)
         out.putString("memoryResultSnapshot",identity);out.putInt("memoryResultDetailScroll",memoryScroll)
@@ -63,7 +65,18 @@ internal class CentralWorkMemoryResults(
     fun restoreAfterReader(work: String, scroll: Int) { if(hasSelection(work)){readerPendingScroll=scroll;poll(work)} else { screens.body.removeAllViews();screens.body.visibility=View.VISIBLE } }
     fun render(work: String, target: LinearLayout, previousScroll: Int, live: Boolean) {
         if(workId!=work){clear();workId=work}
+        resultsTarget=target;this.live=live
+        readInto(work, target, previousScroll)
+    }
+    /** The terminal-cadence refresh: re-reads the same membership and owner-read rows into the
+     * pane that is already on screen, without rebuilding the surrounding detail view. */
+    fun revalidate(work: String, live: Boolean) {
+        val target=resultsTarget?:return
+        if(workId!=work)return
         this.live=live
+        readInto(work, target, ui.contentScroll())
+    }
+    private fun readInto(work: String, target: LinearLayout, previousScroll: Int) {
         val cursor=cursors.last();val api=screens.client
         target.removeAllViews()
         ui.work(MoteI18n.text("正在读取…"), { runCatching {
