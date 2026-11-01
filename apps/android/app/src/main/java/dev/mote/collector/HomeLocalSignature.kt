@@ -35,8 +35,9 @@ internal class RevisionCache {
 
 /**
  * The local inventory payload the home reads: the draft flag, the existence check keyed by
- * [recordsRevision] and the saved receipt. [exists] is invoked only when the revision changed,
- * so an unchanged local archive never opens the queue.
+ * [recordsRevision] and the saved receipt. [exists] is invoked only when the revision changed —
+ * or whenever [pendingRecovery] reports stage work still awaiting replay, because the revision
+ * cannot see accepted-but-uncommitted inputs.
  */
 internal object HomeLocalCaptures {
     /**
@@ -47,10 +48,14 @@ internal object HomeLocalCaptures {
      */
     fun exists(queue: DurableQueue) = queue.anyStored()
 
-    fun collect(cache: RevisionCache, recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, exists: () -> Boolean): JSONObject {
+    fun collect(cache: RevisionCache, recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, pendingRecovery: () -> Boolean, exists: () -> Boolean): JSONObject {
         val captures = JSONObject()
         captures.put("hasDraft", draft.optString("text").isNotBlank() || draft.optString("description").isNotBlank() || (draft.optJSONArray("attachments")?.length() ?: 0) > 0 || draft.optJSONObject("origin")?.optString("text").orEmpty().isNotBlank())
-        captures.put("hasAnyRecords", cache.hasRecords(recordsRevision, exists))
+        // Pending stage recovery bypasses the revision cache: an unchanged records revision
+        // cannot see the accepted inbox, and only opening the queue retries its replay. The
+        // bypassed answer is never cached, so each cycle re-checks until recovery commits or
+        // reports its failure — and an existing-record answer stays truthful meanwhile.
+        captures.put("hasAnyRecords", if (pendingRecovery()) exists() else cache.hasRecords(recordsRevision, exists))
         savedReceipt?.let { captures.put("savedReceipt", it) }
         return captures
     }

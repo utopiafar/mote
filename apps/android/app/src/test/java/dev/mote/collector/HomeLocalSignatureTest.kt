@@ -15,8 +15,9 @@ import java.util.UUID
  */
 class HomeLocalSignatureTest {
 
-    private fun collect(cache: RevisionCache, revision: Long, draft: JSONObject = JSONObject(), receipt: JSONObject? = null, exists: () -> Boolean) =
-        HomeLocalCaptures.collect(cache, revision, draft, receipt, exists)
+    private fun collect(cache: RevisionCache, revision: Long, draft: JSONObject = JSONObject(), receipt: JSONObject? = null,
+                        pendingRecovery: () -> Boolean = { false }, exists: () -> Boolean) =
+        HomeLocalCaptures.collect(cache, revision, draft, receipt, pendingRecovery, exists)
 
     @Test fun anUnchangedRecordsRevisionNeverReopensTheQueue() {
         val cache = RevisionCache()
@@ -177,6 +178,53 @@ class HomeLocalSignatureTest {
         val recovered = DurableQueue(dir, cipher, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
         assertTrue(HomeLocalCaptures.exists(recovered))
         assertEquals("the already-committed output is not reported twice", revisionAfterFailure, LocalStateChanges.revisions.value.records)
+    }
+
+    @Test fun aPendingStageInputRetriesRecoveryPastACachedEmptyAnswer() {
+        // Home cached "no records" at this revision; an accepted inbox then crashed inside its
+        // stage. The records revision cannot see uncommitted input, so the pending signal
+        // bypasses the cache: each cycle reopens the queue, retrying the replay until the
+        // transient stage fault clears and the record commits.
+        val crashes = java.util.concurrent.atomic.AtomicInteger(1)
+        val registry = CaptureStageRegistry(listOf(crashingStage(crashes)))
+        val dir = folder.newFolder()
+        val openQueue = { DurableQueue(dir, cipher, captureStages = registry, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) }) }
+        val pending = { java.io.File(dir, ".capture-stages.inbox").exists() || java.io.File(dir, ".capture-stages.journal").exists() }
+        val cache = RevisionCache()
+        val revision = LocalStateChanges.revisions.value.records
+        assertFalse(collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+        assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null, 1_000_000) }
+        crashes.incrementAndGet()
+        // The pending inbox reopens and its failed replay surfaces rather than caching "empty".
+        assertThrows(Exception::class.java) {
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }
+        }
+        crashes.set(0)
+        assertTrue("the next cycle replays the inbox into a committed record",
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+        assertTrue("the recovered write advanced the records revision", LocalStateChanges.revisions.value.records > revision)
+    }
+
+    @Test fun aPendingStageInputKeepsTheTruthfulAnswerWhileRetrying() {
+        // A committed record plus a crashed inbox: pending still bypasses the cache so the
+        // replay retries, but the existence answer stays the truthful hasAnyRecords=true.
+        val crashes = java.util.concurrent.atomic.AtomicInteger(0)
+        val registry = CaptureStageRegistry(listOf(crashingStage(crashes)))
+        val dir = folder.newFolder()
+        val openQueue = { DurableQueue(dir, cipher, captureStages = registry, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) }) }
+        val pending = { java.io.File(dir, ".capture-stages.inbox").exists() || java.io.File(dir, ".capture-stages.journal").exists() }
+        val cache = RevisionCache()
+        openQueue().enqueue(note(), null, 1_000_000)
+        crashes.set(1)
+        assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null, 1_000_000) }
+        val revision = LocalStateChanges.revisions.value.records
+        assertTrue("the committed record answers truthfully while the failed inbox retries",
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+        crashes.set(0)
+        assertTrue("the retried replay commits the second record",
+            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists(openQueue()) }.getBoolean("hasAnyRecords"))
+        assertEquals(2, openQueue().depth())
+        assertTrue("the second commit advanced the records revision", LocalStateChanges.revisions.value.records > revision)
     }
 
     private fun note() = JSONObject().put("id", UUID.randomUUID().toString())

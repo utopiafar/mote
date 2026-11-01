@@ -39,6 +39,11 @@ class QueueStorage(private val context: Context) {
     })
     fun selected(): QueueLocation { requireUiReady(); return DurableQueue.exclusive { store().selected() } }
     fun current(): QueueLocation { requireUiReady(); return DurableQueue.exclusive { store().current().also { recoveryFailure = null } } }
+    /** Accepted stage work that still needs replay; a cheap file presence check, never an open. */
+    fun stageRecoveryPending(): Boolean = DurableQueue.exclusive {
+        val path = store().current().path
+        File(path, ".capture-stages.inbox").exists() || File(path, ".capture-stages.journal").exists()
+    }
     fun migrate(id: String): QueueLocation = DurableQueue.exclusive {
         val target = choices().singleOrNull { it.id == id } ?: error(MoteI18n.text("所选目标存储暂不可用"))
         try { store().migrate(target.id, target.base, RuntimeSettings::reportProgress) } finally { LocalStateChanges.changed(records = true) }
