@@ -66,7 +66,7 @@ function WorkDetail({api,id,onBack,onNavigate,onOpen}:{api:Api;id:string;onBack:
  const attention=work&&['needs_input','failed','stale'].includes(work.state);
  return <div className="activity-detail">
   <div hidden={relatedOpen} data-activity-main>
-  <div className="activity-detail-toolbar"><button className="back-link" onClick={onBack}><ArrowLeft size={14}/>{moteText('返回活动')}</button><button className="text-button" disabled={loading} onClick={refresh}>{moteText('刷新')}</button></div>
+  <div className="activity-detail-toolbar"><button className="back-link" onClick={onBack}><ArrowLeft size={14}/>{moteText('返回活动')}</button><button className="text-button" disabled={loading} onClick={()=>{refresh();setMemoryRevision(value=>value+1);}}>{moteText('刷新')}</button></div>
   {historyError!==undefined&&<p role="alert" className="notice error">{errorMessage(historyError)} <button className="text-button" onClick={()=>{setHistoryError(undefined);setMemoryRevision(value=>value+1);}}>{moteText('重试')}</button></p>}
   {error!==undefined&&<p role="alert" className="notice error">{errorMessage(error)} <button className="text-button" onClick={refresh}>{moteText('重试')}</button></p>}{loading&&!work&&<p role="status">{moteText('正在读取…')}</p>}
   {work&&<>
