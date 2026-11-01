@@ -37,6 +37,17 @@ test('reopening an unobserved detail revalidates its immutable ref after externa
  const {ApiError}=await import('../src/api.js'),{api,calls}=fake(),resource=resources(api).get('/api/capture-browser/generated');let off=resource.subscribe(()=>{});calls[0].resolve({text:'old original'});await turn();off();off=resource.subscribe(()=>{});assert.equal(calls.length,2);calls[1].reject(new ApiError('deleted',404));await turn();assert.equal(resource.getSnapshot().data,undefined);off();
 });
 
+test('only the fixed insight receipt collection skips capture and file hints; reports and reset retain revalidation',async()=>{
+ const {affectedResource}=await import('../src/operation-feed.js');
+ for(const path of ['/api/insight-runs','/api/insight-runs?limit=20']){
+  for(const kind of ['capture','file'])assert.equal(affectedResource(path,new Set([kind+':generated']),false),false,path+' '+kind);
+  for(const kind of ['insight','workflow','import'])assert.equal(affectedResource(path,new Set([kind+':generated']),false),true,path+' '+kind);
+  assert.equal(affectedResource(path,new Set(),true),true,'a lost cursor still refreshes receipts');
+  assert.equal(affectedResource(path,new Set(['capture:generated','insight:generated']),false),true,'mixed batches retain insight updates');
+ }
+ for(const path of ['/api/insight-runs/generated','/api/insight-runs/generated?detail=1','/api/insights','/api/insights/generated'])for(const kind of ['capture','file'])assert.equal(affectedResource(path,new Set([kind+':generated']),false),true,path+' '+kind);
+});
+
 test('imperative page reads share a generation and cancel independently of another observer',async()=>{
  const {readResource}=await import('../src/resource-cache.js');const {api,calls}=fake(),one=new AbortController(),two=new AbortController();
  const a=readResource<{n:number}>(api,'/api/generated',one.signal),b=readResource<{n:number}>(api,'/api/generated',two.signal);assert.equal(calls.length,1);const rejected=assert.rejects(a,{name:'AbortError'});one.abort();await rejected;assert.equal(calls[0].signal.aborted,false);calls[0].resolve({n:2});assert.deepEqual(await b,{n:2});
