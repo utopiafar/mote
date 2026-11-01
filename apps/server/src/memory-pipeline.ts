@@ -155,7 +155,7 @@ export class MemoryPipeline {
   private drafts:MemoryExtractionDrafts;
   private inputPlans:MemoryInputPlans;
   private active=new Map<string,Promise<MemoryJobDetail>>();
-  private batchTransitions=new Map<string,Map<string,string>>();
+  private batchTransitions=new Map<string,Map<string,Set<string>>>();
   readonly engine:ExecutionEngine;
   private owned:boolean;
   private completions=new Map<string,{resolve:(job:MemoryJobDetail)=>void;reject:(error:unknown)=>void}>();
@@ -332,7 +332,12 @@ export class MemoryPipeline {
     // restores the previous stamp even when it restores the same status value.
     if(transitioned)batch.transitionStamp=randomUUID();
     const json=encodeMemoryBatch(this.store,batch,Boolean(prior?.privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(priorRow?.json??''))));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);
-    if(transitioned){const jobId=String(priorRow!.job_id),markers=this.batchTransitions.get(jobId)??new Map<string,string>();markers.set(batch.id,batch.transitionStamp!);this.batchTransitions.set(jobId,markers);}
+    if(transitioned){
+      const jobId=String(priorRow!.job_id),markers=this.batchTransitions.get(jobId)??new Map<string,Set<string>>(),stamps=markers.get(batch.id)??new Set<string>();
+      // A later transaction can roll back to an earlier, still-unreconciled
+      // committed stamp. Keep every candidate until refresh checks the row.
+      stamps.add(batch.transitionStamp!);markers.set(batch.id,stamps);this.batchTransitions.set(jobId,markers);
+    }
   }
   private checkpoint(chunk:Chunk){return Boolean(this.store.db.prepare('SELECT key FROM memory_checkpoints WHERE key=?').get(chunk.key));}
   get(id:string):MemoryJobDetail {
@@ -788,11 +793,11 @@ export class MemoryPipeline {
   private refreshJob(id:string){
     const job=this.storedJob(id),counts=this.counts(id);
     // saveBatch may run inside a larger SQLite transaction, so a recorded marker
-    // only counts while the exact stamped write is still the persisted row; a
-    // rolled-back update restores the earlier stamp and leaves no signal, even
-    // when the rollback reinstates an equal status value.
+    // only counts while one of its stamped writes is still the persisted row.
+    // Rollback rejects that transaction's candidates without hiding an earlier
+    // committed transition awaiting this refresh, even for equal final statuses.
     const markers=this.batchTransitions.get(id);this.batchTransitions.delete(id);
-    const transitioned=markers?[...markers].some(([batchId,stamp])=>this.store.db.prepare("SELECT json_extract(json,'$.transitionStamp') stamp FROM memory_batches WHERE id=?").get(batchId)?.stamp===stamp):false;
+    const transitioned=markers?[...markers].some(([batchId,stamps])=>stamps.has(String(this.store.db.prepare("SELECT json_extract(json,'$.transitionStamp') stamp FROM memory_batches WHERE id=?").get(batchId)?.stamp))):false;
     // Jobs persisted before the derived counters existed take the current projection as
     // their baseline; only a real batch transition above makes an unchanged refresh a write.
     job.runningBatches??=Number(counts.running);job.pendingBatches??=Number(counts.pending);

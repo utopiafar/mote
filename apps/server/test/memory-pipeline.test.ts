@@ -232,6 +232,77 @@ test('an owner reply rolled back inside its real reply transaction leaves no tra
  spy2.mock.restore();
 });
 
+test('overlapping owner replies preserve the first committed batch transition when the second receipt rolls back',{timeout:30000},async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-overlap-'));
+ const config:Config={dataDir:directory,token:'generated-owner-overlap-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const answers:Array<()=>void>=[];
+ const generate=async(input:QueryInput):Promise<QueryResult>=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
+  if(input.taskContext?.ownerClarificationReply){await new Promise<void>(resolve=>answers.push(resolve));return {runId:'generated-'+randomUUID(),answer:'{"disposition":"resolved"}',citations:[],trace:[]};}
+  const plan=await fixtureMemoryPlan(input);if(plan)return plan;
+  const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;
+  if(members)return {runId:'generated-'+randomUUID(),answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'needs_owner_input',candidateIndexes:[],question:{prompt:'Which generated speaker corresponds to you?',choices:[],evidence:[{id:member.id,quote:'I felt pressured at work.'}]}})),...fixtureMemoryCapacity(input)}),citations:[],trace:[]};
+  return {runId:'generated-'+randomUUID(),answer:'{"memories":[]}',citations:[],trace:[]};
+ };
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})});
+ t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
+ await node.app.ready();await authorizeFixtureModels(node);
+ const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ assert.equal((await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'})).statusCode,200);
+ for(const externalId of ['first','second']){
+  const created=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:'Speaker A: I felt pressured at work. Speaker B: Could you describe what happened? Speaker A: A colleague kept assigning my tasks.',document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});
+  assert.equal(created.statusCode,200,created.body);
+ }
+ await node.materialOrganizer.tick();await node.sourcePipelines.tick();
+ const materials=node.materials.list({sourceId:'generated-dialogues'}).items;assert.equal(materials.length,2);
+ const start=await api('POST','/api/memory-jobs',{evidenceIds:materials.flatMap(material=>node.materials.evidenceIds(material.ref)),recipes:[{id:'mote.personal-memory',version:'2'}]});
+ assert.equal(start.statusCode,202,start.body);
+ const job=await node.memoryPipeline.run(start.json().id);assert.equal(job.status,'waiting_for_input');assert.equal(job.batches.length,1);
+ const questions=(await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id))).json().items;
+ assert.equal(questions.length,2);assert.notEqual(questions[0].materialId,questions[1].materialId);
+ const batch=()=>JSON.parse(String(node.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json));
+ const snapshot=()=>node.store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ const before=snapshot(),originalStamp=batch().transitionStamp,updated:string[]=[],prepare=node.store.db.prepare.bind(node.store.db);
+ let receipts=0,committedStamp:string|undefined;
+ const spy=t.mock.method(node.store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{if(args[1]===job.id)updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  if(sql==='INSERT INTO owner_question_replies VALUES(?,?,?)'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{
+    receipts++;
+    if(receipts===1){committedStamp=batch().transitionStamp;assert.notEqual(committedStamp,originalStamp);}
+    if(receipts===2){assert.equal(updated.length,0,'both reply transactions must precede the queued parent refresh');assert.notEqual(batch().transitionStamp,committedStamp);throw new Error('generated second receipt failure');}
+    return run(...args as Parameters<typeof run>);
+   }) as typeof statement.run;
+  }
+  return statement;
+ });
+ // Hold only the external model boundary. Release both real HTTP replies in
+ // one turn, so their synchronous commit/rollback precedes queued reconciliation.
+ const replies=questions.map((question:{id:string;revision:number})=>api('POST','/api/owner-questions/'+question.id+'/reply',{requestId:randomUUID(),expectedRevision:question.revision,action:'answer',answer:'The first speaker corresponds to me.'}).then(response=>response));
+ while(answers.length<2)await nextTurn();
+ await delay(5);for(const answer of answers)answer();
+ const responses=await Promise.all(replies);
+ assert.deepEqual(responses.map(response=>response.statusCode).sort(),[200,500]);assert.equal(receipts,2);
+ assert.equal(batch().status,'completed');assert.equal(batch().transitionStamp,committedStamp,'rollback must restore the successful first reply stamp');
+ const states=(await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id))).json().items.map((question:{state:string})=>question.state).sort();
+ assert.deepEqual(states,['answered','open']);
+ await nextTurn();await nextTurn();
+ assert.equal(updated.length,1,'the successful reply must advance the parent exactly once despite the later rollback');
+ const after=snapshot(),oldJob=JSON.parse(before.json),newJob=JSON.parse(after.json);
+ for(const key of ['status','totalBatches','completedBatches','failedBatches','runningBatches','pendingBatches','errorCode','availableAt'])assert.equal(newJob[key],oldJob[key],key+' remains unchanged');
+ assert.ok(newJob.updatedAt>oldJob.updatedAt);assert.ok(after.updated_at>before.updated_at);
+ updated.length=0;
+ for(let i=0;i<3;i++){node.memoryPipeline.wake();await nextTurn();await nextTurn();}
+ assert.equal(updated.length,0,'reconciled or rolled-back stamps must not produce later phantom activity');assert.deepEqual(snapshot(),after);
+ spy.mock.restore();
+});
+
 test('job summaries count distinct surviving batch memories without exposing their IDs',async t=>{
  const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());
  const pipeline=fixtureMemoryPipeline({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>result(record.id)}});t.after(()=>pipeline.close());
