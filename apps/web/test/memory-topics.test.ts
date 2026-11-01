@@ -91,6 +91,24 @@ test('a provider failure surfaces while the view stays visible and recovers on t
  assert.equal(catalogReads(reads),5,'each ten-second revalidation issues exactly one read');
 });
 
+test('a failed read during running classification backs off to the bounded interval and recovers',async t=>{
+ const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
+ let status=0,state='running';
+ const {api,reads}=countingApi(()=>{if(status)throw new ApiError('Generated provider failure',status);return {classification:{state},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[{id:'one',label:'Generated node'}]}]}});
+ await act(async()=>root.render(React.createElement(LiveTopics,{api,treeId:'auto.fixture',nodeId:'one'})));
+ assert.equal(catalogReads(reads),1);
+ await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),2,'running classification re-reads every five seconds');
+ // The failed read retains the stale 'running' receipt; it must not keep the
+ // five-second cadence for the rest of the outage.
+ status=502;await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),3,'the next five-second read observes the outage');
+ assert.ok(d.querySelector('[role=alert]'));assert.ok(d.querySelector('.memory-topic-nodes'),'the last delivered topics stay visible');
+ await act(async()=>t.mock.timers.tick(5000));assert.equal(catalogReads(reads),3,'a failed read switches to the ten-second interval');
+ status=0;state='ready';await act(async()=>t.mock.timers.tick(5000));
+ assert.equal(catalogReads(reads),4,'recovery arrives on the error interval, not the retained running cadence');
+ assert.equal(d.querySelector('[role=alert]'),null);assert.ok(d.querySelector('.memory-topic-nodes'));
+ for(let i=0;i<2;i++)await act(async()=>t.mock.timers.tick(10000));assert.equal(catalogReads(reads),6,'the recovered ready catalog keeps the bounded revalidation');
+});
+
 test('running classification polls every five seconds and falls back to the bounded revalidation when ready',async t=>{
  const {root}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});
  let state='running';const data={classification:{state:'running'},items:[{id:'auto.fixture',version:'1',label:'Generated auto',nodes:[]}]};

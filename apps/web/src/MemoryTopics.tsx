@@ -12,7 +12,9 @@ export function MemoryTopics({api,treeId,nodeId,onChange}:{api:Api;treeId:string
  // provider-backed batch exists and classifier lifecycle transitions already
  // publish feed events. Every other state may hide provider-suppressed trees
  // whose recovery emits no local event, so it keeps a bounded revalidation.
- useEffect(()=>{const state=trees.data?.classification?.state;setPollMs(state==='running'?5000:trees.error===undefined&&state==='unavailable'?undefined:10000);},[trees.data,trees.error]);
+ // A failed read takes precedence over retained data — a stale 'running'
+ // receipt must not sustain the five-second cadence through an outage.
+ useEffect(()=>{const state=trees.data?.classification?.state;setPollMs(trees.error!==undefined?10000:state==='running'?5000:state==='unavailable'?undefined:10000);},[trees.data,trees.error]);
  useEffect(()=>{
   if(typeof document==='undefined')return;
   const revalidate=()=>{if(!document.hidden)resources(api).get('/api/context-trees').refresh();};
