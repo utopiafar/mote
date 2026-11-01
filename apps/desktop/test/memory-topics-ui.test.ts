@@ -20,7 +20,7 @@ it.each(['version','stale','superseded','wrong-id','denied'])('rechecks the open
  const current={id,title:'Memory',status:'published',version:1,statement:'GENERATED BODY',evidenceIds:[]};
  if(change==='denied')vi.mocked(api.memoryTopicDetail).mockRejectedValue(Error('403'));
  else vi.mocked(api.memoryTopicDetail).mockResolvedValue({...current,...change==='version'?{version:2}:change==='stale'?{status:'stale'}:change==='superseded'?{supersededBy:id}:{id:'22222222-2222-4222-8222-222222222222'}});
- await vi.advanceTimersByTimeAsync(5000);await flush();expect(root.textContent).not.toContain('GENERATED BODY');expect(root.querySelector('[data-memory]')).toBeNull();
+ await vi.advanceTimersByTimeAsync(60000);await flush();expect(root.textContent).not.toContain('GENERATED BODY');expect(root.querySelector('[data-memory]')).toBeNull();
 });
 it('invalidation rejects a late original response, without returning its old body',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});vi.mocked(api.memoryTopicDetail).mockResolvedValue({id,title:'Memory',version:1,status:'published',statement:'BODY',evidenceIds:[id]});
@@ -28,5 +28,42 @@ it('invalidation rejects a late original response, without returning its old bod
  ui.open();await flush();(root.querySelector('[data-memory]') as HTMLElement).click();await flush();click('查看原文依据 1');await flush();
  // The original request is pending while a directory/Memory validation invalidates this view.
  vi.mocked(api.memoryTopicDetail).mockResolvedValue({id,title:'Memory',version:2,status:'published'});
- await vi.advanceTimersByTimeAsync(5000);await flush();finish({id,text:'LATE ORIGINAL',metadata:''});await flush();expect(root.textContent).not.toContain('LATE ORIGINAL');
+ await vi.advanceTimersByTimeAsync(60000);await flush();finish({id,text:'LATE ORIGINAL',metadata:''});await flush();expect(root.textContent).not.toContain('LATE ORIGINAL');
+});
+it('polls the directory once per 60s while classification is not running',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(59999);expect(api.memoryTopics).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(1);expect(api.memoryTopics).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(59999);expect(api.memoryTopics).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(1);expect(api.memoryTopics).toHaveBeenCalledTimes(3);
+});
+it('polls the directory every 5s while classification is running',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
+ vi.mocked(api.memoryTopics).mockResolvedValue({items:[{id:'auto.one',label:'One',nodes:[{id:'a',label:'Topic'}]}],classification:{state:'running'}});
+ ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
+ for(const count of[2,3,4]){await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(count);}
+});
+it('applies the latest directory classification state to the next poll',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});let state='ready';
+ vi.mocked(api.memoryTopics).mockImplementation(async()=>({items:[{id:'auto.one',label:'One',nodes:[{id:'a',label:'Topic'}]}],classification:{state}}));
+ ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
+ state='running';await vi.advanceTimersByTimeAsync(5000);expect(api.memoryTopics).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(55000);expect(api.memoryTopics).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(5000);expect(api.memoryTopics).toHaveBeenCalledTimes(3);
+ state='ready';await vi.advanceTimersByTimeAsync(5000);expect(api.memoryTopics).toHaveBeenCalledTimes(4);
+ await vi.advanceTimersByTimeAsync(5000);expect(api.memoryTopics).toHaveBeenCalledTimes(4);
+ await vi.advanceTimersByTimeAsync(55000);expect(api.memoryTopics).toHaveBeenCalledTimes(5);
+});
+it('stops polling after close and does not revive a pending read',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});let release!:(directory:unknown)=>void;
+ vi.mocked(api.memoryTopics).mockImplementationOnce(()=>new Promise(r=>{release=r;}) as never);
+ ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);ui.close();
+ release({items:[],classification:{state:'running'}});await flush();await vi.advanceTimersByTimeAsync(120000);
+ expect(api.memoryTopics).toHaveBeenCalledTimes(1);expect(root.open).toBe(false);
+});
+it('reopens with a single fresh poll cycle',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
+ ui.open();await flush();ui.close();ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(60000);expect(api.memoryTopics).toHaveBeenCalledTimes(3);
+ await vi.advanceTimersByTimeAsync(60000);expect(api.memoryTopics).toHaveBeenCalledTimes(4);
 });
