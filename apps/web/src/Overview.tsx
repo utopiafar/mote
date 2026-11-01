@@ -9,6 +9,7 @@ import {answerPreview} from './AnswerMarkdown';
 import {dateTime,errorMessage,type Answer,type Api,type Device,type Range,type Status} from './api';
 import {type Page} from './navigation';
 import {FeatureHome} from './features/home';
+import {useOperationUpdates} from './useOperationUpdates';
 import {useResource} from './useResource';
 import {HomeMaterialRow,type RecentMaterial} from './HomeMaterialRow';
 import {ownerQuestionListPath,openOwnerQuestionList} from './owner-question-route';
@@ -37,6 +38,9 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
  const catalog=useResource<OwnerBrowsePage>(api,'/api/library/browse?limit=3');
  const conversations=useResource<{items:Conversation[]}>(api,canConversations?'/api/conversations?limit=3':null);
  const questions=useResource<{items:{id:string}[];nextCursor?:string|null}>(api,canQuestions?ownerQuestionListPath():null);
+ // The shared change feed is what discovers reviews started on other devices:
+ // its insight: rule invalidates the run list, which then enters running polls.
+ useOperationUpdates(api);
  const [runsActive,setRunsActive]=useState(false);
  const insightRuns=useResource<{items:InsightRun[]}>(api,canInsightRuns?'/api/insight-runs':null,runsActive?5000:undefined);
  useEffect(()=>setRunsActive(Boolean(insightRuns.data?.items.some(run=>run.status==='running'))),[insightRuns.data]);
