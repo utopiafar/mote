@@ -46,7 +46,7 @@ export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;b
 type Chunk=EvidenceRange&{materialInputFingerprints?:string[];strategy?:MemoryRecipeBinding;reviewFingerprint?:string;profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
 export type MemoryBatch={contextFeedbackChildId?:string;failureReceipt?:ExecutionFailureReceipt;workContract?:MemoryWorkContract;evaluation?:{workContract:MemoryWorkContract;selectedCandidates:number;assessedTargets:number;incompleteTargets:number;reviewRunId?:string;resultHash:string;checkedAt:string};generationContract?:string;replanRound?:number;feedbackRound?:number;feedbackWorkId?:string;workerGoal?:string;workerInstruction?:string;contextRanges?:EvidenceRange[];coverage?:MemoryWorkMember[];reviewReceipt?:MemoryReviewReceipt;supersededBy?:string[];strategy?:MemoryRecipeBinding;configuration?:ModelConfiguration;id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope};
 type BatchInputScope={planIds?:string[];materialInputs:MaterialInputPin[];materialRefs:Record<string,string>};
-type StoredBatch=MemoryBatch&BatchInputScope&{nativeDraft?:{key:string;context:MemoryEngineDraftPin};engineDrafts?:MemoryEngineDraftPin[];feedbackOnly?:boolean;contextFeedbackChildId?:string;artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];contextChunks?:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
+type StoredBatch=MemoryBatch&BatchInputScope&{transitionStamp?:string;nativeDraft?:{key:string;context:MemoryEngineDraftPin};engineDrafts?:MemoryEngineDraftPin[];feedbackOnly?:boolean;contextFeedbackChildId?:string;artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];contextChunks?:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
 export type MemoryJob={failureReceipt?:ExecutionFailureReceipt;priorValidationFailure?:(MemoryValidationFailure&{batchId:string;batchIndex:number});outcome?:'completed'|'processing_failed'|'input_invalidated';invalidatedBatches?:number;contextReadVersion?:1;workContract?:MemoryWorkContract;continuationOf?:string;cancellationCause?:'authority'|'owner';authorizedChunks?:Chunk[];activationRequired:boolean;inputPlanVersion:1;inputPlans:MemoryPlanSummary;recipeProgress:MemoryRecipeProgress[];materialInputs?:MaterialInputPin[];batchCharacters?:number;automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage;contextTime:string;recipes?:MemoryStrategyRef[];configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs?:Record<string,string>;language?:Locale;id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'waiting_for_input'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];memoryCount:number;availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={processingImages?:QueryInput['processingImages'];memoryReviewQuestion?:string;memoryReviewRepair?:string;taskContext?:QueryInput['taskContext'];processingMaterialInputs?:QueryInput['processingMaterialInputs'];processingEvidence?:QueryInput['processingEvidence'];contextTime?:string;signal?:AbortSignal;language?:Locale;modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory'|'memory-strategy';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];evidenceReadRanges?:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
@@ -155,6 +155,7 @@ export class MemoryPipeline {
   private drafts:MemoryExtractionDrafts;
   private inputPlans:MemoryInputPlans;
   private active=new Map<string,Promise<MemoryJobDetail>>();
+  private batchTransitions=new Map<string,Map<string,Set<string>>>();
   readonly engine:ExecutionEngine;
   private owned:boolean;
   private completions=new Map<string,{resolve:(job:MemoryJobDetail)=>void;reject:(error:unknown)=>void}>();
@@ -323,7 +324,21 @@ export class MemoryPipeline {
   private batches(id:string):StoredBatch[]{return (this.store.db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(id) as {json:string}[]).map(row=>decodeMemoryBatch<StoredBatch>(this.store,row.json));}
   private batch(id:string):StoredBatch {const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(id);if(!row)throw new StoreError('Memory batch not found',404);return decodeMemoryBatch<StoredBatch>(this.store,String(row.json));}
   private saveJob(job:MemoryJob){const {batches:_batches,inputPlans:_plans,recipeProgress:_recipes,memoryCount:_count,outcome:_outcome,invalidatedBatches:_invalidated,priorValidationFailure:_validation,...value}=job as MemoryJobDetail;value.updatedAt=new Date().toISOString();const prior=this.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id),json=encodeMemoryJob(this.store,value,Boolean(prior&&JSON.parse(String(prior.json)).privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(prior?.json??''))));this.store.db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(json,job.id);}
-  private saveBatch(batch:StoredBatch){const prior=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(batch.id),json=encodeMemoryBatch(this.store,batch,Boolean(prior&&JSON.parse(String(prior.json)).privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(prior?.json??''))));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);}
+  private saveBatch(batch:StoredBatch){
+    const priorRow=this.store.db.prepare('SELECT job_id,json FROM memory_batches WHERE id=?').get(batch.id) as {job_id:string;json:string}|undefined,prior=priorRow?JSON.parse(String(priorRow.json)) as StoredBatch&{privateRetired?:boolean}:undefined;
+    const transitioned=prior!==undefined&&prior.status!==batch.status;
+    // The stamp rides the same row write as the status change, so the marker below
+    // can only match a transition whose transaction actually committed; a rollback
+    // restores the previous stamp even when it restores the same status value.
+    if(transitioned)batch.transitionStamp=randomUUID();
+    const json=encodeMemoryBatch(this.store,batch,Boolean(prior?.privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(priorRow?.json??''))));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);
+    if(transitioned){
+      const jobId=String(priorRow!.job_id),markers=this.batchTransitions.get(jobId)??new Map<string,Set<string>>(),stamps=markers.get(batch.id)??new Set<string>();
+      // A later transaction can roll back to an earlier, still-unreconciled
+      // committed stamp. Keep every candidate until refresh checks the row.
+      stamps.add(batch.transitionStamp!);markers.set(batch.id,stamps);this.batchTransitions.set(jobId,markers);
+    }
+  }
   private checkpoint(chunk:Chunk){return Boolean(this.store.db.prepare('SELECT key FROM memory_checkpoints WHERE key=?').get(chunk.key));}
   get(id:string):MemoryJobDetail {
     const job=this.storedJob(id),batches=this.batches(id),failedBatches=batches.filter(b=>b.status==='failed').length,invalidatedBatches=batches.filter(b=>b.status==='invalidated').length,plans=this.planView(id);
@@ -333,7 +348,7 @@ export class MemoryPipeline {
     const errorCode=(status==='failed'?batches.find(b=>b.status==='failed'&&b.errorCode)?.errorCode:undefined)??job.errorCode??batches.find(b=>b.errorCode)?.errorCode;
     return {...job,...plans,status,outcome,errorCode,priorValidationFailure:this.priorValidationFailure(id),invalidatedBatches,queuePosition:this.queuePosition(id),runningBatches:batches.filter(b=>b.status==='running').length,pendingBatches:batches.filter(b=>b.status==='pending').length,lastSavedAt:(this.store.db.prepare("SELECT max(created_at) AS at FROM memories WHERE id IN (SELECT value FROM json_each(?))").get(JSON.stringify(memoryIds)) as {at?:string})?.at??undefined,totalBatches:batches.length,completedBatches:batches.filter(b=>b.status==='completed').length,failedBatches,memoryIds,memoryCount:memoryIds.length,
       execution:executionEnvelope({status:outcome==='input_invalidated'?'skipped':status==='paused'||status==='waiting_for_input'?'waiting':status==='pausing'?'running':status,attempts,errorCode,availableAt:job.availableAt,updatedAt:job.updatedAt}),
-      failureReceipt:this.lastFailureReceipt(id),batches:batches.map(({nativeDraft:_nativeDraft,engineDrafts:_engineDrafts,chunks:_chunks,contextChunks:_contexts,resourceEvidenceIds:_resources,materialInputs:_inputs,materialRefs:_refs,...batch})=>({...batch,failureReceipt:this.engine.failure(batch.id),execution:executionEnvelope({status:batch.status==='pending'?'queued':batch.status==='completed'?'succeeded':batch.status==='invalidated'?'skipped':batch.status,attempts:batch.attempts,errorCode:batch.errorCode,availableAt:batch.availableAt})}))};
+      failureReceipt:this.lastFailureReceipt(id),batches:batches.map(({nativeDraft:_nativeDraft,engineDrafts:_engineDrafts,chunks:_chunks,contextChunks:_contexts,resourceEvidenceIds:_resources,materialInputs:_inputs,materialRefs:_refs,transitionStamp:_transition,...batch})=>({...batch,failureReceipt:this.engine.failure(batch.id),execution:executionEnvelope({status:batch.status==='pending'?'queued':batch.status==='completed'?'succeeded':batch.status==='invalidated'?'skipped':batch.status,attempts:batch.attempts,errorCode:batch.errorCode,availableAt:batch.availableAt})}))};
   }
   private lastFailureReceipt(id:string):ExecutionFailureReceipt|undefined {const row=this.store.db.prepare("SELECT f.json FROM execution_failures f JOIN execution_steps e ON e.id=f.step_id WHERE e.operation_id=? ORDER BY json_extract(f.json,'$.at') DESC LIMIT 1").get('memory:'+id);return row?JSON.parse(String(row.json)):undefined;}
   /** Repair only a proven terminal planner failure, never restart or rebind work. */
@@ -777,6 +792,15 @@ export class MemoryPipeline {
   }
   private refreshJob(id:string){
     const job=this.storedJob(id),counts=this.counts(id);
+    // saveBatch may run inside a larger SQLite transaction, so a recorded marker
+    // only counts while one of its stamped writes is still the persisted row.
+    // Rollback rejects that transaction's candidates without hiding an earlier
+    // committed transition awaiting this refresh, even for equal final statuses.
+    const markers=this.batchTransitions.get(id);this.batchTransitions.delete(id);
+    const transitioned=markers?[...markers].some(([batchId,stamps])=>stamps.has(String(this.store.db.prepare("SELECT json_extract(json,'$.transitionStamp') stamp FROM memory_batches WHERE id=?").get(batchId)?.stamp))):false;
+    // Jobs persisted before the derived counters existed take the current projection as
+    // their baseline; only a real batch transition above makes an unchanged refresh a write.
+    job.runningBatches??=Number(counts.running);job.pendingBatches??=Number(counts.pending);
     const before=JSON.stringify({...job,updatedAt:undefined});
     if(job.status==='pausing'&&Number(counts.running)===0)job.status='paused';
     {
@@ -790,7 +814,8 @@ export class MemoryPipeline {
     if(!['waiting_for_model','waiting_for_input'].includes(job.status))job.errorCode=job.errorCode||String(this.store.db.prepare("SELECT json_extract(json,'$.errorCode') error FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','invalidated') LIMIT 1").get(id)?.error??'')||undefined;
     if(job.status!=='waiting_for_input')job.availableAt=Number(this.store.db.prepare("SELECT max(json_extract(json,'$.availableAt')) at FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','pending')").get(id)?.at)||undefined;
     job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);
-    if(JSON.stringify({...job,updatedAt:undefined})!==before)this.saveJob(job);
+    job.runningBatches=Number(counts.running);job.pendingBatches=Number(counts.pending);
+    if(transitioned||JSON.stringify({...job,updatedAt:undefined})!==before)this.saveJob(job);
   }
   private assertStrategies(batch:StoredBatch){
     for(const chunk of batch.chunks){
@@ -886,7 +911,7 @@ export class MemoryPipeline {
     let chunks:Chunk[]=[];
     if(!observeCurrent(()=>{
       if(batch.chunks.every(c=>!c.strategy&&c.profile!=='coding')&&job.skillVersion!==currentSkill){batch.skillVersion=currentSkill;batch.chunks=batch.chunks.map(c=>({...c,key:sha256(JSON.stringify([c.id,c.fingerprint,c.offset,c.length,currentSkill,c.reviewFingerprint]))}));this.saveBatch(batch);}
-      chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));const currentJob=this.storedJob(id);currentJob.skippedChunks+=batch.chunks.length-chunks.length;this.saveJob(currentJob);
+      chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));const skipped=batch.chunks.length-chunks.length;if(skipped>0){const currentJob=this.storedJob(id);currentJob.skippedChunks+=skipped;this.saveJob(currentJob);}
     }))throw new ExecutionFailure('waiting','interrupted');
     if(batch.chunks.some(chunk=>{const record=this.options.memories.readEvidence([chunk.id])[0];return !chunk.strategy&&record&&chunk.profile==='coding'&&chunk.profileVersion&&chunk.profileVersion!==memoryProfile(record).version;}))throw new ExecutionFailure('stale','skill_changed');
     if(!chunks.length)return;
