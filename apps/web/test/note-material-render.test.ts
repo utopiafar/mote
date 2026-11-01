@@ -15,6 +15,11 @@ import {resources} from '../src/resource-cache';
 import {noteMaterialFixture} from './note-material-fixture';
 import {materialId} from '../../server/src/materials.js';
 function span(blockId:string,start:number,end:number,format='plain'):NoteReadSpan{return{blockId,kind:'text',format,pageRange:{start,end},materialRange:{start,end},memberIds:[]};}
+async function quoteTick(t:import('node:test').TestContext,ms=0){await act(async()=>{t.mock.timers.tick(ms);await new Promise<void>(resolve=>setImmediate(resolve));});}
+function quoteVisibility(d:Document){
+ let hidden=false;Object.defineProperty(d,'hidden',{get:()=>hidden,configurable:true});
+ return async(value:boolean)=>{hidden=value;await act(async()=>d.dispatchEvent(new d.defaultView!.Event('visibilitychange')));};
+}
 async function settle(check:()=>boolean){for(let n=0;n<80&&!check();n++)await act(async()=>new Promise(resolve=>setTimeout(resolve,10)));assert.equal(check(),true,'actual Note Material view settled');}
 async function fixture(t:import('node:test').TestContext){
  await featuresReady;const directory=await mkdtemp(join(tmpdir(),'mote-note-material-contract-'));t.after(()=>rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:50}));const node=await noteMaterialFixture(directory),prior=new Map<string,PropertyDescriptor|undefined>(),locale=getLocale(),seen:string[]=[];
@@ -112,4 +117,59 @@ test('an owner switch while expansion is held cannot publish the old full snapsh
 test('switching to a new Material revision during a held expansion cannot reveal the old quote',async t=>{
  const f=await fixture(t),old=f.longQuote.material;let release!:()=>void,started=false;f.hold((path,response)=>{if(path.includes(old.id)&&path.includes('length=12000')){started=true;return new Promise(done=>release=()=>done(response));}});await f.render(old);await settle(()=>Boolean([...f.d.querySelectorAll('button')].find(button=>button.textContent==='查看全部内容')));await f.click('查看全部内容');await settle(()=>started);
  const next=f.materials.publish({id:old.id,kind:old.kind,schemaVersion:old.schemaVersion,title:'Generated new pinned revision',origin:old.origin,members:[{id:f.longQuote.id,kind:'capture',ref:'capture:'+f.longQuote.id}],blocks:[{id:'record',kind:'text',format:'plain',text:'Generated new revision only',memberIds:[f.longQuote.id]}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},{expectedRevision:old.revision});await f.render(next);await settle(()=>Boolean(f.d.querySelector('.note-material-record pre')?.textContent?.includes('Generated new revision only')));await act(async()=>release());assert.equal(Boolean(f.d.querySelector('.quoted-answer-markdown')),false);assert.doesNotMatch(f.d.body.textContent!,/Generated long answer/);assert.match(f.d.querySelector('.note-material-record')!.textContent!,/Generated new revision only/);
+});
+
+test('a mounted saved quote stops timer reads for 60s hidden and coalesces its foreground refresh',async t=>{
+ const f=await fixture(t),visible=quoteVisibility(f.d),path='/api/capture-browser/'+f.exact.id;
+ t.mock.timers.enable({apis:['setTimeout']});
+ try{
+  await f.render(f.exact.material);await quoteTick(t);assert.ok(f.d.querySelector('.note-material-quote nav'));
+  const count=()=>f.seen.filter(value=>value===path).length;assert.equal(count(),1);
+  await visible(true);await quoteTick(t,60000);assert.equal(count(),1,'hidden timers must not read the saved quote');
+  await visible(false);await visible(false);await quoteTick(t);assert.equal(count(),2,'one foreground transition reads the exact quote once');
+  await quoteTick(t,4999);assert.equal(count(),2);await quoteTick(t,1);assert.equal(count(),3,'visible 5s safety revalidation remains');
+  assert.equal(f.d.querySelector('.note-material-quote pre')!.textContent,'Generated saved question?');
+  assert.ok(f.seen.some(value=>value.includes('/read?revision='+f.exact.material.revision)),'the Material revision stays pinned');
+ }finally{t.mock.timers.reset();}
+});
+
+test('foreground quote revalidation lets a held read finish then performs one fresh follow-up',async t=>{
+ const f=await fixture(t),visible=quoteVisibility(f.d),path='/api/capture-browser/'+f.exact.id;let release!:()=>void;
+ t.mock.timers.enable({apis:['setTimeout']});
+ try{
+  await f.render(f.exact.material);await quoteTick(t);assert.ok(f.d.querySelector('.note-material-quote nav'));
+  f.hold((value,response)=>value===path?new Promise(done=>{release=()=>done(response);}):undefined);
+  await quoteTick(t,5000);const count=()=>f.seen.filter(value=>value===path).length;assert.equal(count(),2);
+  await visible(true);await quoteTick(t,60000);await visible(false);await visible(false);assert.equal(count(),2,'do not replace the held read');
+  f.hold(undefined);await act(async()=>release());await quoteTick(t);assert.equal(count(),3,'coalesce visibility hints into one fresh read after completion');
+  assert.ok(f.d.querySelector('.note-material-quote nav'));
+  await quoteTick(t,5000);assert.equal(count(),4);
+ }finally{t.mock.timers.reset();}
+});
+
+test('an old Api cannot publish its held quote or run a queued foreground refresh after owner switch',async t=>{
+ const f=await fixture(t),visible=quoteVisibility(f.d),path='/api/capture-browser/'+f.exact.id;let release!:()=>void;
+ t.mock.timers.enable({apis:['setTimeout']});
+ try{
+  await f.render(f.exact.material);await quoteTick(t);
+  f.hold((value,response)=>value===path?new Promise(done=>{release=()=>done(response);}):undefined);
+  await quoteTick(t,5000);assert.equal(typeof release,'function');await visible(true);await visible(false);
+  f.hold(undefined);await f.render(f.exact.material,createApi({token:'generated-denied-owner'}));await quoteTick(t);
+  await act(async()=>release());await quoteTick(t,60000);
+  assert.equal(f.seen.filter(value=>value===path).length,2,'the detached owner must not run its queued follow-up');
+  assert.equal(Boolean(f.d.querySelector('.note-material-body')),false);assert.doesNotMatch(f.d.body.textContent!,/Generated answer/);assert.deepEqual(f.opened,[]);
+ }finally{t.mock.timers.reset();}
+});
+
+for(const status of [401,403,404,409])test('foreground quote HTTP '+status+' preserves the literal snapshot and removes source navigation',async t=>{
+ const f=await fixture(t),visible=quoteVisibility(f.d),path='/api/capture-browser/'+f.exact.id;
+ t.mock.timers.enable({apis:['setTimeout']});
+ try{
+  await f.render(f.exact.material);await quoteTick(t);assert.ok(f.d.querySelector('.note-material-quote nav'));
+  await visible(true);f.hold(value=>value===path?Promise.resolve(new Response('{"error":"generated-unavailable"}',{status,headers:{'content-type':'application/json'}})):undefined);
+  await visible(false);await quoteTick(t);
+  const quote=f.d.querySelector('.note-material-quote')!;
+  assert.match(quote.textContent!,/原文暂不可用/);assert.equal(quote.querySelector('nav'),null);
+  assert.equal(quote.querySelector('pre')!.textContent,f.exactSnapshot+'\n');assert.deepEqual(f.opened,[]);
+ }finally{t.mock.timers.reset();}
 });
