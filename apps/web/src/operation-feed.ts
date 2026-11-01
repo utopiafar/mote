@@ -30,6 +30,7 @@ export function affectedResource(key:string,ids:Set<string>,reset:boolean){
  if(/^\/api\/(plugins|plugin-instances)(\/|$)/.test(path))return changed('plugin','memory');
  if(/^\/api\/memory-spaces(\/|$)/.test(path))return changed('memory','plugin','workflow');
  if(/^\/api\/(memories|memory-jobs)(\/|$)/.test(path))return changed('memory','import','capture','file','workflow');
+ if(path==='/api/capture-browser/timeline'||path==='/api/capture-browser/timeline/members')return reset;
  if(/^\/api\/(files|capture-browser|captures|source-items|sources)(\/|$)/.test(path))return changed('file','capture','import');
  if(/^\/api\/(materials|agent-view\/materials|agent-view\/material-read)(\/|$)/.test(path))return changed('material-index','workflow','file','capture','import');
  if(/^\/api\/(query-runs|conversations)(\/|$)/.test(path))return changed('query','capture','file','import');
