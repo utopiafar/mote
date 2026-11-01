@@ -135,6 +135,7 @@ it('renders an owner description separately and clears it when the reader closes
 });
 
 it('keeps recent content complete without changing the Content workspace filter',async()=>{
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;
   const local={...item,key:'queue:22222222-2222-4222-8222-222222222222',title:'Generated local note'};
   vi.mocked(api.localContent).mockResolvedValue({items:[local],total:1});
   (el('content-scope') as HTMLSelectElement).value='received';
@@ -167,7 +168,7 @@ it('does not turn a local read failure into an empty first-use screen and still 
 
 
 it('keeps search results independent from Home and invalidates a late older query',async()=>{
-  await flush();const search=el('content-search') as HTMLInputElement;
+  await flush();document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;const search=el('content-search') as HTMLInputElement;
   let finish!:(value:CentralContentPage)=>void;
   vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
   search.value='older';const pending=library.refresh();await flush();
@@ -228,4 +229,179 @@ it('does not restore retained central rows when a pre-denial content request fai
   vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise((_resolve,fail)=>{reject=fail;}));const pending=library.refresh();await flush();
   page={items:[],total:0,authorizationDenied:true};await library.refreshHome();reject(Error('Generated delayed transport failure'));await pending;await flush();
   expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();expect(el('content-feed').querySelector('[data-content-key^="capture:"]')).toBeNull();
+});
+
+it('reads local and central once for a search while the hidden Home is not refreshed',async()=>{
+  await flush();
+  const before={local:vi.mocked(api.localContent).mock.calls.length,central:vi.mocked(api.centralContent).mock.calls.length};
+  (el('content-search') as HTMLInputElement).value='generated query';await library.refresh();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+1);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
+  expect(vi.mocked(api.localContent).mock.calls.at(-1)).toEqual([0,'generated query']);
+  expect(vi.mocked(api.centralContent).mock.calls.at(-1)).toEqual([undefined,'generated query']);
+});
+
+it('defers the Home read while hidden and catches up once the overview is visible again',async()=>{
+  await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';
+  const before={local:vi.mocked(api.localContent).mock.calls.length,central:vi.mocked(api.centralContent).mock.calls.length};
+  await library.refresh();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+1);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central);
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;
+  library.update({...status});await flush();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+2);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
+});
+
+it('discards a delayed hidden-Home denial that lands after a newer filtered search succeeds',async()=>{
+  await flush();
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=false;
+  let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));
+  const home=library.refreshHome();await flush();
+  document.querySelector<HTMLElement>('[data-page=overview]')!.hidden=true;
+  (el('content-search') as HTMLInputElement).value='generated query';await library.refresh();await flush();
+  await open(item.key);expect(dialog.open).toBe(true);
+  deny({items:[],total:0,authorizationDenied:true});await home;await flush();
+  expect(el('content-feed').querySelector(`[data-content-key="${item.key}"]`)).not.toBeNull();
+  expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
+});
+
+it.each([401,403])('honors delayed Home HTTP %s after a local-only refresh with no newer Central authorization result',async code=>{
+  await flush();await library.refreshHome();await open(item.key);
+  expect(dialog.open).toBe(true);expect(el('home-recent').querySelector(`[data-content-key="${item.key}"]`)).not.toBeNull();
+  let finish!:(value:Response)=>void;
+  vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;})));
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>centralContentPage({...defaultConfig(),serverUrl:status.config.serverUrl,token:'generated-token',deviceId:id}));
+  const home=library.refreshHome();await flush();
+  const centralReads=vi.mocked(api.centralContent).mock.calls.length;
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();
+  expect(api.centralContent).toHaveBeenCalledTimes(centralReads);
+  finish(new Response('{}',{status:code}));await home;await flush();
+  expectCleared();expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();
+  expect(el('content-feed').querySelector('[data-content-key^="capture:"]')).toBeNull();
+});
+
+it('observes newer Central success before its held local read so an older Home denial cannot clear it',async()=>{
+  await flush();await open(item.key);
+  let deny!:(value:CentralContentPage)=>void,finishLocal!:(value:{items:ContentItem[];total:number})=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();
+  (el('content-scope') as HTMLSelectElement).value='all';(el('content-search') as HTMLInputElement).value='newer';
+  vi.mocked(api.localContent).mockImplementationOnce(()=>new Promise(resolve=>{finishLocal=resolve;}));
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[{...item,title:'Generated newer successful match'}]});const search=library.refresh();await flush();
+  deny({items:[],authorizationDenied:true});await home;expect(dialog.open).toBe(true);
+  finishLocal({items:[],total:0});await search;await flush();
+  expect(el('content-feed').textContent).toContain('Generated newer successful match');expect(dialog.open).toBe(true);
+});
+
+it('keeps a newer successful Home snapshot when the older unfiltered Content request denies access',async()=>{
+  await flush();let finish!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));const content=library.refresh();await flush();
+  page={items:[{...item,title:'Generated newer Home row'}]};await library.refreshHome();
+  finish({items:[],authorizationDenied:true});await content;await flush();
+  expect(el('home-recent').textContent).toContain('Generated newer Home row');expect(el('home-onboarding').hidden).toBe(true);
+  expect(el('content-status').textContent).toContain('内容暂不可完整读取');
+});
+
+it.each(['central','local-receipt'])('keeps a newer successful %s reader when a superseded list denial arrives',async kind=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();
+  if(kind==='local-receipt')vi.mocked(api.localContentDetail).mockResolvedValueOnce(remote);
+  library.open({...item,key:kind==='central'?item.key:'queue:22222222-2222-4222-8222-222222222222'});await flush();
+  expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
+  deny({items:[],authorizationDenied:true});await home;await flush();
+  expect(dialog.open).toBe(true);expect(el('content-detail-body').textContent).toBe(remote.text);
+});
+
+it('confirms an apparently older denial after a newer reader success and honors current remote revocation',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();library.open(item);await flush();
+  expect(dialog.open).toBe(true);
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});
+  const reads=vi.mocked(api.centralContent).mock.calls.length;deny({items:[],authorizationDenied:true});await home;await flush();
+  expect(api.centralContent).toHaveBeenCalledTimes(reads+1);expectCleared();
+  expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();
+});
+
+it('withdraws private rows when confirmation of an ambiguous denial fails',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();library.open(item);await flush();
+  vi.mocked(api.centralContent).mockRejectedValueOnce(Error('Generated confirmation transport failure'));
+  deny({items:[],authorizationDenied:true});await home;await flush();expectCleared();
+  expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();expect(el('home-onboarding').hidden).toBe(true);
+});
+
+it('does not apply an old node confirmation denial after a new node reader succeeds',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void,confirm!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();library.open(item);await flush();
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{confirm=resolve;}));deny({items:[],authorizationDenied:true});await home;await flush();
+  library.update({...status,authorizationGeneration:2,config:{...status.config,serverUrl:'http://127.0.0.1:9998'}});await flush();
+  library.open({...item,title:'Generated new node reader'});await flush();confirm({items:[],authorizationDenied:true});await flush();
+  expect(dialog.open).toBe(true);expect(el('content-detail-title').textContent).toBe('Generated new node reader');expect(el('content-detail-body').textContent).toBe(remote.text);
+});
+
+it('checks again when a second delayed denial arrives after the in-flight confirmation was authorized',async()=>{
+  await flush();let denyHome!:(value:CentralContentPage)=>void,denyContent!:(value:CentralContentPage)=>void,confirm!:(value:CentralContentPage)=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{denyHome=resolve;}));const home=library.refreshHome();await flush();
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{denyContent=resolve;}));const content=library.refresh();await flush();
+  (el('content-scope') as HTMLSelectElement).value='local';await library.refresh();library.open(item);await flush();expect(dialog.open).toBe(true);
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{confirm=resolve;}));denyHome({items:[],authorizationDenied:true});await home;await flush();
+  const reads=vi.mocked(api.centralContent).mock.calls.length;denyContent({items:[],authorizationDenied:true});await content;await flush();expect(api.centralContent).toHaveBeenCalledTimes(reads);
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});confirm({items:[item]});await flush();
+  expect(api.centralContent).toHaveBeenCalledTimes(reads+1);expectCleared();
+});
+
+it('shows a confirmed denial and hides obsolete Central pagination while preserving local rows',async()=>{
+  await flush();const local={...item,key:'queue:22222222-2222-4222-8222-222222222222',title:'Generated safe local row'};
+  vi.mocked(api.localContent).mockResolvedValue({items:[local],total:1});
+  let deny!:(value:CentralContentPage)=>void;vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  (el('content-search') as HTMLInputElement).value='newer';vi.mocked(api.centralContent).mockResolvedValueOnce({items:[item],nextCursor:'generated-obsolete-next'});await library.refresh();
+  library.open(item);await flush();expect(el('content-more').hidden).toBe(false);
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});deny({items:[],authorizationDenied:true});await home;await flush();
+  expectCleared();expect(el('content-status').textContent).toContain('无法访问采集记录');expect(el('content-status').classList.contains('visually-hidden')).toBe(false);
+  expect(el('content-more').hidden).toBe(true);expect(el('content-feed').querySelector(`[data-content-key="${local.key}"]`)).not.toBeNull();
+});
+
+it('keeps the confirmed All-view denial visible while loading the next local page until a fresh Central success',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void;
+  const first={...item,key:'queue:22222222-2222-4222-8222-222222222222',title:'Generated first local page'},second={...first,key:'queue:33333333-3333-4333-8333-333333333333',title:'Generated second local page'};
+  vi.mocked(api.localContent).mockImplementation(async offset=>offset?{items:[second],total:31}:{items:[first],total:31,nextOffset:30});
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const home=library.refreshHome();await flush();
+  page={items:[item],nextCursor:'generated-old-central-page'};await library.refresh();
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});deny({items:[],authorizationDenied:true});await home;await flush();
+  expect(el('content-more').hidden).toBe(false);const reads=vi.mocked(api.centralContent).mock.calls.length;
+  el('content-more').click();await flush();
+  expect(api.centralContent).toHaveBeenCalledTimes(reads);expect(el('content-feed').textContent).toContain(first.title);expect(el('content-feed').textContent).toContain(second.title);
+  expect(el('content-status').textContent).toContain('无法访问采集记录');expect(el('content-status').classList.contains('visually-hidden')).toBe(false);
+  await library.refresh();expect(el('content-feed').querySelector(`[data-content-key="${item.key}"]`)).not.toBeNull();
+  expect(el('content-status').textContent).not.toContain('无法访问采集记录');expect(el('content-status').classList.contains('visually-hidden')).toBe(true);
+});
+
+it.each(['all','search'])('marks an invalidated successful %s page incomplete after a Home denial whose local read is held',async scope=>{
+  await flush();let finish!:(value:CentralContentPage)=>void,finishLocal!:(value:{items:ContentItem[];total:number})=>void;
+  if(scope==='search')(el('content-search') as HTMLInputElement).value='generated';
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));const content=library.refresh();await flush();
+  vi.mocked(api.localContent).mockImplementationOnce(()=>new Promise(resolve=>{finishLocal=resolve;}));
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});const home=library.refreshHome();await flush();
+  finish({items:[item]});await content;await flush();
+  expect(el('content-status').textContent).toContain('无法访问采集记录');expect(el('content-feed').textContent).not.toContain('没有符合');
+  expect(el('home-onboarding').hidden).toBe(true);
+  finishLocal({items:[],total:0});await home;await flush();expect(el('home-onboarding').hidden).toBe(true);
+  expect(el('home-recent').textContent).toContain('内容暂不可完整读取');
+});
+
+it('does not call a held Home read complete when its successful Central page was invalidated by confirmed revocation',async()=>{
+  await flush();let deny!:(value:CentralContentPage)=>void,finishLocal!:(value:{items:ContentItem[];total:number})=>void;
+  vi.mocked(api.centralContent).mockImplementationOnce(()=>new Promise(resolve=>{deny=resolve;}));const content=library.refresh();await flush();
+  vi.mocked(api.localContent).mockImplementationOnce(()=>new Promise(resolve=>{finishLocal=resolve;}));const home=library.refreshHome();await flush();
+  vi.mocked(api.centralContent).mockResolvedValueOnce({items:[],authorizationDenied:true});deny({items:[],authorizationDenied:true});await content;await flush();
+  finishLocal({items:[],total:0});await home;await flush();
+  expect(el('home-onboarding').hidden).toBe(true);expect(el('home-recent').textContent).toContain('内容暂不可完整读取');
+  expect(el('home-recent').querySelector('[data-content-key^="capture:"]')).toBeNull();
 });
