@@ -685,7 +685,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
     fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null, libraryBindings: Boolean = false, libraryVersion: ((JSONObject, String?) -> String)? = null): JSONObject {
         prepareIndex(requireStatistics = true)
-        return guarded {
+        val (items, result) = guarded {
             require(limit in 1..60)
             require(source in setOf("", "screen", "media", "notification", "device_event", "note", "activity", "ui_page"))
             val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
@@ -701,13 +701,21 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val items = page.take(limit).map { read(File(dir, "${it.first.getString("id")}.event")) }
             val next = if (page.size <= limit) null else items.last().let {
                 Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject().put("at", it.getString("capturedAt")).put("id", it.getString("id")).toString().toByteArray())
+            }
+            val bindings = JSONObject()
+            if (libraryBindings) items.forEach { event -> bindings.put(event.getString("id"), event.optString("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))) }
+            // Display projection mutates its input; keep the original facts and blob hash for versioning.
+            items to JSONObject().put("items", JSONArray(items.map { display(JSONObject(it.toString())).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
+                .apply { if (libraryBindings) put("bindings", bindings) }
+                .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
         }
-        val bindings = JSONObject(); val versions = JSONObject()
-        if (libraryBindings) items.forEach { event -> bindings.put(event.getString("id"), event.optString("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))); versions.put(event.getString("id"), (libraryVersion ?: CaptureLibraryVersion::of)(event, event.optString("_blob"))) }
-        JSONObject().put("items", org.json.JSONArray(items.map { display(it).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
-        .apply { if (libraryBindings) { put("bindings", bindings); put("versions", versions) } }
-        .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
+        // Note versions read RecordDraftStore, whose ACK writes acquire this queue's lock.
+        if (libraryBindings) {
+            val versions = JSONObject()
+            items.forEach { event -> versions.put(event.getString("id"), (libraryVersion ?: CaptureLibraryVersion::of)(event, event.optString("_blob"))) }
+            result.put("versions", versions)
         }
+        return result
     }
     /** Album/grid paths never deserialize full capture records or OCR text. */
     fun albumPage(after: String, before: String, cursor: String? = null): JSONObject {
