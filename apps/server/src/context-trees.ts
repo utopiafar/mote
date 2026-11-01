@@ -24,12 +24,19 @@ export class ContextTreeRegistry {
   private readonly trees=new Map<string,ContextTree>();
   private revision=0;
   private store?:Store;
+  private canPublish=()=>true;
   automatic?:AutomaticTopics;
-  initializeAutomatic(store:Store,reader:TopicMemoryRead){
-    this.store=store;
+  private publishChange(kind:'registry'|'classifier'){
+    if(this.store?.db.isOpen&&this.canPublish())publishOperationChange(this.store,'context-trees:'+kind);
+  }
+  initializeAutomatic(store:Store,reader:TopicMemoryRead,canPublish?:()=>boolean){
+    this.store=store;if(canPublish)this.canPublish=canPublish;
     if(this.automatic)return this.automatic;
     const automatic=this.automatic=new AutomaticTopics(store,reader),register=automatic.register.bind(automatic);
-    automatic.register=(classifier)=>{publishOperationChange(store,'context-trees:classifier');const dispose=register(classifier);return()=>{dispose();publishOperationChange(store,'context-trees:classifier');};};
+    automatic.register=(classifier)=>{
+      const dispose=register(classifier);this.publishChange('classifier');let removed=false;
+      return()=>{if(removed)return;removed=true;dispose();this.publishChange('classifier');};
+    };
     return automatic;
   }
   register(raw:ContextTree){
@@ -40,8 +47,8 @@ export class ContextTreeRegistry {
       while(parent){if(!ids.has(parent)||seen.has(parent))throw new StoreError('Invalid context tree ancestry');seen.add(parent);parent=tree.nodes.find(item=>item.id===parent)!.parentId;}
     }
     this.trees.set(tree.id,tree);this.revision++;let removed=false;
-    if(this.store)publishOperationChange(this.store,'context-trees:registry');
-    return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;if(this.store)publishOperationChange(this.store,'context-trees:registry');}};
+    this.publishChange('registry');
+    return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;this.publishChange('registry');}};
   }
   async catalog(){return {classification:this.automatic?.state()??{state:'unavailable'},items:[...(await this.automatic?.trees()??[]),...this.trees.values()].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};}
   async page(reader:TreeMemoryRead,treeId:string,nodeId:string,raw:unknown,ownerArchive=true){
