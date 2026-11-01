@@ -1,23 +1,24 @@
 import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
-import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
+import {fixtureMemoryCapacity,fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import {setImmediate as nextTurn,setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {authorizeFixtureModels} from './fixtures/model-authorization.js';
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {MemoryStore,MemoryOutputValidationError,memoryEvidenceFingerprint} from '../src/memory.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
-import {AgentTimeoutError} from '@mote/agent';
-import {ProviderFailure} from '@mote/shared';
+import type {MemoryWorkMember} from '../src/memory-work-contract.js';
+import {AgentTimeoutError,type QueryInput} from '@mote/agent';
+import {ProviderFailure,type QueryResult} from '@mote/shared';
 
 function fixture(t:TestContext,beforeStoreClose?:()=>Promise<void>){
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-generated-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
@@ -69,6 +70,236 @@ test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity
  assert.equal(JSON.parse(String(stopped.json)).status,'cancelled');assert.equal(JSON.parse(String(stopped.json)).cancellationCause,'owner');
  assert.notEqual(JSON.parse(String(stopped.json)).updatedAt,JSON.parse(String(old.json)).updatedAt);assert.notEqual(stopped.updated_at,old.updated_at);
  assert.deepEqual(after.filter(row=>row.id!==selected),before.filter(row=>row.id!==selected));assert.equal(calls,0);assert.equal(node.memories.list().length,0);
+ spy.mock.restore();
+});
+
+test('a second batch starting while one already runs still rewrites the job and advances Activity ordering',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('derived-a','a'.repeat(600))),b=await sources.upsert('generated',item('derived-b','b'.repeat(600)));
+ let slots=1;const releases:(()=>void)[]=[];
+ const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>slots,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{if(releases.length>=2)return empty();await new Promise<void>(r=>releases.push(r));return empty();}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);
+ const storedStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id) as {json:string}).json)).status);
+ while(releases.length<1||storedStatus()!=='running')await nextTurn();
+ assert.equal(pipeline.get(job.id).runningBatches,1,'the first batch occupies the only slot while the second waits');
+ const snapshot=()=>store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ const before=snapshot();assert.equal(JSON.parse(before.json).status,'running');
+ const updated:string[]=[],prepare=store.db.prepare.bind(store.db);
+ const spy=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ await delay(5);slots=2;pipeline.wake();
+ while(releases.length<2)await nextTurn();
+ for(let i=0;i<3;i++)await nextTurn();
+ assert.equal(updated.length,1,'a pending->running batch with unchanged job aggregates must still write the job row once');
+ const after=snapshot(),afterJson=JSON.parse(after.json);
+ assert.notEqual(afterJson.updatedAt,JSON.parse(before.json).updatedAt);assert.notEqual(after.updated_at,before.updated_at);
+ assert.equal(afterJson.runningBatches,2);assert.equal(pipeline.get(job.id).runningBatches,2);
+ for(const release of releases)release();const finished=await done;assert.equal(finished.status,'completed');assert.equal(finished.completedBatches,finished.totalBatches);
+ spy.mock.restore();
+});
+
+test('the first refresh of a job persisted without derived counters does not write or reorder it',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('baseline-a','a'.repeat(600)));
+ let release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
+ const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>1,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{await gate;return empty();}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id]}),done=pipeline.run(job.id);
+ const storedStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id) as {json:string}).json)).status);
+ while(storedStatus()!=='running')await nextTurn();
+ const snapshot=()=>store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ // Simulate a job row persisted before the derived counters existed; the first
+ // refresh afterwards must not count as job activity.
+ store.db.prepare("UPDATE memory_jobs SET json=json_remove(json,'$.runningBatches','$.pendingBatches') WHERE id=?").run(job.id);
+ const before=snapshot();
+ const updated:string[]=[],prepare=store.db.prepare.bind(store.db);
+ const spy=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ for(let i=0;i<3;i++){pipeline.wake();await nextTurn();await nextTurn();}
+ assert.equal(updated.length,0,'an unchanged first refresh must not write the job row');
+ assert.deepEqual(snapshot(),before,'Activity ordering must not move on an unchanged refresh');
+ release();const finished=await done;assert.equal(finished.status,'completed');
+ spy.mock.restore();
+});
+
+test('a batch update rolled back with its transaction leaves no transition signal for an unchanged refresh',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('rollback-a','a'.repeat(600)));
+ let allowed=true;
+ const pipeline=fixtureMemoryPipeline({store,memories,admission:{evidenceAllowedForMemory:()=>allowed},models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{throw new ProviderFailure({category:'permanent',code:'provider_timeout',retryAfterMs:0});}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id]}),failed=await pipeline.run(job.id);
+ assert.equal(failed.status,'failed');assert.equal(failed.failedBatches,1);
+ // acceptRetry invalidates the failed batch inside its transaction; failing the job
+ // write then rolls the batch update back while an in-memory signal would linger.
+ allowed=false;
+ const prepare=store.db.prepare.bind(store.db);let thrown=false;
+ const spy=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{if(!thrown){thrown=true;throw new Error('generated write failure');}return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ assert.throws(()=>pipeline.acceptRetry(job.id,true));
+ spy.mock.restore();
+ const batchStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_batches WHERE job_id=?').get(job.id) as {json:string}).json)).status);
+ assert.equal(batchStatus(),'failed','the rollback must restore the persisted batch status');
+ const snapshot=()=>store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ const before=snapshot();
+ const updated:string[]=[];
+ const spy2=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ const settled=await pipeline.run(job.id);assert.equal(settled.status,'failed');
+ assert.equal(updated.length,0,'an unchanged refresh after a rolled-back batch update must not write the job row');
+ assert.deepEqual(snapshot(),before,'Activity ordering must not move after a rolled-back transition');
+ spy2.mock.restore();
+});
+
+test('an owner reply rolled back inside its real reply transaction leaves no transition signal for an unchanged refresh',{timeout:30000},async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-rollback-'));
+ const config:Config={dataDir:directory,token:'generated-owner-rollback-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const generate=async(input:QueryInput):Promise<QueryResult>=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
+  const plan=await fixtureMemoryPlan(input);if(plan)return plan;
+  const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;
+  if(members)return {runId:'generated-'+randomUUID(),answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'needs_owner_input',candidateIndexes:[],question:{prompt:'Which generated speaker corresponds to you?',choices:[{id:'first',label:'First speaker',answer:'The first speaker corresponds to me.'}],evidence:[{id:member.id,quote:'I felt pressured at work.'}]}})),...fixtureMemoryCapacity(input)}),citations:[],trace:[]};
+  return {runId:'generated-'+randomUUID(),answer:'{"memories":[]}',citations:[],trace:[]};
+ };
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ await node.app.ready();await authorizeFixtureModels(node);
+ const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ assert.equal((await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'})).statusCode,200);
+ const created=await api('PUT','/api/sources/generated-dialogues/items',{externalId:'dialogue',revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:'Speaker A: I felt pressured at work. Speaker B: Could you describe what happened? Speaker A: A colleague kept assigning my tasks.',document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});
+ assert.equal(created.statusCode,200,created.body);
+ await node.materialOrganizer.tick();await node.sourcePipelines.tick();
+ const material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId==='dialogue');
+ assert.ok(material);
+ const start=await api('POST','/api/memory-jobs',{evidenceIds:node.materials.evidenceIds(material.ref),recipes:[{id:'mote.personal-memory',version:'2'}]});
+ assert.equal(start.statusCode,202,start.body);
+ const job=await node.memoryPipeline.run(start.json().id);
+ assert.equal(job.status,'waiting_for_input');assert.equal(job.errorCode,'memory_owner_input_required');
+ const [pending]=(await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id))).json().items;
+ assert.ok(pending);
+ const batches=()=>node.store.db.prepare("SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx").all(job.id).map(row=>JSON.parse(String((row as {json:string}).json)));
+ assert.ok(batches().every(batch=>batch.status==='completed'),'the dormant question keeps its completed batch');
+ const snapshot=()=>node.store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ const before=snapshot();
+ // The real reply transaction invalidates the completed batch via the material
+ // declaration, saves it back to completed through the continuation link, then a
+ // failing reply receipt must roll the whole transaction back.
+ const prepare=node.store.db.prepare.bind(node.store.db);let thrown=false;
+ const spy=t.mock.method(node.store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='INSERT INTO owner_question_replies VALUES(?,?,?)'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{if(!thrown){thrown=true;throw new Error('generated receipt failure');}return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ const response=await api('POST','/api/owner-questions/'+pending.id+'/reply',{requestId:randomUUID(),expectedRevision:pending.revision,action:'answer',choiceId:'first'});
+ assert.equal(response.statusCode,500,response.body);
+ spy.mock.restore();
+ assert.ok(batches().every(batch=>batch.status==='completed'),'the rollback must restore the persisted batch status');
+ const updated:string[]=[];
+ const spy2=t.mock.method(node.store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ const settled=await node.memoryPipeline.run(job.id);assert.equal(settled.status,'waiting_for_input');
+ assert.equal(updated.length,0,'an unchanged refresh after a rolled-back owner reply must not write the job row');
+ assert.deepEqual(snapshot(),before,'Activity ordering must not move after a rolled-back reply transaction');
+ spy2.mock.restore();
+});
+
+test('overlapping owner replies preserve the first committed batch transition when the second receipt rolls back',{timeout:30000},async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-overlap-'));
+ const config:Config={dataDir:directory,token:'generated-owner-overlap-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const answers:Array<()=>void>=[];
+ const generate=async(input:QueryInput):Promise<QueryResult>=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
+  if(input.taskContext?.ownerClarificationReply){await new Promise<void>(resolve=>answers.push(resolve));return {runId:'generated-'+randomUUID(),answer:'{"disposition":"resolved"}',citations:[],trace:[]};}
+  const plan=await fixtureMemoryPlan(input);if(plan)return plan;
+  const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;
+  if(members)return {runId:'generated-'+randomUUID(),answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'needs_owner_input',candidateIndexes:[],question:{prompt:'Which generated speaker corresponds to you?',choices:[],evidence:[{id:member.id,quote:'I felt pressured at work.'}]}})),...fixtureMemoryCapacity(input)}),citations:[],trace:[]};
+  return {runId:'generated-'+randomUUID(),answer:'{"memories":[]}',citations:[],trace:[]};
+ };
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})});
+ t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
+ await node.app.ready();await authorizeFixtureModels(node);
+ const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ assert.equal((await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'})).statusCode,200);
+ for(const externalId of ['first','second']){
+  const created=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:'Speaker A: I felt pressured at work. Speaker B: Could you describe what happened? Speaker A: A colleague kept assigning my tasks.',document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});
+  assert.equal(created.statusCode,200,created.body);
+ }
+ await node.materialOrganizer.tick();await node.sourcePipelines.tick();
+ const materials=node.materials.list({sourceId:'generated-dialogues'}).items;assert.equal(materials.length,2);
+ const start=await api('POST','/api/memory-jobs',{evidenceIds:materials.flatMap(material=>node.materials.evidenceIds(material.ref)),recipes:[{id:'mote.personal-memory',version:'2'}]});
+ assert.equal(start.statusCode,202,start.body);
+ const job=await node.memoryPipeline.run(start.json().id);assert.equal(job.status,'waiting_for_input');assert.equal(job.batches.length,1);
+ const questions=(await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id))).json().items;
+ assert.equal(questions.length,2);assert.notEqual(questions[0].materialId,questions[1].materialId);
+ const batch=()=>JSON.parse(String(node.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json));
+ const snapshot=()=>node.store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ const before=snapshot(),originalStamp=batch().transitionStamp,updated:string[]=[],prepare=node.store.db.prepare.bind(node.store.db);
+ let receipts=0,committedStamp:string|undefined;
+ const spy=t.mock.method(node.store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{if(args[1]===job.id)updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  if(sql==='INSERT INTO owner_question_replies VALUES(?,?,?)'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{
+    receipts++;
+    if(receipts===1){committedStamp=batch().transitionStamp;assert.notEqual(committedStamp,originalStamp);}
+    if(receipts===2){assert.equal(updated.length,0,'both reply transactions must precede the queued parent refresh');assert.notEqual(batch().transitionStamp,committedStamp);throw new Error('generated second receipt failure');}
+    return run(...args as Parameters<typeof run>);
+   }) as typeof statement.run;
+  }
+  return statement;
+ });
+ // Hold only the external model boundary. Release both real HTTP replies in
+ // one turn, so their synchronous commit/rollback precedes queued reconciliation.
+ const replies=questions.map((question:{id:string;revision:number})=>api('POST','/api/owner-questions/'+question.id+'/reply',{requestId:randomUUID(),expectedRevision:question.revision,action:'answer',answer:'The first speaker corresponds to me.'}).then(response=>response));
+ while(answers.length<2)await nextTurn();
+ await delay(5);for(const answer of answers)answer();
+ const responses=await Promise.all(replies);
+ assert.deepEqual(responses.map(response=>response.statusCode).sort(),[200,500]);assert.equal(receipts,2);
+ assert.equal(batch().status,'completed');assert.equal(batch().transitionStamp,committedStamp,'rollback must restore the successful first reply stamp');
+ const states=(await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id))).json().items.map((question:{state:string})=>question.state).sort();
+ assert.deepEqual(states,['answered','open']);
+ await nextTurn();await nextTurn();
+ assert.equal(updated.length,1,'the successful reply must advance the parent exactly once despite the later rollback');
+ const after=snapshot(),oldJob=JSON.parse(before.json),newJob=JSON.parse(after.json);
+ for(const key of ['status','totalBatches','completedBatches','failedBatches','runningBatches','pendingBatches','errorCode','availableAt'])assert.equal(newJob[key],oldJob[key],key+' remains unchanged');
+ assert.ok(newJob.updatedAt>oldJob.updatedAt);assert.ok(after.updated_at>before.updated_at);
+ updated.length=0;
+ for(let i=0;i<3;i++){node.memoryPipeline.wake();await nextTurn();await nextTurn();}
+ assert.equal(updated.length,0,'reconciled or rolled-back stamps must not produce later phantom activity');assert.deepEqual(snapshot(),after);
  spy.mock.restore();
 });
 

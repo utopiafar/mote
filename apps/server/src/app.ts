@@ -38,7 +38,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID,timingSafeEqual } from 'node:crypto';
 import {setImmediate as yieldEventLoop} from 'node:timers/promises';
 import { existsSync,readFileSync } from 'node:fs';
-import { dirname,join } from 'node:path';
+import { dirname,join,relative,sep } from 'node:path';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
@@ -269,7 +269,9 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
   const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
     ref=>materialMemoryWork.readyForMemory(ref));
+  let catalogChangesEnabled=false;
   const contextTrees=createContextTrees();
+  resources.beforeClose(()=>{catalogChangesEnabled=false;});
   backendContext.provide('moteContextTrees',contextTrees);
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,conversations=new Conversations(store);
@@ -903,7 +905,8 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   if(existsSync(web)) {
     app.addHook('onRequest',async(req,reply)=>{if(!req.url.startsWith('/api/')&&webVersion!==serverVersion)return reply.code(503).type('text/plain; charset=utf-8').send('Web/server build mismatch. Run npm run build -w @mote/web and restart the server.');});
     // A catch-all static route masks rejected API parameters as missing files.
-    await app.register(staticFiles,{root:web,prefix:'/',wildcard:false});
+    await app.register(staticFiles,{root:web,prefix:'/',wildcard:false,preCompressed:true,
+      setHeaders:(reply,path)=>{if(relative(web,path).startsWith(`assets${sep}`))reply.header('Cache-Control','public, max-age=31536000, immutable');}});
     app.setNotFoundHandler(async(req,reply)=>{
       if(req.url.startsWith('/api/'))return reply.code(404).send({error:'not_found',requestId:req.id});
       // A removed hashed bundle must not receive the SPA HTML fallback. Open
@@ -934,7 +937,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   resources.defer(()=>featureHost.close());
   registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   await installServerFeatures(featureHost,featureServices);
-  memoryTopics=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query:input=>queryAgent(input,'query','memories')});
+  memoryTopics=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader,()=>catalogChangesEnabled&&!closing),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query:input=>queryAgent(input,'query','memories')});
   resources.defer(()=>memoryTopics?.close());
   await configService.startWatching();
   diagnostics.record('server.started');
@@ -949,6 +952,9 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();
   });
   app.addHook('onClose',async()=>resources.close());
+  // Rebuilding built-in registrations before readers exist is not a change.
+  // Shutdown disables notifications before any registration is disposed.
+  catalogChangesEnabled=true;
   return {app,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];

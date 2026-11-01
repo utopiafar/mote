@@ -15,6 +15,7 @@ export const sourceHash = (value: string | Buffer): string => createHash('sha256
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
 
 type QueueName = 'realtime' | 'history';
+export type PendingSourceSummary = Readonly<Pick<SourceItem,'title'|'text'|'observedAt'|'externalId'|'revision'>>;
 function isFileCheckpoint(value: SourceCheckpoint | undefined): value is LocalFileCheckpoint {
   return Boolean(value && value.version === 1 && typeof (value as LocalFileCheckpoint).root === 'string');
 }
@@ -77,6 +78,10 @@ export class SourceSync {
   }
 
   pendingContent(): SourceItem[] { return structuredClone([...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)]); }
+  /** Detached scalar fields from both outbox lanes and quarantine; no originals or metadata. */
+  pendingSummaries(): readonly PendingSourceSummary[] {
+    return [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].map(({title,text,observedAt,externalId,revision})=>({title,text,observedAt,externalId,revision}));
+  }
   pendingForHistory(versionKey: string): SourceItem | undefined { const item = [...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)].find(item => sourceHash(`${item.externalId}\0${item.revision}`) === versionKey); return item ? structuredClone(item) : undefined; }
   checkpoint(): SourceCheckpoint | undefined { return structuredClone(this.data.checkpoint); }
   /** Scanner borrows immutable catalog rows and records changes in its own draft. */

@@ -1,3 +1,4 @@
+import '@mote/shared/i18n-all';
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {JSDOM} from 'jsdom';
 import {readFileSync} from 'node:fs';

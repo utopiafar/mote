@@ -19,14 +19,19 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
     private val previous = mutableListOf<Int>()
     private var selected: String? = null
     private var section = "overview"
+    private var detailLive = false
+    /** The exact work projection the current detail view was built from. */
+    private var detailSignature = ""
     private var branchCursor = 0
     private val branchPrevious = mutableListOf<Int>()
     private val memoryResults by lazy { CentralWorkMemoryResults(screens, { id->screens.isWorkActivityPage && selected==id && section=="results" }, { id->detail(id) }) }
     private fun enc(value: String) = CentralScreens.encode(value)
     private fun text(value: String, size: NativeFontRole = NativeFontRole.BODY, parent: LinearLayout = body) = ui.text(value, size, parent)
     private fun button(label: String, primary: Boolean = false, parent: LinearLayout = body, action: () -> Unit) = ui.button(label, primary, parent, action)
-    fun show() { selected?.let { if(section=="results"&&memoryResults.hasSelection(it))memoryResults.showSelected(it) else detail(it) } ?: list() }
-    fun clearPrivateState() { detailBody = null; rendered = ""; selected = null; section = "overview"; state = "active"; cursor = 0; previous.clear(); branchCursor = 0; branchPrevious.clear();memoryResults.clear() }
+    fun show() { selected?.let { id ->
+        if(section=="results"&&memoryResults.hasSelection(id))memoryResults.showSelected(id) else detail(id)
+    } ?: list() }
+    fun clearPrivateState() { detailBody = null; rendered = ""; selected = null; section = "overview"; state = "active"; cursor = 0; previous.clear(); branchCursor = 0; branchPrevious.clear();detailLive=false;detailSignature="";memoryResults.clear() }
     fun saveState(out: Bundle) { out.putString("state", state); out.putString("selected", selected); out.putString("section", section); out.putInt("cursor", cursor); out.putInt("branchCursor", branchCursor); out.putIntegerArrayList("previous", ArrayList(previous)); out.putIntegerArrayList("branchPrevious", ArrayList(branchPrevious));out.putBundle("memoryResults",Bundle().also(memoryResults::save)) }
     fun restoreState(value: Bundle, allowMemoryResult: Boolean) {
         state = value.getString("state").takeIf { it in setOf("active", "attention", "completed") } ?: "active"
@@ -37,7 +42,9 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
         if(allowMemoryResult)memoryState?.let(memoryResults::restore)
         else if(memoryState?.getString("memoryResultWork")!=null) { selected=null;section="overview" }
     }
-    fun poll() { selected?.takeIf{section=="results"&&memoryResults.hasSelection(it)}?.let(memoryResults::poll) ?: show() }
+    fun poll() { selected?.let { id ->
+        if(section=="results"&&memoryResults.hasSelection(id))memoryResults.poll(id) else detail(id, preserveUnchanged = true)
+    } ?: list() }
     fun restoreMemoryAfterReader(work: String, scroll: Int) { if(selected==work && section=="results")memoryResults.restoreAfterReader(work,scroll) }
     fun retainMemoryForRecreation(work: String) { if(selected==work && section=="results")memoryResults.rememberDrafts() }
     private var rendered = ""
@@ -51,7 +58,16 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
     private fun list() {
         if (screens.body.childCount == 0) button(MoteI18n.text("重试")) { list() }
         val api = screens.client
-        ui.work(MoteI18n.text("正在读取…"), { api.get("/api/work-activity?state=$state&limit=10&cursor=$cursor") }) { page ->
+        ui.work(MoteI18n.text("正在读取…"), { runCatching { api.get("/api/work-activity?state=$state&limit=10&cursor=$cursor") } }) { result ->
+            result.onFailure { error ->
+                if ((error as? CentralFailure)?.status in setOf(401, 403, 404, 410)) {
+                    clear("withdrawn-list:$state:$cursor")
+                    button(MoteI18n.text("重试")) { list() }
+                } else ui.scheduleActivityPoll(WorkPolling.TERMINAL_MS)
+                ui.requestFailure(error)
+                return@work
+            }
+            val page = result.getOrThrow()
             clear("list:$state:$cursor")
             text(MoteI18n.text("活动"), NativeFontRole.TITLE_MOBILE)
             text(MoteI18n.text("这里是 Mote 的后台工作：理解资料、导入、整理记忆与生成洞察。手机和电脑的应用使用情况在「资料库 → 应用活动」。"))
@@ -84,51 +100,78 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
                 text(MoteI18n.text("查看底层执行记录，排查依赖与失败原因。"), parent = target)
                 button(MoteI18n.text("技术执行记录"), parent = target) { ui.navigate("processing") }
             }
-            ui.scheduleActivityPoll()
+            WorkPolling.rearm(items, ui::scheduleActivityPoll)
         }
     }
-    private fun detail(id: String) {
+    private fun detail(id: String, preserveUnchanged: Boolean = false) {
         if (screens.body.childCount == 0) button(MoteI18n.text("重试")) { detail(id) }
         val api = screens.client
-        ui.work(MoteI18n.text("正在读取…"), { api.get("/api/work-activity/" + enc(id) + "?limit=20&cursor=$branchCursor") }) { work ->
-            val previousScroll=clear("detail:$id:$section:$branchCursor"); screens.setBack { selected = null; section = "overview";memoryResults.clear(); list() }
-            button(MoteI18n.text("返回活动")) { selected = null; section = "overview";memoryResults.clear(); screens.clearBack(); list() }
-            button(MoteI18n.text("刷新")) { detail(id) }
-            text(work.getString("goal"), NativeFontRole.TITLE_MOBILE)
-            text(MoteI18n.text(CentralWorkPresentation.state(work.getString("state"))))
-            progress(work.getJSONObject("progress"), body)
-            val sections = listOf("overview" to "概览", "work" to "工作分支", "results" to "成果", "evidence" to "证据", "technical" to "技术详情")
-            val split = NativeUiPacks.registry.layout().usesDetailPane(ui.resources.configuration.screenWidthDp)
-            if (split) {
-                val panes = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; tag = "work-detail:split" }
-                val navigation = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
-                val reading = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.moteDp(MoteTheme.spacePanel), 0, 0, 0) }
-                sections.forEach { (key, label) -> button(MoteI18n.text(label), parent = navigation) { section = key; detail(id) }.isSelected = key == section }
-                panes.addView(navigation, LinearLayout.LayoutParams(ui.moteDp(180), -2)); panes.addView(reading, LinearLayout.LayoutParams(0, -2, 1f))
-                screens.body.addView(panes); detailBody = reading
-            } else {
-            val selection = android.widget.Spinner(ui).apply {
-                contentDescription = MoteI18n.text("工作详情")
-                adapter = MoteUi.choiceAdapter(ui, sections.map { MoteI18n.text(it.second) })
-                setSelection(sections.indexOfFirst { it.first == section })
-                onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                    override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-                    override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, rowId: Long) {
-                        if (section != sections[position].first) { section = sections[position].first; detail(id) }
-                    }
+        ui.work(if (preserveUnchanged) "" else MoteI18n.text("正在读取…"), { runCatching { api.get("/api/work-activity/" + enc(id) + "?limit=20&cursor=$branchCursor") } }) { result ->
+            result.onFailure { error ->
+                val status = (error as? CentralFailure)?.status
+                if (status in setOf(401, 403, 404, 410)) {
+                    // A denied or missing work must not leave owner-read rows on screen.
+                    memoryResults.clear(); clear("withdrawn:$id:$section:$branchCursor")
+                    text(if (status == 404 || status == 410) MoteI18n.text("请求的资源不存在或已删除。") else error.message.orEmpty())
+                    button(MoteI18n.text("返回活动")) { selected = null; section = "overview"; screens.clearBack(); list() }
                 }
-                MoteUi.select(this)
-            }; body.addView(selection)
+                ui.requestFailure(error)
+                // A transient failure keeps the last confirmed projection and retries at the
+                // current cadence so withdrawal and resume transitions stay observable.
+                if (status !in setOf(401, 403, 404, 410)) WorkPolling.rearm(detailLive, ui::scheduleActivityPoll)
+                return@work
             }
-            when (section) {
-                "overview" -> overview(work)
-                "work" -> branches(work)
-                "results" -> results(work,previousScroll)
-                "evidence" -> evidence(work)
-                "technical" -> technical(work)
+            val work = result.getOrThrow()
+            if (!preserveUnchanged || rendered != "detail:$id:$section:$branchCursor" || work.toString() != detailSignature) {
+                build(id, work)
+                return@work
             }
-            ui.scheduleActivityPoll()
+            // Keep expanded sections in place, but re-read Memory rows: receipt IDs carry no
+            // per-item revision, so an unchanged work projection cannot establish freshness.
+            if (section == "results" && work.optString("kind") == "memory") memoryResults.revalidate(work.getString("id"), WorkPolling.live(work.getString("state")))
+            WorkPolling.rearm(work, ui::scheduleActivityPoll)
         }
+    }
+    private fun build(id: String, work: JSONObject) {
+        detailSignature = work.toString()
+        detailLive = WorkPolling.live(work.getString("state"))
+        val previousScroll=clear("detail:$id:$section:$branchCursor"); screens.setBack { selected = null; section = "overview";memoryResults.clear(); list() }
+        button(MoteI18n.text("返回活动")) { selected = null; section = "overview";memoryResults.clear(); screens.clearBack(); list() }
+        button(MoteI18n.text("刷新")) { detail(id) }
+        text(work.getString("goal"), NativeFontRole.TITLE_MOBILE)
+        text(MoteI18n.text(CentralWorkPresentation.state(work.getString("state"))))
+        progress(work.getJSONObject("progress"), body)
+        val sections = listOf("overview" to "概览", "work" to "工作分支", "results" to "成果", "evidence" to "证据", "technical" to "技术详情")
+        val split = NativeUiPacks.registry.layout().usesDetailPane(ui.resources.configuration.screenWidthDp)
+        if (split) {
+            val panes = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; tag = "work-detail:split" }
+            val navigation = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+            val reading = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.moteDp(MoteTheme.spacePanel), 0, 0, 0) }
+            sections.forEach { (key, label) -> button(MoteI18n.text(label), parent = navigation) { section = key; detail(id) }.isSelected = key == section }
+            panes.addView(navigation, LinearLayout.LayoutParams(ui.moteDp(180), -2)); panes.addView(reading, LinearLayout.LayoutParams(0, -2, 1f))
+            screens.body.addView(panes); detailBody = reading
+        } else {
+        val selection = android.widget.Spinner(ui).apply {
+            contentDescription = MoteI18n.text("工作详情")
+            adapter = MoteUi.choiceAdapter(ui, sections.map { MoteI18n.text(it.second) })
+            setSelection(sections.indexOfFirst { it.first == section })
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, rowId: Long) {
+                    if (section != sections[position].first) { section = sections[position].first; detail(id) }
+                }
+            }
+            MoteUi.select(this)
+        }; body.addView(selection)
+        }
+        when (section) {
+            "overview" -> overview(work)
+            "work" -> branches(work)
+            "results" -> results(work,previousScroll)
+            "evidence" -> evidence(work)
+            "technical" -> technical(work)
+        }
+        WorkPolling.rearm(work, ui::scheduleActivityPoll)
     }
     private fun overview(work: JSONObject) {
         val counts = work.optJSONObject("branchCounts") ?: JSONObject()
@@ -163,7 +206,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
         if(work.optString("kind")=="memory") {
             val results = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
             body.addView(results)
-            memoryResults.render(work.getString("id"),results,previousScroll)
+            memoryResults.render(work.getString("id"),results,previousScroll,WorkPolling.live(work.getString("state")))
             return
         }
         val artifacts = work.optJSONArray("artifacts") ?: JSONArray()

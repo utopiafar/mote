@@ -51,6 +51,12 @@ class WorkMemoryJourneyInstrumentedTest {
     private fun scrollAndY(view:View):Pair<Int,Int> = main{val p=IntArray(2);view.getLocationOnScreen(p);shown().filterIsInstance<android.widget.ScrollView>().first().scrollY to p[1]}
     private fun bundleStrings(bundle:android.os.Bundle):List<String> = bundle.keySet().flatMap { key->when(val value=bundle.get(key)){is String->listOf(value);is android.os.Bundle->bundleStrings(value);is ArrayList<*>->value.filterIsInstance<String>();else->emptyList()} }
     private fun idle(scenario:ActivityScenario<CentralActivity>) { until("Central is idle"){var ready=false;scenario.onActivity{ready=!it.isWorking};ready} }
+    private fun readerTick(fake:Fake, change:()->Unit = {}) {
+        val before=fake.readerReads.get();change()
+        val deadline=SystemClock.elapsedRealtime()+5_000
+        while(fake.readerReads.get()==before && SystemClock.elapsedRealtime()<deadline)Thread.sleep(50)
+        assertTrue("An open reader must issue its next revalidation within 5s, not the 15s results cadence",fake.readerReads.get()>before)
+    }
     private fun record(name:String){
         instrumentation.waitForIdleSync();until("Focused window $name"){main{WindowInspector.getGlobalWindowViews().any{it.isShown&&it.hasWindowFocus()&&it.width>0&&it.height>0}}}
         main{val root=WindowInspector.getGlobalWindowViews().last{it.isShown&&it.hasWindowFocus()};val bitmap=android.graphics.Bitmap.createBitmap(root.width,root.height,android.graphics.Bitmap.Config.ARGB_8888);try{root.draw(android.graphics.Canvas(bitmap));File(context.filesDir,"work-memory-generated").apply{mkdirs()}.resolve("$name.png").outputStream().use{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}}finally{bitmap.recycle()}}
@@ -58,9 +64,31 @@ class WorkMemoryJourneyInstrumentedTest {
     private fun fixture(block:(Fake)->Unit){
         assumeTrue(InstrumentationRegistry.getArguments().getString("generatedWorkMemory") == "true")
         require(context.packageName=="dev.mote.collector.dev"&&Build.FINGERPRINT.contains("emu64a"))
-        val settings=Settings(context);val config=settings.read();val before=context.queue().dedupeIds().toSet();require(!settings.enabled&&config.syncMode=="manual"&&config.syncPaused)
+        // Refuse all retained native state before opening a queue or changing connection state.
+        for(name in listOf("central-native","file-archives")) {
+            val directory=File(context.noBackupFilesDir,name)
+            require(!directory.exists() || directory.isDirectory && directory.listFiles()?.isEmpty()==true) { "Generated Work fixture needs no retained $name state" }
+        }
+        val settings=Settings(context);val config=settings.read()
+        require(!settings.enabled && config.token.isEmpty() && config.server in setOf("",BuildConfig.DEFAULT_SERVER)) { "Generated Work fixture needs an unconfigured profile with capture disabled" }
+        require(settings.lastCapture()==null && settings.dataOrigin().isBlank())
+        val queueDirectory=File(QueueStorage(context).selected().path)
+        require(listOf(".capture-stages.inbox",".capture-stages.journal").none { File(queueDirectory,it).exists() }) { "A pending capture is not an empty generated queue" }
+        require(!settings.hasPendingData())
+        val draft=context.recordDraftStore().draft()
+        require(draft.optString("text").isEmpty() && draft.optString("description").isEmpty() && draft.optJSONObject("origin")?.optString("text").orEmpty().isEmpty() &&
+            draft.optJSONArray("attachments")?.length()==0 && !draft.has("prepared") && context.recordDraftStore().pendingMedia().length()==0)
+        val note=QuickNotes.draft(context).read();require(note.text.isEmpty() && note.mood.isEmpty() && note.prepared==null)
+        require(context.localSources().sources().isEmpty() && context.localFileContents(8).isEmpty())
+        val before=context.queue().dedupeIds().toSet();require(before.isEmpty())
+        val language=MoteI18n.preference();val appearance=MoteAppearance.preference()
         Fake().use{fake->
+            val nativeProfile=File(context.noBackupFilesDir,"central-native/"+SourceRules.hash(fake.origin))
+            require(!nativeProfile.exists()) { "Generated origin must not reuse an existing native profile" }
             try{
+                // Isolate transport for this proven-generated fixture, then restore the original
+                // default batch/paused settings rather than requiring a preconfigured test app.
+                settings.save(config.copy(syncMode="manual",syncPaused=true),confirmCentralEndpoint=true)
                 until("Connect generated Activity fixture after background reads finish"){
                     try{ConnectionGuard.change(context,fake.origin,bindLocal=true){settings.saveConnection(fake.origin,fake.token,"Generated activity memory",true);settings.save(settings.read().copy(syncMode="manual",syncPaused=true),confirmCentralEndpoint=true)};true}
                     catch(error:ConnectionFailure){if(error.category=="busy")false else throw error}
@@ -68,8 +96,9 @@ class WorkMemoryJourneyInstrumentedTest {
                 MoteI18n.select(context,"zh-CN");main{MoteAppearance.select(context,AppearancePreference.LIGHT)};block(fake)
                 assertEquals("No Activity/Memory browsing writes local records",before,context.queue().dedupeIds().toSet())
             } finally {
-                fake.release.countDown();CentralDraftWrites.barrier{};File(context.noBackupFilesDir,"central-native/"+SourceRules.hash(fake.origin)).deleteRecursively()
+                fake.release.countDown();CentralDraftWrites.barrier{};nativeProfile.deleteRecursively()
                 settings.save(config,confirmCentralEndpoint=true);CentralSession.get(context).select(config.server)
+                MoteI18n.select(context,language);main{MoteAppearance.select(context,appearance)}
             }
         }
     }
@@ -102,6 +131,124 @@ class WorkMemoryJourneyInstrumentedTest {
             assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
     }
+    @Test fun removedResultWithdrawsFromTheOpenCompletedResultsList()=fixture{fake->
+        // The generated work is completed: its results list keeps a slower withdrawal read so a
+        // Memory removed on another device disappears without any owner action.
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            openResults(fake,scenario);val id=fake.ids[3];assertTrue(has(fake.title(id)));idle(scenario)
+            fake.removed.add(id)
+            // The detail rebuilds while its results read is still in flight: assert the removed
+            // row is gone only after the surviving row is present in the same refreshed view.
+            until("A removed Memory withdraws its results row while the completed work stays open"){!has(fake.title(id))&&has(fake.title(fake.ids[4]))&&has(fake.goal)}
+            tag("work-memory:"+fake.ids[4]);until("A surviving result still opens"){has(fake.statement(fake.ids[4]))}
+            assertEquals(0,fake.deletes.get());assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+        }
+    }
+    @Test fun revokedWorkReadWithdrawsTheCompletedResultsList()=fixture{fake->
+        // A transient detail failure keeps the last confirmed rows and re-arms the withdrawal
+        // cadence; a later denied work read must not leave owner-read titles on screen.
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            openResults(fake,scenario);val id=fake.ids[3];assertTrue(has(fake.title(id)));idle(scenario)
+            val reads=fake.workReads.get()
+            fake.failWork.set(true)
+            until("The terminal results cadence reaches the detail again"){fake.workReads.get()>reads}
+            idle(scenario);assertTrue("A transient detail failure keeps the last confirmed rows",has(fake.title(id)))
+            fake.forbidden=true
+            until("A denied work read withdraws every owner-read result row"){!has(fake.title(id))&&!has(fake.title(fake.ids[4]))&&has("返回活动")}
+            assertFalse(has(fake.statement(id)));assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+        }
+    }
+    @Test fun unchangedReceiptsStillReauthorizeAndRefreshRenamedMemories()=fixture{fake->
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            openResults(fake,scenario);val id=fake.ids[3];val oldTitle=fake.title(id);idle(scenario)
+            val reads=fake.memoryReads.get()
+            fake.renamedMemory=id
+            until("Unchanged receipt IDs and work timestamp still refresh owner-read titles"){has(fake.title(id))}
+            idle(scenario)
+            assertTrue("Every revalidation performs owner reads",fake.memoryReads.get()>reads)
+            assertFalse(main{shown().filterIsInstance<TextView>().any{it.text.toString()==oldTitle}})
+        }
+    }
+    @Test fun anEmptyActivityDiscoversNewlyArrivingWork()=fixture{fake->
+        // The list re-arms even with nothing to show: a work that arrives on Central while the
+        // owner watches an empty page must appear without any owner action.
+        fake.listed=false;fake.filterLists=true
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            until("The empty activity page renders"){has("目前没有正在进行的工作")};idle(scenario)
+            fake.workState="running";fake.listed=true
+            until("The arriving work joins the list on its own"){has(fake.goal)}
+            assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+        }
+    }
+    @Test fun aNewCompletedWorkJoinsTheOpenActivityList()=fixture{fake->
+        fake.filterLists=true
+        // A page holding only terminal rows keeps discovering membership: a work that completes
+        // elsewhere joins the open list at the slow cadence without an owner refresh.
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            until("The activity filters render"){has("最近完成")};idle(scenario)
+            click("最近完成");until("The completed work is listed"){has(fake.goal)};idle(scenario)
+            fake.extraWork=JSONObject().put("id","import:"+UUID.randomUUID()).put("kind","import").put("goal","Generated second activity work").put("state","completed").put("updatedAt","2026-10-30T00:00:00Z").put("progress",JSONObject().put("mode","semantic").put("stage","finished"))
+            until("The newly completed work appears on the open list"){has("Generated second activity work")}
+            assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+        }
+    }
+    @Test fun anInputWaitingWorkResumesThroughTheOpenDetail()=fixture{fake->
+        // needs_input work can resume on another client: its open detail keeps revalidating and
+        // a changed projection rebuilds it into the running state, then into the finished one.
+        fake.workState="needs_input";fake.filterLists=true
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            until("Activity filters render"){has("需要处理")};idle(scenario);click("需要处理")
+            until("The waiting work is listed"){has(fake.goal)}
+            main{shown().first{it.isClickable&&it.contentDescription?.toString()?.startsWith(fake.goal)==true}.performClick()}
+            until("The open detail shows the input wait"){has("需要处理")&&has(fake.goal)};idle(scenario)
+            fake.workState="running"
+            until("The resumed work rebuilds the open detail"){has("正在进行")&&has(fake.goal)}
+            fake.workState="completed"
+            until("The finished work updates the same detail"){has("已完成")&&has(fake.goal)}
+        }
+    }
+    @Test fun anUnchangedTerminalRefreshKeepsTheExpandedDetail()=fixture{fake->
+        // An unchanged terminal projection must not rebuild the view: an expanded Operation
+        // disclosure stays open across the revalidation tick.
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            until("The generated work is listed"){has(fake.goal)}
+            main{shown().first{it.isClickable&&it.contentDescription?.toString()?.startsWith(fake.goal)==true}.performClick()}
+            until("The detail loads"){main{shown().filterIsInstance<Spinner>().any{it.contentDescription=="工作详情"}}};idle(scenario)
+            main{val spinner=shown().filterIsInstance<Spinner>().single{it.contentDescription=="工作详情"};spinner.setSelection((0 until spinner.count).single{spinner.getItemAtPosition(it).toString()=="技术详情"})}
+            until("The technical section renders"){has("原始 Operation")};idle(scenario)
+            click("原始 Operation");until("The operation disclosure expands"){has("generated-operation")}
+            val reads=fake.workReads.get()
+            until("The terminal cadence revalidates the open detail"){fake.workReads.get()>reads};idle(scenario)
+            assertTrue("An unchanged projection keeps the expanded technical section",has("generated-operation")&&has(fake.goal))
+        }
+    }
+    @Test fun aRedactedProjectionRebuildsTheOpenTerminalDetail()=fixture{fake->
+        // A completed projection can be rewritten elsewhere (its originals deleted): the changed
+        // signature rebuilds the open detail instead of keeping the stale goal on screen.
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            until("The generated work is listed"){has(fake.goal)}
+            main{shown().first{it.isClickable&&it.contentDescription?.toString()?.startsWith(fake.goal)==true}.performClick()}
+            until("The open detail shows the goal"){has(fake.goal)&&has("已完成")};idle(scenario)
+            val memoryReads=fake.memoryReads.get()
+            fake.redactGoal=true;fake.workState="stale"
+            until("Deletion withdraws the goal from the open detail"){!has(fake.goal)&&has("资料变化，需要重新检查")}
+            assertEquals("Non-results withdrawal needs no Memory reads",memoryReads,fake.memoryReads.get())
+        }
+    }
+    @Test fun deletedOriginalWithdrawsTheTitleFromAnOpenCompletedBranch()=fixture{fake->
+        fake.includeBranch=true
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            until("The generated work is listed"){has(fake.goal)}
+            main{shown().first{it.isClickable&&it.contentDescription?.toString()?.startsWith(fake.goal)==true}.performClick()}
+            until("The detail loads"){main{shown().filterIsInstance<Spinner>().any{it.contentDescription=="工作详情"}}};idle(scenario)
+            main{val spinner=shown().filterIsInstance<Spinner>().single{it.contentDescription=="工作详情"};spinner.setSelection((0 until spinner.count).single{spinner.getItemAtPosition(it).toString()=="工作分支"})}
+            until("The private branch title is shown"){has(fake.branchTitle)};idle(scenario)
+            val memoryReads=fake.memoryReads.get()
+            fake.redactGoal=true;fake.workState="stale"
+            until("Deleting originals withdraws goal and branch title without navigation"){!has(fake.goal)&&!has(fake.branchTitle)&&has("资料变化，需要重新检查")}
+            assertEquals("Branch withdrawal reads only the work projection",memoryReads,fake.memoryReads.get())
+        }
+    }
     @Test fun removedResultCannotOpenFromAnAlreadyRenderedRow()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];val old=main{shown().single{it.tag=="work-memory:$id"}};fake.removed.add(id)
@@ -117,11 +264,33 @@ class WorkMemoryJourneyInstrumentedTest {
     }
     @Test fun withdrawnOwnerAccessHidesThePreviouslyOpenMemory()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
-            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Initially authorized Memory opens"){has(fake.statement(id))};idle(scenario);main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated local correction")};fake.forbidden=true
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Initially authorized Memory opens"){has(fake.statement(id))};idle(scenario)
+            readerTick(fake);idle(scenario)
+            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated local correction")}
+            readerTick(fake) { fake.forbidden=true }
             until("A revoked owner read withdraws the open Memory"){has("当前连接没有执行此操作的权限")&&!has(fake.statement(id))};assertFalse(has(fake.title(id)));assertEquals(0,fake.deletes.get());assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
             assertTrue(has("Generated local correction"));assertFalse(has("保存校正"))
         }
     }
+    private fun automaticReaderWithdrawal(change:(Fake,String)->Unit)=fixture{fake->
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id")
+            until("The completed work's exact Memory opens"){has(fake.statement(id))};idle(scenario)
+            readerTick(fake);idle(scenario)
+            val edit="Generated unsent automatic-withdrawal edit"
+            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText(edit)}
+            readerTick(fake) { change(fake,id) }
+            // Keep the original 30s outcome timeout; only the request cadence has the tighter check.
+            until("Automatic revalidation withdraws owner content and retains only the unsent edit") {
+                has("请求的资源不存在或已删除。") && !has(fake.statement(id)) && !has(fake.title(id)) && has(edit)
+            }
+            assertFalse(has("保存校正"));assertFalse(has("删除记忆"))
+            assertEquals(0,fake.deletes.get());assertEquals(0,fake.corrections.get())
+            assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+        }
+    }
+    @Test fun removedMemoryAutomaticallyWithdrawsFromAnOpenCompletedReader() = automaticReaderWithdrawal { fake,id -> fake.removed.add(id) }
+    @Test fun changedIdentityAutomaticallyWithdrawsFromAnOpenCompletedReader() = automaticReaderWithdrawal { fake,_ -> fake.mutateStatement=true }
     @Test fun signOutWhileMemoryReadIsHeldCannotOpenThePreviousOwnerResult()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];fake.holdMemory=id;tag("work-memory:$id");assertTrue("The owner read is actually held",fake.entered.await(5,TimeUnit.SECONDS))
@@ -382,25 +551,26 @@ class WorkMemoryJourneyInstrumentedTest {
         }
     }
     private class Fake:AutoCloseable{
-        val token="generated-work-memory-owner-token";val workId="memory:"+UUID.randomUUID();val evidenceId=UUID.randomUUID().toString();val otherEvidence=UUID.randomUUID().toString();val goal="Generated activity memory work";val ids=List(23){UUID.randomUUID().toString()}.sorted();val removed=java.util.concurrent.ConcurrentHashMap.newKeySet<String>();val deletes=AtomicInteger();val corrections=AtomicInteger();val queryWrites=AtomicInteger();val captureWrites=AtomicInteger();val entered=CountDownLatch(1);val release=CountDownLatch(1);val captureEntered=CountDownLatch(1);val captureRelease=CountDownLatch(1);val pageEntered=CountDownLatch(1);val pageRelease=CountDownLatch(1);val captureReads=AtomicInteger();val failMemory=AtomicBoolean();val failCapture=AtomicBoolean();val failPage=AtomicBoolean();val holdPage=AtomicBoolean();@Volatile var holdMemory:String?=null;@Volatile var holdCapture=0;@Volatile var forbidden=false;@Volatile var source="file";@Volatile var mutateStatement=false;@Volatile var swapEvidence=false
+        val token="generated-work-memory-owner-token";val workId="memory:"+UUID.randomUUID();val evidenceId=UUID.randomUUID().toString();val otherEvidence=UUID.randomUUID().toString();val goal="Generated activity memory work";val branchTitle="Generated private branch title";val ids=List(23){UUID.randomUUID().toString()}.sorted();val removed=java.util.concurrent.ConcurrentHashMap.newKeySet<String>();val deletes=AtomicInteger();val corrections=AtomicInteger();val queryWrites=AtomicInteger();val captureWrites=AtomicInteger();val entered=CountDownLatch(1);val release=CountDownLatch(1);val captureEntered=CountDownLatch(1);val captureRelease=CountDownLatch(1);val pageEntered=CountDownLatch(1);val pageRelease=CountDownLatch(1);val captureReads=AtomicInteger();val workReads=AtomicInteger();val memoryReads=AtomicInteger();val readerReads=AtomicInteger();val failWork=AtomicBoolean();val failMemory=AtomicBoolean();val failCapture=AtomicBoolean();val failPage=AtomicBoolean();val holdPage=AtomicBoolean();@Volatile var holdMemory:String?=null;@Volatile var holdCapture=0;@Volatile var forbidden=false;@Volatile var source="file";@Volatile var mutateStatement=false;@Volatile var renamedMemory:String?=null;@Volatile var swapEvidence=false;@Volatile var workState="completed";@Volatile var listed=true;@Volatile var filterLists=false;@Volatile var redactGoal=false;@Volatile var includeBranch=false;@Volatile var extraWork:JSONObject?=null
         private val listener=ServerSocket(0,10,InetAddress.getByName("127.0.0.1"));val origin="http://127.0.0.1:${listener.localPort}";private val workers=Executors.newCachedThreadPool()
-        fun title(id:String)="Generated memory "+(ids.indexOf(id)+1).toString().padStart(2,'0')
+        fun title(id:String)="Generated memory "+(ids.indexOf(id)+1).toString().padStart(2,'0')+(if(renamedMemory==id)" renamed" else "")
         fun statement(id:String)="Generated exact statement "+(ids.indexOf(id)+1).toString().padStart(2,'0')
-        private fun work()=JSONObject().put("id",workId).put("kind","memory").put("goal",goal).put("state","completed").put("updatedAt","2026-10-30T00:00:00Z").put("progress",JSONObject().put("mode","semantic").put("stage","finished")).put("branchCounts",JSONObject().put("total",0).put("running",0).put("completed",0)).put("branches",JSONArray()).put("branchesNextCursor",JSONObject.NULL).put("artifacts",JSONArray().put(JSONObject().put("id","aggregate").put("kind","memory").put("count",ids.size-removed.size).put("title","Generated saved Memory aggregate").put("ref","memories"))).put("evidence",JSONObject().put("count",0).put("refs",JSONArray())).put("events",JSONArray()).put("destination","memories").put("technical",JSONObject().put("operationIds",JSONArray()))
+        private fun work()=JSONObject().put("id",workId).put("kind","memory").put("goal",if(redactGoal)"" else goal).put("state",workState).put("updatedAt","2026-10-30T00:00:00Z").put("progress",JSONObject().put("mode","semantic").put("stage","finished")).put("branchCounts",JSONObject().put("total",if(includeBranch)1 else 0).put("running",0).put("completed",if(includeBranch)1 else 0)).put("branches",JSONArray().apply{if(includeBranch)put(JSONObject().put("id","generated-branch").put("title",if(redactGoal)"" else branchTitle).put("state",workState))}).put("branchesNextCursor",JSONObject.NULL).put("artifacts",JSONArray().put(JSONObject().put("id","aggregate").put("kind","memory").put("count",ids.size-removed.size).put("title","Generated saved Memory aggregate").put("ref","memories"))).put("evidence",JSONObject().put("count",0).put("refs",JSONArray())).put("events",JSONArray()).put("destination","memories").put("technical",JSONObject().put("operationIds",JSONArray().put("generated-operation")))
         private fun memory(id:String)=JSONObject().put("id",id).put("title",title(id)).put("statement",statement(id)+(if(mutateStatement)" changed" else "")).put("uncertainty","").put("status","published").put("version",1).put("fingerprint","a".repeat(64)).put("evidenceIds",JSONArray().put(if(swapEvidence)otherEvidence else evidenceId))
         init{workers.submit{while(!listener.isClosed)runCatching{listener.accept()}.getOrNull()?.let{socket->workers.submit{socket.use{
             val input=it.getInputStream().bufferedReader();val first=input.readLine().orEmpty();val headers=mutableListOf<String>();while(true){val line=input.readLine();if(line.isNullOrEmpty())break;headers.add(line)}
             val length=headers.firstOrNull{line->line.startsWith("Content-Length:",true)}?.substringAfter(':')?.trim()?.toInt()?:0;val body=CharArray(length);var read=0;while(read<length){val count=input.read(body,read,length-read);if(count<0)break;read+=count}
             val parts=first.split(' ');val method=parts.firstOrNull().orEmpty();val uri=URI(parts.getOrElse(1){"/"});val path=uri.path;val params=uri.rawQuery.orEmpty().split('&').filter{pair->pair.contains('=')}.associate{pair->URLDecoder.decode(pair.substringBefore('='),"UTF-8") to URLDecoder.decode(pair.substringAfter('='),"UTF-8")}
+            if(method=="GET"&&(path=="/api/work-activity/$workId/memory-results"||path.startsWith("/api/memories/")))readerReads.incrementAndGet()
             if(method=="POST"&&path.startsWith("/api/query"))queryWrites.incrementAndGet();if(method=="POST"&&path=="/api/captures")captureWrites.incrementAndGet()
             var status="200 OK";val response=when{
                 forbidden||headers.none{line->line.equals("Authorization: Bearer $token",true)}->{status="403 Forbidden";JSONObject().put("error","forbidden")}
-                path=="/api/work-activity"->JSONObject().put("items",JSONArray().put(work())).put("nextCursor",JSONObject.NULL)
+                path=="/api/work-activity"->JSONObject().put("items",JSONArray(listOfNotNull(if(listed)work()else null,extraWork).filter { row -> when(if(filterLists)params["state"]else null) { "active" -> row.optString("state") in setOf("running","waiting");"attention" -> row.optString("state") in setOf("needs_input","failed","stale");"completed" -> row.optString("state") in setOf("completed","cancelled","excluded");else -> true } })).put("nextCursor",JSONObject.NULL)
                 path=="/api/work-activity/$workId/memory-results"->{if(holdPage.compareAndSet(true,false)){pageEntered.countDown();pageRelease.await(15,TimeUnit.SECONDS)};if(failPage.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else{val available=ids.filterNot{it in removed};val cursor=params["cursor"];val page=available.filter{cursor==null||it>cursor}.take(20);JSONObject().put("ids",JSONArray(page)).put("total",available.size).put("nextCursor",if(available.count{cursor==null||it>cursor}>page.size)page.last()else JSONObject.NULL)}}
-                path=="/api/work-activity/$workId"->work()
+                path=="/api/work-activity/$workId"->{workReads.incrementAndGet();if(failWork.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else work()}
                 path=="/api/capture-browser/$evidenceId"->{val n=captureReads.incrementAndGet();if(n==holdCapture){captureEntered.countDown();captureRelease.await(15,TimeUnit.SECONDS)};if(failCapture.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else JSONObject().put("id",evidenceId).put("source",source).put("deviceId","generated-device").put("libraryVersion","generated-version").put("appName","Generated evidence").put("capturedAt","2026-10-30T00:00:00Z").put("ocrText","Generated exact Memory evidence").put("metadata",JSONObject())}
                 method=="POST" && path.startsWith("/api/memories/") && path.endsWith("/correct")->{corrections.incrementAndGet();JSONObject().put("id",UUID.randomUUID().toString())}
-                path.startsWith("/api/memories/")->{val id=path.substringAfterLast('/');if(method=="GET"&&holdMemory==id){entered.countDown();release.await(15,TimeUnit.SECONDS)};if(method=="GET"&&failMemory.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else if(method=="DELETE"&&id in ids){removed.add(id);deletes.incrementAndGet();JSONObject().put("externalErase","acknowledged").put("physicalEraseVerified",true)}else if(id in ids&&id !in removed)memory(id)else{status="404 Not Found";JSONObject().put("error","not_found")}}
+                path.startsWith("/api/memories/")->{if(method=="GET")memoryReads.incrementAndGet();val id=path.substringAfterLast('/');if(method=="GET"&&holdMemory==id){entered.countDown();release.await(15,TimeUnit.SECONDS)};if(method=="GET"&&failMemory.compareAndSet(true,false)){status="503 Service Unavailable";JSONObject()}else if(method=="DELETE"&&id in ids){removed.add(id);deletes.incrementAndGet();JSONObject().put("externalErase","acknowledged").put("physicalEraseVerified",true)}else if(id in ids&&id !in removed)memory(id)else{status="404 Not Found";JSONObject().put("error","not_found")}}
                 else->JSONObject().put("items",JSONArray())
             };val bytes=response.toString().toByteArray();it.getOutputStream().apply{write("HTTP/1.1 $status\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray());write(bytes);flush()}
         }}}}}

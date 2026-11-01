@@ -1,4 +1,5 @@
 import {DESKTOP_STORAGE_VERSION} from './storage-format';
+import '@mote/shared/i18n-all';
 import {spoolOriginal,originalPart} from './original-spool';
 import {sourceState} from './source-state-store';
 import { moteText, configureLocale, type Locale } from '@mote/shared/i18n';

@@ -16,7 +16,7 @@ afterEach(async()=>{vi.unstubAllGlobals();await rm(directory,{recursive:true,for
 it('finds queued records beyond the first 30 and paginates the filtered set',async()=>{
   const queue=new DurableQueue(join(directory,'queue'),defaultConfig());await queue.initialize();
   for(let i=0;i<65;i++)await queue.enqueue({...event(randomUUID()),source:'note',durationMs:0,imageMime:undefined,privacy:{excluded:false,redacted:false,mode:'none'},capturedAt:new Date(Date.UTC(2026,0,1,0,i)).toISOString(),appName:'Generated notes',ocrText:i<32?'Needle older record '+i:'Unrelated recent record '+i});
-  const sources={pendingContent:()=>[]} as unknown as LocalSourceManager;
+  const sources={pendingContentSummaries:()=>[]} as unknown as LocalSourceManager;
   expect(localContentPage(queue,sources).items.every(row=>row.preview.startsWith('Unrelated'))).toBe(true);
   const first=localContentPage(queue,sources,0,'NEEDLE');expect(first.total).toBe(32);expect(first.items).toHaveLength(30);expect(first.nextOffset).toBe(30);
   const next=localContentPage(queue,sources,first.nextOffset,'needle');expect(next.items).toHaveLength(2);expect(next.nextOffset).toBeUndefined();
