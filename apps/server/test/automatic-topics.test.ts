@@ -8,6 +8,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import type {TopicAuthority} from '../src/automatic-topics.js';
+import {MemoryProviderError,type MemoryProvider} from '../src/memory-provider-contract.js';
 const at='2026-10-01T10:00:00.000Z';
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-auto-topics-'));
@@ -22,6 +23,89 @@ async function fixture(t:TestContext){
 }
 const authority=(controller=new AbortController()):TopicAuthority=>({admissionId:'original-generated-admission',signal:controller.signal,assertCurrent:()=>{controller.signal.throwIfAborted();}});
 const output=(ids:string[])=>({trees:[{id:'projects',label:'Generated project topics',nodes:[{id:'planning',label:'Generated planning',memoryIds:ids},{id:'review',label:'Generated review',memoryIds:ids.slice(0,1)}]},{id:'practices',label:'Generated practice topics',nodes:[{id:'checklists',label:'Generated checklists',memoryIds:ids.slice(0,1)}]}]});
+function bindGeneratedProvider(f:Awaited<ReturnType<typeof fixture>>,read:MemoryProvider['read']){
+ const namespace={ownerId:'generated-owner',instanceId:'generated-topic-provider',bindingRevision:2};
+ const unexpected=async()=>{throw Error('Unexpected generated provider operation');};
+ f.n.memoryBindings.providerFactory=()=>({read,put:unexpected,remove:unexpected,search:unexpected,export:unexpected,health:unexpected,recover:unexpected,close:async()=>{}});
+ f.n.store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify({planId:'instance:'+namespace.instanceId,generation:2,namespace}));
+ return ()=>f.n.pluginCenter.references(namespace.instanceId).includes('Existing queries retain a read snapshot');
+}
+
+test('topic directory and node browsing materialize one Memory snapshot per batch read',async t=>{
+ const f=await fixture(t),service=f.n.featureServices.contextTrees.automatic!,ids:string[]=[];
+ for(let index=0;index<30;index++)ids.push((await f.seed('Synthetic topic input '+index)).id);
+ service.register({id:'fixture',version:'1',classify:async()=>output(ids)});
+ await service.classify({operationId:'snapshot-count',classifierId:'fixture',memoryIds:ids},authority());
+ let snapshots=0;const prepare=f.n.store.db.prepare.bind(f.n.store.db);
+ t.mock.method(f.n.store.db,'prepare',(statement:string)=>{
+  const prepared=prepare(statement);
+  if(statement==='SELECT json FROM memories ORDER BY id'){
+   const all=prepared.all.bind(prepared);
+   prepared.all=((...args:unknown[])=>{snapshots++;return all(...args as Parameters<typeof all>);}) as typeof prepared.all;
+  }
+  return prepared;
+ });
+ const catalog=await f.api('/api/context-trees'),trees=catalog.items.filter((tree:any)=>tree.id.startsWith('auto.')),directorySnapshots=snapshots;
+ assert.equal(trees.length,2);snapshots=0;
+ const page=await f.api(`/api/context-trees/${trees[0].id}/nodes/planning?limit=100`),nodeSnapshots=snapshots;
+ assert.deepEqual(page.items.map((memory:any)=>memory.id).sort(),[...ids].sort());assert.equal(page.nextCursor,null);
+ t.diagnostic(`30 inputs: directory=${directorySnapshots}, node=${nodeSnapshots} full Memory snapshot materializations`);
+ assert.ok(directorySnapshots<=1,`directory materialized ${directorySnapshots} snapshots for one batch`);
+ assert.ok(nodeSnapshots<=3,`node browsing materialized ${nodeSnapshots} snapshots for one batch`);
+});
+
+test('pinned body mismatch hides topic labels while provider failures propagate and read leases are released',async t=>{
+ const f=await fixture(t),a=await f.seed('Synthetic provider input'),service=f.n.featureServices.contextTrees.automatic!;let calls=0;
+ service.register({id:'fixture',version:'1',classify:async()=>{calls++;return output([a.id]);}});
+ const input={operationId:'provider-original',classifierId:'fixture',memoryIds:[a.id]};await service.classify(input,authority());
+ let mode='valid';
+ const retained=bindGeneratedProvider(f,async({key})=>{
+  assert.equal(retained(),true,'the provider remains retained during its body read');assert.equal(key.memoryId,a.id);
+  if(mode==='invalid')throw new MemoryProviderError('invalid_record','Generated provider invalid record');
+  if(mode==='offline')throw new MemoryProviderError('unavailable','Generated provider unavailable');
+  return mode==='mismatch'?{...a,statement:'Generated body with a different immutable digest'}:a;
+ });
+ for(const [next,status,trees] of [['valid',200,2],['mismatch',200,0],['invalid',502,0],['offline',503,0],['valid',200,2]] as const){
+  mode=next;const response=await f.n.app.inject({url:'/api/context-trees',headers:f.headers});assert.equal(response.statusCode,status,response.body);
+  if(status===200)assert.equal(response.json().items.filter((tree:any)=>tree.id.startsWith('auto.')).length,trees);
+  else await assert.rejects(service.trees(),{statusCode:status,message:next==='invalid'?'Generated provider invalid record':'Generated provider unavailable'});
+  assert.equal(retained(),false,'success, hidden labels and provider errors all release the read lease');
+ }
+ mode='mismatch';await assert.rejects(service.classify({...input,operationId:'provider-mismatch'},authority()),{statusCode:409});
+ assert.equal(calls,1,'a stale pinned body never reaches the classifier');assert.equal(retained(),false);
+});
+
+test('a topic batch keeps its original provider binding across cutover and releases it after the last input',async t=>{
+ const f=await fixture(t),a=await f.seed('Synthetic binding input one'),b=await f.seed('Synthetic binding input two'),service=f.n.featureServices.contextTrees.automatic!;
+ service.register({id:'fixture',version:'1',classify:async()=>output([a.id,b.id])});
+ await service.classify({operationId:'binding-cutover',classifierId:'fixture',memoryIds:[a.id,b.id]},authority());
+ let entered!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>entered=resolve),barrier=new Promise<void>(resolve=>release=resolve),providers:string[]=[];t.after(()=>release());
+ const retained=bindGeneratedProvider(f,async({namespace,key})=>{
+  providers.push(namespace.instanceId);assert.equal(retained(),true);
+  if(providers.length===1){entered();await barrier;}
+  return [a,b].find(memory=>memory.id===key.memoryId)!;
+ });
+ const reading=f.api('/api/context-trees');await started;
+ f.n.store.db.prepare('UPDATE memory_plan_binding SET json=? WHERE id=1').run(JSON.stringify({planId:'mote.builtin',generation:3}));
+ assert.equal(retained(),true,'cutover cannot dispose the provider used by this batch');release();
+ assert.equal((await reading).items.filter((tree:any)=>tree.id.startsWith('auto.')).length,2);
+ assert.deepEqual(providers,['generated-topic-provider','generated-topic-provider'],'both inputs use the original binding');assert.equal(retained(),false);
+});
+
+test('a shared topic snapshot cannot retain permission for an earlier or in-flight input',async t=>{
+ for(const revoked of ['earlier','in-flight'] as const)await t.test(revoked,async t=>{
+  const f=await fixture(t),a=await f.seed('Synthetic first permission input'),b=await f.seed('Synthetic second permission input'),inputs=[a,b].sort((a,b)=>a.id.localeCompare(b.id)),service=f.n.featureServices.contextTrees.automatic!;
+  service.register({id:'fixture',version:'1',classify:async()=>output([a.id,b.id])});
+  await service.classify({operationId:'permission-during-read',classifierId:'fixture',memoryIds:[a.id,b.id]},authority());
+  let entered!:()=>void,release!:()=>void;const started=new Promise<void>(resolve=>entered=resolve),barrier=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
+  const retained=bindGeneratedProvider(f,async({key})=>{const memory=inputs.find(memory=>memory.id===key.memoryId)!;if(memory.id===inputs[1].id){entered();await barrier;}return memory;});
+  const reading=f.api('/api/context-trees');await started;assert.equal(retained(),true);
+  const excluded=inputs[revoked==='earlier'?0:1];
+  f.n.store.db.prepare("UPDATE captures SET json=json_set(json,'$.privacy.excluded',json('true')) WHERE id=?").run(excluded.evidenceIds[0]);
+  release();assert.equal((await reading).items.some((tree:any)=>tree.id.startsWith('auto.')),false);
+  assert.equal(retained(),false,'revoked inputs also release the read lease');
+ });
+});
 
 test('generated classification persists multi-tree references without copying Memory and resumes exact admitted operation',async t=>{
  const f=await fixture(t),a=await f.seed('Synthetic checklist proposal'),b=await f.seed('Synthetic review plan');let calls=0;
