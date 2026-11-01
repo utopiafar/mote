@@ -9,29 +9,31 @@ import org.json.JSONObject
  * while resume, manual refresh, pagination and opening a result still read fresh.
  */
 internal object WorkPolling {
+    const val MS = 3_000L
+
     fun live(state: String) = state == "running" || state == "waiting"
 
     fun anyLive(items: JSONArray): Boolean =
         (0 until items.length()).any { live(items.optJSONObject(it)?.optString("state").orEmpty()) }
 
-    /** Every screen re-arms its poll through these, so the gate can never drift from the reads. */
+    /** Every screen re-arms its poll through these, so the gate can never drift from the reads.
+     * An open result reader does not use them: its withdrawal checks keep the original cadence
+     * regardless of the work state, because membership, authorization and identity must stay
+     * revalidated while the statement is visible. */
     fun rearm(items: JSONArray, schedule: () -> Unit) { if (anyLive(items)) schedule() }
     fun rearm(work: JSONObject, schedule: () -> Unit) { if (live(work.getString("state"))) schedule() }
     fun rearm(live: Boolean, schedule: () -> Unit) { if (live) schedule() }
 
-    /**
-     * An open result keeps its withdrawal checks after the work reaches a terminal state:
-     * membership, authorization and identity are revalidated at [readerMs] cadence — every
-     * three seconds while the work is live or unknown, every fifteen seconds once terminal,
-     * so a revoked or removed Memory is still withdrawn promptly without the full cadence.
-     */
-    fun readerMs(live: Boolean?) = if (live == false) 15_000L else 3_000L
+    /** A terminal memory work's results re-read on a slower cadence: the rows carry owner-read
+     * titles that must be withdrawn when the Memory is removed or access revoked elsewhere. */
+    const val RESULTS_TERMINAL_MS = 15_000L
 
-    /** The reader's work state is re-checked at most this often; an unknown state retries on every poll. */
-    const val READER_STATE_MS = 60_000L
+    /** The saved-results list never stops while visible; a terminal work only slows it down. */
+    fun rearmResults(live: Boolean, schedule: (Long) -> Unit) = schedule(if (live) MS else RESULTS_TERMINAL_MS)
 
-    fun recheckState(live: Boolean?, checkedAt: Long, now: Long) = live == null || now - checkedAt >= READER_STATE_MS
-
-    /** The reader always revalidates; only its cadence depends on the last known work state. */
-    fun rearmReader(live: Boolean?, schedule: (Long) -> Unit) = schedule(readerMs(live))
+    /** Non-memory detail stops at terminal; a memory detail keeps its slower results withdrawal. */
+    fun rearmDetail(work: JSONObject, schedule: (Long) -> Unit) {
+        if (live(work.getString("state"))) schedule(MS)
+        else if (work.optString("kind") == "memory") schedule(RESULTS_TERMINAL_MS)
+    }
 }

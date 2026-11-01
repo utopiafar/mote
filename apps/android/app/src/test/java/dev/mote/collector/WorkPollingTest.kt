@@ -10,6 +10,11 @@ import org.junit.Test
  * `detail` calls `WorkPolling.rearm(work, ::poll)` and the memory-results views carry the
  * rendered `live` into `WorkPolling.rearm(live, ::poll)`. A terminal render schedules nothing
  * while resume, refresh and pagination still read once, exactly as before.
+ *
+ * The open Memory reader deliberately bypasses this gate: `CentralWorkMemoryResults.open`,
+ * `poll` and the transient-failure re-arm call `ui.scheduleActivityPoll()` unconditionally, so
+ * withdrawal, deletion, authorization and identity checks keep the original cadence while the
+ * statement is visible — only the saved-results list stops at terminal.
  */
 class WorkPollingTest {
 
@@ -57,43 +62,24 @@ class WorkPollingTest {
         assertTrue(armed)
     }
 
-    @Test fun aRestoredReaderReArmsOnlyForLiveWork() {
-        // Mirrors showSelected(): recreation clears `live`, a fresh work-state read refreshes
-        // it, and the reader's rearm call schedules its next revalidation.
-        var live: Boolean? = null
-        var polls = 0
-        fun restoreReader(stateRead: () -> String) {
-            runCatching(stateRead).onSuccess { live = WorkPolling.live(it) }
-            WorkPolling.rearmReader(live) { polls++ }
-        }
-        restoreReader { "running" }
-        assertEquals("a still-running work resumes the reader poll", 1, polls)
-        live = null
-        restoreReader { "completed" }
-        assertEquals("a completed work keeps the slower withdrawal revalidation", 2, polls)
-        live = null
-        restoreReader { error("offline") }
-        assertEquals("an unknown state is not terminal: the reader retries it", 3, polls)
-        assertTrue("an unknown state stays on the live cadence", WorkPolling.recheckState(live, 0, 1))
-    }
-
-    @Test fun theOpenReaderRevalidatesSlowerAfterTheWorkTerminates() {
-        // running -> revalidation every three seconds; a fresh state read reports completed ->
-        // the same production rearm drops to the fifteen-second withdrawal cadence.
-        var live: Boolean? = WorkPolling.live("running")
+    @Test fun terminalMemoryResultsKeepASlowerWithdrawalCadence() {
+        // The saved-results rows carry owner-read titles, so their list keeps re-reading after
+        // the work turns terminal — slower than live, never off — to withdraw removed Memories.
         val delays = mutableListOf<Long>()
-        WorkPolling.rearmReader(live) { delays.add(it) }
-        live = WorkPolling.live("completed")
-        WorkPolling.rearmReader(live) { delays.add(it) }
-        WorkPolling.rearmReader(null) { delays.add(it) }
-        assertEquals(listOf(3_000L, 15_000L, 3_000L), delays)
+        WorkPolling.rearmResults(true) { delays.add(it) }
+        WorkPolling.rearmResults(false) { delays.add(it) }
+        assertEquals(listOf(WorkPolling.MS, WorkPolling.RESULTS_TERMINAL_MS), delays)
     }
 
-    @Test fun theReaderRefreshesTheWorkStateOnItsOwnClock() {
-        assertTrue("an unknown state is re-read on every poll", WorkPolling.recheckState(null, 0, 0))
-        assertFalse("a fresh state answer is reused", WorkPolling.recheckState(true, 0, WorkPolling.READER_STATE_MS - 1))
-        assertTrue("the state is re-checked once it ages out", WorkPolling.recheckState(true, 0, WorkPolling.READER_STATE_MS))
-        assertTrue("a terminal state still re-checks for a restart", WorkPolling.recheckState(false, 0, WorkPolling.READER_STATE_MS))
+    @Test fun onlyMemoryDetailKeepsPollingAfterTerminal() {
+        // The detail re-arm covers the embedded results list: a completed memory work keeps
+        // its withdrawal cadence while every other terminal kind sleeps.
+        val delays = mutableListOf<Long>()
+        WorkPolling.rearmDetail(JSONObject("""{"state":"completed","kind":"memory"}""")) { delays.add(it) }
+        WorkPolling.rearmDetail(JSONObject("""{"state":"completed","kind":"capture"}""")) { delays.add(it) }
+        WorkPolling.rearmDetail(JSONObject("""{"state":"running","kind":"capture"}""")) { delays.add(it) }
+        WorkPolling.rearmDetail(JSONObject("""{"state":"running","kind":"memory"}""")) { delays.add(it) }
+        assertEquals(listOf(WorkPolling.RESULTS_TERMINAL_MS, WorkPolling.MS, WorkPolling.MS), delays)
     }
 
     @Test fun detailAndListUseTheSameTerminalGate() {

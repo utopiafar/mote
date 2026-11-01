@@ -127,7 +127,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
                 "evidence" -> evidence(work)
                 "technical" -> technical(work)
             }
-            WorkPolling.rearm(work, ui::scheduleActivityPoll)
+            WorkPolling.rearmDetail(work, ui::scheduleActivityPoll)
         }
     }
     private fun overview(work: JSONObject) {
