@@ -80,11 +80,19 @@ test('completed snapshots return duplicate ACK and cannot restart their successf
 });
 
 test('cancelled snapshots require owner retry before recovery can restore temporary bytes',async t=>{
+ let release!:()=>void,started!:()=>void;
+ const held=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>started=resolve);
+ t.after(()=>release());
  const f=await fixture(t),bytes=Buffer.from('Generated explicit retry fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);
  const cancelled=await f.request('POST',`/api/files/${ack.id}/cancel`,{});assert.equal(cancelled.statusCode,200,cancelled.body);assert.equal(f.node.files.detail(ack.id).job?.state,'cancelled');assert.deepEqual((await f.recovery()).json(),{items:[]});
  const duplicate=await f.begin(input);assert.equal(duplicate.statusCode,200,duplicate.body);assert.equal(duplicate.json().ack.duplicate,true);await f.node.processing.tick();assert.equal(f.node.files.detail(ack.id).job?.state,'cancelled');assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);
  const retried=await f.request('POST',`/api/files/${ack.id}/retry`,{});assert.equal(retried.statusCode,200,retried.body);assert.deepEqual((await f.recovery()).json(),{items:[requestIdentity(ack.id,input)]});
- const session=(await f.begin(input)).json();assert.equal(session.ack,null);await f.sendParts(session.uploadId,bytes);const restored=await f.commit(session.uploadId);assert.equal(restored.statusCode,200,restored.body);assert.equal(restored.json().id,ack.id);await f.node.processing.tick();assert.equal(f.node.files.detail(ack.id).job?.state,'succeeded');
+ const processor=f.node.processing.runtime.registry.get('text.utf8'),execute=processor.process;
+ processor.process=async args=>{started();await held;return execute(args);};
+ const session=(await f.begin(input)).json();assert.equal(session.ack,null);await f.sendParts(session.uploadId,bytes);const restored=await f.commit(session.uploadId);assert.equal(restored.statusCode,200,restored.body);assert.equal(restored.json().id,ack.id);
+ await bounded(entered,'owner-retried restored processor entry');assert.equal(f.node.files.detail(ack.id).job?.state,'running');assert.deepEqual(Buffer.concat([...f.node.files.processingBytes(ack.id)]),bytes);
+ const pipelines=f.node.processing.engine.list({operationId:'file:'+ack.id,kind:'files.pipeline',limit:100}).items.filter(step=>step.state==='running').map(step=>step.id);assert.equal(pipelines.length,1,'Observe the actual owner-retried pipeline, even when a completion wake admitted it before tick discovery');
+ release();await bounded(f.node.processing.engine.drain(pipelines),'owner-retried restored pipeline completion');assert.equal(f.node.files.detail(ack.id).job?.state,'succeeded');assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);assert.throws(()=>[...f.node.files.bytes(ack.id)],{statusCode:404});
 });
 
 test('recovery authorization and strict schema exclude agents, revoked sessions and unrelated request fields',async t=>{
