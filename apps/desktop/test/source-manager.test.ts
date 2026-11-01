@@ -13,8 +13,10 @@ let managers: LocalSourceManager[] = [];
 let servers: Server[] = [];
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-manager-'))); });
 afterEach(async () => { for (const manager of managers) await manager.close(); for (const server of servers) await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }); managers = []; servers = []; await rm(directory, { recursive: true, force: true }); });
-async function endpoint(dropFirstAck = false) {
+type AckGate = { allowed: boolean; sent: number; dropped: number };
+async function endpoint(dropFirstAck = false, ackGate?: AckGate) {
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
+  let acknowledgements = 0;
   const sessions=new Map<string,any>();let recoveries:unknown[]=[];
   const server = createServer(async (req, res) => {
     expect(req.headers['x-mote-ingress-version']).toBe('2');
@@ -25,15 +27,16 @@ async function endpoint(dropFirstAck = false) {
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
     if(req.url?.startsWith('/api/file-sync/v1/recovery/')&&req.url.endsWith('/uploads')){const m=[...sessions.values()].at(-1),uploadId='recovery-'+m.item.revision;sessions.set(uploadId,m);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
     if(req.url==='/api/file-sync/v1/uploads'){const uploadId=body.revision;sessions.set(uploadId,manifest);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
-    if(req.url?.endsWith('/commit')){const m=sessions.get(req.url.split('/').at(-2)!);items.push(m.item);if(dropNext){dropNext=false;res.destroy();return;}res.end(JSON.stringify({...sourceAck(id,m.item,'file-revision',items.length>1),sha256:m.sha256,sizeBytes:m.sizeBytes}));return;}
+    const replyAck=(ack:unknown)=>{if(dropNext||ackGate?.allowed===false){dropNext=false;if(ackGate)ackGate.dropped++;res.destroy();return;}acknowledgements++;if(ackGate)ackGate.sent++;res.end(JSON.stringify(ack));};
+    if(req.url?.endsWith('/commit')){const m=sessions.get(req.url.split('/').at(-2)!);items.push(m.item);replyAck({...sourceAck(id,m.item,'file-revision',items.length>1),sha256:m.sha256,sizeBytes:m.sizeBytes});return;}
     res.setHeader('Content-Type', 'application/json');
     if (req.url?.endsWith('/items/batch')) { res.statusCode = 404; res.end('{}'); }
     else if (req.method === 'POST') { id = body.id; registered.push(body); res.end(JSON.stringify(body)); }
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id }));
-    else { items.push(body); if (dropNext) { dropNext = false; res.destroy(); return; } res.end(JSON.stringify(sourceAck(id,body,body.kind==='file'?'file-revision':'source-item',items.length>1))); }
+    else { items.push(body); replyAck(sourceAck(id,body,body.kind==='file'?'file-revision':'source-item',items.length>1)); }
   });
   servers.push(server); await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, loseNextAck: () => { dropNext = true; },recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];} };
+  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, acknowledgements:()=>acknowledgements, loseNextAck: () => { dropNext = true; },recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];} };
 }
 async function manager(url: string, token = 'synthetic-source-token', adapters?:SourceAdapterRegistry, controlledWatcher = false) {
   const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper',false,undefined,adapters);
@@ -61,12 +64,28 @@ it('connects the discovered Kimi Code home and queues its main conversation',asy
 });
 describe('native source lifecycle with local HTTP fixtures', () => {
   it('persists an ACK-lost file, restores after restart, and never invokes calendar permission at startup', async () => {
-    const server = await endpoint(true); const file = join(directory, '合成.md'); await writeFile(file, '合成内容 🧑🏽‍💻');
-    let app = await manager(server.url); await app.addFiles(file, DEFAULT_SOURCE_OPTIONS); await app.sync();
-    expect(app.status()[0].pending).toBe(1); await app.close();
-    app = await manager(server.url); await app.sync();
-    expect(app.status()[0].pending).toBe(0); expect(server.items).toHaveLength(2); expect(server.items[0]).toEqual(server.items[1]);
-    const status = app.status(); expect(JSON.stringify(status)).not.toContain('synthetic-source-token');
+    const gate:AckGate={allowed:false,sent:0,dropped:0},server = await endpoint(true,gate); const file = join(directory, '合成.md'); await writeFile(file, '合成内容 🧑🏽‍💻');
+    const calendarPermission=vi.spyOn(await import('../src/source-calendar'),'calendarHelper');
+    // This restart case owns the retry boundary. Filesystem delivery and the
+    // periodic scheduler are covered separately, not allowed to acknowledge it.
+    vi.useFakeTimers({toFake:['setInterval','clearInterval']});
+    let app:LocalSourceManager|undefined;
+    try {
+      app = await manager(server.url,undefined,undefined,true); await app.addFiles(file, DEFAULT_SOURCE_OPTIONS); await app.sync();
+      expect(gate).toEqual({allowed:false,sent:0,dropped:1});expect(server.items).toHaveLength(1);
+      expect(app.status()[0].pending).toBe(1);const sourceId=app.status()[0].source.id; await app.close();
+      gate.allowed=true;app = await manager(server.url,undefined,undefined,true); await app.sync();
+      expect(app.status()[0].pending).toBe(0); expect(server.items).toHaveLength(2); expect(server.items[0]).toEqual(server.items[1]);
+      expect(app.status()[0].source.id).toBe(sourceId);expect(gate.sent).toBe(1);expect(calendarPermission).not.toHaveBeenCalled();
+      const status = app.status(); expect(JSON.stringify(status)).not.toContain('synthetic-source-token');
+    } finally { await app?.close();vi.useRealTimers();calendarPermission.mockRestore(); }
+  });
+  it('a controlled watcher retry legitimately acknowledges the same lost-ACK revision before restart',async()=>{
+    const server=await endpoint(true),file=join(directory,'watcher-ack.md');await writeFile(file,'Generated ACK retry body');
+    const app=await manager(server.url,undefined,undefined,true);await app.addFiles(file,DEFAULT_SOURCE_OPTIONS);await app.sync();
+    expect(app.status()[0].pending).toBe(1);expect(server.acknowledgements()).toBe(0);const sourceId=app.status()[0].source.id;
+    (app as any).onFileWatchEvent({sourceId,root:file,path:file,backend:'fsevents',kind:'change'});await app.sync(false);
+    expect(app.status()[0].pending).toBe(0);expect(server.acknowledgements()).toBe(1);expect(server.items).toHaveLength(2);expect(server.items[1]).toEqual(server.items[0]);
   });
   it('keeps old queued data bound to its original node and respects local pause', async () => {
     const first = await endpoint(true); const second = await endpoint(); const file = join(directory, 'synthetic.md'); await writeFile(file, '旧节点私有合成内容');
