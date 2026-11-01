@@ -16,6 +16,15 @@ internal class UiTask(
     private val executor: ExecutorService = Executors.newSingleThreadExecutor(),
     private val ownsExecutor: Boolean = true,
 ) : Application.ActivityLifecycleCallbacks {
+    /** Controlled native-fixture boundary; unset in normal use and scoped to this task only. */
+    internal interface ResultDeliveryObserver {
+        /** Work has completed. Publication is held here so the regular tick cannot consume it. */
+        fun resultReady(outcome: Result<*>)
+        /** The actual worker-posted UI runnable ran, including a paused/destroyed drop. */
+        fun deliveryFinished(outcome: Result<*>, delivered: Boolean)
+    }
+    @Volatile internal var resultDeliveryObserver: ResultDeliveryObserver? = null
+
     class Progress internal constructor(label: String) {
         @Volatile var message: String = label
         internal val started = SystemClock.elapsedRealtime()
@@ -51,8 +60,19 @@ internal class UiTask(
                 SupportEvents.record(activity.applicationContext, EventStage.UI, EventCode.STARTED)
                 val outcome = runCatching { work(state) }
                 outcome.exceptionOrNull()?.let { SupportEvents.failure(activity.applicationContext, EventStage.UI, it, SystemClock.elapsedRealtime() - state.started) } ?: SupportEvents.record(activity.applicationContext, EventStage.UI, EventCode.OK, SystemClock.elapsedRealtime() - state.started)
+                val observer = resultDeliveryObserver
+                observer?.resultReady(outcome)
                 result.set(outcome)
-                handler.post { if (!closed && visible) { handler.removeCallbacks(tick); tick.run() } }
+                handler.post {
+                    var delivered = false
+                    try {
+                        if (!closed && visible) {
+                            handler.removeCallbacks(tick)
+                            delivered = busy
+                            tick.run()
+                        }
+                    } finally { observer?.deliveryFinished(outcome, delivered) }
+                }
             }
         } catch (error: java.util.concurrent.RejectedExecutionException) {
             // A rejected submission still completes through the normal UI result path.

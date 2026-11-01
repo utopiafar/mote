@@ -9,35 +9,34 @@ import android.widget.TextView
 /** A read of existing conversation summaries; it never submits a question or starts capture. */
 internal class HomeConversationView(private val activity: MoteActivity, private val archiveEmpty: (Boolean) -> Unit = {}, private val open: (String) -> Unit) : LinearLayout(activity), HomeSection {
     private val task = UiTask(activity)
-    private var generation = -1L
-    private var origin = ""
-    private var nextRead = 0L
-    private var epoch = 0L
+    private val gate = HomeReadGate()
     private var closed = false
     private var active = false
+    private var denied = false
     private var rendered = ""
 
     init { orientation = VERTICAL; tag = "home-recent-conversations" }
 
-    override fun pause() { active = false; epoch++; nextRead = 0L }
+    override fun pause() { active = false; gate.wake() }
     override fun close() { closed = true; pause(); task.close() }
 
     override fun refresh() {
         if (closed) return
         active = true
         val access = runCatching { CentralAccess.resolve(activity) }.getOrElse {
+            // A resolution failure replaces the retry with a plain label, but `denied` survives;
+            // when resolution recovers the denied affordance is re-rendered below.
             clear(); label(MoteI18n.text("对话暂不可读取，请稍后重试。")); return
         }
-        if (access.generation != generation || access.server != origin) {
-            epoch++; clear(); archiveEmpty(false); nextRead = 0L; generation = access.generation; origin = access.server
-        }
+        if (gate.adopt(access.generation, access.server)) { denied = false; clear(); archiveEmpty(false) }
         if (access.client == null) {
+            denied = false
             message(if (access.server.isBlank()) MoteI18n.text("连接中央后查看对话。") else MoteI18n.text("登录中央后查看对话。"))
             return
         }
-        if (task.busy || SystemClock.elapsedRealtime() < nextRead) return
-        val stamp = epoch
-        nextRead = SystemClock.elapsedRealtime() + 5000
+        // A revoked read leaves the gate stopped and its retry the only recovery: never read, keep the affordance.
+        if (denied) { retryMessage(MoteI18n.text("对话暂不可读取，请稍后重试。")); return }
+        val stamp = if (task.busy || !gate.due(SystemClock.elapsedRealtime())) return else gate.begin(SystemClock.elapsedRealtime())
         if (childCount == 0) label(MoteI18n.text("正在读取对话…"))
         task.start("", {}, {
             val page = access.client.get("/api/conversations?limit=5")
@@ -52,18 +51,17 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
                 java.time.Instant.parse(item.getString("updatedAt"))
                 require(item.get("turnCount") is Number && item.getInt("turnCount") >= 0)
             }
-            val emptyArchive = rows.length() == 0 && runCatching {
-                val storage = access.client.get("/api/status").getJSONObject("storage")
-                storage.has("captures") && storage.get("captures") is Number && storage.getLong("captures") == 0L &&
-                    access.client.get("/api/library/catalog?limit=1").getJSONArray("items").length() == 0 &&
-                    access.client.get("/api/files?limit=1").getJSONArray("items").length() == 0
-            }.getOrDefault(false)
+            val emptyArchive = gate.archiveEmpty(rows.length() == 0, stamp, SystemClock.elapsedRealtime()) {
+                HomeArchiveProbe.empty(access.client::get)
+            }
             rows to emptyArchive
         }) { outcome ->
-            if (closed || !active || stamp != epoch || activity.isDestroyed || activity.isFinishing) return@start
+            if (closed || !active || !gate.current(stamp) || activity.isDestroyed || activity.isFinishing) return@start
             val current = runCatching { CentralAccess.resolve(activity) }.getOrNull()
-            if (current == null || current.generation != generation || current.server != origin || current.client == null) { clear(); nextRead = 0L; return@start }
+            if (current == null || current.generation != access.generation || current.server != access.server || current.client == null) { clear(); gate.invalidate(); return@start }
             outcome.onSuccess { (rows, emptyArchive) ->
+                gate.success(SystemClock.elapsedRealtime())
+                denied = false
                 archiveEmpty(emptyArchive)
                 if (rendered == rows.toString()) return@onSuccess
                 clear(); rendered = rows.toString()
@@ -85,7 +83,7 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
                         setOnClickListener {
                             val selected = runCatching { CentralAccess.resolve(activity) }.getOrNull()
                             if (selected?.client != null && selected.generation == access.generation && selected.server == access.server) open(id)
-                            else { clear(); nextRead = 0L; refresh() }
+                            else { clear(); gate.invalidate(); refresh() }
                         }
                     }
                     row.addView(TextView(activity).apply { text = "◌"; textSize = 23f; MoteUi.textColor(this, NativeColorRole.ACCENT) }, LayoutParams(activity.moteDp(24), -2).apply { marginEnd = activity.moteDp(13) })
@@ -98,15 +96,29 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
                     row.addView(TextView(activity).apply { this.text = "›"; textSize = 17f; MoteUi.textColor(this, NativeColorRole.MUTED) })
                     addView(row); divider()
                 }
-            }.onFailure {
+            }.onFailure { error ->
+                val status = (error as? CentralFailure)?.status
+                gate.failure(SystemClock.elapsedRealtime(), status)
                 // A failed or revoked read is not an empty history, and must not expose old-target rows.
                 archiveEmpty(false)
-                message(MoteI18n.text("对话暂不可读取，请稍后重试。"))
+                if (status == 401 || status == 403) { denied = true; retryMessage(MoteI18n.text("对话暂不可读取，请稍后重试。")) }
+                else message(MoteI18n.text("对话暂不可读取，请稍后重试。"))
             }
         }
     }
     private fun clear() { removeAllViews(); rendered = "" }
     private fun message(value: String) { if (rendered == value) return; clear(); rendered = value; label(value) }
+    /** A revoked read offers an explicit retry that re-arms the gate; transient failures keep auto-retrying. */
+    private fun retryMessage(value: String) {
+        if (rendered == "$value\u0000retry") return
+        clear(); rendered = "$value\u0000retry"
+        label(value)
+        addView(TextView(activity).apply {
+            text = MoteI18n.text("重试"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT)
+            setPadding(0, 0, 0, activity.moteDp(16)); isClickable = true; isFocusable = true
+            setOnClickListener { if (active && !closed) { denied = false; gate.retry(); refresh() } }
+        })
+    }
     private fun label(value: String) { addView(TextView(activity).apply { text = value; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, activity.moteDp(16), 0, activity.moteDp(16)) }) }
     private fun divider() { addView(View(activity).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LayoutParams(-1, activity.moteDp(1))) }
 }
