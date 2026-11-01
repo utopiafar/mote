@@ -19,7 +19,7 @@ let dom:JSDOM,api:DesktopApi,ui:ReturnType<typeof createSourceWorkspaceUi>,toggl
 const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const openDescription=()=>document.querySelector<HTMLButtonElement>('#source-detail-body .source-detail-context button')!.click();
 beforeEach(()=>{
- dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'));vi.stubGlobal('document',dom.window.document);
+ dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'),{pretendToBeVisual:true});vi.stubGlobal('document',dom.window.document);
  const dialog=el<HTMLDialogElement>('source-context-dialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
  api={sourcePendingContent:vi.fn(async()=>({items:[],total:0})),sourceArchivedContent:vi.fn(async()=>({items:[]})),sourceContext:vi.fn(async()=>context('New node description')),saveSourceContext:vi.fn(async(_id,write)=>({...context('New node description'),pending:write})),openCentral:vi.fn(async()=>{})} as unknown as DesktopApi;
  toggle=vi.fn(async()=>{});
@@ -27,6 +27,11 @@ beforeEach(()=>{
  document.querySelector<HTMLElement>('[data-page=source-detail]')!.hidden=false;
 });
 const detailPage=()=>document.querySelector<HTMLElement>('[data-page=source-detail]')!;
+function timedUi(){
+ ui.clear();vi.useFakeTimers({toFake:['setTimeout','clearTimeout','setInterval','clearInterval','Date']});
+ vi.mocked(api.sourcePendingContent).mockClear();vi.mocked(api.sourceArchivedContent).mockClear();
+ ui=createSourceWorkspaceUi(api,{openDetail:()=>true,edit:()=>{},toggle,content:()=>{},read:()=>{}});ui.status(status(1));ui.update([structuredClone(source)]);ui.open(id);
+}
 afterEach(()=>{ui.clear();dom.window.close();vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers();});
 
 it.each([undefined,'2026-10-30T23:59:59.000Z'])('does not present upload time %s as the time of a completed local scan',lastSyncAt=>{
@@ -269,6 +274,79 @@ it('withdraws a remote deletion while Mac stays visible, with four archive-only 
  detailPage().hidden=true;await flush();await vi.advanceTimersByTimeAsync(60000);
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(5);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
  detailPage().hidden=false;await flush();expect(api.sourceArchivedContent).toHaveBeenCalledTimes(6);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+});
+
+it('lets 16-second archive reads finish across the 15-second timer without starving the visible result',async()=>{
+ await flush();
+ vi.mocked(api.sourceArchivedContent).mockImplementation(()=>new Promise(resolve=>setTimeout(()=>resolve({items:[{key:'capture:generated-slow',source:'file',title:'Generated slow archive',observedAt:'2026-10-30T01:00:00.000Z',preview:''}]}),16000)));
+ timedUi();await vi.advanceTimersByTimeAsync(15000);
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ await vi.advanceTimersByTimeAsync(1000);expect(el('source-detail-body').textContent).toContain('Generated slow archive');
+ await vi.advanceTimersByTimeAsync(16000);expect(el('source-detail-body').textContent).toContain('Generated slow archive');
+ expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+});
+
+it('keeps both loaded archive pages and the focused row across an unchanged periodic recheck',async()=>{
+ await flush();
+ const first={key:'capture:generated-preserved-one',source:'file' as const,title:'Generated preserved one',observedAt:'2026-10-30T01:00:00.000Z',preview:''};
+ const second={...first,key:'capture:generated-preserved-two',title:'Generated preserved two'};
+ vi.mocked(api.sourceArchivedContent).mockImplementation(async(_id,cursor)=>cursor?{items:[second]}:{items:[first],nextCursor:'generated-second'});
+ timedUi();await flush();
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='加载更多')!.click();await flush();
+ const row=Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent?.includes(second.title))!;row.focus();
+ await vi.advanceTimersByTimeAsync(15000);
+ expect(el('source-detail-body').textContent).toContain(first.title);expect(el('source-detail-body').textContent).toContain(second.title);
+ expect(Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent?.includes(second.title))).toBe(row);expect(document.activeElement).toBe(row);
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(4);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+});
+
+it('keeps a load-more response that crosses a periodic tick and coalesces the recheck behind it',async()=>{
+ await flush();let finish!:(page:{items:import('../src/contracts/content').ContentItem[]})=>void,hold=true;
+ const first={key:'capture:generated-crossing-one',source:'file' as const,title:'Generated crossing one',observedAt:'2026-10-30T01:00:00.000Z',preview:''};
+ const second={...first,key:'capture:generated-crossing-two',title:'Generated crossing two'};
+ vi.mocked(api.sourceArchivedContent).mockImplementation(async(_id,cursor)=>cursor?(hold?await new Promise(resolve=>{finish=resolve;}):{items:[second]}):{items:[first],nextCursor:'generated-crossing-second'});
+ timedUi();await flush();
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='加载更多')!.click();await flush();
+ await vi.advanceTimersByTimeAsync(15000);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);
+ hold=false;finish({items:[second]});await flush();
+ expect(el('source-detail-body').textContent).toContain(second.title);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(4);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+});
+
+it('withdraws a remotely deleted row on a loaded second page without removing the unchanged first row',async()=>{
+ await flush();let deleted=false;
+ const first={key:'capture:generated-page-delete-one',source:'file' as const,title:'Generated retained first row',observedAt:'2026-10-30T01:00:00.000Z',preview:''};
+ const second={...first,key:'capture:generated-page-delete-two',title:'Generated deleted second row'};
+ vi.mocked(api.sourceArchivedContent).mockImplementation(async(_id,cursor)=>cursor?{items:deleted?[]:[second]}:{items:[first],nextCursor:'generated-delete-second'});
+ timedUi();await flush();Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='加载更多')!.click();await flush();
+ const firstRow=Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent?.includes(first.title));
+ deleted=true;await vi.advanceTimersByTimeAsync(15000);
+ expect(el('source-detail-body').textContent).not.toContain(second.title);
+ expect(Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent?.includes(first.title))).toBe(firstRow);
+});
+
+it('stops a multi-page recheck before the next request when the window hides during the first response',async()=>{
+ await flush();let finish!:(page:{items:import('../src/contracts/content').ContentItem[];nextCursor:string})=>void;
+ const first={key:'capture:generated-hide-between-one',source:'file' as const,title:'Generated hide-between first row',observedAt:'2026-10-30T01:00:00.000Z',preview:''};
+ const second={...first,key:'capture:generated-hide-between-two',title:'Generated hide-between second row'};
+ vi.mocked(api.sourceArchivedContent).mockImplementation(async(_id,cursor)=>cursor?{items:[second]}:{items:[first],nextCursor:'generated-hide-between-cursor'});
+ timedUi();await flush();Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='加载更多')!.click();await flush();
+ vi.mocked(api.sourceArchivedContent).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+ await vi.advanceTimersByTimeAsync(15000);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
+ const hidden=vi.spyOn(document,'hidden','get').mockReturnValue(true);document.dispatchEvent(new dom.window.Event('visibilitychange'));
+ finish({items:[first],nextCursor:'generated-hide-between-cursor'});await flush();
+ await vi.advanceTimersByTimeAsync(60000);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
+ hidden.mockReturnValue(false);document.dispatchEvent(new dom.window.Event('visibilitychange'));await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(5);expect(el('source-detail-body').textContent).toContain(second.title);
+});
+
+it('does not poll a tray-hidden document and rechecks once when the window is visible again',async()=>{
+ await flush();timedUi();await flush();
+ const hidden=vi.spyOn(document,'hidden','get').mockReturnValue(true);
+ document.dispatchEvent(new dom.window.Event('visibilitychange'));
+ for(let index=0;index<5;index++)ui.update([{...structuredClone(source),pending:index}]);
+ await vi.advanceTimersByTimeAsync(60000);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+ hidden.mockReturnValue(false);document.dispatchEvent(new dom.window.Event('visibilitychange'));await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);
 });
 
 it('defers the Central archive revalidation while hidden and folds it into the next visible read',async()=>{
