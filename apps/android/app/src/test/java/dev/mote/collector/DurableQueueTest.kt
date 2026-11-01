@@ -130,4 +130,65 @@ class DurableQueueTest {
         restarted.acknowledge(note.getString("id")); assertEquals(0, restarted.depth()); assertEquals(0L, restarted.bytes())
     }
 
+    @Test fun `library version callback does not hold the queue lock`() {
+        val queue = DurableQueue(folder.newFolder(), cipher).apply { archiveOrigin = "https://generated.example" }
+        val note = event().put("source", "note").put("ocrText", "Generated note")
+        queue.enqueue(note, null, 100000)
+        val lockProbe = Thread { DurableQueue.exclusive { } }.apply { isDaemon = true }
+        try {
+            val page = queue.capturePage("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", source = "note",
+                libraryBindings = true, libraryVersion = { original, hash ->
+                    lockProbe.start()
+                    lockProbe.join(2000)
+                    assertFalse("Version calculation must let attachment ACKs acquire the queue lock", lockProbe.isAlive)
+                    assertEquals(note.getString("id"), original.getString("id"))
+                    assertEquals("Generated note", original.getString("ocrText"))
+                    assertTrue(hash.isNullOrBlank())
+                    CaptureLibraryVersion.of(original, hash)
+                })
+            val id = note.getString("id")
+            assertEquals(CaptureLibraryVersion.of(note), page.getJSONObject("versions").getString(id))
+            assertEquals("https://generated.example", page.getJSONObject("bindings").getString(id))
+            assertEquals(1, page.getInt("totalCount"))
+            assertTrue(page.isNull("nextCursor"))
+            assertEquals("Generated note", page.getJSONArray("items").getJSONObject(0).getString("textPreview"))
+        } finally {
+            // A failing pre-fix callback releases the lock before this cleanup joins the probe.
+            lockProbe.join(2000)
+            assertFalse("Queue lock probe must finish", lockProbe.isAlive)
+        }
+    }
+
+    @Test fun `library page versions preserve original text blob and binding across display projection`() {
+        val queue = DurableQueue(folder.newFolder(), cipher).apply { archiveOrigin = "https://generated.example" }
+        val older = event().put("source", "note").put("ocrText", "Generated older note")
+        val note = event().put("source", "note").put("ocrText", "Generated original body ".repeat(10))
+            .put("capturedAt", "2026-01-01T01:00:00Z")
+            .put("metadata", JSONObject().put("noteOrigin", JSONObject().put("kind", "share").put("text", "Generated quoted source")))
+        val image = byteArrayOf(1, 2, 3)
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(image).joinToString("") { "%02x".format(it) }
+        queue.enqueue(older, null, 100000); queue.enqueue(note, image, 100000)
+        queue.acknowledge(note.getString("id"), retentionDays = 7)
+        queue.cacheCentralDerived(JSONObject().put("id", note.getString("id")).put("textPreview", "Generated central preview")
+            .put("ocr", JSONObject().put("status", "completed")), 100000)
+        queue.archiveOrigin = "https://other.example"
+
+        val page = queue.capturePage("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", limit = 1, source = "note", libraryBindings = true)
+        val id = note.getString("id"); val item = page.getJSONArray("items").getJSONObject(0)
+        assertEquals(CaptureLibraryVersion.of(note, hash), page.getJSONObject("versions").getString(id))
+        assertEquals("https://generated.example", page.getJSONObject("bindings").getString(id))
+        assertEquals(id, item.getString("id")); assertEquals("Generated central preview", item.getString("textPreview"))
+        assertTrue(item.getBoolean("hasImage")); assertTrue(item.getBoolean("uploaded"))
+        assertFalse(item.has("ocrText")); assertFalse(item.has("_blob")); assertFalse(item.has("_archiveOrigin"))
+        assertEquals(2, page.getInt("totalCount"))
+
+        val next = queue.capturePage("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", cursor = page.getString("nextCursor"),
+            limit = 1, source = "note", libraryBindings = true)
+        val olderId = older.getString("id")
+        assertEquals(olderId, next.getJSONArray("items").getJSONObject(0).getString("id"))
+        assertEquals(CaptureLibraryVersion.of(older), next.getJSONObject("versions").getString(olderId))
+        assertEquals("https://generated.example", next.getJSONObject("bindings").getString(olderId))
+        assertEquals(2, next.getInt("totalCount")); assertTrue(next.isNull("nextCursor"))
+    }
+
 }
