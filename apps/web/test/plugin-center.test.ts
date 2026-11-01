@@ -273,3 +273,18 @@ for(const status of [403,404])test('plugin advanced install stays blocked throug
  f.read(undefined);await act(async()=>finish(structuredClone(f.binding)));await ui.tick();assert.equal(fields[0].disabled,false);assert.equal(fields[1].disabled,false);assert.equal(fields[0].value,'');assert.doesNotMatch(ui.element.textContent!,/Generated binding owner denied/);
  f.write(path=>path==='/api/plugins/resolve'?structuredClone(preview):undefined);await input(ui.element,'GitHub 仓库',source.repository);await input(ui.element,'发布标签（可选）',source.tag);await ui.click('预览发布包');assert.equal(f.writes.length,1);assert.equal(f.writes[0].path,'/api/plugins/resolve');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);
 });
+
+for(const failure of ['503','offline'])test('plugin independent control plane can install through an initial binding '+failure+' without erasing input',async t=>{
+ const f=generatedPluginApi();f.read(path=>{if(path===bindingPath)throw failure==='503'?new ApiError('Generated binding provider missing',503):new TypeError('Generated binding transport unavailable');});
+ f.write(path=>{if(path==='/api/plugins/resolve')return structuredClone(preview);if(path==='/api/plugins/install'){f.plugins.packages=[structuredClone(packageFixture)];f.plugins.revision++;return structuredClone(f.plugins);}});
+ const ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());const fields=ui.element.querySelectorAll<HTMLInputElement>('.plugin-discovery input');assert.equal(fields[0].disabled,false,'a Memory provider failure is not denial of the plugin control plane');
+ await input(ui.element,'GitHub 仓库',source.repository);await input(ui.element,'发布标签（可选）',source.tag);await ui.tick(3000);assert.equal(fields[0].value,source.repository);assert.equal(fields[1].value,source.tag);assert.equal(button(ui.element,'预览发布包').disabled,false);assert.equal(f.writes.length,0);
+ await ui.click('预览发布包');assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),true);await ui.click('安装此版本');assert.equal(f.writes.filter(write=>write.path==='/api/plugins/install').length,1);assert.equal(f.plugins.packages.length,1);assert.equal(Boolean(ui.element.querySelector('[role=dialog]')),false);assert.equal(f.plugins.packages[0].desired,false,'install does not enable or bind Memory');
+});
+
+test('plugin binding authorization denial stays fenced through a later 503 but does not leak to a new Api',async t=>{
+ const first=generatedPluginApi(),ui=await pluginClock(t,first.api,'#/system/plugins?tab=discover');await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());
+ await ui.visibility(true);first.read(path=>{if(path===bindingPath)throw new ApiError('Generated old owner denied',403);});await ui.visibility(false);await ui.tick();assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true);
+ first.read(path=>{if(path===bindingPath)throw new ApiError('Generated provider503 after denial',503);});await ui.tick(3000);assert.equal(ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!.disabled,true,'a transport/provider failure is not authorization recovery');
+ const other=generatedPluginApi();other.read(path=>{if(path===bindingPath)throw new ApiError('Generated new owner provider503',503);});await ui.render(other.api);await ui.tick();const field=ui.element.querySelector<HTMLInputElement>('.plugin-discovery input')!;assert.equal(field.disabled,false);assert.equal(field.value,'');assert.doesNotMatch(ui.element.textContent!,/Generated old owner denied/);
+});

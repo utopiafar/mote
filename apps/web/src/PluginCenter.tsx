@@ -44,19 +44,22 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
  useForegroundResources(api,[pluginsPath,bindingPath,'/api/model-authorization']);
  useEffect(()=>operationFeed(api).subscribe(()=>{}),[api]);
  const view=pluginResource.data,binding=bindingResource.data;
+ const [bindingDenied,setBindingDenied]=useState<Api>();
  const [tab,setTab]=useHashChoice('tab',pluginTabFromHash),[selected,setSelected]=useState<string>(),[dialog,setDialog]=useState<Dialog>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[retry,setRetry]=useState<Intent>();
  const [repository,setRepository]=useState(''),[tag,setTag]=useState(''),[scope,setScope]=useState('default'),[fee,setFee]=useState(false),[showInventory,setShowInventory]=useState(false),[rhythmOpened,setRhythmOpened]=useState(false);
  const opener=useRef<HTMLElement|null>(null),identity=useRef(api),controller=useRef<AbortController|undefined>(undefined),busyRef=useRef(false);identity.current=api;
- useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setRepository('');setTag('');return()=>controller.current?.abort();},[api]);
+ useEffect(()=>{setSelected(undefined);setDialog(undefined);setBusy(false);busyRef.current=false;setError('');setNotice('');setRetry(undefined);setRepository('');setTag('');setBindingDenied(undefined);return()=>controller.current?.abort();},[api]);
  useEffect(()=>{
   const denied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
+  if(bindingResource.error instanceof ApiError&&[401,403,404,410].includes(bindingResource.error.status))setBindingDenied(api);
+  else if(bindingResource.error===undefined&&!bindingResource.loading&&bindingResource.data!==undefined)setBindingDenied(undefined);
   if(!denied)return;
   clearQuickAdd();
   controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');setRepository('');setTag('');
- },[pluginResource.error,bindingResource.error]);
+ },[api,pluginResource.error,bindingResource.error,bindingResource.data,bindingResource.loading]);
  const currentPackage=view?.packages.find(item=>item.id===selected);
- const privateDenied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
- const installReady=!privateDenied&&view!==undefined&&binding!==undefined;
+ const privateDenied=bindingDenied===api||[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
+ const installReady=!privateDenied&&view!==undefined;
  const latestInstance=dialog?.kind==='configure'&&dialog.instance?view?.instances.find(instance=>instance.id===dialog.instance!.id):undefined;
  function open(next:Dialog,event?:HTMLElement){if(!confirmNavigation())return;opener.current=event??document.activeElement as HTMLElement;setDialog(next);setScope('default');setFee(false);setError('');setNotice('');setRetry(undefined);}
  function close(){if(!busy&&confirmNavigation())setDialog(undefined);}
@@ -90,7 +93,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   {pluginResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(pluginResource.error)}<button className="text-button" onClick={pluginResource.refresh}>{moteText('重试')}</button></p>}
   {bindingResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(bindingResource.error)}<button className="text-button" onClick={bindingResource.refresh}>{moteText('重试')}</button></p>}
   {pluginResource.loading&&!view&&<p role="status">{moteText('正在读取…')}</p>}
-  {tab==='discover'&&!installReady&&!privateDenied&&bindingResource.loading&&view&&<p role="status">{moteText('正在读取…')}</p>}
+  {tab==='discover'&&!installReady&&bindingResource.loading&&view&&<p role="status">{moteText('正在读取…')}</p>}
   {tab==='installed'&&<>
    {view&&<div className={"provider-workspace plugin-workspace"+(currentPackage?" has-package":"")}><aside hidden={Boolean(currentPackage)} className="panel provider-sidebar"><div className="section-heading"><h2>{moteText('已安装')}</h2><span className="badge muted">{view.packages.length}</span></div>
 
