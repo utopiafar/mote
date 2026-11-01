@@ -105,7 +105,7 @@ internal class CentralWorkMemoryResults(
                 ui.text(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("中央响应格式无效，请刷新后重试。"),parent=target)
                 ui.button(MoteI18n.text("重试"),parent=target){refreshWork(work)}
             }
-            if(live)ui.scheduleActivityPoll()
+            WorkPolling.rearm(live, ui::scheduleActivityPoll)
         }
     }
     private fun open(work: String, id: String, cursor: String?, scroll: Int, preserveIdentity: Boolean = false) {
@@ -127,7 +127,7 @@ internal class CentralWorkMemoryResults(
                 children(screens.body).filterIsInstance<EditText>().forEach { field -> saved?.edits?.get((field.tag as? MemoryTopicEdit)?.key)?.let(field::setText) }
                 ui.restoreContentScroll(saved?.scroll ?: memoryScroll);restoringSelection=false
             }
-            if(live)ui.scheduleActivityPoll()
+            WorkPolling.rearm(live, ui::scheduleActivityPoll)
         }, { error -> failure(work,error) })
     }
     private fun back(work: String) {
@@ -167,7 +167,7 @@ internal class CentralWorkMemoryResults(
                 if(retryingReader) { unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"),true);return }
                 if(identity==null)selected=null
                 ui.notice(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"))
-                if(live)ui.scheduleActivityPoll()
+                WorkPolling.rearm(live, ui::scheduleActivityPoll)
             }
         }
     }
@@ -180,7 +180,7 @@ internal class CentralWorkMemoryResults(
             if(afterReaderScroll!=null)readerPendingScroll=null
             result.onSuccess { row ->
                 if(identity(id,row)!=identity)unavailable(work)
-                else { if(afterReaderScroll!=null)screens.body.visibility=View.VISIBLE;afterReaderScroll?.let(ui::restoreContentScroll);if(live)ui.scheduleActivityPoll() }
+                else { if(afterReaderScroll!=null)screens.body.visibility=View.VISIBLE;afterReaderScroll?.let(ui::restoreContentScroll);WorkPolling.rearm(live, ui::scheduleActivityPoll) }
             }
                 .onFailure { error ->
                     if(afterReaderScroll!=null && error !is WorkMemoryUnavailable && !(error is CentralFailure && error.status in setOf(401,403,404,410)))

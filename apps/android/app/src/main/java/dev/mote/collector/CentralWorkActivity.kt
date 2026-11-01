@@ -84,7 +84,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
                 text(MoteI18n.text("查看底层执行记录，排查依赖与失败原因。"), parent = target)
                 button(MoteI18n.text("技术执行记录"), parent = target) { ui.navigate("processing") }
             }
-            if (WorkPolling.anyLive(items)) ui.scheduleActivityPoll()
+            WorkPolling.rearm(items, ui::scheduleActivityPoll)
         }
     }
     private fun detail(id: String) {
@@ -127,7 +127,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
                 "evidence" -> evidence(work)
                 "technical" -> technical(work)
             }
-            if (WorkPolling.live(work.getString("state"))) ui.scheduleActivityPoll()
+            WorkPolling.rearm(work, ui::scheduleActivityPoll)
         }
     }
     private fun overview(work: JSONObject) {
