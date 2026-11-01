@@ -46,6 +46,16 @@ it('revalidates an open Memory once per 5s while classification runs',async()=>{
  await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(3);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(2);
  await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(4);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(3);
 });
+it('overlapping validations compare against the latest pinned Memory',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});const resolvers:((value:unknown)=>void)[]=[];
+ vi.mocked(api.memoryTopicDetail).mockImplementation(()=>new Promise(r=>{resolvers.push(r);}) as never);
+ ui.open();await flush();(root.querySelector('[data-memory]') as HTMLElement).click();await flush();expect(resolvers.length).toBe(1);
+ await vi.advanceTimersByTimeAsync(5000);expect(resolvers.length).toBe(2);
+ await vi.advanceTimersByTimeAsync(55000);expect(resolvers.length).toBe(3);
+ const v1={id,title:'Memory',status:'published',version:1,statement:'GENERATED BODY',evidenceIds:[]};
+ resolvers[1](v1);await flush();resolvers[2]({...v1,version:2});await flush();resolvers[0](v1);await flush();
+ expect(root.textContent).toContain('所选记忆已变化');expect(root.textContent).not.toContain('GENERATED BODY');
+});
 it('polls the directory once per 60s while classification is not running',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
  await vi.advanceTimersByTimeAsync(59999);expect(api.memoryTopics).toHaveBeenCalledTimes(1);

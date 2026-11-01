@@ -19,26 +19,26 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  function failed(error:unknown){clear();heading();const message=text('p',error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''):moteText('操作失败'));message.setAttribute('role','alert');root.append(message);button(moteText('重试'),()=>void show());button(moteText('全部记忆'),()=>{nodeId=undefined;selected=undefined;cursors=[undefined];void show();});schedule();}
  function detailUnavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('所选记忆已变化，请刷新后重新选择。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
  async function poll(){
-  const stamp=generation,id=selected,snapshot=detailSnapshot;
+  const stamp=generation,id=selected;
   try{
    const next=await api.memoryTopics();if(stamp!==generation||!root.open)return;classificationState=next.classification?.state;
    if(!valid(next)){unavailable();return;}
    if(id){
     const current=await api.memoryTopicDetail(id);if(stamp!==generation||!root.open||selected!==id)return;
     const identity=memoryTopicSnapshot(current,id);
-    if(!identity||snapshot!==undefined&&identity!==snapshot){detailUnavailable();return;}
+    if(!identity||detailSnapshot!==undefined&&identity!==detailSnapshot){detailUnavailable();return;}
     if(detailSnapshot===undefined)detailSnapshot=identity;
    }
    if(JSON.stringify(catalog)!==JSON.stringify(next)&&!selected){catalog=next;await list();}else catalog=next;
   }catch(error){if(stamp===generation&&root.open)failed(error);}finally{schedule();}
  }
  async function recheck(){
-  const stamp=generation,id=selected,snapshot=detailSnapshot;
+  const stamp=generation,id=selected;
   if(id===undefined)return;
   try{
    const current=await api.memoryTopicDetail(id);if(stamp!==generation||!root.open||selected!==id)return;
    const identity=memoryTopicSnapshot(current,id);
-   if(!identity||snapshot!==undefined&&identity!==snapshot){detailUnavailable();return;}
+   if(!identity||detailSnapshot!==undefined&&identity!==detailSnapshot){detailUnavailable();return;}
    if(detailSnapshot===undefined)detailSnapshot=identity;
   }catch(error){if(stamp===generation&&root.open)failed(error);}finally{scheduleDetail();}
  }
