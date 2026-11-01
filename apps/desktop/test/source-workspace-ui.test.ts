@@ -23,7 +23,7 @@ beforeEach(()=>{
  document.querySelector<HTMLElement>('[data-page=source-detail]')!.hidden=false;
 });
 const detailPage=()=>document.querySelector<HTMLElement>('[data-page=source-detail]')!;
-afterEach(()=>{ui.clear();dom.window.close();vi.unstubAllGlobals();});
+afterEach(()=>{ui.clear();dom.window.close();vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 it.each([undefined,'2026-10-30T23:59:59.000Z'])('does not present upload time %s as the time of a completed local scan',lastSyncAt=>{
  ui.update([{...structuredClone(source),scanComplete:true,lastSyncAt}]);
@@ -156,12 +156,24 @@ it('revalidates the archive once after the owner returns from Central while loca
 });
 
 it('revalidates the archive on the next status update after opening Central, not on every poll',async()=>{
- await flush();
+ await flush();vi.spyOn(document,'hasFocus').mockReturnValue(true);
  Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='查看中央资料')!.click();
  ui.update([{...structuredClone(source),message:'Generated later poll'}]);await flush();
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
  ui.update([{...structuredClone(source),message:'Generated another poll'}]);await flush();
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the archive revalidation armed while the owner is still in the browser',async()=>{
+ await flush();
+ Array.from(el('source-detail-body').querySelectorAll('button')).find(button=>button.textContent==='查看中央资料')!.click();
+ const focus=vi.spyOn(document,'hasFocus').mockReturnValue(false);
+ ui.update([{...structuredClone(source),message:'Generated poll while browsing'}]);await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
+ vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[{key:'capture:generated-kept',source:'file',title:'Generated current archive',observedAt:'2026-10-30T01:00:00.000Z',preview:''}]});
+ focus.mockRestore();
+ dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
+ expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(el('source-detail-body').textContent).toContain('Generated current archive');
 });
 
 it('defers the Central archive revalidation while hidden and folds it into the next visible read',async()=>{
@@ -171,6 +183,7 @@ it('defers the Central archive revalidation while hidden and folds it into the n
  ui.update([{...structuredClone(source),message:'Generated hidden poll'}]);await flush();
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(1);
  detailPage().hidden=false;
+ vi.spyOn(document,'hasFocus').mockReturnValue(true);
  ui.update([{...structuredClone(source),message:'Generated hidden poll'}]);await flush();
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(2);expect(api.sourcePendingContent).toHaveBeenCalledTimes(1);
 });
