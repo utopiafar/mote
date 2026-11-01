@@ -16,10 +16,10 @@ writeFileSync(join(data,'config.json'),JSON.stringify({version:4,developmentToke
 writeFileSync(join(data,'storage-format.json'),JSON.stringify({version:4}),{mode:0o600});
 const out=resolve(process.env.MOTE_TOPICS_OUTPUT??resolve(__dirname,'../.mote/topic-ui'));mkdirSync(out,{recursive:true});
 const post=async(path,body={})=>{const response=await fetch(url+'/api/__fixture/'+path,{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body)});assert.equal(response.status,200);return response.json();};
-const timeout=setTimeout(()=>{console.error('Mac topics timeout');app.exit(1);},120000);let main;
+const timeout=setTimeout(()=>{console.error('Mac topics timeout');app.exit(1);},300000);let main;
 app.on('browser-window-created',(_event,window)=>{if(main)return;main=window;window.webContents.once('did-finish-load',()=>void(async()=>{
  const fixture=await post('reset');const js=code=>window.webContents.executeJavaScript(code);
- const wait=async(code,label)=>{const end=Date.now()+15000;while(!await js(code)){assert.ok(Date.now()<end,label);await new Promise(r=>setTimeout(r,40));}};
+ const wait=async(code,label,ms=15000)=>{const end=Date.now()+ms;while(!await js(code)){assert.ok(Date.now()<end,label);await new Promise(r=>setTimeout(r,40));}};
  const click=label=>js(`[...document.querySelectorAll('#memory-topics-dialog button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);
  const tree=label=>js(`{const s=document.querySelector('#memory-topic-tree');s.value=[...s.options].find(o=>o.textContent===${JSON.stringify(label)}).value;s.dispatchEvent(new Event('change'));}`);
  const count=n=>wait(`document.querySelectorAll('#memory-topic-members [data-memory]').length===${n}`,'members '+n);
@@ -63,9 +63,9 @@ app.on('browser-window-created',(_event,window)=>{if(main)return;main=window;win
  await click('返回');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('查看原文依据 1')`,'detail back');await click('返回');await count(1);
  await tree('合成实践');await wait(`Boolean(document.querySelector('[data-topic="reuse"]'))`,'tree two');await js(`document.querySelector('[data-topic="reuse"]').click()`);await count(1);assert.equal(await js(`document.querySelector('[data-memory]').dataset.memory`),fixture.firstMemory);await shot('second-tree');
  await tree('合成项目');await wait(`Boolean(document.querySelector('[data-topic="planning"]'))`,'tree paging');await js(`document.querySelector('[data-topic="planning"]').click()`);await count(30);await click('下一页');await count(2);await click('关闭详情');await js(`document.querySelector('#content-memories').click()`);await count(2);await click('上一页');await count(30);
- await post('mode',{mode:'offline'});await click('刷新');await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'offline');assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('offline');await post('mode',{mode:'online'});await click('重试');await count(30);
- await post('mode',{mode:'denied'});await click('刷新');await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'denied');assert.equal(await js(`document.querySelectorAll('[data-topic]').length`),0);await post('mode',{mode:'online'});await click('重试');await count(30);
- await post('invalidate');await click('刷新');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('此主题已不可用')`,'invalidated');assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('invalidated');await click('全部记忆');await count(30);
+ await post('mode',{mode:'offline'});await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'offline',75000);assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('offline');await post('mode',{mode:'online'});await click('重试');await count(30);
+ await post('mode',{mode:'denied'});await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'denied',75000);assert.equal(await js(`document.querySelectorAll('[data-topic]').length`),0);await post('mode',{mode:'online'});await click('重试');await count(30);
+ await post('invalidate');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('此主题已不可用')`,'invalidated',75000);assert.equal(await js(`document.querySelectorAll('[data-memory]').length`),0);await shot('invalidated');await click('全部记忆');await count(30);
  await post('empty');await click('刷新');await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('当前筛选下没有匹配')`,'empty');await shot('empty');await click('关闭详情');
  await post('reset');await js(`location.reload()`);await wait(`Boolean(window.mote)&&!document.querySelector('#settings-fields').disabled`,'reload');await js(`document.querySelector('aside [data-nav="records"]').click();document.querySelector('.content-more-tools').open=true;document.querySelector('#content-memories').focus();document.querySelector('#content-memories').click()`);await count(30);
  assert.equal((await js('window.mote.status()')).running,false);

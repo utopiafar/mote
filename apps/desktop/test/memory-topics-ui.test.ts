@@ -33,8 +33,10 @@ it('invalidation rejects a late original response, without returning its old bod
 it('keeps revalidating an open Memory every 5s while the directory idles',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();(root.querySelector('[data-memory]') as HTMLElement).click();await flush();
  expect(api.memoryTopics).toHaveBeenCalledTimes(2);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(1);
- await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(3);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(2);
- await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(4);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(3);
+ await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(2);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(5000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(2);expect(api.memoryTopicDetail).toHaveBeenCalledTimes(3);
+ await vi.advanceTimersByTimeAsync(49000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(1000);await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(3);
 });
 it('polls the directory once per 60s while classification is not running',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
