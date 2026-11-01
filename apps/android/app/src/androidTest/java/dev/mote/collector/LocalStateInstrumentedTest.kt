@@ -130,6 +130,67 @@ class LocalStateInstrumentedTest {
         while (repository.state.value.active == null && android.os.SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
         assertNotNull("Repository refresh must finish after configuration resumes", repository.state.value.active)
     }
+    @Test fun attachmentAckAndCapturePageUseTheRealPrivateStoreWithoutLockInversion() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        require(app.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        val root = java.nio.file.Files.createTempDirectory(app.cacheDir.toPath(), "generated-ack-page-").toFile()
+        val context = GeneratedQueueContext(app, root)
+        val versionEntered = CountDownLatch(1)
+        val storeLocked = CountDownLatch(1)
+        val acknowledged = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>()
+        var writer: Thread? = null
+        try {
+            val origin = "https://generated-ack.invalid"
+            val store = context.recordDraftStore()
+            val bytes = "Generated attachment original".toByteArray()
+            val attachment = store.stage(bytes, "generated.txt", "text/plain")
+            store.edit("Generated owner comment", org.json.JSONArray().put(attachment), JSONObject().put("kind", "manual"))
+            val event = store.prepare(origin) { draft -> JSONObject()
+                .put("id", UUID.randomUUID().toString()).put("source", "note").put("ocrText", draft.getString("text"))
+                .put("capturedAt", "2026-10-25T00:00:00Z").put("platform", "android").put("durationMs", 1000)
+                .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")) }
+            val id = event.getString("id")
+            val beforeVersion = context.captureLibraryVersion(event, null)
+            val queue = QueueStorage(context).openQueue().apply { archiveOrigin = origin }
+            queue.enqueue(event, null, 16L * 1024 * 1024)
+            val ack = UUID.randomUUID().toString()
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            val identity = ItemUploadIdentity("attachment", "scope", "capture", origin, "device", "target", "source", "external", "revision", "fingerprint", hash, bytes.size.toLong(), id, attachment.getString("id"))
+            writer = Thread {
+                try {
+                    synchronized(store) {
+                        storeLocked.countDown()
+                        check(versionEntered.await(5, TimeUnit.SECONDS))
+                        check(store.acknowledgeExact(identity, ack))
+                    }
+                } catch (error: Throwable) { failure.set(error) }
+                finally { acknowledged.countDown() }
+            }.apply { isDaemon = true; start() }
+            assertTrue("The real ACK owns its store monitor before the page starts", storeLocked.await(5, TimeUnit.SECONDS))
+            val page = queue.capturePage("2026-10-25T00:00:00Z", "2026-10-26T00:00:00Z", source = "note", libraryBindings = true,
+                libraryVersion = { original, blob ->
+                    versionEntered.countDown()
+                    assertTrue("A real attachment ACK must finish while page versioning is in progress", acknowledged.await(5, TimeUnit.SECONDS))
+                    failure.get()?.let { throw AssertionError("Generated ACK failed", it) }
+                    context.captureLibraryVersion(original, blob)
+                })
+            val expected = JSONObject(event.toString()).put("metadata", JSONObject().put("attachments", org.json.JSONArray().put(ack)))
+            val version = page.getJSONObject("versions").getString(id)
+            assertEquals(CaptureLibraryVersion.of(expected), version)
+            assertNotEquals("The actual consumer incorporated the committed attachment ACK", beforeVersion, version)
+            val row = page.getJSONArray("items").getJSONObject(0)
+            assertEquals(id, row.getString("id")); assertEquals("Generated owner comment", row.getString("textPreview"))
+            assertEquals(origin, page.getJSONObject("bindings").getString(id))
+            assertFalse("Versioning cannot add transport metadata to the original", event.has("metadata"))
+            assertEquals(ack, store.record(id)!!.getJSONObject("acks").getString(attachment.getString("id")))
+            assertArrayEquals(bytes, store.bytes(attachment.getString("id")))
+        } finally {
+            versionEntered.countDown(); writer?.join(5000)
+            try { assertFalse("The generated ACK writer must terminate before cleanup", writer?.isAlive == true) }
+            finally { context.dispose() }
+        }
+    }
     @Test fun delayedFileAnchorAndActualSignInCompleteWithoutLockInversion() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         require(context.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
