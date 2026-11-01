@@ -58,11 +58,31 @@ class WorkMemoryJourneyInstrumentedTest {
     private fun fixture(block:(Fake)->Unit){
         assumeTrue(InstrumentationRegistry.getArguments().getString("generatedWorkMemory") == "true")
         require(context.packageName=="dev.mote.collector.dev"&&Build.FINGERPRINT.contains("emu64a"))
-        val settings=Settings(context);val config=settings.read();val before=context.queue().dedupeIds().toSet();require(!settings.enabled&&config.syncMode=="manual"&&config.syncPaused)
+        // Refuse all retained native state before opening a queue or changing connection state.
+        for(name in listOf("central-native","file-archives")) {
+            val directory=File(context.noBackupFilesDir,name)
+            require(!directory.exists() || directory.isDirectory && directory.listFiles()?.isEmpty()==true) { "Generated Work fixture needs no retained $name state" }
+        }
+        val settings=Settings(context);val config=settings.read()
+        require(!settings.enabled && config.token.isEmpty() && config.server in setOf("",BuildConfig.DEFAULT_SERVER)) { "Generated Work fixture needs an unconfigured profile with capture disabled" }
+        require(settings.lastCapture()==null && settings.dataOrigin().isBlank())
+        val queueDirectory=File(QueueStorage(context).selected().path)
+        require(listOf(".capture-stages.inbox",".capture-stages.journal").none { File(queueDirectory,it).exists() }) { "A pending capture is not an empty generated queue" }
+        require(!settings.hasPendingData())
+        val draft=context.recordDraftStore().draft()
+        require(draft.optString("text").isEmpty() && draft.optString("description").isEmpty() && draft.optJSONObject("origin")?.optString("text").orEmpty().isEmpty() &&
+            draft.optJSONArray("attachments")?.length()==0 && !draft.has("prepared") && context.recordDraftStore().pendingMedia().length()==0)
+        val note=QuickNotes.draft(context).read();require(note.text.isEmpty() && note.mood.isEmpty() && note.prepared==null)
+        require(context.localSources().sources().isEmpty() && context.localFileContents(8).isEmpty())
+        val before=context.queue().dedupeIds().toSet();require(before.isEmpty())
+        val language=MoteI18n.preference();val appearance=MoteAppearance.preference()
         Fake().use{fake->
             val nativeProfile=File(context.noBackupFilesDir,"central-native/"+SourceRules.hash(fake.origin))
             require(!nativeProfile.exists()) { "Generated origin must not reuse an existing native profile" }
             try{
+                // Isolate transport for this proven-generated fixture, then restore the original
+                // default batch/paused settings rather than requiring a preconfigured test app.
+                settings.save(config.copy(syncMode="manual",syncPaused=true),confirmCentralEndpoint=true)
                 until("Connect generated Activity fixture after background reads finish"){
                     try{ConnectionGuard.change(context,fake.origin,bindLocal=true){settings.saveConnection(fake.origin,fake.token,"Generated activity memory",true);settings.save(settings.read().copy(syncMode="manual",syncPaused=true),confirmCentralEndpoint=true)};true}
                     catch(error:ConnectionFailure){if(error.category=="busy")false else throw error}
@@ -72,6 +92,7 @@ class WorkMemoryJourneyInstrumentedTest {
             } finally {
                 fake.release.countDown();CentralDraftWrites.barrier{};nativeProfile.deleteRecursively()
                 settings.save(config,confirmCentralEndpoint=true);CentralSession.get(context).select(config.server)
+                MoteI18n.select(context,language);main{MoteAppearance.select(context,appearance)}
             }
         }
     }
