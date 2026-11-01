@@ -89,8 +89,8 @@ class MainActivity : MoteActivity() {
     private lateinit var homeRecordReceipt: LinearLayout
     private lateinit var homeFirstIntro: TextView
     private var homeReceiptAvailable = false
-    private var homeReceiptSignature = ""
-    private var homeSourceSignature = ""
+    private var homeReceiptSignature: String? = null
+    private var homeSourceSignature: String? = null
     private val homeRecordsCache = RevisionCache()
     internal fun isFirstUseRecordEntry() = firstUse
     private var libraryView: LibraryCaptureView? = null
@@ -331,7 +331,7 @@ class MainActivity : MoteActivity() {
         HomeCalendarNeedsView(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
             homeSections += it; content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         }
-        homeReceiptSignature = ""
+        homeReceiptSignature = null
         homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         val pageContent = content
         val guide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
@@ -444,7 +444,7 @@ class MainActivity : MoteActivity() {
             content.addView(captureProgress)
             captureAction = button(MoteI18n.text("开始采集"), primary = !settings.enabled) { if (settings.enabled) stopCapture() else startCapture() }
 
-            homeSourceSignature = ""
+            homeSourceSignature = null
             homeSourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             content.addView(homeSourceList)
             button(MoteI18n.text("来源管理")) { showPage(Page.SOURCES) }

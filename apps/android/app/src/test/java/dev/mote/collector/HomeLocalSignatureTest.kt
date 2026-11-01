@@ -59,6 +59,16 @@ class HomeLocalSignatureTest {
         assertNull("no receipt leaves no card key", collect(cache, 1, receipt = null) { true }.optJSONObject("savedReceipt"))
     }
 
+    @Test fun anUnsetSourceSignatureNeverMatchesAnEmptyList() {
+        // Mirrors the activity's nullable initial signature: an empty first render must still
+        // build so the "no folders yet" guidance is not skipped.
+        var rendered: String? = null
+        val first = HomeLocalSignature.sources(emptyList())
+        assertTrue("an empty list must still build its guidance row", first != rendered)
+        rendered = first
+        assertFalse("the same empty list does not rebuild", HomeLocalSignature.sources(emptyList()) != rendered)
+    }
+
     @Test fun sourceSignaturesTrackOnlyRenderedContent() {
         val rows = listOf(Triple("s1", "Photos", "已同步"), Triple("s2", "Docs", "扫描中\n12/40"))
         val signature = HomeLocalSignature.sources(rows)
