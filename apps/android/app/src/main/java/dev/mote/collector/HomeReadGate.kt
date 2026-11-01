@@ -66,7 +66,8 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
      * Empty-archive probe used while [rowsEmpty] holds. Once data is found the probe is not run
      * again this generation; an empty answer is rechecked at most every [probeRecheckMs]; an
      * inconclusive answer clears the empty confirmation and retries on the next steady read; a
-     * forbidden answer stops the block like any other 403. The last answer is reused between
+     * forbidden answer stops the block and rethrows so the whole read takes its failure path
+     * rather than rendering a bogus empty answer. The last answer is reused between
      * probes. [probe] runs off the gate lock so a slow read cannot block [adopt]; its answer is
      * committed only while [stamp] is still current, so a probe from an old generation can never
      * mark the new generation done.
@@ -75,9 +76,9 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
         if (!rowsEmpty) return false
         val due = synchronized(this) { stamp == epoch && !probeDone && now >= probeNext }
         val result = if (due) runCatching { probe() } else null
-        return synchronized(this) {
+        val forbidden = (result?.exceptionOrNull() as? CentralFailure)?.status == 403
+        val empty = synchronized(this) {
             if (due && stamp == epoch && result != null) {
-                val forbidden = (result.exceptionOrNull() as? CentralFailure)?.status == 403
                 when {
                     forbidden -> { stopped = true; probeNext = 0; probeDone = false; probeEmpty = false }
                     result.isFailure -> { probeNext = now + steadyMs; probeEmpty = false }
@@ -87,5 +88,8 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
             }
             probeEmpty
         }
+        // A denied probe fails the read so the caller renders its forbidden/retry path instead of a bogus empty answer.
+        if (forbidden) throw result!!.exceptionOrNull()!!
+        return empty
     }
 }

@@ -182,11 +182,14 @@ class HomeReadGateTest {
         assertTrue("a recovered probe can confirm the archive empty again", gate.archiveEmpty(true, stamp, 420_000) { true })
     }
 
-    @Test fun aDeniedProbeStopsTheBlockLikeAForbiddenRead() {
+    @Test fun aDeniedProbeFailsTheReadLikeAForbiddenResponse() {
+        // The view takes its failure path on a denied probe, so the read cannot record a success
+        // or render a bogus empty answer; the explicit retry re-arms both the read and the probe.
         val gate = HomeReadGate()
         gate.adopt(1, "https://central")
         val stamp = gate.begin(0)
-        assertFalse(gate.archiveEmpty(true, stamp, 0) { throw CentralFailure(403) })
+        val thrown = assertThrows(CentralFailure::class.java) { gate.archiveEmpty(true, stamp, 0) { throw CentralFailure(403) } }
+        assertEquals(403, thrown.status)
         assertFalse("a denied probe stops the block's reads", gate.due(60_000))
         assertFalse("the stop survives leaving and returning", run { gate.wake(); gate.due(600_000) })
         assertTrue("the explicit retry re-arms reads and the probe", gate.retry().let { gate.due(600_000) })

@@ -17,6 +17,7 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
     private val gate=HomeReadGate()
     private var closed=false
     private var active=false
+    private var denied=false
     private var rendered=""
     init { orientation=VERTICAL;visibility=View.GONE;tag="home-existing-discovery" }
     private fun clear(){removeAllViews();rendered="";visibility=View.GONE;present(false)}
@@ -27,8 +28,10 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
         active=true
         val access=runCatching{CentralAccess.resolve(activity)}.getOrNull()
         if(access==null){gate.invalidate();clear();return}
-        if(gate.adopt(access.generation,access.server))clear()
-        if(access.client==null){clear();return}
+        if(gate.adopt(access.generation,access.server)){denied=false;clear()}
+        if(access.client==null){denied=false;clear();return}
+        // pause() cleared the denied affordance while the gate kept its stop; re-render it instead of reading.
+        if(denied){denied();return}
         val stamp=if(task.busy||!gate.due(SystemClock.elapsedRealtime()))return else gate.begin(SystemClock.elapsedRealtime())
         task.start("",{}, {
             val page=access.client.get("/api/insights?limit=30")
@@ -44,10 +47,11 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
             val finding=outcome.getOrNull()
             if(finding==null){
                 // A revoked read offers an explicit retry that re-arms the gate; a transient failure stays hidden and auto-retries.
-                if((outcome.exceptionOrNull() as? CentralFailure)?.status in setOf(401,403)){clear();visibility=View.VISIBLE;rendered="\u0000denied";label(MoteI18n.text("暂不可读取"),NativeFontRole.META).also{addView(it)};addView(TextView(activity).apply{text=MoteI18n.text("重试");MoteUi.type(this,11);MoteUi.textColor(this,NativeColorRole.ACCENT);setPadding(0,activity.moteDp(5),0,activity.moteDp(5));isClickable=true;isFocusable=true;setOnClickListener{if(active&&!closed){gate.retry();refresh()}}})}
-                else clear()
+                denied=(outcome.exceptionOrNull() as? CentralFailure)?.status in setOf(401,403)
+                if(denied)denied()else clear()
                 return@start
             }
+            denied=false
             if(rendered==finding.toString())return@start
             clear();rendered=finding.toString()
             val id=requireNotNull(InsightPresentation.id(finding))
@@ -70,5 +74,6 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
             addView(card,LayoutParams(-1,-2).apply{bottomMargin=activity.moteDp(26)});visibility=View.VISIBLE;present(true)
         }
     }
+    private fun denied(){clear();visibility=View.VISIBLE;rendered="denied";label(MoteI18n.text("暂不可读取"),NativeFontRole.META).also{addView(it)};addView(TextView(activity).apply{text=MoteI18n.text("重试");MoteUi.type(this,11);MoteUi.textColor(this,NativeColorRole.ACCENT);setPadding(0,activity.moteDp(5),0,activity.moteDp(5));isClickable=true;isFocusable=true;setOnClickListener{if(active&&!closed){denied=false;gate.retry();refresh()}}})}
     private fun label(value:String,role:NativeFontRole)=TextView(activity).apply{text=value;MoteUi.type(this,when(role){NativeFontRole.META->10;NativeFontRole.SUPPORT->12;NativeFontRole.ACTION->11;else->role.size()});MoteUi.textColor(this,if(role==NativeFontRole.META||role==NativeFontRole.SUPPORT)NativeColorRole.MUTED else NativeColorRole.INK);setPadding(0,activity.moteDp(5),0,activity.moteDp(5))}
 }
