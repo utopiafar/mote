@@ -155,6 +155,7 @@ export class MemoryPipeline {
   private drafts:MemoryExtractionDrafts;
   private inputPlans:MemoryInputPlans;
   private active=new Map<string,Promise<MemoryJobDetail>>();
+  private batchTransitions=new Set<string>();
   readonly engine:ExecutionEngine;
   private owned:boolean;
   private completions=new Map<string,{resolve:(job:MemoryJobDetail)=>void;reject:(error:unknown)=>void}>();
@@ -323,7 +324,11 @@ export class MemoryPipeline {
   private batches(id:string):StoredBatch[]{return (this.store.db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(id) as {json:string}[]).map(row=>decodeMemoryBatch<StoredBatch>(this.store,row.json));}
   private batch(id:string):StoredBatch {const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(id);if(!row)throw new StoreError('Memory batch not found',404);return decodeMemoryBatch<StoredBatch>(this.store,String(row.json));}
   private saveJob(job:MemoryJob){const {batches:_batches,inputPlans:_plans,recipeProgress:_recipes,memoryCount:_count,outcome:_outcome,invalidatedBatches:_invalidated,priorValidationFailure:_validation,...value}=job as MemoryJobDetail;value.updatedAt=new Date().toISOString();const prior=this.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id),json=encodeMemoryJob(this.store,value,Boolean(prior&&JSON.parse(String(prior.json)).privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(prior?.json??''))));this.store.db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(json,job.id);}
-  private saveBatch(batch:StoredBatch){const prior=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(batch.id),json=encodeMemoryBatch(this.store,batch,Boolean(prior&&JSON.parse(String(prior.json)).privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(prior?.json??''))));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);}
+  private saveBatch(batch:StoredBatch){
+    const priorRow=this.store.db.prepare('SELECT job_id,json FROM memory_batches WHERE id=?').get(batch.id) as {job_id:string;json:string}|undefined,prior=priorRow?JSON.parse(String(priorRow.json)) as StoredBatch&{privateRetired?:boolean}:undefined;
+    const json=encodeMemoryBatch(this.store,batch,Boolean(prior?.privateRetired));this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(priorRow?.json??''))));this.store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(json,batch.id);
+    if(prior&&prior.status!==batch.status)this.batchTransitions.add(String(priorRow!.job_id));
+  }
   private checkpoint(chunk:Chunk){return Boolean(this.store.db.prepare('SELECT key FROM memory_checkpoints WHERE key=?').get(chunk.key));}
   get(id:string):MemoryJobDetail {
     const job=this.storedJob(id),batches=this.batches(id),failedBatches=batches.filter(b=>b.status==='failed').length,invalidatedBatches=batches.filter(b=>b.status==='invalidated').length,plans=this.planView(id);
@@ -777,6 +782,10 @@ export class MemoryPipeline {
   }
   private refreshJob(id:string){
     const job=this.storedJob(id),counts=this.counts(id);
+    const transitioned=this.batchTransitions.delete(id);
+    // Jobs persisted before the derived counters existed take the current projection as
+    // their baseline; only a real batch transition above makes an unchanged refresh a write.
+    job.runningBatches??=Number(counts.running);job.pendingBatches??=Number(counts.pending);
     const before=JSON.stringify({...job,updatedAt:undefined});
     if(job.status==='pausing'&&Number(counts.running)===0)job.status='paused';
     {
@@ -791,7 +800,7 @@ export class MemoryPipeline {
     if(job.status!=='waiting_for_input')job.availableAt=Number(this.store.db.prepare("SELECT max(json_extract(json,'$.availableAt')) at FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','pending')").get(id)?.at)||undefined;
     job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);
     job.runningBatches=Number(counts.running);job.pendingBatches=Number(counts.pending);
-    if(JSON.stringify({...job,updatedAt:undefined})!==before)this.saveJob(job);
+    if(transitioned||JSON.stringify({...job,updatedAt:undefined})!==before)this.saveJob(job);
   }
   private assertStrategies(batch:StoredBatch){
     for(const chunk of batch.chunks){

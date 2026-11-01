@@ -102,6 +102,34 @@ test('a second batch starting while one already runs still rewrites the job and 
  spy.mock.restore();
 });
 
+test('the first refresh of a job persisted without derived counters does not write or reorder it',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('baseline-a','a'.repeat(600)));
+ let release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
+ const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>1,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{await gate;return empty();}}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id]}),done=pipeline.run(job.id);
+ const storedStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id) as {json:string}).json)).status);
+ while(storedStatus()!=='running')await nextTurn();
+ const snapshot=()=>store.db.prepare('SELECT j.json,a.updated_at FROM memory_jobs j JOIN activity_memory_jobs a ON a.id=j.id WHERE j.id=?').get(job.id) as {json:string;updated_at:string};
+ // Simulate a job row persisted before the derived counters existed; the first
+ // refresh afterwards must not count as job activity.
+ store.db.prepare("UPDATE memory_jobs SET json=json_remove(json,'$.runningBatches','$.pendingBatches') WHERE id=?").run(job.id);
+ const before=snapshot();
+ const updated:string[]=[],prepare=store.db.prepare.bind(store.db);
+ const spy=t.mock.method(store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  if(sql==='UPDATE memory_jobs SET json=? WHERE id=?'){
+   const run=statement.run.bind(statement);
+   statement.run=((...args:unknown[])=>{updated.push(String(args[0]));return run(...args as Parameters<typeof run>);}) as typeof statement.run;
+  }
+  return statement;
+ });
+ for(let i=0;i<3;i++){pipeline.wake();await nextTurn();await nextTurn();}
+ assert.equal(updated.length,0,'an unchanged first refresh must not write the job row');
+ assert.deepEqual(snapshot(),before,'Activity ordering must not move on an unchanged refresh');
+ release();const finished=await done;assert.equal(finished.status,'completed');
+ spy.mock.restore();
+});
+
 test('job summaries count distinct surviving batch memories without exposing their IDs',async t=>{
  const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());
  const pipeline=fixtureMemoryPipeline({store,memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>result(record.id)}});t.after(()=>pipeline.close());
