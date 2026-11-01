@@ -38,7 +38,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID,timingSafeEqual } from 'node:crypto';
 import {setImmediate as yieldEventLoop} from 'node:timers/promises';
 import { existsSync,readFileSync } from 'node:fs';
-import { dirname,join } from 'node:path';
+import { dirname,join,relative,sep } from 'node:path';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
@@ -903,7 +903,8 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   if(existsSync(web)) {
     app.addHook('onRequest',async(req,reply)=>{if(!req.url.startsWith('/api/')&&webVersion!==serverVersion)return reply.code(503).type('text/plain; charset=utf-8').send('Web/server build mismatch. Run npm run build -w @mote/web and restart the server.');});
     // A catch-all static route masks rejected API parameters as missing files.
-    await app.register(staticFiles,{root:web,prefix:'/',wildcard:false});
+    await app.register(staticFiles,{root:web,prefix:'/',wildcard:false,preCompressed:true,
+      setHeaders:(reply,path)=>{if(relative(web,path).startsWith(`assets${sep}`))reply.header('Cache-Control','public, max-age=31536000, immutable');}});
     app.setNotFoundHandler(async(req,reply)=>{
       if(req.url.startsWith('/api/'))return reply.code(404).send({error:'not_found',requestId:req.id});
       // A removed hashed bundle must not receive the SPA HTML fallback. Open
