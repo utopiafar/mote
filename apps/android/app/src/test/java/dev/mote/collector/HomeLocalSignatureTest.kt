@@ -259,6 +259,21 @@ class HomeLocalSignatureTest {
         assertTrue("the second commit advanced the records revision", LocalStateChanges.revisions.value.records > revision)
     }
 
+    @Test fun aFailedRecoveryReadPreservesTheLastKnownInventory() {
+        // A pending inbox whose open keeps failing before the queue can answer — for example a
+        // journal that lands an event then throws — must not flip a previously observed archive
+        // to empty. The bypassed cycle preserves the last known answer and still publishes the
+        // independent draft state; with no prior answer at all the failure stays unknown.
+        val cache = RevisionCache()
+        assertTrue(collect(cache, 9) { true }.getBoolean("hasAnyRecords"))
+        val pending = { true }
+        val broken = { error("generated storage failure") }
+        assertTrue("an undetermined read keeps the last known answer, not a false empty",
+            collect(cache, 9, draft = JSONObject().put("text", "draft"), pendingRecovery = pending, exists = broken).getBoolean("hasAnyRecords"))
+        val fresh = RevisionCache()
+        assertThrows(Exception::class.java) { collect(fresh, 9, pendingRecovery = pending, exists = broken) }
+    }
+
     private fun note() = JSONObject().put("id", UUID.randomUUID().toString())
         .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 1000)
         .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")).put("source", "note")

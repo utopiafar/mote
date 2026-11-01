@@ -505,7 +505,7 @@ class MainActivity : MoteActivity() {
             }
             val captures = HomeLocalCaptures.collect(homeRecordsCache, LocalStateRepository.get(applicationContext).state.value.revision.records,
                 applicationContext.recordDraftStore().draft(),
-                NativeRecordReceipt.recordId?.let { id -> runCatching { applicationContext.queue().capture(id)?.let { applicationContext.withNativeNotePreview(it) } }.getOrNull() },
+                NativeRecordReceipt.recordId?.let { id -> QueueStorage(applicationContext).committedCapture(id)?.let { applicationContext.withNativeNotePreview(it) } },
                 pendingRecovery = { QueueStorage(applicationContext).stageRecoveryPending() }) {
                 HomeLocalCaptures.exists(
                     queue = { applicationContext.queue() },

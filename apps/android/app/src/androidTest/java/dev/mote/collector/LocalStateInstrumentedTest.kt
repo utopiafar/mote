@@ -24,9 +24,13 @@ class LocalStateInstrumentedTest {
     @Test fun pendingStageRecoveryRetriesThroughTheSelectedQueueStorage() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         require(context.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
-        require(!Settings(context).enabled && !CaptureAccessibilityService.connected && !ProjectionService.running && context.queue().depth() == 0)
         val storage = QueueStorage(context)
         val dir = File(storage.current().path)
+        // Isolation before any mutation: the stage files this test writes must not already hold
+        // a real pending capture (depth() == 0 cannot see one), and the queue must stay empty.
+        require(!storage.stageRecoveryPending() && !File(dir, ".capture-stages.checkpoint").exists())
+        require(!Settings(context).enabled && !CaptureAccessibilityService.connected && !ProjectionService.running && context.queue().depth() == 0)
+        val baseline = dir.list()?.toSet() ?: emptySet()
         val revision = LocalStateChanges.revisions.value.records
         val cache = RevisionCache()
         val collect = {
@@ -59,7 +63,9 @@ class LocalStateInstrumentedTest {
             assertFalse("recovery cleared the pending stage input", storage.stageRecoveryPending())
             assertNotNull("the replayed record landed in the real queue", context.queue().capture(event.getString("id")))
         } finally {
-            listOf(".capture-stages.inbox", ".capture-stages.journal", ".capture-stages.checkpoint", "${event.getString("id")}.event").forEach { File(dir, it).delete() }
+            // Restore the baseline exactly: remove only files this test created, never a
+            // pre-existing stage file or record.
+            (dir.list()?.toSet() ?: emptySet()).minus(baseline).forEach { File(dir, it).delete() }
         }
     }
     @Test fun localStateRefreshNeverHoldsQueueWhileWaitingForConfiguration() {

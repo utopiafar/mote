@@ -37,6 +37,32 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         private val validatedBlobs = object : LinkedHashMap<String, BlobStamp>(256, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BlobStamp>?) = size > 4096
         }
+
+        /** The same projection `capture` returns, read straight from a committed record file:
+         * stage replay failures can never hide a record that is already on disk. A missing file
+         * answers null; an unreadable or malformed one propagates its failure. */
+        internal fun readStoredEvent(dir: File, cipher: ByteCipher, id: String): JSONObject? {
+            val file = File(dir, "${UUID.fromString(id)}.event")
+            if (!file.exists()) return null
+            return display(dir, JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)).also(LocalDataFormat::validateEvent))
+        }
+        private fun display(dir: File, event: JSONObject): JSONObject {
+            val hash = event.optString("_blob")
+            event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
+            event.put("retainedUntil", event.optLong("_retainedUntil"))
+            event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
+            if (event.optBoolean("_uploadConflict")) event.put("syncError", "upload_conflict")
+            if (event.optBoolean("_archiveMissing")) event.put("syncError", "archive_missing").put("ocr", JSONObject().put("status", "failed"))
+            event.optJSONObject("_centralDerived")?.let { result ->
+                event.put("centralProcessing", result.optJSONArray("perceptionJobs"))
+                if (result.optJSONObject("ocr")?.optString("status") == "completed") {
+                    event.put("ocrText", result.optString("textPreview")); event.put("ocr", result.getJSONObject("ocr"))
+                    event.put("centralTextLength", result.optInt("textLength")); event.put("centralPreview", true)
+                }
+            }
+            event.remove("_blob"); localFields.forEach(event::remove)
+            return event
+        }
     }
     /** Origin snapshot supplied by the connection-owned queue handle; unbound handles fail closed for pinned records. */
     internal var externalStorageBytes: () -> Long = { 0L }
@@ -680,29 +706,12 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val image = if (hash.isBlank()) null else verifiedBlob(hash, readBytes = true)
         // Later Central processing must not replace the confirmed original's body.
         event.remove("_centralDerived")
-        display(event) to image
+        display(dir, event) to image
     }
     fun capture(id: String): JSONObject? = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return null
-        display(read(file))
-    }
-    private fun display(event: JSONObject): JSONObject {
-        val hash = event.optString("_blob")
-        event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
-        event.put("retainedUntil", event.optLong("_retainedUntil"))
-        event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
-        if (event.optBoolean("_uploadConflict")) event.put("syncError", "upload_conflict")
-        if (event.optBoolean("_archiveMissing")) event.put("syncError", "archive_missing").put("ocr", JSONObject().put("status", "failed"))
-        event.optJSONObject("_centralDerived")?.let { result ->
-            event.put("centralProcessing", result.optJSONArray("perceptionJobs"))
-            if (result.optJSONObject("ocr")?.optString("status") == "completed") {
-                event.put("ocrText", result.optString("textPreview")); event.put("ocr", result.getJSONObject("ocr"))
-                event.put("centralTextLength", result.optInt("textLength")); event.put("centralPreview", true)
-            }
-        }
-        event.remove("_blob"); localFields.forEach(event::remove)
-        return event
+        display(dir, read(file))
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
     fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null, libraryBindings: Boolean = false, libraryVersion: ((JSONObject, String?) -> String)? = null): JSONObject {
@@ -727,7 +736,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val bindings = JSONObject()
             if (libraryBindings) items.forEach { event -> bindings.put(event.getString("id"), event.optString("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))) }
             // Display projection mutates its input; keep the original facts and blob hash for versioning.
-            items to JSONObject().put("items", JSONArray(items.map { display(JSONObject(it.toString())).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
+            items to JSONObject().put("items", JSONArray(items.map { display(dir, JSONObject(it.toString())).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
                 .apply { if (libraryBindings) put("bindings", bindings) }
                 .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
         }

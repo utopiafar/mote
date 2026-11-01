@@ -31,6 +31,8 @@ internal class RevisionCache {
         if (revision != this.revision) { value = check(); this.revision = revision }
         return value
     }
+    /** The last determined answer once one exists; the inventory is genuinely unknown before that. */
+    fun lastOrNull(): Boolean? = if (revision >= 0) value else null
 }
 
 /**
@@ -58,8 +60,12 @@ internal object HomeLocalCaptures {
         captures.put("hasDraft", draft.optString("text").isNotBlank() || draft.optString("description").isNotBlank() || (draft.optJSONArray("attachments")?.length() ?: 0) > 0 || draft.optJSONObject("origin")?.optString("text").orEmpty().isNotBlank())
         // Pending stage recovery bypasses the revision cache: an unchanged records revision
         // cannot see the accepted inbox, and only opening the queue retries its replay. The
-        // bypassed answer is never cached, so each cycle re-checks until recovery commits.
-        captures.put("hasAnyRecords", if (pendingRecovery()) exists() else cache.hasRecords(recordsRevision, exists))
+        // bypassed answer is never cached, so each cycle re-checks until recovery commits. When
+        // the read itself cannot determine the inventory, the last known answer stands instead
+        // of a false empty; with no known answer the failure still propagates as unknown.
+        captures.put("hasAnyRecords", if (pendingRecovery()) {
+            try { exists() } catch (error: Exception) { cache.lastOrNull() ?: throw error }
+        } else cache.hasRecords(recordsRevision, exists))
         savedReceipt?.let { captures.put("savedReceipt", it) }
         return captures
     }

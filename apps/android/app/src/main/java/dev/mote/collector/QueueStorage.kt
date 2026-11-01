@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import android.content.Context
 import android.os.Environment
+import org.json.JSONObject
 import java.io.File
 
 data class QueueStorageChoice(val id: String, val title: String, val base: File, val availableBytes: Long)
@@ -49,6 +50,11 @@ class QueueStorage(private val context: Context) {
     fun committedStored(): Boolean = DurableQueue.exclusive {
         File(store().current().path).listFiles()?.any { it.extension == "event" }
             ?: error(MoteI18n.text("无法读取本机存储目录"))
+    }
+    /** A committed record projection by id without opening the queue, so a still-failing stage
+     * replay cannot take a displayed receipt down; read failures propagate to the caller. */
+    fun committedCapture(id: String): JSONObject? = DurableQueue.exclusive {
+        DurableQueue.readStoredEvent(File(store().current().path), context.localContentCipher(), id)
     }
     fun migrate(id: String): QueueLocation = DurableQueue.exclusive {
         val target = choices().singleOrNull { it.id == id } ?: error(MoteI18n.text("所选目标存储暂不可用"))
