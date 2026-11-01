@@ -47,6 +47,25 @@ class WorkPollingTest {
         assertEquals("running work keeps the full cadence", 21, reads)
     }
 
+    @Test fun aRestoredReaderReArmsOnlyForLiveWork() {
+        // Mirrors showSelected(): recreation clears `live`, then a fresh work-state read decides
+        // whether the restored open reader re-arms its poll.
+        var live = false
+        var polls = 0
+        fun restoreReader(stateRead: () -> String) {
+            runCatching(stateRead).onSuccess { live = WorkPolling.live(it) }
+            if (live) polls++
+        }
+        restoreReader { "running" }
+        assertEquals("a still-running work resumes the reader poll", 1, polls)
+        live = false
+        restoreReader { "completed" }
+        assertEquals("a work that completed during recreation does not re-arm", 1, polls)
+        live = false
+        restoreReader { error("offline") }
+        assertEquals("a failed state read leaves polling off", 1, polls)
+    }
+
     @Test fun detailAndListUseTheSameTerminalGate() {
         val terminal = JSONObject("""{"state":"completed"}""")
         val active = JSONObject("""{"state":"waiting"}""")

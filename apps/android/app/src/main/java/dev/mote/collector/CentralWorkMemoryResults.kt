@@ -58,7 +58,17 @@ internal class CentralWorkMemoryResults(
         identity=out.getString("memoryResultSnapshot")?.takeIf{it.matches(Regex("^[a-f0-9]{64}$"))};memoryScroll=out.getInt("memoryResultDetailScroll").coerceAtLeast(0);restoringSelection=selected!=null && identity!=null
     }
     fun hasSelection(work: String) = workId==work && selected!=null
-    fun showSelected(work: String) { selected?.takeIf{current(work,cursors.last())}?.let{open(work,it,cursors.last(),returnScroll,preserveIdentity=restoringSelection)} }
+    fun showSelected(work: String) {
+        val id=selected?.takeIf{current(work,cursors.last())}?:return
+        val api=screens.client
+        // A restored reader never passed through render(): refresh the work state before
+        // deciding whether its polling re-arms, then run the normal fresh open reads.
+        ui.work("", { runCatching { api.get("/api/work-activity/"+CentralScreens.encode(work)+"?limit=1&cursor=0").getString("state") } }) { result ->
+            if(!current(work,cursors.last())||selected!=id||screens.client!==api)return@work
+            result.onSuccess { live=WorkPolling.live(it) }
+            open(work,id,cursors.last(),returnScroll,preserveIdentity=restoringSelection)
+        }
+    }
     fun restoreAfterReader(work: String, scroll: Int) { if(hasSelection(work)){readerPendingScroll=scroll;poll(work)} else { screens.body.removeAllViews();screens.body.visibility=View.VISIBLE } }
     fun render(work: String, target: LinearLayout, previousScroll: Int, live: Boolean) {
         if(workId!=work){clear();workId=work}
