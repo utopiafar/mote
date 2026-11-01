@@ -144,6 +144,7 @@ export class DelegatedQueryRuns {
   private notify(id:string){for(const resolve of this.waiters.get(id)??[])resolve();this.waiters.delete(id);}
   get(id:string):QueryRun{
     const run=this.raw(id);let work:DelegationWork;
+    const before=JSON.stringify({...run,operationUsage:undefined}),beforeUsage=JSON.stringify(run.operationUsage);
     work=this.runtime.get('query:'+id);
     const stepId=work.id+':coordinator:'+work.revision,step=this.runtime.engine.get(stepId);
     if(step&&['failed','blocked','stale','cancelled'].includes(step.state)&&['running','waiting'].includes(work.status)){this.runtime.engine.project(stepId);work=this.runtime.get(work.id);}
@@ -158,7 +159,11 @@ export class DelegatedQueryRuns {
     const executionStatus=run.status==='running'&&work.status==='waiting'?(work.wait?'waiting':step?.error?'retry_wait':'queued'):run.status;
     const attempts=Number(this.store.db.prepare("SELECT coalesce(sum(attempts),0) n FROM execution_steps WHERE operation_id=? AND kind='delegation.coordinator.query'").get(work.operationId)?.n??0);
     run.execution=executionEnvelope({status:executionStatus,attempts,errorCode:run.error?.code??step?.error,availableAt:step?.availableAt,updatedAt:run.updatedAt});
-    this.save(run);return run;
+    // A running usage moves with the wall clock and is returned, not persisted;
+    // once terminal it is written exactly once with the rest of the receipt.
+    const changed=JSON.stringify({...run,operationUsage:undefined})!==before
+      ||run.status!=='running'&&JSON.stringify(run.operationUsage)!==beforeUsage;
+    if(changed)this.save(run);return run;
   }
   list(){return this.store.db.prepare("SELECT id FROM query_runs ORDER BY json_extract(json,'$.createdAt') DESC,id DESC LIMIT 100").all().map(row=>this.get(String(row.id)));}
   start(id:string,input:unknown,deadline:RunDeadline={}){

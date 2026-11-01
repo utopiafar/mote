@@ -139,3 +139,75 @@ test('export bundles require owner access, include originals and never include m
   assert.ok(gunzipSync(data.rawPayload).toString().includes('Synthetic original bytes'));
   const meta=await app.inject({url:'/api/export-bundle?mode=metadata',headers});assert.ok(!gunzipSync(meta.rawPayload).toString().includes('Synthetic original bytes'));
 });
+
+const runWrites=(t:any,store:any)=>{
+  const sql:string[]=[],original=store.db.prepare.bind(store.db);
+  t.mock.method(store.db,'prepare',(query:string)=>{sql.push(query);return original(query);});
+  return {sql,updates:()=>sql.filter(query=>query.startsWith('UPDATE query_runs')).length};
+};
+const persistedRun=(store:any,id:string)=>String((store.db.prepare('SELECT json FROM query_runs WHERE id=?').get(id) as {json:string}).json);
+const settledStatus=async(store:any,id:string)=>{for(let i=0;i<30;i++){await new Promise(r=>setImmediate(r));const status=(store.db.prepare("SELECT json_extract(json,'$.status') status FROM query_runs WHERE id=?").get(id) as {status:string}|undefined)?.status;if(status!=='running')return status;}};
+const settledWork=async(store:any,id:string)=>{let last='';for(let i=0;i<60;i++){await new Promise(r=>setImmediate(r));const work=store.db.prepare("SELECT json_extract(json,'$.status') status,json_extract(json,'$.updatedAt') updatedAt FROM delegation_works WHERE id=?").get('query:'+id) as {status?:string;updatedAt?:string}|undefined;if(work?.status==='succeeded'&&work.updatedAt===last)return;last=work?.updatedAt??'';}};
+const settleReads=async(app:any,store:any,id:string)=>{let last='',detail:any;for(let i=0;i<40;i++){await new Promise(r=>setImmediate(r));detail=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();const now=persistedRun(store,id);if(now===last)return detail;last=now;}return detail;};
+
+test('repeated reads of a completed run do not write to the store',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-readonly-'));
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}};
+  const {app,store}=await buildApp(config(dir),{agent});
+  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  const id=randomUUID();
+  assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated question'}}})).statusCode,202);
+  assert.equal(await settledStatus(store,id),'completed','the run committed its completed receipt');
+  await settledWork(store,id);
+  const log=runWrites(t,store);
+  const first=await app.inject({url:`/api/query-runs/${id}`,headers});assert.equal(first.statusCode,200,first.body);assert.equal(first.json().status,'completed');
+  assert.equal(log.updates(),1,'the first read observing the transition writes the settled receipt exactly once');
+  assert.equal((await settleReads(app,store,id)).status,'completed','in-flight projection updates settle as one-off real writes');
+  log.sql.length=0;
+  const before=persistedRun(store,id);
+  for(let i=0;i<10;i++){const detail=await app.inject({url:`/api/query-runs/${id}`,headers});assert.equal(detail.statusCode,200,detail.body);assert.equal(detail.json().status,'completed');}
+  assert.equal(log.updates(),0,'repeated reads of a stable run must not UPDATE the row');
+  assert.equal(persistedRun(store,id),before,'persisted bytes stay identical');
+  const list=await app.inject({url:'/api/query-runs',headers});assert.equal(list.statusCode,200,list.body);
+  assert.equal(log.updates(),0,'listing does not rewrite stable runs');
+  assert.equal(persistedRun(store,id),before);
+});
+
+test('running reads return fresh usage without writes and the completed transition writes once',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-transition-'));let entered!:()=>void,release!:()=>void,held:Parameters<QueryAgent['query']>[0];
+  const running=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{held=input;input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});entered();await gate;return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}};
+  const {app,store}=await buildApp(config(dir),{agent});
+  t.after(async()=>{release();await app.close();rmSync(dir,{recursive:true,force:true});});
+  const id=randomUUID();
+  assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated question'}}})).statusCode,202);
+  await running;
+  const log=runWrites(t,store);
+  const first=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();
+  assert.equal(first.status,'running');assert.ok(first.operationUsage,'a running read returns the live computed usage');
+  assert.equal(first.operationUsage.total.totalTokens,40);
+  log.sql.length=0;
+  const whileRunning=persistedRun(store,id);
+  held!.onUsage?.({requests:2,reportedRequests:2,inputTokens:60,outputTokens:20,totalTokens:80,cacheReadTokens:20,cacheWriteTokens:0});
+  const second=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();
+  assert.equal(second.status,'running');assert.equal(second.operationUsage.total.totalTokens,80,'the next read recomputes live usage');
+  const third=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();
+  assert.equal(third.status,'running');
+  assert.equal(log.updates(),0,'running reads return fresh usage without persisting it');
+  assert.equal(persistedRun(store,id),whileRunning,'the stored row stays untouched while running');
+  release();
+  assert.equal(await settledStatus(store,id),'completed','the commit persisted the terminal status');
+  await settledWork(store,id);
+  log.sql.length=0;
+  const settled=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();
+  assert.equal(settled.status,'completed');
+  assert.equal(log.updates(),1,'the first read observing the transition writes the settled receipt exactly once');
+  assert.equal((await settleReads(app,store,id)).status,'completed','in-flight projection updates settle as one-off real writes');
+  log.sql.length=0;
+  const persisted=JSON.parse(persistedRun(store,id));
+  assert.equal(persisted.status,'completed');assert.equal(persisted.operationUsage.total.totalTokens,80,'stable terminal usage is written once with the receipt');
+  const stable=persistedRun(store,id);
+  for(let i=0;i<5;i++){const detail=await app.inject({url:`/api/query-runs/${id}`,headers});assert.equal(detail.json().status,'completed');}
+  assert.equal(log.updates(),0,'stable terminal reads stop writing');
+  assert.equal(persistedRun(store,id),stable);
+});
