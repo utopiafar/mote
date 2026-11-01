@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import type {StatementSync} from 'node:sqlite';
 import {z} from 'zod';
 import {formatEvidenceRef,sourceContentTime,libraryMaterialTypes,type CapturePreview,type LibraryMaterialType} from '@mote/shared';
 import {moteText} from './i18n.js';
@@ -19,6 +20,8 @@ const encode=(value:unknown)=>Buffer.from(JSON.stringify(value)).toString('base6
 /** A read projection of existing owner entities. It never publishes notes or
  * changes the Material-only catalog used by native clients and model tools. */
 export class OwnerLibraryBrowse {
+ private representedStatement?:StatementSync;
+ private facets?:{generation:string;ownerIdentity:string;registryRevision:number;sourceNames:string;value:Pick<ReturnType<MaterialStore['catalog']['list']>,'types'|'sources'|'sourcesTruncated'>};
  constructor(private materials:MaterialStore,private reader:Pick<EvidenceReader,'archivedEvidence'>){}
  private get store():Store{return this.materials.store;}
  private generation(){return this.materials.catalog.generation()+':'+String(this.store.db.prepare('SELECT COALESCE(MAX(seq),0) version FROM changes').get()!.version);}
@@ -26,14 +29,33 @@ export class OwnerLibraryBrowse {
   if(query.origin)return false;
   // Only an exact, full singleton note replacement can suppress its original.
   // Missing version pins, grouped materials and derived summaries never do.
-  const rows=this.store.db.prepare(`SELECT h.id FROM material_heads h JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision
+  const statement=this.representedStatement??=this.store.db.prepare(`SELECT h.id FROM material_heads h JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision
     JOIN material_members m ON m.material_id=h.id AND m.revision=h.revision
     WHERE h.kind='mote.note' AND h.retired=0 AND h.sequence>=h.min_visible_sequence AND r.member_count=1
       AND m.kind='capture' AND m.ref=? AND m.source_revision IS NOT NULL
       AND (m.source_revision=? OR m.source_revision=?)
       AND json_extract(r.manifest,'$.coverage.state')='complete' AND json_extract(r.manifest,'$.fidelity.state')='lossless'
-      AND json_extract(r.manifest,'$.retention.original')='retained'`).all(formatEvidenceRef('capture',record.id),version,record.provenance?.revision??'');
+      AND json_extract(r.manifest,'$.retention.original')='retained'`);
+  const rows=statement.all(formatEvidenceRef('capture',record.id),version,record.provenance?.revision??'');
   return rows.some(row=>this.materials.list({...query,cursor:undefined,id:String(row.id),type:'note',limit:1,order:'source'}).items.length>0);
+ }
+ private possibleReplacements(ids:string[],query:Query){
+  if(query.origin||!ids.length)return new Set<string>();
+  const rows=this.store.db.prepare(`SELECT DISTINCT m.ref FROM material_heads h JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision
+   JOIN material_members m ON m.material_id=h.id AND m.revision=h.revision
+   WHERE h.kind='mote.note' AND h.retired=0 AND h.sequence>=h.min_visible_sequence AND r.member_count=1
+    AND m.kind='capture' AND m.ref IN (${ids.map(()=>'?').join(',')}) AND m.source_revision IS NOT NULL
+    AND json_extract(r.manifest,'$.coverage.state')='complete' AND json_extract(r.manifest,'$.fidelity.state')='lossless'
+    AND json_extract(r.manifest,'$.retention.original')='retained'`).all(...ids.map(id=>formatEvidenceRef('capture',id)));
+  return new Set(rows.map(row=>String(row.ref)));
+ }
+ private currentFacets(generation:string,ownerIdentity:string){
+  // Head generation covers counts and visibility, but not source labels or
+  // runtime renderer registration. Read these live before reusing metadata.
+  const sourceNames=JSON.stringify(this.store.db.prepare("SELECT id,json_extract(json,'$.name') name FROM source_connections ORDER BY id").all()),registryRevision=this.materials.catalog.registry.revision,cached=this.facets;
+  if(cached&&cached.generation===generation&&cached.ownerIdentity===ownerIdentity&&cached.registryRevision===registryRevision&&cached.sourceNames===sourceNames)return structuredClone(cached.value);
+  const {types,sources,sourcesTruncated}=this.materials.catalog.list({limit:1},ownerIdentity),value={types,sources,sourcesTruncated};
+  this.facets={generation,ownerIdentity,registryRevision,sourceNames,value};return structuredClone(value);
  }
  list(query:Query,ownerIdentity:string){
   const {cursor,...filter}=query,generation=this.generation(),scope=createHash('sha256').update(JSON.stringify(['owner-browse',ownerIdentity,filter,this.materials.catalog.registry.revision])).digest('hex');
@@ -47,11 +69,12 @@ export class OwnerLibraryBrowse {
    // Reuse the same original visibility, literal search and content time as
    // existing owner capture browsing. No direct weaker captures SQL path.
    const page=this.store.searchPage({source:'note',collection:'content',query:query.query,deviceId:query.deviceId,after:query.after,before:query.before,limit:100,cursor:noteCursor,includeTotal:false});
+   const possible=this.possibleReplacements(page.items.map(candidate=>candidate.id),query);
    for(const candidate of page.items){
     const nextCursor=encode({t:new Date(sourceContentTime(candidate)).toISOString(),id:candidate.id});
     const record=this.reader.archivedEvidence([formatEvidenceRef('capture',candidate.id)],{deviceId:query.deviceId,after:query.after,before:query.before})[0];
     const revision=record&&storedCaptureLibraryVersion(this.store,record.id);
-    if(record&&revision&&!this.represented(record,query,revision))notes.push({entry:{entryType:'capture',ref:formatEvidenceRef('capture',record.id),contentAt:new Date(sourceContentTime(record)).toISOString(),revision,capture:this.store.preview(record)},cursor:nextCursor});
+    if(record&&revision&&(!possible.has(formatEvidenceRef('capture',record.id))||!this.represented(record,query,revision)))notes.push({entry:{entryType:'capture',ref:formatEvidenceRef('capture',record.id),contentAt:new Date(sourceContentTime(record)).toISOString(),revision,capture:this.store.preview(record)},cursor:nextCursor});
     noteCursor=nextCursor;if(notes.length===count)break;
    }
    if(notes.length===count)break;
@@ -66,7 +89,7 @@ export class OwnerLibraryBrowse {
    materialDone:position.materialDone||!materialPage.nextCursor&&usedMaterials.length===materialEntries.length,
    notesDone:position.notesDone||notesExhausted&&usedNotes.length===notes.length};
   const more=materialEntries.length>usedMaterials.length||notes.length>usedNotes.length||!next.materialDone||!next.notesDone;
-  const catalog=this.materials.catalog.list({limit:1},ownerIdentity);
+  const catalog=this.currentFacets(generation,ownerIdentity);
   return {schemaVersion:1 as const,revision:generation,types:catalog.types,sources:catalog.sources,sourcesTruncated:catalog.sourcesTruncated,noteOrigin:{origin:'notes' as const,label:moteText('随手记')},items,nextCursor:more?this.materials.catalog.sealPosition({scope,generation,inner:JSON.stringify(next)}):null};
  }
 }

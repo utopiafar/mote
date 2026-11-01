@@ -16,7 +16,7 @@ async function fixture(t:import('node:test').TestContext){
  const note=async(index:number,at='2026-10-21T01:00:00.000Z')=>{const id=randomUUID(),text='Generated note '+index+' literal searchable body';const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-note-device',deviceName:'Generated note device',platform:'import',capturedAt:at,text,metadata:{version:1,observedAt:at,ownerDescription:'PRIVATE DESCRIPTION must never become a browse preview'}}});assert.equal(response.statusCode,201,response.body);return {id,text,at};};
  const read=async(query:Record<string,string>={},status=200,auth=headers)=>{const response=await node.app.inject({url:'/api/library/browse?'+new URLSearchParams(query),headers:auth});assert.equal(response.statusCode,status,response.body);return response.json();};
  node.sources.register({id:'generated-source',name:'Generated source',kind:'custom',deviceId:'generated-material-device',platform:'import'});
- const material=(id:string,original:{id:string;text:string;at:string},extra:Partial<MaterialDraft>={})=>node.materials.publish({id:materialId('generated-source',id),kind:'mote.note',schemaVersion:1,title:'Generated material '+id,origin:{sourceId:'generated-source',externalId:id,firstAt:original.at,lastAt:original.at,deviceId:'generated-material-device'},members:[{id:original.id,kind:'capture',ref:'capture:'+original.id,revision:storedCaptureLibraryVersion(node.store,original.id)}],blocks:[{id:'body',kind:'text',format:'plain',text:original.text,memberIds:[original.id]}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'},...extra});
+ const material=(id:string,original:{id:string;text:string;at:string},extra:Partial<MaterialDraft>={},options:Parameters<typeof node.materials.publish>[1]={})=>node.materials.publish({id:materialId('generated-source',id),kind:'mote.note',schemaVersion:1,title:'Generated material '+id,origin:{sourceId:'generated-source',externalId:id,firstAt:original.at,lastAt:original.at,deviceId:'generated-material-device'},members:[{id:original.id,kind:'capture',ref:'capture:'+original.id,revision:storedCaptureLibraryVersion(node.store,original.id)}],blocks:[{id:'body',kind:'text',format:'plain',text:original.text,memberIds:[original.id]}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'},...extra},options);
  return {node,headers,note,read,material};
 }
 
@@ -55,4 +55,56 @@ test('browse source ordering normalizes ISO offsets and equivalent millisecond t
  const seen:any[]=[];let cursor:string|undefined;do{const page=await f.read({limit:'2',...(cursor?{cursor}:{})});seen.push(...page.items.map(({ref,contentAt}:any)=>({ref,contentAt})));cursor=page.nextCursor??undefined;}while(cursor);
  assert.deepEqual(seen,expected.sort((a,b)=>b.contentAt.localeCompare(a.contentAt)||b.ref.localeCompare(a.ref)));assert.equal(new Set(seen.map(item=>item.ref)).size,10);
  const bounded=await f.read({after:'2026-10-29T08:30:00+08:00',before:'2026-10-29T09:00:00.001+08:00',limit:'100'});assert.equal(bounded.items.length,6);assert.ok(bounded.items.every((item:any)=>item.contentAt==='2026-10-29T01:00:00.000Z'));
+});
+
+function observeBrowse(f:Awaited<ReturnType<typeof fixture>>){
+ const reads={preflight:0,exact:0,exactCompiles:0,perItemVisibility:0,facets:0},db=f.node.store.db,prepare=db.prepare.bind(db),list=f.node.materials.list.bind(f.node.materials),catalog=f.node.materials.catalog.list.bind(f.node.materials.catalog);
+ db.prepare=sql=>{const represented=sql.includes('r.member_count=1'),preflight=represented&&sql.includes('m.ref IN');if(represented&&!preflight)reads.exactCompiles++;return new Proxy(prepare(sql),{get(target,key){const value=Reflect.get(target,key,target);if(typeof value!=='function')return value;return (...args:unknown[])=>{if(key==='all'&&represented){if(preflight)reads.preflight++;else reads.exact++;}return value.apply(target,args);};}});};
+ f.node.materials.list=args=>{if(args?.id)reads.perItemVisibility++;return list(args);};
+ f.node.materials.catalog.list=(...args)=>{reads.facets++;return catalog(...args);};
+ return reads;
+}
+
+test('400 unrepresented notes use batch-bounded preflight without per-note replacement queries',async t=>{
+ const f=await fixture(t);for(let i=0;i<400;i++)await f.note(i);
+ const reads=observeBrowse(f),page=await f.read({limit:'100'});assert.equal(page.items.length,100);assert.ok(page.items.every((item:any)=>item.entryType==='capture'));
+ assert.equal(reads.exact,0,'No candidate has a possible replacement');assert.equal(reads.exactCompiles,0,'Exact statement remains lazy');assert.equal(reads.preflight,2,'101 candidates come from two batches of at most100');assert.equal(reads.perItemVisibility,0);
+});
+
+test('400 notes with390 exact replacements retain every entry, order, revision, cursor and facet while preparing exact lookup once',async t=>{
+ const f=await fixture(t),expected:{ref:string;contentAt:string}[]=[];
+ for(let i=0;i<400;i++){const at=new Date(Date.parse('2026-10-21T01:00:00Z')+Math.floor(i/3)*60000).toISOString(),original=await f.note(i,at);expected.push({ref:i<390?f.material('exact-'+i,original).ref:'capture:'+original.id,contentAt:at});}
+ expected.sort((a,b)=>b.contentAt.localeCompare(a.contentAt)||b.ref.localeCompare(a.ref));const reads=observeBrowse(f),first=await f.read({limit:'100'});
+ assert.deepEqual(await f.read({limit:'100'}),first,'A cache hit preserves the complete first page including its signed cursor');
+ const seen:any[]=[];let page=first;do{seen.push(...page.items.map(({ref,contentAt}:any)=>({ref,contentAt})));assert.equal(page.revision,first.revision);assert.deepEqual(page.types,first.types);assert.deepEqual(page.sources,first.sources);assert.equal(page.sourcesTruncated,first.sourcesTruncated);if(!page.nextCursor)break;page=await f.read({limit:'100',cursor:page.nextCursor});}while(true);
+ assert.deepEqual(seen,expected);assert.equal(new Set(seen.map(item=>item.ref)).size,400);assert.equal(reads.exactCompiles,1);assert.ok(reads.perItemVisibility>=390,'Every possible exact replacement still checks live visibility');assert.equal(reads.facets,1);
+});
+
+test('version mismatches, duplicate members and query-invisible replacements never hide an original note',async t=>{
+ const f=await fixture(t),mismatch=await f.note(1),duplicate=await f.note(2),invisible=await f.note(3),hidden=await f.note(4);
+ f.material('mismatch',mismatch,{members:[{id:mismatch.id,kind:'capture',ref:'capture:'+mismatch.id,revision:'generated-wrong-version'}]});
+ f.material('duplicate',duplicate,{members:[{id:duplicate.id,kind:'capture',ref:'capture:'+duplicate.id,revision:storedCaptureLibraryVersion(f.node.store,duplicate.id)},{id:'same-original-again',kind:'capture',ref:'capture:'+duplicate.id,revision:storedCaptureLibraryVersion(f.node.store,duplicate.id)}]});
+ f.material('different-device',invisible);
+ const protectedMaterial=f.material('redacted',hidden);f.node.materials.redactUntilRebuilt(protectedMaterial.id);
+ const all=await f.read({limit:'100'});for(const original of [mismatch,duplicate,hidden])assert.ok(all.items.some((item:any)=>item.ref==='capture:'+original.id));
+ const device=await f.read({deviceId:'generated-note-device',limit:'100'});assert.ok(device.items.some((item:any)=>item.ref==='capture:'+invisible.id));assert.ok(device.items.every((item:any)=>item.entryType==='capture'));
+});
+
+test('facets reuse only live generation, source names, registry and owner credentials while authorization stays current',async t=>{
+ const f=await fixture(t),original=await f.note(1),material=f.material('facets',original),reads=observeBrowse(f),catalog=f.node.materials.catalog;
+ const first=await f.read();assert.equal(reads.facets,1);assert.deepEqual(await f.read(),first);assert.equal(reads.facets,1);
+ const added=f.material('new-facet',await f.note(2));assert.equal((await f.read()).sources[0].count,2);assert.equal(reads.facets,2);
+ f.node.materials.retire(added.id,{expectedRevision:added.revision});assert.equal((await f.read()).sources[0].count,1);assert.equal(reads.facets,3);
+ const generation=catalog.generation();f.node.sources.update('generated-source',{name:'Renamed generated source'});assert.equal(catalog.generation(),generation,'Source labels are outside material generation');
+ assert.equal((await f.read()).sources.find((source:any)=>source.id==='generated-source').label,'Renamed generated source');assert.equal(reads.facets,4);
+ const dispose=catalog.registry.register({id:'generated.extra-type',kind:'generated.extra-kind',schemaVersion:1,label:'Generated extra type'});assert.ok((await f.read()).types.some((type:any)=>type.id==='generated.extra-type'));assert.equal(reads.facets,5);
+ dispose();assert.equal((await f.read()).types.some((type:any)=>type.id==='generated.extra-type'),false);assert.equal(reads.facets,6);
+ f.node.materials.redactUntilRebuilt(material.id);const protectedPage=await f.read();assert.deepEqual(protectedPage.sources,[]);assert.ok(protectedPage.items.some((item:any)=>item.ref==='capture:'+original.id));assert.equal(reads.facets,7);
+ const replacement=f.material('facets',original,{title:'Generated rebuilt material'},{expectedRevision:material.revision});assert.equal((await f.read()).sources[0].count,1);assert.equal(reads.facets,8);
+ f.node.materials.retire(replacement.id,{expectedRevision:replacement.revision});assert.deepEqual((await f.read()).sources,[]);assert.equal(reads.facets,9);
+ const removed=await f.node.app.inject({method:'DELETE',url:'/api/captures/'+original.id,headers:f.headers});assert.equal(removed.statusCode,200);assert.equal((await f.read()).items.some((item:any)=>item.ref==='capture:'+original.id),false);assert.equal(reads.facets,10);
+ const invitation=await f.node.app.inject({method:'POST',url:'/api/connections/invitations',headers:f.headers,payload:{serverUrl:'https://generated.invalid',label:'Generated second owner device'}});assert.equal(invitation.statusCode,200,invitation.body);
+ const redeemed=await f.node.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.json().invitation.code,deviceId:'generated-second-owner',deviceName:'Generated owner',platform:'android'}});assert.equal(redeemed.statusCode,200,redeemed.body);
+ const paired=redeemed.json(),auth={...f.headers,authorization:'Bearer '+paired.token};await f.read({},200,auth);assert.equal(reads.facets,11,'A different owner credential cannot reuse the cached identity');
+ const revoked=await f.node.app.inject({method:'DELETE',url:'/api/connections/'+paired.credentialId,headers:f.headers});assert.equal(revoked.statusCode,200);await f.read({},401,auth);assert.equal(reads.facets,11,'Revoked credentials fail before a cached projection is read');
 });

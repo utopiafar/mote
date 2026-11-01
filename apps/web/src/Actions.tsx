@@ -23,18 +23,29 @@ export function Actions({api,onOpen}:{api:ReturnType<typeof createApi>;onOpen:(i
  const listReturn=useRef<{id:string;scroll:number}|undefined>(undefined);
  const activeApi=useRef(api);activeApi.current=api;
  const [timeZoneEdit,setTimeZoneEdit]=useState<{api:typeof api;revision:number;authorizationRevision:number;initialTimeZone:string;settings:ActionSettings}>(),[settingsError,setSettingsError]=useState(false),[withdrawalApplied,setWithdrawalApplied]=useState(false);
- const [error,setError]=useState(''),[busy,setBusy]=useState(false),[review,setReview]=useState<ActionProposal>(),[draft,setDraft]=useState<CalendarDraft>(),[target,setTarget]=useState(''),[localId,setLocalId]=useState<string>(),[tab,setTab]=useState('active'),[workspaceTab,setWorkspaceTab]=useState(new URLSearchParams(window.location.hash.split('?')[1]).get('tab')==='todos'?'todos':'calendar'),[settingsOpen,setSettingsOpen]=useState(false),[newTodoRequest,setNewTodoRequest]=useState(0),[selectedId,setSelectedId]=useState<string>(),[cursor,setCursor]=useState(0);
- const read=useResource<State>(api,`/api/actions?cursor=${cursor}`,15000),deviceRead=useResource<{items:{deviceId:string;deviceName:string}[]}>(api,'/api/devices');
+ const [error,setError]=useState(''),[busy,setBusy]=useState(false),[review,setReview]=useState<ActionProposal>(),[draft,setDraft]=useState<CalendarDraft>(),[target,setTarget]=useState(''),[localId,setLocalId]=useState<string>(),[tab,setTab]=useState('active'),[workspaceTab,setWorkspaceTab]=useState(new URLSearchParams(window.location.hash.split('?')[1]).get('tab')==='todos'?'todos':'calendar'),[settingsOpen,setSettingsOpen]=useState(false),[newTodoRequest,setNewTodoRequest]=useState(0),[selectedId,setSelectedId]=useState<string>(),[cursorState,setCursor]=useState(0);
+ const selectionOwner=useRef(api),cursor=selectionOwner.current===api?cursorState:0;
+ const [foregroundRevision,setForegroundRevision]=useState(0);
+ const read=useResource<State>(api,`/api/actions?cursor=${cursor}`,15000,foregroundRevision),deviceRead=useResource<{items:{deviceId:string;deviceName:string}[]}>(api,'/api/devices');
  const requested=new URLSearchParams(window.location.hash.split('?')[1]??'').get('action');
  const selectedCalendarId=selectedId??requested;
- const selectionOwner=useRef(api);
- const focused=useResource<ActionProposal>(api,selectionOwner.current===api&&selectedCalendarId&&/^[0-9a-f-]{36}$/i.test(selectedCalendarId)?'/api/actions/'+selectedCalendarId:null,15000);
+ const focused=useResource<ActionProposal>(api,selectionOwner.current===api&&selectedCalendarId&&/^[0-9a-f-]{36}$/i.test(selectedCalendarId)?'/api/actions/'+selectedCalendarId:null,15000,foregroundRevision);
  const denied=read.error instanceof ApiError&&[401,403,404,410].includes(read.error.status),focusedDenied=focused.error instanceof ApiError&&[401,403,404,410].includes(focused.error.status);
  const data=denied?undefined:read.data,devices=deviceRead.data?.items??[],feedError=useOperationUpdates(api);
  const timeZoneDraft=timeZoneEdit?.api===api?timeZoneEdit:undefined;
  useUnsavedChanges(Boolean(timeZoneDraft&&JSON.stringify(timeZoneDraft.settings)!==JSON.stringify(data?.settings)));
  const refresh=async()=>{read.refresh();focused.refresh();};
- useEffect(()=>{if(selectionOwner.current!==api){const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);for(const key of ['action','todoEvidence','returnTo'])query.delete(key);window.history.replaceState(null,'',route+(query.size?'?'+query:''));selectionOwner.current=api;listReturn.current=undefined;}setSelectedId(undefined);setSettingsOpen(false);setReview(undefined);setDraft(undefined);setLocalId(undefined);setError('');setTimeZoneEdit(undefined);setSettingsError(false);setWithdrawalApplied(false);setBusy(false);},[api]);
+ useEffect(()=>{
+  let foreground=!document.hidden;
+  const leave=()=>{foreground=false;};
+  // Revision invalidation targets the current exact keys and coalesces shared
+  // readers/in-flight hints instead of cancelling their requests.
+  const enter=()=>{if(document.hidden||foreground||activeApi.current!==api)return;foreground=true;setForegroundRevision(value=>value+1);};
+  const visibility=()=>{if(document.hidden)leave();else enter();};
+  document.addEventListener('visibilitychange',visibility);window.addEventListener('blur',leave);window.addEventListener('focus',enter);
+  return()=>{document.removeEventListener('visibilitychange',visibility);window.removeEventListener('blur',leave);window.removeEventListener('focus',enter);};
+ },[api]);
+ useEffect(()=>{if(selectionOwner.current!==api){const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);for(const key of ['action','todoEvidence','returnTo'])query.delete(key);window.history.replaceState(null,'',route+(query.size?'?'+query:''));selectionOwner.current=api;listReturn.current=undefined;}setCursor(0);setSelectedId(undefined);setSettingsOpen(false);setReview(undefined);setDraft(undefined);setLocalId(undefined);setError('');setTimeZoneEdit(undefined);setSettingsError(false);setWithdrawalApplied(false);setBusy(false);},[api]);
  useEffect(()=>{if([read.error,focused.error].some(error=>error instanceof ApiError&&[401,403,404,410].includes(error.status))){setReview(undefined);setDraft(undefined);setTimeZoneEdit(undefined);}},[read.error,focused.error]);
  const run=async(fn:()=>Promise<unknown>)=>{setBusy(true);setError('');try{await fn();if(activeApi.current===api)await refresh();}catch(e){if(activeApi.current===api)setError(actionFailure(e));}finally{if(activeApi.current===api)setBusy(false);}};
  const post=(path:string,body:unknown)=>api.request(path,{method:'POST',body:JSON.stringify(body)});
