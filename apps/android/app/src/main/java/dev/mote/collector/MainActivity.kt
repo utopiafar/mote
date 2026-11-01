@@ -89,6 +89,9 @@ class MainActivity : MoteActivity() {
     private lateinit var homeRecordReceipt: LinearLayout
     private lateinit var homeFirstIntro: TextView
     private var homeReceiptAvailable = false
+    private var homeReceiptSignature = ""
+    private var homeSourceSignature = ""
+    private val homeRecordsCache = RevisionCache()
     internal fun isFirstUseRecordEntry() = firstUse
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
@@ -328,6 +331,7 @@ class MainActivity : MoteActivity() {
         HomeCalendarNeedsView(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
             homeSections += it; content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         }
+        homeReceiptSignature = ""
         homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         val pageContent = content
         val guide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
@@ -440,6 +444,7 @@ class MainActivity : MoteActivity() {
             content.addView(captureProgress)
             captureAction = button(MoteI18n.text("开始采集"), primary = !settings.enabled) { if (settings.enabled) stopCapture() else startCapture() }
 
+            homeSourceSignature = ""
             homeSourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             content.addView(homeSourceList)
             button(MoteI18n.text("来源管理")) { showPage(Page.SOURCES) }
@@ -498,11 +503,11 @@ class MainActivity : MoteActivity() {
                     }
                 }
             }
-            val captures = applicationContext.withNativeNotePreviews(applicationContext.queue().capturePage("1970-01-01T00:00:00Z", java.time.Instant.now().plusSeconds(1).toString(), limit = 3, source = "note"))
-            val draft = applicationContext.recordDraftStore().draft()
-            captures.put("hasDraft", draft.optString("text").isNotBlank() || draft.optString("description").isNotBlank() || (draft.optJSONArray("attachments")?.length() ?: 0) > 0 || draft.optJSONObject("origin")?.optString("text").orEmpty().isNotBlank())
-            captures.put("hasAnyRecords", applicationContext.queue().capturePage("1970-01-01T00:00:00Z", java.time.Instant.now().plusSeconds(1).toString(), limit = 1, source = "").getInt("totalCount") > 0)
-            NativeRecordReceipt.recordId?.let { id -> applicationContext.queue().capture(id)?.let { captures.put("savedReceipt",applicationContext.withNativeNotePreview(it)) } }
+            val captures = HomeLocalCaptures.collect(homeRecordsCache, LocalStateRepository.get(applicationContext).state.value.revision.records,
+                applicationContext.recordDraftStore().draft(),
+                NativeRecordReceipt.recordId?.let { id -> applicationContext.queue().capture(id)?.let { applicationContext.withNativeNotePreview(it) } }) {
+                applicationContext.queue().capturePage("1970-01-01T00:00:00Z", java.time.Instant.now().plusSeconds(1).toString(), limit = 1, source = "").getInt("totalCount") > 0
+            }
             Triple(sources, captures, applicationContext.localFileContents(3))
         }) { result ->
             result.onSuccess { (sources, capturePage, files) ->
@@ -512,6 +517,9 @@ class MainActivity : MoteActivity() {
                 val receipt = capturePage.optJSONObject("savedReceipt")
                 homeReceiptAvailable = receipt != null
                 updateFirstUse()
+                val receiptSignature = HomeLocalSignature.receipt(receipt?.optString("id").orEmpty(), receipt?.let(NativeRecordPreview::text).orEmpty(), receipt?.optString("capturedAt").orEmpty(), loadedConfig.hasSyncConnection())
+                if (receiptSignature != homeReceiptSignature) {
+                homeReceiptSignature = receiptSignature
                 homeRecordReceipt.removeAllViews()
                 homeRecordReceipt.visibility = if (receipt == null) View.GONE else View.VISIBLE
                 if (receipt != null) {
@@ -525,12 +533,19 @@ class MainActivity : MoteActivity() {
                     card.addView(row); homeRecordReceipt.addView(card,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(18) })
                     if(loadedConfig.hasSyncConnection()) lightTextAction(MoteI18n.text("查看 Central 的接收结果")+" ↗",homeRecordReceipt) { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(loadedConfig.server))) }
                 }
+                }
+                val sourceSignature = HomeLocalSignature.sources(sources.filter { it.first.syncContinuously }.map { (source, state) ->
+                    Triple(source.id, source.name, LocalContentPresentation.sourceStatus(source, state) + state.optString("folderProgress").takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty())
+                })
+                if (sourceSignature != homeSourceSignature) {
+                homeSourceSignature = sourceSignature
                 homeSourceList.removeAllViews()
                 if (sources.none { it.first.syncContinuously }) homeSourceList.addView(TextView(this).apply { text = MoteI18n.text("尚未添加文件夹。添加后可在这里查看范围和状态。"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
                 sources.filter { it.first.syncContinuously }.forEach { (source, state) ->
                     addContentRow(homeSourceList, source.name, LocalContentPresentation.sourceStatus(source, state) + state.optString("folderProgress").takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty(), "source:" + source.id) {
                         startActivity(Intent(this, SourcesActivity::class.java).putExtra("sourceId", source.id))
                     }
+                }
                 }
 
 
