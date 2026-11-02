@@ -11,7 +11,7 @@ import {AgentResponseError,reportTrace,reportProgress} from './types.js';
 import {sourceProtocolInstructions} from './instructions.js';
 import {extractionSeedScopeValid} from './extraction-seed-scope.js';
 import {randomBytes,createHash} from "node:crypto";
-import type {BridgeToolHandler} from "./bridge-contracts.js";
+import type {BridgeToolHandler,PreparedToolDelivery,PrepareToolDelivery} from "./bridge-contracts.js";
 import { displayTime } from './time.js';
 import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime,attributionContextSchema,sourceContextDeclarationSchema,type SourceContextDeclaration} from '@mote/shared';
 import type {
@@ -359,6 +359,76 @@ export async function createContextToolSession(
   // Character counts are observations. Only an explicit caller limit is enforced.
   const toolUsage=()=>({calls,deliveredCharactersBeforeResult:deliveredCharacters,unit:'utf16_characters',...(maxToolCalls!==undefined?{remainingCalls:Math.max(0,maxToolCalls-calls)}:{})});
 
+  type StagedState={
+    records:Map<string,ContextRecord>;
+    deliveredRanges:{id:string;offset:number;length:number}[];
+    disclosedIds:Set<string>;
+    sourceContextDependencies:Map<string,SourceContextDeclaration>;
+    discovered:Set<string>;
+    expanded:Set<string>;
+    discoveredSourceContexts:Set<string>;
+    metadataImageIds:Set<string>;
+    pinnedMaterials:Set<string>;
+    deliveredCharacters:number;
+    trace:ToolTrace[];
+    completeLineage:boolean;
+    imageReadReceipts:Map<string,{id:string;imageView:ImageView}>;
+    disclosedImages:Map<string,ImageDelivery>;
+  };
+  const captureState=():StagedState=>({
+    records:new Map(records),
+    deliveredRanges:deliveredRanges.map(range=>({...range})),
+    disclosedIds:new Set(disclosedIds),
+    sourceContextDependencies:new Map([...sourceContextDependencies].map(([key,value])=>[key,{...value}])),
+    discovered:new Set(discovered),
+    expanded:new Set(expanded),
+    discoveredSourceContexts:new Set(discoveredSourceContexts),
+    metadataImageIds:new Set(metadataImageIds),
+    pinnedMaterials:new Set(pinnedMaterials),
+    deliveredCharacters,
+    trace:trace.map(entry=>({...entry})),
+    completeLineage,
+    imageReadReceipts:new Map([...imageReadReceipts].map(([key,value])=>[key,{id:value.id,imageView:structuredClone(value.imageView)}])),
+    disclosedImages:new Map(disclosedImages),
+  });
+  const applyState=(state:StagedState)=>{
+    records.clear();for(const [key,value] of state.records)records.set(key,value);
+    deliveredRanges.length=0;deliveredRanges.push(...state.deliveredRanges.map(range=>({...range})));
+    disclosedIds.clear();for(const id of state.disclosedIds)disclosedIds.add(id);
+    sourceContextDependencies.clear();for(const [key,value] of state.sourceContextDependencies)sourceContextDependencies.set(key,{...value});
+    discovered.clear();for(const id of state.discovered)discovered.add(id);
+    expanded.clear();for(const id of state.expanded)expanded.add(id);
+    discoveredSourceContexts.clear();for(const ref of state.discoveredSourceContexts)discoveredSourceContexts.add(ref);
+    metadataImageIds.clear();for(const id of state.metadataImageIds)metadataImageIds.add(id);
+    pinnedMaterials.clear();for(const ref of state.pinnedMaterials)pinnedMaterials.add(ref);
+    deliveredCharacters=state.deliveredCharacters;
+    trace.length=0;trace.push(...state.trace.map(entry=>({...entry})));
+    completeLineage=state.completeLineage;
+    imageReadReceipts.clear();for(const [key,value] of state.imageReadReceipts)imageReadReceipts.set(key,{id:value.id,imageView:structuredClone(value.imageView)});
+    disclosedImages.clear();for(const [key,value] of state.disclosedImages)disclosedImages.set(key,value);
+  };
+  type DeferredCallbacks={originals:Map<string,unknown>;events:{name:string;args:unknown[]}[]};
+  const callbackNames=['onEvidence','onSourceContextDependencies','onTrace','onProgress','onMemoryBodies'] as const;
+  const beginCallbacks=():DeferredCallbacks=>{
+    const originals=new Map<string,unknown>(),events:{name:string;args:unknown[]}[]=[];
+    for(const name of callbackNames){
+      originals.set(name,(bounds as unknown as Record<string,unknown>)[name]);
+      (bounds as unknown as Record<string,unknown>)[name]=(...args:unknown[])=>events.push({name,args});
+    }
+    return {originals,events};
+  };
+  const endCallbacks=(deferred:DeferredCallbacks)=>{
+    for(const name of callbackNames)(bounds as unknown as Record<string,unknown>)[name]=deferred.originals.get(name);
+  };
+  const flushCallbacks=(deferred:DeferredCallbacks)=>{
+    for(const event of deferred.events){
+      const callback=deferred.originals.get(event.name);
+      if(typeof callback!=='function')continue;
+      try{(callback as (...args:unknown[])=>void)(...event.args);}catch{/* Observation callbacks cannot change the receipt. */}
+    }
+  };
+  let prepareLock=Promise.resolve();
+  const activeStaged=new Set<PreparedToolDelivery>();
   const handle:BridgeToolHandler = async (request, res) => {
     let tool=request.tool,args:Record<string,unknown>={},metadataOnly=false,dispatchedViaCatalog=false,disclosureDependencies:unknown,disclosureSourceContextDependencies:unknown;
     try {
@@ -974,8 +1044,67 @@ export async function createContextToolSession(
 
     }
   };
+  const prepareNow=async(tool:string,args:Record<string,unknown>,signal:AbortSignal,release:()=>void):Promise<PreparedToolDelivery>=>{
+    if(closing)throw new ContextToolError('bridge_closing','The tool session is closing','stop');
+    signal.throwIfAborted();bounds.assertContextAuthority?.();
+    const before=captureState(),deferred=beginCallbacks(),deliveredCallbacks:(()=>void)[]=[];
+    let status=200,body:string|undefined;
+    try{
+      const reply={destroyed:false,writeHead(code:number){status=code;return reply;},end(value:string,delivered?:()=>void){body=value;if(delivered)deliveredCallbacks.push(delivered);},once(){},off(){}};
+      await handle({tool,readArguments:async()=>args},reply);
+    }catch(error){applyState(before);endCallbacks(deferred);release();throw error;}
+    endCallbacks(deferred);
+    if(closing||signal.aborted||status>=400||typeof body!=='string'){
+      applyState(before);
+      if(status>=400){
+        let issue:Record<string,unknown>|undefined;
+        try{issue=(JSON.parse(body??'{}') as {toolError?:Record<string,unknown>}).toolError;}catch{/* Non-JSON failure remains a tool failure. */}
+        release();
+        throw new ContextToolError(typeof issue?.code==='string'?issue.code:'context_tool_failed',typeof issue?.message==='string'?issue.message:'The tool could not complete.','stop',issue?.details&&typeof issue.details==='object'?issue.details as Record<string,unknown>:{});
+      }
+      release();
+      if(closing)throw new ContextToolError('bridge_closing','The tool session closed before delivery','stop');
+      if(signal.aborted)throw new ContextToolError('tool_cancelled','The tool call was cancelled before delivery','stop');
+      throw new ContextToolError('context_tool_failed','The tool produced no deliverable response','stop');
+    }
+    let value:unknown;
+    try{value=JSON.parse(body);}catch{applyState(before);release();throw new ContextToolError('context_tool_failed','The tool produced an invalid response','stop');}
+    const after=captureState();
+    applyState(before);
+    let settled=false;
+    const delivery:PreparedToolDelivery={
+      value,
+      confirm(){
+        if(settled)return;settled=true;activeStaged.delete(delivery);
+        try{
+          if(closing)throw new ContextToolError('bridge_closing','The tool session closed before confirmation','stop');
+          signal.throwIfAborted();bounds.assertContextAuthority?.();
+          applyState(after);
+          const token=(value&&typeof value==='object'&&typeof (value as {imageDelivery?:unknown}).imageDelivery==='string')?(value as {imageDelivery:string}).imageDelivery:undefined;
+          if(token)imageDelivery(token,true);
+          flushCallbacks(deferred);
+          for(const callback of deliveredCallbacks)callback();
+        }catch(error){applyState(before);throw error;}finally{release();}
+      },
+      discard(){
+        if(settled)return;settled=true;activeStaged.delete(delivery);release();
+      },
+    };
+    activeStaged.add(delivery);
+    return delivery;
+  };
+  const prepareDelivery:PrepareToolDelivery=(tool,args,signal)=>{
+    let release!:()=>void;
+    const gate=new Promise<void>(resolve=>release=resolve);
+    const previous=prepareLock;prepareLock=gate;
+    return previous.then(
+      ()=>prepareNow(tool,args,signal,release),
+      error=>{release();throw error;},
+    );
+  };
   const session = {
     imageDelivery,
+    prepareDelivery,
     failure,
     trace,
     records,
@@ -1000,6 +1129,7 @@ export async function createContextToolSession(
   const close=()=>{
     try{bounds.onEvidence?.(evidenceLayers(records));}catch{/* Host observation cannot grant reads or change the result. */}
     closing=true;
+    for(const delivery of [...activeStaged])delivery.discard();
     for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}
     disclosedImages.clear();
   };
