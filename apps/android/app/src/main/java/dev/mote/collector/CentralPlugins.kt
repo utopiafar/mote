@@ -106,8 +106,17 @@ internal class CentralPlugins(private val screens: CentralScreens, private val r
                 ui.text((if (instance.desired) MoteI18n.text("已选择启用") else MoteI18n.text("已选择停用")) + " · " + state(instance.observed), parent = target)
                 capabilities(instance.capabilities, target); instance.issues.forEach { ui.text(it, parent = target) }
                 if ("configure" in instance.allowedActions) ui.button(MoteI18n.text("配置"), parent = target) { configuration(item, instance) }
-                listOf("check" to MoteI18n.text("核验能力"), "enable" to MoteI18n.text("启用"), "disable" to MoteI18n.text("停用")).forEach { (action, label) ->
-                    if (action in instance.allowedActions) ui.button(label, action == "enable", parent = target) { submit(PluginControlClient.instanceAction(instance.id, action, instance.revision)) }
+                // The instance command surface is delegated to the
+                // schema-bound declarative runtime: only DOMAIN-allowed
+                // actions are declared, and each fires the same precise
+                // revision-carried PluginControlClient command.
+                run {
+                    val labels = mapOf("check" to MoteI18n.text("核验能力"), "enable" to MoteI18n.text("启用"), "disable" to MoteI18n.text("停用"))
+                    val actions = labels.keys.filter { it in instance.allowedActions }
+                    val spec = dev.mote.collector.plugins.DeclarativePluginView.parse(org.json.JSONObject().put("components", org.json.JSONArray().apply {
+                        actions.forEach { action -> put(org.json.JSONObject().put("type", "action").put("command", action).put("labelKey", action)) }
+                    }), actions.toSet())
+                    target.addView(ui.declarativePluginView(spec, org.json.JSONObject(), { k -> labels[k] ?: k }, { ui.isWorking }, { action, _ -> submit(PluginControlClient.instanceAction(instance.id, action, instance.revision)) }))
                 }
                 ui.button(MoteI18n.text("查看记忆方案"), parent = target) { tab = "memory"; load() }
             }

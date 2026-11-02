@@ -68,3 +68,64 @@ export function FeatureActions({position,...props}:ViewProps&{position:'card'|'d
   useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
   return <>{webFeatures.views('action',props.value).filter(entry=>'position' in entry&&entry.position===position&&(!props.catalog?.actions||props.catalog.actions.includes(entry.id))).map(entry=><ViewBoundary key={entry.id+props.value.ref+props.value.revision} fallback={null}><ViewContent entry={entry} props={{...props,fallback:null}}/></ViewBoundary>)}</>;
 }
+
+// --- U07: plugins-domain declarative consumption --------------------------------
+// The real plugins DOMAIN (PluginCenterView/PluginInstanceView: identity,
+// revision, desired/observed, allowedActions) drives declared declarative
+// surfaces. Commands are the same precise revision-carried API paths the
+// inline buttons issued — nothing is relabeled or guessed.
+import type { PluginInstanceView } from '@mote/shared';
+import type { UiContributionDescriptor } from '@mote/shared/plugin-ui';
+import { parseDeclarativeView, DeclarativeViewSession, DeclarativeView } from '../plugin-host/declarative-view';
+import { createElement, useMemo } from 'react';
+
+/** Command actions whose semantics are precise DOMAIN commands (revision
+ * carried). 'configure' opens a dialog and is not an API command here. */
+export const instanceCommandActions = ['check', 'enable', 'disable'] as const;
+export type InstanceCommandAction = typeof instanceCommandActions[number];
+
+/** Descriptor for one instance's action surface: only actions the DOMAIN
+ * actually allowed are declared — nothing else can be invoked. */
+export function pluginInstanceDescriptor(instance: PluginInstanceView): UiContributionDescriptor {
+  const commands = instanceCommandActions.filter(a => instance.allowedActions.includes(a)).map(id => ({ id, apiVersion: '1' }));
+  return { id: `instance:${instance.id}`, kind: 'declarative-view', apiVersion: '1', platforms: ['web'], presentation: { labelKey: 'instance', i18nNamespace: 'mote' }, commands };
+}
+
+/** Spec + data for the instance action surface driven by the real DOMAIN
+ * fields; undefined allowedActions fail closed. */
+export function pluginInstanceSpec(instance: PluginInstanceView) {
+  return parseDeclarativeView({ components: [
+    { type: 'detail', fields: [
+      { key: 'scope', labelKey: 'scope' },
+      { key: 'observed', labelKey: 'state', format: 'badge' },
+    ] },
+    ...(instanceCommandActions.filter(a => instance.allowedActions.includes(a)).map(a => ({ type: 'action' as const, command: a, labelKey: a }))),
+  ] }, pluginInstanceDescriptor(instance));
+}
+
+/** The real invoker: each declared action is the same URL+revision the
+ * inline control issued — /api/plugin-instances/{id}/{action} @ revision. */
+export function pluginInstanceInvoker(instance: PluginInstanceView, invoke: (path: string, revision: number) => Promise<unknown> | void) {
+  return (command: { id: string }) => invoke(`/api/plugin-instances/${encodeURIComponent(instance.id)}/${command.id}`, instance.revision);
+}
+
+/** Delegated instance action surface for PluginCenter: same DOMAIN fields
+ * and the same precise commands, rendered through the schema-bound runtime. */
+export function PluginInstanceSurface({ instance, busy, command, labels, stateLabel }: {
+  instance: PluginInstanceView;
+  busy: boolean;
+  command: (path: string, revision: number) => void;
+  labels: Record<string, string>;
+  /** Existing localized state presentation (packageStateLabel); the raw
+   * observed value never reaches the UI. */
+  stateLabel: (observed: string) => string;
+}) {
+  const session = useMemo(() => new DeclarativeViewSession(
+    pluginInstanceDescriptor(instance),
+    pluginInstanceSpec(instance),
+    async cmd => pluginInstanceInvoker(instance, command)(cmd),
+  ), [instance, command]);
+  const data = { scope: instance.scope, observed: stateLabel(instance.observed) };
+  if (busy) return null;
+  return createElement(DeclarativeView, { session, data, translate: k => labels[k] ?? k });
+}
