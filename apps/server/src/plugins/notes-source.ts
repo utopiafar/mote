@@ -11,8 +11,8 @@ import type {MaterialNoteDeletion} from '../material-note-deletion.js';
  * dependencies are trusted-assembly functions from current production, never
  * a published Store, generic writer or synthetic C19D/C24 contract. */
 export interface NotesSourceDependencies {
-  /** Note-only page using the existing Store.list cursor semantics. */
-  readonly page:(args:Range)=>Pick<ReturnType<Store['list']>,'items'|'nextCursor'>;
+  /** Note-only page using the existing Store.list cursor and total semantics. */
+  readonly page:(args:Range)=>ReturnType<Store['list']>;
   readonly attribution:(record:CaptureRecord)=>ReturnType<MaterialStore['contextForEvidence']>;
   readonly evidence:(ids:string[])=>ReturnType<Store['evidence']>;
   /** Current DELETE /api/notes/:id semantics; material aliases stay on the
@@ -21,7 +21,7 @@ export interface NotesSourceDependencies {
   readonly noteDeletion:Pick<MaterialNoteDeletion,'resolve'>;
 }
 export type NotesAttribution=ReturnType<MaterialStore['contextForEvidence']>;
-export type NoteListPage={items:(CaptureRecord&{attributionContext:NotesAttribution})[];nextCursor:string|null};
+export type NoteListPage=Omit<ReturnType<Store['list']>,'items'> & {items:(CaptureRecord&{attributionContext:NotesAttribution})[]};
 export type NoteDeleteResult=ReturnType<Store['delete']>;
 export type MaterialNoteAlias=ReturnType<MaterialNoteDeletion['resolve']>;
 

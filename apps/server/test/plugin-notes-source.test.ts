@@ -45,6 +45,7 @@ test('real HTTP note list keeps cursor, attribution and note-only deletion over 
   do{
     const response=await f.app.inject({url:'/api/notes?limit=2'+(cursor?'&cursor='+cursor:'')});
     assert.equal(response.statusCode,200,response.body);const page=response.json();pages++;
+    if(pages===1)assert.equal(page.totalCount,4,'the notes-source page must preserve the fallback totalCount');
     for(const item of page.items){assert.ok(!read.has(item.id));read.add(item.id);assert.equal(item.source,'note');assert.equal(typeof item.attributionContext,'object');}
     cursor=page.nextCursor;
   }while(cursor);
