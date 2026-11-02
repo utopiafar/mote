@@ -55,6 +55,20 @@ const publicTransport:PluginReleaseTransport=async url=>{
 };
 const parseJson=(bytes:Uint8Array)=>JSON.parse(new TextDecoder().decode(bytes)) as unknown;
 
+/** Shared pure archive boundary used by release resolution and H09 pack/validate.
+ * It only expands/checks the current archive; it never imports package code. */
+export function validatePluginArchive(bytes:Uint8Array,manifest:PluginManifest,hostAdapter=false){
+  if(bytes.length>archiveBytes)throw new StoreError('Plugin archive exceeds the host resource budget',413);
+  let entries:ReturnType<typeof unzipSync>,total=0,count=0;try{entries=unzipSync(bytes,{filter:file=>{
+    if(++count>entryCount||file.originalSize>entryBytes||(total+=file.originalSize)>expandedBytes)throw new StoreError('Plugin archive exceeds the host expansion resource budget',413);
+    if(!relativePath.safeParse(file.name.endsWith('/')?file.name.slice(0,-1):file.name).success)throw new StoreError('Invalid package path',422);return true;
+  }});}catch(error){if(error instanceof StoreError)throw error;throw new StoreError('The adapter archive is invalid',422);}
+  for(const path of Object.keys(entries))if(!path.endsWith('/'))relativePath.parse(path);
+  if(!hostAdapter&&!entries[manifest.entry])throw new StoreError('The adapter entry is missing from its archive',422);
+  if(!hostAdapter)for(const contribution of manifest.contributions??[])if(contribution.entry&&!entries[contribution.entry])throw new StoreError('A contribution entry is missing from its archive',422);
+  return entries;
+}
+
 export class GitHubPluginReleases {
   constructor(readonly directory:string,private transport:PluginReleaseTransport=publicTransport){}
   async resolve(raw:{repository:string;tag?:string}):Promise<ResolvedPluginRelease>{
@@ -100,15 +114,7 @@ export class GitHubPluginReleases {
     return {manifest,archiveUrl,preview:{id:randomUUID(),name:manifest.name,version:manifest.version,source:{repository:repo,tag:release.tag_name,commit,digest},runtime:manifest.runtime,restartRequired:false,capabilities:manifest.capabilities.map(id=>({id,state:'unknown',reason:'Requires an instance capability check'})),dependencies:manifest.dependencies.map(dependencyLabel),access:[...manifest.access],issues:[],installable:true}};
   }
   private validateArchive(bytes:Uint8Array,manifest:PluginManifest,hostAdapter=false){
-    if(bytes.length>archiveBytes)throw new StoreError('Plugin archive exceeds the host resource budget',413);
-    let entries:ReturnType<typeof unzipSync>,total=0,count=0;try{entries=unzipSync(bytes,{filter:file=>{
-      if(++count>entryCount||file.originalSize>entryBytes||(total+=file.originalSize)>expandedBytes)throw new StoreError('Plugin archive exceeds the host expansion resource budget',413);
-      if(!relativePath.safeParse(file.name.endsWith('/')?file.name.slice(0,-1):file.name).success)throw new StoreError('Invalid package path',422);return true;
-    }});}catch(error){if(error instanceof StoreError)throw error;throw new StoreError('The adapter archive is invalid',422);}
-    for(const path of Object.keys(entries))if(!path.endsWith('/'))relativePath.parse(path);
-    if(!hostAdapter&&!entries[manifest.entry])throw new StoreError('The adapter entry is missing from its archive',422);
-    if(!hostAdapter)for(const contribution of manifest.contributions??[])if(contribution.entry&&!entries[contribution.entry])throw new StoreError('A contribution entry is missing from its archive',422);
-    return entries;
+    return validatePluginArchive(bytes,manifest,hostAdapter);
   }
   async install(release:ResolvedPluginRelease){
     const bytes=(await this.transport(release.archiveUrl)).bytes;if(hash(bytes)!==release.preview.source.digest)throw new StoreError('The release asset changed after review; resolve it again',409);
