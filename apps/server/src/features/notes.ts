@@ -3,12 +3,13 @@ import type { FastifyInstance } from 'fastify';
 import { assertExternalCaptures,assertCaptureAttachments } from '../capture-admission.js';
 import type { FeatureServices } from '../feature-services.js';
 import type { CaptureIntakeAuthority,CaptureRouteContext } from '../plugins/capture-intake.js';
+import type { CaptureIntake } from '../plugins/central-contracts.js';
 import type { NotesSourceAssembly } from '../plugins/notes-source.js';
 import { StoreError } from '../store.js';
 
-/** C10A/C10 trusted assembly supplies the same C04 platform and request pin;
- * neither is a published service and this feature never mints authority. */
-export interface NotesCapture {readonly authority:CaptureIntakeAuthority;readonly route:CaptureRouteContext}
+/** C10A/C10 trusted assembly supplies the same C04 platform, request pin and
+ * the lifecycle-guarded published capture port; none is minted here. */
+export interface NotesCapture {readonly authority:CaptureIntakeAuthority;readonly route:CaptureRouteContext;readonly intake:CaptureIntake}
 
 /** notes: owns its transport, data and command contributions. The attached
  * C10A intake is authoritative when wired; the legacy ingress remains only as
@@ -19,7 +20,7 @@ app.post('/api/notes',async(req,reply)=>{
   if(notesCapture){
     const request=notesCapture.route.request(req);
     if(!request)throw new StoreError('Owner authorization is required',401);
-    const result=await diagnostics.measure('ingest','note',()=>notesCapture.authority.withCapture(request,input,()=>notesCapture.authority.captureIntake.capture(input,notesCapture.authority.commits.capture())),r=>({count:r.duplicate?0:1}));
+    const result=await diagnostics.measure('ingest','note',()=>notesCapture.authority.withCapture(request,input,()=>notesCapture.intake.capture(input,notesCapture.authority.commits.capture())),r=>({count:r.duplicate?0:1}));
     return reply.code(result.duplicate?200:201).send(result);
   }
   const c=credential(req);assertExternalCaptures([input],!c);if(c)connections.assertCapture(c,input);assertCaptureAttachments([input],files,c);const result=await diagnostics.measure('ingest','note',()=>ingress.capture(input,()=>{assertRequestActive(req);assertCaptureAttachments([input],files,c);if(c)connections.assertCapture(c,input);}),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);

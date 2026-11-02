@@ -54,7 +54,7 @@ async function intakeFixture(t:any){
   app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'notes_intake_failed'});});
   app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
-  registerNotesFeature(app,{assertRequestActive:()=>{},connections:platform.assembly.connections!,credential:()=>undefined,diagnostics,files,ingress:intake.ingress,materials,sources,store,notesSource:source.assemblyForRoutes(),notesCapture:{authority:platform,route:{request:request=>pins.get(request)}}} as any);
+  registerNotesFeature(app,{assertRequestActive:()=>{},connections:platform.assembly.connections!,credential:()=>undefined,diagnostics,files,ingress:intake.ingress,materials,sources,store,notesSource:source.assemblyForRoutes(),notesCapture:{authority:platform,route:{request:request=>pins.get(request)},intake:intake.ports.captureIntake}} as any);
   await app.ready();
   t.after(async()=>{await app.close();await source.close();await intake.close();await platform.close();await diagnostics.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {store,sources,platform,intake,app,headers:{authorization:'Bearer '+ownerToken}};
@@ -106,6 +106,12 @@ test('C10A intake POST keeps note 201/200/409 and collector device semantics',as
   await f.platform.assembly.connections!.revoke(paired.credentialId);
   const revoked=await f.app.inject({method:'POST',url:'/api/notes',headers:collector,payload:note({id:randomUUID(),deviceId:'generated-note-device'})});
   assert.ok([401,403].includes(revoked.statusCode),revoked.body);
+  f.intake.quiesce('shutdown');
+  const quiesced=await f.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:note({id:randomUUID()})});
+  assert.equal(quiesced.statusCode,503,quiesced.body);
+  await f.intake.close();
+  const closed=await f.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:note({id:randomUUID()})});
+  assert.equal(closed.statusCode,503,closed.body);
 });
 
 test('notes-source quiesce keeps reads but refuses new delete, and the factory mounts with no published service',async t=>{
