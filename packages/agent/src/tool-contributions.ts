@@ -32,7 +32,7 @@ function assemble(input:QueryInput,packs:readonly ReadPackRegistration[]):RunToo
   try{return {snapshot:registry.snapshot(registry.registered()),release};}catch(error){release();throw error;}
 }
 export function contextToolSnapshot(input:QueryInput):ToolSnapshot {
-  return (input as PinnedInput)[runTools]?.snapshot??assemble(input,standalonePacks(input)).snapshot;
+  return (input as PinnedInput)[runTools]?.snapshot??assemble(input,input.toolContributions??standalonePacks(input)).snapshot;
 }
 export function hasPinnedContextTools(input:QueryInput){return Boolean((input as PinnedInput)[runTools]);}
 export function releaseContextTools(input:QueryInput){(input as PinnedInput)[runTools]?.release();}
