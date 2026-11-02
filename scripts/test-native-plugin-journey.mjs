@@ -105,6 +105,23 @@ async function subprocessRestart(){
     assert.ok(existsSync(sentinel),'caller sentinel survives');
     assert.equal(readFileSync(existing,'utf8'),existingBody,'caller mote.yaml is not overwritten');
     report.checks.push('caller directory and existing configuration survive process fixture cleanup');
+
+    const exitEntry=join(parent,'exit-before-health.mjs');writeFileSync(exitEntry,'process.exit(7);\n');
+    await assert.rejects(createPrivateProcess({directory:parent,entry:exitEntry}),/exited before health/);
+    assert.ok(existsSync(sentinel)&&readFileSync(existing,'utf8')===existingBody,'early exit preserves caller parent');
+
+    const unhealthy=join(parent,'never-healthy.mjs');writeFileSync(unhealthy,'setInterval(()=>{},1000);\n');
+    await assert.rejects(createPrivateProcess({directory:parent,entry:unhealthy,healthTimeoutMs:200}),/health deadline/);
+    assert.ok(existsSync(sentinel)&&readFileSync(existing,'utf8')===existingBody,'health timeout preserves caller parent');
+
+    const badStop=join(parent,'bad-stop.mjs');writeFileSync(badStop,`import {createServer} from 'node:http';import {readFileSync} from 'node:fs';const port=Number(/port:\\s*(\\d+)/.exec(readFileSync(process.env.MOTE_CONFIG_FILE,'utf8'))[1]);const server=createServer((_req,res)=>{res.writeHead(200,{'content-type':'application/json'});res.end('{"ok":true}');});server.listen(port,'127.0.0.1');process.on('SIGTERM',()=>process.exit(7));\n`);
+    const failing=await createPrivateProcess({directory:parent,entry:badStop,version:'failed-stop'});
+    let stopFailure;
+    try{await failing.stop();}catch(error){stopFailure=error;}
+    assert.match(String(stopFailure),/did not shut down gracefully/,'nonzero SIGTERM exit is a failed stop');
+    await failing.close();
+    assert.ok(existsSync(sentinel)&&readFileSync(existing,'utf8')===existingBody,'failed stop preserves caller parent');
+    report.checks.push('early exit, never-healthy startup and nonzero/forced stop paths fail visibly while preserving caller parent');
   }finally{rmSync(parent,{recursive:true,force:true});}
 
   const run=await createPrivateProcess({version:'process-restart'});
