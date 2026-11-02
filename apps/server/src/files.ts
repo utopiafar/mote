@@ -115,7 +115,7 @@ export class FileStore {
   }
   upload(id:string,authorize:(sourceId:string)=>void){const row=this.session(id,authorize);return {uploadId:id,partBytes:FILE_PART_BYTES,parts:this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').all(id),ack:row.ack?JSON.parse(row.ack):null};}
   part(id:string,part:number,bytes:Buffer,authorize:(sourceId:string)=>void){
-    this.assertOpen();
+    this.assertAdmitting();
     const row=this.session(id,authorize);if(row.ack)throw new StoreError('Upload already committed',409);
     const input=JSON.parse(row.manifest) as FileRevision,n=Math.ceil(input.sizeBytes/FILE_PART_BYTES);
     if(!Number.isInteger(part)||part<0||part>=n||bytes.length!==Math.min(FILE_PART_BYTES,input.sizeBytes-part*FILE_PART_BYTES))throw new StoreError('Invalid file part size or offset');
@@ -152,9 +152,9 @@ export class FileStore {
     },true);}finally{asset.release();}
   });}
   async commit(id:string,authorize:(sourceId:string)=>void,signal?:AbortSignal){
-    // A final started before close drains or aborts through the signal; a new
-    // final after close is refused before it can read or publish the session.
-    if(this.closed)throw new StoreError('File uploads are closed',503);
+    // A final already in flight drains or aborts through the signal; a new
+    // final after quiesce/close is refused before it can read or publish the session.
+    this.assertAdmitting();
     return this.serialize('upload:'+id,async()=>{
     const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();
     const row=this.session(id,authorize);if(row.ack)return JSON.parse(row.ack);
