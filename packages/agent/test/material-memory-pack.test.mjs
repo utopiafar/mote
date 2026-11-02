@@ -96,15 +96,19 @@ test('material catalog uses the untrusted body and material_read verifies origin
 
 test('memories defaults list to durable memory and detail to history without a layer', async () => {
   const {snapshot} = assembly();
-  const page = {items: [{id: 'memory-1', evidence: [{quote: 'saved quote', id: 'original-1'}]}], references: []};
+  const durable = {id: 'memory-1', evidence: [{quote: 'saved quote', id: 'original-1'}]}, observation = {id: 'observation-1'};
+  const page = args => args.id
+    ? {items: args.includeHistory ? [durable] : [], references: []}
+    : {items: args.layer === 'memory' ? [durable] : [observation, durable], references: []};
   const session = port({memories: page});
   const list = await execute(snapshot, 'memories', {}, session.port);
   assert.equal(session.calls[0].args.layer, 'memory');
   assert.equal(session.calls[0].args.includeHistory, undefined);
-  assert.equal(list.source, 'untrusted_personal_context');
+  assert.deepEqual(list.data.items.map(item => item.id), ['memory-1']);
   const detail = await execute(snapshot, 'memories', {id: 'memory-1', includeEvidence: true}, session.port);
   assert.equal(session.calls[1].args.includeHistory, true);
   assert.equal(session.calls[1].args.layer, undefined);
+  assert.deepEqual(detail.data.items.map(item => item.id), ['memory-1']);
   assert.equal(detail.data.items[0].evidence[0].id, 'original-1');
   assert.equal(detail.data.items[0].evidence[0].quote, undefined);
   await assert.rejects(execute(snapshot, 'memories', {includeEvidence: true}, session.port), error => error.code === 'invalid_tool_arguments');
