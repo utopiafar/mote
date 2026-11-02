@@ -35,11 +35,19 @@ export interface ServiceSelection {
   readonly provider: PackageContributionAddress;
 }
 
+export interface HostDependency {
+  readonly id: string;
+  readonly version: string;
+}
+
 export interface CompositionInput {
   readonly revision: number;
   readonly host: HostKind;
   readonly packages: readonly PackageManifest[];
   readonly bindings?: readonly ServiceSelection[];
+  /** Exact host-distribution capabilities available in this running build.
+   * A manifest's `kind: 'host'` dependencies are never assumed satisfied. */
+  readonly hostDependencies?: readonly HostDependency[];
 }
 
 export interface PlannedPackage {
@@ -71,6 +79,7 @@ export interface ActivationPlan {
   readonly packages: readonly PlannedPackage[];
   readonly contributions: readonly PlannedContribution[];
   readonly bindings: readonly PlannedBinding[];
+  readonly hostDependencies: readonly HostDependency[];
 }
 
 export type CompositionResult =
@@ -117,6 +126,15 @@ export function planComposition(input: CompositionInput): CompositionResult {
     return {ok: false, failures: [failure('invalid_input', 'Composition input requires a nonnegative revision and a supported host')]};
   }
 
+  const hostDependencies = new Map<string, string>();
+  for (const dependency of input.hostDependencies ?? []) {
+    const prior = hostDependencies.get(dependency.id);
+    if (prior !== undefined && prior !== dependency.version) {
+      failures.push(failure('version_mismatch', 'The host reports conflicting versions for one distribution dependency', {dependency: {kind: 'host', id: dependency.id, version: dependency.version}}));
+      continue;
+    }
+    hostDependencies.set(dependency.id, dependency.version);
+  }
   const packages = new Map<string, PackageManifest>();
   for (const manifest of input.packages) {
     if (packages.has(manifest.id)) {
@@ -170,9 +188,12 @@ export function planComposition(input: CompositionInput): CompositionResult {
 
   const resolveDependency = (dependency: ManifestDependency, owner: {packageId: string; contributionId?: string}) => {
     if (dependency.required === false) return;
-    // Host-distribution prerequisites are shipped with this host build, not
-    // installed as another plugin package.
-    if (dependency.kind === 'host') return;
+    if (dependency.kind === 'host') {
+      const available = hostDependencies.get(dependency.id);
+      if (available === undefined) failures.push(dependencyFailure(dependency, 'missing_dependency', owner));
+      else if (available !== dependency.version) failures.push(dependencyFailure(dependency, 'version_mismatch', owner));
+      return;
+    }
     if (dependency.kind === 'package') {
       const target = packages.get(dependency.id);
       if (!target) failures.push(dependencyFailure(dependency, 'missing_dependency', owner));
@@ -297,6 +318,6 @@ export function planComposition(input: CompositionInput): CompositionResult {
   }));
   return {
     ok: true,
-    plan: {schemaVersion: ACTIVATION_PLAN_VERSION, revision: input.revision, host: input.host, packages: plannedPackages, contributions: plannedContributions, bindings},
+    plan: {schemaVersion: ACTIVATION_PLAN_VERSION, revision: input.revision, host: input.host, packages: plannedPackages, contributions: plannedContributions, bindings, hostDependencies: [...hostDependencies].map(([id, version]) => ({id, version}))},
   };
 }

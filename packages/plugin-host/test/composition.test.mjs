@@ -68,8 +68,11 @@ test('client hosts activate their own contributions even when the package entry 
   assert.deepEqual(invalid(planComposition({revision:1,host:'web',packages:[manifest('fixture.client',{contributions:[source]})]})).map(value=>value.code),['unsupported_runtime']);
 });
 
-test('host distribution dependencies are satisfied by the running host',()=>{
-  const result=planComposition({revision:1,host:'central',packages:[manifest('fixture.hosted',{dependencies:[{kind:'host',id:'mote.adapter',version:'1'}]})]});
+test('host distribution dependencies require exact host capabilities',()=>{
+  const packageManifest=manifest('fixture.hosted',{dependencies:[{kind:'host',id:'mote.adapter',version:'1'}]});
+  assert.deepEqual(invalid(planComposition({revision:1,host:'central',packages:[packageManifest]})).map(value=>value.code),['missing_dependency']);
+  assert.deepEqual(invalid(planComposition({revision:1,host:'central',packages:[packageManifest],hostDependencies:[{id:'mote.adapter',version:'2'}]})).map(value=>value.code),['version_mismatch']);
+  const result=planComposition({revision:1,host:'central',packages:[packageManifest],hostDependencies:[{id:'mote.adapter',version:'1'}]});
   assert.equal(result.ok,true);
-  assert.deepEqual(result.plan.packages[0].packageId,'fixture.hosted');
+  assert.deepEqual(result.plan.hostDependencies,[{id:'mote.adapter',version:'1'}]);
 });

@@ -91,7 +91,7 @@ export class GitHubPluginReleases {
     if(!manifestAsset)throw new StoreError('This release has no Mote adapter manifest (mote-plugin.json). Install a compatible adapter release.',422);
     let manifest:PluginManifest;
     try{manifest=pluginManifestSchema.parse(parseJson((await this.transport(trustedAsset(manifestAsset.browser_download_url))).bytes));}
-    catch(error){if(error instanceof PluginContractError)throw new StoreError('The plugin manifest is invalid or uses an unsupported contract version',422);throw error;}
+    catch(error){if(error instanceof PluginContractError)throw new StoreError('The plugin manifest is invalid or uses an unsupported contract version',400);throw error;}
     if(manifest.runtime==='service')throw new StoreError('This release requires a service runtime that this host does not provide',422);
     const asset=release.assets.find(asset=>asset.name===manifest.archive.asset);if(!asset)throw new StoreError('The adapter archive is absent from the release',422);
     const archiveUrl=trustedAsset(asset.browser_download_url),bytes=(await this.transport(archiveUrl)).bytes,digest=hash(bytes);

@@ -468,7 +468,8 @@ test('actual HTTP plugin controls authorize owner sessions, reject MCP credentia
     throw Error('Unexpected generated invalid manifest URL');
   }});
   const invalid = await node.app.inject({method: 'POST', url: '/api/plugins/resolve', headers: headers(owner), payload: {repository: 'generated-invalid/manifest', tag: 'v1'}});
-  assert.equal(invalid.statusCode, 422);
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(invalid.json().error, 'validation');
   assert.doesNotMatch(invalid.body, /internal server|PluginContractError/i);
   await node.connections.revoke(session.credentialId);
   assert.equal((await node.app.inject({url: '/api/plugins', headers: headers(session.token)})).statusCode, 401);
