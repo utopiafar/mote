@@ -149,6 +149,9 @@ test('tools/images/import/task-control capabilities are structural requirements,
   }
   for (const capability of ['importWorkspace', 'hostDelegation']) {
     const f = fixture(); f.context.requirements.chat.capabilities = [capability]; f.context.models[0].capabilities.tools = false;
+    f.context.models[0].capabilities.images = false;
+    assert.equal(select(f).runtime.runtimeId, 'generated.dsh', 'Host-only requirements do not imply model tools/images');
+    f.context.requirements.chat.capabilities = [capability, 'tools'];
     assert.throws(() => select(f), code('runtime_capability_missing'));
   }
   const invalid = fixture(); invalid.context.models[0].modelRevision = -1;

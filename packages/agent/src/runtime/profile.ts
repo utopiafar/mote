@@ -104,7 +104,8 @@ export function validateRuntimeModelPair(input: RuntimeSelectionInput) {
   if (!provider.capabilities.modelTransports.includes(transport)) throw new RuntimeSelectionError('incompatible_runtime_model');
   if (!provider.capabilities.taskKinds.includes(requirements.taskKind)) throw new RuntimeSelectionError('runtime_capability_missing');
   for (const capability of requirements.capabilities) {
-    const modelSupports = capability === 'images' ? model.capabilities.images : model.capabilities.tools;
+    // Workspace/delegation are Host capabilities. Task packs declare tools/images separately when needed.
+    const modelSupports = capability === 'images' ? model.capabilities.images : capability === 'tools' ? model.capabilities.tools : true;
     if (!provider.capabilities[capability] || !modelSupports) {
       throw new RuntimeSelectionError('runtime_capability_missing');
     }
