@@ -29,6 +29,10 @@ export interface ConnectorHostAdapter {
   start():Promise<void>;
   inventory():ReturnType<ConnectorRegistry['inventory']>;
   configureSyncInterval(intervalMs:number):void;
+  /** Hot-install a new manifest after start; failure rolls back only it. */
+  install(manifest:ConnectorManifest):Promise<void>;
+  /** Hot-restart a known stopped manifest with a fresh H04 scope. */
+  restart(id:string):Promise<void>;
   /** Hot-stop one installed instance; sibling instances keep running. */
   stop(id:string):Promise<void>;
   close():Promise<void>;
@@ -55,39 +59,54 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     capabilityUsers.delete(kind);
     if(ownedKinds.delete(kind)){ownedDescriptors.delete(kind);options.context.sources.capabilities.unregister(kind);}
   };
+  const registerDescriptors=(manifest:ConnectorManifest)=>{
+    const added:string[]=[];
+    for(const entry of manifest.sourceKinds){
+      if(typeof entry==='string')continue;
+      const owned=ownedDescriptors.get(entry.kind);
+      if(owned){
+        if(descriptorKey(owned)!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
+        continue;
+      }
+      if(options.context.sources.capabilities.has(entry.kind)){
+        if(descriptorKey(installedDescriptor(entry.kind))!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
+        continue;
+      }
+      options.context.sources.capabilities.register(entry.kind,entry.capabilities);
+      ownedKinds.add(entry.kind);ownedDescriptors.set(entry.kind,entry.capabilities);added.push(entry.kind);
+    }
+    return added;
+  };
+  const rollbackDescriptors=(added:readonly string[])=>{
+    for(const kind of added)if(!capabilityUsers.get(kind)&&ownedKinds.delete(kind)){
+      ownedDescriptors.delete(kind);try{options.context.sources.capabilities.unregister(kind);}catch{}
+    }
+  };
+  const installRefs=(manifest:ConnectorManifest)=>{
+    const scope=scopeFor(manifest);
+    for(const entry of manifest.sourceKinds){
+      const kind=typeof entry==='string'?entry:entry.kind;
+      if(!options.context.sources.capabilities.has(kind))throw Error(`Connector source kind ${kind} has no installed capability`);
+      capabilityUsers.set(kind,(capabilityUsers.get(kind)??0)+1);
+      scope.defer(()=>releaseCapability(kind));
+    }
+  };
   const installCapabilities=()=>{
     try{
       // Descriptors install first, independent of manifest order. A descriptor
       // already present is either adapter-owned (must match) or preinstalled
       // (must match and stays externally owned).
-      for(const manifest of options.manifests)for(const entry of manifest.sourceKinds){
-        if(typeof entry==='string')continue;
-        const owned=ownedDescriptors.get(entry.kind);
-        if(owned){
-          if(descriptorKey(owned)!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
-          continue;
-        }
-        if(options.context.sources.capabilities.has(entry.kind)){
-          if(descriptorKey(installedDescriptor(entry.kind))!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
-          continue;
-        }
-        options.context.sources.capabilities.register(entry.kind,entry.capabilities);
-        ownedKinds.add(entry.kind);ownedDescriptors.set(entry.kind,entry.capabilities);
-      }
+      for(const manifest of options.manifests)registerDescriptors(manifest);
       // Every manifest use, including a string reference, keeps the kind alive.
-      for(const manifest of options.manifests){
-        const scope=scopeFor(manifest);
-        for(const entry of manifest.sourceKinds){
-          const kind=typeof entry==='string'?entry:entry.kind;
-          if(!options.context.sources.capabilities.has(kind))throw Error(`Connector source kind ${kind} has no installed capability`);
-          capabilityUsers.set(kind,(capabilityUsers.get(kind)??0)+1);
-          scope.defer(()=>releaseCapability(kind));
-        }
-      }
+      for(const manifest of options.manifests)installRefs(manifest);
     }catch(error){
       for(const kind of ownedKinds)try{options.context.sources.capabilities.unregister(kind);}catch{}
       ownedKinds.clear();ownedDescriptors.clear();capabilityUsers.clear();throw error;
     }
+  };
+  const installCapabilitiesFor=(manifest:ConnectorManifest)=>{
+    const added=registerDescriptors(manifest);
+    try{installRefs(manifest);}catch(error){rollbackDescriptors(added);throw error;}
   };
   const http:ConnectorHttpHost={
     ownerRoute:(route,scope)=>options.dispatcher.registerOwnerRoute(scope,route),
@@ -97,8 +116,22 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     http,scopeFor,statusScope:options.statusScope,manageCapabilities:false,
     ...(options.transport?{transport:options.transport}:{}),
   });
+  const manifests=new Map(options.manifests.map(manifest=>[manifest.id,manifest])),retiring=new Set<Promise<void>>();
   for(const manifest of options.manifests)registry.register(manifest);
   let started=false,closed=false,startTask:Promise<void>|undefined,teardown:Promise<void>|undefined,closing:Promise<void>|undefined;
+  const startHot=async(manifest:ConnectorManifest)=>{
+    if(scopes.has(manifest.id))throw Error(`Connector ${manifest.id} is already started`);
+    const scope=options.scopeFor(manifest,manifest.id);scopes.set(manifest.id,scope);
+    let added:string[]=[];
+    try{
+      added=registerDescriptors(manifest);installRefs(manifest);
+      await registry.startInstance(manifest,scope.scope);
+    }catch(error){
+      rollbackDescriptors(added);scopes.delete(manifest.id);
+      try{await scope.close();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector instance startup and disposal failed',{cause:error});}
+      throw error;
+    }
+  };
   const teardownInternal=()=>{
     if(teardown)return teardown;
     closed=true;
@@ -113,6 +146,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       }
       await clean(()=>registry.close());
       for(const value of [...scopes.values()].reverse())await clean(()=>startedScopes.get(value)??value.close());
+      for(const task of [...retiring])await clean(()=>task);
       if(errors.length)throw new AggregateError(errors,'Connector host adapter disposal failed');
     })();
     return teardown;
@@ -138,11 +172,19 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       if(closed)throw Error('Connector host adapter is closed');
       startTask=(async()=>{
         try{
-          installCapabilities();await registry.start();
+          installCapabilities();
+          const failures:unknown[]=[];
+          for(const manifest of options.manifests){
+            const scope=scopes.get(manifest.id);if(!scope)throw Error('Connector scope is unavailable');
+            try{await registry.startInstance(manifest,scope.scope);}
+            catch(error){scopes.delete(manifest.id);try{await scope.close();}catch(cleanup){failures.push(new AggregateError([error,cleanup],'Connector instance startup and disposal failed',{cause:error}));continue;}failures.push(error);}
+          }
           if(closed)throw Error('Connector host adapter is closed');
+          registry.mountStatus(options.statusScope);
           started=true;
+          if(failures.length)throw new AggregateError(failures,'Connector host adapter startup failures');
         }catch(error){
-          try{await teardownInternal();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host adapter startup and disposal failed',{cause:error});}
+          if(!started){try{await teardownInternal();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host adapter startup and disposal failed',{cause:error});}}
           throw error;
         }
       })();
@@ -150,13 +192,23 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     },
     inventory:()=>registry.inventory(),
     configureSyncInterval:(intervalMs:number)=>registry.configureSyncInterval(intervalMs),
+    async install(manifest:ConnectorManifest){
+      if(!started||closed)throw Error('Connector host adapter is not active');
+      if(manifests.has(manifest.id)||scopes.has(manifest.id))throw Error(`Connector ${manifest.id} is already known`);
+      registry.addManifest(manifest);manifests.set(manifest.id,manifest);
+      await startHot(manifest);
+    },
+    async restart(id:string){
+      if(!started||closed)throw Error('Connector host adapter is not active');
+      const manifest=manifests.get(id);if(!manifest)throw Error(`Connector ${id} is not known`);
+      if(scopes.has(id)||registry.inventory().some(item=>item.id===id))throw Error(`Connector ${id} is already started`);
+      await startHot(manifest);
+    },
     async stop(id:string){
       if(closed)throw Error('Connector host adapter is closed');
-      const errors:unknown[]=[],value=scopes.get(id);let started:Promise<void>|undefined;
-      if(value?.fence)try{await value.fence();}catch(error){errors.push(error);}
-      else if(value){started=value.close();void started.catch(()=>{});}
-      try{await registry.stop(id);}catch(error){errors.push(error);}
-      if(value)try{await (started??value.close());scopes.delete(id);}catch(error){errors.push(error);}
+      const errors:unknown[]=[],value=scopes.get(id);if(value)scopes.delete(id);
+      try{await registry.stop(id,value?.fence?()=>value.fence!():undefined);}catch(error){errors.push(error);}
+      if(value){const task=value.close();retiring.add(task);void task.catch(()=>{});try{await task;}catch(error){errors.push(error);}finally{retiring.delete(task);}}
       if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
     },
     close,

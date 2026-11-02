@@ -88,8 +88,8 @@ export class ConnectorRegistry {
   private closing?:Promise<void>;
   constructor(private app:FastifyInstance|undefined,private context:ConnectorContext,private options:ConnectorRegistryOptions={}){}
 
-  register(value:unknown){
-    if(this.started||this.closed)throw Error('Connector registry is already started');
+  register(value:unknown,hot=false){
+    if(this.closed||(!hot&&this.started))throw Error('Connector registry is already started');
     if(!value||typeof value!=='object')throw Error('Invalid connector manifest');
     const manifest=value as ConnectorManifest;
     if(manifest.apiVersion!==1||typeof manifest.id!=='string'||!connectorId.test(manifest.id)||typeof manifest.create!=='function'||!Array.isArray(manifest.sourceKinds)||manifest.sourceKinds.length>20||manifest.statusKey!==undefined&&(typeof manifest.statusKey!=='string'||!connectorId.test(manifest.statusKey)))throw Error('Invalid connector manifest');
@@ -102,6 +102,8 @@ export class ConnectorRegistry {
     }
     this.manifests.push(manifest);
   }
+  addManifest(value:unknown){this.register(value,true);}
+  manifest(id:string){return this.manifests.find(manifest=>manifest.id===id);}
 
   async loadModules(specifiers:readonly string[]){
     for(const specifier of specifiers){
@@ -147,7 +149,7 @@ export class ConnectorRegistry {
       if(this.closed)throw Error('Connector registry is closed');
       if(this.options.http){
         if(!this.options.statusScope)throw Error('Connector status scope is unavailable');
-        this.statusHandle=this.options.http.ownerRoute({method:'GET',path:'/api/connectors/status',handler:()=>this.statusView()},this.options.statusScope);
+        this.mountStatus(this.options.statusScope);
         for(const {instance,scope} of this.instances)instance.configure?.({
           ownerRoute:route=>{if(!scope)throw Error('Connector scope is unavailable');this.options.http!.ownerRoute(route,scope);},
           oauthCallback:callback=>{if(!scope)throw Error('Connector scope is unavailable');this.options.http!.oauthCallback(callback,scope);},
@@ -167,10 +169,50 @@ export class ConnectorRegistry {
   }
 
   private statusView(){return Object.fromEntries(this.instances.flatMap(({manifest,instance})=>manifest.statusKey&&instance.status?[[manifest.statusKey,instance.status()]]:[]));}
-  async stop(id:string){
+  mountStatus(scope:HostScope){
+    if(!this.options.http)throw Error('Connector HTTP host is unavailable');
+    if(this.statusHandle)throw Error('Connector status is already mounted');
+    this.statusHandle=this.options.http.ownerRoute({method:'GET',path:'/api/connectors/status',handler:()=>this.statusView()},scope);
+  }
+  /** Start one connector instance. Failure rolls back only this entry and its
+   * instance; the caller owns the H04 scope and releases routes/capabilities. */
+  async startInstance(manifest:ConnectorManifest,scope:HostScope){
+    const http=this.options.http;if(!http)throw Error('Connector HTTP host is unavailable');
+    if(this.closed)throw Error('Connector registry is closed');
+    if(this.instances.some(entry=>entry.manifest.id===manifest.id))throw Error(`Connector ${manifest.id} is already started`);
+    const instance=await manifest.create(this.context);
+    if(!instance||typeof instance!=='object')throw Error(`Connector ${manifest.id} did not create an instance`);
+    if(this.closed){
+      try{await instance.close?.();}catch(cleanup){throw new AggregateError([Error('Connector registry is closed'),cleanup],'Connector late initialization and disposal failed');}
+      throw Error('Connector registry is closed');
+    }
+    const entry={manifest,instance,scope,disposed:false};this.instances.push(entry);
+    try{
+      if(this.closed){const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);entry.disposed=true;await instance.close?.();throw Error('Connector registry is closed');}
+      await instance.init?.();
+      if(this.closed)throw Error('Connector registry is closed');
+      instance.configure?.({
+        ownerRoute:route=>http.ownerRoute(route,scope),
+        oauthCallback:callback=>http.oauthCallback(callback,scope),
+      });
+      if(instance.mountTransport){
+        if(!this.options.transport)throw Error('Connector transport is unavailable');
+        await this.options.transport(instance);
+      }
+    }catch(error){
+      const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);
+      if(!entry.disposed){entry.disposed=true;try{await instance.close?.();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector instance startup and disposal failed',{cause:error});}}
+      throw error;
+    }
+  }
+  async stop(id:string,beforeClose?:()=>void|Promise<void>){
     const index=this.instances.findIndex(item=>item.manifest.id===id);if(index<0)return;
     const [entry]=this.instances.splice(index,1);
-    entry.disposed=true;await entry.instance.close?.();
+    entry.disposed=true;
+    const errors:unknown[]=[];
+    if(beforeClose)try{await beforeClose();}catch(error){errors.push(error);}
+    try{await entry.instance.close?.();}catch(error){errors.push(error);}
+    if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
   }
 
   private addOwnerRoute(route:OwnerRoute){

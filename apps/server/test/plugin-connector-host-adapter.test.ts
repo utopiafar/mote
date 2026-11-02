@@ -29,10 +29,11 @@ function instanceScope(name:string):TestScope {
   });
   return {resources,scope,fence:()=>resources.stop(),close:()=>resources.close()};
 }
-function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void|Promise<void>;kind?:string;stringKind?:boolean;capabilities?:SourceCapabilityDescriptor}={}):ConnectorManifest {
+function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void|Promise<void>;onInit?:()=>void|Promise<void>;kind?:string;stringKind?:boolean;capabilities?:SourceCapabilityDescriptor}={}):ConnectorManifest {
   const kind=options.kind??'generated.connector';
   return {apiVersion:1,id,sourceKinds:[options.stringKind?kind:{kind,capabilities:options.capabilities??capabilities}],...(options.statusKey?{statusKey:options.statusKey}:{}),
     create:()=>({
+      ...(options.onInit?{init:options.onInit}:{}),
       status:()=>({id}),
       configure:host=>{
         host.ownerRoute({method:'GET',path:`/api/connectors/${id}`,handler:()=>id});
@@ -76,6 +77,91 @@ test('adapter registers routes/OAuth/status through the dispatcher and releases 
   assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{});
   await adapter.close();
   assert.deepEqual(closed.sort(),['a','b']);
+});
+
+test('hot install/restart adds and removes one connector with shared OAuth',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-a',{statusKey:'a'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  await adapter.install(manifest('generated-hot-b',{statusKey:'b',prefix:'hot-b.'}));
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-b',headers})).body,'generated-hot-b');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=hot-b.${'a'.repeat(24)}&code=generated-code`)).body,'generated-hot-b');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{a:{id:'generated-hot-a'},b:{id:'generated-hot-b'}});
+  await adapter.stop('generated-hot-b');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-b',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-a',headers})).body,'generated-hot-a');
+  await adapter.restart('generated-hot-b');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-b',headers})).body,'generated-hot-b');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=hot-b.${'a'.repeat(24)}&code=generated-code`)).body,'generated-hot-b');
+  await adapter.close();
+});
+
+test('hot install init failure rolls back only its instance and siblings serve',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseInit!:()=>void,enteredInit!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseInit=resolve;}),entered=new Promise<void>(resolve=>{enteredInit=resolve;});
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseInit();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(manifest('generated-hot-init-fail',{statusKey:'fail',prefix:'init.' ,onInit:async()=>{enteredInit();await held;throw new Error('generated init failure');}}));
+  await entered;
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-ok',headers})).body,'generated-hot-ok');
+  releaseInit();
+  await assert.rejects(installing,/generated init failure/);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-init-fail',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-ok',headers})).body,'generated-hot-ok');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-hot-ok'}});
+  await adapter.close();
+});
+
+test('hot stop close failure removes only that instance and siblings serve',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-close-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  await adapter.install(manifest('generated-close-fail',{statusKey:'fail',prefix:'close-fail.',onClose:()=>{throw new Error('generated close failure');}}));
+  await assert.rejects(adapter.stop('generated-close-fail'),/Connector instance stop failed/);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-close-fail',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-close-ok',headers})).body,'generated-close-ok');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-close-ok'}});
+  await adapter.close();
+});
+
+test('hot restart while old scope close is held keeps the replacement route and OAuth',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseOld!:()=>void,enteredOld!:()=>void,firstClose=true;
+  const held=new Promise<void>(resolve=>{releaseOld=resolve;}),started=new Promise<void>(resolve=>{enteredOld=resolve;});
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-replace',{statusKey:'r',onClose:()=>{if(firstClose){firstClose=false;enteredOld();return held;}}})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseOld();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const stopping=adapter.stop('generated-replace');await started;
+  await adapter.restart('generated-replace');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-replace',headers})).body,'generated-replace');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=${'a'.repeat(24)}&code=generated-code`)).body,'generated-replace');
+  releaseOld();await stopping;
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-replace',headers})).body,'generated-replace','old scope cleanup must not delete the replacement route');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=${'a'.repeat(24)}&code=generated-code`)).body,'generated-replace','old cleanup must not delete the replacement callback');
+  await adapter.close();
+});
+
+test('initial start init failure leaves siblings serving',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-start-ok',{statusKey:'ok'}),
+    manifest('generated-start-fail',{statusKey:'fail',prefix:'start-fail.',onInit:async()=>{throw new Error('generated initial init failure');}}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await assert.rejects(adapter.start(),/Connector host adapter startup failures/);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-start-ok',headers})).body,'generated-start-ok');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-start-fail',headers})).statusCode,404);
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-start-ok'}});
+  await adapter.close();
 });
 
 test('adapter rejects conflicting source capability descriptors before instances start',async t=>{
