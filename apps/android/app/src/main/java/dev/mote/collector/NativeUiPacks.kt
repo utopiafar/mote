@@ -11,7 +11,7 @@ internal data class NativeUiIdentity(val id: String, val version: String) {
 }
 internal data class NativeUiBinding(val theme: NativeUiIdentity, val layout: NativeUiIdentity)
 internal data class NativeUiNotificationError(val observer: Int, val code: String = "observer-failed")
-internal data class NativeThemeSnapshot(val identity: NativeUiIdentity, val tokens: Map<String, String>, val schemes: Map<String, Map<String, String>> = emptyMap()) {
+internal data class NativeThemeSnapshot(val identity: NativeUiIdentity, val tokens: Map<String, String>, val schemes: Map<String, Map<String, String>> = emptyMap(), val presentation: PluginUiPresentation? = null) {
     fun value(key: String): String = requireNotNull(tokens[key]) { "Missing native theme token: $key" }
     fun number(key: String): Double = value(key).removeSuffix("px").removeSuffix("em").toDouble()
     fun dimension(key: String): Int = number(key).roundToInt()
@@ -22,14 +22,20 @@ internal data class NativeLayoutSnapshot(
     val initial: String,
     val navigation: String,
     val detail: String,
+    val presentation: PluginUiPresentation? = null,
 ) { fun usesDetailPane(widthDp: Int): Boolean = detail == "split" && widthDp >= 840 }
 internal interface NativeThemeProvider { val snapshot: NativeThemeSnapshot }
 internal interface NativeLayoutProvider { val snapshot: NativeLayoutSnapshot }
+
+private data class PresentationKey(val surface: String, val identity: NativeUiIdentity)
+internal data class FallbackSource(val identity: NativeUiIdentity, val declared: PluginUiPresentation, val lastReadable: ResolvedPluginUiPresentation?)
 
 /** Exact binding is deliberately separate from installation. No fuzzy version or unknown-route dispatch. */
 internal class NativeUiPackRegistry {
     private val themes = linkedMapOf<NativeUiIdentity, NativeThemeSnapshot>()
     private val layouts = linkedMapOf<NativeUiIdentity, NativeLayoutSnapshot>()
+    private val lastPresentations = LinkedHashMap<PresentationKey, ResolvedPluginUiPresentation>()
+    private var fallbackSource: FallbackSource? = null
     private val observers = java.util.concurrent.CopyOnWriteArrayList<(Long) -> Unit>()
     private var colorScheme = "dark"
     private var binding: NativeUiBinding? = null
@@ -50,6 +56,42 @@ internal class NativeUiPackRegistry {
         require(snapshot.number("letter-title").isFinite())
         listOf("font", "font-heading").forEach { require(snapshot.value(it).isNotBlank()) }
     }
+    /** Keep the last readable label but take the newly resolved glyph/a11y
+     * roles, so a replacement catalog that only updates accessibility text is
+     * not lost. When the accessible name came from the label, it follows it. */
+    private fun mergeReadableLabel(resolved: ResolvedPluginUiPresentation, cached: ResolvedPluginUiPresentation?): ResolvedPluginUiPresentation {
+        if (cached == null) return resolved
+        val label = PluginUiText(cached.label.text, resolved.label.fallbackReason)
+        val a11yWasLabel = resolved.a11y.text == resolved.label.text
+        val a11y = if (a11yWasLabel) {
+            // The current a11y came from the missing label; keep the cached
+            // distinct accessible name when one exists.
+            if (cached.a11y.text != cached.label.text) PluginUiText(cached.a11y.text, resolved.a11y.fallbackReason) else PluginUiText(label.text, label.fallbackReason)
+        } else resolved.a11y
+        val reasons = listOfNotNull(label.fallbackReason, resolved.glyph?.fallbackReason, a11y.fallbackReason).distinct()
+        return ResolvedPluginUiPresentation(resolved.routeId, label, resolved.glyph, a11y, reasons)
+    }
+    /** Runtime-locale labels for a declared presentation, keyed by surface so a
+     * theme and layout sharing id@version never swap cached labels. */
+    private fun presentation(surface: String, identity: NativeUiIdentity, declared: PluginUiPresentation?): ResolvedPluginUiPresentation? {
+        if (declared == null) return null
+        val key = PresentationKey(surface, identity)
+        val resolved = MoteI18n.pluginCatalogs.resolve(identity.id, declared, MoteI18n.language())
+        val unreadable = resolved.label.fallbackReason == "key_missing" || resolved.label.fallbackReason == "namespace_missing"
+        if (!unreadable) { lastPresentations[key] = resolved; return resolved }
+        val merged = mergeReadableLabel(resolved, lastPresentations[key])
+        if (merged.label.fallbackReason != "key_missing" && merged.label.fallbackReason != "namespace_missing") lastPresentations[key] = merged
+        return merged
+    }
+    private fun fallbackPresentation(): ResolvedPluginUiPresentation? {
+        val source = fallbackSource ?: return null
+        val resolved = MoteI18n.pluginCatalogs.resolve(source.identity.id, source.declared, MoteI18n.language())
+        val unreadable = resolved.label.fallbackReason == "key_missing" || resolved.label.fallbackReason == "namespace_missing"
+        val presentation = if (unreadable) mergeReadableLabel(resolved, source.lastReadable) else resolved
+        val readable = presentation.label.fallbackReason != "key_missing" && presentation.label.fallbackReason != "namespace_missing"
+        if (readable) fallbackSource = source.copy(lastReadable = presentation)
+        return presentation
+    }
     @Synchronized fun register(provider: NativeThemeProvider) {
         val supplied = provider.snapshot
         val snapshot = supplied.copy(tokens = java.util.Collections.unmodifiableMap(supplied.tokens.toMap()), schemes = java.util.Collections.unmodifiableMap(supplied.schemes.mapValues { java.util.Collections.unmodifiableMap(it.value.toMap()) }))
@@ -61,6 +103,7 @@ internal class NativeUiPackRegistry {
             validateThemeTokens(snapshot.copy(tokens = values, schemes = emptyMap()))
         }
         themes[snapshot.identity] = snapshot
+        presentation("theme", snapshot.identity, snapshot.presentation)
     }
     @Synchronized fun register(provider: NativeLayoutProvider) {
         val supplied = provider.snapshot
@@ -69,11 +112,12 @@ internal class NativeUiPackRegistry {
         require(value.primary == listOf("home")) { "Native layout has one home; management destinations remain secondary" }
         require(value.initial == "home" && value.navigation == "home" && value.detail == "stack") { "Unsupported native layout capability" }
         layouts[value.identity] = value
+        presentation("layout", value.identity, value.presentation)
     }
-    @Synchronized fun bind(value: NativeUiBinding, fallbackReason: String? = null) {
+    @Synchronized fun bind(value: NativeUiBinding, fallbackReason: String? = null, fallback: FallbackSource? = null) {
         require(value.theme in themes && value.layout in layouts) { "Native UI binding requires exact installed providers" }
         if (binding != value) {
-            binding = value; removalReason = fallbackReason; revision++
+            binding = value; removalReason = fallbackReason; fallbackSource = fallback; revision++
             val failures = mutableListOf<NativeUiNotificationError>()
             observers.forEachIndexed { index, observer -> try { observer(revision) } catch (_: Throwable) { failures.add(NativeUiNotificationError(index)) } }
             notificationErrors = java.util.Collections.unmodifiableList(failures.toList())
@@ -85,16 +129,36 @@ internal class NativeUiPackRegistry {
     }
     @Synchronized fun removeTheme(identity: NativeUiIdentity) {
         require(identity != builtin?.theme) { "Cannot remove the native builtin theme" }
-        if (activeBinding().theme == identity) bind(activeBinding().copy(theme = requireNotNull(builtin).theme), "theme_removed")
+        val key = PresentationKey("theme", identity)
+        if (activeBinding().theme == identity) {
+            val declared = themes[identity]?.presentation
+            val current = declared?.let { presentation("theme", identity, it) }
+            val removed = declared?.let { FallbackSource(identity, it, current ?: lastPresentations[key]) }
+            bind(activeBinding().copy(theme = requireNotNull(builtin).theme), "theme_removed", removed)
+        }
         themes.remove(identity)
+        lastPresentations.remove(key)
     }
     @Synchronized fun removeLayout(identity: NativeUiIdentity) {
         require(identity != builtin?.layout) { "Cannot remove the native builtin layout" }
-        if (activeBinding().layout == identity) bind(activeBinding().copy(layout = requireNotNull(builtin).layout), "layout_removed")
+        val key = PresentationKey("layout", identity)
+        if (activeBinding().layout == identity) {
+            val declared = layouts[identity]?.presentation
+            val current = declared?.let { presentation("layout", identity, it) }
+            val removed = declared?.let { FallbackSource(identity, it, current ?: lastPresentations[key]) }
+            bind(activeBinding().copy(layout = requireNotNull(builtin).layout), "layout_removed", removed)
+        }
         layouts.remove(identity)
+        lastPresentations.remove(key)
     }
     fun observe(observer: (Long) -> Unit): () -> Unit { observers.add(observer); return { observers.remove(observer) } }
     @Synchronized fun fallbackReason(): String? = removalReason
+    @Synchronized fun themeLabel(): PluginUiText? = themes[activeBinding().theme]?.let { presentation("theme", it.identity, it.presentation)?.label }
+    @Synchronized fun layoutLabel(): PluginUiText? = layouts[activeBinding().layout]?.let { presentation("layout", it.identity, it.presentation)?.label }
+    @Synchronized fun themeA11y(): PluginUiText? = themes[activeBinding().theme]?.let { presentation("theme", it.identity, it.presentation)?.a11y }
+    @Synchronized fun layoutA11y(): PluginUiText? = layouts[activeBinding().layout]?.let { presentation("layout", it.identity, it.presentation)?.a11y }
+    @Synchronized fun fallbackLabel(): PluginUiText? = fallbackPresentation()?.label
+    @Synchronized fun fallbackA11y(): PluginUiText? = fallbackPresentation()?.a11y
     @Synchronized fun getNotificationErrors(): List<NativeUiNotificationError> = notificationErrors
     @Synchronized fun activeBinding(): NativeUiBinding = requireNotNull(binding) { "Native UI has no active binding" }
     @Synchronized fun colorScheme(value: String) {
