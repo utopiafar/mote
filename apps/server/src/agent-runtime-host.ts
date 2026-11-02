@@ -10,7 +10,7 @@ import {moteText} from './i18n.js';
 import {createModelAgent,type ModelAgentFactory,type ModelAgentIdentity} from './model-agent.js';
 import {agentModelConnection} from './model-authorization-host.js';
 import type {ProviderAdmission} from './provider-admission.js';
-import type {QueryAgent} from './query-agent.js';
+import type {QueryAgent,QueryRunLease} from './query-agent.js';
 import {StoreError} from './store.js';
 
 export interface AgentRuntimeHostDependencies {
@@ -80,6 +80,8 @@ export class AgentRuntimeHost {
     const wrapped:QueryAgent={
       get configured(){return !closing&&!thisHost.closed&&inner.configured;},
       ...(inner.configuredFor?{configuredFor:(id:string)=>!closing&&!this.closed&&inner.configuredFor!(id)}:{}),
+      // Forwarded, never reported here: only the executing leaf owns the declaration.
+      ...(inner.runFinalizer?{runFinalizer:inner.runFinalizer}:{}),
       close:()=>{
         if(!closing){
           stop.abort(new StoreError('Agent runtime adapter is closed',503));
@@ -89,13 +91,13 @@ export class AgentRuntimeHost {
         }
         return closing;
       },
-      query:input=>{
-        const task=execute(input);pending.add(task);
+      query:(input,lease)=>{
+        const task=execute(input,lease);pending.add(task);
         void task.then(()=>pending.delete(task),()=>pending.delete(task));
         return task;
       },
     };
-    const execute=async(input:QueryInput):Promise<QueryResult>=>{
+    const execute=async(input:QueryInput,lease?:QueryRunLease):Promise<QueryResult>=>{
         assertOpen();if(!inner.configured)throw new AgentNotConfiguredError();
         const connection=agentModelConnection(identity,settings);d.authorization.assertCurrent(connection);
         d.assertPurpose(input);await d.assertEvidenceAsync(input);assertOpen();
@@ -113,7 +115,7 @@ export class AgentRuntimeHost {
             d.retainSnapshot(input);
             const result=await d.modelOperation.run(operationId,()=>d.admission.run(settings,()=>{
               assertOpen();d.authorization.assertCurrent(connection);d.assertEvidence(input);d.agentStarted();
-              return d.modelContext.run(input,()=>inner.query(input));
+              return d.modelContext.run(input,()=>inner.query(input,lease));
             }));
             assertOpen();d.authorization.assertCurrent(connection);status='completed';return result;
           }catch(error){if(error instanceof AgentYieldError)status='yielded';throw error;}

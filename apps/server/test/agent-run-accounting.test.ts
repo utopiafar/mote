@@ -1,0 +1,105 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import type {QueryInput} from '@mote/agent';
+import {buildApp} from '../src/app.js';
+import {ReloadableAgent,type ModelAgentFactory} from '../src/model-agent.js';
+import type {QueryAgent} from '../src/query-agent.js';
+import type {Config} from '../src/config.js';
+
+type HostEvent=Parameters<NonNullable<QueryInput['onHostRunEvent']>>[0];
+const token='generated-run-accounting-owner',headers={authorization:`Bearer ${token}`};
+const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const answer=()=>({answer:'Generated accounting answer',citations:[],trace:[],runId:randomUUID()});
+const identity=(runId:string)=>({runId,runtime:{id:'generated-runtime',revision:1,profileId:'generated-profile',profileRevision:1,assemblyFingerprint:'generated-fingerprint'},model:{modelId:'generated-model',modelRevision:1,profileId:'generated-profile',profileRevision:1,transport:'generated'}});
+const usageEvent=(runId:string,inputTokens=10):HostEvent=>({identity:identity(runId),attemptId:'attempt-1',event:{type:'usage',usage:{requests:1,reportedRequests:1,inputTokens,outputTokens:5,totalTokens:inputTokens+5,cacheReadTokens:0,cacheWriteTokens:0}}});
+const terminalEvent=(runId:string):HostEvent=>({identity:identity(runId),attemptId:'attempt-1',event:{type:'run.terminal',terminal:{kind:'completed'}}});
+
+/** A generated leaf that emulates the production declaration contract: it
+ * reports its own finalizer once, before any await, and never lets the
+ * composites decide the mode. */
+function leaf(behaviour:{mode:'host'|'legacy';hostEvents?:boolean;runIds?:string[];terminal?:boolean;legacyUsage?:boolean}):QueryAgent{
+  return {configured:true,runFinalizer:behaviour.mode,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.(behaviour.mode);
+    if(behaviour.hostEvents){
+      const ids=behaviour.runIds??['generated-run'];
+      input.onHostRunEvent?.(usageEvent(ids[0]));
+      for(const id of ids.slice(1))input.onHostRunEvent?.(usageEvent(id));
+      if(behaviour.terminal!==false)input.onHostRunEvent?.(terminalEvent(ids[0]));
+    }
+    if(behaviour.legacyUsage)input.onUsage?.({requests:1,reportedRequests:1,inputTokens:20,outputTokens:6,totalTokens:26,cacheReadTokens:0,cacheWriteTokens:0});
+    return answer();
+  }};
+}
+async function app(t:import('node:test').TestContext,agent:QueryAgent){
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-run-accounting-'));
+  const node=await buildApp(config(dataDir),{backgroundWorker:false,createModelAgent:(async()=>agent as unknown) as ModelAgentFactory});
+  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+  return node;
+}
+const receipts=(node:Awaited<ReturnType<typeof buildApp>>)=>(node.store.db.prepare('SELECT json FROM model_usage ORDER BY created_at,id').all() as {json:string}[]).map(row=>JSON.parse(row.json) as {status:string;tokens?:{inputTokens:number}});
+
+test('a Host leaf finalizes once through the observer and reports the captured receipt',async t=>{
+  const node=await app(t,leaf({mode:'host',hostEvents:true}));
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated Host question'}});
+  assert.equal(response.statusCode,200,response.body);
+  assert.equal(response.json().answer,'Generated accounting answer');
+  const rows=receipts(node);
+  assert.equal(rows.length,1,'the Host path must not create a second receipt');
+  assert.equal(rows[0].status,'completed');
+  assert.equal(rows[0].tokens?.inputTokens,10);
+  assert.equal(response.json().usage?.status,'completed','the response carries the captured Host receipt');
+});
+
+test('a legacy leaf keeps the existing onUsage and finalizer chain',async t=>{
+  const node=await app(t,leaf({mode:'legacy',legacyUsage:true}));
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated legacy question'}});
+  assert.equal(response.statusCode,200,response.body);
+  const rows=receipts(node);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].status,'completed');
+  assert.equal(rows[0].tokens?.inputTokens,20);
+});
+
+test('a Host event on a non-host mode is rejected instead of finalized as success',async t=>{
+  const node=await app(t,leaf({mode:'legacy',hostEvents:true}));
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated contradiction question'}});
+  assert.notEqual(response.statusCode,200,response.body);
+  const rows=receipts(node);
+  assert.equal(rows.length,1,'the legacy owner still records its started attempt');
+  assert.equal(rows[0].status,'failed','a contradiction must never finalize as completed success');
+});
+
+test('a second run id in one query is rejected and cannot finalize as success',async t=>{
+  const node=await app(t,leaf({mode:'host',hostEvents:true,runIds:['generated-run-a','generated-run-b']}));
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated second identity question'}});
+  assert.notEqual(response.statusCode,200,response.body);
+  assert.equal(receipts(node).length,1,'the first identity still owns the one receipt');
+});
+
+test('a Host path that settles without a run terminal is rejected, not reported as success',async t=>{
+  const node=await app(t,leaf({mode:'host',hostEvents:true,terminal:false}));
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated missing terminal question'}});
+  assert.notEqual(response.statusCode,200,response.body);
+  const rows=receipts(node);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].status,'running','no app-side finalizer may close a Host receipt');
+});
+
+test('a configuration switch mid-query keeps the pinned generation lease and reports once',async t=>{
+  let entered!:()=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>{entered=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
+  const reports:string[]=[];let usedSecond=false;
+  const first:QueryAgent={configured:true,runFinalizer:'host',close:async()=>{},query:async(_input,lease)=>{lease?.onFinalizer?.('host');entered();await held;return answer();}};
+  const second:QueryAgent={configured:true,runFinalizer:'legacy',close:async()=>{},query:async()=>{usedSecond=true;return answer();}};
+  const reloading=new ReloadableAgent();
+  const prepared=await reloading.prepare(first,()=>{});prepared.activate();prepared.complete();
+  const pending=reloading.query({question:'Generated pinned question'},{onFinalizer:mode=>reports.push(mode)});await started;
+  const next=await reloading.prepare(second,()=>{});next.activate();
+  release();await pending;await reloading.close();
+  assert.deepEqual(reports,['host'],'the pinned generation reports exactly once');
+  assert.equal(usedSecond,false,'the new generation must not serve the in-flight query');
+});

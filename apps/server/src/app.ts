@@ -3,7 +3,8 @@ import {createMemoryControl} from './memory-control.js';
 import {createMemoryModelAuthorityJobReader} from './memory-model-authority.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
 import {createModelEvidenceAuthority,contextFailure} from './model-evidence-authority.js';
-import type {QueryAgent} from './query-agent.js';
+import type {QueryAgent,AgentRunFinalizer,QueryRunLease} from './query-agent.js';
+import {createHostRunUsageObserver} from './agent-runtime-events.js';
 import {AgentRuntimeHost} from './agent-runtime-host.js';
 import type {FeatureServices} from './feature-services.js';
 import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
@@ -654,7 +655,24 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     };
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,evidenceReadRanges:input.evidenceReadRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
-    const meter=usageOwner==='query'?admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()}):undefined;
+    const usageAttribution={agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()};
+    const meter=usageOwner==='query'?admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
+    // The Host path owns usage through one C06 receipt; capture its terminal
+    // receipt so the response reports the finalized sample without a second
+    // finalize. Constructing this meter writes nothing until a model starts.
+    const hostMeterBase=usageOwner==='query'?observabilityAssembly.admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
+    let hostReceipt:import('@mote/shared').UsageReceipt|undefined;
+    const hostMeter=hostMeterBase&&{...hostMeterBase,complete:()=>hostReceipt=hostMeterBase.complete(),fail:()=>hostReceipt=hostMeterBase.fail()};
+    // Trusted per-query run accounting. Only app callbacks mutate this state and
+    // none of them throw: observation isolation must not govern execution.
+    const runState:{mode?:AgentRunFinalizer;runId?:string;hostEvents:boolean;hostTerminal:boolean;violation?:string}={hostEvents:false,hostTerminal:false};
+    let hostObserver:ReturnType<typeof createHostRunUsageObserver>|undefined;
+    const runAccountingError=()=>runState.violation?new StoreError('Agent run accounting contradiction',409)
+      :runState.mode==='host'&&!runState.hostTerminal?new StoreError('Agent run terminal is missing',409):undefined;
+    const runLease:QueryRunLease={onFinalizer:mode=>{
+      if(runState.mode!==undefined&&runState.mode!==mode){runState.violation??='finalizer_mode_contradiction';return;}
+      runState.mode=mode;
+    }};
     // Agent implementations account admitted model/tool/repair work. A second
     // wall-clock deadline here would charge host resource-gate waiting again.
     const deadline=agentDeadline(input.signal,null),taskSignal=deadline.signal;
@@ -671,9 +689,23 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
         disclosedSourcePins=next;observed.contextSourceContextDependencies=next;
         input.onSourceContextDependencies?.(pins);
       },
-      onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter?.update(tokens);input.onUsage?.(tokens);}};
+      onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,
+      onUsage:(tokens:import('@mote/shared').TokenUsage)=>{if(runState.mode!=='host')meter?.update(tokens);input.onUsage?.(tokens);},
+      onHostRunEvent:(envelope)=>{
+        // Bind only after the chosen leaf declared host and only from the first
+        // trusted Host identity; never infer the mode from an event.
+        if(runState.mode!=='host'){runState.violation??='host_event_without_host_mode';return;}
+        const identity=envelope?.identity;
+        const runId=identity&&typeof identity==='object'&&typeof identity.runId==='string'?identity.runId:undefined;
+        if(!runId){runState.violation??='invalid_host_identity';return;}
+        if(runState.runId===undefined)runState.runId=runId;
+        else if(runState.runId!==runId){runState.violation??='run_identity_contradiction';return;}
+        runState.hostEvents=true;
+        if(envelope.event.type==='run.terminal')runState.hostTerminal=true;
+        if(hostMeter)(hostObserver??=createHostRunUsageObserver({runId,meter:hostMeter,diagnostics}))(envelope);
+      }};
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
-    const promise=diagnostics.measure('agent',operation,()=>(meter?meter.run(()=>agent.query(observed)):agent.query(observed)).then(result=>{
+    const promise=diagnostics.measure('agent',operation,()=>(meter?meter.run(()=>agent.query(observed,runLease)):agent.query(observed,runLease)).then(result=>{
       taskSignal?.throwIfAborted();
       assertModelEvidence(observed);
       if(observed.executionLane==='interactive'&&observed.evidenceIds&&result.citations.some(citation=>![...observed.evidenceIds!,...(observed.directImages?.map(image=>image.id)??[])].includes(citation.id)))throw contextFailure('context_evidence_restricted');
@@ -696,13 +728,26 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
           if(!evidenceDependencies?.complete||used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
         }
       }
+      // A contradiction latches before any success finalize or product commit.
+      const accounting=runAccountingError();
+      if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
-      const completedUsage=meter?.completed();
+      const completedUsage=runState.mode==='host'?hostReceipt:meter?.completed();
       return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
     }).catch(error=>{
-      if(error instanceof AgentYieldError){meter?.completed();trace({type:'query.yielded',status:'waiting'});throw error;}
+      // The Host path finalizes only through its observer's run terminal; the
+      // legacy path keeps its existing finalizers. A latched contradiction
+      // replaces the outcome after the legacy finalizer has settled its row.
+      if(error instanceof AgentYieldError){
+        if(runState.mode!=='host')meter?.completed();
+        const accounting=runAccountingError();
+        if(accounting)throw accounting;
+        trace({type:'query.yielded',status:'waiting'});throw error;
+      }
       const wait=error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited')?{code:error.details.code,retryAfterMs:error.details.retryAfterMs}:error instanceof ExecutionFailure&&error.category==='waiting'?{code:error.code,retryAfterMs:error.retryAfterMs}:undefined;
-      meter?.failed(error);
+      if(runState.mode!=='host')meter?.failed(error);
+      const accounting=runAccountingError();
+      if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId});
       trace(wait?{type:'query.waiting',status:'waiting',payload:wait}:{type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;
     }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));

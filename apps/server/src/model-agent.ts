@@ -19,14 +19,14 @@ export async function createModelRegistry(profiles:ModelProfile[], reader:Contex
   return {
     configured:[...agents.values()].some(agent=>agent.configured),
     configuredFor:id=>Boolean(agents.get(id)?.configured),
-    async query(input){
+    async query(input,lease){
       const id=input.modelProfileId??defaultProfileId,agent=agents.get(id),profile=profiles.find(p=>p.id===id);
       if(!agent||!profile||!agent.configured)throw new AgentNotConfiguredError();
       const {modelProfileId:_,modelOverride,...request}=input;
       const model=modelOverride??profile.settings.model;
       const temporary=model!==profile.settings.model?await factory({...profile.settings,model},reader,undefined,{kind:'profile',id:profile.id}):undefined;
       try {
-        const result=await (temporary??agent).query(request);
+        const result=await (temporary??agent).query(request,lease);
         return {...result,modelSelection:{profileId:id,profileName:profile.name,provider:profile.settings.provider,model}};
       } finally {await temporary?.close();}
     },
@@ -91,12 +91,12 @@ export class ReloadableAgent implements QueryAgent {
     };
   }
 
-  async query(args: Parameters<QueryAgent['query']>[0]) {
+  async query(args: Parameters<QueryAgent['query']>[0], lease?: Parameters<NonNullable<QueryAgent['query']>>[1]) {
     const generation = this.current;
     if (this.closed) throw new Error('Agent is closed');
     if (!generation) throw new AgentNotConfiguredError();
     generation.active++;
-    try { return await generation.agent.query(args); }
+    try { return await generation.agent.query(args, lease); }
     finally { generation.active--; if (generation.retired && !generation.active) void this.retire(generation); }
   }
 
