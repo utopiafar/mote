@@ -48,6 +48,10 @@ function fileAcknowledgement(ack:FileAck){return {...ack,receipt:fileReceipt(ack
 export class IngressService {
   private readonly recordContexts:RecordContextStore;
   constructor(private store:Store,private sources:SourceStore,private files:FileStore){this.recordContexts=new RecordContextStore(store);}
+  /** Trusted assembly identity check for the single-Ingress contract. It compares
+   * the exact constructor references and never exposes them, authorizes a write or
+   * becomes an ordinary service. */
+  usesRepositories(store:Store,sources:SourceStore,files:FileStore){return this.store===store&&this.sources===sources&&this.files===files;}
   async capture(input:CaptureInput,authorize?:()=>void){
     const ack=await this.store.ingest(withoutOwnerDescription(input),result=>{authorize?.();this.recordContexts.bind(result.id,input.metadata?.ownerDescription,result.duplicate);});
     this.store.captureReceived(input.deviceId);

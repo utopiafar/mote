@@ -167,3 +167,13 @@ test('real PluginHost install binds this ingress into C04 before start and regis
   assert.equal(created.statusCode,201,created.body);
   assert.equal(store.evidence([created.json().id]).length,1);
 });
+
+test('shared ingress identity accepts only its exact repositories',async t=>{
+  const f=await fixture(t);
+  assert.equal(f.intake.ingress.usesRepositories(f.store,f.sources,f.files),true);
+  assert.equal(f.intake.ingress.usesRepositories(f.store,new SourceStore(f.store),f.files),false,'a different SourceStore is not the same ingress');
+  assert.equal(f.intake.ingress.usesRepositories(f.store,f.sources,new FileStore(f.store,f.sources)),false,'a different FileStore is not the same ingress');
+  const other=mkdtempSync(join(tmpdir(),'mote-ingress-other-')),otherStore=new Store(other),otherSources=new SourceStore(otherStore),otherFiles=new FileStore(otherStore,otherSources);
+  try{assert.equal(f.intake.ingress.usesRepositories(otherStore,otherSources,otherFiles),false,'a different Store is not the same ingress');}
+  finally{await otherFiles.close();otherStore.close();rmSync(other,{recursive:true,force:true});}
+});
