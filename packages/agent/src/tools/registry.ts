@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {validateCapabilityArguments} from '../capability-schema.js';
+import type {RuntimeToolIdentity} from '../runtime/contracts.js';
 import {
   canonicalJson,
   defineToolDescriptor,
@@ -8,19 +9,53 @@ import {
   toolContractError,
   toolSchemaFingerprint,
   type ToolDescriptor,
-  type ToolDescriptorInput,
-  type ToolExecutionHost,
   type ToolFields,
-  type ToolPin,
-  type ToolSnapshot,
+  type ToolSelection,
   type ToolSnapshotEntry,
 } from './descriptor.js';
+import type {HostSessionPort} from './host-session.js';
 
 interface Registration {
   readonly descriptor: ToolDescriptor;
   readonly fingerprint: string;
   readonly token: symbol;
 }
+
+/** Serializable snapshot body. It is a pure DTO: no callback, token, reader or
+ * other local capability can be serialized from it. */
+export interface ToolSnapshotWire {
+  readonly schemaVersion: typeof TOOL_SNAPSHOT_SCHEMA_VERSION;
+  readonly entries: readonly ToolSnapshotEntry[];
+  readonly fingerprint: string;
+}
+
+/** Local snapshot handle. The enumerable wire fields serialize as a pure DTO
+ * (see toJSON); assertActive/resolve are non-enumerable local capabilities
+ * closed over the exact registrations this snapshot was taken from. `resolve`
+ * is the parent execution entry and must never be wired. */
+export interface ToolSnapshot extends ToolSnapshotWire {
+  /** Local liveness: throws unless the exact registration that produced this
+   * snapshot still owns the pin's name/version/fingerprint. */
+  assertActive(pin: RuntimeToolIdentity): void;
+  /** Local dispatch bound to the original registration. Not serializable. */
+  resolve(pin: RuntimeToolIdentity): ResolvedTool;
+  toJSON(): ToolSnapshotWire;
+}
+
+/** Parent-only execution entry. It carries no reader, ledger, sender, confirm
+ * or discard; every read goes through the parent-bound HostSessionPort. */
+export interface ResolvedTool {
+  readonly identity: RuntimeToolIdentity;
+  execute(args: Readonly<Record<string, unknown>>, port: HostSessionPort): Promise<unknown>;
+}
+
+export interface ToolSnapshotDiff {
+  readonly added: readonly ToolSnapshotEntry[];
+  readonly removed: readonly ToolSnapshotEntry[];
+  readonly changed: readonly Readonly<{name: string; before: ToolSnapshotEntry; after: ToolSnapshotEntry}>[];
+}
+
+type SnapshotLike = Readonly<{entries: readonly ToolSnapshotEntry[]}>;
 
 const byName = (left: {readonly name: string}, right: {readonly name: string}) => left.name.localeCompare(right.name);
 
@@ -32,19 +67,43 @@ function invalidArguments(message: string, details: Record<string, unknown> = {}
   throw toolContractError('invalid_tool_arguments', message, details);
 }
 
-/** One bounded read-only contribution registry. It owns descriptions, exact
- * name/version selection, the immutable snapshot DTO and local liveness only.
- * It owns no reader, store, grant table, ledger, image quota, sender or confirm;
- * `execute` hands a call to a parent-bound ToolExecutionHost that decides every
- * actual read. A snapshot pin is not an authorization and does not survive
- * unload: the parent still re-checks its online grant on each call. */
+function identityFor(registration: Registration): RuntimeToolIdentity {
+  return {name: registration.descriptor.name, version: registration.descriptor.version, fingerprint: registration.fingerprint};
+}
+
+const entryChange = (entry: ToolSnapshotEntry) => canonicalJson({version: entry.version, fingerprint: entry.fingerprint, kind: entry.kind, exposure: entry.exposure, requires: entry.requires});
+
+/** Compare two wire snapshots by name. Schema identity is covered by fingerprint;
+ * kind/exposure/requires are compared explicitly because they change the
+ * declared Host surface without changing the schema. */
+export function diffToolSnapshots(before: SnapshotLike, after: SnapshotLike): ToolSnapshotDiff {
+  const previous = new Map(before.entries.map(entry => [entry.name, entry]));
+  const next = new Map(after.entries.map(entry => [entry.name, entry]));
+  const added = after.entries.filter(entry => !previous.has(entry.name));
+  const removed = before.entries.filter(entry => !next.has(entry.name));
+  const changed = after.entries.flatMap(entry => {
+    const old = previous.get(entry.name);
+    return old && entryChange(old) !== entryChange(entry) ? [{name: entry.name, before: old, after: entry}] : [];
+  });
+  return Object.freeze({
+    added: Object.freeze([...added].sort(byName)),
+    removed: Object.freeze([...removed].sort(byName)),
+    changed: Object.freeze([...changed].sort(byName)),
+  });
+}
+
+/** One read-only contribution registry. It owns descriptions, explicit
+ * selection, snapshots, local liveness and local dispatch only. It owns no
+ * reader, store, grant table, ledger, discovered set, receipt, sender, confirm
+ * or discard; the parent Host still decides every read and citation. */
 export class ToolRegistry {
   private readonly entries = new Map<string, Registration>();
 
-  /** Register one versioned descriptor. Names are unique so a runtime tool list
-   * can never contain two definitions with the same name; replacing a version
-   * requires unregistering first, which also retires the old pin. */
-  register(input: ToolDescriptorInput): () => void {
+  /** Register one versioned descriptor and return its unregister function.
+   * Names are unique so a runtime tool list cannot contain two definitions with
+   * the same name; replacing a version requires unregistering first, which also
+   * retires the old registration identity. */
+  register(input: ToolDescriptor): () => void {
     const descriptor = defineToolDescriptor(input);
     const existing = this.entries.get(descriptor.name);
     if (existing) throw toolContractError('duplicate_tool', 'This tool name is already registered; unregister it before replacing its version.', {name: descriptor.name, version: existing.descriptor.version});
@@ -63,109 +122,77 @@ export class ToolRegistry {
   }
 
   /** Remove the current registration for a name. A later registration with the
-   * same name and version is a new pin and cannot revive an old snapshot. */
+   * same name and version is a new identity and cannot revive an old snapshot. */
   unregister(name: string): boolean {
     return this.entries.delete(name);
   }
 
-  /** Process-local pins for the current registrations. These tokens never enter
-   * a snapshot or a discovery document. */
-  pins(): readonly ToolPin[] {
-    return Object.freeze([...this.entries.values()].sort((left, right) => byName(left.descriptor, right.descriptor)).map(registration => this.pinFor(registration)));
+  /** All registrations as an explicit selection, sorted for display. Callers
+   * still pass an explicit selection to snapshot(); this is not a run order. */
+  registered(): ToolSelection {
+    return Object.freeze([...this.entries.values()].sort((left, right) => byName(left.descriptor, right.descriptor)).map(registration => Object.freeze({name: registration.descriptor.name, version: registration.descriptor.version})));
   }
 
-  /** Whether this exact registration still owns the name. Re-registering the
-   * same name/version after unload yields a different token and therefore false. */
-  isCurrent(pin: ToolPin): boolean {
-    const registration = this.entries.get(pin.name);
-    return Boolean(registration && registration.token === pin.token && registration.descriptor.version === pin.version && registration.fingerprint === pin.fingerprint);
-  }
-
-  /** Local liveness assertion. This is not an authorization check; the parent
-   * still calls the Host port's assertCurrent() and its fresh grant check. */
-  assertCurrent(pin: ToolPin): void {
-    if (!this.isCurrent(pin)) throw toolContractError('stale_tool_pin', 'This capability registration was unloaded or replaced.', {name: pin.name, version: pin.version});
-  }
-
-  /** Resolve one exact name/version against a run's pinned selection. A name
-   * outside the selection is an undiscovered capability; a different version is
-   * an exact-version mismatch. Registration order never affects either result. */
-  select(pins: readonly ToolPin[], name: string, version: string): ToolPin {
-    const pin = pins.find(candidate => candidate.name === name);
-    if (!pin) unknownTool(name);
-    if (pin.version !== version) throw toolContractError('tool_version_mismatch', 'Use the exact pinned version of this capability.', {name, expected: pin.version, received: version});
-    return pin;
-  }
-
-  /** Immutable wire manifest. With a selection, every selected name must be
-   * registered; otherwise the whole manifest fails closed. */
-  snapshot(selection?: readonly string[]): ToolSnapshot {
-    let registrations: Registration[];
-    if (selection === undefined) {
-      registrations = [...this.entries.values()];
-    } else {
-      if (new Set(selection).size !== selection.length) throw toolContractError('invalid_tool_selection', 'A tool selection must not repeat a name.');
-      registrations = selection.map(name => this.entries.get(name) ?? unknownTool(name));
-    }
-    const tools = Object.freeze(registrations.map(registration => this.entryFor(registration)).sort(byName));
+  /** Build one immutable snapshot for an explicit selection. Every selected
+   * name/version must be registered exactly; a missing, unsupported or repeated
+   * selection fails closed. Entry order is the selection order, never
+   * registration order. */
+  snapshot(selection: ToolSelection): ToolSnapshot {
+    if (!Array.isArray(selection)) throw toolContractError('invalid_tool_selection', 'A tool selection must be an array of exact name/version pairs.');
+    const seen = new Set<string>();
+    const registrations = selection.map(({name, version}) => {
+      if (typeof name !== 'string' || typeof version !== 'string') throw toolContractError('invalid_tool_selection', 'Every tool selection needs a string name and version.');
+      if (seen.has(name)) throw toolContractError('invalid_tool_selection', 'A tool selection must not repeat a name.', {name});
+      seen.add(name);
+      const registration = this.entries.get(name);
+      if (!registration) unknownTool(name);
+      if (registration.descriptor.version !== version) throw toolContractError('tool_version_mismatch', 'Use the exact registered version of this capability.', {name, expected: registration.descriptor.version, received: version});
+      return registration;
+    });
+    const entries = Object.freeze(registrations.map(registration => this.entryFor(registration)));
     const fingerprint = createHash('sha256').update(canonicalJson({
       schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION,
-      tools: tools.map(({name, version, fingerprint, kind, requires}) => ({name, version, fingerprint, kind, requires})),
+      entries: entries.map(({name, version, fingerprint, kind, exposure, requires}) => ({name, version, fingerprint, kind, exposure, requires})),
     })).digest('hex');
-    return Object.freeze({schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION, tools, fingerprint});
-  }
-
-  /** capability_discover without a name: brief, sorted metadata only. */
-  discover(): Readonly<{schemaVersion: typeof TOOL_SNAPSHOT_SCHEMA_VERSION; capabilities: readonly Readonly<{name: string; version: string; description: string}>[]}>;
-  /** capability_discover with an exact name: the pinned version and argument schema. */
-  discover(name: string): Readonly<{schemaVersion: typeof TOOL_SNAPSHOT_SCHEMA_VERSION} & ToolSnapshotEntry>;
-  discover(name?: string): Readonly<{schemaVersion: typeof TOOL_SNAPSHOT_SCHEMA_VERSION; capabilities: readonly Readonly<{name: string; version: string; description: string}>[]}> | Readonly<{schemaVersion: typeof TOOL_SNAPSHOT_SCHEMA_VERSION} & ToolSnapshotEntry> {
-    if (name === undefined) {
-      const capabilities = this.snapshot().tools.map(tool => Object.freeze({name: tool.name, version: tool.version, description: tool.description.split('. ')[0]!}));
-      return Object.freeze({schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION, capabilities: Object.freeze(capabilities)});
-    }
-    const registration = this.entries.get(name);
-    if (!registration) unknownTool(name);
-    return Object.freeze({schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION, ...this.entryFor(registration)});
-  }
-
-  /** Execute one pinned capability with already-decoded arguments. The same
-   * registration is verified before I/O and again after the await; a late result
-   * from an unloaded or replaced registration is discarded. `host.assertCurrent()`
-   * runs on both sides too, but the parent's online grant and confirm remain the
-   * authority: this registry check never grants evidence or delivery. */
-  async execute(pin: ToolPin, args: Readonly<Record<string, unknown>>, host: ToolExecutionHost): Promise<unknown> {
-    const registration = this.requireCurrent(pin);
-    if (!isPlainRecord(args)) invalidArguments('Capability arguments must be a plain object.');
-    host.assertCurrent();
-    validateCapabilityArguments(registration.descriptor.fields as Record<string, Record<string, unknown>>, args as Record<string, unknown>);
-    const result = await registration.descriptor.execute(Object.freeze({...args}), host);
-    this.requireCurrent(pin);
-    host.assertCurrent();
-    return result;
-  }
-
-  /** capability_execute transport shape: a bounded JSON object string, then the
-   * exact same registration, schema and liveness checks as execute(). */
-  async executeCapability(pin: ToolPin, argumentsJson: string, host: ToolExecutionHost): Promise<unknown> {
-    if (typeof argumentsJson !== 'string' || argumentsJson.length > 65536) invalidArguments('Capability argumentsJson must be a bounded JSON object string.');
-    let decoded: unknown;
-    try {
-      decoded = JSON.parse(argumentsJson);
-    } catch {
-      invalidArguments('Capability argumentsJson must be valid JSON.');
-    }
-    if (!isPlainRecord(decoded)) invalidArguments('Capability argumentsJson must be a JSON object.');
-    return this.execute(pin, decoded, host);
-  }
-
-  private requireCurrent(pin: ToolPin): Registration {
-    this.assertCurrent(pin);
-    return this.entries.get(pin.name)!;
-  }
-
-  private pinFor(registration: Registration): ToolPin {
-    return Object.freeze({name: registration.descriptor.name, version: registration.descriptor.version, fingerprint: registration.fingerprint, token: registration.token});
+    const captured = new Map(registrations.map(registration => [registration.descriptor.name, registration]));
+    const assertActive = (pin: RuntimeToolIdentity): void => {
+      const registration = captured.get(pin.name);
+      if (!registration || registration.descriptor.version !== pin.version || registration.fingerprint !== pin.fingerprint) {
+        throw toolContractError('stale_tool_pin', 'This pin is not part of this snapshot.', {name: pin.name, version: pin.version});
+      }
+      if (this.entries.get(pin.name) !== registration) {
+        throw toolContractError('stale_tool_pin', 'This capability registration was unloaded or replaced.', {name: pin.name, version: pin.version});
+      }
+    };
+    const resolve = (pin: RuntimeToolIdentity): ResolvedTool => {
+      assertActive(pin);
+      const registration = captured.get(pin.name)!;
+      return Object.freeze({
+        identity: Object.freeze(identityFor(registration)),
+        async execute(args: Readonly<Record<string, unknown>>, port: HostSessionPort): Promise<unknown> {
+          // Re-check before I/O and after the await. A result from an unloaded or
+          // replaced registration must not reach the parent or the model.
+          assertActive(pin);
+          port.assertCurrent();
+          if (!isPlainRecord(args)) invalidArguments('Tool arguments must be a plain object.');
+          validateCapabilityArguments(registration.descriptor.fields as Record<string, Record<string, unknown>>, args as Record<string, unknown>);
+          const parsed = registration.descriptor.parse(Object.freeze({...args}));
+          if (!isPlainRecord(parsed)) invalidArguments('Tool parse must return a plain argument object.');
+          const value = await registration.descriptor.execute(Object.freeze({...parsed}), port);
+          assertActive(pin);
+          port.assertCurrent();
+          return value;
+        },
+      });
+    };
+    const wire = () => Object.freeze({schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION, entries, fingerprint});
+    const snapshot = {schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION, entries, fingerprint} as unknown as ToolSnapshot;
+    Object.defineProperties(snapshot, {
+      assertActive: {value: assertActive, enumerable: false},
+      resolve: {value: resolve, enumerable: false},
+      toJSON: {value: wire, enumerable: false},
+    });
+    return Object.freeze(snapshot);
   }
 
   private entryFor(registration: Registration): ToolSnapshotEntry {
@@ -174,10 +201,11 @@ export class ToolRegistry {
       name: descriptor.name,
       version: descriptor.version,
       description: descriptor.description,
+      fields: descriptor.fields as ToolFields,
       kind: descriptor.kind,
+      exposure: descriptor.exposure,
       requires: descriptor.requires,
       fingerprint,
-      fields: descriptor.fields as ToolFields,
     });
   }
 }
