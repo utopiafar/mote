@@ -32,6 +32,7 @@ const resolve = (registry, name) => {
 };
 
 const aggregate = {captures: 3, observations: 2, totalDurationMs: 1000, intervals: [{startMs: 0, endMs: 600}, {startMs: 400, endMs: 1000}], disclosureDependencies: {version: 1, complete: true, ids: ['generated-original']}};
+const {disclosureDependencies: aggregateDependencies, ...publicAggregate} = aggregate;
 
 test('A08E publishes the frozen declarations and current public schemas', () => {
   const registry = registryWithPacks();
@@ -68,7 +69,9 @@ test('activity passes the effective scope and Host aggregate through unchanged',
   const result = await tool.execute(args, port);
   assert.deepEqual(calls.activity, [{after: '2026-01-05T00:00:00.000Z', before: '2026-02-01T00:00:00.000Z', deviceId: 'scope-device', limit: 6, source: 'screen', appId: 'generated-app', collection: 'activity'}]);
   assert.equal(result.source, 'untrusted_personal_context');
-  assert.deepEqual(result.data, aggregate);
+  assert.deepEqual(result.data, publicAggregate);
+  assert.deepEqual(result.disclosureDependencies, aggregateDependencies);
+  assert.equal(JSON.stringify(result.data).includes('generated-original'), false);
   assert.equal(calls.asserts, 4);
   for (const bad of [{source: 'unknown'}, {deviceId: 'other-device'}, {limit: 0}, {after: 'not-a-time'}, {appId: ''}, {collection: 'bad'}]) {
     await assert.rejects(tool.execute({...args, ...bad}, port), invalid);
@@ -84,7 +87,9 @@ test('media_activity forces the media source and preserves playback filters with
   const args = {after: '2026-01-05T00:00:00.000Z', appVisibility: 'foreground', screenLocked: true, playbackType: 'local', limit: 100};
   const result = await tool.execute(args, port);
   assert.deepEqual(calls.media, [{after: '2026-01-05T00:00:00.000Z', deviceId: 'scope-device', limit: 6, source: 'media', appVisibility: 'foreground', screenLocked: true, playbackType: 'local'}]);
-  assert.deepEqual(result.data, aggregate);
+  assert.deepEqual(result.data, publicAggregate);
+  assert.deepEqual(result.disclosureDependencies, aggregateDependencies);
+  assert.equal(JSON.stringify(result.data).includes('generated-original'), false);
   for (const bad of [{source: 'screen'}, {appVisibility: 'visible'}, {playbackType: 'stream'}, {screenLocked: 'true'}, {deviceId: 'other-device'}, {limit: 0}]) {
     await assert.rejects(tool.execute({...args, ...bad}, port), invalid);
   }

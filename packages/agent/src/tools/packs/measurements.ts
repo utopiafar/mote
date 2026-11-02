@@ -16,6 +16,21 @@ const invalid = (message: string): never => {
   throw new ContextToolError('invalid_tool_arguments', message, 'correct_arguments');
 };
 
+/** Keep private lineage receipts out of the public data field. The parent strips
+ * these top-level fields before model disclosure and records them as private
+ * dependencies; they must never appear as model-visible aggregate content. */
+function untrustedMeasurement(value: unknown): {data: unknown; disclosureDependencies?: unknown; sourceContextDependencies?: unknown} {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const {disclosureDependencies, sourceContextDependencies, ...data} = value as Record<string, unknown>;
+    return {
+      data,
+      ...(disclosureDependencies === undefined ? {} : {disclosureDependencies}),
+      ...(sourceContextDependencies === undefined ? {} : {sourceContextDependencies}),
+    };
+  }
+  return {data: value};
+}
+
 function spec(name: string): readonly [string, string, ToolFields] {
   const entry = CONTEXT_TOOLS.find(([candidate]) => candidate === name);
   if (!entry) throw new Error(`Missing context-tool schema for ${name}`);
@@ -42,9 +57,9 @@ export function createMeasurementReadPack(options: MeasurementReadPackOptions = 
       async execute(args, port: HostSessionPort) {
         const filters = originalReadRange(args, port.scope);
         port.assertCurrent();
-        const data = await port.read('activity', filters);
+        const measured = untrustedMeasurement(await port.read('activity', filters));
         port.assertCurrent();
-        return {source: 'untrusted_personal_context', data};
+        return {source: 'untrusted_personal_context', ...measured};
       },
     }),
     defineToolDescriptor({
@@ -74,9 +89,9 @@ export function createMeasurementReadPack(options: MeasurementReadPackOptions = 
           ...(args.playbackType === undefined ? {} : {playbackType: args.playbackType as 'local' | 'remote' | 'unknown'}),
         };
         port.assertCurrent();
-        const data = await port.read('mediaActivity', request);
+        const measured = untrustedMeasurement(await port.read('mediaActivity', request));
         port.assertCurrent();
-        return {source: 'untrusted_personal_context', data};
+        return {source: 'untrusted_personal_context', ...measured};
       },
     }),
   ]);
