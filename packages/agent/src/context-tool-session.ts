@@ -1,3 +1,6 @@
+import {HOST_READ_OPERATIONS} from './tools/descriptor.js';
+import {isDeepStrictEqual} from 'node:util';
+import type {ImagePayload} from './tools/image-result.js';
 import {attributionMetadata,attributionMetadataResponse} from './tools/result-metadata.js';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
@@ -443,14 +446,12 @@ export async function createContextToolSession(
         res.end(serialized,()=>{if(result.yield)rejectFailure(new AgentYieldError());});return;
       }
       if (!contributions.has(tool)) {
+        if(TOOL_NAMES.includes(tool))throw hostError('Tool is unavailable for this task');
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
       if(!dispatchTools(bounds).includes(tool)||!dispatchedViaCatalog&&!taskTools(bounds).includes(tool))throw hostError('Tool is unavailable for this task; use the discovered capability gateway');
-      if (TOOL_NAMES.includes(tool)&&!['timeline','search_context','activity','media_activity','segments','context_index'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
-        throw hostError('App/source/collection filters require a context or activity tool');
-      if (TOOL_NAMES.includes(tool)&&tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
-        throw hostError('Media state filters require media_activity');
+      const pin=contributions.get(tool)!;
       // Normalize typed references before discovery/range checks, never after them.
       // Original-only tools use a declared UUID resource identity or an explicit capture ref.
       const captureId=(value:unknown)=>{
@@ -461,19 +462,15 @@ export async function createContextToolSession(
         if(!id)throw hostError('Invalid capture identity');
         return id;
       };
-      if(tool==='evidence'&&Array.isArray(args.ids))args={...args,ids:args.ids.map(captureId)};
-      if(['read_image','read_file_evidence','file_chunks','source_history','context_evidence'].includes(tool)||tool==='attribution_context'&&args.id!==undefined)args={...args,id:captureId(args.id)};
+      if(pin.requires.includes('evidence')&&Array.isArray(args.ids))args={...args,ids:args.ids.map(captureId)};
+      if(args.id!==undefined&&pin.requires.some(permission=>['readImage','readFileEvidence','fileChunks','sourceHistory','evidence'].includes(permission)))args={...args,id:captureId(args.id)};
       const progressOnly=contributions.get(tool)!.requires.length>0&&contributions.get(tool)!.requires.every(permission=>permission==='progress');
       if(!dispatchedViaCatalog&&!progressOnly)countToolCall();
       reportProgress(bounds,{stage:'tool',tool,phase:'started'});
       if(bounds.skill==='working-memory')throw hostError('Working memory uses only the supplied dialogue; retrieval is disabled');
-      const pin=contributions.get(tool)!;
       const assertTool=()=>{bounds.signal?.throwIfAborted();try{pinnedTools.assertActive(pin);}catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}bounds.assertContextAuthority?.();if(closing)throw new ContextToolError('bridge_closing','The tool session is closing','stop');};
       assertTool();execution.getStore()?.checks.add(assertTool);
-      validateCapabilityArguments(pin.fields as Record<string,Record<string,unknown>>,args);
-      const ordinaryReads=new Set<HostReadOperation>(['catalog','search','timeline','sources','sourceItems','sourceHistory','readFileEvidence','fileChunks','activity','mediaActivity','devices','segments']);
-      if(pin.requires.every(permission=>permission==='actionCatalog'||permission==='progress'||ordinaryReads.has(permission as HostReadOperation))){
-        const scope=Object.freeze(range(args,bounds)),produced:{operation:HostReadOperation;value:unknown}[]=[];
+      try{validateCapabilityArguments(pin.fields as Record<string,Record<string,unknown>>,args);}catch(error){if(tool==='context_evidence')throw new ContextToolError('invalid_evidence_range','Use a declared context original id, absolute offset and length.','correct_arguments');if(tool==='read_image')throw new ContextToolError('invalid_image_region','Use the declared image arguments.','correct_arguments');throw error;}
         const signals=[closeSignal.signal,execution.getStore()?.signal,bounds.signal,...(bounds.toolContributions??[]).filter(pack=>pack.descriptors.some(descriptor=>descriptor.name===pin.name)).map(pack=>pack.lifecycle.signal)].filter((signal):signal is AbortSignal=>Boolean(signal));
         const signal=AbortSignal.any(signals);
         const assertLive=()=>{assertTool();signal.throwIfAborted();};
@@ -482,9 +479,18 @@ export async function createContextToolSession(
           const cancelled=new Promise<never>((_,reject)=>{aborted=()=>{try{assertLive();}catch(error){reject(error);}};signal.addEventListener('abort',aborted,{once:true});if(signal.aborted)aborted();});
           try{const value=await Promise.race([task,cancelled]);assertLive();return value;}finally{signal.removeEventListener('abort',aborted);}
         };
+      const ordinaryReads=new Set<HostReadOperation>(HOST_READ_OPERATIONS.filter(operation=>operation!=='readImage'));
+      if(pin.requires.every(permission=>permission==='actionCatalog'||permission==='progress'||ordinaryReads.has(permission as HostReadOperation))){
+        const scope=Object.freeze(range(args,bounds));let grantedReadRange:{offset:number;length:number}|undefined;
+        const inScope=(record:ContextRecord)=>{const at=sourceContentTime(record);return Number.isFinite(Date.parse(at))&&(!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));};
+        const detach=<T>(value:T):T=>{
+          const copied=structuredClone(value);
+          const preserve=(source:unknown,target:unknown)=>{if(!source||typeof source!=='object'||!target||typeof target!=='object')return;const record=source as ContextRecord;if(typeof record.id==='string'&&typeof record.ocrText==='string')copyEvidencePresentation(record,target as ContextRecord);for(const [key,item]of Object.entries(source))preserve(item,(target as Record<string,unknown>)[key]);};preserve(value,copied);return copied;
+        };
+        const produced:{operation:HostReadOperation;value:unknown;originals?:ContextRecord[]}[]=[];
         const port:HostSessionPort={tool:pin,scope,signal,assertCurrent:assertLive,
           async read(operation,...parameters){
-            assertLive();if(restricted)throw hostError('This extraction session uses only the supplied evidence ranges');
+            assertLive();if(restricted&&operation!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
             if(!ordinaryReads.has(operation))throw hostError('This read operation is unavailable through this tool');
             const requested=(parameters[0]??{}) as Record<string,unknown>;
             const normalized=range(requested,{...bounds,after:scope.after,before:scope.before,deviceId:scope.deviceId});
@@ -496,42 +502,115 @@ export async function createContextToolSession(
             if(operation==='mediaActivity'&&actual.source!==undefined&&actual.source!=='media')throw hostError('media_activity requires the media source');
             if(operation==='readFileEvidence'&&(!Number.isSafeInteger(actual.offset??0)||Number(actual.offset??0)<0||Number(actual.offset??0)>10000000||!Number.isSafeInteger(actual.length??8000)||Number(actual.length??8000)<1||Number(actual.length??8000)>16000))throw hostError('Invalid text range');
             if(operation==='fileChunks'&&(!Number.isSafeInteger(actual.offset??0)||Number(actual.offset??0)<0))throw hostError('Invalid chunk offset');
+            if(operation==='sourceContext'&&(typeof requested.sourceContextRef!=='string'||!state().discoveredSourceContexts.has(requested.sourceContextRef)))throw hostError('Discover the source context before reading its statement');
+            if(operation==='materialRead'&&(typeof requested.ref!=='string'||!state().pinnedMaterials.has(requested.ref)))throw hostError('Use an exact pinned Material ref returned in this run');
+            if(operation==='evidence'){
+              if(!Array.isArray(requested.ids)||!requested.ids.length||requested.ids.length>30)throw hostError('ids must contain 1–30 original identifiers');
+              actual.ids=requested.ids.map(captureId);
+              const ids=actual.ids as string[];
+              if(ids.some(id=>typeof id!=='string'))throw hostError('Invalid original identifier');
+              if(restricted){
+                const allowed=tool==='context_evidence'?readRanges.map(grant=>grant.id):bounds.evidenceIds!;
+                if(ids.some(id=>!allowed.includes(id)))throw new ContextToolError(tool==='context_evidence'?'evidence_range_exceeded':'evidence_scope_denied','Use only original ids supplied by this Host grant.','correct_arguments',{allowedRanges:ranges.map(({id,offset,length})=>({id,offset,length}))});
+              }else{
+                const linked=produced.flatMap(read=>read.operation==='materialRead'&&read.value&&typeof read.value==='object'?((read.value as {originalRefs?:string[]}).originalRefs??[]).flatMap(ref=>{const parsed=parseEvidenceRef(ref);return parsed?.kind==='capture'?[parsed.id]:[];}):[]);
+                const allowed=tool==='changes'?bounds.incrementalEvidenceIds??[]:[...state().discovered,...linked];
+                if(ids.some(id=>!allowed.includes(id)))throw hostError('Discover originals in this run before expanding evidence');
+              }
+            }
             const method=reader[operation] as ((...args:unknown[])=>Promise<unknown>)|undefined;
             if(!method)throw hostError('The requested read operation is unavailable');
-            const value=await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual])));
-            produced.push({operation,value});return value as never;
+            let value=await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual]))),originals:ContextRecord[]|undefined;
+            if(operation==='evidence'){
+              if(!Array.isArray(value))throw hostError('The evidence reader returned invalid records');
+              const ids=actual.ids as string[];
+              value=(value as ContextRecord[]).filter(record=>ids.includes(record.id)&&inScope(record));
+              originals=detach(value as ContextRecord[]);
+              if(restricted){
+                const current=value as ContextRecord[];
+                if(ids.some(id=>{const raw=current.find(record=>record.id===id),record=raw&&(bounds.skill==='calendar-extraction'?{...raw,ocrText:actionEvidenceText(raw)}:raw);return !record||originalPin(record)!==originalPins.get(id);}))throw new ContextToolError('evidence_changed','Source evidence, authorization or its Host attribution changed.','stop');
+                if(tool==='context_evidence'){
+                  const id=String(args.id),start=Number(args.offset),length=Number(args.length??4000),grant=readRanges.filter(grant=>grant.id===id&&start>=grant.offset&&start<grant.offset+grant.length).sort((a,b)=>b.offset+b.length-a.offset-a.length)[0];
+                  if(!Number.isSafeInteger(start)||start<0||!Number.isSafeInteger(length)||length<1||length>12000)throw new ContextToolError('invalid_evidence_range','Use an absolute UTF-16 offset and length from 1–12000.','correct_arguments');
+                  if(!grant)throw new ContextToolError('evidence_range_exceeded','Requested context is outside the Host original read grant.','correct_arguments',{evidenceId:id,allowedRanges:readRanges.filter(grant=>grant.id===id)});
+                  const record=permitted.get(id)!;if(splitsPair(record.ocrText,start))throw new ContextToolError('invalid_evidence_range','Context offset splits a UTF-16 pair.','correct_arguments');
+                  const grantEnd=grant.offset+grant.length;let end=Math.min(grantEnd,start+length);if(splitsPair(record.ocrText,end))end--;
+                  if(end<=start)throw new ContextToolError('invalid_evidence_range','Request a complete Unicode character.','correct_arguments');
+                  const projected=project(record,start,end-start,bounds.timeZone);projected.textRange={...(projected.textRange as object),nextOffset:end<grantEnd?end:null};
+                  grantedReadRange={offset:grant.offset,length:grant.length};value=[projected];
+                }else{
+                  value=seedEvidence.filter(record=>ids.includes(record.id));
+                  if(requested.offset!==undefined||requested.length!==undefined){
+                    const offset=Number(requested.offset??0),length=Number(requested.length??2000);
+                    if(!Number.isSafeInteger(offset)||offset<0||offset>10000000||!Number.isSafeInteger(length)||length<1||length>12000)throw new ContextToolError('invalid_evidence_range','Use a nonnegative offset and length 1–12000.','correct_arguments');
+                    value=ids.map(id=>{const record=permitted.get(id)!;if(!ranges.some(grant=>grant.id===id&&offset>=grant.offset&&offset+length<=grant.offset+grant.length)||splitsPair(record.ocrText,offset)||splitsPair(record.ocrText,offset+length))throw new ContextToolError('evidence_range_exceeded','Requested range is outside this extraction batch.','correct_arguments',{evidenceId:id,allowedRanges:ranges.filter(grant=>grant.id===id)});return project(record,offset,length,bounds.timeZone);});
+                  }
+                }
+              }else if(tool==='evidence'){
+                const offset=Number(requested.offset??0),length=Number(requested.length??12000);
+                if(!Number.isSafeInteger(offset)||offset<0||offset>100000||!Number.isSafeInteger(length)||length<1||length>12000)throw hostError('Invalid original read range');
+                if(requested.layer!==undefined&&!['ocr','semantic'].includes(String(requested.layer)))throw hostError('Invalid derived layer');
+                value=(value as ContextRecord[]).map(record=>project(requested.layer==='semantic'?{...record,ocrText:String(record.summary??''),contentLayer:'L2_model_interpretation'}:{...record,...(record.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})},offset,length,bounds.timeZone));
+              }
+            }
+            if(operation==='materialCatalog'){
+              const page=value as {items?:unknown[];nextCursor?:unknown}|null;if(!page||!Array.isArray(page.items))throw hostError('Invalid material catalog page');
+              value={...page,items:page.items.filter(item=>Boolean(materialMetadata(item,scope)))};
+            }
+            if(operation==='materialRead'){
+              const page=value as {material?:unknown}|null,material=materialMetadata(page?.material,scope);
+              if(!material||material.ref!==requested.ref)throw hostError('Material is outside the selected scope or has changed');
+            }
+            produced.push({operation,value:detach(value),originals});return detach(value) as never;
           },
           async actionCatalog(parameters){assertLive();if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');return wait(bounds.actionCatalog({...parameters,...range({...parameters},bounds),limit:parameters.limit}));},
           progress(message){assertLive();if(typeof message!=='string'||!message.trim()||message.length>600)throw hostError('Progress message must contain 1–600 characters');reportProgress(bounds,{stage:'model',message:message.trim()});},
         };
-        let result:unknown;try{result=await pinnedTools.resolve(pin).execute(args,port);}catch(error){assertLive();throw error;}assertLive();
+        let result:unknown;try{result=await pinnedTools.resolve(pin).execute(args,port);}catch(error){assertLive();if(tool==='context_evidence'&&error instanceof ContextToolError&&error.code==='invalid_tool_arguments')throw new ContextToolError('invalid_evidence_range',error.message,'correct_arguments');throw error;}assertLive();
         if(progressOnly){res.end(JSON.stringify(result));return;}
         const body=result&&typeof result==='object'&&!Array.isArray(result)?result as Record<string,unknown>:{data:result};
         if(body.image!==undefined||body.imageDelivery!==undefined)throw hostError('Image delivery requires an actual Host image read');
-        const proofs:ContextRecord[]=[];
-        for(const {operation,value}of produced){
-          if(['search','sourceHistory','fileChunks'].includes(operation)&&Array.isArray(value))proofs.push(...value);
-          else if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))proofs.push(...(value as {items:ContextRecord[]}).items);
-          else if(operation==='readFileEvidence'&&value&&typeof value==='object'&&(value as {record?:ContextRecord}).record)proofs.push((value as {record:ContextRecord}).record);
+        type OriginalProof={record:ContextRecord;range?:{start:number;end:number}};
+        const proofs:OriginalProof[]=[],spanProofs:OriginalProof[]=[];
+        for(const {operation,value,originals}of produced){
+          if(['search','sourceHistory','fileChunks','evidence'].includes(operation)&&Array.isArray(value))for(const record of value as ContextRecord[]){
+            const full=originals?.find(original=>original.id===record.id)??record,selection=record.textRange as {start:number;end:number}|undefined;
+            proofs.push({record:full,...(selection?{range:selection}:{})});
+          }
+          else if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))for(const record of (value as {items:ContextRecord[]}).items)proofs.push({record});
+          else if(operation==='readFileEvidence'&&value&&typeof value==='object'&&(value as {record?:ContextRecord}).record)proofs.push({record:(value as {record:ContextRecord}).record});
+          if((operation==='materialRead'||operation==='memories')&&value&&typeof value==='object'){
+            const page=value as {references?:{id:string}[];sourceSpans?:{record:ContextRecord;offset:number;length:number}[]};
+            for(const span of (page.sourceSpans??[]).slice(0,operation==='memories'?3:30)){
+              const fresh=operation==='materialRead'?produced.flatMap(read=>read.operation==='evidence'&&Array.isArray(read.value)?read.originals??read.value as ContextRecord[]:[]).find(record=>record.id===span.record.id):span.record;
+              if(!fresh||!inScope(fresh)||fresh.contentLayer==='L2_model_interpretation'||span.record.contentLayer==='L2_model_interpretation'||fresh.ocrText!==span.record.ocrText||!Number.isSafeInteger(span.offset)||span.offset<0||!Number.isSafeInteger(span.length)||span.length<1||span.offset>=fresh.ocrText.length||operation==='memories'&&!page.references?.some(ref=>ref.id===fresh.id))continue;
+              const end=Math.min(fresh.ocrText.length,span.offset+Math.min(span.length,operation==='memories'?2000:span.length));
+              if(splitsPair(fresh.ocrText,span.offset)||splitsPair(fresh.ocrText,end))continue;
+              spanProofs.push({record:fresh,range:{start:span.offset,end}});
+            }
+          }
         }
         const delivered:ContextRecord[]=[];
-        const prove=(candidate:unknown):unknown=>{
+        const prove=(candidate:unknown,available:OriginalProof[]=proofs):unknown=>{
           if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return candidate;
-          const item=candidate as ContextRecord;
-          if(typeof item.id!=='string'||typeof item.ocrText!=='string')return candidate;
-          const original=proofs.find(record=>record.id===item.id);if(!original)return candidate;
+          const item=candidate as ContextRecord;if(typeof item.id!=='string'||typeof item.ocrText!=='string')return candidate;
           const selected=item.textRange as {start?:unknown;end?:unknown}|undefined;
           const start=Number(selected?.start??0),end=Number(selected?.end??item.ocrText.length);
+          const proof=available.find(proof=>proof.record.id===item.id&&(!proof.range||start>=proof.range.start&&end<=proof.range.end));if(!proof)return candidate;
+          const original=proof.record;
           if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>original.ocrText.length||splitsPair(original.ocrText,start)||splitsPair(original.ocrText,end))throw hostError('Tool result exceeds the actual original read');
           const record=project(original,start,end-start,bounds.timeZone);
           if(record.ocrText!==item.ocrText||record.evidenceFingerprint!==item.evidenceFingerprint)throw hostError('Tool result does not match the actual original read');
+          // The Host grant, not the pack, owns restricted continuation bounds.
+          if(grantedReadRange)record.textRange={...(record.textRange as object),nextOffset:(item.textRange as {nextOffset?:unknown})?.nextOffset??null};
           delivered.push(record);return record;
         };
         let data=body.data;
-        if(Array.isArray(data))data=data.map(prove);
+        if(Array.isArray(data))data=data.map(candidate=>prove(candidate));
         else if(data&&typeof data==='object'&&(data as {record?:unknown}).record)data={...data,record:prove((data as {record:unknown}).record)};
+        if(data&&typeof data==='object'&&Array.isArray((data as {sourceEvidence?:unknown}).sourceEvidence))data={...data,sourceEvidence:(data as {sourceEvidence:unknown[]}).sourceEvidence.map(candidate=>prove(candidate,spanProofs))};
         const {disclosureDependencies:_receipt,sourceContextDependencies:_pins,toolUsage:_usage,hostSourceSemantics:_semantics,...publicBody}=body;
-        const serialized=JSON.stringify(attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}));
+        const serialized=JSON.stringify(attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),...(grantedReadRange?{readRange:grantedReadRange}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}));
         assertLive();
         for(const {operation,value}of produced){
           rememberSourceContexts(value);
@@ -544,167 +623,32 @@ export async function createContextToolSession(
             if(item.id)state().disclosedIds.add(item.id);for(const id of [...(item.members??[]),...(item.metadata?.citations??[])])state().discovered.add(id);
           }
         }
-        for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);}
+        const visibleIds=new Set<string>();
+        const collectVisible=(value:unknown)=>{if(typeof value==='string')visibleIds.add(value);else if(Array.isArray(value))for(const item of value)collectVisible(item);else if(value&&typeof value==='object')for(const item of Object.values(value))collectVisible(item);};collectVisible(data);
+        for(const {operation,value}of produced){
+          if(!value||typeof value!=='object')continue;
+          const raw=value as Record<string,unknown>;
+          if(operation==='materialCatalog')for(const item of (raw.items as {ref?:string}[]|undefined)??[])if(item.ref&&visibleIds.has(item.ref))state().pinnedMaterials.add(item.ref);
+          if(operation==='materialRead')for(const ref of (raw.originalRefs as string[]|undefined)??[]){const parsed=parseEvidenceRef(ref);if(parsed?.kind==='capture'&&visibleIds.has(ref)){state().discovered.add(parsed.id);state().disclosedIds.add(parsed.id);}}
+          if(operation==='memories'){
+            const page=value as {items?:{id?:string;statement?:string;fingerprint?:string;version?:number}[];references?:{id:string}[];evidence?:ContextRecord[]};
+            for(const item of page.items??[])if(item.id&&visibleIds.has(item.id))state().disclosedIds.add(item.id);
+            for(const item of [...(page.references??[]),...(page.evidence??[])])if(visibleIds.has(item.id))state().discovered.add(item.id);
+            const shown=data&&typeof data==='object'&&Array.isArray((data as {items?:unknown}).items)?(data as {items:Record<string,unknown>[]}).items:[];
+            const cards=(page.items??[]).flatMap(item=>item.id&&typeof item.statement==='string'&&item.statement.length&&typeof item.fingerprint==='string'&&shown.some(row=>row.id===item.id&&row.statement===item.statement&&row.fingerprint===item.fingerprint&&row.version===item.version)?[{id:item.id,fingerprint:item.fingerprint,...(typeof item.version==='number'?{version:item.version}:{})}]:[]);
+            if(cards.length)try{bounds.onMemoryBodies?.(cards);}catch(error){rejectFailure(error instanceof Error?error:new Error('Memory delivery receipt could not be recorded'));}
+
+          }
+          if(operation==='materialCatalog'||operation==='materialRead')rememberDisclosureDependencies(raw.disclosureDependencies);
+          if(operation==='evidence'&&tool==='attribution_context')for(const record of value as ContextRecord[])state().disclosedIds.add(record.id);
+        }
+        if(grantedReadRange)for(const record of delivered){const selection=record.textRange as {start:number;end:number};state().deliveredRanges.push({id:record.id,offset:selection.start,length:selection.end-selection.start});}
+        for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(produced.some(read=>read.operation==='evidence'||read.operation==='memories'))state().expanded.add(record.id);}
         if(!produced.length&&pin.requires.some(permission=>permission!=='progress'))state().completeLineage=false;
-        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:{...args,...scope},count:Array.isArray(data)?data.length:data===undefined?0:1});
+        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:{...args,...scope},count:Array.isArray(data)?data.length:data===undefined?0:1,...(tool==='attribution_context'&&data&&typeof data==='object'?{attributionPage:{contextFingerprint:String((data as {contextFingerprint?:unknown}).contextFingerprint),offset:Number((data as {offset?:unknown}).offset),total:Number((data as {total?:unknown}).total),requestedLength:Number(args.length??8000),returnedLength:String((data as {text?:unknown}).text??'').length}}:{})});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:state().trace.at(-1)!.count});res.end(serialized);return;
       }
-      if(!TOOL_NAMES.includes(tool))throw hostError('The registered read operation is unavailable');
-      if(tool==='material_catalog'){
-        if(Object.keys(args).some(key=>!['after','before','deviceId','limit','cursor','sourceId','kind','query'].includes(key)))throw hostError('Invalid material catalog filter');
-        for(const key of ['sourceId','kind','query'])if(args[key]!==undefined&&(typeof args[key]!=='string'||!args[key]||String(args[key]).length>128))throw hostError(`Invalid ${key}`);
-        const scope=range(args,bounds),effective={...scope,sourceId:args.sourceId as string|undefined,kind:args.kind as string|undefined,query:args.query as string|undefined};
-        const page=await reader.materialCatalog?.(effective)??{items:[],nextCursor:null};
-        if(!page||!Array.isArray(page.items)||(page.nextCursor!==null&&(typeof page.nextCursor!=='string'||page.nextCursor.length>4096)))throw hostError('Invalid material catalog page');
-        const items=page.items.slice(0,scope.limit).map(item=>materialMetadata(item,scope)).filter((item):item is Record<string,unknown>=>Boolean(item));
-        const serialized=JSON.stringify({source:'untrusted_personal_context',data:{items,nextCursor:page.nextCursor},toolUsage:toolUsage()});
-        state().deliveredCharacters+=serialized.length;
-        rememberSourceContexts(items);
-        for(const item of items)state().pinnedMaterials.add(item.ref as string);
-        rememberDisclosureDependencies(page.disclosureDependencies);
-        state().trace.push({tool,arguments:effective,count:items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:items.length});res.end(serialized);return;
-      }
-      if(tool==='material_read'){
-        if(Object.keys(args).some(key=>!['ref','offset','length'].includes(key))||typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!state().pinnedMaterials.has(args.ref))throw hostError('Use the owner-selected pinned material ref or one returned by material_catalog in this run');
-        const offset=args.offset??0,length=args.length??4000;
-        if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw hostError('Invalid material read range');
-        if(!reader.materialRead)throw hostError('Material reading is unavailable');
-        const scope=range({},bounds);
-        if(closing||res.destroyed)return;
-        bounds.signal?.throwIfAborted();
-        const page=await reader.materialRead({...scope,ref:args.ref,offset:Number(offset),length:Number(length)});
-        bounds.signal?.throwIfAborted();
-        const material=materialMetadata(page.material,scope);
-        if(!material||material.ref!==args.ref||typeof page.text!=='string'||page.text.length>Number(length)||!page.textRange||page.textRange.offset!==offset||!Number.isSafeInteger(page.textRange.total)||page.textRange.total<Number(offset)+page.text.length||page.textRange.nextOffset!==(Number(offset)+page.text.length<page.textRange.total?Number(offset)+page.text.length:null)||page.text.length===0&&Number(offset)<page.textRange.total||!Array.isArray(page.spans)||page.spans.length>64||!Array.isArray(page.originalRefs))throw hostError('Invalid material read page');
-        const spans=page.spans.map(span=>{
-          const pageRange=span?.pageRange as {start?:unknown;end?:unknown}|undefined;
-          const materialRange=span?.materialRange as {start?:unknown;end?:unknown}|undefined;
-          if(!span||typeof span.blockId!=='string'||span.blockId.length>128||typeof span.kind!=='string'||!['text','asset'].includes(span.kind)||!Array.isArray(span.memberIds)||span.memberIds.length>32||span.memberIds.some(id=>typeof id!=='string'||id.length>128)||!pageRange||!materialRange||!Number.isSafeInteger(pageRange.start)||!Number.isSafeInteger(pageRange.end)||Number(pageRange.start)<0||Number(pageRange.end)<Number(pageRange.start)||Number(pageRange.end)>page.text.length||!Number.isSafeInteger(materialRange.start)||!Number.isSafeInteger(materialRange.end)||Number(materialRange.start)<0||Number(materialRange.end)<Number(materialRange.start))throw hostError('Invalid material span');
-          const attribution=attributionContextSchema.safeParse(span.attributionContext);
-          return {blockId:span.blockId,kind:span.kind,...(attribution.success?{attributionContext:attribution.data}:{}),...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
-        });
-        const refs=[...new Set(page.originalRefs.slice(0,30).map(ref=>{const parsed=parseEvidenceRef(ref);return parsed?.kind==='capture'?parsed.id:undefined;}))];
-        if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');
-        const ids=refs as string[];
-        let originals:ContextRecord[]=[];
-        if(ids.length){
-          originals=await reader.evidence({...scope,ids});
-          const valid=new Set(originals.filter(record=>{const at=sourceContentTime(record);return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).map(record=>record.id));
-          if(ids.some(id=>!valid.has(id)))throw hostError('Material original is missing or outside the selected scope');
-        }
-        const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
-        const sourceEvidence:ContextRecord[]=[];
-        // A locator/ancestry is not proof. Reauthorize each host-mapped span,
-        // match its exact current original bytes and preserve original offsets.
-        for(const span of (page.sourceSpans??[]).slice(0,30)){
-          const fresh=originals.find(record=>record.id===span.record.id);
-          if(!fresh||fresh.contentLayer==='L2_model_interpretation'||span.record.contentLayer==='L2_model_interpretation'||!Number.isSafeInteger(span.offset)||span.offset<0||!Number.isSafeInteger(span.length)||span.length<1||span.offset+span.length>fresh.ocrText.length||splitsPair(fresh.ocrText,span.offset)||splitsPair(fresh.ocrText,span.offset+span.length)||fresh.ocrText!==span.record.ocrText)continue;
-          sourceEvidence.push(project(fresh,span.offset,span.length,bounds.timeZone));
-        }
-        if(closing||res.destroyed)return;
-        bounds.signal?.throwIfAborted();
-        const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids.map(id=>formatEvidenceRef('capture',id)),originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length,sourceEvidence,sourceCoverage:{references:total,delivered:sourceEvidence.length,partial:total>new Set(sourceEvidence.map(record=>record.id)).size||page.originalRefsTruncated},pagination:{requestedLength:Number(length),returnedLength:page.text.length}};
-        const serialized=JSON.stringify(attributionMetadataResponse({source:'untrusted_personal_context',data,toolUsage:toolUsage(),...(sourceProtocolInstructions(sourceEvidence)?{hostSourceSemantics:sourceProtocolInstructions(sourceEvidence)}:{})}));
-        state().deliveredCharacters+=serialized.length;
-        rememberSourceContexts(data);
-        for(const id of ids){state().discovered.add(id);state().disclosedIds.add(id);}
-        for(const record of sourceEvidence){remember(record);state().expanded.add(record.id);}
-        rememberDisclosureDependencies(page.disclosureDependencies);
-        state().trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{requestedLength:Number(length),returnedLength:page.text.length}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
-      }
-      if(tool==='attribution_context'){
-        if(Object.keys(args).some(key=>!['id','ref','sourceContextRef','offset','length','expectedFingerprint'].includes(key))||
-          [args.id,args.ref,args.sourceContextRef].filter(value=>value!==undefined).length!==1)throw hostError('Choose exactly one discovered original id, pinned Material ref or sourceContextRef');
-        const offset=args.offset??0,length=args.length??8000;
-        if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)
-          throw hostError('Attribution offset must be nonnegative and length must be 1–12000 UTF-16 units');
-        if(args.expectedFingerprint!==undefined&&(typeof args.expectedFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(args.expectedFingerprint)))throw hostError('Invalid attribution context fingerprint');
-        if(Number(offset)>0&&args.expectedFingerprint===undefined)throw hostError('Copy contextFingerprint as expectedFingerprint when continuing an attribution page');
-        const scope=range({},bounds);let context:unknown,dependencies:unknown;
-        let locator:{id:string}|{ref:string}|{sourceContextRef:string};
-        if(args.id!==undefined){
-          if(typeof args.id!=='string'||!state().discovered.has(args.id))throw hostError('Discover the original before reading its attribution context');
-          locator={id:args.id};
-          const record=(await reader.evidence({...scope,ids:[args.id]})).find(record=>record.id===args.id);
-          if(!record)throw hostError('Original attribution context is unavailable in the current scope');
-          const at=sourceContentTime(record);
-          if(!Number.isFinite(Date.parse(at))||scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))throw hostError('Original attribution context is outside the selected scope');
-          context=record.attributionContext;
-        }else if(args.sourceContextRef!==undefined){
-          if(typeof args.sourceContextRef!=='string'||!state().discoveredSourceContexts.has(args.sourceContextRef)||!reader.sourceContext)throw hostError('Discover the source context before reading its statement');
-          locator={sourceContextRef:args.sourceContextRef};
-          context=(await reader.sourceContext({...scope,sourceContextRef:args.sourceContextRef})).attributionContext;
-        }else{
-          if(typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!state().pinnedMaterials.has(args.ref))throw hostError('Use an exact pinned Material ref returned in this run');
-          if(!reader.materialRead)throw hostError('Material context reading is unavailable');
-          locator={ref:args.ref};
-          // This host read reuses current privacy/revision checks. Its source
-          // bodies and internal grants are never delivered or remembered here.
-          const page=await reader.materialRead({...scope,ref:args.ref,offset:0,length:2});
-          const material=materialMetadata(page.material,scope);
-          if(!material||material.ref!==args.ref)throw hostError('Material attribution context changed or left the selected scope');
-          context=page.material.attributionContext;dependencies=page.disclosureDependencies;
-        }
-        if(closing||res.destroyed)return;bounds.signal?.throwIfAborted();
-        const parsed=attributionContextSchema.safeParse(context??{version:1,ownerRelation:'unknown',basis:'default'});
-        if(!parsed.success)throw hostError('Invalid host attribution context');
-        const text=JSON.stringify(parsed.data),contextFingerprint=createHash('sha256').update(text).digest('hex');
-        if(args.expectedFingerprint!==undefined&&args.expectedFingerprint!==contextFingerprint)throw new ContextToolError('attribution_context_changed','The current attribution context changed. Restart at offset 0; do not combine pages from different versions.','correct_arguments');
-        const start=Number(offset),requestedLength=Number(length);
-        if(start>text.length||splitsPair(text,start))throw hostError('Attribution offset exceeds its context or splits a UTF-16 pair');
-        let end=Math.min(text.length,start+requestedLength);if(splitsPair(text,end))end--;
-        const serialize=(stop:number)=>JSON.stringify({source:'untrusted_personal_context',data:{...locator,contextFingerprint,offset:start,total:text.length,nextOffset:stop<text.length?stop:null,text:text.slice(start,stop),citationAuthority:false},toolUsage:toolUsage()});
-        const serialized=serialize(end);
-        if(end===start&&start<text.length)throw hostError('Attribution length must deliver a complete UTF-16 character');
-        state().deliveredCharacters+=serialized.length;
-        // Context disclosure participates in deletion/correction lineage only;
-        // it never populates records, discovered or expanded original grants.
-        rememberSourceContexts({attributionContext:parsed.data});
-        if('id' in locator)state().disclosedIds.add(locator.id);else if('ref' in locator)rememberDisclosureDependencies(dependencies);
-        state().trace.push({tool,arguments:{...locator,offset:start,length:requestedLength,...(args.expectedFingerprint?{expectedFingerprint:args.expectedFingerprint}:{})},count:1,
-          attributionPage:{contextFingerprint,offset:start,total:text.length,requestedLength,returnedLength:end-start}});
-        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
-      }
-      if(restricted&&tool!=='read_image'){
-        if(tool==='context_evidence'){
-          if(Object.keys(args).some(key=>!['id','offset','length'].includes(key))||typeof args.id!=='string'||!Number.isSafeInteger(args.offset)||Number(args.offset)<0||!Number.isSafeInteger(args.length??4000)||Number(args.length??4000)<1||Number(args.length??4000)>12000)throw new ContextToolError('invalid_evidence_range','Use an original id from authorizedContextRanges, an absolute UTF-16 offset and length from 1–12000.','correct_arguments');
-          const id=args.id,start=Number(args.offset),requestedLength=Number(args.length??4000);
-          const grant=readRanges.filter(r=>r.id===id&&start>=r.offset&&start<r.offset+r.length).sort((a,b)=>b.offset+b.length-a.offset-a.length)[0];
-          if(!grant)throw new ContextToolError('evidence_range_exceeded','Requested context is outside the host original read grant.','correct_arguments',{evidenceId:id,requestedOffset:start,allowedRanges:readRanges.filter(r=>r.id===id).map(({offset,length})=>({offset,length}))});
-          const raw=(await reader.evidence({...range({},bounds),ids:[id]})).find(record=>record.id===id),fresh=raw&&(bounds.skill==='calendar-extraction'?{...raw,ocrText:actionEvidenceText(raw)}:raw);
-          if(!fresh||originalPin(fresh)!==originalPins.get(id))throw new ContextToolError('evidence_changed','Source evidence, authorization or its host attribution changed. Stop this run; its original read grant cannot be repaired by changing arguments.','stop');
-          const text=fresh.ocrText,grantEnd=grant.offset+grant.length;
-          if(splitsPair(text,start))throw new ContextToolError('invalid_evidence_range','Context offset splits a UTF-16 pair. Use the returned continuation offset.','correct_arguments');
-          let end=Math.min(grantEnd,start+requestedLength);if(splitsPair(text,end))end--;
-          const serialize=(stop:number)=>{const record=project(fresh,start,stop-start,bounds.timeZone);record.textRange={...(record.textRange as object),nextOffset:stop<grantEnd?stop:null};return {record,text:JSON.stringify({source:'untrusted_personal_context',data:[record],readRange:{offset:grant.offset,length:grant.length},toolUsage:toolUsage()})};};
-          if(end<=start)throw new ContextToolError('invalid_evidence_range','This page cannot deliver a complete Unicode character; request at least two UTF-16 units.','correct_arguments');
-          const page=serialize(end);
-          remember(page.record);state().discovered.add(id);state().disclosedIds.add(id);state().expanded.add(id);rememberSourceContexts(page.record);
-          state().deliveredRanges.push({id,offset:start,length:end-start});state().deliveredCharacters+=page.text.length;
-          state().trace.push({tool,arguments:{id,offset:start,length:requestedLength,returnedLength:end-start},count:1});
-          reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(page.text);return;
-        }
-        if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
-        if(!Array.isArray(args.ids)||!args.ids.length||args.ids.some(id=>typeof id!=='string'||!bounds.evidenceIds!.includes(id)))throw new ContextToolError('evidence_scope_denied','Use only record.id values supplied by the host for this batch, never fingerprints or content hashes. Copy IDs from allowedRanges; omit offset and length to read the supplied segments.','correct_arguments',{allowedRanges:ranges.map(({id,offset,length})=>({id,offset,length}))});
-        const current=await reader.evidence({...range({},bounds),ids:args.ids as string[]});
-        if((args.ids as string[]).some(id=>{const raw=current.find(r=>r.id===id),after=raw&&(bounds.skill==='calendar-extraction'?{...raw,ocrText:actionEvidenceText(raw)}:raw);return !after||originalPin(after)!==originalPins.get(id);}))throw new ContextToolError('evidence_changed','Source evidence, authorization or its host attribution changed. Stop this run; its original grant cannot be repaired by changing arguments.','stop');
-        let data=seedEvidence.filter(record=>(args.ids as string[]).includes(record.id));
-        if(args.offset!==undefined||args.length!==undefined){
-          const offset=args.offset??0,length=args.length??2000;
-          if(!Number.isSafeInteger(offset)||Number(offset)<0||Number(offset)>10000000||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw new ContextToolError('invalid_evidence_range','offset must be a nonnegative integer and length must be 1–12000 UTF-16 units. Prefer omitting both to read the supplied ranges.','correct_arguments');
-          data=(args.ids as string[]).map(id=>{
-            const record=permitted.get(id)!;
-            if(!ranges.some(r=>r.id===id&&Number(offset)>=r.offset&&Number(offset)+Number(length)<=r.offset+r.length)||splitsPair(record.ocrText,Number(offset))||splitsPair(record.ocrText,Number(offset)+Number(length)))throw new ContextToolError('evidence_range_exceeded','Requested range is outside this extraction batch. Omit offset and length to read each supplied segment, or select one permitted absolute UTF-16 range.','correct_arguments',{evidenceId:id,requestedOffset:offset,requestedLength:length,allowedRanges:ranges.filter(r=>r.id===id).map(({offset,length})=>({offset,length}))});
-            return project(record,Number(offset),Number(length),bounds.timeZone);
-          });
-        }
-        const serialized=JSON.stringify({source:'untrusted_personal_context',data,toolUsage:toolUsage()});
-        state().deliveredCharacters+=serialized.length;
-        state().trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
-        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:data.length});
-        res.end(serialized);return;
-      }
-      if(tool==='read_image'){
+      if(pin.requires.includes('readImage')){
         const parsed=imageReadSchema.safeParse(args);
         if(!parsed.success)throw new ContextToolError('invalid_image_region','Use the declared image arguments. Regions require expectedImageSha256, integer original coordinates and sides of 1–2048.','correct_arguments',{maxRegionSide:IMAGE_REGION_MAX_SIDE});
         const selection=parsed.data;
@@ -714,11 +658,22 @@ export async function createContextToolSession(
         for(;;){
           if(closing||res.destroyed)return;
           const direct=directImages.some(image=>image.id===args.id);
-          const record=direct?directImageRecords.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
+          const record=direct?directImageRecords.get(args.id):(await wait(reader.evidence({ids:[args.id]})))[0],scope=range({},bounds);
           const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
           if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
           if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
-          const image=await reader.readImage(selection);
+          let rawImage:Awaited<ReturnType<NonNullable<ContextReader['readImage']>>>|undefined;
+          const imagePort:HostSessionPort={tool:pin,scope:Object.freeze(scope),signal,assertCurrent:assertLive,
+            async read(operation,...parameters){
+              assertLive();if(operation!=='readImage'||!isDeepStrictEqual(parameters[0],selection)||rawImage)throw hostError('Read exactly the admitted image selection');
+              rawImage=structuredClone(await wait(reader.readImage!(selection)));return structuredClone(rawImage) as never;
+            },
+            actionCatalog:async()=>{throw hostError('Action catalog is unavailable through this image read');},
+            progress:message=>reportProgress(bounds,{stage:'model',message}),
+          };
+          let packed:ImagePayload;try{packed=await pinnedTools.resolve(pin).execute(args,imagePort) as ImagePayload;}catch(error){assertLive();throw error;}assertLive();
+          if(!rawImage||packed.id!==selection.id||packed.attachmentId!==selection.attachmentId||packed.view!==selection.view||packed.expectedImageSha256!==selection.expectedImageSha256||!isDeepStrictEqual(packed.region,selection.region)||packed.image?.data!==rawImage.data||packed.image&&packed.image.mimeType!==rawImage.mimeType)throw hostError('Image result does not match the actual Host read');
+          const image={...rawImage,...(packed.image?{mimeType:packed.image.mimeType,data:packed.image.data}:{})};
           if(closing||res.destroyed)return;
           const metadata=selection.view==='metadata';
           let imageView:ImageView|undefined;
@@ -731,7 +686,8 @@ export async function createContextToolSession(
               imageView.region&&(imageView.region.x+imageView.region.width>imageView.original.width||imageView.region.y+imageView.region.height>imageView.original.height||imageView.original.pages!==1))throw hostError('Image view does not match the requested original and region');
           }else if(restricted||metadata||selection.region||selection.expectedImageSha256)throw new ContextToolError('image_view_unsupported','This image reader cannot verify metadata or regions. Use existing evidence or a plain original image request.','use_existing_evidence');
           if(imageGrant&&imageView?.original.sha256!==imageGrant.originalSha256)throw new ContextToolError('evidence_changed','The original image changed after the frozen Memory scope was created.','stop');
-          const publicView:ImageViewTrace|undefined=imageView?{...imageView,id:selection.id,...(selection.attachmentId?{attachmentId:selection.attachmentId}:{}),delivery:metadata?'metadata' as const:'pending' as const}:undefined;
+          const publicView:ImageViewTrace|undefined=packed.imageView?structuredClone(packed.imageView):undefined;
+          if(publicView){const {id,attachmentId,delivery,...view}=publicView;if(id!==selection.id||attachmentId!==selection.attachmentId||delivery!==(metadata?'metadata':'pending')||!isDeepStrictEqual(view,imageView))throw hostError('Image view does not match its actual producer');}else if(imageView)throw hostError('Image result omitted the actual view');
           const imageBudget=()=>({remainingPayloads:Math.max(0,4-disclosedImages.size),maxRegionSide:IMAGE_REGION_MAX_SIDE,maxOutputBytes:IMAGE_MAX_BYTES});
           const sendImageResult=(result:Record<string,unknown>,entry:ToolTrace)=>{
             const {image:payload,imageDelivery:receipt,...text}=result;
@@ -783,156 +739,7 @@ export async function createContextToolSession(
           return;
         }
       }
-      let value: unknown;
-      let effective: Record<string, unknown> = args;
-      let textOffset = 0, textLength = 600;
-      let retrieval:unknown;
-      const discoveredMemoryIds:string[]=[];
-      const derivedIds:string[]=[];
-      let memoryEvidence:ContextRecord[]=[];
-      let pagination: { nextCursor: string | null; totalCount?: number } | undefined;
-      if(tool==='memories'){
-        const scope=range(args,bounds);
-        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw hostError('Invalid memory id');
-        if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid memory query');
-        if(args.tier!==undefined&&!['episode','consolidated'].includes(String(args.tier)))throw hostError('Invalid memory tier');
-        if(args.kind!==undefined&&!['episodic','semantic','procedural'].includes(String(args.kind)))throw hostError('Invalid memory kind');
-        if(args.layer!==undefined&&!['observation','memory'].includes(String(args.layer)))throw hostError('Invalid memory layer');
-        if(args.includeHistory!==undefined&&typeof args.includeHistory!=='boolean')throw hostError('Invalid memory history flag');
-        if(args.includeEvidence!==undefined&&typeof args.includeEvidence!=='boolean')throw hostError('Invalid memory evidence flag');
-        if(args.includeEvidence===true&&!args.id)throw hostError('Select a memory id before requesting its original evidence');
-        if(args.asOf!==undefined&&(typeof args.asOf!=='string'||!Number.isFinite(Date.parse(args.asOf))))throw hostError('Invalid memory validity time');
-        const search={includeHistory:args.id?true:args.includeHistory as boolean|undefined,asOf:args.asOf as string|undefined,layer:args.id?undefined:(args.layer??'memory') as 'observation'|'memory',query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
-        effective={...scope,id:args.id,...search,includeEvidence:args.includeEvidence};
-        const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search,includeEvidence:args.includeEvidence as boolean|undefined})??{items:[]};
-        derivedIds.push(...result.items.flatMap(item=>typeof (item as {id?:unknown}).id==='string'?[(item as {id:string}).id]:[]));
-        const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));
-        discoveredMemoryIds.push(...evidence.map(r=>r.id),...(result.references??[]).map(r=>r.id));
-        const references=result.references??[];
-        if(args.includeEvidence===true&&result.items.length){
-          // Only host-verified, requested, in-scope original ranges become citable.
-          const allowedIds=new Set(references.map(ref=>ref.id));
-          for(const span of (result.sourceSpans??[]).slice(0,3)){
-            const r=span.record,at=sourceContentTime(r);
-            if(!allowedIds.has(r.id)||!Number.isFinite(Date.parse(at))||!Number.isSafeInteger(span.offset)||span.offset<0||!Number.isSafeInteger(span.length)||span.length<1||span.offset>=r.ocrText.length||
-              scope.deviceId&&r.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))continue;
-            memoryEvidence.push(project(r,span.offset,Math.min(span.length,2000),bounds.timeZone));
-          }
-        }
-        // Saved quotes locate a claim but are not a fresh permission/version check.
-        const items=result.items.map(item=>{
-          if(!item||typeof item!=='object'||!Array.isArray((item as {evidence?:unknown}).evidence))return item;
-          return {...item,evidence:(item as {evidence:Record<string,unknown>[]}).evidence.map(({quote,...ref})=>ref)};
-        });
-        const partial=result.sourceCoverage?.partial===true||memoryEvidence.length<references.length||(result.sourceSpans??[]).length>memoryEvidence.length||(result.sourceSpans??[]).some(span=>span.length>2000);
-        value={items,evidence:[...evidence,...references],...(args.includeEvidence===true?{sourceEvidence:memoryEvidence,sourceCoverage:{references:result.sourceCoverage?.references??references.length,delivered:memoryEvidence.length,partial}}:{}),coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
-      }
-      else if (tool === "evidence") {
-        if (
-          !Array.isArray(args.ids) ||
-          args.ids.length < 1 ||
-          args.ids.length > 30 ||
-          args.ids.some((id) => typeof id !== "string" || id.length > 300)
-        )
-          throw hostError("ids must contain 1–30 record identifiers");
-        // Evidence expansion only reads records discovered in this run, inside its scope.
-        const ids = args.ids as string[];
-        if (ids.some((id) => !state().discovered.has(id)))
-          throw hostError(
-            "Discover records with search_context or timeline before expanding evidence",
-          );
-        if(args.layer!==undefined&&!['ocr','semantic'].includes(String(args.layer)))throw hostError('Invalid derived layer');
-        const scope=range({},bounds);
-        for (const [key, fallback, min, max] of [["offset", 0, 0, 100000], ["length", 12000, 1, 12000]] as const) {
-          const n = args[key] ?? fallback;
-          if (typeof n !== "number" || !Number.isSafeInteger(n) || n < min || n > max) throw hostError(`${key} must be an integer from ${min} to ${max}`);
-          if (key === "offset") textOffset = n; else textLength = n;
-        }
-        value = (await reader.evidence({ ids })).filter(r=>{
-          const at=sourceContentTime(r);return ids.includes(r.id)&&(!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));
-        }).map(r=>args.layer==='semantic'?{...r,ocrText:String(r.summary??''),contentLayer:'L2_model_interpretation'}:{...r,...(r.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})});
-        effective = { ids, ...(args.layer?{layer:args.layer}:{}), ...(args.offset === undefined ? {} : { offset:textOffset }), ...(args.length === undefined ? {} : { length:textLength }) };
-      } else {
-        const filters = range(args, bounds);
-        effective = { ...filters };
-        if(tool==='changes'){
-        const ids=bounds.incrementalEvidenceIds??[],offset=args.cursor===undefined?0:Number(args.cursor),limit=Math.min(Number(args.limit??30),30);
-        if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1)throw hostError('Invalid changes page');
-        const scope=range({},bounds);effective={...filters,limit};
-        const selectedIds=new Set(ids.slice(offset,offset+limit));
-        value=(await reader.evidence({ids:[...selectedIds]})).filter(r=>{const at=sourceContentTime(r);return selectedIds.has(r.id)&&(!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));});
-        if(args.view!==undefined&&!['overview','text'].includes(String(args.view)))throw new ContextToolError('invalid_changes_view','view must be overview or text.','correct_arguments');
-        metadataOnly=args.view==='overview'||(args.view===undefined&&bounds.skill==='personal-insight');
-        if(metadataOnly){discoveredMemoryIds.push(...(value as ContextRecord[]).map(r=>r.id));value=(value as ContextRecord[]).map(r=>({id:r.id,capturedAt:r.capturedAt,contentAt:sourceContentTime(r),appName:r.appName,sourceType:r.sourceType,characters:r.ocrText.length}));}
-        pagination={nextCursor:offset+limit<ids.length?String(offset+limit):null,totalCount:ids.length};
-      }
-      else throw hostError('The registered read operation is unavailable');
-
-      }
-      if (!metadataOnly && (
-        tool === "evidence" || tool==='changes'
-      )) {
-        if (!Array.isArray(value))
-          throw hostError("Context reader returned invalid records");
-        value = (value as ContextRecord[])
-          .slice(0, tool === "evidence" ? 30 : Number(effective.limit ?? 100))
-          .map(record => {
-            let offset=textOffset;
-            return project(record,offset,textLength,bounds.timeZone);
-          });
-      }
-      if(['sources','context_index','activity','media_activity'].includes(tool)&&value&&typeof value==='object'&&!Array.isArray(value)){
-        const {disclosureDependencies:receipt,sourceContextDependencies:pins,...data}=value as Record<string,unknown>;disclosureDependencies=receipt;disclosureSourceContextDependencies=pins;value=data;
-      }
-      const safeValue = JSON.parse(JSON.stringify(value ?? null));
-      const serialized = JSON.stringify(attributionMetadataResponse({
-        source: "untrusted_personal_context",
-        data: safeValue,
-        toolUsage:toolUsage(),
-        ...(sourceProtocolInstructions([...(Array.isArray(value)?value:[]) as ContextRecord[],...memoryEvidence])?{hostSourceSemantics:sourceProtocolInstructions([...(Array.isArray(value)?value:[]) as ContextRecord[],...memoryEvidence])}:{}),
-        ...(retrieval?{retrieval}:{}),
-        ...(pagination ? { pagination } : {}),
-      }));
-      state().deliveredCharacters+=serialized.length;
-      rememberSourceContexts(safeValue);
-      for(const id of [...discoveredMemoryIds,...derivedIds])state().disclosedIds.add(id);
-      // Private host receipts fence metadata without granting original reads.
-      // Aggregate tools without contributor receipts remain conservative.
-      if(['sources','context_index','devices','activity','media_activity'].includes(tool)){
-        rememberDisclosureDependencies(disclosureDependencies);
-        if(disclosureSourceContextDependencies!==undefined){
-          const pins=sourceContextDeclarationSchema.array().safeParse(disclosureSourceContextDependencies);
-          if(pins.success)for(const pin of pins.data)rememberSourcePin(pin);else state().completeLineage=false;
-        }
-      }
-      // Changes overviews are projected from the exact current originals above;
-      // their contributor IDs are complete even when their bodies remain unread.
-      else if(metadataOnly&&tool!=='changes')state().completeLineage=false;
-      for(const id of discoveredMemoryIds)state().discovered.add(id);
-      // Only a successfully serialized, deliverable tool result authorizes evidence.
-      if (!metadataOnly&&(tool === "evidence" || tool==='changes')) {
-        for (const [index,record] of (safeValue as ContextRecord[]).entries())
-          {copyEvidencePresentation((value as ContextRecord[])[index],record);remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);}
-        if(tool==='evidence')for(const record of safeValue as ContextRecord[])state().expanded.add(record.id);
-      }
-      for(const record of memoryEvidence){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(tool==='memories')state().expanded.add(record.id);}
-      state().trace.push({
-        tool,
-        arguments: effective,
-        count: Array.isArray(safeValue)
-          ? safeValue.length
-          : safeValue == null
-            ? 0
-            : 1,
-      });
-      reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:state().trace.at(-1)!.count});
-      res.end(serialized);
-      if(tool==='memories'&&safeValue&&typeof safeValue==='object'){
-        const delivered=(safeValue as {items?:{id?:unknown;statement?:unknown;version?:unknown;fingerprint?:unknown}[]}).items??[];
-        const cards=delivered.flatMap(item=>typeof item.id==='string'&&typeof item.statement==='string'&&item.statement.length>0&&typeof item.fingerprint==='string'?
-          [{id:item.id,fingerprint:item.fingerprint,...(typeof item.version==='number'?{version:item.version}:{})}]:[]);
-        if(cards.length)try{bounds.onMemoryBodies?.(cards);}catch(error){rejectFailure(error instanceof Error?error:new Error('Memory delivery receipt could not be recorded'));}
-      }
+      throw hostError('The registered read operation is unavailable');
     } catch (error) {
       let issue=error instanceof ContextToolError?error:new ContextToolError('context_tool_failed','The tool could not complete. Check the declared argument schema and permitted scope. Do not repeat the same failed request.','correct_arguments');
       const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;

@@ -1,10 +1,10 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {PluginHost, PluginResourceScope} from '@mote/plugin-host';
 import type {ServiceBinding, ServiceContract, ScopeIdentity} from '@mote/plugin-api/contracts';
-import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
+import {toolInputSchema,toRuntimeToolDefinition} from './tools/runtime-schema.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {ActiveExecutionBudget, DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active-budget.js';
-import {contextToolDefinitions, pinContextTools} from './tool-contributions.js';
+import {contextToolDefinitions, pinContextTools,contextToolSnapshot} from './tool-contributions.js';
 import {taskTools} from './task-context.js';
 import {assembleHostContext, settleHostCleanup} from './host/run-session.js';
 import {createHostOutputProvider} from './host/output.js';
@@ -109,16 +109,18 @@ export function createAgent(original: AgentOptions) {
         requirements: {taskKind: 'query', capabilities: ['tools']},
       });
       bridge = await startBridge(reader, {...input, signal, onTrace: trace}, options.maxToolCalls); assertCurrent();
+      const toolSnapshot=contextToolSnapshot(input);
+      const assertToolPins=()=>{assertCurrent();for(const pin of toolSnapshot.entries)try{toolSnapshot.assertActive(pin);}catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}};
       const definitions: RuntimeToolDefinition[] = contextToolDefinitions(input).filter(([name]) => taskTools(input).includes(name)).map(([name, description, fields]) => {
-        const pin = input.contextCapabilitySnapshot?.find(tool => tool.name === name);
-        return {name, description, inputSchema: {...parameterSchemaSpecToJsonSchema(fields as unknown as Parameters<typeof parameterSchemaSpecToJsonSchema>[0]), additionalProperties: false}, version: pin?.version ?? '1', fingerprint: pin?.fingerprint ?? hash([description, fields])};
+        const pin=toolSnapshot.entries.find(tool=>tool.name===name);
+        return pin?toRuntimeToolDefinition(pin):{name,description,inputSchema:toolInputSchema(fields),version:'1',fingerprint:hash([description,fields])};
       });
       definitions.push(skillTool);
       const {system, prompt, metrics} = assembleHostContext(input, bridge.seedEvidence, options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS, options.maxToolCalls, definitions);
       trace({type: 'instructions.assembled', stage: 'starting', payload: {system, tools: definitions}});
       trace({type: 'context.assembled', stage: 'starting', payload: {prompt, metrics, seedEvidence: bridge.seedEvidence}});
       session = await prepareDshRun(selection, {runId, scope, input, runtime, model: {...modelPort, selection: selection.modelSelection}, output,
-        tools: {definitions, bindings: [], assertCurrent}, commitFence: {assertCurrent},
+        tools: {definitions, bindings: [], assertCurrent:assertToolPins}, commitFence: {assertCurrent},
         budget: {activeTimeoutMs: options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs},
         activeBudget: new ActiveExecutionBudget(options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs),
       }, {

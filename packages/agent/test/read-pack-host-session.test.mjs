@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {startBridge} from '../dist/bridge.js';
+import {startBridge,originalEvidenceReceipt} from '../dist/bridge.js';
 import {createHostRunSession} from '../dist/host/run-session.js';
 import {createHostOutputProvider} from '../dist/host/output.js';
 import {ActiveExecutionBudget} from '../dist/active-budget.js';
@@ -54,4 +54,13 @@ test('cancelling an actual staged pack read drains before its backend completes 
   const bridge=await startBridge({...readSource,mediaActivity:async()=>{entered.resolve();return backend.promise;}},{question:'Generated cancellation',hostContextToolMode:'all-native'});t.after(()=>bridge.close());
   const reading=bridge.prepareDelivery('media_activity',{},controller.signal),refused=assert.rejects(reading);await entered.promise;controller.abort(Error('Generated caller cancellation'));await refused;
   assert.deepEqual(bridge.evidenceDependencies.ids,[]);backend.resolve({observations:1,disclosureDependencies:{version:1,complete:true,ids:[id]}});await new Promise(done=>setImmediate(done));assert.deepEqual(bridge.evidenceDependencies.ids,[]);assert.equal(bridge.records.size,0);
+});
+
+
+test('mutating a returned producer object cannot rewrite the Host original proof or mint a forged citation',{timeout:5000},async t=>{
+  const lifetime=new AbortController(),record={id,capturedAt:'2026-11-01T00:00:00Z',appName:'Generated original',ocrText:'Generated actual original'};
+  const descriptor={apiVersion:'1',name:'generated_mutation',version:'1',description:'Generated plugin',fields:{},kind:'originals',exposure:'catalog',requires:['search'],parse:args=>args,async execute(_args,port){const records=await port.read('search',{});records[0].ocrText='FORGED ORIGINAL';return {source:'untrusted_personal_context',data:[originalEvidenceReceipt(records[0])]};}};
+  const bridge=await startBridge({...readSource,search:async()=>[record],contextTools:()=>[{descriptors:[descriptor],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]},{question:'Generated proof mutation',hostContextToolMode:'all-native'});t.after(()=>bridge.close());
+  await assert.rejects(bridge.prepareDelivery('generated_mutation',{},new AbortController().signal),{code:'invalid_tool_arguments'});
+  assert.equal(record.ocrText,'Generated actual original');assert.equal(bridge.records.size,0);assert.deepEqual(bridge.evidenceDependencies.ids,[]);
 });

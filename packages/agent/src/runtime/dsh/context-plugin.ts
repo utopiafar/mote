@@ -1,3 +1,4 @@
+import {dshImageAttachmentInput,dshPreparedValue} from '../../tools/image-result.js';
 import {createServer} from 'node:http';
 import {createHash, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
@@ -155,10 +156,10 @@ export async function applyContextPlugin(ctx: Context) {
           for (const image of delivered.payload.images ?? []) {
             const service = ctx.get('attachments') as {saveImage(input: {data: Buffer; mediaType: string; name: string}): Promise<unknown>} | undefined;
             if (!service) throw failure();
-            attachments.push(await service.saveImage({data: Buffer.from(image.data, 'base64'), mediaType: image.mimeType, name: 'capture'}));
+            attachments.push(await service.saveImage(dshImageAttachmentInput(image)));
           }
           await call('/ack', {id: delivered.id, ...delivered.receipt, delivered: true}, exec.signal);
-          return {text: delivered.payload.text, ...(attachments.length ? {attachments} : {})};
+          return dshPreparedValue(delivered.payload,attachments);
         } catch (error) {
           await call('/ack', {id: delivered.id, ...delivered.receipt, delivered: false}, AbortSignal.timeout(5000)).catch(() => {}); throw error;
         }
