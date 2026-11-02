@@ -66,7 +66,12 @@ const defaultError=(error:unknown):DynamicHttpErrorResponse=>{
   if(value?.name==='ConnectorError'&&typeof value.code==='string'&&Number.isInteger(value.statusCode)&&(value.statusCode as number)>=400&&(value.statusCode as number)<=599)return {status:value.statusCode as number,error:value.code};
   return {status:502,error:'connector_operation_failed'};
 };
-const bodyTooLarge=()=>Object.assign(new Error('Connector request body is too large'),{statusCode:413,code:'FST_ERR_CTP_BODY_TOO_LARGE'});
+class ConnectorBodyTooLarge extends Error {
+  readonly statusCode=413;
+  readonly code='connector_body_too_large';
+  constructor(){super('Connector request body is too large');this.name='ConnectorBodyTooLarge';}
+}
+const bodyTooLarge=()=>new ConnectorBodyTooLarge();
 
 /** One host-owned dispatch table behind two routes registered before Fastify listen.
  * It is not another PluginHost: H04's HostScope owns admission, drain and scope cleanup. */
@@ -101,11 +106,17 @@ class DynamicHttpDispatcherImpl {
         const finish=(error?:Error)=>{
           if(settled)return;settled=true;
           if(error){payload.pause();done(error);return;}
-          done(null,Readable.from(chunks));
+          const replay=Readable.from(chunks);
+          (replay as Readable&{receivedEncodedLength?:number}).receivedEncodedLength=bytes;
+          done(null,replay);
         };
         payload.on('data',(chunk:Buffer)=>{if(settled)return;bytes+=chunk.length;if(bytes>limit){finish(bodyTooLarge());return;}chunks.push(chunk);});
         payload.on('end',()=>finish());
         payload.on('error',error=>finish(error));
+      },
+      errorHandler:(error,request,reply)=>{
+        if(error instanceof ConnectorBodyTooLarge)return reply.code(413).header('Cache-Control','no-store').send({error:'connector_body_too_large',requestId:request.id});
+        return reply.send(error);
       },
       handler:(request,reply)=>this.dispatchOwner(request,reply)});
     app.get('/oauth/:provider/callback',(request,reply)=>this.dispatchOAuth(request,reply));

@@ -27,8 +27,8 @@ function fixture(t:import('node:test').TestContext,authorize:(request:FastifyReq
 }
 const owner={authorization:'Bearer generated-owner'};
 const route=(path:string,handler=(_request:FastifyRequest,reply:FastifyReply)=>reply.send({ok:true}))=>({method:'GET' as const,path:path as `/api/connectors/${string}`,handler});
-const chunkedStatus=(port:number,path:string,chunks:readonly string[],headers:Record<string,string>)=>new Promise<number>((resolve,reject)=>{
-  const request=httpRequest({host:'127.0.0.1',port,path,method:'POST',headers},response=>{response.resume();response.on('end',()=>resolve(response.statusCode??0));});
+const httpResult=(port:number,path:string,chunks:readonly string[],headers:Record<string,string>)=>new Promise<{status:number;body:string;headers:Record<string,string|string[]|undefined>}>((resolve,reject)=>{
+  const request=httpRequest({host:'127.0.0.1',port,path,method:'POST',headers},response=>{const parts:Buffer[]=[];response.on('data',chunk=>parts.push(chunk));response.on('end',()=>resolve({status:response.statusCode??0,body:Buffer.concat(parts).toString('utf8'),headers:response.headers}));});
   request.on('error',reject);for(const chunk of chunks)request.write(chunk);request.end();
 });
 
@@ -84,10 +84,37 @@ test('raw chunked body limits reject oversized JSON before the handler runs',asy
   dispatcher.registerOwnerRoute(a.scope,{method:'POST',path:'/api/connectors/chunked',bodyLimit:16,handler:(_request,reply)=>{called++;return reply.send({ok:true});}});
   await app.listen({host:'127.0.0.1',port:0});const address=app.server.address();assert.ok(address&&typeof address==='object');
   const headers={...owner,'content-type':'application/json'};
-  assert.equal(await chunkedStatus(address.port,'/api/connectors/chunked',['{',' '.repeat(100),'}'],headers),413);
+  const oversized=await httpResult(address.port,'/api/connectors/chunked',['{',' '.repeat(100),'}'],headers);
+  assert.equal(oversized.status,413);assert.equal(JSON.parse(oversized.body).error,'connector_body_too_large');assert.ok(JSON.parse(oversized.body).requestId);assert.equal(oversized.headers['cache-control'],'no-store');
   assert.equal(called,0,'the handler must not receive an oversized chunked body');
-  assert.equal(await chunkedStatus(address.port,'/api/connectors/chunked',['{"ok":1}'],headers),200);
+  assert.equal((await httpResult(address.port,'/api/connectors/chunked',['{"ok":1}'],headers)).status,200);
   assert.equal(called,1);
+  const declaredBody='{"ok":1}';
+  assert.equal((await httpResult(address.port,'/api/connectors/chunked',[declaredBody],{...headers,'content-length':String(Buffer.byteLength(declaredBody))})).status,200,'declared-length replay preserves receivedEncodedLength');
+  assert.equal(called,2);
+  const declaredOversized='{"value":"'+'x'.repeat(100)+'"}';
+  const declaredTooLarge=await httpResult(address.port,'/api/connectors/chunked',[declaredOversized],{...headers,'content-length':String(Buffer.byteLength(declaredOversized))});
+  assert.equal(declaredTooLarge.status,413);assert.equal(JSON.parse(declaredTooLarge.body).error,'connector_body_too_large');assert.equal(declaredTooLarge.headers['cache-control'],'no-store');assert.equal(called,2);
+});
+
+test('a withdrawn activation cannot hand a partial upload to a replacement handler',async t=>{
+  const a=fixtureScope('pin-a'),b=fixtureScope('pin-b');
+  t.after(async()=>{await a.resources.close();await b.resources.close();});
+  let authorized!:()=>void;const authorizedSignal=new Promise<void>(resolve=>{authorized=resolve;});
+  const {app,dispatcher}=fixture(t,()=>{authorized();return true;});let firstCalls=0,replacementCalls=0;
+  const first=dispatcher.registerOwnerRoute(a.scope,{method:'POST',path:'/api/connectors/pin',bodyLimit:1024,handler:(_request,reply)=>{firstCalls++;return reply.send({first:true});}});
+  await app.listen({host:'127.0.0.1',port:0});const address=app.server.address();assert.ok(address&&typeof address==='object');
+  const result=new Promise<number>((resolve,reject)=>{
+    const request=httpRequest({host:'127.0.0.1',port:address.port,path:'/api/connectors/pin',method:'POST',headers:{...owner,'content-type':'application/json'}},response=>{response.resume();response.on('end',()=>resolve(response.statusCode??0));});
+    request.on('error',reject);request.write('{"value":"');
+    authorizedSignal.then(async()=>{
+      await first.release();
+      dispatcher.registerOwnerRoute(b.scope,{method:'POST',path:'/api/connectors/pin',bodyLimit:16,handler:(_request,reply)=>{replacementCalls++;return reply.send({second:true});}});
+      request.end('x'.repeat(100)+'"}');
+    });
+  });
+  assert.equal(await result,404);
+  assert.equal(firstCalls,0);assert.equal(replacementCalls,0,'the replacement must not receive the withdrawn activation body');
 });
 
 test('route conflicts, sibling isolation and release drain one controlled inflight request',async t=>{
