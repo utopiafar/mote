@@ -107,14 +107,28 @@ test('revoked source and closed plugin reject a late final without publishing, a
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM file_versions').get()!.n,1);
 });
 
-test('HTTP playback cookie is scoped to the issuing file and stops verifying after quiesce',async t=>{
+test('closed files source rejects late metadata revisions and manifest batches without publishing',async t=>{
   const f=fixture(t);await f.source.prepare();f.source.start();
+  const files=f.source.assemblyForRoutes().files;
+  await f.source.stop('disabled');
+  const base=manifest(Buffer.alloc(0),'late'),reference:FileRevision={...base,item:{...base.item,layer:'reference',title:'Late reference'},sizeBytes:10**12};
+  delete (reference as {sha256?:string}).sha256;
+  await assert.rejects(files.revision(reference,()=>{}),{statusCode:503});
+  await assert.rejects(files.manifestBatch({items:[{sourceId,previousRevision:null,item:reference.item}]},()=>{}),{statusCode:503});
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,0);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM file_versions').get()!.n,0);
+});
+
+test('HTTP playback cookie is scoped to the issuing file and stops verifying after quiesce',async t=>{
+  const f=fixture(t,{clock:()=>1000});await f.source.prepare();f.source.start();
   const {app,verify}=routes(f);t.after(()=>app.close());
   const bytes=Buffer.from('Generated playback bytes'),input=manifest(bytes),files=f.source.assemblyForRoutes().files;
   const upload=files.begin(input,()=>{});files.part(upload.uploadId,0,bytes,()=>{});const ack=await files.commit(upload.uploadId,()=>{});
   const response=await app.inject({method:'POST',url:`/api/files/${ack.id}/playback`,payload:{}});
   assert.equal(response.statusCode,200,response.body);
-  const cookie=String(response.headers['set-cookie']).split(';')[0],request={routeOptions:{url:'/api/files/:id/content'},method:'GET',params:{id:ack.id},headers:{cookie}} as any;
+  const cookie=String(response.headers['set-cookie']).split(';')[0];
+  assert.match(String(response.headers['set-cookie']),/Max-Age=300(?:;|$)/,'cookie lifetime must use the registry clock, not wall time');
+  const request={routeOptions:{url:'/api/files/:id/content'},method:'GET',params:{id:ack.id},headers:{cookie}} as any;
   assert.equal(verify(request),true);
   assert.equal(verify({...request,params:{id:'00000000-0000-4000-8000-000000000000'}}),false);
   f.source.quiesce('disabled');
@@ -155,7 +169,9 @@ test('import upload transport refuses a late final after its owner closes withou
   const uploads=new ImportUploads(store,archived),bytes=Buffer.from('Generated import bytes'),upload=uploads.begin({name:'generated.txt',sizeBytes:bytes.length});
   t.after(async()=>{await uploads.close();store.close();rmSync(directory,{recursive:true,force:true});});
   uploads.part(upload.id,0,bytes);
-  await uploads.close();
+  const firstClose=uploads.close(),secondClose=uploads.close();
+  assert.equal(firstClose,secondClose,'concurrent close must join the same drain');
+  await Promise.all([firstClose,secondClose]);
   assert.throws(()=>uploads.begin({name:'generated.txt',sizeBytes:bytes.length}),{statusCode:503});
   await assert.rejects(uploads.commit(upload.id),{statusCode:503});
   assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,0);

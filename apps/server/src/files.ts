@@ -47,6 +47,7 @@ export class FileStore {
     if(version&&!this.store.evidence([version.capture_id]).length)throw new StoreError('Revision was deleted',410);
   }
   async manifestBatch(raw:unknown,authorize:(sourceId:string)=>void){
+    this.assertOpen();
     // Predecessor discovery is part of this protocol; retries reuse the persisted immutable manifest.
     const batch=z.object({items:z.array(z.record(z.unknown())).min(1).max(100)}).strict().parse(raw);
     const normalized=batch.items.map(entry=>{
@@ -164,6 +165,7 @@ export class FileStore {
     }finally{release();}
   });}
   async revision(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown):Promise<any>{
+    this.assertOpen();
     const input=fileRevisionSchema.parse(raw);return this.serialize('item:'+input.sourceId+':'+input.item.externalId,async()=>{
       authorize(input.sourceId);this.allowed(input);
       const prior=this.store.db.prepare('SELECT * FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as Version|undefined;

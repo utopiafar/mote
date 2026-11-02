@@ -55,8 +55,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.post('/api/files/:id/playback',async(req,reply)=>{
     const id=fileId(req);file(req);
     const sourceId=files.version(id).source_id,issued=grants.issue(id,sourceId,()=>authorize(req,sourceId));
-    const maxAge=Math.max(0,Math.ceil((issued.until-Date.now())/1000));
-    reply.header('Set-Cookie',`${cookieName(id)}=${issued.token}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Path=/api/files/${id}/content${req.protocol==='https'?'; Secure':''}`);
+    reply.header('Set-Cookie',`${cookieName(id)}=${issued.token}; HttpOnly; SameSite=Strict; Max-Age=${issued.maxAgeSeconds}; Path=/api/files/${id}/content${req.protocol==='https'?'; Secure':''}`);
     return {url:'/api/files/'+id+'/content'};
   });
   app.get('/api/files/:id/content',async(req,reply)=>{

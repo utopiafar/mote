@@ -12,7 +12,7 @@ const manifestSchema=z.object({id:z.string().uuid().optional(),name:z.string().m
 type Manifest=z.infer<typeof manifestSchema>&{id:string;fileId?:string};
 /** Bounded binary upload. Each acknowledged part is durable and checksum checked on replay. */
 export class ImportUploads {
- private directory:string;private pending=new Map<string,Promise<unknown>>();private closing=new AbortController();private closed=false;
+ private directory:string;private pending=new Map<string,Promise<unknown>>();private closing=new AbortController();private closed=false;private closingTask?:Promise<void>;
  constructor(private store:Store,private files:ArchivedFileStore){this.directory=join(store.directory,'import-uploads');privateDirectory(this.directory);store.db.exec('CREATE TABLE IF NOT EXISTS import_uploads(id TEXT PRIMARY KEY,expires INTEGER NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS import_upload_parts(upload_id TEXT NOT NULL REFERENCES import_uploads(id) ON DELETE CASCADE,part INTEGER NOT NULL,bytes INTEGER NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(upload_id,part))');}
  private assertOpen(){if(this.closed)throw new StoreError('Import uploads are closed',503);}
  private load(id:string):Manifest{const row=this.store.db.prepare('SELECT json FROM import_uploads WHERE id=? AND expires>?').get(id,Date.now());if(!row)throw new StoreError('Upload expired or missing',404);return JSON.parse(String(row.json));}
@@ -36,7 +36,7 @@ export class ImportUploads {
   const hash=sha256(bytes),prior=this.store.db.prepare('SELECT hash FROM import_upload_parts WHERE upload_id=? AND part=?').get(id,part);if(prior){if(prior.hash!==hash)throw new StoreError('Import part conflicts',409);return {part,bytes:bytes.length,hash};}if(manifest.fileId)throw new StoreError('Upload already committed',409);
   this.store.reserveMetadata(bytes.length+128);const directory=join(this.directory,id);privateDirectory(directory);this.store.contentEncryption.write(join(directory,String(part)),bytes);this.store.db.prepare('INSERT INTO import_upload_parts VALUES(?,?,?,?)').run(id,part,bytes.length,hash);return {part,bytes:bytes.length,hash};
  }
- async close(){if(this.closed)return;this.closed=true;this.closing.abort();await Promise.allSettled([...this.pending.values()]);}
+ close():Promise<void>{return this.closingTask??=(async()=>{this.closed=true;this.closing.abort();await Promise.allSettled([...this.pending.values()]);})();}
  async commit(id:string,signal?:AbortSignal){this.assertOpen();const prior=this.pending.get(id)??Promise.resolve(),next=prior.catch(()=>{}).then(()=>this.commitOnce(id,signal));this.pending.set(id,next);try{return await next;}finally{if(this.pending.get(id)===next)this.pending.delete(id);}}
  private async commitOnce(id:string,signal?:AbortSignal){const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();const manifest=this.load(id);if(manifest.fileId)return this.files.get(manifest.fileId);
   const parts=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id) as {part:number;bytes:number;hash:string}[];if(parts.length!==Math.ceil(manifest.sizeBytes/PART))throw new StoreError('Import upload incomplete',409);

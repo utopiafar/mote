@@ -23,7 +23,7 @@ export const filesSourceDeclaration={id:filesSourceContribution.id,apiVersion:'1
 /** Frozen C01 migration contract keeps files hot; no storage format changes. */
 export const filesSourceReplacement='hot' as const;
 
-export interface PlaybackGrant {readonly token:string;readonly until:number}
+export interface PlaybackGrant {readonly token:string;readonly until:number;readonly maxAgeSeconds:number}
 /** The trusted route host binds an already admitted request/source check. This
  * registry never invents authorization: it replays the caller's C04-backed
  * check and expires with the issuing plugin scope. */
@@ -59,7 +59,7 @@ export class PlaybackGrants implements FilePlaybackGrants {
     if(this.grants.has(token))throw new StoreError('File playback token conflict',503);
     const until=this.clock()+this.ttlMs;
     this.grants.set(token,{fileId,sourceId,until,check});
-    return {token,until};
+    return {token,until,maxAgeSeconds:Math.max(1,Math.ceil(this.ttlMs/1000))};
   }
   /** Missing, expired, retired, mismatched or no-longer-authorized grants fail closed.
    * A token presented for another file is rejected without revoking its real grant. */
