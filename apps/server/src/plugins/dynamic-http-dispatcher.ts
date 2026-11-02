@@ -1,6 +1,7 @@
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {StopReason} from '@mote/plugin-api/contracts';
 import type {HostScope} from '@mote/plugin-host';
+import {Readable} from 'node:stream';
 import {z,ZodError} from 'zod';
 
 type OwnerMethod='GET'|'POST'|'PUT'|'DELETE';
@@ -65,13 +66,7 @@ const defaultError=(error:unknown):DynamicHttpErrorResponse=>{
   if(value?.name==='ConnectorError'&&typeof value.code==='string'&&Number.isInteger(value.statusCode)&&(value.statusCode as number)>=400&&(value.statusCode as number)<=599)return {status:value.statusCode as number,error:value.code};
   return {status:502,error:'connector_operation_failed'};
 };
-const tooLarge=(body:unknown,length:string|string[]|undefined,limit:number)=>{
-  const raw=Array.isArray(length)?length[0]:length,declared=raw===undefined?NaN:Number(raw);
-  if(Number.isFinite(declared)&&declared>limit)return true;
-  if(body===undefined||body===null)return false;
-  try{const bytes=typeof body==='string'?Buffer.byteLength(body):body instanceof Uint8Array?body.byteLength:Buffer.byteLength(JSON.stringify(body));return bytes>limit;}
-  catch{return false;}
-};
+const bodyTooLarge=()=>Object.assign(new Error('Connector request body is too large'),{statusCode:413,code:'FST_ERR_CTP_BODY_TOO_LARGE'});
 
 /** One host-owned dispatch table behind two routes registered before Fastify listen.
  * It is not another PluginHost: H04's HostScope owns admission, drain and scope cleanup. */
@@ -81,12 +76,30 @@ class DynamicHttpDispatcherImpl {
   private closing?:Promise<void>;
   private readonly owner=new Map<string,OwnerEntry>();
   private readonly oauth=new Map<string,OAuthGroup>();
+  private readonly registered=new Set<Entry>();
   constructor(private readonly options:DynamicHttpDispatcherOptions){}
   attach(app:FastifyInstance){
     if(this.closed)throw new DynamicHttpError('dispatcher_closed');
     if(this.attached)throw new DynamicHttpError('dispatcher_attached');
     if(app.server.listening)throw new DynamicHttpError('dispatcher_attached');
-    app.route({method:['GET','POST','PUT','DELETE'],url:'/api/connectors/*',handler:(request,reply)=>this.dispatchOwner(request,reply)});
+    app.route({method:['GET','POST','PUT','DELETE'],url:'/api/connectors/*',
+      preParsing:(request,_reply,payload,done)=>{
+        const limit=this.owner.get(`${request.method} ${requestPath(request)}`)?.route.bodyLimit;
+        if(limit===undefined){done(null,payload);return;}
+        // Count raw wire bytes before parsing; reserializing parsed JSON would let
+        // whitespace hide an oversized chunked request. Buffering is bounded by
+        // the registered limit and replay preserves the original bytes.
+        const chunks:Buffer[]=[];let bytes=0,settled=false;
+        const finish=(error?:Error)=>{
+          if(settled)return;settled=true;
+          if(error){payload.pause();done(error);return;}
+          done(null,Readable.from(chunks));
+        };
+        payload.on('data',(chunk:Buffer)=>{if(settled)return;bytes+=chunk.length;if(bytes>limit){finish(bodyTooLarge());return;}chunks.push(chunk);});
+        payload.on('end',()=>finish());
+        payload.on('error',error=>finish(error));
+      },
+      handler:(request,reply)=>this.dispatchOwner(request,reply)});
     app.get('/oauth/:provider/callback',(request,reply)=>this.dispatchOAuth(request,reply));
     app.addHook('onClose',async()=>{await this.close();});
     this.attached=app;
@@ -99,7 +112,7 @@ class DynamicHttpDispatcherImpl {
     if(this.owner.has(key))throw new DynamicHttpError('route_conflict');
     const entry:OwnerEntry={kind:'owner',route,scope,active:true,inflight:new Set(),remove:()=>{}};
     entry.remove=()=>{if(this.owner.get(key)===entry)this.owner.delete(key);};
-    this.owner.set(key,entry);this.bind(entry);
+    this.owner.set(key,entry);this.registered.add(entry);this.bind(entry);
     return Object.freeze({release:()=>this.release(entry)});
   }
   registerOAuthCallback(scope:HostScope,callback:DynamicOAuthCallback):DynamicHttpRouteHandle {
@@ -120,7 +133,7 @@ class DynamicHttpDispatcherImpl {
       if(!current.callbacks.size)this.oauth.delete(callback.path);
     };
     group.callbacks.set(prefix,entry);group.first??=entry;if(prefix==='')group.default=entry;this.oauth.set(callback.path,group);
-    this.bind(entry);
+    this.registered.add(entry);this.bind(entry);
     return Object.freeze({release:()=>this.release(entry)});
   }
   private bind(entry:Entry){
@@ -133,12 +146,13 @@ class DynamicHttpDispatcherImpl {
     if(entry.released)return entry.released;
     entry.active=false;entry.remove();
     if(entry.abort){entry.scope.signal.removeEventListener('abort',entry.abort);entry.abort=undefined;}
-    entry.released=(async()=>{
+    const settling=(async()=>{
       const results=await Promise.allSettled([...entry.inflight]);
       const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
       for(const error of errors)try{this.options.onError?.(error);}catch{}
       if(errors.length)throw new AggregateError(errors,'Dynamic HTTP route release failed');
     })();
+    entry.released=settling.finally(()=>{this.registered.delete(entry);});
     return entry.released;
   }
   private admit(entry:Entry,work:()=>unknown|Promise<unknown>):Promise<Admission|undefined> {
@@ -154,7 +168,6 @@ class DynamicHttpDispatcherImpl {
     let allowed=false;try{allowed=this.options.authorize(request);}catch{allowed=false;}
     if(!allowed)return reply.code(401).send({error:'unauthorized'});
     reply.header('Cache-Control','no-store');
-    if(entry.route.bodyLimit!==undefined&&tooLarge(request.body,request.headers['content-length'],entry.route.bodyLimit))return reply.code(413).send({error:'connector_body_too_large',requestId:request.id});
     const task=this.admit(entry,()=>entry.route.handler(request,reply));
     entry.inflight.add(task);void task.then(()=>entry.inflight.delete(task),()=>entry.inflight.delete(task));
     let result:Admission|undefined;try{result=await task;}catch(error){return this.sendError(error,request,reply);}
@@ -190,7 +203,9 @@ class DynamicHttpDispatcherImpl {
   close():Promise<void> {
     if(this.closing)return this.closing;
     this.closed=true;
-    const entries:Entry[]=[...this.owner.values(),...[...this.oauth.values()].flatMap(group=>[...group.callbacks.values()])];
+    // Includes entries already removed from the lookup tables by release/abort;
+    // their accepted inflight work must still settle before close resolves.
+    const entries:Entry[]=[...this.registered];
     this.closing=(async()=>{
       const results=await Promise.allSettled(entries.map(entry=>this.release(entry)));
       const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);

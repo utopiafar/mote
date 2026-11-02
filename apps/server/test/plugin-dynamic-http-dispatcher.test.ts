@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {request as httpRequest} from 'node:http';
 import Fastify,{type FastifyReply,type FastifyRequest} from 'fastify';
 import {ZodError} from 'zod';
 import {PluginResourceScope} from '@mote/plugin-host';
@@ -26,6 +27,10 @@ function fixture(t:import('node:test').TestContext,authorize:(request:FastifyReq
 }
 const owner={authorization:'Bearer generated-owner'};
 const route=(path:string,handler=(_request:FastifyRequest,reply:FastifyReply)=>reply.send({ok:true}))=>({method:'GET' as const,path:path as `/api/connectors/${string}`,handler});
+const chunkedStatus=(port:number,path:string,chunks:readonly string[],headers:Record<string,string>)=>new Promise<number>((resolve,reject)=>{
+  const request=httpRequest({host:'127.0.0.1',port,path,method:'POST',headers},response=>{response.resume();response.on('end',()=>resolve(response.statusCode??0));});
+  request.on('error',reject);for(const chunk of chunks)request.write(chunk);request.end();
+});
 
 test('static routes dispatch real owner handlers with auth, headers, body limits and mapped errors',async t=>{
   const a=fixtureScope('a');t.after(()=>a.resources.close());
@@ -47,6 +52,18 @@ test('static routes dispatch real owner handlers with auth, headers, body limits
   assert.throws(()=>dispatcher.registerOwnerRoute(a.scope,route('/evil')),error=>error instanceof DynamicHttpError&&error.code==='invalid_route');
 });
 
+test('raw chunked body limits reject oversized JSON before the handler runs',async t=>{
+  const a=fixtureScope('chunked');t.after(()=>a.resources.close());
+  const {app,dispatcher}=fixture(t);let called=0;
+  dispatcher.registerOwnerRoute(a.scope,{method:'POST',path:'/api/connectors/chunked',bodyLimit:16,handler:(_request,reply)=>{called++;return reply.send({ok:true});}});
+  await app.listen({host:'127.0.0.1',port:0});const address=app.server.address();assert.ok(address&&typeof address==='object');
+  const headers={...owner,'content-type':'application/json'};
+  assert.equal(await chunkedStatus(address.port,'/api/connectors/chunked',['{',' '.repeat(100),'}'],headers),413);
+  assert.equal(called,0,'the handler must not receive an oversized chunked body');
+  assert.equal(await chunkedStatus(address.port,'/api/connectors/chunked',['{"ok":1}'],headers),200);
+  assert.equal(called,1);
+});
+
 test('route conflicts, sibling isolation and release drain one controlled inflight request',async t=>{
   const a=fixtureScope('a'),b=fixtureScope('b');t.after(async()=>{await a.resources.close();await b.resources.close();});
   const {app,dispatcher}=fixture(t);
@@ -65,6 +82,32 @@ test('route conflicts, sibling isolation and release drain one controlled inflig
   assert.equal((await app.inject('/api/connectors/b')).statusCode,200,'a sibling route remains dispatchable');
   await aHandle.release();assert.equal((await app.inject('/api/connectors/a')).statusCode,404);assert.equal((await app.inject('/api/connectors/b')).statusCode,200);
   await bHandle.release();
+});
+
+test('dispatcher close waits for a released entry with inflight work',async t=>{
+  const a=fixtureScope('close-release');t.after(()=>a.resources.close());
+  const {app,dispatcher}=fixture(t);
+  let releaseHandler!:()=>void,entered!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseHandler=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
+  const handle=dispatcher.registerOwnerRoute(a.scope,{method:'GET',path:'/api/connectors/close-held',handler:async(_request,reply)=>{entered();await held;return reply.send({ok:true});}});
+  const pending=app.inject('/api/connectors/close-held');await started;
+  const releasing=handle.release();
+  let closed=false;const closing=dispatcher.close().then(()=>{closed=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(closed,false,'close must join the released entry inflight work');
+  releaseHandler();assert.equal((await pending).statusCode,200);await releasing;await closing;assert.equal(closed,true);
+});
+
+test('dispatcher close drains an entry already removed by scope abort',async t=>{
+  const a=fixtureScope('close-abort');t.after(()=>a.resources.close());
+  const {app,dispatcher}=fixture(t);
+  let releaseHandler!:()=>void,entered!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseHandler=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
+  dispatcher.registerOwnerRoute(a.scope,{method:'GET',path:'/api/connectors/abort-held',handler:async(_request,reply)=>{entered();await held;return reply.send({ok:true});}});
+  const pending=app.inject('/api/connectors/abort-held');await started;
+  a.resources.stop();
+  let closed=false;const closing=dispatcher.close().then(()=>{closed=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(closed,false,'close must join an entry removed by abort');
+  releaseHandler();assert.equal((await pending).statusCode,200);await closing;assert.equal(closed,true);
 });
 
 test('OAuth shared path selects longest statePrefix, keeps default fallback and rejects new callbacks after release',async t=>{
