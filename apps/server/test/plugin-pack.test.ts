@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {zipSync} from 'fflate';
 import {packPlugin} from '../../../scripts/plugin-pack.mjs';
 import {releaseCompatibilityFailures} from '../../../scripts/plugin-validate.mjs';
-import {GitHubPluginReleases, validatePluginArchive} from '../src/plugin-release.js';
+import {GitHubPluginReleases, pluginManifestSchema, validatePluginArchive} from '../src/plugin-release.js';
 import type {PluginManifest} from '../src/plugin-release.js';
 
 const manifest = {
@@ -30,9 +30,9 @@ function fixture() {
 test('pack produces a deterministic external manifest and ZIP payload without a manifest self-reference', async t => {
   const f = fixture();
   t.after(() => rmSync(f.directory, {recursive: true, force: true}));
-  const first = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out});
+  const first = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out, manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive});
   const secondOut = join(f.directory, 'out2');
-  const second = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: secondOut});
+  const second = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: secondOut, manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive});
   assert.equal(first.digest, second.digest);
   assert.deepEqual(readFileSync(first.zipPath), readFileSync(second.zipPath));
   assert.ok(first.entries.includes('main.mjs') && first.entries.includes('page.html'));
@@ -41,10 +41,18 @@ test('pack produces a deterministic external manifest and ZIP payload without a 
   assert.doesNotThrow(() => validatePluginArchive(readFileSync(first.zipPath), first.manifest));
 });
 
+test('pack rejects an output tree inside the payload and an invalid calendar declaration', async t => {
+  const f = fixture();
+  t.after(() => rmSync(f.directory, {recursive: true, force: true}));
+  await assert.rejects(packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: join(f.payload, 'dist'), manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive}), /outside the payload/);
+  writeFileSync(join(f.directory, 'bad.json'), JSON.stringify({...manifest, capabilities: ['calendar.manage']}));
+  await assert.rejects(packPlugin({manifestPath: join(f.directory, 'bad.json'), payload: f.payload, out: join(f.directory, 'bad-out'), manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive}));
+});
+
 test('archive validation rejects traversal, missing entries and tampered payloads', async t => {
   const f = fixture();
   t.after(() => rmSync(f.directory, {recursive: true, force: true}));
-  const packed = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out});
+  const packed = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out, manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive});
   const zip = readFileSync(packed.zipPath);
   const tampered = Buffer.from(zip); tampered[tampered.length - 1] ^= 1;
   assert.notEqual(createHash('sha256').update(tampered).digest('hex'), packed.digest);
@@ -60,7 +68,7 @@ test('validation rejects a generic service runtime before the release consumer w
 test('a packed release is accepted by the real GitHubPluginReleases resolve/install/verify consumer', async t => {
   const f = fixture();
   t.after(() => rmSync(f.directory, {recursive: true, force: true}));
-  const packed = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out});
+  const packed = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out, manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive});
   const zip = readFileSync(packed.zipPath), manifestBytes = readFileSync(packed.manifestPath);
   const base = 'https://github.com/generated/pack/releases/download/v1/';
   const commit = 'a'.repeat(40);

@@ -8,9 +8,10 @@ import {mkdir, readFile, readdir, lstat, writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zipSync} from 'fflate';
-import {packageManifestSchema} from '@mote/plugin-api';
 
-const ZIP_MTIME = new Date('1980-01-01T00:00:00.000Z');
+// fflate writes ZIP date fields from local getters; fixed local fields keep
+// the archive independent of the machine timezone.
+const ZIP_MTIME = new Date(1980, 0, 1, 0, 0, 0);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const safePath = value => Boolean(value) && !value.startsWith('/') && !value.includes('\\') && !value.split('/').some(part => !part || part === '.' || part === '..');
 
@@ -30,17 +31,25 @@ async function collect(directory, base = '') {
   return files;
 }
 
-export async function packPlugin({manifestPath, payload, out}) {
+export async function packPlugin({manifestPath, payload, out, manifestSchema, validateArchive}) {
   const manifestFile = resolve(manifestPath);
-  const manifest = packageManifestSchema.parse(JSON.parse(await readFile(manifestFile, 'utf8')));
-  const files = (await collect(resolve(payload))).sort((left, right) => left.path.localeCompare(right.path));
+  const payloadRoot = resolve(payload), output = resolve(out);
+  if (output === payloadRoot || output.startsWith(payloadRoot + '/')) throw Error('Output directory must be outside the payload tree');
+  let release;
+  if (!manifestSchema || !validateArchive) {
+    try { release = await import(new URL('../apps/server/dist/plugin-release.js', import.meta.url).href); }
+    catch { throw Error('Build @mote/server before packing (the release Manifest contract and archive validator are shared)'); }
+  }
+  const manifest = (manifestSchema ?? release.pluginManifestSchema).parse(JSON.parse(await readFile(manifestFile, 'utf8')));
+  const files = (await collect(payloadRoot)).sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
   if (!files.some(file => file.path === manifest.entry)) throw Error(`Manifest entry is absent from payload: ${manifest.entry}`);
   for (const contribution of manifest.contributions ?? []) if (contribution.entry && !files.some(file => file.path === contribution.entry)) throw Error(`Contribution entry is absent from payload: ${contribution.entry}`);
   const zippable = Object.fromEntries(files.map(file => [file.path, [file.bytes, {mtime: ZIP_MTIME, os: 0}]]));
   const archive = zipSync(zippable, {level: 9});
+  const validator = validateArchive ?? release.validatePluginArchive;
+  validator(archive, manifest);
   const digest = hash(archive);
   const releaseManifest = {...manifest, archive: {...manifest.archive, sha256: digest}};
-  const output = resolve(out);
   await mkdir(output, {recursive: true, mode: 0o700});
   const zipPath = join(output, manifest.archive.asset);
   const manifestOut = join(output, 'mote-plugin.json');
