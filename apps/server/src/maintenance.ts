@@ -2,11 +2,13 @@ import {fork,type ChildProcess} from 'node:child_process';
 import {createRequire} from 'node:module';
 import type {Config} from './config.js';
 
+export type MaintenanceConfig=Pick<Config,'dataDir'> & Partial<Pick<Config,'dataKey'|'contentEncryptionEnabled'|'maxStorageBytes'>> & {embeddingModel?:string;embeddingEnabled?:boolean};
+
 /** One deployable service, isolated CPU/disk maintenance with automatic recovery. */
 export class MaintenanceWorker {
   private child?:ChildProcess;private timer?:ReturnType<typeof setTimeout>;private closed=false;
   private state={status:'starting',lastCompletedAt:null as string|null,durationMs:0,failures:0};
-  constructor(private config:Config){this.start();}
+  constructor(private config:MaintenanceConfig){this.start();}
   snapshot(){return {...this.state};}
   configureContentEncryption(enabled:boolean){this.config.contentEncryptionEnabled=enabled;if(this.child?.connected)try{this.child.send({type:'content-encryption',enabled},()=>{});}catch{/* Restart uses the current authoritative write policy. */}}
   private start(){
@@ -16,7 +18,7 @@ export class MaintenanceWorker {
     // worker (and can overwrite its PID lock). Only the source loader is needed.
     const execArgv=extension==='ts'?['--import',createRequire(import.meta.url).resolve('tsx')]:[];
     const child=this.child=fork(new URL(`./maintenance-worker.${extension}`,import.meta.url),[],{stdio:['ignore','ignore','ignore','ipc'],execArgv});
-    child.send({directory:this.config.dataDir,options:{maintenance:true,dataKey:this.config.dataKey,contentEncryptionEnabled:this.config.contentEncryptionEnabled,maxStorageBytes:this.config.maxStorageBytes,embeddingEnabled:Boolean(this.config.embeddingModel)}});
+    child.send({directory:this.config.dataDir,options:{maintenance:true,dataKey:this.config.dataKey,contentEncryptionEnabled:this.config.contentEncryptionEnabled,maxStorageBytes:this.config.maxStorageBytes,embeddingEnabled:this.config.embeddingEnabled??Boolean(this.config.embeddingModel)}});
     child.on('message',(event:any)=>{if(event.type==='tick')this.state={...this.state,status:'ready',lastCompletedAt:new Date().toISOString(),durationMs:event.durationMs};else if(event.type==='error'){this.state.status='degraded';this.state.failures++;}});
     child.on('error',()=>{this.state.status='degraded';});
     child.once('exit',()=>{if(this.child===child)this.child=undefined;if(!this.closed){this.state.status='restarting';this.state.failures++;this.timer=setTimeout(()=>this.start(),5000);this.timer.unref();}});
