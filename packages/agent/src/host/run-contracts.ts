@@ -75,8 +75,10 @@ export type HostRunEvent = {
     | {readonly type: 'run.terminal'; readonly terminal: HostRunTerminal};
 };
 export interface HostCommitFence {
-  /** Check signal/scope, runtime/model/tool lease validity, current data grants and source/evidence pins.
-   * Called after async validation and before returning. Persistent writers recheck in their transaction. */
+  /** Check current domain grants and source/evidence pins, including after run-owned leases are released.
+   * HostRunSession separately checks scope/cancellation/deadline and every runtime/model/output/tool lease
+   * before release; after awaited release it rechecks the remaining scope/cancellation/deadline and this
+   * domain fence without asserting intentionally released leases. Writers recheck in their transaction. */
   assertCurrent(): void;
 }
 export interface HostRunDependencies {

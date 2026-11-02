@@ -38,7 +38,7 @@ export interface AgentOptions {
 export function reportProgress(input: QueryInput, event: AgentProgress): void {
   try { input.onProgress?.(event); } catch { /* Observation cannot change evidence permissions or fail a query. */ }
 }
-export function reportTrace(input: QueryInput, event: AgentTraceEvent): void {
+export function reportTrace(input: Pick<QueryInput, 'onTrace'>, event: AgentTraceEvent): void {
   try { input.onTrace?.({at: new Date().toISOString(), ...event}); } catch { /* Trace sinks cannot change model execution. */ }
 }
 export interface Citation {
@@ -128,7 +128,7 @@ export class AgentTimeoutError extends Error {
 }
 
 /** Runs before closing the model conversation, so a rejected output can be repaired in place. */
-export async function validateHostOutput(input:QueryInput, answer:AgentAnswer):Promise<void> {
+export async function validateHostOutput(input:Pick<QueryInput, 'validateOutput' | 'onTrace'>, answer:AgentAnswer):Promise<void> {
   const issue=await input.validateOutput?.(answer);
   if(issue){reportTrace(input,{type:'validation.host_rejected',runId:answer.runId,stage:'validating',status:'rejected',payload:{code:issue.code,feedback:issue.feedback}});throw new AgentResponseError(`${issue.code}: ${issue.feedback}`,'host_validation');}
 }
