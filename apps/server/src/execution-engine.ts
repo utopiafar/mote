@@ -59,6 +59,7 @@ export class ExecutionEngine {
  private admissions=new Map<string,ExecutionPoolAdmission>();
  private active=new Map<string,{controller:AbortController;task:Promise<void>;pool:string;kind:string;lane:ExecutionLane}>();
  private stopping=false;
+ private quiescing=false;
  private pumping=false;
  private pumpAgain=false;
  private scheduled:ReturnType<typeof setImmediate>|undefined;
@@ -103,9 +104,9 @@ export class ExecutionEngine {
   const waiting=this.store.db.prepare("SELECT * FROM execution_steps WHERE pool=? AND state='waiting'").all(pool) as Row[];
   return Object.fromEntries(lanes.map(lane=>[lane,{limit:this.limit(pool,lane),running:this.running(pool,lane),waiting:waiting.filter(row=>this.lane(view(row))===lane).length}]));
  }
- register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)!==handler)return;this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort(interrupted);await Promise.allSettled(running.map(value=>value.task));};}
+ register(handler:ExecutionHandler){if(this.stopping||this.quiescing)throw new StoreError('Execution engine is closed',503);if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)!==handler)return;this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort(interrupted);await Promise.allSettled(running.map(value=>value.task));};}
  enqueue(operationId:string,kind:string,input:Record<string,unknown>,options:OperationMembership&{id?:string;dependencies?:string[];initial?:{state:ExecutionState;attempts:number;availableAt:number;error?:string}}={}){
-  if(this.stopping)throw new StoreError('Execution engine is closed',503);
+  if(this.stopping||this.quiescing)throw new StoreError('Execution engine is closed',503);
   const handler=this.handlers.get(kind);if(!handler)throw new StoreError('Execution handler unavailable',409);
   input=canonical(input) as Record<string,unknown>;
   const json=JSON.stringify(input);
@@ -204,7 +205,7 @@ export class ExecutionEngine {
  isActiveStep(id:string){return this.active.has(id);}
  /** Several completions in one turn need only one admission pass. */
  private scheduleTick(){
-  if(this.stopping||this.scheduled)return;
+  if(this.stopping||this.quiescing||this.scheduled)return;
   this.scheduled=setImmediate(()=>{this.scheduled=undefined;if(!this.stopping)void this.tick().catch(()=>{});});
  }
  async drain(ids:string[]){
@@ -232,7 +233,7 @@ export class ExecutionEngine {
  }
  /** Start available slots. Return only work admitted by this call; slow older work is independent. */
  tick(){
-  if(this.stopping)return Promise.resolve();
+  if(this.stopping||this.quiescing)return Promise.resolve();
   if(this.pumping){this.pumpAgain=true;return Promise.resolve();}
   this.pumping=true;const started:Promise<void>[]=[];
   try{
@@ -392,5 +393,7 @@ export class ExecutionEngine {
    throw new ExecutionFailure('waiting','step_pending',Math.max(1000,step.availableAt-this.now()));
   }finally{options.signal.removeEventListener('abort',abort);await unregister();}
  }
- async close(){this.stopping=true;if(this.scheduled){clearImmediate(this.scheduled);this.scheduled=undefined;}for(const active of this.active.values())active.controller.abort(interrupted);await Promise.allSettled([...this.active.values()].map(a=>a.task));await Promise.allSettled([...this.programs.values()]);}
+ /** Fence new admission while already accepted leases may finish. */
+ quiesce(){this.quiescing=true;if(this.scheduled){clearImmediate(this.scheduled);this.scheduled=undefined;}}
+ async close(){this.stopping=true;this.quiesce();for(const active of this.active.values())active.controller.abort(interrupted);await Promise.allSettled([...this.active.values()].map(a=>a.task));await Promise.allSettled([...this.programs.values()]);}
 }
