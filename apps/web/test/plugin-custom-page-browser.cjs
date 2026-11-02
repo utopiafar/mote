@@ -42,10 +42,24 @@ async function run(){
  await pause(1200);console.log('PROBE',await js('JSON.stringify({html:document.body.innerHTML.slice(0,160),calls:JSON.stringify(window.calls),got:JSON.stringify(window.got),srcMatch:window.srcMatch,rejected:window.rejected})'),'HITS',JSON.stringify(hits));
 await until(()=>js(`!!document.querySelector('iframe.plugin-custom-page')`),'component mounted');
  await until(()=>js(`window.calls&&window.calls.length>=1`),'first document invocation');
- await pause(800); // entry1 navigates at 120 ms; the invoke resolves at ~400 ms
+ // Navigation committed (entry2 fetched, /ran2 + /slow requested) while the
+ // replacement's own load is held by the slow subresource — the leaked port
+ // is exercised for real inside the pre-load window.
+ await until(()=>hits['/slow'],'replacement began loading, load held by /slow');
+ await js(`window.leakedPort&&window.leakedPort.postMessage(${requestEnvelope(documentKey,'r-leaked')})`);
+ await pause(150);
+ const callsPreLoad=await js('window.calls');
+ assert.equal(callsPreLoad.length,1,'the leaked port cannot invoke while the replacement is pre-load: '+JSON.stringify(callsPreLoad));
+ const tInvoke=await js('window.invokeSettledAt');
+ assert.ok(Number.isFinite(tInvoke),'the stale invoke actually settled');
+ await until(()=>js('window.got&&window.got.some(m=>m&&m.kind==="fixture-report")'),'replacement reports its own observation');
+ await pause(150);
  const calls=await js('window.calls'),posted=await js('JSON.stringify(window.got||[])');
  assert.equal(calls.length,1,'only the issued document invoked — the pre-load replacement request never reached the invoker: '+JSON.stringify(calls));
- const got=JSON.parse(posted),responses=got.filter(m=>m&&m.kind==='response');
- assert.equal(responses.length,0,'the in-flight response was fenced by revocation — nothing leaked to the replacement');
+ const got=JSON.parse(posted),report=got.find(m=>m&&m.kind==='fixture-report');
+ assert.ok(report,'the replacement reported its own observation');
+ assert.equal(report.received,0,'the pre-load replacement itself received zero messages: '+JSON.stringify(got));
+ assert.ok(hits['/slow-served']>tInvoke,'the stale invoke settled before the held load fired: '+JSON.stringify({tInvoke,slowServed:hits['/slow-served']}));
+ assert.ok(hits['/slow-served']-hits['/slow']>=800,'the replacement load was genuinely held ~900ms: '+JSON.stringify({hit:hits['/slow'],served:hits['/slow-served']}));
  return window;}
 run().then(async window=>{console.log(JSON.stringify({passed:true}));window.destroy();rmSync(temporary,{recursive:true,force:true});app.exit(0);}).catch(async error=>{console.error(error);rmSync(temporary,{recursive:true,force:true});app.exit(1);});
