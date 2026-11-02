@@ -8,6 +8,14 @@ import Fastify from 'fastify';
 import {noteCapture,noteSchema} from '@mote/shared';
 import {PluginHost} from '@mote/plugin-host';
 import type {ScopeIdentity} from '@mote/plugin-api/contracts';
+import {Store} from '../src/store.js';
+import {SourceStore} from '../src/sources.js';
+import {FileStore} from '../src/files.js';
+import {MaterialStore} from '../src/materials.js';
+import {ServerDiagnostics} from '../src/diagnostics.js';
+import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
+import {createCaptureIntake} from '../src/plugins/capture-intake.js';
+import type {RequestAuthority} from '../src/plugins/central-contracts.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {MaterialNoteDeletion} from '../src/material-note-deletion.js';
@@ -31,6 +39,25 @@ async function fixture(t:any){
   await app.ready();
   t.after(async()=>{await app.close();await source.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   return {node,source,app,assembly:source.assemblyForRoutes(),headers:{authorization:'Bearer '+config.token}};
+}
+async function intakeFixture(t:any){
+  const directory=mkdtempSync(join(tmpdir(),'mote-notes-intake-')),store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
+  const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),level:'debug'});await diagnostics.init();
+  const intake=createCaptureIntake({diagnostics},{store,sources,files,materials});await intake.prepare();
+  const ownerToken='generated-notes-intake-token';
+  const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
+  await platform.prepare();platform.bindRepositories({sources,files,materials,ingress:intake.ingress});await platform.start();intake.bindAuthorization(platform);intake.start();
+  sources.register({id:'generated-note-source',name:'Generated notes',kind:'custom',deviceId:'generated-note-device',platform:'android',enabled:true,retention:'archive'});
+  const source=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
+  await source.prepare();source.start();
+  const app=Fastify(),pins=new WeakMap<object,RequestAuthority>();
+  app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'notes_intake_failed'});});
+  app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
+  app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
+  registerNotesFeature(app,{assertRequestActive:()=>{},connections:platform.assembly.connections!,credential:()=>undefined,diagnostics,files,ingress:intake.ingress,materials,sources,store,notesSource:source.assemblyForRoutes(),notesCapture:{authority:platform,route:{request:request=>pins.get(request)}}} as any);
+  await app.ready();
+  t.after(async()=>{await app.close();await source.close();await intake.close();await platform.close();await diagnostics.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  return {store,sources,platform,intake,app,headers:{authorization:'Bearer '+ownerToken}};
 }
 const note=(changes:Record<string,unknown>={})=>({id:randomUUID(),deviceId:'generated-note-device',deviceName:'Generated device',platform:'android',capturedAt:'2026-11-02T10:00:00.000Z',text:'  Generated note body\nwith original spacing.  ',...changes});
 
@@ -61,6 +88,24 @@ test('real HTTP note list keeps cursor, attribution and note-only deletion over 
   assert.ok(f.node.store.evidence([first.id])[0]);
   assert.deepEqual((await f.app.inject({method:'DELETE',url:'/api/notes/'+first.id})).json(),{deleted:1});
   assert.deepEqual((await f.app.inject({method:'DELETE',url:'/api/notes/'+first.id})).json(),{deleted:0});
+});
+
+test('C10A intake POST keeps note 201/200/409 and collector device semantics',async t=>{
+  const f=await intakeFixture(t),input=note();
+  const created=await f.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:input});
+  assert.equal(created.statusCode,201,created.body);
+  const receipt=created.json();assert.equal(receipt.receipt.version,2);assert.equal(receipt.receipt.state,'received');assert.equal(receipt.duplicate,false);
+  assert.equal((await f.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:input})).statusCode,200);
+  assert.equal((await f.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:{...input,text:'Generated changed body'}})).statusCode,409);
+  assert.equal(f.store.evidence([input.id])[0].source,'note');
+  const invitation=f.platform.assembly.connections!.invite({serverUrl:'https://generated.invalid',label:'Generated collector',deviceId:'generated-note-device'},'collector');
+  const paired=await f.platform.assembly.connections!.redeem({code:invitation.invitation.code,deviceId:'generated-note-device',deviceName:'Generated phone',platform:'android'});
+  const collector={authorization:'Bearer '+paired.token};
+  assert.equal((await f.app.inject({method:'POST',url:'/api/notes',headers:collector,payload:note({id:randomUUID(),deviceId:'generated-note-device'})})).statusCode,201);
+  assert.equal((await f.app.inject({method:'POST',url:'/api/notes',headers:collector,payload:note({id:randomUUID(),deviceId:'generated-other'})})).statusCode,403);
+  await f.platform.assembly.connections!.revoke(paired.credentialId);
+  const revoked=await f.app.inject({method:'POST',url:'/api/notes',headers:collector,payload:note({id:randomUUID(),deviceId:'generated-note-device'})});
+  assert.ok([401,403].includes(revoked.statusCode),revoked.body);
 });
 
 test('notes-source quiesce keeps reads but refuses new delete, and the factory mounts with no published service',async t=>{
