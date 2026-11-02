@@ -87,7 +87,7 @@ test('private DSH channel rejects an extra write tool or changed schema rather t
 
 test('private DSH transport binds the native turn/call identity and confirms only the separate sender ACK', async t => {
   const f = await channelFixture(t), attempt = {id: 'host-initial', index: 0};
-  f.channel.bindCall(1, 'native-call', definition.name, attempt);
+  f.channel.bindCall(1, 'native-call', definition.name, attempt, {});
   const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}});
   const frame = await response.json(); assert.equal(response.status, 200); assert.deepEqual(f.calls[0].attempt, attempt);
   assert.equal(f.delivered, false, 'HTTP body receipt is not the separate delivery ACK');
@@ -97,7 +97,7 @@ test('private DSH transport binds the native turn/call identity and confirms onl
 
 test('channel shutdown with a lost sender ACK refuses successful cleanup and never confirms a delivery', async t => {
   const f = await channelFixture(t); void f.channel.failure.catch(() => {});
-  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0});
+  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0}, {});
   const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}}); await response.json();
   assert.equal(f.delivered, false); await assert.rejects(f.channel.close(), {reason: 'tool_failure'}); assert.equal(f.delivered, false);
 });
@@ -105,7 +105,7 @@ test('channel shutdown with a lost sender ACK refuses successful cleanup and nev
 test('child ACK response waits for Host post-sender eligibility and cannot report a stale delivery as accepted', async t => {
   const f = await channelFixture(t); void f.channel.failure.catch(() => {});
   f.host.tools.deliver = async (_attempt, _call, sender) => { await sender({text: 'Generated payload'}); throw Error('Generated stale attempt after sender'); };
-  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0});
+  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0}, {});
   const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}}), frame = await response.json();
   assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 400);
   await assert.rejects(f.channel.failure, {reason: 'tool_failure'}); assert.equal(f.delivered, false);
@@ -113,7 +113,7 @@ test('child ACK response waits for Host post-sender eligibility and cannot repor
 
 test('runtime delivery receipt is bound to the run, fixed attempt, native call and exact payload and is one-shot', async t => {
   const f = await channelFixture(t), attempt = {id: 'host-initial', index: 0};
-  f.channel.bindCall(1, 'native-call', definition.name, attempt);
+  f.channel.bindCall(1, 'native-call', definition.name, attempt, {});
   const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}}), frame = await response.json();
   assert.equal(frame.receipt.runId, 'generated-run'); assert.equal(frame.receipt.attemptId, attempt.id); assert.equal(frame.receipt.callId, 'native-call');
   for (const changed of [{runId: 'other-run'}, {attemptId: 'host-repair'}, {callId: 'other-call'}, {payloadFingerprint: '0'.repeat(64)}]) {
@@ -121,6 +121,15 @@ test('runtime delivery receipt is bound to the run, fixed attempt, native call a
   }
   assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 200);
   assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 400); assert.equal(f.calls.length, 1);
+  assert.equal((await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}})).status, 400);
+  assert.equal(f.calls.length, 1, 'a replay cannot stage a second read under the same native call');
+});
+
+test('private native calls cannot replace the typed model tool arguments', async t => {
+  const f = await channelFixture(t);
+  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0}, {ids: ['generated-id']});
+  assert.equal((await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {ids: ['different-id']}})).status, 400);
+  assert.equal(f.calls.length, 0);
 });
 
 test('official DSH plugin publishes through the real Host without an observer and quiesces admissions', async t => {
@@ -143,7 +152,7 @@ test('an unconfigured DSH model fails before private resources or a subprocess a
 
 test('a Host delegation yield crosses the real parent channel as a typed stopping cause', async t => {
   const f = await channelFixture(t), yielded = new AgentYieldError(); void f.channel.failure.catch(() => {});
-  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0});
+  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0}, {});
   f.host.tools.deliver = async () => { throw yielded; };
   assert.equal((await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}})).status, 400);
   await assert.rejects(f.channel.failure, error => error === yielded); assert.equal(f.delivered, false);

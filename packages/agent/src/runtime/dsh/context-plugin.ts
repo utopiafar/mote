@@ -9,7 +9,7 @@ import {ContextToolError} from '../../tool-errors.js';
 import {AgentYieldError} from '../../host-controls.js';
 
 interface ChildConfiguration {url: string; token: string; runId: string; tools: readonly RuntimeToolDefinition[]}
-interface NativeCall {attempt: RuntimeAttempt; name: string}
+interface NativeCall {attempt: RuntimeAttempt; name: string; arguments: unknown; consumed: boolean}
 interface RuntimeReceipt {runId: string; attemptId: string; callId: string; payloadFingerprint: string}
 const fingerprint = (payload: RuntimeToolPayload) => createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 const failure = () => new AgentResponseError('The native context tools could not be verified or delivered.', 'tools_unverified');
@@ -60,7 +60,8 @@ export async function createDshHostChannel(host: HostRunPort) {
         const key = keyFor(body.turn, body.callId);
         if (!calls.has(key)) await new Promise<void>(resolve => { const group = waiters.get(key) ?? new Set(); group.add(resolve); waiters.set(key, group); });
         host.assertCurrent(); if (closing) throw failure();
-        const call = calls.get(key); if (!call || call.name !== body.name) throw failure();
+        const call = calls.get(key); if (!call || call.consumed || call.name !== body.name || !isDeepStrictEqual(call.arguments, body.arguments)) throw failure();
+        call.consumed = true;
         let confirmed!: () => void, rejected!: (error: unknown) => void;
         const completed = new Promise<void>((resolve, reject) => { confirmed = resolve; rejected = reject; }); void completed.catch(() => {});
         try {
@@ -90,11 +91,11 @@ export async function createDshHostChannel(host: HostRunPort) {
   return {
     configuration: {url: `http://127.0.0.1:${address.port}`, token, runId: host.identity.runId, tools: host.tools.definitions} satisfies ChildConfiguration,
     failure: failurePromise,
-    bindCall(turn: number, callId: string, name: string, attempt: RuntimeAttempt) {
+    bindCall(turn: number, callId: string, name: string, attempt: RuntimeAttempt, args: unknown) {
       if (closing) return;
       const key = keyFor(turn, callId), existing = calls.get(key);
-      if (existing && (existing.attempt !== attempt || existing.name !== name)) { rejectFailure(failure()); return; }
-      calls.set(key, {attempt, name});
+      if (existing && (existing.attempt !== attempt || existing.name !== name || !isDeepStrictEqual(existing.arguments, args))) { rejectFailure(failure()); return; }
+      if (!existing) calls.set(key, {attempt, name, arguments: structuredClone(args), consumed: false});
       for (const wake of waiters.get(key) ?? []) wake(); waiters.delete(key);
     },
     close() {

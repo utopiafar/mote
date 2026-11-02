@@ -106,10 +106,14 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
           const usage = observeHarness({question: '', onUsage(value) { if (active) host.emit({type: 'usage', usage: value}, active); }, onProgress(value) { if (active) host.emit({type: 'progress', progress: value}, active); }}, host.identity.runId, connection.protocol !== 'deepseek');
           const notification = (value: HarnessNotification) => {
             if (value.method !== 'session.event' || value.params.sessionId !== host.identity.runId) return;
-            const event = value.params.event as {type: string; data?: {turn?: number; callId?: string; name?: string}};
+            const event = value.params.event as {type: string; data?: {turn?: number; callId?: string; name?: string; arguments?: string}};
             if (event.type === 'turn/start' && active && Number.isSafeInteger(event.data?.turn)) turns.set(event.data!.turn!, active);
             if (event.type === 'tool/call' && typeof event.data?.callId === 'string' && typeof event.data.name === 'string') {
-              const attempt = turns.get(event.data.turn!); if (attempt) channel!.bindCall(event.data.turn!, event.data.callId, event.data.name, attempt);
+              const attempt = turns.get(event.data.turn!);
+              if (attempt) {
+                try { channel!.bindCall(event.data.turn!, event.data.callId, event.data.name, attempt, JSON.parse(event.data.arguments!)); }
+                catch { /* Invalid native JSON cannot acquire a matching Host call. */ }
+              }
             }
             try { usage(value); } catch { /* Host rejects late observations after an attempt settles. */ }
           };
