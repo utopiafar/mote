@@ -5,7 +5,7 @@
  * an explicit isolated loader (U08) — an unisolated component is never a
  * mount. Mount lifecycle reuses the U02 ViewLifetime, never a second one. */
 import { ViewLifetime } from '@mote/shared/plugin-view-lifetime';
-import type { WebContribution, WebFeatureHost } from '../features/host';
+import { contributionDescriptor, type WebContribution, type WebFeatureHost } from '../features/host';
 
 export type InstanceLoader = 'react' | 'external';
 
@@ -66,13 +66,21 @@ export class PluginContributionScope {
         // Builtin instances are declared 1:1 with their package, so the
         // manifest keeps the package ID — FeatureInventory keeps grouping
         // browser and server capabilities under one feature. Non-builtin
-        // instances key ownership on instanceId and namespace contribution
-        // IDs so identical component IDs cannot collide.
+        // instances key registry ownership on instanceId and qualify the
+        // descriptor KEY only: the public entry.id stays stable for catalog
+        // matching, while local dependency references are rewritten to the
+        // qualified descriptor IDs.
         const builtin = inst.installationId.startsWith('builtin:');
-        const qualified = builtin
-          ? inst.contributions
-          : inst.contributions.map(c => ({ ...c, entry: { ...c.entry, id: `${inst.instanceId}/${c.entry.id}` } }) as WebContribution);
-        const fiber = await this.#host.install({ id: builtin ? inst.packageId : inst.instanceId, version: '1', components: [] }, [...qualified]);
+        const idMap = new Map(inst.contributions.map(c => {
+          const d = contributionDescriptor(c);
+          return [d.id, `${d.id.split(':')[0]}:${inst.instanceId}/${c.entry.id}`] as const;
+        }));
+        const qualified = builtin ? inst.contributions : inst.contributions.map(c => {
+          const requires = c.entry.requires?.map(r => typeof r === 'string' ? r : idMap.has(r.id) ? { ...r, id: idMap.get(r.id)! } : r);
+          return { ...c, entry: { ...c.entry, ...(requires ? { requires } : {}) } } as WebContribution;
+        });
+        const qualifyId = builtin ? undefined : (id: string) => idMap.get(id) ?? id;
+        const fiber = await this.#host.install({ id: builtin ? inst.packageId : inst.instanceId, version: '1', components: [] }, [...qualified], qualifyId);
         this.defer(() => fiber.dispose());
       } else await isolated!.mount(this);
       this.#mounted = true;
@@ -94,7 +102,9 @@ export class PluginContributionScope {
       try { await dispose(); } catch (error) { errors.push(error); }
     }
     this.#mounted = false;
-    if (this.lifetime.state !== 'disposed') this.lifetime.dispose();
+    if (this.lifetime.state !== 'disposed') {
+      try { this.lifetime.dispose(); } catch (error) { errors.push(error); }
+    }
     return { errors };
   }
 }

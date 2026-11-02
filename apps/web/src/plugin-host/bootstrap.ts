@@ -42,8 +42,10 @@ export async function bootstrapPlugins(
 export async function teardownPlugins(scopes: ReadonlyMap<string, PluginContributionScope>): Promise<{ errors: unknown[] }> {
   const errors: unknown[] = [];
   for (const scope of scopes.values()) {
-    const result = await scope.rollback();
-    errors.push(...result.errors);
+    try {
+      const result = await scope.rollback();
+      errors.push(...result.errors);
+    } catch (error) { errors.push(error); }
   }
   return { errors };
 }

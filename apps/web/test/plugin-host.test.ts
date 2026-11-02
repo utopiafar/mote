@@ -68,12 +68,12 @@ test('two instances of one package coexist and repeated mount is idempotent', as
   const inst = (id: string, pageId: string): InstanceSnapshot => ({ ...builtinInstance('pkg.shared', [page(pageId)]), instanceId: id, installationId: id });
   const { reports, scopes } = await bootstrapPlugins(host, [inst('inst.work', 'work-page'), inst('inst.personal', 'personal-page')]);
   assert.deepEqual(reports.map(r => r.outcome.observed), ['mounted', 'mounted']);
-  assert.deepEqual(host.pages().map(p => p.id).sort(), ['inst.personal/personal-page', 'inst.work/work-page']);
+  assert.deepEqual(host.pages().map(p => p.id).sort(), ['personal-page', 'work-page']);
   const work = scopes.get('inst.work')!;
   assert.deepEqual(await work.mount(), { observed: 'mounted' }, 're-mount is idempotent, prior install kept');
-  assert.equal(host.page('inst.work/work-page')?.id, 'inst.work/work-page');
+  assert.equal(host.page('inst.work/work-page')?.id, 'work-page');
   await work.rollback();
-  assert.deepEqual(host.pages().map(p => p.id), ['inst.personal/personal-page'], 'sibling instance untouched');
+  assert.deepEqual(host.pages().map(p => p.id), ['personal-page'], 'sibling instance untouched');
 });
 
 test('rollback awaits asynchronous cleanup including fiber disposal before remount', async () => {
@@ -94,9 +94,13 @@ test('identical component IDs across instances are namespaced and sibling surviv
   const host = new WebFeatureHost();
   const inst = (id: string): InstanceSnapshot => ({ ...builtinInstance('pkg.dup', [page('notes')]), instanceId: id, installationId: `ext:${id}` });
   const { scopes } = await bootstrapPlugins(host, [inst('inst.one'), inst('inst.two')]);
-  assert.deepEqual(host.pages().map(p => p.id).sort(), ['inst.one/notes', 'inst.two/notes']);
+  // Public entry.id stays declared for catalog matching; the qualified
+  // descriptor key owns the route.
+  assert.equal(host.page('inst.one/notes')?.id, 'notes');
+  assert.equal(host.page('inst.two/notes')?.id, 'notes');
   await scopes.get('inst.one')!.rollback();
-  assert.deepEqual(host.pages().map(p => p.id), ['inst.two/notes']);
+  assert.equal(host.page('inst.one/notes'), undefined);
+  assert.equal(host.page('inst.two/notes')?.id, 'notes');
 });
 
 test('rollback reports cleanup failures and the teardown entrypoint releases scopes', async () => {
@@ -111,4 +115,45 @@ test('rollback reports cleanup failures and the teardown entrypoint releases sco
   assert.equal(released, 1);
   assert.equal(result.errors.length, 1);
   assert.equal(host.pages().length, 0, 'teardown withdrew the registration');
+});
+
+
+test('local dependency references are rewritten to qualified descriptor IDs', async () => {
+  const host = new WebFeatureHost();
+  const inst: InstanceSnapshot = {
+    ...builtinInstance('pkg.deps', [
+      page('reader'),
+      { surface: 'panel', entry: { id: 'reader-panel', featureId: 'deps', kind: 'mote.journal', schemaVersion: 1, representation: 'panel', requires: [{ id: 'page:reader', version: '1', host: 'local' }], render: () => null } },
+    ]),
+    instanceId: 'inst.dep', installationId: 'ext:inst.dep',
+  };
+  const { reports } = await bootstrapPlugins(host, [inst]);
+  assert.equal(reports[0]!.outcome.observed, 'mounted');
+  const registered = (host as any).registry.list('panel').map((r: any) => r.value.entry);
+  assert.equal(registered[0]?.requires?.[0]?.id, 'page:inst.dep/reader', 'local dep rewritten to qualified id');
+  assert.equal(host.page('inst.dep/reader')?.id, 'reader');
+});
+
+test('catalog-facing view ids stay declared for external instances', async () => {
+  const host = new WebFeatureHost();
+  const inst: InstanceSnapshot = {
+    ...builtinInstance('pkg.cat', [
+      { surface: 'renderer', entry: { id: 'fixture.journal-detail', featureId: 'cat', kind: 'mote.journal', schemaVersion: 1, representation: 'detail', render: () => null } },
+    ]),
+    instanceId: 'inst.cat', installationId: 'ext:inst.cat',
+  };
+  await bootstrapPlugins(host, [inst]);
+  const views = host.views('renderer', { kind: 'mote.journal', schemaVersion: 1, representation: 'detail' });
+  assert.equal(views.length, 1);
+  assert.equal(views[0]!.id, 'fixture.journal-detail', 'catalog ID preserved for matching');
+});
+
+test('a throwing lifetime dispose does not strand sibling scopes on teardown', async () => {
+  const host = new WebFeatureHost();
+  const { scopes } = await bootstrapPlugins(host, [builtinInstance('pkg.s1', [page('s1')]), builtinInstance('pkg.s2', [page('s2')])]);
+  const first = scopes.values().next().value!;
+  (first.lifetime as unknown as { dispose: () => void }).dispose = () => { throw new Error('lifetime boom'); };
+  const result = await teardownPlugins(scopes);
+  assert.equal(result.errors.length, 1);
+  assert.equal(host.pages().length, 0, 'sibling scope still released');
 });
