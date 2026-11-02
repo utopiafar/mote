@@ -77,14 +77,22 @@ class DynamicHttpDispatcherImpl {
   private readonly owner=new Map<string,OwnerEntry>();
   private readonly oauth=new Map<string,OAuthGroup>();
   private readonly registered=new Set<Entry>();
+  private readonly admitted=new WeakMap<FastifyRequest,OwnerEntry>();
   constructor(private readonly options:DynamicHttpDispatcherOptions){}
   attach(app:FastifyInstance){
     if(this.closed)throw new DynamicHttpError('dispatcher_closed');
     if(this.attached)throw new DynamicHttpError('dispatcher_attached');
     if(app.server.listening)throw new DynamicHttpError('dispatcher_attached');
     app.route({method:['GET','POST','PUT','DELETE'],url:'/api/connectors/*',
+      onRequest:async(request,reply)=>{
+        const entry=this.owner.get(`${request.method} ${requestPath(request)}`);
+        if(!entry||!entry.active)return reply.code(404).send({error:'connector_route_unavailable',requestId:request.id});
+        let allowed=false;try{allowed=this.options.authorize(request);}catch{allowed=false;}
+        if(!allowed)return reply.code(401).send({error:'unauthorized'});
+        reply.header('Cache-Control','no-store');this.admitted.set(request,entry);
+      },
       preParsing:(request,_reply,payload,done)=>{
-        const limit=this.owner.get(`${request.method} ${requestPath(request)}`)?.route.bodyLimit;
+        const limit=this.admitted.get(request)?.route.bodyLimit;
         if(limit===undefined){done(null,payload);return;}
         // Count raw wire bytes before parsing; reserializing parsed JSON would let
         // whitespace hide an oversized chunked request. Buffering is bounded by
@@ -163,11 +171,8 @@ class DynamicHttpDispatcherImpl {
     });
   }
   private async dispatchOwner(request:FastifyRequest,reply:FastifyReply){
-    const entry=this.owner.get(`${request.method} ${requestPath(request)}`);
+    const entry=this.admitted.get(request);
     if(!entry||!entry.active)return reply.code(404).send({error:'connector_route_unavailable',requestId:request.id});
-    let allowed=false;try{allowed=this.options.authorize(request);}catch{allowed=false;}
-    if(!allowed)return reply.code(401).send({error:'unauthorized'});
-    reply.header('Cache-Control','no-store');
     const task=this.admit(entry,()=>entry.route.handler(request,reply));
     entry.inflight.add(task);void task.then(()=>entry.inflight.delete(task),()=>entry.inflight.delete(task));
     let result:Admission|undefined;try{result=await task;}catch(error){return this.sendError(error,request,reply);}

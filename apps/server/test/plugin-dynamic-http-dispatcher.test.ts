@@ -52,6 +52,32 @@ test('static routes dispatch real owner handlers with auth, headers, body limits
   assert.throws(()=>dispatcher.registerOwnerRoute(a.scope,route('/evil')),error=>error instanceof DynamicHttpError&&error.code==='invalid_route');
 });
 
+test('owner auth runs before body parsing and preserves 404 for unknown routes',async t=>{
+  const a=fixtureScope('auth-early');t.after(()=>a.resources.close());
+  let authorizeCalls=0,handlerCalls=0;
+  const {app,dispatcher}=fixture(t,()=>{authorizeCalls++;return false;});
+  dispatcher.registerOwnerRoute(a.scope,{method:'POST',path:'/api/connectors/auth-early',bodyLimit:16,handler:(_request,reply)=>{handlerCalls++;return reply.send({ok:true});}});
+  const headers={...owner,'content-type':'application/json'};
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/auth-early',headers,payload:'{'})).statusCode,401,'malformed JSON is not parsed before owner auth');
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/auth-early',headers,payload:{value:'x'.repeat(100)}})).statusCode,401,'an oversized body is not buffered before owner auth');
+  assert.equal(authorizeCalls,2);assert.equal(handlerCalls,0);
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/unknown',headers,payload:'{'})).statusCode,404,'unknown routes stay 404 before auth');
+  assert.equal(authorizeCalls,2);
+});
+
+test('throwing owner auth rejects before parsing while authorized malformed JSON reaches the parser',async t=>{
+  const a=fixtureScope('auth-throw'),b=fixtureScope('auth-ok');
+  t.after(async()=>{await a.resources.close();await b.resources.close();});
+  const throwing=fixture(t,()=>{throw new Error('generated auth failure');});let thrownHandler=0;
+  throwing.dispatcher.registerOwnerRoute(a.scope,{method:'POST',path:'/api/connectors/auth-throw',handler:(_request,reply)=>{thrownHandler++;return reply.send({ok:true});}});
+  assert.equal((await throwing.app.inject({method:'POST',url:'/api/connectors/auth-throw',headers:{...owner,'content-type':'application/json'},payload:'{'})).statusCode,401);
+  assert.equal(thrownHandler,0);
+  const ok=fixture(t,()=>true);let okHandler=0;
+  ok.dispatcher.registerOwnerRoute(b.scope,{method:'POST',path:'/api/connectors/auth-ok',handler:(_request,reply)=>{okHandler++;return reply.send({ok:true});}});
+  assert.equal((await ok.app.inject({method:'POST',url:'/api/connectors/auth-ok',headers:{...owner,'content-type':'application/json'},payload:'{'})).statusCode,400,'after auth, malformed JSON still reaches the parser');
+  assert.equal(okHandler,0);
+});
+
 test('raw chunked body limits reject oversized JSON before the handler runs',async t=>{
   const a=fixtureScope('chunked');t.after(()=>a.resources.close());
   const {app,dispatcher}=fixture(t);let called=0;
