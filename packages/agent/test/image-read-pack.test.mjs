@@ -142,18 +142,29 @@ test('pure runtime adapters prepare payloads without sending, confirming or copy
   assert.equal(steer[1].url, `data:image/png;base64,${encoded}`);
 });
 
-test('DSH prepared value matches the render contract consumed by context-plugin', () => {
-  // This mirrors runtime/dsh/context-plugin.ts output.render exactly: it reads
-  // {text, attachments?} and maps each attachment to an image content item.
-  const render = value => {
-    const result = value;
-    return [{type: 'text', text: result.text}, ...(result.attachments ?? []).map(attachment => ({type: 'image', attachment}))];
-  };
+test('dshPreparedValue reaches the real context-plugin renderer', async () => {
+  // Install the production DSH plugin with a stub Cordis context and capture
+  // the exact ToolDefinition.output.render it registers.
+  const {applyContextPlugin} = await import('../dist/runtime/dsh/context-plugin.js');
+  const {entry} = registryFixture();
+  const tool = {name: entry.name, version: '1', fingerprint: entry.fingerprint, description: entry.description, inputSchema: toolInputSchema(entry.fields)};
+  const previous = process.env.MOTE_HOST_RUN, transport = globalThis.fetch, registered = [];
+  process.env.MOTE_HOST_RUN = JSON.stringify({url: 'http://127.0.0.1:9', token: 'generated-token', runId: 'generated-run', tools: [tool]});
+  globalThis.fetch = async () => ({ok: true, json: async () => ({})});
+  try {
+    await applyContextPlugin({
+      tools: {register: definition => registered.push(definition), guard() {}, schemas: () => [{name: tool.name, description: tool.description, parameters: tool.inputSchema}]},
+      get: () => undefined,
+      provide() {},
+    });
+  } finally {
+    if (previous === undefined) delete process.env.MOTE_HOST_RUN; else process.env.MOTE_HOST_RUN = previous;
+    globalThis.fetch = transport;
+  }
+  assert.equal(registered.length, 1, 'the production plugin registered its read_image tool');
+  const render = registered[0].output.render;
   const attachment = {id: 'generated-attachment'};
-  const rendered = render(dshPreparedValue({text: 'untrusted image payload text', images: [{mimeType: 'image/png', data: encoded}]}, [attachment]));
-  assert.deepEqual(rendered, [
-    {type: 'text', text: 'untrusted image payload text'},
-    {type: 'image', attachment},
-  ]);
-  assert.deepEqual(render(dshPreparedValue({text: 'metadata only'}, [])), [{type: 'text', text: 'metadata only'}]);
+  const rendered = render({}, dshPreparedValue({text: 'untrusted image payload text', images: [{mimeType: 'image/png', data: encoded}]}, [attachment]));
+  assert.deepEqual(rendered, [{type: 'text', text: 'untrusted image payload text'}, {type: 'image', attachment}]);
+  assert.deepEqual(render({}, dshPreparedValue({text: 'metadata only'}, [])), [{type: 'text', text: 'metadata only'}]);
 });
