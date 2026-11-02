@@ -10,6 +10,10 @@ import {PluginHost} from '@mote/plugin-host';
 import {serviceContract,type ScopeIdentity,type ServiceBinding} from '@mote/plugin-api/contracts';
 import {Store,sha256} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
+import {MemoryBindings} from '../src/memory-bindings.js';
+import {MemoryAutomation} from '../src/memory-automation.js';
+import {MemoryStore} from '../src/memory.js';
+import {WorkerMemoryProvider} from '../src/worker-memory-provider.js';
 import {GitHubPluginReleases,type PluginManifest} from '../src/plugin-release.js';
 import {PluginControlStore} from '../src/plugins/plugin-control-store.js';
 import {createPluginControlPlatform,pluginControlDeclaration,type TrustedPluginBuild} from '../src/plugin-center.js';
@@ -101,8 +105,8 @@ test('missing exact dependency is blocked and receipt replay never retries a fac
   await f.plugins.selectBuild('one',input);assert.equal(calls,0);
 });
 
-function releaseFixture(path:string,hold?:{entered:()=>void;wait:Promise<void>}){
-  const source=`import {appendFileSync,existsSync,writeFileSync} from 'node:fs';import {setTimeout as delay} from 'node:timers/promises'; export async function createMemoryProvider(c){if(existsSync(c.log+'.hold')){writeFileSync(c.log+'.initializing','');while(existsSync(c.log+'.hold'))await delay(5);}return {health(){return {capabilities:[{id:'repository',state:'verified'}],issues:[]}},put(){appendFileSync(c.log,'submitted\\n');process.exit(17)},close(){}}}`;
+function releaseFixture(path:string,hold?:{entered:()=>void;wait:Promise<void>},memory=false){
+  const source=memory?`export function createMemoryProvider(){return {health(){return {providerId:'generated.empty',version:'1',ready:true,verified:{persistentCrud:true,scopedRetrieval:true,immutableRecords:true,idempotentReplay:true,history:true,physicalErase:false},problems:[]}},export(){return []},read(){return null},search(){return []},close(){}}}`:`import {appendFileSync,existsSync,writeFileSync} from 'node:fs';import {setTimeout as delay} from 'node:timers/promises'; export async function createMemoryProvider(c){if(existsSync(c.log+'.hold')){writeFileSync(c.log+'.initializing','');while(existsSync(c.log+'.hold'))await delay(5);}return {health(){return {capabilities:[{id:'repository',state:'verified'}],issues:[]}},put(){appendFileSync(c.log,'submitted\\n');process.exit(17)},close(){}}}`;
   const archive=zipSync({'worker.mjs':strToU8(source)}),repository='generated-fixture/control',tag='v1.0.0',base=`https://github.com/${repository}/releases/download/${tag}/`;
   const manifest:PluginManifest={schemaVersion:1,id:'fixture.worker',name:'Fixture worker',version:'1.0.0',runtime:'worker',entry:'worker.mjs',archive:{asset:'worker.zip',sha256:sha256(Buffer.from(archive))},capabilities:['repository','retrieval'],configuration:[{id:'log',label:'Fixture submission log',type:'text',required:true}],dependencies:[],access:['Generated private profile']};
   const releases=new GitHubPluginReleases(join(path,'packages'),async url=>{
@@ -188,4 +192,34 @@ test('a release resolve returning after owner shutdown cannot persist a late pre
   await waiting;await f.handle.close('disabled');release();await rejected;
   assert.equal(f.store.db.prepare('SELECT count(*) AS count FROM plugin_release_previews').get()!.count,0);
   assert.equal(f.store.db.prepare('SELECT count(*) AS count FROM plugin_commands').get()!.count,0);
+});
+
+for(const retained of [false,true])test(`checked disabled instance resumes without another check${retained?' while the actual Memory binding retains it':''}`,async t=>{
+  const path=directory(t),r=releaseFixture(path,undefined,true),f=await platform(path,[],r.releases);t.after(()=>f.close());
+  const automation=new MemoryAutomation(f.store),bindings=new MemoryBindings(f.store,new MemoryStore(f.store),automation,f.plugins,f.executor);t.after(()=>bindings.close());
+  f.plugins.probe=async(id,signal)=>{
+    const health=await new WorkerMemoryProvider(f.plugins.runtime(id)).recover({namespace:{ownerId:'mote-owner',instanceId:id,bindingRevision:1}});signal.throwIfAborted();
+    return {capabilities:f.plugins.packageForInstance(id).manifest.capabilities.map(id=>({id,state:health.ready&&(id==='repository'?health.verified.persistentCrud&&health.verified.immutableRecords&&health.verified.idempotentReplay:health.verified.scopedRetrieval)?'verified' as const:'unknown' as const})),issues:health.problems};
+  };
+  const preview=await f.plugins.resolve({repository:r.repository,tag:r.tag});f.plugins.install({...command(f.plugins.revision()),previewId:preview.id});await until(()=>f.plugins.view().packages[0]?.state==='installed');
+  const instance=f.plugins.configure(undefined,{...command(f.plugins.revision()),packageId:f.plugins.view().packages[0]!.id,name:'Resume fixture',scope:'default',configuration:{log:join(path,'fixture.log')}});
+  f.plugins.action(instance.id,'check',command(instance.revision));await until(()=>f.plugins.instanceView(instance.id).observed!=='checking');
+  let current=f.plugins.instanceView(instance.id);assert.equal(current.observed,'ready');assert.ok(current.capabilities.every(value=>value.state==='verified'));
+  current=f.plugins.action(instance.id,'enable',command(current.revision));
+  if(retained){
+    const preparation=command(bindings.view().revision);bindings.prepare({...preparation,targetPlanId:'instance:'+instance.id,scope:'default',feeAcknowledged:true});
+    await until(()=>['verified','blocked','failed'].includes(bindings.view().preparation?.state??''));assert.equal(bindings.view().preparation!.state,'verified');
+    bindings.action('activate',{...command(bindings.view().revision),preparationId:preparation.operationId});
+    automation.command('resume',command(automation.view().revision));assert.equal(bindings.accepting(),true);
+    assert.ok(f.plugins.references(instance.id).some(value=>value.includes('Current Memory binding')));
+  }
+  const bindingBefore=bindings.binding(),identity=f.plugins.instanceIdentity(instance.id),capabilities=current.capabilities;
+  const disabled=f.plugins.action(instance.id,'disable',command(current.revision));
+  assert.equal(disabled.observed,retained?'draining':'disabled');assert.deepEqual(disabled.capabilities,capabilities);
+  if(retained){assert.equal(bindings.accepting(),false);assert.ok(!disabled.allowedActions.includes('check'));assert.throws(()=>f.plugins.action(instance.id,'check',command(disabled.revision)),{statusCode:409});}
+  assert.ok(disabled.allowedActions.includes('enable'),'completed capability verification still admits resume');
+  const enable=command(disabled.revision),resumed=f.plugins.action(instance.id,'enable',enable);
+  assert.equal(resumed.desired,true);assert.equal(resumed.observed,'ready');assert.deepEqual(bindings.binding(),bindingBefore);assert.deepEqual(f.plugins.instanceIdentity(instance.id),identity);
+  assert.deepEqual(f.plugins.action(instance.id,'enable',enable),resumed,'lost response replay does not reapply enable');
+  if(retained)assert.equal(bindings.accepting(),true);
 });
