@@ -25,6 +25,10 @@ const agent={configured:false,query:async()=>{throw Error('No model in bootstrap
 test('default loader preserves the complete product, owner checks and original note write/read, then closes its vault',async t=>{
   const {config,headers}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(()=>node.app.close());
+  assert.equal(node.executor,node.executionPlatform.assembly.executor,'buildApp must use the execution platform engine');
+  const execution=node.featureServices.runtimeSettings.execution();
+  assert.deepEqual({agent:node.executionPlatform.assembly.agentGate.snapshot().limit,llm:node.executionPlatform.assembly.llmGate.snapshot().limit,interactive:node.executionPlatform.assembly.interactiveGate.snapshot().limit,interactiveModel:node.executionPlatform.assembly.interactiveModelGate.snapshot().limit},
+    {agent:execution.agentConcurrency,llm:execution.llmConcurrency,interactive:execution.interactiveConcurrency,interactiveModel:execution.interactiveConcurrency});
   assert.deepEqual(node.featureHost.registry.inventory().features.map(feature=>feature.id),[
     'mote.activity','mote.files','mote.actions','mote.connections','mote.system','mote.storage','mote.capture','mote.context','mote.materials',
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
@@ -43,6 +47,8 @@ test('default loader preserves the complete product, owner checks and original n
   const usage=await node.app.inject({url:'/api/usage?from=2026-11-01&to=2026-11-03',headers});
   assert.equal(usage.statusCode,200,usage.body);
   await node.app.close();await node.app.close();
+  assert.equal(node.executor.closed,true);
+  assert.throws(()=>node.executionPlatform.assembly);
   assert.throws(()=>node.observabilityPlatform.forAssembly(node.observabilityScope));
   assert.equal(node.bootstrap.snapshot().contributions.length,0);
   assert.throws(()=>node.store.stats());
