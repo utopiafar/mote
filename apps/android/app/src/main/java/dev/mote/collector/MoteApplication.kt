@@ -1,9 +1,16 @@
 package dev.mote.collector
 
 import android.app.Application
+import dev.mote.collector.plugins.NativePluginHost
+import dev.mote.collector.plugins.NativePluginProvider
+import dev.mote.collector.plugins.NativePluginRegistry
 import java.util.concurrent.Executors
 
 class MoteApplication : Application() {
+    /** Build-native plugin host: providers ship in the APK; activation and
+     * binding come only from the real snapshot. View scopes die with the
+     * Activity view; durable owners (capture, uploads, drafts) do not. */
+    lateinit var pluginHost: NativePluginHost; private set
     companion object { @Volatile var visibleActivities = 0; private set }
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -15,6 +22,13 @@ class MoteApplication : Application() {
         NativeUiPacks.initialize(this)
         MoteAppearance.initialize(this)
         if (getProcessName() != packageName) return
+        val buildId = runCatching { packageManager.getPackageInfo(packageName, 0).versionName ?: "dev" }.getOrDefault("dev")
+        pluginHost = NativePluginHost(NativePluginRegistry().apply {
+            register(NativePluginProvider("mote.capture.projection", "1", buildId = buildId, osGrants = listOf("projection")))
+            register(NativePluginProvider("mote.capture.accessibility", "1", buildId = buildId, osGrants = listOf("accessibility")))
+            register(NativePluginProvider("mote.durable-upload", "1", buildId = buildId))
+            register(NativePluginProvider("mote.quick-note", "1", buildId = buildId))
+        })
         try { LocalDataFormat.requireCurrent(this) } catch (error: Exception) {
             QueueStorage.recoveryFailure = error.message
             return

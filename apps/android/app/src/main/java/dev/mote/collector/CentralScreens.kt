@@ -74,7 +74,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 if (ui.requestedFileOriginMatches()) library.openFile(id) else ui.text(MoteI18n.text("访问凭据已失效，请重新连接。"))
             } ?: library.show(page)
             "archive", "timeline", "materials", "coding", "memories", "insights", "sources", MoteNavigation.SEARCH -> library.show(page)
-            else -> admin.show(page)
+            else -> if (!ui.pluginRoute(page, body)) admin.show(page)
         }
     }
     fun back(): Boolean = detailBack?.let { detailBack = null; it(); true } ?: false

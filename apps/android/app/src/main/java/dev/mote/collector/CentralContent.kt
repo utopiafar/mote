@@ -32,6 +32,45 @@ internal class CentralContent(
         }
         catch (error: Exception) { pendingReaderReturn = null; throw error }
     }
+    /** The plugin view bound to this content; disposed when its route,
+     * pause or Activity ends while the durable owner persists. Removing the
+     * mounted slot lets the existing body.childCount == 0 resume path
+     * remount the route instead of leaving dead UI. */
+    private var pluginView: dev.mote.collector.plugins.PluginViewSession? = null
+    private var pluginViewSlot: android.view.View? = null
+    fun disposePluginView() {
+        pluginView?.dispose(); pluginView = null
+        pluginViewSlot?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        pluginViewSlot = null
+    }
+
+    /** Plugin-owned route binding: a registered factory must mount its
+     * contribution into the shell before the route is reported handled; a
+     * failed mount disposes the fresh session and falls back. */
+    fun pluginRoute(page: String, container: Any): Boolean {
+        val host = (activity.application as? MoteApplication)?.pluginHost ?: return false
+        val factory = host.route(page) ?: return false
+        val owner = host.routeOwner(page) ?: return false
+        disposePluginView()
+        val session = host.onViewRecreated(owner)
+        // The factory mounts into a disposable child slot: a thrown mount
+        // removes everything it added, so the fallback never shares the body
+        // with partial plugin UI.
+        val parent = container as? android.view.ViewGroup
+        val slot: Any = parent?.let { android.widget.LinearLayout(activity).apply { orientation = android.widget.LinearLayout.VERTICAL }.also(it::addView) } ?: container
+        return try {
+            session.registerView(factory(session, slot))
+            pluginView = session
+            if (slot !== container) pluginViewSlot = slot as android.view.View
+            true
+        } catch (error: Throwable) {
+            // Cleanup must never mask the mount error or block the fallback.
+            runCatching { if (slot !== container) parent?.removeView(slot as android.view.View) }
+            session.dispose()
+            false
+        }
+    }
+
     fun requestedFileId(): String? = activity.intent.getStringExtra("fileId")
     fun requestedFileOriginMatches(): Boolean = activity.intent.getStringExtra("fileOrigin") == server
     fun recordNew() = activity.openRecordEditor()
@@ -281,8 +320,8 @@ internal class CentralContent(
         accessReady = true
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
-    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.pauseInsights(); screens?.close() }
-    fun close() { pause(); pending.clear() }
+    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.pauseInsights(); screens?.close() }
+    fun close() { disposePluginView(); pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)
         state.putString("browserLoginId", browserLoginId); state.putString("browserVerifier", browserVerifier); state.putLong("browserGeneration", browserGeneration)
@@ -333,7 +372,7 @@ internal class CentralContent(
     internal fun navigate(next: String, remember: Boolean = true) {
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
-        page = next; revision++; pending.clear(); handler.removeCallbacks(refreshRun); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
+        page = next; revision++; pending.clear(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
         updateCollectionBar(); updateBackButton()
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("中央资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
