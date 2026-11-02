@@ -188,11 +188,12 @@ let chromeCaptureBridge:ChromeCaptureBridge|undefined;
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', showWindow);
+  let pluginHost: DesktopPluginHost | undefined;
   app.on('before-quit', event => {
     quitting = true; void events.record('APP', 'STOPPED'); collector?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void Promise.allSettled([controlChain, settleNoteWork(), localSources?.close(), updater?.close(), chromeCaptureBridge?.close(), collector?.settleCapture()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
+    void Promise.allSettled([controlChain, settleNoteWork(), localSources?.close(), updater?.close(), chromeCaptureBridge?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
@@ -245,8 +246,9 @@ else {
 
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
-    const pluginHost: DesktopPluginHost = new DesktopPluginHost({ router: electronIpcRouter(ipcMain, () => pluginHost.windowFacts), native: new NativeProviderRegistry('mac') });
-    pluginHost.native.register({ capability: 'mote.native-helper', apiVersion: '1', platform: 'mac', buildId: app.getVersion(), osGrants: ['screen', 'accessibility', 'calendar'] });
+    pluginHost = new DesktopPluginHost({ router: electronIpcRouter(ipcMain, () => pluginHost!.windowFacts), native: new NativeProviderRegistry('mac') });
+    const host: DesktopPluginHost = pluginHost;
+    host.native.register({ capability: 'mote.native-helper', apiVersion: '1', platform: 'mac', buildId: app.getVersion(), osGrants: ['screen', 'accessibility', 'calendar'] });
     window = new BrowserWindow({
       width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: developmentProfile },
@@ -260,9 +262,9 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    pluginHost.registerWindow(mainSenderId, 'main');
-    window.once('closed', () => pluginHost.unregisterWindow(mainSenderId));
-    window.on('close', event => { if (!quitting) { event.preventDefault(); pluginHost.onMainWindowClosed(); window?.hide(); } });
+    host.registerWindow(mainSenderId, 'main');
+    window.once('closed', () => host.unregisterWindow(mainSenderId));
+    window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
       if (!([window,quickNoteWindow].some(owned=>owned && !owned.isDestroyed() && event.sender===owned.webContents && event.senderFrame===owned.webContents.mainFrame && event.senderFrame?.url===(owned===quickNoteWindow?pageUrl+'#quick-note':pageUrl)))) throw new Error(moteText("请求来源不受信任"));
     };
@@ -271,12 +273,12 @@ else {
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
       quickNoteWindow=noteWindow;
       const noteSenderId = noteWindow.webContents.id;
-      pluginHost.registerWindow(noteSenderId, 'quick-note');
+      host.registerWindow(noteSenderId, 'quick-note');
       noteWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
       noteWindow.webContents.on('will-navigate',event=>event.preventDefault());
       noteWindow.webContents.on('will-attach-webview',event=>event.preventDefault());
       const appearance=()=>{noteWindow.setBackgroundColor(appearanceBackground());noteWindow.webContents.send('mote:appearance',appearanceState());};nativeTheme.on('updated',appearance);
-      noteWindow.once('closed',()=>{pluginHost.unregisterWindow(noteSenderId);nativeTheme.removeListener('updated',appearance);if(quickNoteWindow===noteWindow)quickNoteWindow=undefined;});
+      noteWindow.once('closed',()=>{host.unregisterWindow(noteSenderId);nativeTheme.removeListener('updated',appearance);if(quickNoteWindow===noteWindow)quickNoteWindow=undefined;});
       await noteWindow.loadURL(pageUrl+'#quick-note');
     };
     ipcMain.on('mote:appearance-initial' ,(event)=>{trusted(event);event.returnValue=appearanceState();});
@@ -288,8 +290,8 @@ else {
       preferredAppearance=raw;nativeTheme.themeSource=raw==='auto'?'system':raw;
       broadcastAppearance();return appearanceState();
     });
-      const shellScope = pluginHost.createScope({ instanceId: 'desktop-shell', capabilities: ['shell.language'] });
-      await pluginHost.startPlugin(shellScope, (scope: PluginScopeHandle) => {
+      const shellScope = host.createScope({ instanceId: 'desktop-shell', capabilities: ['shell.language'] });
+      await host.startPlugin(shellScope, (scope: PluginScopeHandle) => {
         scope.registerIpc({ channel: 'mote:language', capability: 'shell.language', windowRoles: ['main', 'quick-note'], roleFrameUrls: { main: [pageUrl], 'quick-note': [pageUrl + '#quick-note'] } }, () => languageState());
       });
     ipcMain.handle('mote:set-language', async (event, raw: unknown) => {
