@@ -43,15 +43,30 @@ async function copyPackage(source, target) {
   await cp(join(source, 'dist'), join(target, 'dist'), {recursive: true, force: false, errorOnExist: true});
   return manifest;
 }
+const repository = resolve(sdk, '..', '..');
+async function copyInstalledDependency(name, manifests, copied) {
+  if (copied.has(name)) return;
+  copied.add(name);
+  const source = join(repository, 'node_modules', name);
+  const target = join(stage, 'node_modules', name);
+  await regularTree(source);
+  await cp(source, target, {recursive: true, force: true});
+  const dependency = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
+  for (const child of Object.keys(dependency.dependencies ?? {})) await copyInstalledDependency(child, manifests, copied);
+  manifests.add(name);
+}
 // Build diagnostics go to stderr; --json pack output remains machine readable.
 run(['run', 'build'], sdk, process.env, 2);
 const stage = await mkdtemp(join(tmpdir(), 'mote-plugin-sdk-pack-'));
 try {
-  const manifest = await copyPackage(sdk, stage);
+  const manifest = await copyPackage(sdk, stage), bundled = new Set(manifest.bundledDependencies ?? []);
   for (const name of ['plugin-api', 'plugin-host']) {
     const dependency = await copyPackage(resolve(sdk, '..', name), join(stage, 'node_modules', '@mote', name));
     if (dependency.name !== '@mote/' + name || manifest.dependencies[dependency.name] !== dependency.version) throw Error('SDK private dependency identity/version mismatch');
+    for (const child of Object.keys(dependency.dependencies ?? {})) if (!child.startsWith('@mote/')) await copyInstalledDependency(child, bundled, new Set());
   }
+  manifest.bundledDependencies = [...bundled];
+  await writeFile(join(stage, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
   const env = {...process.env};
   for (const key of Object.keys(env)) if (/^npm_config_(workspace|workspaces|include_workspace_root)$/i.test(key)) delete env[key];
   const stdout = run(['pack', '--ignore-scripts', '--workspaces=false', ...args], stage, env, 'pipe');

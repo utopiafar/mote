@@ -72,13 +72,22 @@ console.log(plan.plan.contributions[0]?.address.contributionId);
   const output = run(process.execPath, ['dist/consumer.js'], external);
   assert.equal(output.trim(), 'external.page');
 
+  const browserTsc = ['--noEmit', '--target', 'ES2022', '--module', 'ESNext', '--moduleResolution', 'Bundler'];
+  writeFileSync(join(external, 'browser-consumer.ts'), "import {packageManifestSchema} from '@mote/plugin-sdk'; console.log(typeof packageManifestSchema.parse);");
+  run(join(root, 'node_modules/.bin/tsc'), [...browserTsc, 'browser-consumer.ts'], external);
+  writeFileSync(join(external, 'browser-host.ts'), "import {planComposition} from '@mote/plugin-sdk'; console.log(typeof planComposition);");
+  let browserHostFailure;
+  try { run(join(root, 'node_modules/.bin/tsc'), [...browserTsc, 'browser-host.ts'], external); } catch (error) { browserHostFailure = error; }
+  assert.ok(browserHostFailure);
+  assert.match(String(browserHostFailure.stdout || browserHostFailure.stderr), /no exported member|TS2305/);
+
   const {build} = await import('esbuild');
   const bundled = await build({
-    stdin: {contents: "import {packageManifestSchema} from '@mote/plugin-sdk/browser'; console.log(typeof packageManifestSchema.parse);", resolveDir: external, sourcefile: 'browser.ts'},
+    stdin: {contents: "import {packageManifestSchema} from '@mote/plugin-sdk'; console.log(typeof packageManifestSchema.parse);", resolveDir: external, sourcefile: 'browser.ts'},
     bundle: true, platform: 'browser', format: 'esm', write: false, logLevel: 'silent',
   });
   const browserOutput = bundled.outputFiles[0].text;
-  assert.doesNotMatch(browserOutput, /node:|from ['"](?:node:)?(?:fs|path|child_process)['"]/);
+  assert.doesNotMatch(browserOutput, /node:|from ['"](?:node:)?(?:fs|path|child_process)['"]|planComposition/);
   assert.ok(!browserOutput.includes(root));
   assert.ok(!browserOutput.includes('MOTE_TOKEN'));
 });
