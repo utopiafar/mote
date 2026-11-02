@@ -31,11 +31,25 @@ test('FeatureManifest is only a projection of package contributions',()=>{
   assert.deepEqual(projected,{
     id:'fixture.package',version:'1.0.0',components:[
       {id:'fixture.source',version:'1',surface:'ingress'},
-      {id:'fixture.processor',version:'1',surface:'processing',requires:[{id:'fixture.source',version:'1'}]},
+      {id:'fixture.processor',version:'1',surface:'processing'},
       {id:'fixture.page',version:'1',surface:'page'},
     ],
   });
   assert.notEqual(projected.components,manifest.contributions);
+});
+
+test('feature projection keeps only required sibling contributions as local requirements',()=>{
+  const manifest=packageManifestSchema.parse({...base,contributions:[{
+    ...base.contributions[2],
+    requires:[
+      {kind:'service',id:'fixture.reader',version:'1'},
+      {kind:'package',id:'fixture.base',version:'1.0.0'},
+      {kind:'host',id:'mote.host',version:'1'},
+      {kind:'contribution',id:'fixture.required',version:'1'},
+      {kind:'contribution',id:'fixture.optional',version:'1',required:false},
+    ],
+  }]});
+  assert.deepEqual(featureManifestForPackage(manifest).components[0].requires,[{id:'fixture.required',version:'1'}]);
 });
 
 test('the current Manifest rejects missing fixed artifacts, duplicate contributions and executable fields',()=>{

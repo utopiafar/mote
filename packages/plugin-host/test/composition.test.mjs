@@ -36,6 +36,11 @@ test('a missing dependency, incompatible API or cycle fails before any activatio
   ]}));
   assert.equal(cycle[0].code,'dependency_cycle');
   assert.ok(cycle[0].path.length>=2);
+  const mixed=invalid(planComposition({revision:1,host:'central',packages:[
+    manifest('fixture.aaa',{contributions:[{id:'fixture.a',version:'1',surface:'data',runtime:'worker'}],dependencies:[{kind:'contribution',id:'fixture.b',version:'1'}]}),
+    manifest('fixture.bbb',{contributions:[{id:'fixture.b',version:'1',surface:'data',runtime:'worker'}],dependencies:[{kind:'package',id:'fixture.aaa',version:'1.0.0'}]}),
+  ]}));
+  assert.equal(mixed[0].code,'dependency_cycle');
 });
 
 test('duplicate package identities and duplicate single providers require an explicit selection',()=>{
@@ -53,7 +58,18 @@ test('duplicate package identities and duplicate single providers require an exp
   assert.deepEqual(explicit.plan.bindings,[{service:{id:'fixture.reader',apiVersion:'1'},provider:{packageId:'fixture.b',packageVersion:'1.0.0',contributionId:'fixture.reader.b'}}]);
 });
 
-test('host/runtime incompatibility is rejected without trying to load a package',()=>{
-  assert.deepEqual(invalid(planComposition({revision:1,host:'web',packages:[manifest('fixture.package')]})).map(value=>value.code),['unsupported_host']);
-  assert.deepEqual(invalid(planComposition({revision:1,host:'web',packages:[manifest('fixture.package',{runtime:'service'})]})).map(value=>value.code),['unsupported_host']);
+test('client hosts activate their own contributions even when the package entry runs centrally',()=>{
+  const web=planComposition({revision:1,host:'web',packages:[manifest('fixture.client',{contributions:[page]})]});
+  assert.equal(web.ok,true);
+  assert.deepEqual(web.plan.contributions.map(value=>value.address.contributionId),['fixture.page']);
+  const native={id:'fixture.native',version:'1',surface:'data',runtime:'native'};
+  assert.equal(planComposition({revision:1,host:'mac',packages:[manifest('fixture.client',{contributions:[native]})]}).ok,true);
+  assert.equal(planComposition({revision:1,host:'android',packages:[manifest('fixture.client',{contributions:[native]})]}).ok,true);
+  assert.deepEqual(invalid(planComposition({revision:1,host:'web',packages:[manifest('fixture.client',{contributions:[source]})]})).map(value=>value.code),['unsupported_runtime']);
+});
+
+test('host distribution dependencies are satisfied by the running host',()=>{
+  const result=planComposition({revision:1,host:'central',packages:[manifest('fixture.hosted',{dependencies:[{kind:'host',id:'mote.adapter',version:'1'}]})]});
+  assert.equal(result.ok,true);
+  assert.deepEqual(result.plan.packages[0].packageId,'fixture.hosted');
 });
