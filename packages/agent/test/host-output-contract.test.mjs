@@ -6,6 +6,7 @@ import {createHostOutputProvider} from '../dist/host/output.js';
 import {ActiveExecutionBudget} from '../dist/active-budget.js';
 import {AgentResponseError, AgentTimeoutError} from '../dist/types.js';
 import {RuntimeContractError} from '../dist/runtime/contracts.js';
+import {ContextToolError} from '../dist/tool-errors.js';
 import {startBridge} from '../dist/bridge.js';
 import {catalogRequest} from './catalog-request.mjs';
 
@@ -51,8 +52,8 @@ function fixture(overrides = {}) {
     commitFence: {assertCurrent() { if (!active) throw new Error('revoked grant'); }},
   };
   const assembly = {
-    prompt: 'Generated assembled prompt', contextUsage: metrics, evidence: overrides.evidence ?? empty,
-    async readTool(call, signal) { return overrides.readTool ? overrides.readTool(call, signal) : {payload: {text: 'Generated payload'}, confirm() { calls.push('confirm'); }}; },
+    systemPrompt: 'Generated Host system policy', prompt: 'Generated assembled prompt', contextUsage: metrics, evidence: overrides.evidence ?? empty,
+    async readTool(call, signal) { return overrides.readTool ? overrides.readTool(call, signal) : {payload: {text: 'Generated payload'}, confirm() { calls.push('confirm'); }, discard() { calls.push('discard'); }}; },
     async close() { calls.push('bridge.close'); await overrides.close?.(); },
     observe(event) { events.push(event); }, cleanupFailed(errors) { cleanupErrors.push(...errors); },
     ...(overrides.admit ? {admit: overrides.admit} : {}),
@@ -213,7 +214,7 @@ test('Host terminal preserves provider failure, processing limit and typed cance
 
 test('an initial-attempt callback arriving during repair is rejected before read and disclosure', async () => {
   let initial, reads = 0, sends = 0;
-  const f = fixture({readTool: async () => { reads++; return {payload: {text: 'secret'}, confirm() {}}; },
+  const f = fixture({readTool: async () => { reads++; return {payload: {text: 'secret'}, confirm() {}, discard() {}}; },
     run: async request => { initial = request.attempt; return outcome('{'); },
     repair: async (request, port) => {
       await assert.rejects(port.tools.deliver(initial, {callId: 'old', name: tools[0].name, arguments: {}}, async () => { sends++; }), RuntimeContractError);
@@ -223,13 +224,13 @@ test('an initial-attempt callback arriving during repair is rejected before read
 });
 
 for (const stage of ['read', 'sender']) test(`late initial ${stage} completion cannot disclose or confirm into a repair attempt`, async () => {
-  const entered = deferred(), release = deferred(); let late, sends = 0, confirms = 0;
-  const f = fixture({readTool: async () => { if (stage === 'read') { entered.resolve(); await release.promise; } return {payload: {text: 'secret'}, confirm() { confirms++; }}; },
+  const entered = deferred(), release = deferred(); let late, sends = 0, confirms = 0, discards = 0;
+  const f = fixture({readTool: async () => { if (stage === 'read') { entered.resolve(); await release.promise; } return {payload: {text: 'secret'}, confirm() { confirms++; }, discard() { discards++; }}; },
     run: async (request, port) => {
       late = port.tools.deliver(request.attempt, {callId: 'old', name: tools[0].name, arguments: {}}, async () => { sends++; entered.resolve(); if (stage === 'sender') await release.promise; });
       void late.catch(() => {}); await entered.promise; return outcome('{');
     }, repair: async () => { release.resolve(); await assert.rejects(late, RuntimeContractError); return outcome(); },
-  }); await (await f.create()).execute(); assert.equal(confirms, 0); assert.equal(sends, stage === 'read' ? 0 : 1);
+  }); await (await f.create()).execute(); assert.equal(confirms, 0); assert.equal(discards, 1); assert.equal(sends, stage === 'read' ? 0 : 1);
 });
 
 test('revocation while the domain validator awaits fences a valid candidate and awaits cleanup', async () => {
@@ -303,6 +304,85 @@ test('invalid question never prepares a runtime and a closed unstarted session e
   await assert.rejects(session.execute());
   assert.equal(closed.calls.includes('run'), false); assert.equal(closed.events.at(-1).attemptId, null);
   assert.equal(closed.events.at(-1).event.terminal.kind, 'cancelled');
+});
+
+test('Host system instructions are fixed on the formal port before runtime preparation', async () => {
+  let received; const traces = [];
+  const f = fixture({input: {onTrace: event => traces.push(event)}, prepare: async host => {
+    received = host.systemPrompt; host.emit({type: 'tools.ready', tools}, null);
+    return {async run() { return outcome(); }, async repair() { return outcome(); }, async cancel() {}, async close() {}};
+  }});
+  const expected = assembleHostContext({question: 'Generated Memory instruction', skill: 'memory-extraction'}, []).system;
+  f.assembly.systemPrompt = expected;
+  const s = await f.create(); f.assembly.systemPrompt = 'Changed after prepare';
+  assert.equal(received, expected); assert.equal(s.port.systemPrompt, expected); await s.execute();
+  const model = traces.filter(event => event.type.startsWith('model.'));
+  assert.deepEqual(model.map(event => event.type), ['model.started', 'model.completed']);
+  assert.equal(model[0].payload.prompt, f.assembly.prompt); assert.equal(model[1].payload.terminal.kind, 'completed');
+});
+
+test('staged delivery is discarded immediately after confirmation or sender failure and preserves the primary error', async () => {
+  for (const mode of ['success', 'sender_failure', 'discard_failure']) {
+    const fail = mode !== 'success', senderFails = mode === 'sender_failure';
+    const primary = Error('Generated sender failure'), secondary = Error('Generated discard cleanup failure'); let confirmed = 0, discarded = 0;
+    const f = fixture({readTool: async () => ({payload: {text: 'Generated stage'}, confirm() { confirmed++; }, discard() { discarded++; if (fail) throw secondary; }}),
+      run: async (request, host) => {
+        const result = host.tools.deliver(request.attempt, {callId: 'generated', name: tools[0].name, arguments: {}}, async () => { if (senderFails) throw primary; return 42; });
+        if (fail) await assert.rejects(result, error => error === (senderFails ? primary : secondary)); else assert.equal(await result, 42);
+        assert.equal(discarded, 1, 'release occurs before runtime run settles');
+        return outcome();
+      },
+    });
+    const session = await f.create();
+    if (fail) await assert.rejects(session.execute(), {name: 'AgentProviderError'}); else await session.execute();
+    assert.equal(confirmed, senderFails ? 0 : 1); assert.equal(discarded, 1);
+    if (fail) assert.deepEqual(f.cleanupErrors, [secondary]);
+  }
+});
+
+test('cancelling a pending sender discards its stage promptly without confirming a receipt', async () => {
+  const entered = deferred(); let confirmed = 0, discarded = 0;
+  const f = fixture({readTool: async () => ({payload: {text: 'Generated stage'}, confirm() { confirmed++; }, discard() { discarded++; }}), run: async (request, host) => {
+    await host.tools.deliver(request.attempt, {callId: 'generated', name: tools[0].name, arguments: {}}, () => new Promise((_resolve, reject) => {
+      entered.resolve(); host.signal.addEventListener('abort', () => reject(new DOMException('Generated sender cancellation', 'AbortError')), {once: true});
+    }));
+    return outcome();
+  }});
+  const s = await f.create(), execution = s.execute(); void execution.catch(() => {}); await entered.promise; f.stop();
+  await assert.rejects(execution); assert.equal(confirmed, 0); assert.equal(discarded, 1);
+  assert.equal(f.events.at(-1).event.terminal.kind, 'cancelled');
+});
+
+test('Host retains a required confirmation failure when the runtime reports a typed tool terminal', async () => {
+  const primary = Error('Generated required receipt failure'), secondary = Error('Generated later cleanup failure');
+  let discarded = 0;
+  const f = fixture({readTool: async () => ({payload: {text: 'Generated delivered payload'}, confirm() { throw primary; }, discard() { discarded++; }}),
+    runtimeClose: async () => { throw secondary; },
+    run: async (request, host) => {
+      await assert.rejects(host.tools.deliver(request.attempt, {callId: 'generated-call', name: tools[0].name, arguments: {}}, async () => {}), error => error === primary);
+      return {terminal: {kind: 'failed', reason: 'tool_failure'}};
+    },
+  });
+  await assert.rejects((await f.create()).execute(), error => error === primary);
+  assert.equal(discarded, 1); assert.deepEqual(f.cleanupErrors, [secondary]);
+  assert.equal(f.events.at(-1).event.terminal.kind, 'failed');
+});
+
+test('Host-owned read stops cannot be ignored by a completed runtime but argument corrections remain recoverable', async () => {
+  for (const stopped of [new AgentResponseError('Generated image policy denial', 'image_disclosure_disabled'), new ContextToolError('evidence_changed', 'Generated evidence revoked', 'stop')]) {
+    const f = fixture({readTool: async () => { throw stopped; }, run: async (request, host) => {
+      await assert.rejects(host.tools.deliver(request.attempt, {callId: 'generated-call', name: tools[0].name, arguments: {}}, async () => { throw Error('Must not disclose'); }), error => error === stopped);
+      return outcome();
+    }});
+    await assert.rejects((await f.create()).execute(), error => error === stopped);
+    assert.notEqual(f.events.at(-1).event.terminal.kind, 'completed');
+  }
+  const recoverable = new ContextToolError('invalid_tool_arguments', 'Generated argument correction', 'correct_arguments');
+  const f = fixture({readTool: async () => { throw recoverable; }, run: async (request, host) => {
+    await assert.rejects(host.tools.deliver(request.attempt, {callId: 'generated-call', name: tools[0].name, arguments: {}}, async () => {}), error => error === recoverable);
+    return outcome();
+  }});
+  assert.equal((await (await f.create()).execute()).answer, 'Generated answer');
 });
 
 for (const service of ['mote.agent.runtime', 'generated.model', 'mote.agent.host-output']) {

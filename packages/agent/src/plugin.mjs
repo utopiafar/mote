@@ -1,10 +1,5 @@
-import {CONTEXT_TOOLS} from "./context-tools.js";
-import { defineTool } from "@deepseek-ai/dsh-tools";
-import { apply as applySkillTool } from "@deepseek-ai/dsh-tool-skill";
-
 export const name = "mote-context";
-export const inject = ["tools", "skills", "agents", "attachments"];
-const names = CONTEXT_TOOLS.map(([name])=>name);
+export const inject = ["tools", "agents", "attachments"];
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */
@@ -132,58 +127,16 @@ export async function imageToolResult(value, attachments, receipt) {
 }
 
 export async function apply(ctx) {
-  for (const skill of JSON.parse(process.env.MOTE_SKILLS || '[]')) {
-    ctx.skills.register({name:skill.name,description:skill.description,content:skill.content,source:'bundled',metadata:{version:skill.version}});
-  }
-  applySkillTool(ctx);
-  const endpoint = process.env.MOTE_CONTEXT_BRIDGE;
-  const token = process.env.MOTE_CONTEXT_BRIDGE_TOKEN;
-  if (!endpoint || !token) throw new Error("Mote context bridge is missing");
-  const configuration = process.env.MOTE_MODEL_TRANSPORT ? JSON.parse(process.env.MOTE_MODEL_TRANSPORT) : undefined;
-  const transport=globalThis.fetch.bind(globalThis);
-  globalThis.fetch = boundedModelFetch(transport, endpoint, undefined, configuration, modelFailureReporter(transport),modelRequestAuthorization(transport));
-  async function call(tool, args, signal) {
-    const response = await fetch(`${endpoint}/${tool}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(args),
-      signal,
-    });
-    const result = await response.json();
-    if (!response.ok)
-      throw new Error(result.toolError ? JSON.stringify({toolError:result.toolError}) : "Mote context tool failed");
-    return result;
-  }
-  const allowed = JSON.parse(process.env.MOTE_TASK_TOOLS || JSON.stringify(names));
-  for (const [tool, description, parameters] of JSON.parse(process.env.MOTE_TOOL_DEFINITIONS || JSON.stringify(CONTEXT_TOOLS))) {
-    if (!allowed.includes(tool)) continue;
-    ctx.tools.register(
-      defineTool({
-        name: tool,
-        description,
-        parameters,
-        output: {
-          schema: { type: "json" },
-          render: (_args, value) => value?.imageAttachment ? [{type:'text',text:JSON.stringify({id:value.id,attachmentId:value.attachmentId,...(value.imageView?{imageView:value.imageView}:{}),...(value.imageBudget?{imageBudget:value.imageBudget}:{}),...(value.toolUsage?{toolUsage:value.toolUsage}:{}),source:'untrusted_personal_context'})},{type:'image',attachment:value.imageAttachment}] : [{type:'text',text:JSON.stringify(value)}],
-        },
-        async execute(args, exec) {
-          const value=await call(tool,args,exec.signal);
-          if(tool==='read_image')return imageToolResult(value,ctx.get('attachments'),receipt=>call('_image_delivery',receipt,AbortSignal.timeout(5000)));
-          return value;
-        },
-      }),
-    );
-  }
-  // Monotonic deny: an accidental dependency must not grant the agent another capability.
-  ctx.tools.guard((exec) =>
-    (allowed.includes(exec.name) || exec.name === 'skill')
-      ? undefined
-      : "Mote exposes only read-only context tools",
-  );
-  const exposed = ctx.tools.schemas().map((tool) => tool.name);
-  await call("_ready", { tools: exposed });
-  ctx.provide("moteReady", { tools: [...allowed,'skill'] });
+  const configured=process.env.MOTE_HOST_RUN;
+  if(!configured)throw new Error('A Host run session is required');
+  // The import runtime copies this module for its transport helpers. Resolve
+  // the query-only adapter only when the installed query plugin is activated.
+  const {applyContextPlugin}=await import('./runtime/dsh/context-plugin.js');
+  const {url:endpoint}=JSON.parse(configured);
+  const configuration=process.env.MOTE_MODEL_TRANSPORT?JSON.parse(process.env.MOTE_MODEL_TRANSPORT):undefined;
+  const original=globalThis.fetch;
+  const transport=original.bind(globalThis);
+  globalThis.fetch=boundedModelFetch(transport,endpoint,undefined,configuration,modelFailureReporter(transport),modelRequestAuthorization(transport));
+  ctx.effect(()=>()=>{globalThis.fetch=original;});
+  await applyContextPlugin(ctx);
 }

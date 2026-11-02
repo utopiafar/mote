@@ -5,6 +5,7 @@ import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {parseRuntimeOutcome, RuntimeContractError, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
 import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
+import {ContextToolError} from '../tool-errors.js';
 import {systemInstructions} from '../instructions.js';
 import {assembleContext, taskTools} from '../task-context.js';
 import {contextToolDefinitions} from '../tool-contributions.js';
@@ -99,11 +100,12 @@ export async function settleHostCleanup(tasks: readonly (() => unknown | Promise
 /** A08 supplies staged reads: no ledger mutation before confirm. The Host
  * checks the issued attempt before read, before disclosure and after ACK. */
 export interface HostSessionAssembly {
+  readonly systemPrompt: string;
   readonly prompt: string;
   readonly outputSchema?: Readonly<Record<string, unknown>>;
   readonly contextUsage: NonNullable<AgentAnswer['contextUsage']>;
   evidence(): HostEvidenceSnapshot;
-  readTool(call: RuntimeToolCall, signal: AbortSignal): Promise<{payload: RuntimeToolPayload; confirm(): void}>;
+  readTool(call: RuntimeToolCall, signal: AbortSignal): Promise<{payload: RuntimeToolPayload; confirm(): void; discard(): void}>;
   admit?<T>(task: () => Promise<T>, signal: AbortSignal): Promise<T>;
   close(): Promise<void>;
   observe?(event: HostRunEvent): void;
@@ -126,6 +128,8 @@ class ManagedHostRunSession implements HostRunSession {
   private attempt?: RuntimeAttempt;
   private lastAttempt?: RuntimeAttempt;
   private pending = new Set<Promise<unknown>>();
+  private deliveryCleanupErrors: unknown[] = [];
+  private hostToolFailure?: {error: unknown};
   private execution?: Promise<AgentAnswer>;
   private preparing?: Promise<void>;
   private runtimeWork?: Promise<RuntimeOutcome>;
@@ -154,16 +158,33 @@ class ManagedHostRunSession implements HostRunSession {
     };
     signal.addEventListener('abort', this.abortListener, {once: true});
     this.port = {
-      identity: dependencies.identity, signal,
+      identity: dependencies.identity, systemPrompt: assembly.systemPrompt, signal,
       tools: {definitions: dependencies.tools.definitions, deliver: (attempt, call, sender) => this.track(async () => {
         this.assertAttempt(attempt);
         if (typeof call.callId !== 'string' || !call.callId || !dependencies.tools.definitions.some(tool => tool.name === call.name)) throw new RuntimeContractError();
-        const delivery = await assembly.readTool(call, signal);
-        this.assertAttempt(attempt);
-        const result = await sender(delivery.payload);
-        this.assertAttempt(attempt);
-        delivery.confirm();
-        return result;
+        let delivery: Awaited<ReturnType<HostSessionAssembly['readTool']>>;
+        try { delivery = await assembly.readTool(call, signal); }
+        catch (error) {
+          if (error instanceof AgentResponseError || error instanceof AgentYieldError || error instanceof ContextToolError && error.recovery === 'stop') this.hostToolFailure ??= {error};
+          throw error;
+        }
+        let primary = false;
+        try {
+          this.assertAttempt(attempt);
+          const result = await sender(delivery.payload);
+          this.assertAttempt(attempt);
+          try { delivery.confirm(); }
+          catch (error) { this.hostToolFailure ??= {error}; throw error; }
+          return result;
+        } catch (error) { primary = true; throw error; }
+        finally {
+          try { delivery.discard(); }
+          catch (error) {
+            this.deliveryCleanupErrors.push(error);
+            reportTrace(dependencies.input, {type: 'run.cleanup_failed', runId: dependencies.identity.runId, status: 'failed', payload: {count: 1, resource: 'tool_delivery'}});
+            if (!primary) throw error;
+          }
+        }
       })},
       assertCurrent: () => this.assertCurrent(),
       runModel: (attempt, task) => this.track(async () => {
@@ -220,7 +241,11 @@ class ManagedHostRunSession implements HostRunSession {
     this.dependencies.scope.assertCurrent();
   }
   private assertCurrent() {
+    // A provider may translate a mandatory local read/confirmation failure into
+    // a typed tool terminal. Host policy and its original reason remain here.
+    if (this.hostToolFailure) throw this.hostToolFailure.error;
     this.assertLifetime();
+    if (this.deliveryCleanupErrors.length) throw new AgentProviderError();
     if (this.phase === 'closed' || this.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
     const deps = this.dependencies;
     deps.runtime.assertCurrent(); deps.model.assertCurrent(); deps.output.assertCurrent();
@@ -256,11 +281,15 @@ class ManagedHostRunSession implements HostRunSession {
     this.attempt = attempt; this.lastAttempt = attempt; this.phase = 'running';
     if (index) this.repairs = index;
     const request: RuntimeRunRequest = {attempt, prompt, ...(this.assembly.outputSchema ? {outputSchema: this.assembly.outputSchema} : {})};
+    const started = performance.now(), repair = index ? {repair: true, repairAttempt: index} : {};
+    reportProgress(this.dependencies.input, {stage: 'model'});
+    reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.started', stage: 'model', phase: 'started', payload: {prompt, ...repair}});
     try {
       this.runtimeWork = Promise.resolve().then(() => error ? this.handle.repair({...request, validation: {reason: error.reason, feedback: error.message}} satisfies RuntimeRepairRequest) : this.handle.run(request));
       const raw = await this.runtimeWork;
       this.assertAttempt(attempt);
       const outcome = parseRuntimeOutcome(raw);
+      reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.completed', stage: 'model', phase: 'completed', durationMs: performance.now() - started, payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...repair}});
       this.observe({identity: this.dependencies.identity, attemptId: attempt.id, event: {type: 'attempt.terminal', terminal: outcome.terminal}});
       return outcome;
     } finally { this.runtimeWork = undefined; this.attempt = undefined; if (this.phase === 'running') this.phase = 'idle'; }
@@ -311,6 +340,7 @@ class ManagedHostRunSession implements HostRunSession {
           },
           async () => { await Promise.allSettled([...this.pending, ...(this.runtimeWork ? [this.runtimeWork] : [])]); },
         ], true, failures => errors.push(...failures));
+        errors.push(...this.deliveryCleanupErrors.splice(0));
         if (!primary) await settleHostCleanup([() => this.cancellationTask], true, failures => errors.push(...failures));
         await settleHostCleanup([() => this.assembly.close()], true, failures => errors.push(...failures));
         if (checkFinal && !errors.length) {
