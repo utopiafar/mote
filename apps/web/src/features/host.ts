@@ -10,12 +10,13 @@ export function contributionDescriptor(value:WebContribution){
 export class WebFeatureHost {
   readonly context=new Context();
   readonly registry=new FeatureRegistry<WebContribution>();
-  async install(manifest:FeatureManifest,contributions:WebContribution[]){
-    const descriptors=contributions.map(contributionDescriptor);
+  async install(manifest:FeatureManifest,contributions:WebContribution[],qualifyId?:(descriptorId:string)=>string){
+    const descriptor=(value:WebContribution)=>{const base=contributionDescriptor(value);return qualifyId?{...base,id:qualifyId(base.id)}:base;};
+    const descriptors=contributions.map(descriptor);
     const declared=manifest.components.length?manifest:{...manifest,components:descriptors};
     const fiber=this.context.plugin((ctx:Context)=>{
       ctx.effect(()=>this.registry.install(declared));
-      for(const value of contributions)ctx.effect(()=>this.registry.register(manifest.id,contributionDescriptor(value),value));
+      for(const value of contributions)ctx.effect(()=>this.registry.register(manifest.id,descriptor(value),value));
     });
     try{await fiber;return fiber;}catch(error){await fiber.dispose();throw error;}
   }
