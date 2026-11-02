@@ -51,7 +51,12 @@ export function CustomPluginPage(props: CustomPageProps) {
     if (!guarded) return;
     const frame = frameRef.current;
     if (!frame || navigatedRef.current) return;
-    let loaded = false;
+    // Load sequence: only the load of the PREPARED entry navigation may
+    // claim — the initial about:blank load and any earlier navigation are
+    // ignored, and a resolved claim is delivered only while that exact
+    // load is still the latest (a later load seq ends the channel).
+    let entryStarted = false;
+    let loadSeq = 0;
     let channel: MessageChannel | null = null;
     let alive = true;
     const endChannel = () => {
@@ -64,38 +69,44 @@ export function CustomPluginPage(props: CustomPageProps) {
       props.onNavigated?.();
     };
     const onLoad = async () => {
-      if (!loaded) {
-        loaded = true;
-        // Claim the exact frame epoch — a rejected claim never issues.
-        let grant: {frameTreeNodeId: number; epoch: number};
-        try { grant = await mote!.customPageClaim!({instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!}); }
-        catch { return; }
-        channel = new MessageChannel();
-        const bridge = new CustomPageBridge({
-          instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!,
-          generation: () => grant.epoch, visible: props.visible!, documentAlive: () => alive,
-          declared: props.declared!, invoke: props.invoke!,
-          post: envelope => channel!.port1.postMessage(envelope),
-          onRejected: props.onRejected,
-        });
-        channel.port1.onmessage = event => { void bridge.accept(event); };
-        channel.port1.start();
-        bridgeRef.current = bridge;
-        frame.contentWindow?.postMessage(
-          {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, kind: 'channel'}, '*', [channel.port2]);
-        return;
-      }
-      endChannel();
+      if (!entryStarted) return; // about:blank or an earlier navigation
+      loadSeq++;
+      if (loadSeq > 1) { endChannel(); return; }
+      const claimingSeq = loadSeq;
+      // Claim the exact frame epoch — a rejected claim never issues.
+      let grant: {frameTreeNodeId: number; epoch: number};
+      try { grant = await mote!.customPageClaim!({instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!}); }
+      catch { return; }
+      // The port is delivered ONLY if this is still the latest load —
+      // a document that started replacing itself can never receive it.
+      if (loadSeq !== claimingSeq || navigatedRef.current) return;
+      channel = new MessageChannel();
+      const bridge = new CustomPageBridge({
+        instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!,
+        generation: () => grant.epoch, visible: props.visible!, documentAlive: () => alive,
+        declared: props.declared!, invoke: props.invoke!,
+        post: envelope => channel!.port1.postMessage(envelope),
+        onRejected: props.onRejected,
+      });
+      channel.port1.onmessage = event => { void bridge.accept(event); };
+      channel.port1.start();
+      bridgeRef.current = bridge;
+      frame.contentWindow?.postMessage(
+        {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, kind: 'channel'}, '*', [channel.port2]);
     };
     frame.addEventListener('load', onLoad);
-    // Prepare the nonce-bound frame before it navigates anywhere.
+    // Prepare the nonce-bound frame before it navigates anywhere; a
+    // refused prepare degrades to the trusted entry render-only.
     void mote!.customPagePrepare!({instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!, entryUrl: props.entryUrl!})
       .then(() => {
         const frame = frameRef.current;
-        if (frame && !navigatedRef.current)
-          frame.src = props.entryUrl! + (props.entryUrl!.includes('?') ? '&' : '?') + 'moteFrame=' + encodeURIComponent(props.nonce!);
+        if (!frame || navigatedRef.current) return;
+        const bound = new URL(props.entryUrl!, window.location.href);
+        bound.searchParams.set('moteFrame', props.nonce!);
+        entryStarted = true;
+        frame.src = bound.toString();
       })
-      .catch(() => { /* a refused prepare leaves the page render-only */ });
+      .catch(() => { if (frameRef.current && !navigatedRef.current) frameRef.current.src = props.entryUrl!; });
     return () => { alive = false; frame.removeEventListener('load', onLoad); bridgeRef.current?.revoke(); bridgeRef.current = null; channel?.port1.close(); channel?.port2.close(); };
   }, [props.instanceId, props.nonce, props.documentKey, props.entryUrl]);
 
