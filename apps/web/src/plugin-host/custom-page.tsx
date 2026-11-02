@@ -1,13 +1,12 @@
 /** Custom plugin page loader: renders a trusted package entry inside a
- * sandboxed iframe bound to a CustomPageBridge. The entry document comes
- * from the host's resolved package content — never an arbitrary URL — and
- * the frame keeps an opaque origin with no same-origin or top-navigation
- * escapes. */
+ * sandboxed iframe and issues the RPC channel to the EXACT document that
+ * loaded. A MessagePort — not the shared WindowProxy — carries every
+ * envelope, so a document replacement under the same contentWindow can
+ * neither send a request nor receive a response. */
 import React, {useEffect, useRef} from 'react';
-import {CustomPageBridge, bridgeContractVersion, type BridgeEnvelope, type BridgeInvoker} from './custom-page-bridge';
+import {CustomPageBridge, bridgeContractVersion, type BridgeInvoker} from './custom-page-bridge';
 
 export interface CustomPageProps {
-  /** Trusted resolved entry document (already parsed package content). */
   /** Trusted resolved entry document (already parsed package content). Used
    * only when `entryUrl` is absent — it inherits the host script policy, so
    * script-bearing entries must load through an isolated entryUrl. */
@@ -18,7 +17,7 @@ export interface CustomPageProps {
   readonly instanceId: string;
   readonly nonce: string;
   /** Per-document key issued for this exact loaded entry; rotate it with
-   * the nonce on every navigation. */
+   * the nonce on every approved navigation. */
   readonly documentKey: string;
   readonly generation: () => number;
   /** The real U02 visibility predicate (mounted/visible/suspended/disposed). */
@@ -37,47 +36,40 @@ export function CustomPluginPage(props: CustomPageProps) {
 
   useEffect(() => {
     const frame = frameRef.current;
-    if (!frame?.contentWindow) return;
-    let bridge: CustomPageBridge | null = null;
+    if (!frame?.contentWindow || navigatedRef.current) return;
     let loaded = false;
-    if (navigatedRef.current) return; // disarmed by a previous navigation — host must remount
-    const onMessage = (event: MessageEvent) => { void bridge?.accept(event); };
+    let channel: MessageChannel | null = null;
     const onLoad = () => {
-      if (navigatedRef.current) return;
       if (!loaded) {
-        // The channel is issued only once the entry document actually
-        // loaded — anything arriving earlier has no authority at all.
         loaded = true;
-        bridge = new CustomPageBridge({
-          instanceId: props.instanceId,
-          nonce: props.nonce,
-          documentKey: props.documentKey,
-          frame: frame.contentWindow!,
-          generation: props.generation,
-          visible: props.visible,
-          declared: props.declared,
-          invoke: props.invoke,
-          post: envelope => frame.contentWindow?.postMessage(envelope, '*'),
+        // Issue the channel ONLY to the document that just loaded — a
+        // later replacement never receives a port, so its requests have
+        // no carrier and old responses die with the old document's port.
+        channel = new MessageChannel();
+        const bridge = new CustomPageBridge({
+          instanceId: props.instanceId, nonce: props.nonce, documentKey: props.documentKey,
+          generation: props.generation, visible: props.visible,
+          declared: props.declared, invoke: props.invoke,
+          post: envelope => channel!.port1.postMessage(envelope),
           onRejected: props.onRejected,
         });
+        channel.port1.onmessage = event => { void bridge.accept(event); };
+        channel.port1.start();
         bridgeRef.current = bridge;
-        // Issue the document-scoped channel to the just-loaded document —
-        // only that document can answer with the documentKey.
-        frame.contentWindow?.postMessage({contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, kind: 'channel'}, '*');
+        frame.contentWindow?.postMessage(
+          {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, kind: 'channel'}, '*', [channel.port2]);
         return;
       }
-      // A later load means the document was replaced under the same
-      // contentWindow: revoke the issued channel and let the host rotate
-      // the document key before a replacement could use it.
-      bridge?.revoke();
-      bridge = null;
+      // Any later load means the document was replaced: destroy the issued
+      // channel — the mount stays disarmed until the host remounts.
+      bridgeRef.current?.revoke();
       bridgeRef.current = null;
-      navigatedRef.current = true; // sticky: a replacement never re-arms this mount
+      channel?.port1.close(); channel?.port2.close(); channel = null;
+      navigatedRef.current = true;
       props.onNavigated?.();
     };
     frame.addEventListener('load', onLoad);
-    window.addEventListener('message', onMessage);
-    return () => { frame.removeEventListener('load', onLoad); window.removeEventListener('message', onMessage); bridge?.revoke(); bridgeRef.current = null; };
+    return () => { frame.removeEventListener('load', onLoad); bridgeRef.current?.revoke(); bridgeRef.current = null; channel?.port1.close(); channel?.port2.close(); };
   }, [props.instanceId, props.nonce, props.documentKey]);
 
   useEffect(() => { if (props.visible()) bridgeRef.current?.show(); else bridgeRef.current?.hide(); }, [props.visible()]);

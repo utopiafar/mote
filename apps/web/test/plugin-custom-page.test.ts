@@ -2,22 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CustomPageBridge, bridgeContractVersion, BRIDGE_MAX_PENDING } from '../src/plugin-host/custom-page-bridge';
 
-const frame = { postMessage(env: unknown) { posted.push(env); } };
 const posted: unknown[] = [];
 let visible = true;
 const base = {
-  instanceId: 'inst:one', nonce: 'n-9', documentKey: 'doc-1', frame,
+  instanceId: 'inst:one', nonce: 'n-9', documentKey: 'doc-1',
   generation: () => generation, visible: () => visible, declared: ['read', 'command'],
   invoke: async (m: string, p: unknown) => { calls.push([m, p]); return 'value-' + m; },
   post: (e: unknown) => posted.push(e),
 };
 let generation = 1, calls: [string, unknown][] = [];
 const env = (over: object = {}) => ({ contractVersion: bridgeContractVersion, nonce: 'n-9', documentKey: 'doc-1', instanceId: 'inst:one', generation, requestId: 'r1', kind: 'request', method: 'read', ...over });
-const event = (data: unknown, source = frame) => ({ data, source }) as MessageEvent;
+const event = (data: unknown) => ({ data }) as {data?: unknown};
 
-test('foreign source, forged nonce, guessed instance and stale generation never reach the invoker', async () => {
+test('forged channel fields, guessed instance and stale generation never reach the invoker', async () => {
   const bridge = new CustomPageBridge(base);
-  assert.equal(await bridge.accept(event(env(), { postMessage: () => {} })), false, 'wrong source');
+  assert.equal(await bridge.accept(event({kind: 'request'})), false, 'malformed envelope');
   assert.equal(await bridge.accept(event(env({ nonce: 'x' }))), false, 'forged nonce');
   assert.equal(await bridge.accept(event(env({ documentKey: 'doc-2' }))), false, 'a replaced document never inherits the key');
   assert.equal(await bridge.accept(event(env({ instanceId: 'inst:two' }))), false, 'guessed instance');
@@ -105,13 +104,14 @@ test('strict wire: binary, cyclic, BigInt, non-JSON and oversized fields are ref
   const bridge = new CustomPageBridge(base);
   const cyclic: {self?: unknown} = {}; cyclic.self = cyclic;
   const cases: [unknown, string][] = [
-    [{buffer: new ArrayBuffer(1 << 20)}, 'ArrayBuffer payload'],
-    [cyclic, 'cyclic payload'],
-    [{big: BigInt(1)}, 'BigInt payload'],
-    [{fn: () => 1}, 'function payload'],
+    [env({payload: {buffer: new ArrayBuffer(1 << 20)}}), 'ArrayBuffer inside a real envelope'],
+    [env({payload: cyclic}), 'cyclic payload inside a real envelope'],
+    [env({payload: {big: BigInt(1)}}), 'BigInt inside a real envelope'],
+    [env({payload: {fn: () => 1}}), 'function inside a real envelope'],
     ['raw string', 'non-envelope value'],
     [env({requestId: 'x'.repeat(400)}), 'oversized requestId'],
-    [env({payload: {blob: new Uint8Array(4)}}), 'typed-array payload'],
+    [env({payload: {blob: new Uint8Array(4)}}), 'typed-array inside a real envelope'],
+    [env({extraField: 'x'.repeat(70000)}), 'extra field cannot bypass the wire budget'],
   ];
   for (const [data, what] of cases)
     assert.equal(await bridge.accept(event(data)), false, what);
@@ -125,7 +125,7 @@ test('a rejected invoke posts one correlated bounded failure and releases the sl
   const reply = posted.at(-1) as {kind: string; ok: boolean; error: string; requestId: string};
   assert.equal(reply.kind, 'response'); assert.equal(reply.ok, false);
   assert.equal(reply.requestId, 'r1');
-  assert.ok(reply.error.length <= 256, 'the failure is bounded');
+  assert.equal(reply.error, 'invoke_failed', 'stable public failure — no internal message leaks');
   assert.equal(await bridge.accept(event(env())), true, 'the pending slot was released');
 });
 

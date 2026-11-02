@@ -10,10 +10,18 @@ const requestEnvelope=(key,id='r-preload',mark)=>JSON.stringify({contractVersion
 execFileSync(join(repo,'node_modules/.bin/esbuild'),['apps/web/test/custom-page-harness.tsx','--bundle','--format=iife','--outfile='+join(temporary,'bundle.js'),'--jsx=automatic'],{cwd:repo});
 const hits={};const files={
  '/harness.html':{type:'text/html'},
- '/entry1.html':{type:'text/html',body:`<script>new Image().src='/ran1';addEventListener('pagehide',()=>{parent.postMessage({contractVersion:'1',nonce:'${nonce}',documentKey:'${documentKey}',kind:'closing'},'*');});addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){setTimeout(()=>{window.location.href='/entry2.html';},120);parent.postMessage(${requestEnvelope(documentKey)},'*');}});</script>`},
+ '/entry1.html':{type:'text/html',body:`<script>new Image().src='/ran1';addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){const port=e.ports[0];setTimeout(()=>{window.location.href='/entry2.html';},120);port.postMessage(${requestEnvelope(documentKey)});}});</script>`},
  // The replacement reuses the leaked nonce but never learns the rotated
  // document key — it posts BEFORE its own load event.
- '/entry2.html':{type:'text/html',body:`<script>new Image().src='/ran2';parent.postMessage(${requestEnvelope(documentKey,'r-replacement','e2')},'*');window.postedEarly=true;</script>`},
+ // The replacement holds the leaked nonce+documentKey but never received a
+// port — its window.postMessage requests have no carrier. It also listens
+// for stray response messages and reports its own reception to the host.
+'/entry2.html':{type:'text/html',body:`<script>new Image().src='/ran2';
+window.received=[];
+addEventListener('message',e=>window.received.push(e.data));
+setTimeout(()=>{parent.postMessage({kind:'fixture-report',received:window.received.length},'*');},900);
+parent.postMessage(${requestEnvelope(documentKey,'r-replacement','e2')},'*');
+</script>`},
 };
 async function run(){
  const server=createServer((req,res)=>{hits[req.url]=(hits[req.url]||0)+1;
