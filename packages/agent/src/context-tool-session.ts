@@ -1074,16 +1074,27 @@ export async function createContextToolSession(
         value.settle();
       }
     };
+    const restoreBefore=()=>{
+      // An HTTP image ACK may arrive while this read is staged. Its live
+      // reservation is authoritative even though the staged map is not.
+      for(const [key,live] of disclosedImages){
+        const base=before.disclosedImages.get(key);
+        if(base&&live.confirmed){
+          base.confirmed=true;base.imageView=live.imageView;base.timer=live.timer;base.ready=live.ready;base.settle=live.settle;
+        }
+      }
+      applyState(before);
+    };
     let status=200,body:string|undefined;
     try{
       const reply={destroyed:false,writeHead(code:number){status=code;return reply;},end(value:string,delivered?:()=>void){body=value;if(delivered)deliveredCallbacks.push(delivered);},once(){},off(){}};
       await handle({tool,readArguments:async()=>args},reply);
-    }catch(error){const failed=captureState();clearStagedImages(before,failed);applyState(before);stagingBase=undefined;endCallbacks(deferred);release();throw error;}
+    }catch(error){const failed=captureState();clearStagedImages(before,failed);restoreBefore();stagingBase=undefined;endCallbacks(deferred);release();throw error;}
     endCallbacks(deferred);
     try{bounds.assertContextAuthority?.();signal.throwIfAborted();}
-    catch(error){const failed=captureState();clearStagedImages(before,failed);applyState(before);stagingBase=undefined;release();throw error;}
+    catch(error){const failed=captureState();clearStagedImages(before,failed);restoreBefore();stagingBase=undefined;release();throw error;}
     if(closing||signal.aborted||status>=400||typeof body!=='string'){
-      const failed=captureState();clearStagedImages(before,failed);applyState(before);stagingBase=undefined;
+      const failed=captureState();clearStagedImages(before,failed);restoreBefore();stagingBase=undefined;
       if(status>=400){
         let issue:Record<string,unknown>|undefined;
         try{issue=(JSON.parse(body??'{}') as {toolError?:Record<string,unknown>}).toolError;}catch{/* Non-JSON failure remains a tool failure. */}
@@ -1097,7 +1108,7 @@ export async function createContextToolSession(
       throw new ContextToolError('context_tool_failed','The tool produced no deliverable response','stop');
     }
     let value:unknown;
-    try{value=JSON.parse(body);}catch{const failed=captureState();clearStagedImages(before,failed);applyState(before);stagingBase=undefined;release();throw new ContextToolError('context_tool_failed','The tool produced an invalid response','stop');}
+    try{value=JSON.parse(body);}catch{const failed=captureState();clearStagedImages(before,failed);restoreBefore();stagingBase=undefined;release();throw new ContextToolError('context_tool_failed','The tool produced an invalid response','stop');}
     const after=captureState();
     let settled=false;
     const delivery:PreparedToolDelivery={
@@ -1112,10 +1123,10 @@ export async function createContextToolSession(
           if(token)imageDelivery(token,true);
           flushCallbacks(deferred);
           for(const callback of deliveredCallbacks)callback();
-        }catch(error){clearStagedImages(before,after);applyState(before);stagingBase=undefined;throw error;}finally{release();}
+        }catch(error){clearStagedImages(before,after);restoreBefore();stagingBase=undefined;throw error;}finally{release();}
       },
       discard(){
-        if(settled)return;settled=true;activeStaged.delete(delivery);clearStagedImages(before,after);applyState(before);stagingBase=undefined;release();
+        if(settled)return;settled=true;activeStaged.delete(delivery);clearStagedImages(before,after);restoreBefore();stagingBase=undefined;release();
       },
     };
     activeStaged.add(delivery);
@@ -1158,9 +1169,9 @@ export async function createContextToolSession(
     },
   };
   const close=()=>{
-    try{bounds.onEvidence?.(evidenceLayers(records));}catch{/* Host observation cannot grant reads or change the result. */}
     closing=true;
     for(const delivery of [...activeStaged])delivery.discard();
+    try{bounds.onEvidence?.(evidenceLayers(records));}catch{/* Host observation cannot grant reads or change the result. */}
     for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}
     disclosedImages.clear();
   };

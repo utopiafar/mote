@@ -138,3 +138,24 @@ test('discarding a staged image releases its reservation for a fresh staged read
     second.discard();
   }finally{await bridge.close();}
 });
+
+test('in-flight preparation does not expose staged records through the public bridge or close callback',async()=>{
+  let release,entered;
+  const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>entered=resolve);
+  const blocking={...reader,search:async()=>{entered();await gate;return [record];}};
+  const observed=[];
+  const bridge=await startBridge(blocking,{question:'Generated in-flight staging',onEvidence:records=>observed.push(...records)});
+  try{
+    const pending=bridge.prepareDelivery('search_context',{query:'Generated'},signal());
+    await started;
+    assert.equal(bridge.records.size,0,'public records must stay pre-state while the read awaits');
+    assert.deepEqual(bridge.deliveredRanges,[]);
+    assert.equal(bridge.trace.length,0);
+    release();
+    const staged=await pending;
+    assert.equal(bridge.records.size,0,'staged records remain hidden before confirm');
+    staged.discard();
+    await bridge.close();
+    assert.deepEqual(observed,[],'close must not publish undelivered evidence');
+  }finally{await bridge.close().catch(()=>{});}
+});
