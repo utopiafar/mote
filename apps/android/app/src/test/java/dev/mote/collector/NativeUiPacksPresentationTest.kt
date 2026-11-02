@@ -147,4 +147,15 @@ class NativeUiPacksPresentationTest {
         assertEquals("Updated accessible name", registry.themeA11y()?.text)
         assertEquals("key_missing", registry.themeLabel()?.fallbackReason)
     }
+
+    @Test fun catalogUnloadKeepsDistinctCachedAccessibleName() = withLocale("en") {
+        val registry = registryWithBuiltin()
+        MoteI18n.pluginCatalogs.register("fixture.plugin", "en", mapOf("theme.name" to "Studio", "theme.a11y" to "Studio theme"))
+        registry.register(themeProvider("fixture.theme", "1", PluginUiPresentation("theme.name", a11yKey = "theme.a11y", i18nNamespace = "fixture.plugin")))
+        registry.bind(NativeUiBinding(NativeUiIdentity("fixture.theme", "1"), NativeUiIdentity("fixture.builtin", "1")))
+        assertEquals("Studio theme", registry.themeA11y()?.text)
+        MoteI18n.pluginCatalogs.clear()
+        assertEquals("Studio", registry.themeLabel()?.text)
+        assertEquals("Studio theme", registry.themeA11y()?.text)
+    }
 }
