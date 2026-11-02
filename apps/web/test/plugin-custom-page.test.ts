@@ -155,7 +155,7 @@ test('a request built solely from the channel handshake is admitted — epoch ot
   const handshake = {contractVersion: '1', nonce: 'n-9', documentKey: 'doc-1', instanceId: 'inst:one', generation: epoch, kind: 'channel'};
   const request = {...env(), contractVersion: handshake.contractVersion, nonce: handshake.nonce, documentKey: handshake.documentKey, instanceId: handshake.instanceId, generation: handshake.generation, requestId: 'first', kind: 'request' as const, method: 'read'};
   assert.equal(await bridge.accept(event(request)), true);
-  assert.deepEqual(calls, ['read:null']);
+  assert.deepEqual(calls, [['read', undefined]]);
 });
 
 test('checkpoints are host-bounded only — oversized writes are rejected', () => {
