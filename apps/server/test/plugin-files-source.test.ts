@@ -110,17 +110,22 @@ test('revoked source and closed plugin reject a late final without publishing, a
 test('quiesce fences new upload and metadata admissions while admitted sessions drain',async t=>{
   const f=fixture(t);await f.source.prepare();f.source.start();
   const files=f.source.assemblyForRoutes().files,bytes=Buffer.from('Generated admitted bytes'),admitted=files.begin(manifest(bytes,'admitted'),()=>{});
+  const admittedBase=manifest(Buffer.alloc(0),'admitted-metadata'),admittedReference:FileRevision={...admittedBase,item:{...admittedBase.item,externalId:'content://generated/admitted-metadata',layer:'reference',title:'Admitted reference'},sizeBytes:10**12};
+  delete (admittedReference as {sha256?:string}).sha256;
+  const admittedRevision=files.revision(admittedReference,()=>{});
   await f.source.quiesce('upgrade');
   files.part(admitted.uploadId,0,bytes,()=>{});
   const ack=await files.commit(admitted.uploadId,()=>{});
   assert.deepEqual(Buffer.concat([...files.bytes(ack.id)]),bytes,'a session admitted before quiesce may finish');
+  await admittedRevision;
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,2,'an admitted metadata revision may finish');
   assert.throws(()=>files.begin(manifest(bytes,'new-admission'),()=>{}),{statusCode:503});
   const base=manifest(Buffer.alloc(0),'quiesced'),reference:FileRevision={...base,item:{...base.item,layer:'reference',title:'Quiesced reference'},sizeBytes:10**12};
   delete (reference as {sha256?:string}).sha256;
   await assert.rejects(files.revision(reference,()=>{}),{statusCode:503});
   await assert.rejects(files.manifestBatch({items:[{sourceId,previousRevision:null,item:reference.item}]},()=>{}),{statusCode:503});
   assert.throws(()=>f.source.assemblyForRoutes(),{statusCode:503});
-  assert.equal(f.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,1);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,2);
 });
 
 test('closed files source rejects late metadata revisions and manifest batches without publishing',async t=>{
