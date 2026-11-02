@@ -29,7 +29,7 @@ function instanceScope(name:string):TestScope {
   });
   return {resources,scope,fence:()=>resources.stop(),close:()=>resources.close()};
 }
-function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void;kind?:string;stringKind?:boolean;capabilities?:SourceCapabilityDescriptor}={}):ConnectorManifest {
+function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void|Promise<void>;kind?:string;stringKind?:boolean;capabilities?:SourceCapabilityDescriptor}={}):ConnectorManifest {
   const kind=options.kind??'generated.connector';
   return {apiVersion:1,id,sourceKinds:[options.stringKind?kind:{kind,capabilities:options.capabilities??capabilities}],...(options.statusKey?{statusKey:options.statusKey}:{}),
     create:()=>({
@@ -38,7 +38,7 @@ function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:(
         host.ownerRoute({method:'GET',path:`/api/connectors/${id}`,handler:()=>id});
         host.oauthCallback({path:'/oauth/shared/callback',...(options.prefix?{statePrefix:options.prefix}:{}),complete:async()=>{},successMessage:id,failureMessage:`${id}-fail`});
       },
-      close:()=>{options.onClose?.();},
+      close:()=>options.onClose?.(),
     })};
 }
 async function fixture(t:import('node:test').TestContext){
@@ -90,6 +90,17 @@ test('adapter rejects conflicting source capability descriptors before instances
   await adapter.close();
 });
 
+test('adapter rejects a descriptor conflicting with a preinstalled capability',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  f.sources.capabilities.register('generated.preinstalled-conflict',capabilities);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-pre-conflict',{kind:'generated.preinstalled-conflict',capabilities:{...capabilities,synchronization:'revisions'}})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await assert.rejects(adapter.start(),/Connector source capability conflict/);
+  assert.equal(f.sources.capabilities.has('generated.preinstalled-conflict'),true,'the externally owned capability remains');
+  await adapter.close();
+});
+
 test('adapter never unregisters a preinstalled capability it did not create',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   f.sources.capabilities.register('generated.preinstalled',capabilities);
@@ -108,6 +119,42 @@ test('stop fences admission before awaiting connector shutdown',async t=>{
   t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
   await adapter.start();await adapter.stop('generated-fence');await adapter.close();
   assert.deepEqual(order,['fence','close']);
+});
+
+test('stop rejects new admission while connector shutdown is pending and keeps siblings',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseClose!:()=>void,enteredClose!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseClose=resolve;}),started=new Promise<void>(resolve=>{enteredClose=resolve;});
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-pending-a',{onClose:async()=>{enteredClose();await held;}}),
+    manifest('generated-pending-b',{prefix:'pending-b.'}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseClose();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const stopping=adapter.stop('generated-pending-a');await started;
+  assert.ok([404,503].includes((await f.app.inject({url:'/api/connectors/generated-pending-a',headers})).statusCode),'new requests are fenced while connector close is pending');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-pending-b',headers})).body,'generated-pending-b');
+  releaseClose();await stopping;
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-pending-a',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-pending-b',headers})).body,'generated-pending-b');
+  await adapter.close();
+});
+
+test('close during a pending connector create disposes the late instance without init',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  let initialized=0,closed=0;
+  const late:ConnectorManifest={apiVersion:1,id:'generated-late',sourceKinds:[{kind:'generated.late',capabilities}],create:async()=>{enteredCreate();await held;return {init:()=>{initialized++;},close:()=>{closed++;}};}};
+  const adapter=createConnectorHostAdapter({manifests:[late],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  const starting=adapter.start();await entered;
+  await adapter.close();resolveCreate();
+  await assert.rejects(starting,/Connector registry is closed/);
+  assert.equal(initialized,0,'a late instance must not initialize after close');
+  assert.equal(closed,1,'the late instance is disposed');
 });
 
 test('adapter close fences every instance before connector shutdown',async t=>{

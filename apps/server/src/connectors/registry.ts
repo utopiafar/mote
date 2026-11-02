@@ -129,8 +129,15 @@ export class ConnectorRegistry {
         if(this.options.http&&!scope)throw Error('Connector scope is unavailable');
         const instance=await manifest.create(this.context);
         if(!instance||typeof instance!=='object')throw Error(`Connector ${manifest.id} did not create an instance`);
-        this.instances.push({manifest,instance,...(scope?{scope}:{})});
+        const disposedLate=async()=>{
+          try{await instance.close?.();}catch(cleanup){throw new AggregateError([Error('Connector registry is closed'),cleanup],'Connector late initialization and disposal failed');}
+          throw Error('Connector registry is closed');
+        };
+        if(this.closed)await disposedLate();
+        const entry={manifest,instance,...(scope?{scope}:{})};this.instances.push(entry);
+        if(this.closed){const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);await disposedLate();}
         await instance.init?.();
+        if(this.closed)await disposedLate();
       }
       if(this.options.http){
         if(!this.options.statusScope)throw Error('Connector status scope is unavailable');
