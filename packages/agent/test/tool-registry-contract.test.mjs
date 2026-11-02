@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
 import {assertObjectJsonSchema, parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {
   HOST_READ_OPERATIONS,
   TOOL_DESCRIPTOR_API_VERSION,
   TOOL_SNAPSHOT_SCHEMA_VERSION,
   defineToolDescriptor,
+  toolFingerprint,
 } from '../dist/tools/descriptor.js';
 import {ToolRegistry, diffToolSnapshots} from '../dist/tools/registry.js';
 import {toCodexTools, toRuntimeToolDefinitions, toolInputSchema} from '../dist/tools/runtime-schema.js';
@@ -54,6 +54,13 @@ test('descriptor fixes apiVersion/kind/exposure/requires and rejects reserved, d
   assert.equal(tool.apiVersion, '1');
   assert.deepEqual(tool.requires, ['search', 'evidence', 'actionCatalog', 'progress']);
   assert.ok(Object.isFrozen(tool) && Object.isFrozen(tool.fields) && Object.isFrozen(tool.requires));
+
+  const fields = {alpha: {type: 'string'}, beta: {type: 'integer'}};
+  const base = toolFingerprint('Generated fixture.', fields, 'metadata', 'native', ['search', 'evidence']);
+  assert.equal(base, toolFingerprint('Generated fixture.', {beta: {type: 'integer'}, alpha: {type: 'string'}}, 'metadata', 'native', ['evidence', 'search']));
+  assert.notEqual(base, toolFingerprint('Generated fixture.', fields, 'metadata', 'catalog', ['search', 'evidence']));
+  assert.notEqual(base, toolFingerprint('Generated fixture.', fields, 'derived', 'native', ['search', 'evidence']));
+  assert.notEqual(base, toolFingerprint('Generated fixture.', fields, 'metadata', 'native', ['search', 'evidence', 'progress']));
 
   assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), apiVersion: '2'}), expectCode('invalid_tool_descriptor'));
   assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), apiVersion: 1}), expectCode('invalid_tool_descriptor'));
@@ -165,6 +172,52 @@ test('resolution validates pinned arguments and discards a late result after unl
   assert.equal(calls.asserts, 1);
 });
 
+test('registration lifecycle signal/callback are checked before and after execute', async () => {
+  const registry = new ToolRegistry();
+  const controller = new AbortController();
+  let checks = 0;
+  registry.register(descriptor('lifecycle_read', {execute: async () => ({ok: true})}), {signal: controller.signal, assertCurrent: () => {checks++;}});
+  const snapshot = registry.snapshot(selection(['lifecycle_read', 'v1']));
+  const tool = snapshot.resolve(pin(snapshot.entries[0]));
+  assert.deepEqual(await tool.execute({}, port()), {ok: true});
+  // resolve() validates the pin once; execute checks before I/O and after the await.
+  assert.equal(checks, 3);
+  controller.abort();
+  await assert.rejects(tool.execute({}, port()), error => error.name === 'AbortError');
+  assert.throws(() => snapshot.assertActive(pin(snapshot.entries[0])), error => error.name === 'AbortError');
+  assert.equal(checks, 3);
+});
+
+test('a tool can reach only the Host operations it declared', async () => {
+  const livePort = (reads = []) => ({
+    ...port(),
+    async read(operation, args) {reads.push([operation, args]); return {operation};},
+    actionCatalog() {return {items: []};},
+    progress() {},
+  });
+  const run = (registry, name) => {
+    const snapshot = registry.snapshot(selection([name, 'v1']));
+    return snapshot.resolve(pin(snapshot.entries[0])).execute({}, livePort());
+  };
+
+  const declared = new ToolRegistry();
+  declared.register(descriptor('declared_read', {
+    requires: ['evidence'],
+    execute: async (_args, host) => {await host.read('evidence', {ids: ['generated']}); return {ok: true};},
+  }));
+  assert.deepEqual(await run(declared, 'declared_read'), {ok: true});
+
+  for (const [name, operation] of [
+    ['undeclared_search', host => host.read('search', {})],
+    ['undeclared_calendar', host => host.actionCatalog({})],
+    ['undeclared_progress', host => host.progress('status')],
+  ]) {
+    const registry = new ToolRegistry();
+    registry.register(descriptor(name, {requires: ['evidence'], execute: async (_args, host) => {operation(host); return {ok: true};}}));
+    await assert.rejects(run(registry, name), expectCode('tool_permission_denied'));
+  }
+});
+
 test('the real registry snapshot drives both production schema consumers identically', () => {
   const entry = (name, overrides) => {
     const [, description, fields] = CONTEXT_TOOLS.find(([candidate]) => candidate === name);
@@ -188,7 +241,8 @@ test('the real registry snapshot drives both production schema consumers identic
     assert.equal(definition.inputSchema.additionalProperties, false);
     assert.equal(definition.inputSchema.required?.length ?? 0, Object.values(entry.fields).filter(field => field.required === true).length);
     assert.equal(definition.version, entry.version);
-    assert.equal(definition.fingerprint, createHash('sha256').update(JSON.stringify([entry.description, entry.fields])).digest('hex'));
+    assert.equal(definition.fingerprint, toolFingerprint(entry.description, entry.fields, entry.kind, entry.exposure, entry.requires));
+    assert.equal(entry.fingerprint, definition.fingerprint);
     assert.deepEqual(Object.keys(codex).sort(), ['description', 'inputSchema', 'name', 'type']);
     assert.ok(!('version' in codex) && !('fingerprint' in codex));
   }

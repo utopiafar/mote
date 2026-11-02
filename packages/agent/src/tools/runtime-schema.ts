@@ -21,25 +21,33 @@ export function toRuntimeToolIdentity(entry: ToolSnapshotEntry): RuntimeToolIden
   return Object.freeze({name: entry.name, version: entry.version, fingerprint: entry.fingerprint});
 }
 
-/** Mote's private Host→runtime definitions. This structure carries the Host pin
- * (version/fingerprint) because the Host child configuration is a Mote channel,
- * not the DSH tool frame or the Codex function-call frame. */
-export function toRuntimeToolDefinitions(snapshot: ToolSnapshotView): readonly RuntimeToolDefinition[] {
-  return Object.freeze(snapshot.entries.map(entry => Object.freeze({
+/** Mote's private Host→runtime definition for one entry. This structure carries
+ * the Host pin (version/fingerprint) because the Host child configuration is a
+ * Mote channel, not the DSH tool frame or the Codex function-call frame. */
+export function toRuntimeToolDefinition(entry: ToolSnapshotEntry): RuntimeToolDefinition {
+  return Object.freeze({
     ...toRuntimeToolIdentity(entry),
     description: entry.description,
     inputSchema: toolInputSchema(entry.fields),
-  })));
+  });
 }
 
-/** Codex function tools. The Codex protocol has no tool-version field, so this
- * adapter deliberately emits none; the Host keeps the pin beside the tool list
- * and never pretends the frame carries identity. */
-export function toCodexTools(snapshot: ToolSnapshotView): readonly CodexTool[] {
-  return Object.freeze(snapshot.entries.map(entry => Object.freeze({
+export function toRuntimeToolDefinitions(snapshot: ToolSnapshotView): readonly RuntimeToolDefinition[] {
+  return Object.freeze(snapshot.entries.map(toRuntimeToolDefinition));
+}
+
+/** Codex function tool for one entry. The Codex protocol has no tool-version
+ * field, so this adapter deliberately emits none; the Host keeps the pin beside
+ * the tool list and never pretends the frame carries identity. */
+export function toCodexTool(entry: ToolSnapshotEntry): CodexTool {
+  return Object.freeze({
     type: 'function' as const,
     name: entry.name,
     description: entry.description,
     inputSchema: toolInputSchema(entry.fields),
-  })));
+  });
+}
+
+export function toCodexTools(snapshot: ToolSnapshotView): readonly CodexTool[] {
+  return Object.freeze(snapshot.entries.map(toCodexTool));
 }
