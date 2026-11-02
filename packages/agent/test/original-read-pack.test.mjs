@@ -168,3 +168,17 @@ test('scope bounds are normalized before intersection and the parent limit is au
   await run('timeline', {limit: 40}, makePort({calls: clamped, scope: {limit: 12}, records: {timeline: {items: [], nextCursor: null}}}));
   assert.equal(clamped.find(([operation]) => operation === 'timeline')[1][0].limit, 12, 'the parent-bound limit wins over the raw argument');
 });
+
+test('a personal-insight scope keeps its 30-record page instead of a 12-record cap', async () => {
+  const {run} = registryFixture();
+  const many = Array.from({length: 20}, (_, index) => record({id: 'generated-original-' + index, capturedAt: '2026-09-01T10:' + String(index).padStart(2, '0') + ':00.000Z'}));
+  const searchCalls = [];
+  const search = await run('search_context', {query: 'generated'}, makePort({calls: searchCalls, scope: {limit: 30}, records: {search: many}}));
+  assert.equal(searchCalls.find(([operation]) => operation === 'search')[1][0].limit, 30);
+  assert.equal(search.data.length, 20, 'insight pages are not truncated to twelve records');
+
+  const timelineCalls = [];
+  const timeline = await run('timeline', {}, makePort({calls: timelineCalls, scope: {limit: 30}, records: {timeline: {items: many, nextCursor: null}}}));
+  assert.equal(timelineCalls.find(([operation]) => operation === 'timeline')[1][0].limit, 30);
+  assert.equal(timeline.data.length, 20);
+});
