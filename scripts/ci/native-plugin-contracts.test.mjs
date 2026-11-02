@@ -72,6 +72,6 @@ test('affected selection routes new plugin paths to their real consumers, never 
   const hostTasks=automaticTasks(hostSelection).tasks;
   assert.ok(hostTasks.includes('server-build')&&hostTasks.includes('server-4'));
   assert.ok(!hostTasks.some(task=>/benchmark|scale|recovery/.test(task)));
-  assert.deepEqual(selectScopes(['packages/plugin-sdk/src/browser.ts']),{scopes:['tooling'],fallback:[]});
-  assert.deepEqual(automaticTasks(selectScopes(['packages/plugin-sdk/src/browser.ts'])).tasks,['architecture','tooling']);
+  assert.deepEqual(selectScopes(['packages/plugin-sdk/src/browser.ts']),{scopes:['plugin-sdk'],fallback:[]});
+  assert.deepEqual(automaticTasks(selectScopes(['packages/plugin-sdk/src/browser.ts'])).tasks,['architecture','plugin-sdk']);
 });

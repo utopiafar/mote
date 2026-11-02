@@ -14,7 +14,7 @@ test('Web, Agent, translations and shared wire changes retain their actual consu
   assert.deepEqual(changed('apps/server/src/connections.ts').scopes, ['server', 'i18n']);
   assert.deepEqual(changed('packages/agent/src/prompt.md').scopes, ['server', 'agent']);
   for (const path of ['packages/shared/src/i18n.ts', 'packages/shared/src/i18n-en.ts', 'packages/shared/src/i18n-ja.ts', 'packages/shared/src/i18n-ru.ts', 'apps/android/app/src/main/assets/i18n-en.json', 'apps/android/app/src/main/assets/i18n-de.json']) assert.deepEqual(changed(path).scopes, ['i18n']);
-  for (const path of ['packages/shared/src/protocol.ts', 'protocol/contract.json']) assert.deepEqual(changed(path).scopes, scopes.filter(name => name !== 'tooling'));
+  for (const path of ['packages/shared/src/protocol.ts', 'protocol/contract.json']) assert.deepEqual(changed(path).scopes, scopes.filter(name => name !== 'tooling' && name !== 'plugin-sdk'));
 });
 test('unknown inputs and locks conservatively select all light scopes and explain the fallback', () => {
   for (const path of ['package-lock.json', 'package.json', 'tsconfig.base.json', 'packages/future/src/new.ts', 'new-root/input.ts']) assert.deepEqual(changed(path), { scopes, fallback: [path], serverGroups: ['all'], androidContract: true });
@@ -33,8 +33,8 @@ test('new plugin API/host paths select their real consumers without all-light fa
   assert.deepEqual(hostTasks, ['architecture', 'tooling', 'server-build', 'server-1', 'server-2', 'server-3', 'server-4']);
   assert.ok(!hostTasks.some(task => /benchmark|scale|recovery/.test(task)));
   const sdk = changed('packages/plugin-sdk/src/browser.ts');
-  assert.deepEqual(sdk, { scopes: ['tooling'], fallback: [] });
-  assert.deepEqual(automaticTasks(sdk).tasks, ['architecture', 'tooling']);
+  assert.deepEqual(sdk, { scopes: ['plugin-sdk'], fallback: [] });
+  assert.deepEqual(automaticTasks(sdk).tasks, ['architecture', 'plugin-sdk']);
 });
 test('the exact browser login smoke path selects its current clients without broadening unknown scripts', () => {
   const login = changed('scripts/test-web-login.cjs');

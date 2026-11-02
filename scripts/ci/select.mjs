@@ -5,7 +5,7 @@ import { serverGroups, serverFiles } from './server-tests.mjs';
 import { changedPaths } from '../release/affected-components.mjs';
 
 // Check scopes are independent of release/components.json and its central artifact.
-export const scopes = ['web', 'server', 'agent', 'shared', 'i18n', 'desktop', 'android', 'tooling'];
+export const scopes = ['web', 'server', 'agent', 'shared', 'plugin-sdk', 'i18n', 'desktop', 'android', 'tooling'];
 const documentation = path => path.startsWith('docs/') || path.startsWith('release/notes/')
   || /(?:^|\/)AGENTS\.md$/.test(path) || /^(?:README(?:\.[\w-]+)?|THIRD_PARTY_NOTICES)\.md$/.test(path)
   || /^\.agents\/skills\/.*\.(?:md|yaml)$/.test(path)
@@ -50,8 +50,9 @@ export function selectScopes(paths) {
     // by Central. Keep server shards and tooling without Android/heavy fallback.
     if (path.startsWith('packages/plugin-api/')) { add('shared', 'agent', 'server', 'web', 'desktop', 'tooling'); broadServer = true; continue; }
     if (path.startsWith('packages/plugin-host/')) { add('server', 'tooling'); broadServer = true; continue; }
-    // The SDK is an author-facing build surface, not a current app consumer.
-    if (path.startsWith('packages/plugin-sdk/')) { add('tooling'); continue; }
+    // The SDK has its own light build/package-boundary task; it is not a current
+    // desktop/Android runtime consumer and must not fall back to tooling-only.
+    if (path.startsWith('packages/plugin-sdk/')) { add('plugin-sdk'); continue; }
     if (path.startsWith('packages/shared/') || path.startsWith('protocol/')) {
       add('shared', 'agent', 'server', 'web', 'desktop', 'android', 'i18n'); broadServer = true; continue;
     }
@@ -70,7 +71,7 @@ export function automaticTasks(selection, event = 'pull_request') {
   const selected = new Set(selection.scopes), tasks = [];
   // One source-boundary check before the affected Node tasks; no builds or heavy suites.
   if ([...selected].some(name => name !== 'android')) tasks.push('architecture');
-  for (const name of ['tooling', 'i18n', 'shared']) if (selected.has(name)) tasks.push(name);
+  for (const name of ['tooling', 'plugin-sdk', 'i18n', 'shared']) if (selected.has(name)) tasks.push(name);
   for (const name of ['web', 'agent', 'desktop']) if (selected.has(name)) tasks.push(event === 'push' ? `${name}-contract` : name);
   if (selected.has('server')) tasks.push(...(event === 'push' ? ['server-contract'] : ['server-build', ...[1, 2, 3, 4].filter(shard => serverFiles(shard, '.', selection.serverGroups).length).map(shard => `server-${shard}`)]));
   // Main retains focused Kotlin consumption when its actual wire inputs change;
