@@ -118,7 +118,13 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     http,scopeFor,statusScope:options.statusScope,manageCapabilities:false,
     ...(options.transport?{transport:options.transport}:{}),
   });
-  const manifests=new Map(options.manifests.map(manifest=>[manifest.id,manifest])),retiring=new Set<Promise<void>>(),pendingHot=new Set<Promise<void>>(),hotById=new Map<string,Promise<void>>();
+  const manifests=new Map(options.manifests.map(manifest=>[manifest.id,manifest])),retiring=new Set<Promise<void>>(),pendingHot=new Set<Promise<void>>(),hotById=new Map<string,Promise<void>>(),lateCleanupFailures:unknown[]=[];
+  const scopeClosures=new WeakMap<ConnectorInstanceScope,Promise<void>>();
+  const closeScope=(value:ConnectorInstanceScope)=>{
+    let task=scopeClosures.get(value);
+    if(!task){try{task=Promise.resolve(value.close());}catch(error){task=Promise.reject(error);}scopeClosures.set(value,task);}
+    return task;
+  };
   for(const manifest of options.manifests)registry.register(manifest);
   let started=false,closed=false,startTask:Promise<void>|undefined,teardown:Promise<void>|undefined,closing:Promise<void>|undefined;
   const startHot=async(manifest:ConnectorManifest)=>{
@@ -133,7 +139,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       if(current)scopes.delete(manifest.id);
       rollbackDescriptors(added);
       if(isConnectorCleanupFailure(error))cleanupErrors.push(error);
-      try{await scope.close();}catch(cleanup){cleanupErrors.push(cleanup);}
+      try{await closeScope(scope);}catch(cleanup){cleanupErrors.push(cleanup);}
       if(current)registry.recordFailure(manifest,cleanupErrors[0]??error);else registry.clearFailure(manifest.id);
       if(cleanupErrors.length)throw connectorCleanupFailure([error,...cleanupErrors]);
       throw error;
@@ -141,6 +147,9 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
   };
   const runHot=(manifest:ConnectorManifest)=>{
     const task=startHot(manifest);pendingHot.add(task);hotById.set(manifest.id,task);
+    // Retain shutdown-owned cleanup failures before the task disappears from
+    // pendingHot, so close cannot miss a settled late-disposal error.
+    void task.catch(error=>{if(isConnectorCleanupFailure(error))lateCleanupFailures.push(error);});
     void task.finally(()=>{pendingHot.delete(task);if(hotById.get(manifest.id)===task)hotById.delete(manifest.id);}).catch(()=>{});
     return task;
   };
@@ -154,10 +163,10 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       // but new route/OAuth admission is rejected while close is in progress.
       for(const value of scopes.values()){
         if(value.fence)await clean(()=>value.fence!());
-        else {const task=value.close();startedScopes.set(value,task);void task.catch(()=>{});}
+        else {const task=closeScope(value);startedScopes.set(value,task);void task.catch(()=>{});}
       }
       await clean(()=>registry.close());
-      for(const value of [...scopes.values()].reverse())await clean(()=>startedScopes.get(value)??value.close());
+      for(const value of [...scopes.values()].reverse())await clean(()=>startedScopes.get(value)??closeScope(value));
       for(const task of [...retiring])await clean(()=>task);
       if(errors.length)throw new AggregateError(errors,'Connector host adapter disposal failed');
     })();
@@ -172,11 +181,8 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       // Join late factory/init cleanup; start's own rejection is observed by
       // its caller, while teardown cleanup errors remain aggregated here.
       await (startTask?.catch(()=>{})??Promise.resolve());
-      const cleanupErrors:unknown[]=[];
-      while(pendingHot.size){
-        const results=await Promise.allSettled([...pendingHot]);
-        for(const result of results)if(result.status==='rejected'&&isConnectorCleanupFailure(result.reason))cleanupErrors.push(result.reason);
-      }
+      while(pendingHot.size)await Promise.allSettled([...pendingHot]);
+      const cleanupErrors=lateCleanupFailures.splice(0);
       const {error}=await settledInternal;
       if(error!==undefined)cleanupErrors.push(error);
       if(cleanupErrors.length)throw new AggregateError(cleanupErrors,'Connector host adapter disposal failed');
@@ -196,7 +202,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
             try{await registry.startInstance(manifest,scope.scope);}
             catch(error){
               scopes.delete(manifest.id);
-              try{await scope.close();}catch(cleanup){registry.recordFailure(manifest,cleanup);}
+              try{await closeScope(scope);}catch(cleanup){registry.recordFailure(manifest,cleanup);}
             }
           }
           if(closed)throw Error('Connector host adapter is closed');
@@ -230,9 +236,9 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
         let scopeClosing:Promise<void>|undefined;
         // A close-only scope must stop admission before connector shutdown; a
         // fence scope is invoked by registry.stop before it closes the instance.
-        if(value&&!value.fence){scopeClosing=value.close();void scopeClosing.catch(()=>{});}
+        if(value&&!value.fence){scopeClosing=closeScope(value);void scopeClosing.catch(()=>{});}
         try{await registry.stop(id,value?.fence?()=>value.fence!():undefined);}catch(error){errors.push(error);}
-        if(value&&!scopeClosing){scopeClosing=value.close();void scopeClosing.catch(()=>{});}
+        if(value&&!scopeClosing){scopeClosing=closeScope(value);void scopeClosing.catch(()=>{});}
         if(scopeClosing)try{await scopeClosing;}catch(error){errors.push(error);}
         if(attempt)try{await attempt;}catch(error){if(isConnectorCleanupFailure(error))errors.push(error);}
         if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
