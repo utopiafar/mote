@@ -17,6 +17,7 @@ import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile
 import {createHostRunSession, type HostSessionAssembly} from '../../host/run-session.js';
 import type {HostRunDependencies} from '../../host/run-contracts.js';
 import {createDshHostChannel} from './context-plugin.js';
+import {AgentYieldError} from '../../host-controls.js';
 import {DSH_RUNTIME_ID, compileNativeDshProfile, createRuntimePatch, DshProfileError, type InstalledDshModule} from './profile-compiler.js';
 
 export {DSH_RUNTIME_ID, DshProfileError, createRuntimePatch} from './profile-compiler.js';
@@ -120,10 +121,13 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
                 const result = await host.runModel(request.attempt, () => Promise.race([harness!.run(request.prompt, {sessionId: host.identity.runId, onNotification: notification}), channel!.failure, observer!.failure]));
                 const end = result.events && [...result.events].reverse().find(event => event.type === 'turn/end');
                 const reason = (end?.data as {reason?: {kind?: string}} | undefined)?.reason;
-                if (reason?.kind === 'error') return {terminal: {kind: 'failed', reason: 'provider_error'}};
-                return reason?.kind === 'max-tokens' ? {terminal: {kind: 'output_limit'}, candidate: {text: result.finalResponse}} : {terminal: {kind: 'completed'}, candidate: {text: result.finalResponse}};
+                if (reason?.kind === 'max-tokens') return {terminal: {kind: 'output_limit'}, candidate: {text: result.finalResponse}};
+                if (reason?.kind === 'aborted') return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
+                if (reason?.kind !== 'completed') return {terminal: {kind: 'failed', reason: 'provider_error'}};
+                return {terminal: {kind: 'completed'}, candidate: {text: result.finalResponse}};
               } catch (error) {
                 if (cancellation || host.signal.aborted) return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
+                if (error instanceof AgentYieldError) return {terminal: {kind: 'yielded'}};
                 if (error instanceof AgentTimeoutError || error instanceof RequestTimeoutError) throw new AgentTimeoutError();
                 if (error instanceof AgentResponseError && (error.reason === 'tools_unverified' || error.reason === 'tool_failure')) return {terminal: {kind: 'failed', reason: error.reason}};
                 return {terminal: {kind: 'failed', reason: 'provider_error', ...(error instanceof ProviderFailure ? {providerFailure: error.details} : {})}};

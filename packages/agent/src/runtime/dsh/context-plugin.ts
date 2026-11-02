@@ -6,6 +6,7 @@ import {assertObjectJsonSchema, type ToolDefinition} from '@deepseek-ai/dsh-tool
 import type {HostRunPort, RuntimeAttempt, RuntimeToolDefinition, RuntimeToolPayload} from '../contracts.js';
 import {AgentResponseError} from '../../types.js';
 import {ContextToolError} from '../../tool-errors.js';
+import {AgentYieldError} from '../../host-controls.js';
 
 interface ChildConfiguration {url: string; token: string; runId: string; tools: readonly RuntimeToolDefinition[]}
 interface NativeCall {attempt: RuntimeAttempt; name: string}
@@ -73,6 +74,7 @@ export async function createDshHostChannel(host: HostRunPort) {
           confirmed();
         } catch (error) { rejected(error); throw error; }
       } catch (error) {
+        if (error instanceof AgentYieldError || error instanceof AgentResponseError && (error.reason === 'tool_failure' || error.reason === 'tools_unverified')) rejectFailure(error);
         if (req.url === '/ready') rejectFailure(failure());
         if (res.headersSent) { rejectFailure(error instanceof AgentResponseError ? error : new AgentResponseError('Native delivery did not complete.', 'tool_failure')); return; }
         const toolError = error instanceof ContextToolError ? error.toJSON() : {code: 'host_tool_rejected', message: 'The Host rejected this tool call.', recovery: 'stop', details: {}};

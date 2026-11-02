@@ -24,6 +24,7 @@ import {startBridge} from '../dist/bridge.js';
 import {contextToolDefinitions, pinContextTools} from '../dist/tool-contributions.js';
 import {taskTools} from '../dist/task-context.js';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
+import {AgentYieldError} from '../dist/host-controls.js';
 
 const scope = {packageId: 'generated.runtime', installationId: 'generated-install', instanceId: 'generated-instance', activationId: 'generated-active', host: {kind: 'central', id: 'generated-host'}};
 const reference = exportName => ({contribution: {instance: {packageId: scope.packageId, installationId: scope.installationId, instanceId: scope.instanceId}, contributionId: 'native'}, revision: 1, artifactDigest: 'a'.repeat(64), exportName});
@@ -138,6 +139,14 @@ test('an unconfigured DSH model fails before private resources or a subprocess a
   const model = {value: {model: 'generated-model', apiKey: ''}, assertCurrent() {}};
   await assert.rejects(provider.prepare(profile(), model, {assertCurrent() {}, systemPrompt: 'Generated Host policy'}), {name: 'AgentNotConfiguredError'});
   assert.equal(resources, 0);
+});
+
+test('a Host delegation yield crosses the real parent channel as a typed stopping cause', async t => {
+  const f = await channelFixture(t), yielded = new AgentYieldError(); void f.channel.failure.catch(() => {});
+  f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0});
+  f.host.tools.deliver = async () => { throw yielded; };
+  assert.equal((await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}})).status, 400);
+  await assert.rejects(f.channel.failure, error => error === yielded); assert.equal(f.delivered, false);
 });
 
 // Manually selected A05 journey: real SDK child, generated data and loopback only.
