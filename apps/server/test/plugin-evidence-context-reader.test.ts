@@ -68,7 +68,14 @@ test('dispose revokes views and ports, releases retained snapshots, and leaves b
   const view=service.agent({diagnostics}),snapshot=service.ports.memorySnapshots.retainMemorySnapshot({}),retain=service.ports.memorySnapshots.memoryBindings!.retainSnapshot;
   assert.ok(snapshot);
   assert.equal(released[0]!.count,0);
+  const owned=retain();owned.release();
+  assert.equal(released[1]!.count,1,'a normal caller release removes its tracking');
+  retain();
+  assert.equal(released[2]!.count,0);
   service.dispose();
+  assert.equal(released[0]!.count,1);
+  assert.equal(released[1]!.count,1,'dispose does not double-release a caller-released snapshot');
+  assert.equal(released[2]!.count,1,'dispose releases an outstanding capability snapshot');
   assert.throws(()=>retain(),{statusCode:503});
   assert.throws(()=>service.ports.memorySnapshots.memoryBindings!.retainSnapshot(),{statusCode:503});
   assert.equal(service.disposed,true);

@@ -12,7 +12,7 @@ import type {SourceContextStore} from '../source-context.js';
 import type {MemoryBindings} from '../memory-bindings.js';
 import {createContextTrees,type ContextTreeRegistry} from '../context-trees.js';
 import {EvidenceReader,type EvidenceReaderAgentOptions} from '../evidence-reader.js';
-import type {CaptureRead,CaptureContextRead,MaterialRead,MemoryRead,MemoryReadSnapshots,MemoryInputSelection} from '../evidence-read-ports.js';
+import type {CaptureRead,CaptureContextRead,MaterialRead,MemoryRead,MemoryReadSnapshot,MemoryReadSnapshots,MemoryInputSelection} from '../evidence-read-ports.js';
 import {centralServices,type ContextNavigationRead,type ContextTreesRead} from './central-contracts.js';
 
 /** H03 owns the package Manifest; this is the actual data-contribution fragment.
@@ -85,6 +85,22 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
   if(deps.memoryBindings)reader.memoryBindings=deps.memoryBindings;
   const contextTrees=deps.contextTrees??createContextTrees();
   let disposed=false;
+  // The memoryBindings port is used by ContextTreeRegistry.page and other host
+  // consumers that own their snapshot only for one read. Track these so a
+  // factory disposal releases whichever are still outstanding, while a normal
+  // caller release removes one immediately and is never double-released.
+  const bindingSnapshots=new Set<MemoryReadSnapshot>();
+  const trackBindingSnapshot=(snapshot:MemoryReadSnapshot):MemoryReadSnapshot=>{
+    let released=false;
+    const tracked:MemoryReadSnapshot={...snapshot,release:()=>{
+      if(released)return;
+      released=true;
+      if(!bindingSnapshots.delete(tracked))return;
+      snapshot.release();
+    }};
+    bindingSnapshots.add(tracked);
+    return tracked;
+  };
   const assertOpen=()=>{if(disposed||reader.disposed)throw new StoreError('Evidence context reader is unavailable',503);};
   const fenced=<T>(read:()=>T):T=>{
     assertOpen();
@@ -129,7 +145,7 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
       // lifecycle at invocation, not only when the property is read.
       get memoryBindings(){
         const bindings=reader.memoryBindings;
-        return bindings?{retainSnapshot:(ids?:readonly string[])=>fenced(()=>bindings.retainSnapshot(ids))}:undefined;
+        return bindings?{retainSnapshot:(ids?:readonly string[])=>fenced(()=>trackBindingSnapshot(bindings.retainSnapshot(ids)))}:undefined;
       },
       retainMemorySnapshot:context=>fenced(()=>reader.retainMemorySnapshot(context)),
       memorySnapshot:context=>fenced(()=>reader.memorySnapshot(context)),
@@ -158,6 +174,8 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
     dispose(){
       if(disposed)return;
       disposed=true;
+      for(const snapshot of [...bindingSnapshots]){try{snapshot.release();}catch{}}
+      bindingSnapshots.clear();
       reader.dispose();
     },
     get disposed(){return disposed;},
