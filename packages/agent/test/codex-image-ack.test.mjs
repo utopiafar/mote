@@ -65,6 +65,7 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
       const body = JSON.parse(options.body);
       ackBodies.push(body);
       if (mode === 'ack-reject' && body.delivered) return new Response('rejected', {status: 503});
+      if (mode === 'ack-lost' && body.delivered) {await originalFetch(url, options); throw new TypeError('network lost');}
     }
     return originalFetch(url, options);
   };
@@ -112,6 +113,8 @@ test('Codex confirms the same bridge token only after the same-active steer succ
   assert.equal(metadata.body.imageDelivery, undefined);
   assert.equal(f.ackBodies.length, 1, 'metadata-only reads issue no receipt');
   assert.deepEqual(f.bridge.evidenceDependencies.ids, [id]);
+  f.bridge.imageDelivery(f.tokens[0], false);
+  assert.deepEqual(f.bridge.evidenceDependencies.ids, [id], 'false cannot roll back an already confirmed receipt');
 });
 
 for (const mode of ['wrong', 'stale']) {
@@ -143,4 +146,17 @@ test('a definitive true acknowledgement rejection still sends one false fallback
   const retry = await fetch(f.bridge.url + '/read_image', {method:'POST',headers:{Authorization:'Bearer ' + f.bridge.token,'Content-Type':'application/json'},body:JSON.stringify({id})});
   assert.equal(retry.status, 200);
   assert.ok((await retry.json()).image, 'false fallback released the reservation');
+});
+
+
+test('a lost true acknowledgement response keeps the real receipt and is not converted to false', async t => {
+  const f = await fixture(t, 'ack-lost');
+  const running = f.session.run('Read generated image');
+  await waitFor(f.started);
+  await writeFile(f.release, '');
+  await assert.rejects(running);
+  assert.deepEqual(f.ackBodies, [{token:f.tokens[0], delivered:true}]);
+  assert.equal(f.bridge.records.get(id).ocrText, '');
+  assert.deepEqual(f.bridge.evidenceDependencies.ids, [id]);
+  assert.equal(parseAnswer(JSON.stringify({answer:`Generated [${id}]`,citationIds:[id]}), f.bridge.records).citations[0].id, id);
 });
