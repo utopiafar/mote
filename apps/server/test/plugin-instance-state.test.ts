@@ -81,6 +81,9 @@ test('keys, values and namespace accounting are bounded without partial writes',
   await assert.rejects(a.state.compareAndSet('k'.repeat(stateLimits.keyBytes + 1), null, 1), (error: StateError) => error.code === 'invalid_key');
   await assert.rejects(a.state.compareAndSet('bad\0key', null, 1), (error: StateError) => error.code === 'invalid_key');
   await assert.rejects(a.state.compareAndSet('large', null, 'x'.repeat(stateLimits.valueBytes)), (error: StateError) => error.code === 'value_too_large');
+  await assert.rejects(a.state.compareAndSet('nan', null, Number.NaN), (error: StateError) => error.code === 'invalid_value');
+  await assert.rejects(a.state.compareAndSet('inf', null, {nested: Number.POSITIVE_INFINITY}), (error: StateError) => error.code === 'invalid_value');
+  assert.equal(await a.state.get('nan'), undefined);
 
   const before = store.stats().logicalBytes;
   await a.state.compareAndSet('metered', null, 'x'.repeat(1024));

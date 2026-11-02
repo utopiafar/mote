@@ -160,8 +160,15 @@ class InstanceState implements StateStore {
 
   private serialize(value: StateValue): string {
     let json: string | undefined;
-    try { json = JSON.stringify(value); }
-    catch { throw new StateError('invalid_value'); }
+    try {
+      json = JSON.stringify(value, (_key, item) => {
+        if (typeof item === 'number' && !Number.isFinite(item)) throw new StateError('invalid_value');
+        return item;
+      });
+    } catch (error) {
+      if (error instanceof StateError) throw error;
+      throw new StateError('invalid_value');
+    }
     if (typeof json !== 'string') throw new StateError('invalid_value');
     if (Buffer.byteLength(json) > this.limits.valueBytes) throw new StateError('value_too_large');
     return json;
