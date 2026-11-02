@@ -132,8 +132,11 @@ export function createMaterialsPack(input: ReadPackInputs = {}): readonly ToolDe
             Number(materialRange.start) < 0 || Number(materialRange.end) < Number(materialRange.start)) invalid('Invalid material span');
           const pageBounds = pageRange as {start: number; end: number}, materialBounds = materialRange as {start: number; end: number};
           const attribution = attributionContextSchema.safeParse(span.attributionContext);
+          const attributionMetadata = attribution.success
+            ? (({ownerStatements: _owner, importStatements: _import, sourceContextStatements: _source, recordContextStatements: _record, ...metadata}) => metadata)(attribution.data)
+            : undefined;
           return {
-            blockId: span.blockId, kind: span.kind, ...(attribution.success ? {attributionContext: attribution.data} : {}),
+            blockId: span.blockId, kind: span.kind, ...(attributionMetadata ? {attributionContext: attributionMetadata} : {}),
             ...(typeof span.format === 'string' && span.format.length <= 128 ? {format: span.format} : {}),
             pageRange: {start: pageBounds.start, end: pageBounds.end},
             materialRange: {start: materialBounds.start, end: materialBounds.end}, memberIds: span.memberIds,
