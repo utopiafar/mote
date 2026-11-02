@@ -527,37 +527,33 @@ fun Context.declarativePluginView(
                 else EditText(this).apply { hint = label(f.labelKey ?: f.key); if (f.input == "number") inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL; body.addView(this) } to f
             }
             component.submitCommand?.let { command ->
-                // Serialize per declared input type before submitting —
-                // the same contract as the web serializeFormInput.
+                // The same android-free dispatch the JVM tests exercise:
+                // Ready is the only path to onCommand, Rejected marks the
+                // offending control, Busy reads nothing and submits nothing.
                 body.addView(Button(this).apply { text = label(command); isEnabled = !busy(); setOnClickListener {
-                    if (busy()) return@setOnClickListener
-                    val input = org.json.JSONObject()
-                    for ((view, f) in inputs) when (f.input) {
-                        "boolean" -> {
-                            // A required checkbox must be affirmed before dispatch.
-                            val box = view as CheckBox
-                            if (f.required && !box.isChecked) { box.hint = label(f.labelKey ?: f.key); box.requestFocus(); return@setOnClickListener }
-                            input.put(f.key, box.isChecked)
+                    when (val outcome = dev.mote.collector.plugins.DeclarativeSubmit.dispatch(component.fields, { f ->
+                        inputs.firstOrNull { it.second === f }?.first?.let { view ->
+                            if (f.input == "boolean") (view as CheckBox).isChecked else (view as EditText).text.toString()
                         }
-                        "number" -> {
-                            val raw = (view as EditText).text.toString()
-                            if (raw.isBlank()) { if (f.required) { view.error = label(f.labelKey ?: f.key); view.requestFocus(); return@setOnClickListener } }
-                            else raw.toDoubleOrNull()?.let { input.put(f.key, it) } ?: run { view.error = label(f.labelKey ?: f.key); view.requestFocus(); return@setOnClickListener }
+                    }, busy)) {
+                        is dev.mote.collector.plugins.FormSubmit.Ready -> onCommand(command, outcome.input)
+                        is dev.mote.collector.plugins.FormSubmit.Rejected -> inputs.firstOrNull { it.second.key == outcome.field }?.first?.let { view ->
+                            if (view is EditText) view.error = label(view.hint?.toString() ?: outcome.field)
+                            view.requestFocus()
                         }
-                        else -> {
-                            val raw = (view as EditText).text.toString()
-                            if (f.required && raw.isBlank()) { view.error = label(f.labelKey ?: f.key); view.requestFocus(); return@setOnClickListener }
-                            input.put(f.key, raw)
-                        }
+                        dev.mote.collector.plugins.FormSubmit.Busy -> Unit
                     }
-                    onCommand(command, input)
                 } })
             }
         }
         is dev.mote.collector.plugins.DeclarativeNode.Action -> body.addView(Button(this).apply {
             text = component.labelKey?.let(label) ?: component.command
             isEnabled = !busy()
-            setOnClickListener { if (!busy()) onCommand(component.command, org.json.JSONObject()) }
+            // Actions share the same production gate (zero-field dispatch).
+            setOnClickListener {
+                if (dev.mote.collector.plugins.DeclarativeSubmit.dispatch(emptyList(), { null }, busy) is dev.mote.collector.plugins.FormSubmit.Ready)
+                    onCommand(component.command, org.json.JSONObject())
+            }
         })
     }
     return body
