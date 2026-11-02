@@ -39,7 +39,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
     "test": "node --test test/*.test.mjs",
-    "prebuild": "npm run build -w @mote/plugin-host"
+    "prebuild": "npm run build -w @mote/plugin-host",
+    "prepack": "node scripts/pack.mjs",
+    "pack:sdk": "node scripts/pack.mjs"
   },
   "dependencies": {
     "@mote/plugin-api": "0.1.0",
