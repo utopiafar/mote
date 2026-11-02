@@ -4,7 +4,11 @@ import {
   type ReplacementPolicy,
 } from '@mote/plugin-api/contracts';
 import type {CaptureInput} from '@mote/shared';
-import type {CaptureRead, MaterialRead, MemoryRead, MemoryReadSnapshots} from '../evidence-read-ports.js';
+import type {CaptureRead, CaptureContextRead, MaterialRead, MemoryRead, MemoryReadSnapshots, MemoryInputSelection} from '../evidence-read-ports.js';
+import type {EvidenceReader} from '../evidence-reader.js';
+import type {ContextQuery} from '../context-query.js';
+import type {ContextTreeRegistry} from '../context-trees.js';
+import type {registerEvidenceRoutes} from '../evidence-routes.js';
 import type {IngressService} from '../ingress.js';
 import type {MaterialStore} from '../materials.js';
 import type {SourceStore} from '../sources.js';
@@ -24,9 +28,15 @@ import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-pub
  * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
  * neither constructs current services nor registers a second host or Manifest. */
 
-/** Host-issued domain authority, checked synchronously inside the actual commit.
- * A valid service lease alone does not authorize data access, model work or publication. */
-export interface CommitAuthority { assertCurrent(): void }
+/** C04's authorization boundary issues concrete subclasses with a synchronous domain
+ * grant check. The private nominal marker prevents a service lease or a plain liveness
+ * callback from accidentally becoming commit authority. It is a type boundary, not proof
+ * that a grant is current: providers must still invoke assertCurrent inside the commit. */
+export abstract class CommitAuthority {
+  private readonly domainCommitAuthority = true;
+  protected constructor() {}
+  abstract assertCurrent(): void;
+}
 
 /** C02 owns SQLite/locks. Repository implementations close over their private SQL;
  * callers receive typed repositories separately, never a database argument or service bag.
@@ -35,6 +45,13 @@ export interface VaultTransactions {
   transaction<T>(authority: CommitAuthority, work: () => T & (T extends PromiseLike<unknown> ? never : unknown)): T;
 }
 export type ArchivedContentRead = Pick<ArchivedFileStore, 'get' | 'read' | 'listForCapture'>;
+/** Exact originals, browsing, navigation and tree reads remain independently grantable.
+ * The inventory projection contains only the actual ContextQuery's archive/source summaries
+ * and latest-Memory timestamp callback, not their underlying repositories or database. */
+export type CaptureImageRead = Parameters<typeof registerEvidenceRoutes>[1]['store'];
+export type ContextNavigationRead = Pick<EvidenceReader, 'segments' | 'catalogAsync'>;
+export type ContextInventoryRead = ConstructorParameters<typeof ContextQuery>[2];
+export type ContextTreesRead = Pick<ContextTreeRegistry, 'catalog' | 'page'>;
 
 /** C04 binds this handle to the authenticated request without exposing token hashes.
  * The host still rejects disallowed routes before dispatch. Source content cannot mint it. */
@@ -96,6 +113,11 @@ export const centralServices = {
   sources: serviceContract<SourceRepository>('mote.central.source-repository', '1'),
   sourceBindings: serviceContract<SourceBindings>('mote.central.source-bindings', '1'),
   captureRead: serviceContract<CaptureRead>('mote.central.capture-read', '1'),
+  captureImageRead: serviceContract<CaptureImageRead>('mote.central.capture-image-read', '1'),
+  captureContextRead: serviceContract<CaptureContextRead>('mote.central.capture-context-read', '1'),
+  contextNavigationRead: serviceContract<ContextNavigationRead>('mote.central.context-navigation-read', '1'),
+  contextInventoryRead: serviceContract<ContextInventoryRead>('mote.central.context-inventory-read', '1'),
+  contextTreesRead: serviceContract<ContextTreesRead>('mote.central.context-trees-read', '1'),
   materialRepository: serviceContract<MaterialRepositoryRead>('mote.central.material-repository-read', '1'),
   materialPublication: serviceContract<MaterialPublication>('mote.central.material-publication', '1'),
   materialRead: serviceContract<MaterialRead>('mote.central.material-read', '1'),
@@ -109,6 +131,7 @@ export const centralServices = {
   memoryCandidates: serviceContract<MaterialMemoryCandidates>('mote.central.material-memory-candidates', '1'),
   memoryRead: serviceContract<MemoryRead>('mote.central.memory-read', '1'),
   memorySnapshots: serviceContract<MemoryReadSnapshots>('mote.central.memory-read-snapshots', '1'),
+  memoryInputSelection: serviceContract<MemoryInputSelection>('mote.central.memory-input-selection', '1'),
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
 } as const;
@@ -159,10 +182,12 @@ export const centralServiceOwners = {
   vault:'vault', contentRead:'vault', requestAuthorization:'authorization',
   modelAuthority:'authorization', modelAdmission:'authorization',
   captureIntake:'capture', sourceIntake:'capture', sources:'capture', sourceBindings:'sourceRuntime',
-  captureRead:'materials', materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
+  captureRead:'materials', captureImageRead:'materials', captureContextRead:'materials',
+  contextNavigationRead:'materials', contextInventoryRead:'materials', contextTreesRead:'materials',
+  materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
   configuration:'configuration', usage:'observability', pluginControlRead:'control', processing:'processing',
-  memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials',
+  memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryStagePublication:'publication', memoryOwnerPublication:'publication',
 } as const satisfies Record<CentralService, CentralSlice>;
 
@@ -180,7 +205,7 @@ export const centralFeatureMigrations = {
   'mote.system': {owners:['observability','host'], requires:['configuration','execution']},
   'mote.storage': {owners:['vault','files','materials','publication'], requires:['vault','contentRead']},
   'mote.capture': {owners:['capture'], requires:['requestAuthorization','captureIntake','captureRead']},
-  'mote.context': {owners:['materials'], requires:['captureRead','materialRead']},
+  'mote.context': {owners:['materials'], requires:['captureRead','captureImageRead','captureContextRead','contextNavigationRead','contextInventoryRead','contextTreesRead','memoryRead','memorySnapshots']},
   'mote.materials': {owners:['materials','publication'], requires:['vault','materialRepository','materialRead','requestAuthorization']},
   'mote.coding': {owners:['sourceRuntime','materials','agent'], requires:['sourceIntake','sourceBindings','materialPublication']},
   'mote.sources': {owners:['sourceRuntime','capture','connectors'], requires:['sources','sourceBindings','sourceIntake','requestAuthorization']},
@@ -190,7 +215,7 @@ export const centralFeatureMigrations = {
   'mote.devices': {owners:['capture'], requires:['vault','requestAuthorization']},
   'mote.media': {owners:['media'], requires:['configuration','modelAuthority','fileOriginalRead']},
   'mote.owner-questions': {owners:['activity','memoryRuntime'], requires:['vault','requestAuthorization']},
-  'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryStagePublication','modelAdmission']},
+  'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']},
   'mote.imports': {owners:['imports','files','agent'], requires:['execution','sourceIntake','contentRead','requestAuthorization']},
   'mote.ask': {owners:['query','agent'], requires:['requestAuthorization','modelAdmission','captureRead','materialRead','memoryRead','memorySnapshots']},
   'mote.usage': {owners:['observability'], requires:['usage','requestAuthorization']},

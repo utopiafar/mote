@@ -3,16 +3,21 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import {
-  serviceBindingSchema, serviceRefSchema, type ContributionIdentity, type ServiceBinding,
+  serviceBindingSchema, serviceRefSchema, type ContributionIdentity, type ServiceBinding, type ServiceLease,
 } from '@mote/plugin-api/contracts';
 import {
   centralServices, centralServiceOwners, centralMigrationSlices, centralFeatureMigrations, checkCentralServiceDeclarations,
-  type CaptureIntake, type MaterialPublication, type VaultTransactions, type CommitAuthority,
-  type CentralMigrationSlice,
+  type CaptureIntake, type MaterialPublication, type VaultTransactions, CommitAuthority,
+  type CentralMigrationSlice, type CaptureImageRead, type ContextNavigationRead, type ContextInventoryRead, type ContextTreesRead,
 } from '../src/plugins/central-contracts.js';
-import type {CaptureRead} from '../src/evidence-read-ports.js';
+import type {CaptureRead, CaptureContextRead, MemoryRead, MemoryReadSnapshots, MemoryInputSelection} from '../src/evidence-read-ports.js';
 import type {CaptureInput} from '@mote/shared';
 import type {IngressService} from '../src/ingress.js';
+import type {ContextQuery} from '../src/context-query.js';
+import type {EvidenceReader} from '../src/evidence-reader.js';
+import type {registerEvidenceRoutes} from '../src/evidence-routes.js';
+import type {registerMemoryRoutes} from '../src/memory-routes.js';
+import type {MemoryOwnerPublication} from '../src/memory-publication-contract.js';
 
 // These are T1 declaration/type checks. No provider/host or runtime authorization is implemented
 // by C01, and a successful preflight is not evidence of a real startup/HTTP/SQLite T3 journey.
@@ -80,6 +85,27 @@ test('missing authorization is a concrete startup blocker for Note intake, never
   assert.deepEqual(issues, [{code:'dependency_unavailable',service:missing,consumer:'mote.notes',providers:[]}]);
 });
 
+test('context browsing cannot start with only exact evidence reads and its other declared dependencies', () => {
+  const missing = centralServices.captureContextRead;
+  const required = centralFeatureMigrations['mote.context'].requires.map(key => ({consumer:'mote.context',service:centralServices[key]}));
+  const declared = required.filter(item => item.service.id !== missing.id).map(item => ({service:item.service,provider:provider('context-reader')}));
+  assert.deepEqual(checkCentralServiceDeclarations(declared, required), [
+    {code:'dependency_unavailable',service:missing,consumer:'mote.context',providers:[]},
+  ]);
+  assert.equal(centralServiceOwners.captureContextRead, 'materials');
+  assert.deepEqual(checkCentralServiceDeclarations([...declared,{service:missing,provider:provider('context-reader')}], required), []);
+});
+
+for (const key of ['memoryInputSelection','memoryOwnerPublication'] as const) test(`Memory cannot start without its ${key} dependency`, () => {
+  const missing = centralServices[key];
+  const required = centralFeatureMigrations['mote.memory'].requires.map(name => ({consumer:'mote.memory',service:centralServices[name]}));
+  const declared = required.filter(item => item.service.id !== missing.id).map(item => ({service:item.service,provider:provider('memory-services')}));
+  assert.deepEqual(checkCentralServiceDeclarations(declared, required), [
+    {code:'dependency_unavailable',service:missing,consumer:'mote.memory',providers:[]},
+  ]);
+  assert.deepEqual(checkCentralServiceDeclarations([...declared,{service:missing,provider:provider('memory-services')}], required), []);
+});
+
 test('duplicate exact declarations fail, while an explicitly bound provider survives reverse install order', () => {
   const chosen = provider('chosen'), sibling = provider('sibling');
   assert.deepEqual(checkCentralServiceDeclarations([declaration(chosen),declaration(chosen)], []), [
@@ -120,14 +146,34 @@ test('preflight validates a supplied binding rather than accepting a malformed s
 
 // Checked by the focused tsc invocation, not by tsx's type stripping. No fake provider echoes.
 // This protects the real current producer's receipt type, read/write separation and sync commit.
-function checkDomainTypes(vault: VaultTransactions, intake: CaptureIntake, read: CaptureRead, publication: MaterialPublication, input: CaptureInput, authority: CommitAuthority) {
+function checkDomainTypes(vault: VaultTransactions, intake: CaptureIntake, read: CaptureRead, publication: MaterialPublication,
+  input: CaptureInput, authority: CommitAuthority, lease: ServiceLease<CaptureIntake>,
+  draft: Parameters<MaterialPublication['publish']>[0], options: Parameters<MaterialPublication['publish']>[1]) {
   const received: ReturnType<IngressService['capture']> = intake.capture(input, authority);
   void received;
+  class ProviderAuthority extends CommitAuthority {
+    constructor() { super(); }
+    assertCurrent() { authority.assertCurrent(); }
+  }
+  intake.capture(input, new ProviderAuthority());
   vault.transaction(authority, () => ({id:input.id,duplicate:false}));
   // @ts-expect-error transactions cannot await preparation or remote effects inside SQLite
   vault.transaction(authority, async () => ({id:input.id}));
   // @ts-expect-error request authority is required even if a lease is live
   intake.capture(input);
+  // @ts-expect-error a valid service lease is liveness, not a domain commit grant
+  intake.capture(input, lease);
+  // @ts-expect-error a read/service lease cannot authorize a transaction
+  vault.transaction(lease, () => input.id);
+  // @ts-expect-error a service lease cannot authorize Material publication
+  publication.publish(draft, options, lease);
+  const leaseShaped = {assertCurrent() {}};
+  // @ts-expect-error plain callbacks cannot satisfy the nominal domain authority
+  intake.capture(input, leaseShaped);
+  // @ts-expect-error plain callbacks cannot authorize a transaction
+  vault.transaction(leaseShaped, () => input.id);
+  // @ts-expect-error plain callbacks cannot authorize Material publication
+  publication.publish(draft, options, leaseShaped);
   // @ts-expect-error the read handle cannot publish captures
   read.capture(input, authority);
   // @ts-expect-error no raw database is exposed to publication consumers
@@ -136,3 +182,37 @@ function checkDomainTypes(vault: VaultTransactions, intake: CaptureIntake, read:
   vault.store;
 }
 void checkDomainTypes;
+
+// Actual consumer signatures: ContextQuery browsing and the existing exact-evidence route
+// can be assembled from the separate read capabilities. This is compile evidence, not T3.
+function checkContextReadTypes(exact: CaptureRead, browse: CaptureContextRead, images: CaptureImageRead,
+  navigation: ContextNavigationRead, inventory: ContextInventoryRead, trees: ContextTreesRead,
+  memory: MemoryRead, snapshots: MemoryReadSnapshots, context: object) {
+  const queryCaptures: ConstructorParameters<typeof ContextQuery>[0] = browse;
+  const queryMemories: ConstructorParameters<typeof ContextQuery>[1] = memory;
+  const queryMetadata: ConstructorParameters<typeof ContextQuery>[2] = inventory;
+  const retain: ConstructorParameters<typeof ContextQuery>[3] = () => snapshots.retainMemorySnapshot(context);
+  const evidenceRoutes: Parameters<typeof registerEvidenceRoutes>[1] = {...exact,...memory,store:images};
+  const segments: EvidenceReader['segments'] = navigation.segments;
+  const catalog: EvidenceReader['catalogAsync'] = navigation.catalogAsync;
+  void [queryCaptures,queryMemories,queryMetadata,retain,evidenceRoutes,segments,catalog];
+  // @ts-expect-error exact original reads cannot satisfy real ContextQuery browse/search
+  const exactIsNotBrowse: ConstructorParameters<typeof ContextQuery>[0] = exact;
+  // @ts-expect-error navigation readers cannot publish Material
+  navigation.publish;
+  // @ts-expect-error context tree read consumers cannot register classifiers/trees
+  trees.register;
+  // @ts-expect-error the image reader exposes bytes, not the underlying Store database
+  images.db;
+  void exactIsNotBrowse;
+}
+void checkContextReadTypes;
+
+function checkMemoryReadTypes(selection: MemoryInputSelection, owner: MemoryOwnerPublication) {
+  const routeSelection: Parameters<typeof registerMemoryRoutes>[1]['evidenceReader'] = selection;
+  const routeOwner: NonNullable<Parameters<typeof registerMemoryRoutes>[1]['ownerPublication']> = owner;
+  // @ts-expect-error input selection does not grant Memory publication
+  selection.publish;
+  void [routeSelection,routeOwner];
+}
+void checkMemoryReadTypes;
