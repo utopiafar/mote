@@ -48,10 +48,9 @@ test('native assembly validates public manifest, entries and factory ownership',
     {id: 'two', subpath: '.'},
   ], grants), 'native_manifest_invalid');
 
-  const partialGrant = planNativeDshAssembly(fixtureRoot, manifest, [
+  assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
     {id: 'one', subpath: '.', capabilities: ['tools']},
-  ], ['tools']);
-  assert.equal(partialGrant.entries.length, 1);
+  ], ['tools']), 'native_capability_denied');
 
   assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
     {id: 'one', subpath: './factory-a', capabilities: ['network']},
@@ -81,6 +80,16 @@ test('native assembly validates public manifest, entries and factory ownership',
       {id: 'one', subpath: '.'},
     ], grants);
     assert.match(orderedPlan.entries[0].specifier, /generic\.mjs$/);
+
+    await writeManifest({'.': './index.mjs', './private': null});
+    const blockedManifest = await readNativeDshManifest(conditionalRoot);
+    const blockedPlan = planNativeDshAssembly(conditionalRoot, blockedManifest, [
+      {id: 'one', subpath: '.'},
+    ], grants);
+    assert.equal(blockedPlan.entries.length, 1);
+    assertCode(() => planNativeDshAssembly(conditionalRoot, blockedManifest, [
+      {id: 'one', subpath: './private'},
+    ], grants), 'native_entry_missing');
 
     await writeManifest({import: null, default: './index.mjs'});
     await assert.rejects(
@@ -307,8 +316,12 @@ test('real DSH loader runs the native package, changes request config, and resta
     assert.ok(events.includes('turn-stopping-steered'), 'turn-stopping did not steer another step');
     assert.ok(events.includes('factory-a-duplicate-rejected'), 'second factory registration must be rejected');
     assert.ok(events.includes('factory-a-disposed'), 'factory A was not disposed');
-    assert.ok(events.includes('setup-rejected'), 'setup failure was not rejected');
-    assert.ok(events.includes('commit-rejected'), 'commit failure was not rejected');
+    assert.ok(events.includes('setup-called'), 'setup failure did not reach setup');
+    assert.match(aTrace.find(entry => entry.event === 'setup-rejected')?.message ?? '', /setup-failure/);
+    assert.ok(events.includes('commit-setup-called'), 'commit failure did not reach setup');
+    assert.ok(events.includes('commit-called'), 'commit failure did not reach commit');
+    assert.match(aTrace.find(entry => entry.event === 'commit-rejected')?.message ?? '', /commit-failure/);
+    assert.ok(events.includes('owner-setup-started'), 'owner unload did not reach setup');
     assert.ok(events.includes('owner-rejected'), 'owner unload did not reject unpublished setup');
     assert.equal(aTrace.find(entry => entry.event === 'setup-absent')?.absent, true);
     assert.equal(aTrace.find(entry => entry.event === 'commit-absent')?.absent, true);

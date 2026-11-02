@@ -94,7 +94,13 @@ export async function readNativeDshManifest(packageRoot: string): Promise<Native
         }
         const resolved = exportTarget(target);
         if (resolved === undefined || resolved === blockedExport) {
-          throw new NativeDshAssemblyError('native_entry_missing', `Export ${subpath} has no runtime entry`);
+          // A blocked private subpath is normal: it is unavailable to this
+          // loader while other public entries remain usable. The root export is
+          // still mandatory.
+          if (subpath === '.') {
+            throw new NativeDshAssemblyError('native_entry_missing', 'Native package root has no runtime entry');
+          }
+          continue;
         }
         exportsMap[subpath] = resolved;
       }
@@ -185,6 +191,15 @@ export function planNativeDshAssembly(
   grantedCapabilities: readonly string[],
 ): NativeDshAssembly {
   const granted = new Set(grantedCapabilities);
+  // Declarations are package-level: a selected native entry can use any
+  // capability the package declares, so every declared capability must be
+  // granted before any entry loads. Partial grants would be a false boundary
+  // for same-process native code.
+  for (const capability of manifest.capabilities) {
+    if (!granted.has(capability)) {
+      throw new NativeDshAssemblyError('native_capability_denied', `Native package capability is not granted: ${capability}`);
+    }
+  }
   const ids = new Set<string>();
   const subpaths = new Set<string>();
   const specifiers = new Set<string>();
