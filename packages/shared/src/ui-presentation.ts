@@ -70,6 +70,8 @@ type PresentationSource={contribution:ScopedContribution;catalogs:PluginI18nRegi
 export class UiPresentationHost<T> {
   private readonly registry=new FeatureRegistry<UiThemePack|UiLayoutPack<T>>();
   private readonly sources=new Map<string,PresentationSource>();
+  private readonly lastPresentations=new Map<string,ResolvedUiPresentation>();
+  private fallback?:{source:PresentationSource;presentation:ResolvedUiPresentation};
   private readonly bindings=new PresentationContributionRegistry();
   private readonly listeners=new Set<()=>void>();
   private readonly defaults:{theme:UiThemePack;layout:UiLayoutPack<T>};
@@ -101,12 +103,14 @@ export class UiPresentationHost<T> {
     return ()=>{
       if(disposed||pinned)return;disposed=true;removeValue();removeFeature();
       const removed=this.sources.get(key);
+      const removedPresentation=removed?this.presentation(surface,value):undefined;
       this.sources.delete(key);
+      this.lastPresentations.delete(key);
       if(reference(this.snapshot[surface])===reference(value)){
         const next:UiPresentationSnapshot<T>={...this.snapshot,[surface]:this.defaults[surface],fallbackReason:surface==='theme'?'theme_removed':'layout_removed'};
         if(surface==='theme')delete next.themePresentation;else delete next.layoutPresentation;
-        if(removed)next.fallbackPresentation=resolveContributionPresentation(removed.contribution.descriptor,removed.catalogs,getLocale());
-        else delete next.fallbackPresentation;
+        if(removed&&removedPresentation){next.fallbackPresentation=removedPresentation;this.fallback={source:removed,presentation:removedPresentation};}
+        else{delete next.fallbackPresentation;this.fallback=undefined;}
         this.publish(next);
       }
     };
@@ -114,8 +118,15 @@ export class UiPresentationHost<T> {
   registerTheme(pack:UiThemePack,source?:PresentationSource){return this.register('theme',validateUiTheme(pack),false,source);}
   registerLayout(pack:UiLayoutPack<T>,source?:PresentationSource){return this.register('layout',layout(pack,this.defaults.layout.primary),false,source);}
   private presentation(surface:'theme'|'layout',value:UiReference){
-    const source=this.sources.get(surface+':'+reference(value));
-    return source?resolveContributionPresentation(source.contribution.descriptor,source.catalogs,getLocale()):undefined;
+    const key=surface+':'+reference(value),source=this.sources.get(key);
+    if(!source)return undefined;
+    const resolved=resolveContributionPresentation(source.contribution.descriptor,source.catalogs,getLocale());
+    // A catalog may unregister while its pack is still active. Keep the last
+    // readable label instead of exposing the internal key; an English
+    // translation for a missing target locale is still readable.
+    const unreadable=resolved.label.fallback==='key_missing'||resolved.label.fallback==='namespace_missing';
+    if(!unreadable){this.lastPresentations.set(key,resolved);return resolved;}
+    return this.lastPresentations.get(key)??resolved;
   }
   /** Re-resolve the active contributed labels from the current runtime locale. */
   refresh(){
@@ -124,6 +135,13 @@ export class UiPresentationHost<T> {
     const next:UiPresentationSnapshot<T>={...this.snapshot};
     if(themePresentation)next.themePresentation=themePresentation;else delete next.themePresentation;
     if(layoutPresentation)next.layoutPresentation=layoutPresentation;else delete next.layoutPresentation;
+    if(this.fallback){
+      const resolved=resolveContributionPresentation(this.fallback.source.contribution.descriptor,this.fallback.source.catalogs,getLocale());
+      const unreadable=resolved.label.fallback==='key_missing'||resolved.label.fallback==='namespace_missing';
+      const presentation=unreadable?this.fallback.presentation:resolved;
+      this.fallback={source:this.fallback.source,presentation};
+      next.fallbackPresentation=presentation;
+    }else delete next.fallbackPresentation;
     return this.publish(next);
   }
   /** Registers a contributed theme/layout only when the explicit reference
@@ -161,6 +179,7 @@ export class UiPresentationHost<T> {
     if(!theme||!selected)throw Error('Presentation provider unavailable');
     const themePresentation=this.presentation('theme',binding.theme);
     const layoutPresentation=this.presentation('layout',binding.layout);
+    this.fallback=undefined;
     return this.publish({theme,layout:selected,...(themePresentation?{themePresentation}:{}),...(layoutPresentation?{layoutPresentation}:{})});
   }
 }

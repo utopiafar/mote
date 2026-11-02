@@ -222,3 +222,47 @@ test('a later unlabelled removal clears the previous fallback label',()=>{
   assert.equal(host.getSnapshot().fallbackReason,'layout_removed');
   assert.equal(host.getSnapshot().fallbackPresentation,undefined);
 });
+
+test('a removed pack keeps its last readable label when the catalog unloads first',()=>{
+  const host=fixture();
+  const catalogs=new PluginI18nRegistry();
+  const disposeCatalog=catalogs.register('fixture.plugin','en',{'theme.name':'Studio'});
+  const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+  const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+  const contribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+  })};
+  const remove=host.registerContribution(contribution,{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts,'en');
+  host.activate({theme,layout:defaultUiLayout});
+  assert.equal(host.getSnapshot().themePresentation.label.text,'Studio');
+  disposeCatalog();
+  remove();
+  assert.equal(host.getSnapshot().fallbackReason,'theme_removed');
+  assert.equal(host.getSnapshot().fallbackPresentation.label.text,'Studio');
+});
+
+test('a removed pack notice re-resolves on runtime locale changes',()=>{
+  let locale='zh-CN';configureLocale(()=>locale);
+  try{
+    const host=fixture();
+    const catalogs=new PluginI18nRegistry();
+    catalogs.register('fixture.plugin','en',{'theme.name':'Studio'});
+    catalogs.register('fixture.plugin','zh-CN',{'theme.name':'影棚'});
+    const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+    const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+    const contribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+      id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+      presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+    })};
+    const remove=host.registerContribution(contribution,{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts);
+    host.activate({theme,layout:defaultUiLayout});
+    assert.equal(host.getSnapshot().themePresentation.label.text,'影棚');
+    remove();
+    assert.equal(host.getSnapshot().fallbackPresentation.label.text,'影棚');
+    locale='en';
+    host.refresh();
+    assert.equal(host.getSnapshot().fallbackPresentation.label.text,'Studio');
+    assert.equal(host.getSnapshot().fallbackReason,'theme_removed');
+  }finally{configureLocale(()=> 'zh-CN');}
+});
