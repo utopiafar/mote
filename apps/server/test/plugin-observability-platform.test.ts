@@ -62,7 +62,27 @@ test('restart contribution publishes only the frozen usage port and releases its
   meter.update(tokens);const receipt=meter.finish('completed');assert.equal(receipt.status,'completed');
   assert.equal(lease.value.operation('generated-operation').items.length,1);
   await handle.close('disabled');assert.throws(()=>lease.assertCurrent());
+  assert.throws(()=>meter.update(tokens),{statusCode:503},'a retained meter cannot write after host close');
+  assert.throws(()=>meter.finish('failed'),{statusCode:503});
   const reopened=new ServerDiagnostics({directory:logs});try{await reopened.init();assert.equal(reopened.snapshot().enabled,true);assert.equal(reopened.snapshot().writeFailures,0,'the closed writer released its log lock');}finally{await reopened.close();}
+});
+
+test('retained meters drain while quiescing and reject writes after stop',async t=>{
+  const f=await fixture(t);await f.platform.prepare();await f.platform.start();
+  const assembly=f.platform.forAssembly(f.owner.scope),port=f.platform.usagePort();
+  const published=port.start('fixture','fixture-model','generated-quiesce',{operationId:'generated-quiesce',agentId:'generated-agent',moduleId:'generated-module',skillId:null});
+  const admitted=assembly.admittedUsage('fixture','fixture-model','generated-admitted',{operationId:'generated-admitted',agentId:'generated-agent',moduleId:'generated-module',skillId:null});
+  admitted.modelStarted();
+  f.platform.quiesce('restart');
+  published.update(tokens);assert.equal(published.finish('completed').status,'completed');
+  admitted.update(tokens);assert.equal(admitted.complete()?.status,'completed');
+  await f.platform.stop('shutdown');
+  assert.throws(()=>published.update(tokens),{statusCode:503});
+  assert.throws(()=>published.finish('failed'),{statusCode:503});
+  assert.throws(()=>admitted.update(tokens),{statusCode:503});
+  assert.throws(()=>admitted.fail(),{statusCode:503});
+  assert.throws(()=>port.start('fixture','fixture-model','generated-late'),{statusCode:503});
+  assert.equal(f.store.db.prepare('SELECT count(*) count FROM model_usage').get()!.count,2,'only the two drained meters wrote receipts');
 });
 
 test('real SQLite execution writes one admitted receipt and keeps diagnostic, domain-job and ledger identities distinct',async t=>{

@@ -99,15 +99,15 @@ export const observabilityPlatformReplacement='restart' as const;
 
 /** The existing admitted-usage semantics: a receipt exists only after a real
  * model start or sample, so queue/refusal/cancel-before-start leave no fake row. */
-export function createAdmittedUsage(ledger:UsageLedger):AdmittedUsageFactory {
+export function createAdmittedUsage(ledger:UsageLedger,available:()=>void=()=>{}):AdmittedUsageFactory {
   return (provider,model,operation,attribution)=>{
     let meter:ReturnType<UsageLedger['start']>|undefined;
-    const start=()=>meter??=ledger.start(provider,model,operation,attribution);
+    const start=()=>{available();return meter??=ledger.start(provider,model,operation,attribution);};
     return Object.freeze({
       modelStarted:start,
-      update:(tokens:TokenUsage)=>start().update(tokens),
-      complete:()=>meter?.finish('completed'),
-      fail:()=>meter?.finish('failed'),
+      update:(tokens:TokenUsage)=>{available();start().update(tokens);},
+      complete:()=>{available();return meter?.finish('completed');},
+      fail:()=>{available();return meter?.finish('failed');},
     });
   };
 }
@@ -132,8 +132,15 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopping'|'stopped'|'disposed'='created';
   let closing:Promise<void>|undefined;
   const current=()=>{if(phase!=='active'&&phase!=='quiescing')throw unavailable();};
+  /** The host guards a service call, not methods on the object it returns. A
+   * retained meter must therefore recheck this platform on every write: accepted
+   * work may drain while quiescing, but a stopped/disposed platform rejects. */
+  const guardedMeter=(meter:ReturnType<UsageLedger['start']>)=>Object.freeze({
+    update:(tokens:TokenUsage)=>{current();meter.update(tokens);},
+    finish:(status:'completed'|'failed')=>{current();return meter.finish(status);},
+  });
   const usagePort:UsageRecording=Object.freeze({
-    start:(...args)=>{current();if(!ledger)throw unavailable();return ledger.start(...args);},
+    start:(...args)=>{current();if(!ledger)throw unavailable();return guardedMeter(ledger.start(...args));},
     operation:(operationId:string,createdAt?:string,finishedAt?:string):OperationUsage=>{current();if(!ledger)throw unavailable();return ledger.operation(operationId,createdAt,finishedAt);},
   });
   const view=(check:()=>void):ObservabilityRead=>Object.freeze({
@@ -189,7 +196,7 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
         if(phase!=='created'){await diagnostics.close();throw unavailable();}
         observer=new ExecutionObservability(diagnostics,config.observerClock);
         ledger=new UsageLedger(dependencies.store);
-        admitted=createAdmittedUsage(ledger);
+        admitted=createAdmittedUsage(ledger,current);
         eventLoop=monitorEventLoopDelay({resolution:config.eventLoopResolutionMs??20});
         softwareUpdate=createUpdateService(config.update,config.updateDependencies);
         phase='prepared';
