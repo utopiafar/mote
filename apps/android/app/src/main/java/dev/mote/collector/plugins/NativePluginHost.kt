@@ -11,7 +11,7 @@ class PluginOwnerSession internal constructor(
     val capabilities: Set<String>,
 ) {
     internal val jobs = LinkedHashMap<String, PluginJob>()
-    internal val routes = LinkedHashMap<String, String>()
+    internal val routes = LinkedHashMap<String, PluginRouteFactory>()
     internal val services = LinkedHashMap<String, PluginServiceRegistration>()
     internal val disposers = mutableListOf<() -> Unit>()
     internal var revoked = false
@@ -19,10 +19,12 @@ class PluginOwnerSession internal constructor(
     val routeState = mutableMapOf<String, String>()
     var view: PluginViewSession? = null; internal set
 
-    fun registerRoute(routeId: String, entry: String) {
+    /** A route owns how its contribution mounts into the shell container;
+     * the host never reports a route handled before the mount succeeds. */
+    fun registerRoute(routeId: String, factory: PluginRouteFactory) {
         check(!revoked) { "scope is revoked" }
         require(!routes.containsKey(routeId)) { "route already registered: $routeId" }
-        routes[routeId] = entry
+        routes[routeId] = factory
     }
 
     fun registerService(service: PluginServiceRegistration) {
@@ -48,6 +50,11 @@ class PluginOwnerSession internal constructor(
 }
 
 data class PluginJob(val id: String, val durable: Boolean = false, val drain: (() -> Unit)? = null)
+
+/** Mounts this route's contribution into the shell container. The container
+ * is typed loosely so the ports stay JVM-testable; production passes the
+ * real shell body. */
+typealias PluginRouteFactory = (session: PluginViewSession, container: Any) -> PluginViewContribution
 data class PluginServiceRegistration(val id: String, val capability: String)
 
 data class PluginInstanceDescriptor(
@@ -65,8 +72,8 @@ class NativePluginHost(val registry: NativePluginRegistry) {
 
     fun scope(instanceId: String): PluginOwnerSession? = scopes[instanceId]
 
-    /** Registered plugin route entry for a page id, if any scope owns it. */
-    fun route(pageId: String): String? = scopes.values.firstNotNullOfOrNull { it.routes[pageId] }
+    /** Registered plugin route factory for a page id, if any scope owns it. */
+    fun route(pageId: String): PluginRouteFactory? = scopes.values.firstNotNullOfOrNull { it.routes[pageId] }
     fun routeOwner(pageId: String): PluginOwnerSession? = scopes.values.firstOrNull { it.routes.containsKey(pageId) }
 
     /** Admission: desired+compatible only; missing providers reject activation
@@ -106,7 +113,11 @@ class NativePluginHost(val registry: NativePluginRegistry) {
     /** Explicit quit: fence admission, await durable drains, then revoke all. */
     fun quit(): List<Throwable> {
         quitResult?.let { return it }
+        // Fence admission on every existing scope before snapshotting drains:
+        // new jobs/routes/services are rejected while already accepted drains
+        // still run with their resources intact.
         closing = true
+        for (scope in scopes.values) scope.revoked = true
         val errors = mutableListOf<Throwable>()
         val drains = scopes.values.flatMap { it.jobs.values.filter { j -> j.durable && j.drain != null }.map { j -> j.drain!! } }
         for (drain in drains) runCatching { drain() }.onFailure { errors += it }
@@ -119,7 +130,9 @@ class NativePluginHost(val registry: NativePluginRegistry) {
     fun stopScope(instanceId: String): List<Throwable> {
         val scope = scopes[instanceId] ?: return emptyList()
         val errors = revokeScope(scope, keepDurable = false)
-        if (errors.isEmpty()) scopes.remove(instanceId)
+        // The scope is always removed so the instance can restart; cleanup
+        // errors still reach the caller.
+        scopes.remove(instanceId)
         return errors
     }
 

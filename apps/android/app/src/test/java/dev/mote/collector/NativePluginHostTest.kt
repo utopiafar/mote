@@ -10,6 +10,11 @@ private inline fun assertIllegal(block: () -> Unit) {
     }
 }
 
+private fun stubView(id: String) = object : PluginViewContribution {
+    override val routeId = id
+    override fun dispose() { }
+}
+
 class NativePluginHostTest {
     private fun provider(id: String, version: String = "1") =
         NativePluginProvider(capability = id, apiVersion = version, buildId = "test-build")
@@ -34,11 +39,11 @@ class NativePluginHostTest {
     @Test fun `half-initialized scope rolls back registrations while durable jobs and siblings survive`() {
         val host = NativePluginHost(NativePluginRegistry())
         val ok = (host.createScope(descriptor("ok")) as PluginResult.Ok).value
-        ok.registerRoute("ok.route", "entry")
+        ok.registerRoute("ok.route") { _, _ -> stubView("ok.route") }
         val bad = (host.createScope(descriptor("bad")) as PluginResult.Ok).value
         var disposed = 0
         val outcome = host.startPlugin(bad) { scope ->
-            scope.registerRoute("bad.route", "entry")
+            scope.registerRoute("bad.route") { _, _ -> stubView("bad.route") }
             scope.registerJob(PluginJob("transient"))
             scope.registerJob(PluginJob("upload-queue", durable = true))
             scope.defer { disposed++ }
@@ -52,13 +57,13 @@ class NativePluginHostTest {
         assertEquals(1, disposed)
         assertTrue("durable job stays tracked for drain", bad.jobs.containsKey("upload-queue"))
         assertFalse(bad.jobs.containsKey("transient"))
-        assertEquals("sibling scope untouched", "entry", ok.routes["ok.route"])
+        assertTrue("sibling scope untouched", ok.routes.containsKey("ok.route"))
     }
 
     @Test fun `view recreate disposes only the view - durable owner routes drafts and jobs stay`() {
         val host = NativePluginHost(NativePluginRegistry())
         val owner = (host.createScope(descriptor("capture")) as PluginResult.Ok).value
-        owner.registerRoute("capture.page", "entry")
+        owner.registerRoute("capture.page") { _, _ -> stubView("capture.page") }
         owner.routeState["draft"] = "unfinished-note"
         owner.registerJob(PluginJob("durable-capture", durable = true))
         val view = owner.createView()
@@ -74,7 +79,7 @@ class NativePluginHostTest {
         assertEquals("view callbacks and contributions revoked", 2, viewDisposed)
         assertSame(owner, next.owner)
         assertFalse(owner.revoked)
-        assertEquals("entry", owner.routes["capture.page"])
+        assertTrue(owner.routes.containsKey("capture.page"))
         assertEquals("route/draft state survives recreate", "unfinished-note", owner.routeState["draft"])
         assertTrue("durable owner keeps running", owner.jobs.containsKey("durable-capture"))
         assertIllegal { view.registerView(object : PluginViewContribution { override val routeId = "x"; override fun dispose() {} }) }
@@ -85,12 +90,54 @@ class NativePluginHostTest {
         val a = (host.createScope(descriptor("a")) as PluginResult.Ok).value
         var drained = 0
         a.registerJob(PluginJob("durable-a", durable = true, drain = { drained++ }))
-        a.registerRoute("a.route", "entry")
+        a.registerRoute("a.route") { _, _ -> stubView("a.route") }
         host.quit()
         assertEquals(1, drained)
         assertNull(host.scope("a"))
         assertTrue(a.revoked && a.routes.isEmpty())
         val denied = host.createScope(descriptor("late"))
         assertTrue(denied is PluginResult.Failed && denied.code == "closing")
+    }
+
+    @Test fun `a cleanup failure in stopScope still frees the instance for restart`() {
+        val host = NativePluginHost(NativePluginRegistry())
+        val scope = (host.createScope(descriptor("notes")) as PluginResult.Ok).value
+        scope.defer { throw RuntimeException("cleanup boom") }
+        val errors = host.stopScope("notes")
+        assertEquals(1, errors.size)
+        assertNull(host.scope("notes"))
+        assertTrue("instance restarts after failed cleanup", host.createScope(descriptor("notes")) is PluginResult.Ok)
+    }
+
+    @Test fun `quit fences job admission during drain while accepted drains complete`() {
+        val host = NativePluginHost(NativePluginRegistry())
+        val a = (host.createScope(descriptor("a")) as PluginResult.Ok).value
+        var lateJob = false
+        var drained = 0
+        a.registerJob(PluginJob("first", durable = true, drain = {
+            drained++
+            try { a.registerJob(PluginJob("late", durable = true)); lateJob = true } catch (expected: RuntimeException) { }
+        }))
+        host.quit()
+        assertEquals(1, drained)
+        assertFalse("admission is fenced before draining", lateJob)
+        assertTrue(a.revoked)
+    }
+
+    @Test fun `a registered route mounts its contribution before it is reported handled`() {
+        val host = NativePluginHost(NativePluginRegistry())
+        val owner = (host.createScope(descriptor("route")) as PluginResult.Ok).value
+        var mounted = 0
+        owner.registerRoute("route.page") { session, _ ->
+            mounted++
+            session.registerView(stubView("route.page"))
+            stubView("route.page")
+        }
+        val factory = host.route("route.page")
+        assertNotNull(factory)
+        val session = host.onViewRecreated(owner)
+        val contribution = factory!!.invoke(session, Any())
+        assertEquals(1, mounted)
+        assertEquals("route.page", contribution.routeId)
     }
 }

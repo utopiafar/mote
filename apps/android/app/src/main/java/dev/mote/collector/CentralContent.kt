@@ -32,14 +32,28 @@ internal class CentralContent(
         }
         catch (error: Exception) { pendingReaderReturn = null; throw error }
     }
-    /** Plugin-owned route binding: when a registered plugin owns the page,
-     * its view session swaps in while the durable owner persists. Returns
-     * true only when a scope actually registered the route. */
-    fun pluginRoute(page: String): Boolean {
+    /** The plugin view bound to this content; disposed when its route or
+     * Activity ends while the durable owner persists. */
+    private var pluginView: dev.mote.collector.plugins.PluginViewSession? = null
+    fun disposePluginView() { pluginView?.dispose(); pluginView = null }
+
+    /** Plugin-owned route binding: a registered factory must mount its
+     * contribution into the shell before the route is reported handled; a
+     * failed mount disposes the fresh session and falls back. */
+    fun pluginRoute(page: String, container: Any): Boolean {
         val host = (activity.application as? MoteApplication)?.pluginHost ?: return false
+        val factory = host.route(page) ?: return false
         val owner = host.routeOwner(page) ?: return false
-        host.onViewRecreated(owner)
-        return true
+        disposePluginView()
+        val session = host.onViewRecreated(owner)
+        return try {
+            session.registerView(factory(session, container))
+            pluginView = session
+            true
+        } catch (error: Throwable) {
+            session.dispose()
+            false
+        }
     }
 
     fun requestedFileId(): String? = activity.intent.getStringExtra("fileId")
@@ -292,7 +306,7 @@ internal class CentralContent(
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
     fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.pauseInsights(); screens?.close() }
-    fun close() { pause(); pending.clear() }
+    fun close() { disposePluginView(); pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)
         state.putString("browserLoginId", browserLoginId); state.putString("browserVerifier", browserVerifier); state.putLong("browserGeneration", browserGeneration)
@@ -343,7 +357,7 @@ internal class CentralContent(
     internal fun navigate(next: String, remember: Boolean = true) {
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
-        page = next; revision++; pending.clear(); handler.removeCallbacks(refreshRun); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
+        page = next; revision++; pending.clear(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
         updateCollectionBar(); updateBackButton()
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("中央资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
