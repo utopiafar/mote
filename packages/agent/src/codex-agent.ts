@@ -10,7 +10,7 @@ import {startBridge} from './bridge.js';
 import {contextToolDefinitions,contextToolSnapshot,pinContextTools,releaseContextTools} from './tool-contributions.js';
 import {toolInputSchema,toCodexTool} from './tools/runtime-schema.js';
 import {codexImageMetadata,type ImagePayload} from './tools/image-result.js';
-import {CodexSession,type CodexTool} from './codex-session.js';
+import {CodexSession,ImageAcknowledgementRejected,type CodexTool} from './codex-session.js';
 import {bundledSkills} from './skills.js';
 import {displayTime} from './time.js';
 import {AgentInputError,AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
@@ -91,7 +91,7 @@ export function createCodexAgent(options:AgentOptions){
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       session=new CodexSession(options,call,trace,input.onUsage,async(token,delivered)=>{
         const response=await fetch(bridge.url+'/_image_delivery',{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify({token,delivered})});
-        if(!response.ok)throw new AgentProviderError();
+        if(!response.ok)throw new ImageAcknowledgementRejected();
       });sessions.add(session);
       await session.start(system,runTools);
       const assertCurrent=()=>{input.signal?.throwIfAborted();if(closed)throw new AgentProviderError();input.assertContextAuthority?.();assertToolPins();};

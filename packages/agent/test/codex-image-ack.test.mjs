@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import sharp from 'sharp';
 import {parseAnswer} from '../dist/index.js';
 import {startBridge} from '../dist/bridge.js';
-import {CodexSession} from '../dist/codex-session.js';
+import {CodexSession,ImageAcknowledgementRejected} from '../dist/codex-session.js';
 import {generatedImageRead,digest} from './image-region-fixture.mjs';
 
 const id = 'b54d3aaa-4ca3-5073-bb47-ad2db6e84a13';
@@ -47,7 +47,7 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   while(!existsSync(release))await new Promise(resolve=>setTimeout(resolve,5));
   if(mode==='stale'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   send({id:m.id,result:{turnId:mode==='wrong'?'other-turn':'turn-fixture'}});
- }else if(m.id===999&&m.result?.success){
+ }else if(m.id===999){
   send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:'Generated image answer',citationIds:[]})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
  }
@@ -61,7 +61,11 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   t.after(()=>bridge.close());
   const tokens = [], ackBodies = [], originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).endsWith('/_image_delivery')) ackBodies.push(JSON.parse(options.body));
+    if (String(url).endsWith('/_image_delivery')) {
+      const body = JSON.parse(options.body);
+      ackBodies.push(body);
+      if (mode === 'ack-reject' && body.delivered) return new Response('rejected', {status: 503});
+    }
     return originalFetch(url, options);
   };
   t.after(() => {globalThis.fetch = originalFetch;});
@@ -74,7 +78,7 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   };
   const session = new CodexSession({model:'fixture',agentTimeoutMs:5000},toolCall,undefined,undefined,async (token, delivered) => {
     const response = await fetch(bridge.url + '/_image_delivery',{method:'POST',headers:{Authorization:'Bearer ' + bridge.token,'Content-Type':'application/json'},body:JSON.stringify({token,delivered})});
-    if (!response.ok) throw new Error('image ack rejected');
+    if (!response.ok) throw new ImageAcknowledgementRejected();
   });
   t.after(() => session.close());
   await session.start('Generated image ack', []);
@@ -124,3 +128,19 @@ for (const mode of ['wrong', 'stale']) {
     assert.throws(() => parseAnswer(JSON.stringify({answer:`Generated [${id}]`,citationIds:[id]}), f.bridge.records), {reason:'unretrieved_citation'});
   });
 }
+
+
+test('a definitive true acknowledgement rejection still sends one false fallback', async t => {
+  const f = await fixture(t, 'ack-reject');
+  const running = f.session.run('Read generated image');
+  await waitFor(f.started);
+  await writeFile(f.release, '');
+  await running;
+  assert.deepEqual(f.ackBodies, [{token:f.tokens[0], delivered:true}, {token:f.tokens[0], delivered:false}]);
+  assert.equal(f.bridge.records.size, 0);
+  assert.deepEqual(f.bridge.evidenceDependencies.ids, []);
+  assert.throws(() => parseAnswer(JSON.stringify({answer:`Generated [${id}]`,citationIds:[id]}), f.bridge.records), {reason:'unretrieved_citation'});
+  const retry = await fetch(f.bridge.url + '/read_image', {method:'POST',headers:{Authorization:'Bearer ' + f.bridge.token,'Content-Type':'application/json'},body:JSON.stringify({id})});
+  assert.equal(retry.status, 200);
+  assert.ok((await retry.json()).image, 'false fallback released the reservation');
+});
