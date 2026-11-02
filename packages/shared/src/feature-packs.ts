@@ -2,6 +2,9 @@
 export type FeatureSurface = 'ingress'|'upload'|'data'|'command'|'agent'|'processing'|'page'|'collection'|'card'|'action'|'renderer'|'panel'|'settings'|'home'|'theme'|'layout';
 export type FeatureRequirement = string|{id:string;version:string;host?:'local'|'server'};
 export type FeatureComponent = {id:string;version:string;surface:FeatureSurface;requires?:FeatureRequirement[]};
+/** A browser/native projection of @mote/plugin-api package contributions.
+ * Package descriptors and artifact identity live in the package Manifest; do
+ * not author a second package authority in this shape. */
 export type FeatureManifest = {id:string;version:string;components:FeatureComponent[]};
 export type FeatureCapability = FeatureComponent & {featureId:string;state:'active'|'unavailable';reason?:string};
 export type FeatureInventory = {schemaVersion:1;revision:number;features:FeatureManifest[];capabilities:FeatureCapability[]};
