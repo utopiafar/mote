@@ -74,10 +74,11 @@ export function attachBootstrapLifetime(options: {
   let closingPromise: Promise<{ errors: unknown[] }> | null = null;
   const close = () => closingPromise ??= (async () => {
     try { await options.ready; } catch { /* startup failure still tears down */ }
-    try { await options.unmount?.(); } catch { /* unmount errors are reported below via scopes */ }
+    const errors: unknown[] = [];
+    try { await options.unmount?.(); } catch (error) { errors.push(error); }
     const result = await teardownPlugins(options.scopes);
     await options.host.close();
-    return result;
+    return { errors: [...errors, ...result.errors] };
   })();
   return {
     mounted() { return !closing; },

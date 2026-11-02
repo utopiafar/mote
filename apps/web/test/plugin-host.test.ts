@@ -203,3 +203,12 @@ test('server requirements are never rewritten even when a local id matches', asy
   const registered = (host as any).registry.list('panel').map((r: any) => r.value.entry);
   assert.equal(registered[0]?.requires?.[0]?.id, 'page:reader', 'server dep keeps the advertised id');
 });
+
+test('bootstrap lifetime reports unmount failures while still releasing scopes', async () => {
+  const host = new WebFeatureHost();
+  const { scopes } = await bootstrapPlugins(host, [builtinInstance('pkg.um', [page('um-page')])]);
+  const lifetime = attachBootstrapLifetime({ ready: Promise.resolve(), scopes, host, unmount: () => { throw new Error('unmount boom'); } });
+  const result = await lifetime.close();
+  assert.equal(result.errors.length, 1, 'unmount failure is reported');
+  assert.equal(host.pages().length, 0, 'scopes still released');
+});

@@ -545,7 +545,7 @@ document.documentElement.dir = 'ltr';
 const bootstrapLifetime=attachBootstrapLifetime({ready:featuresReady,scopes:featureScopes,host:webFeatures,unmount:()=>root?.unmount()});
 // Best-effort: async teardown cannot be guaranteed before unload; the real
 // owner release path is close(), also used by controlled shutdown.
-window.addEventListener('pagehide',()=>{void bootstrapLifetime.close();});
+window.addEventListener('pagehide',event=>{if(!(event as PageTransitionEvent).persisted)void bootstrapLifetime.close();});
 let root: ReturnType<typeof createRoot> | undefined;
 void Promise.all([featuresReady,consumeLoginTicket().catch(()=>{})]).then(()=>{if(!bootstrapLifetime.mounted())return;root=createRoot(document.getElementById("root")!);root.render(
   <React.StrictMode>
