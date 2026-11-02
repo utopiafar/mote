@@ -18,7 +18,7 @@ import {StoreError} from './store.js';
 export type PluginManifest = Omit<PackageManifest,'actionCapabilities'> & {actionCapabilities?:readonly CalendarPluginCapability[]};
 const parsePluginManifest=(input:unknown):PluginManifest=>{
   const base=packageManifestSchema.parse(input),actions=base.actionCapabilities?.map(value=>calendarPluginCapabilitySchema.parse(value));
-  if(actions&&actions.length!==1)throw new PluginContractError('invalid_contract','$.actionCapabilities');
+  if(actions&&actions.length>1)throw new PluginContractError('invalid_contract','$.actionCapabilities');
   if(base.capabilities.includes('calendar.manage')!==Boolean(actions?.length))throw new PluginContractError('invalid_contract','$.actionCapabilities');
   return (actions?{...base,actionCapabilities:actions}:base) as PluginManifest;
 };
