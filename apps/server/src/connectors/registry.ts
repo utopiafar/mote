@@ -82,6 +82,7 @@ export class ConnectorRegistry {
   private routes:OwnerRoute[]=[];
   private callbacks:OAuthCallback[]=[];
   private addedKinds:string[]=[];
+  private statusHandle?:ConnectorRouteHandle;
   private started=false;
   private closed=false;
   private closing?:Promise<void>;
@@ -133,7 +134,7 @@ export class ConnectorRegistry {
       }
       if(this.options.http){
         if(!this.options.statusScope)throw Error('Connector status scope is unavailable');
-        this.options.http.ownerRoute({method:'GET',path:'/api/connectors/status',handler:()=>this.statusView()},this.options.statusScope);
+        this.statusHandle=this.options.http.ownerRoute({method:'GET',path:'/api/connectors/status',handler:()=>this.statusView()},this.options.statusScope);
         for(const {instance,scope} of this.instances)instance.configure?.({
           ownerRoute:route=>{if(!scope)throw Error('Connector scope is unavailable');this.options.http!.ownerRoute(route,scope);},
           oauthCallback:callback=>{if(!scope)throw Error('Connector scope is unavailable');this.options.http!.oauthCallback(callback,scope);},
@@ -212,6 +213,10 @@ export class ConnectorRegistry {
   close(){return this.closing??=(async()=>{
     this.closed=true;
     const errors:unknown[]=[];
+    // Fence status before disposing instances; the status scope itself may be
+    // shared, so release only this registration instead of closing it.
+    const status=this.statusHandle;this.statusHandle=undefined;
+    if(status)try{await status.release('shutdown');}catch(error){errors.push(error);}
     for(const {instance} of [...this.instances].reverse())try{await instance.close?.();}catch(error){errors.push(error);}
     for(const kind of this.addedKinds)try{this.context.sources.capabilities.unregister(kind);}catch(error){errors.push(error);}
     if(errors.length)throw new AggregateError(errors,'Connector disposal failed');

@@ -27,11 +27,11 @@ function instanceScope(name:string):TestScope {
     every:(ms,work)=>resources.every(ms,work),
     retire:dispose=>resources.retire(dispose),
   });
-  return {resources,scope,close:()=>resources.close()};
+  return {resources,scope,fence:()=>resources.stop(),close:()=>resources.close()};
 }
-function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void;kind?:string;stringKind?:boolean}={}):ConnectorManifest {
+function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void;kind?:string;stringKind?:boolean;capabilities?:SourceCapabilityDescriptor}={}):ConnectorManifest {
   const kind=options.kind??'generated.connector';
-  return {apiVersion:1,id,sourceKinds:[options.stringKind?kind:{kind,capabilities}],...(options.statusKey?{statusKey:options.statusKey}:{}),
+  return {apiVersion:1,id,sourceKinds:[options.stringKind?kind:{kind,capabilities:options.capabilities??capabilities}],...(options.statusKey?{statusKey:options.statusKey}:{}),
     create:()=>({
       status:()=>({id}),
       configure:host=>{
@@ -78,6 +78,18 @@ test('adapter registers routes/OAuth/status through the dispatcher and releases 
   assert.deepEqual(closed.sort(),['a','b']);
 });
 
+test('adapter rejects conflicting source capability descriptors before instances start',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const conflict={...capabilities,synchronization:'revisions' as const};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-conflict-a',{kind:'generated.conflict'}),manifest('generated-conflict-b',{kind:'generated.conflict',capabilities:conflict})],
+    context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await assert.rejects(adapter.start(),/Connector source capability conflict/);
+  assert.equal(f.sources.capabilities.has('generated.conflict'),false);
+  await adapter.close();
+});
+
 test('adapter never unregisters a preinstalled capability it did not create',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   f.sources.capabilities.register('generated.preinstalled',capabilities);
@@ -88,6 +100,26 @@ test('adapter never unregisters a preinstalled capability it did not create',asy
   assert.equal(f.sources.capabilities.has('generated.preinstalled'),true);
 });
 
+test('stop fences admission before awaiting connector shutdown',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const order:string[]=[];let fenced=false;
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-fence',{onClose:()=>{order.push('close');assert.equal(fenced,true);}})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id),fence=scope.fence!;scope.fence=()=>{fenced=true;order.push('fence');return fence();};scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();await adapter.stop('generated-fence');await adapter.close();
+  assert.deepEqual(order,['fence','close']);
+});
+
+test('adapter close fences every instance before connector shutdown',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const order:string[]=[];let fenced=false;
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-close-fence',{onClose:()=>{order.push('close');assert.equal(fenced,true);}})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id),fence=scope.fence!;scope.fence=()=>{fenced=true;order.push('fence');return fence();};scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();await adapter.close();
+  assert.deepEqual(order,['fence','close']);
+});
+
 test('adapter startup installs capability once and close is idempotent',async t=>{
   const f=await fixture(t),closed:string[]=[],scopes:TestScope[]=[];
   const statusScope=instanceScope('status');scopes.push(statusScope);
@@ -95,9 +127,15 @@ test('adapter startup installs capability once and close is idempotent',async t=
     scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
   t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
   await adapter.start();
-  await adapter.close();await adapter.close();await statusScope.close();
-  assert.deepEqual(closed,['c']);
-  assert.equal(f.sources.capabilities.has('generated.connector'),false);
+  await adapter.close();await adapter.close();
   assert.equal((await f.app.inject({url:'/api/connectors/generated-c',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/status',headers})).statusCode,404,'status registration is released even while its shared scope stays open');
+  const replacement=createConnectorHostAdapter({manifests:[manifest('generated-c',{statusKey:'c',onClose:()=>closed.push('c')})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  await replacement.start();
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{c:{id:'generated-c'}});
+  await replacement.close();await statusScope.close();
   assert.equal((await f.app.inject({url:'/api/connectors/status',headers})).statusCode,404);
+  assert.deepEqual(closed,['c','c']);
+  assert.equal(f.sources.capabilities.has('generated.connector'),false);
 });

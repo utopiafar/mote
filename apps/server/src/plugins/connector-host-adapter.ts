@@ -1,4 +1,5 @@
 import type {HostScope} from '@mote/plugin-host';
+import type {SourceCapabilityDescriptor} from '@mote/shared';
 import type {ConnectorContext} from '../connectors/types.js';
 import {ConnectorRegistry,type ConnectorHttpHost,type ConnectorInstance,type ConnectorManifest} from '../connectors/registry.js';
 import type {DynamicHttpDispatcher} from './dynamic-http-dispatcher.js';
@@ -7,6 +8,9 @@ import type {DynamicHttpDispatcher} from './dynamic-http-dispatcher.js';
  * consumer-selectable registration API. */
 export interface ConnectorInstanceScope {
   readonly scope:HostScope;
+  /** Stop admission/cancel accepted work before connector shutdown; optional for
+   * callers that only expose close(). */
+  fence?():void|Promise<void>;
   close():Promise<void>;
 }
 export type ConnectorScopeFactory=(manifest:ConnectorManifest,instanceId:string)=>ConnectorInstanceScope;
@@ -33,8 +37,13 @@ export interface ConnectorHostAdapter {
 /** Adapts the existing deployment-scoped ConnectorRegistry to the shared H05
  * dispatcher and H04 scopes. It is a trusted assembly bridge: it creates no
  * second host/registry and publishes no raw SourceStore/engine/materials API. */
+const descriptorKey=(descriptor:SourceCapabilityDescriptor)=>JSON.stringify([descriptor.lifecycle,descriptor.discovery,descriptor.listening,descriptor.readOriginal,descriptor.synchronization,descriptor.externalWrite]);
 export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):ConnectorHostAdapter {
-  const scopes=new Map<string,ConnectorInstanceScope>(),capabilityUsers=new Map<string,number>(),ownedKinds=new Set<string>();
+  const scopes=new Map<string,ConnectorInstanceScope>(),capabilityUsers=new Map<string,number>(),ownedKinds=new Set<string>(),ownedDescriptors=new Map<string,SourceCapabilityDescriptor>();
+  const installedDescriptor=(kind:string):SourceCapabilityDescriptor=>{
+    const value=options.context.sources.capabilities.describe({kind:kind as never,platform:'macos',retention:'snapshot'});
+    return {lifecycle:value.lifecycle,discovery:value.discovery,listening:value.listening,readOriginal:value.readOriginal,synchronization:value.synchronization,externalWrite:value.externalWrite};
+  };
   const scopeFor=(manifest:ConnectorManifest)=>{
     let value=scopes.get(manifest.id);
     if(!value){value=options.scopeFor(manifest,manifest.id);scopes.set(manifest.id,value);}
@@ -44,18 +53,26 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     const current=capabilityUsers.get(kind);if(current===undefined)return;
     if(current>1){capabilityUsers.set(kind,current-1);return;}
     capabilityUsers.delete(kind);
-    if(ownedKinds.delete(kind))options.context.sources.capabilities.unregister(kind);
+    if(ownedKinds.delete(kind)){ownedDescriptors.delete(kind);options.context.sources.capabilities.unregister(kind);}
   };
   const installCapabilities=()=>{
     try{
       // Descriptors install first, independent of manifest order. A descriptor
-      // already present is a preinstalled capability, not adapter-owned.
+      // already present is either adapter-owned (must match) or preinstalled
+      // (must match and stays externally owned).
       for(const manifest of options.manifests)for(const entry of manifest.sourceKinds){
         if(typeof entry==='string')continue;
-        if(!options.context.sources.capabilities.has(entry.kind)){
-          options.context.sources.capabilities.register(entry.kind,entry.capabilities);
-          ownedKinds.add(entry.kind);
+        const owned=ownedDescriptors.get(entry.kind);
+        if(owned){
+          if(descriptorKey(owned)!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
+          continue;
         }
+        if(options.context.sources.capabilities.has(entry.kind)){
+          if(descriptorKey(installedDescriptor(entry.kind))!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
+          continue;
+        }
+        options.context.sources.capabilities.register(entry.kind,entry.capabilities);
+        ownedKinds.add(entry.kind);ownedDescriptors.set(entry.kind,entry.capabilities);
       }
       // Every manifest use, including a string reference, keeps the kind alive.
       for(const manifest of options.manifests){
@@ -69,7 +86,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       }
     }catch(error){
       for(const kind of ownedKinds)try{options.context.sources.capabilities.unregister(kind);}catch{}
-      ownedKinds.clear();capabilityUsers.clear();throw error;
+      ownedKinds.clear();ownedDescriptors.clear();capabilityUsers.clear();throw error;
     }
   };
   const http:ConnectorHttpHost={
@@ -86,10 +103,16 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     if(closing)return closing;
     closed=true;
     closing=(async()=>{
-      const errors:unknown[]=[];
+      const errors:unknown[]=[],started=new Map<ConnectorInstanceScope,Promise<void>>();
       const clean=async(work:()=>unknown|Promise<unknown>)=>{try{await work();}catch(error){errors.push(error);}};
+      // Fence every instance before connector shutdown; accepted work may drain,
+      // but new route/OAuth admission is rejected while close is in progress.
+      for(const value of scopes.values()){
+        if(value.fence)await clean(()=>value.fence!());
+        else started.set(value,value.close());
+      }
       await clean(()=>registry.close());
-      for(const value of [...scopes.values()].reverse())await clean(()=>value.close());
+      for(const value of [...scopes.values()].reverse())await clean(()=>started.get(value)??value.close());
       if(errors.length)throw new AggregateError(errors,'Connector host adapter disposal failed');
     })();
     return closing;
@@ -105,10 +128,11 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     configureSyncInterval:(intervalMs:number)=>registry.configureSyncInterval(intervalMs),
     async stop(id:string){
       if(closed)throw Error('Connector host adapter is closed');
-      const errors:unknown[]=[];
+      const errors:unknown[]=[],value=scopes.get(id);let started:Promise<void>|undefined;
+      if(value?.fence)try{await value.fence();}catch(error){errors.push(error);}
+      else if(value)started=value.close();
       try{await registry.stop(id);}catch(error){errors.push(error);}
-      const value=scopes.get(id);
-      if(value)try{await value.close();scopes.delete(id);}catch(error){errors.push(error);}
+      if(value)try{await (started??value.close());scopes.delete(id);}catch(error){errors.push(error);}
       if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
     },
     close,
