@@ -43,7 +43,7 @@ export class PluginCenter {
   runtimeFactory?:(pkg:StoredPackage,instance:PluginInstanceView)=>PluginRuntime;
   configurationAllowed?:(field:PluginManifest['configuration'][number],value:string|number|boolean)=>boolean;
   probe?:(instanceId:string,signal:AbortSignal)=>Promise<{capabilities:PluginCapability[];issues:string[]}>;
-  constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;hostDependencies?:readonly TrustedHostDependency[]}){
+  constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
     this.control=new PluginControlStore(store);
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS plugin_release_previews(id TEXT PRIMARY KEY,json TEXT NOT NULL);
@@ -74,6 +74,7 @@ export class PluginCenter {
       classify:()=>new ExecutionFailure('blocked','plugin_check_requires_attention'),
     }));
   }
+  private assertCurrent(){if(!this.accepting)throw new StoreError('Plugin center is quiescing',503);this.hostOwner?.assertCurrent?.();}
   private admit(){
     if(!this.accepting)return new ExecutionFailure('waiting','plugin_control_quiescing',1000);
     if(this.hostOwner){
@@ -90,7 +91,7 @@ export class PluginCenter {
   private savePackage(value:StoredPackage){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO plugin_packages VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.view.id,json);}
   private saveInstance(value:StoredInstance){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO plugin_instances VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.view.id,json);}
   private command(kind:string,input:{operationId:string;expectedRevision:number},revision:()=>number,apply:()=>void){
-    if(!this.accepting)throw new StoreError('Plugin center is quiescing',503);
+    this.assertCurrent();
     const applied=this.control.command(kind,input,revision,apply);
     if(applied)void this.executor.tick().catch(()=>{});
     return applied;
@@ -127,7 +128,7 @@ export class PluginCenter {
   configurationIdentity(id:string){return this.instance(id).configurationId??sha256(JSON.stringify(this.instance(id).view.configuration));}
   async resetRuntime(id:string){if(this.references(id).length||this.instance(id).view.desired)throw new StoreError('A retained or enabled runtime cannot be restarted for a probe',409);const runtime=this.runtimes.get(id);this.runtimes.delete(id);await runtime?.close();}
   packageForInstance(id:string){const value=this.package(this.instance(id).view.packageId);return {...value,directory:join(this.releases.directory,value.view.source.digest)};}
-  async resolve(raw:unknown){if(!this.accepting)throw new StoreError('Plugin center is quiescing',503);const input=z.object({repository:z.string().min(1).max(2000),tag:z.string().min(1).max(200).optional()}).strict().parse(raw),value=await this.releases.resolve(input),json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO plugin_release_previews VALUES(?,?)').run(value.preview.id,json);return value.preview;}
+  async resolve(raw:unknown){this.assertCurrent();const input=z.object({repository:z.string().min(1).max(2000),tag:z.string().min(1).max(200).optional()}).strict().parse(raw),value=await this.releases.resolve(input);this.assertCurrent();const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO plugin_release_previews VALUES(?,?)').run(value.preview.id,json);return value.preview;}
   install(raw:unknown){const input=memoryControlCommandSchema.extend({previewId:z.string().uuid()}).strict().parse(raw);
     this.command('install',input,()=>this.revision(),()=>{const release=this.preview(input.previewId),id=release.manifest.id+'@'+release.preview.source.digest;
       if(this.store.db.prepare('SELECT 1 FROM plugin_packages WHERE id=?').get(id)){
@@ -171,7 +172,7 @@ export class PluginCenter {
     for(const instance of instances){this.store.db.prepare('INSERT OR REPLACE INTO plugin_retired_instances SELECT id,json FROM plugin_instances WHERE id=?').run(instance.id);this.store.db.prepare('DELETE FROM plugin_instances WHERE id=?').run(instance.id);}this.store.db.prepare('INSERT OR REPLACE INTO plugin_retired_packages SELECT id,json FROM plugin_packages WHERE id=?').run(id);this.store.db.prepare('DELETE FROM plugin_packages WHERE id=?').run(id);retired=instances.map(instance=>instance.id);
     // Immutable code remains cached; uninstall never destroys retained Memory.
   });if(applied)for(const id of retired){const runtime=this.runtimes.get(id);this.runtimes.delete(id);void runtime?.close().catch(()=>{});this.retired?.(id);}return this.view();}
-  runtime(id:string){if(!this.accepting)throw new StoreError('Plugin center is closing',503);const existing=this.runtimes.get(id);if(existing)return existing;const instance=this.instance(id).view,pkg=this.packageForInstance(id);if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
+  runtime(id:string){this.assertCurrent();const existing=this.runtimes.get(id);if(existing)return existing;const instance=this.instance(id).view,pkg=this.packageForInstance(id);if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
     this.releases.verifyInstalled(pkg.directory,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));
     const create=()=>{
       const actual=this.runtimeFactory?.(pkg,instance)??new WorkerPluginRuntime(join(pkg.directory,pkg.manifest.entry),instance.configuration,pkg.directory);
@@ -339,7 +340,7 @@ export function createPluginControlPlatform(deps:{store:Store;executor:Execution
     factory:(context:HostPluginContext):PluginLifecycle=>{
       if(claimed||context.scope.identity.host.id!==deps.host.identity.id||context.scope.identity.host.kind!==deps.host.identity.kind)throw new StoreError('Plugin control factory is already owned or belongs to another host',409);claimed=true;
       return {
-      prepare(){center=new PluginCenter(deps.store,deps.executor,deps.releases,{host:deps.host,hostDependencies:structuredClone(deps.hostDependencies??[]),binding:()=>{if(!binding)throw new StoreError('Control binding unavailable',503);return binding;}});context.scope.defer(()=>center!.close());for(const build of builds)center.registerBuild(build);},
+      prepare(){center=new PluginCenter(deps.store,deps.executor,deps.releases,{host:deps.host,assertCurrent:context.scope.assertCurrent,hostDependencies:structuredClone(deps.hostDependencies??[]),binding:()=>{if(!binding)throw new StoreError('Control binding unavailable',503);return binding;}});context.scope.defer(()=>center!.close());for(const build of builds)center.registerBuild(build);},
       start(){binding=context.provide(pluginControlDeclaration.id,centralServices.pluginControlRead,{view:()=>current().view(),instanceView:id=>current().instanceView(id)});},
       quiesce(){current().quiesce();},stop(){return current().close();},dispose(){return center?.close();},
     };},

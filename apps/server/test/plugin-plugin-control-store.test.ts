@@ -101,21 +101,21 @@ test('missing exact dependency is blocked and receipt replay never retries a fac
   await f.plugins.selectBuild('one',input);assert.equal(calls,0);
 });
 
-function release(path:string){
+function releaseFixture(path:string,hold?:{entered:()=>void;wait:Promise<void>}){
   const source=`import {appendFileSync,existsSync,writeFileSync} from 'node:fs';import {setTimeout as delay} from 'node:timers/promises'; export async function createMemoryProvider(c){if(existsSync(c.log+'.hold')){writeFileSync(c.log+'.initializing','');while(existsSync(c.log+'.hold'))await delay(5);}return {health(){return {capabilities:[{id:'repository',state:'verified'}],issues:[]}},put(){appendFileSync(c.log,'submitted\\n');process.exit(17)},close(){}}}`;
   const archive=zipSync({'worker.mjs':strToU8(source)}),repository='generated-fixture/control',tag='v1.0.0',base=`https://github.com/${repository}/releases/download/${tag}/`;
   const manifest:PluginManifest={schemaVersion:1,id:'fixture.worker',name:'Fixture worker',version:'1.0.0',runtime:'worker',entry:'worker.mjs',archive:{asset:'worker.zip',sha256:sha256(Buffer.from(archive))},capabilities:['repository','retrieval'],configuration:[{id:'log',label:'Fixture submission log',type:'text',required:true}],dependencies:[],access:['Generated private profile']};
   const releases=new GitHubPluginReleases(join(path,'packages'),async url=>{
     if(url===`https://api.github.com/repos/${repository}/releases/tags/${tag}`)return {bytes:strToU8(JSON.stringify({tag_name:tag,draft:false,assets:['mote-plugin.json','worker.zip'].map(name=>({name,browser_download_url:base+name}))}))};
     if(url===`https://api.github.com/repos/${repository}/commits/${tag}`)return {bytes:strToU8(JSON.stringify({sha:'a'.repeat(40)}))};
-    if(url===base+'mote-plugin.json')return {bytes:strToU8(JSON.stringify(manifest))};
+    if(url===base+'mote-plugin.json'){hold?.entered();await hold?.wait;return {bytes:strToU8(JSON.stringify(manifest))};}
     if(url===base+'worker.zip')return {bytes:archive};throw Error('Unexpected external fixture URL');
   });return {releases,repository,tag};
 }
 async function until(check:()=>boolean){const deadline=Date.now()+5000;while(!check()){assert.ok(Date.now()<deadline,'controlled operation settles');await delay(5);}}
 
 test('real release enters the same host; unknown capability blocks readiness and lost mutation is never retried',async t=>{
-  const path=directory(t),r=release(path),f=await platform(path,[],r.releases);t.after(()=>f.close());
+  const path=directory(t),r=releaseFixture(path),f=await platform(path,[],r.releases);t.after(()=>f.close());
   const preview=await f.plugins.resolve({repository:r.repository,tag:r.tag});
   f.plugins.install({...command(f.plugins.revision()),previewId:preview.id});await until(()=>f.plugins.view().packages[0]?.state==='installed');
   const pkg=f.plugins.view().packages[0]!,instance=f.plugins.configure(undefined,{...command(f.plugins.revision()),packageId:pkg.id,name:'Generated',scope:'default',configuration:{log:join(path,'submitted.log')}});
@@ -168,7 +168,7 @@ test('missing publication cleans its lifecycle and a failed receipt is not retri
 });
 
 test('caller cancellation during actual hosted worker startup leaves shared initialization alive',async t=>{
-  const path=directory(t),r=release(path),f=await platform(path,[],r.releases);t.after(()=>f.close());
+  const path=directory(t),r=releaseFixture(path),f=await platform(path,[],r.releases);t.after(()=>f.close());
   const preview=await f.plugins.resolve({repository:r.repository,tag:r.tag});f.plugins.install({...command(f.plugins.revision()),previewId:preview.id});await until(()=>f.plugins.view().packages[0]?.state==='installed');
   const log=join(path,'held.log');writeFileSync(log+'.hold','');
   const instance=f.plugins.configure(undefined,{...command(f.plugins.revision()),packageId:f.plugins.view().packages[0]!.id,name:'Held startup',scope:'default',configuration:{log}});
@@ -177,4 +177,15 @@ test('caller cancellation during actual hosted worker startup leaves shared init
   controller.abort();await rejected;
   rmSync(log+'.hold');assert.deepEqual(await runtime.call('health',{}),{capabilities:[{id:'repository',state:'verified'}],issues:[]});
   await f.handle.quiesce('upgrade');await assert.rejects(runtime.call('health',{}),/quiescing/);
+});
+
+test('a release resolve returning after owner shutdown cannot persist a late preview',async t=>{
+  let entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(done=>entered=done),wait=new Promise<void>(done=>release=done);
+  const path=directory(t),r=releaseFixture(path,{entered,wait});
+  const f=await platform(path,[],r.releases);t.after(()=>f.close());
+  const resolving=f.plugins.resolve({repository:r.repository,tag:r.tag}),rejected=assert.rejects(resolving,/quiescing/);
+  await waiting;await f.handle.close('disabled');release();await rejected;
+  assert.equal(f.store.db.prepare('SELECT count(*) AS count FROM plugin_release_previews').get()!.count,0);
+  assert.equal(f.store.db.prepare('SELECT count(*) AS count FROM plugin_commands').get()!.count,0);
 });
