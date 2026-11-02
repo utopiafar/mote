@@ -224,6 +224,48 @@ test('stop without fence starts scope close before shutdown and close joins it',
   releaseClose();await stopping;await closing;assert.equal(settled,true);
 });
 
+test('late disposal failure during close is aggregated',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  const late:ConnectorManifest={apiVersion:1,id:'generated-close-cleanup-fail',sourceKinds:[{kind:'generated.close-cleanup',capabilities}],create:async()=>{enteredCreate();await held;return {close:()=>{throw new Error('generated late cleanup failure');}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-close-cleanup-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const closing=adapter.close();resolveCreate();
+  await assert.rejects(closing,/Connector host adapter disposal failed/);
+  await assert.rejects(installing);
+});
+
+test('late disposal failure during stop is aggregated',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  const late:ConnectorManifest={apiVersion:1,id:'generated-stop-cleanup-fail',sourceKinds:[{kind:'generated.stop-cleanup',capabilities}],create:async()=>{enteredCreate();await held;return {close:()=>{throw new Error('generated late stop cleanup failure');}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-stop-cleanup-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const stopping=adapter.stop('generated-stop-cleanup-fail');resolveCreate();
+  await assert.rejects(stopping,/Connector instance stop failed/);
+  await assert.rejects(installing);
+});
+
+test('stop closes a non-idempotent scope exactly once',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let closes=0;
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-single-close',{statusKey:'s'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const base=instanceScope(m.id);const scope:TestScope={...base,close:()=>{closes++;return closes>1?Promise.reject(new Error('generated double close')):base.close();}};scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();await adapter.stop('generated-single-close');
+  assert.equal(closes,1);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-single-close',headers})).statusCode,404);
+  await adapter.close();
+});
+
 test('hot restart while old scope close is held keeps the replacement route and OAuth',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   let releaseOld!:()=>void,enteredOld!:()=>void,firstClose=true;

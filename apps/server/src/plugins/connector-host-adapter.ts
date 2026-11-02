@@ -1,7 +1,7 @@
 import type {HostScope} from '@mote/plugin-host';
 import type {SourceCapabilityDescriptor} from '@mote/shared';
 import type {ConnectorContext} from '../connectors/types.js';
-import {ConnectorRegistry,type ConnectorHttpHost,type ConnectorInstance,type ConnectorManifest} from '../connectors/registry.js';
+import {ConnectorRegistry,connectorCleanupFailure,isConnectorCleanupFailure,type ConnectorHttpHost,type ConnectorInstance,type ConnectorManifest} from '../connectors/registry.js';
 import type {DynamicHttpDispatcher} from './dynamic-http-dispatcher.js';
 
 /** H05-owned per-install scope. The factory is trusted assembly input, never a
@@ -129,13 +129,13 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       added=registerDescriptors(manifest);installRefs(manifest);
       await registry.startInstance(manifest,scope.scope);
     }catch(error){
-      const current=scopes.get(manifest.id)===scope;
+      const current=scopes.get(manifest.id)===scope,cleanupErrors:unknown[]=[];
       if(current)scopes.delete(manifest.id);
       rollbackDescriptors(added);
-      let cleanupError:unknown;
-      try{await scope.close();}catch(cleanup){cleanupError=cleanup;}
-      if(current)registry.recordFailure(manifest,cleanupError??error);else registry.clearFailure(manifest.id);
-      if(cleanupError!==undefined)throw new AggregateError([error,cleanupError],'Connector instance startup and disposal failed',{cause:error});
+      if(isConnectorCleanupFailure(error))cleanupErrors.push(error);
+      try{await scope.close();}catch(cleanup){cleanupErrors.push(cleanup);}
+      if(current)registry.recordFailure(manifest,cleanupErrors[0]??error);else registry.clearFailure(manifest.id);
+      if(cleanupErrors.length)throw connectorCleanupFailure([error,...cleanupErrors]);
       throw error;
     }
   };
@@ -172,9 +172,14 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       // Join late factory/init cleanup; start's own rejection is observed by
       // its caller, while teardown cleanup errors remain aggregated here.
       await (startTask?.catch(()=>{})??Promise.resolve());
-      while(pendingHot.size)await Promise.allSettled([...pendingHot]);
+      const cleanupErrors:unknown[]=[];
+      while(pendingHot.size){
+        const results=await Promise.allSettled([...pendingHot]);
+        for(const result of results)if(result.status==='rejected'&&isConnectorCleanupFailure(result.reason))cleanupErrors.push(result.reason);
+      }
       const {error}=await settledInternal;
-      if(error!==undefined)throw error instanceof AggregateError?error:new AggregateError([error],'Connector host adapter disposal failed');
+      if(error!==undefined)cleanupErrors.push(error);
+      if(cleanupErrors.length)throw new AggregateError(cleanupErrors,'Connector host adapter disposal failed');
     })();
     return closing;
   };
@@ -232,8 +237,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
         try{await registry.stop(id,value?.fence?()=>value.fence!():undefined);}catch(error){errors.push(error);}
         if(value&&!scopeClosing){scopeClosing=value.close();void scopeClosing.catch(()=>{});}
         if(scopeClosing)try{await scopeClosing;}catch(error){errors.push(error);}
-        if(attempt)try{await attempt;}catch{/* install/restart caller owns that error */}
-        if(value)try{await value.close();}catch(error){errors.push(error);}
+        if(attempt)try{await attempt;}catch(error){if(isConnectorCleanupFailure(error))errors.push(error);}
         if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
       })();
       retiring.add(task);void task.catch(()=>{});

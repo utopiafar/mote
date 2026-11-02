@@ -79,6 +79,10 @@ const failureCode=(error:unknown,fallback:string)=>{
   const code=(error as {code?:unknown})?.code;
   return typeof code==='string'&&/^[a-z][a-z0-9_.:-]{0,99}$/.test(code)?code:fallback;
 };
+/** Late-disposal failures are shutdown cleanup, distinct from an ordinary
+ * create/init failure owned by the install caller. */
+export const connectorCleanupFailure=(errors:readonly unknown[])=>Object.assign(new AggregateError(errors,'Connector cleanup failed'),{connectorCleanup:true as const});
+export const isConnectorCleanupFailure=(error:unknown)=>Boolean(error&&typeof error==='object'&&(error as {connectorCleanup?:unknown}).connectorCleanup===true);
 const oauthPath=/^\/oauth\/[a-z][a-z0-9-]*\/callback$/;
 
 /** A deployment scoped registry: plugins are explicit trusted code, archive contents are never loaded as code. */
@@ -195,14 +199,14 @@ export class ConnectorRegistry {
     let instance:ConnectorInstance|undefined;
     try{instance=await manifest.create(this.context);}catch(error){this.recordFailure(manifest,error);throw error;}
     if(!instance||typeof instance!=='object'){this.recordFailure(manifest,Error('Invalid connector instance'),'failed');throw Error(`Connector ${manifest.id} did not create an instance`);}
-    try{scope.assertCurrent();}catch(error){try{await instance.close?.();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector late initialization and disposal failed',{cause:error});}throw error;}
+    try{scope.assertCurrent();}catch(error){try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([error,cleanup]);}throw error;}
     if(this.closed){
-      try{await instance.close?.();}catch(cleanup){throw new AggregateError([Error('Connector registry is closed'),cleanup],'Connector late initialization and disposal failed');}
+      try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([Error('Connector registry is closed'),cleanup]);}
       throw Error('Connector registry is closed');
     }
     const entry={manifest,instance,scope,disposed:false};this.instances.push(entry);
     try{
-      if(this.closed){const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);entry.disposed=true;await instance.close?.();throw Error('Connector registry is closed');}
+      if(this.closed){const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);entry.disposed=true;try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([Error('Connector registry is closed'),cleanup]);}throw Error('Connector registry is closed');}
       await instance.init?.();
       scope.assertCurrent();
       if(this.closed)throw Error('Connector registry is closed');
@@ -218,7 +222,7 @@ export class ConnectorRegistry {
     }catch(error){
       const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);
       this.recordFailure(manifest,error);
-      if(!entry.disposed){entry.disposed=true;try{await instance.close?.();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector instance startup and disposal failed',{cause:error});}}
+      if(!entry.disposed){entry.disposed=true;try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([error,cleanup]);}}
       throw error;
     }
   }
