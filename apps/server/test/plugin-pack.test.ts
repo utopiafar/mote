@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {zipSync} from 'fflate';
 import {packPlugin} from '../../../scripts/plugin-pack.mjs';
+import {releaseCompatibilityFailures} from '../../../scripts/plugin-validate.mjs';
 import {GitHubPluginReleases, validatePluginArchive} from '../src/plugin-release.js';
 import type {PluginManifest} from '../src/plugin-release.js';
 
@@ -49,6 +50,11 @@ test('archive validation rejects traversal, missing entries and tampered payload
   assert.notEqual(createHash('sha256').update(tampered).digest('hex'), packed.digest);
   assert.throws(() => validatePluginArchive(zipSync({'../escape.mjs': new Uint8Array([0])}), packed.manifest));
   assert.throws(() => validatePluginArchive(zipSync({'other.mjs': new Uint8Array([0])}), packed.manifest));
+});
+
+test('validation rejects a generic service runtime before the release consumer would fail', () => {
+  assert.deepEqual(releaseCompatibilityFailures(manifest), []);
+  assert.deepEqual(releaseCompatibilityFailures({...manifest, runtime: 'service'}).map(failure => failure.code), ['unsupported_runtime']);
 });
 
 test('a packed release is accepted by the real GitHubPluginReleases resolve/install/verify consumer', async t => {

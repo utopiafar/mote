@@ -8,13 +8,17 @@ import {planComposition} from '@mote/plugin-host';
 
 const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+/** The generic release resolver has no service runtime yet; keep this server-specific compatibility check outside the composition planner. */
+export function releaseCompatibilityFailures(manifest) {
+  return manifest.runtime === 'service' ? [{code: 'unsupported_runtime', message: 'The generic release resolver does not provide a service runtime'}] : [];
+}
 
 export async function validatePackage({manifestPath, zipPath, host = 'central', hostDependencies = []}) {
   const release = await import(pathToFileURL(join(repository, 'apps/server/dist/plugin-release.js')).href);
   const manifest = release.pluginManifestSchema.parse(JSON.parse(await readFile(resolve(manifestPath), 'utf8')));
   const archive = await readFile(resolve(zipPath));
   const digest = hash(archive);
-  const failures = [];
+  const failures = releaseCompatibilityFailures(manifest);
   if (digest !== manifest.archive.sha256) failures.push({code: 'digest_mismatch', expected: manifest.archive.sha256, actual: digest});
   let entries = [];
   try { entries = Object.keys(release.validatePluginArchive(archive, manifest)); }
