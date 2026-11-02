@@ -116,6 +116,10 @@ test('strict wire: binary, cyclic, BigInt, non-JSON and oversized fields are ref
   for (const [data, what] of cases)
     assert.equal(await bridge.accept(event(data)), false, what);
   assert.equal(calls.length, 0, 'no case invoked');
+  // Legitimate deep nesting within the byte budget is admitted — no
+  // artificial depth restriction on JSON payloads.
+  const deep = {a:{b:{c:{d:{e:{f:{g:{h:{i:1}}}}}}}}};
+  assert.equal(await bridge.accept(event(env({requestId: 'deep', payload: deep}))), true, 'deeply-nested valid JSON is admitted');
 });
 
 test('a rejected invoke posts one correlated bounded failure and releases the slot', async () => {

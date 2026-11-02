@@ -46,15 +46,21 @@ function measuredEnvelope(value: unknown): number {
   try { const raw = JSON.stringify(value); return raw === undefined ? -1 : encoder.encode(raw).length; }
   catch { return -1; }
 }
-function isJsonValue(value: unknown, depth = 0): boolean {
-  if (depth > 8 || value === null) return value === null;
-  if (typeof value === 'boolean') return true;
-  if (typeof value === 'number') return Number.isFinite(value);
-  if (typeof value === 'string') return true;
-  if (Array.isArray(value)) return value.length <= 10000 && value.every(item => isJsonValue(item, depth + 1));
-  if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype)
-    return Object.values(value as object).length <= 10000 && Object.values(value as object).every(item => isJsonValue(item, depth + 1));
-  return false;
+function isJsonValue(value: unknown): boolean {
+  // Iterative traversal — nesting depth is bounded by the whole-envelope
+  // byte limit, not an artificial cap; total nodes stay budgeted.
+  const stack = [value];
+  let nodes = 0;
+  while (stack.length) {
+    const item = stack.pop();
+    if (++nodes > 10000) return false;
+    if (item === null || typeof item === 'boolean' || typeof item === 'string') continue;
+    if (typeof item === 'number') { if (!Number.isFinite(item)) return false; continue; }
+    if (Array.isArray(item)) { stack.push(...item); continue; }
+    if (typeof item === 'object' && Object.getPrototypeOf(item) === Object.prototype) { stack.push(...Object.values(item as object)); continue; }
+    return false;
+  }
+  return true;
 }
 
 /** One bound channel. Admission requires the envelope to arrive over the
@@ -77,7 +83,7 @@ export class CustomPageBridge {
    * drops — forged channel fields, stale generations, oversized or
    * non-JSON wire values can never reach the invoker. */
   async accept(event: {data?: unknown}): Promise<boolean> {
-    const drop = (reason: string) => { this.options.onRejected?.(reason + ':' + String((event.data as {requestId?: unknown})?.requestId)); return false; };
+    const drop = (reason: string) => { this.options.onRejected?.(reason + ':' + String((event.data as {requestId?: unknown})?.requestId).slice(0, MAX_ID_CHARS)); return false; };
     const env = event.data as BridgeEnvelope;
     if (!env || typeof env !== 'object' || env.contractVersion !== bridgeContractVersion) return drop('malformed');
     if (env.nonce !== this.options.nonce || env.documentKey !== this.options.documentKey) return drop('channel');
