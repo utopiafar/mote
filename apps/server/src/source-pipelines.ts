@@ -211,6 +211,8 @@ export class SourcePipelineRuntime {
     this.store.db.prepare("UPDATE source_pipeline_work SET state=?,error=?,updated_at=? WHERE id=? AND generation=? AND state!='complete'").run(state,step.error??null,Date.now(),input.workId,input.generation);
   }
   select(source:SourceConnection){this.assertAccepting();return this.selected(source);}
+  /** Resolve existing policy for ongoing readers; this does not admit intake. */
+  selectionForRead(source:SourceConnection){return this.selected(source);}
   private selected(source:SourceConnection){
     if(this.stopped)throw new StoreError('Source pipeline unavailable',409);
     const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(source.id);
@@ -350,8 +352,10 @@ export class SourcePipelineRuntime {
         Date.now(),selected?.id??null,selected?.version??null,metadata?.id??null,metadata?.version??null,metadata?.definitionFingerprint??null,metadata?.configFingerprint??null,metadata?.componentPins??null,sourceId);
     for(const prior of previous){const old=stepId(prior.id,prior.generation);this.revoke(old);superseded.push(old);this.enqueueWork(this.row(prior.id)!);}
     db.exec('COMMIT');for(const id of superseded)this.engine.abortLocal(id);return this.options(sourceId);}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
+  /** Ongoing Memory authority, including publication of an already claimed job.
+   * Quiesce fences fresh admission in drainMemory without revoking its grants. */
   memoryAllowed(sourceId:string):boolean {
-    if(!this.accepting||this.stopped||this.initializing)return false;
+    if(this.stopped||this.initializing)return false;
     try{const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(sourceId);
       if(!binding||binding.storage!=='archive')return true;
       const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(sourceId);
@@ -365,9 +369,10 @@ export class SourcePipelineRuntime {
   private memoryCandidateAllowed?:((candidate:MemoryWorkCandidate)=>boolean);
   setMemoryPlanner(planner:MaterialMemoryPlanner|undefined,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,onReconcile?:()=>void,allowCandidate?:(candidate:MemoryWorkCandidate)=>boolean){this.memoryPlanner=planner;this.memoryPackageCreated=onCreated;this.memoryPackageSkipped=onSkipped;this.memoryPlannerReconcile=onReconcile;this.memoryCandidateAllowed=allowCandidate;}
   drainMemory(pipeline:MaterialMemoryRunner,enabled:boolean,limit=1){
+    if(!this.accepting||this.stopped||this.initializing)return Promise.resolve(0);
     this.memoryPlannerReconcile?.();
     return this.memoryWork.drainBounded(pipeline,enabled,64,materialId=>{
-      const material=this.materials.get(materialId);return Boolean(material&&this.memoryAllowed(material.origin.sourceId));
+      const material=this.materials.get(materialId);return Boolean(this.accepting&&!this.stopped&&!this.initializing&&material&&this.memoryAllowed(material.origin.sourceId));
     },this.memoryCandidateAllowed);
   }
 

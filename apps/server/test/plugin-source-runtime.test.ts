@@ -12,6 +12,11 @@ import {MaterialStore} from '../src/materials.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
+import {EvidenceReader} from '../src/evidence-reader.js';
+import {SourceItemRecipeCatalog} from '../src/source-item-recipe.js';
+import {materialId} from '../src/materials.js';
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
+import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
@@ -69,9 +74,9 @@ test('actual C04 intake receipts flow through recipe checkpoints to MaterialStor
 test('a bound archive cannot fall through to records when its pipeline is missing or reinstalled with different storage',async t=>{
   const f=await fixture(t),s=f.state,base=s.runtime.registry.get('mote.coding')!,remove=s.runtime.registry.register({...base,id:'generated.switch',priority:100});
   s.runtime.configure(sourceId,{pipelineId:'generated.switch'});await f.receive(event());await s.runtime.tick();const ref=s.materials.list().items[0].ref,checkpoint=s.store.db.prepare('SELECT archive_checkpoint FROM source_pipeline_work').get()!.archive_checkpoint;
-  remove();await assert.rejects(f.receive(event('missing')),{statusCode:409});assert.equal(s.runtime.memoryAllowed(sourceId),false);
+  remove();await assert.rejects(f.receive(event('missing')),{statusCode:409});assert.throws(()=>s.runtime.selectionForRead(s.sources.getSource(sourceId)),{statusCode:409});assert.equal(s.runtime.memoryAllowed(sourceId),false);
   s.runtime.registry.register({...base,id:'generated.switch',priority:100,storage:'records',recipe:undefined});await assert.rejects(f.receive(event('mismatch')),{statusCode:409});assert.throws(()=>s.runtime.configure(sourceId,{pipelineId:'generated.switch'}),{statusCode:409});
-  assert.equal(s.runtime.memoryAllowed(sourceId),false);
+  assert.equal(s.runtime.memoryAllowed(sourceId),false);assert.throws(()=>s.runtime.selectionForRead(s.sources.getSource(sourceId)),{statusCode:409});
   assert.equal(s.store.stats().captures,0);assert.equal(s.store.db.prepare('SELECT count(*) n FROM source_archive_versions').get()!.n,1);assert.equal(s.store.db.prepare('SELECT archive_checkpoint FROM source_pipeline_work').get()!.archive_checkpoint,checkpoint);assert.equal(s.materials.list().items[0].ref,ref);
 });
 
@@ -82,7 +87,7 @@ for(const mode of ['quiesce','stop'] as const)test(`H04 source ${mode} refuses r
   t.after(()=>release.resolve());await f.receive(event());const checkpoint=s.store.db.prepare('SELECT archive_checkpoint FROM source_pipeline_work').get()!.archive_checkpoint,epoch=s.runtime.registry.epochs.get('mote.coding'),run=s.runtime.tick();await started.promise;
   let closing:Promise<void>|undefined;if(mode==='stop')closing=s.owner.close('disabled');else await s.owner.quiesce('upgrade');
   try{
-    await assert.rejects(f.receive(event('late')),{statusCode:409});assert.equal(s.runtime.memoryAllowed(sourceId),false);
+    await assert.rejects(f.receive(event('late')),{statusCode:409});assert.equal(s.runtime.memoryAllowed(sourceId),mode==='quiesce');if(mode==='stop')assert.throws(()=>s.runtime.selectionForRead(s.sources.getSource(sourceId)),{statusCode:409});else assert.equal(s.runtime.selectionForRead(s.sources.getSource(sourceId))?.id,'mote.coding');
     await s.host.install({identity:identity(),contributions:[{id:'generated-other-handler',apiVersion:'1'}],factory:createExecutionHandlersFactory(s.execution,[{kind:'generated.other',pool:'generated.other',concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{otherCommits++;}}])});
     const id=s.execution.submission.enqueue('generated:other','generated.other',{});await s.execution.submission.drain([id]);assert.equal(otherCommits,1);assert.equal(s.execution.assembly.executor.closed,false);
   }finally{release.resolve();}
@@ -97,4 +102,44 @@ test('failed H04 source initialization releases scoped registration and keeps bo
   await assert.rejects(s.host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(bad)}),/Generated recipe install failure/);
   assert.equal(s.store.db.isOpen,true);assert.equal(s.execution.assembly.executor.closed,false);assert.equal(s.store.db.prepare('SELECT count(*) n FROM source_archive_versions').get()!.n,1);assert.deepEqual(sourceRuntimeContribution.provides,[]);
   const restored=createSourceRuntime({plugins:[codingSourcePlugin]},s.dependencies),handle=await s.host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(restored)});await restored.runtimeForAssembly.tick();assert.equal(s.materials.list().items.length,1);await handle.close('disabled');assert.equal(s.store.db.isOpen,true);
+});
+
+
+for(const storage of ['archive','records'] as const)for(const revoke of [false,true])test(`accepted ${storage} Memory ${revoke?'still rejects actual revocation':'survives source quiesce and restart without replay'}`,async t=>{
+  const f=await fixture(t),s=f.state,source=storage==='archive'?sourceId:'generated-records';
+  const recordsMaterial=async(id:string)=>{
+    s.sources.register({id,name:'Generated records',kind:'custom',deviceId:'generated-device',platform:'import'});
+    const receipt=await f.receive({...event(),document:undefined,layer:'original'},id);assert.ok('id' in receipt);
+    const material=s.materials.publish({id:materialId(id,'one'),kind:'mote.file',schemaVersion:1,title:'Generated records Material',origin:{sourceId:id,externalId:'one'},
+      blocks:[{id:'body',kind:'text',format:'plain',text:'Generated source requirement one',memberIds:['original']}],members:[{id:'original',kind:'capture',ref:'capture:'+receipt.id}],
+      coverage:{state:'complete'},artifacts:[{key:'source-body',state:'ready'}],fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+    s.memoryWork.observe(material.id,['source-body'],{inputKey:receipt.id,change:'source'});return material;
+  };
+  if(storage==='archive'){s.runtime.configure(source,{settleSeconds:0});await f.receive(event());await s.runtime.tick();}
+  else await recordsMaterial(source);
+  s.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();
+  const entered=deferred(),release=deferred();let calls=0;
+  const reader=new EvidenceReader(s.store,s.sources,s.files,undefined,undefined,s.materials,s.runtime,new SourceItemRecipeCatalog(s.store,'1'),ref=>s.memoryWork.readyForMemory(ref));
+  let pipeline=fixtureMemoryPipeline({store:s.store,executor:s.execution.assembly.executor,memories:reader.memories,models:{model:()=> 'generated-memory-model',configured:()=>true},
+    admission:{materialInput:(ref,required)=>s.materials.input(ref,required),materialRequirements:ref=>s.memoryWork.sourceRequirements(ref),materialAllowedForMemory:(ref,_profile,required)=>reader.materialAllowedForMemory(ref,undefined,required),
+      automaticAllowed:job=>s.memoryWork.authorized(job)&&(job.automaticGrants??(job.automaticGrant?[job.automaticGrant]:[])).every(grant=>s.runtime.memoryAllowed(grant.sourceId))},
+    phases:{review:async(_input,draft)=>draft,query:async input=>{calls++;entered.resolve();await release.promise;const id=input.evidenceIds[0];return {answer:generatedMemoryOutput(input,[{title:'Generated source conclusion',statement:`Generated requirement [${id}]`,uncertainty:'Generated fixture only',evidenceIds:[id],...(storage==='archive'?{coding:{kind:'decision',scope:'session',applicability:'Generated fixture session',validation:'user_confirmed'}}:{})}]),citations:[{id,capturedAt:reader.memories.readEvidence([id])[0].capturedAt,appName:'Generated source',excerpt:''}],trace:[],runId:'generated-source-memory'};}}});
+  // The only simulated boundary is the external model response; all admission,
+  // claims, execution, evidence validation and completion transactions are real.
+  t.after(async()=>{release.resolve();await pipeline.close();});
+  assert.equal(await s.runtime.drainMemory(pipeline,true),1);await entered.promise;
+  const job=pipeline.list()[0],grants=job.automaticGrants;assert.ok(grants?.length);assert.equal(s.memoryWork.authorized(job),true);
+  const fresh=await recordsMaterial('generated-fresh-memory');s.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();
+  await s.owner.quiesce('upgrade');
+  assert.equal(await s.runtime.drainMemory(pipeline,true),0,'quiesce fences fresh Memory admission');assert.equal(pipeline.list().length,1);assert.equal(s.store.db.prepare('SELECT job_id FROM material_memory_requests WHERE material_id=?').get(fresh.id)!.job_id,null);
+  if(revoke)s.memoryWork.inputs.forgetSource(source);
+  release.resolve();const completed=await pipeline.run(job.id);
+  if(revoke){assert.notEqual(completed.status,'completed');assert.equal(reader.memories.count(),0);assert.equal(s.memoryWork.authorized(job),false);}
+  else{
+    assert.equal(completed.status,'completed',JSON.stringify(completed.failureReceipt));assert.equal(reader.memories.count(),1);assert.equal(calls,1);assert.equal(s.memoryWork.authorized(job),true);
+    assert.deepEqual(completed.automaticGrants,grants);await pipeline.close();await f.restart();
+    const next=f.state,nextReader=new EvidenceReader(next.store,next.sources,next.files,undefined,undefined,next.materials);
+    pipeline=fixtureMemoryPipeline({store:next.store,executor:next.execution.assembly.executor,memories:nextReader.memories,models:{model:()=> 'generated-memory-model',configured:()=>true},phases:{query:async()=>{throw Error('Completed Memory must not be replayed');}}});
+    assert.equal((await pipeline.run(job.id)).status,'completed');assert.equal(nextReader.memories.count(),1);assert.equal(calls,1);
+  }
 });
