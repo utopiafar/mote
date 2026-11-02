@@ -208,17 +208,21 @@ export interface CentralFeatureMigration {
   readonly requires: readonly CentralService[];
 }
 /** All current routes/features have replaceable target factories; multi-owner entries are
- * intentionally split (e.g. capture must not dispose media; storage must not own indexing). */
+ * intentionally split (e.g. capture must not dispose media; storage must not own indexing).
+ * The storage/capture/materials entries include the fixed C04 verifier prerequisite for
+ * their Vault/intake/Material writer factory assembly. These audit requirements describe
+ * availability, never capability grants: only trusted writer assembly acquires the verifier;
+ * ordinary write-port consumers receive opaque references, not issuance/verification access. */
 export const centralFeatureMigrations = {
   'mote.activity': {owners:['activity'], requires:['execution','materialRead']},
   'mote.files': {owners:['files'], requires:['vault','requestAuthorization','fileOriginalRead']},
   'mote.actions': {owners:['actions'], requires:['execution','requestAuthorization','modelAdmission','pluginControlRead']},
   'mote.connections': {owners:['authorization'], requires:['vault','sources']},
   'mote.system': {owners:['observability','host'], requires:['configuration','execution']},
-  'mote.storage': {owners:['vault','files','materials','publication'], requires:['vault','contentRead']},
-  'mote.capture': {owners:['capture'], requires:['requestAuthorization','captureIntake','captureRead']},
+  'mote.storage': {owners:['vault','files','materials','publication'], requires:['commitAuthorization','vault','contentRead']},
+  'mote.capture': {owners:['capture'], requires:['commitAuthorization','requestAuthorization','captureIntake','captureRead']},
   'mote.context': {owners:['materials'], requires:['captureRead','captureImageRead','captureContextRead','contextNavigationRead','contextInventoryRead','contextTreesRead','memoryRead','memorySnapshots']},
-  'mote.materials': {owners:['materials','publication'], requires:['vault','materialRepository','materialRead','requestAuthorization']},
+  'mote.materials': {owners:['materials','publication'], requires:['commitAuthorization','vault','materialRepository','materialRead','requestAuthorization']},
   'mote.coding': {owners:['sourceRuntime','materials','agent'], requires:['sourceIntake','sourceBindings','materialPublication']},
   'mote.sources': {owners:['sourceRuntime','capture','connectors'], requires:['sources','sourceBindings','sourceIntake','requestAuthorization']},
   'mote.models': {owners:['configuration','authorization','agent'], requires:['configuration','modelAuthority']},

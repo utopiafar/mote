@@ -107,6 +107,21 @@ for (const key of ['memoryInputSelection','memoryOwnerPublication'] as const) te
   assert.deepEqual(checkCentralServiceDeclarations([...declared,{service:missing,provider:provider('memory-services')}], required), []);
 });
 
+// These entries assemble the Vault, capture/source intake and Material publication writers.
+// Ordinary route consumers of their write ports do not acquire the C04 issuer/verifier.
+for (const consumer of [
+  'mote.storage','mote.capture','mote.materials',
+] as const) test(`${consumer} cannot start without its fixed C04 commit verifier`, () => {
+  const missing = centralServices.commitAuthorization;
+  const required = centralFeatureMigrations[consumer].requires.map(key => ({consumer,service:centralServices[key]}));
+  const declared = required.filter(item => item.service.id !== missing.id).map(item => ({service:item.service,provider:provider('write-services')}));
+  assert.deepEqual(checkCentralServiceDeclarations(declared, required), [
+    {code:'dependency_unavailable',service:missing,consumer,providers:[]},
+  ]);
+  assert.equal(centralServiceOwners.commitAuthorization, 'authorization');
+  assert.deepEqual(checkCentralServiceDeclarations([...declared,{service:missing,provider:provider('authorization')}], required), []);
+});
+
 test('duplicate exact declarations fail, while an explicitly bound provider survives reverse install order', () => {
   const chosen = provider('chosen'), sibling = provider('sibling');
   assert.deepEqual(checkCentralServiceDeclarations([declaration(chosen),declaration(chosen)], []), [
