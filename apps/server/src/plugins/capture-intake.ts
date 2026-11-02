@@ -113,7 +113,7 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
   const close=()=>closing??=(async()=>{phase='disposed';})();
   function routes(app:FastifyInstance,context:CaptureRouteContext){
     if(routesInstalled)throw new StoreError('Capture routes are already installed',409);
-    if(phase!=='prepared'&&phase!=='active')throw unavailable();
+    if(phase!=='prepared'&&phase!=='bound'&&phase!=='active')throw unavailable();
     routesInstalled=true;
     const pin=(request:FastifyRequest)=>{
       const value=context.request(request);
@@ -170,14 +170,25 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
 }
 export type CaptureIntakePlatform=ReturnType<typeof createCaptureIntake>;
 
-/** Compiled trusted H04 owner. The capture routes are registered by the feature
- * scope that installs this factory; the host never infers them from contributions. */
-export function createCaptureIntakeFactory(options:CaptureIntakeOptions,dependencies:CaptureIntakeDependencies){
+/** Trusted assembly closure: it binds this exact Ingress into C04, starts C04 and
+ * returns the fixed authority. Never a published service or caller-supplied object. */
+export type CaptureAuthorizationBinding=(ingress:IngressService)=>CaptureIntakeAuthority|Promise<CaptureIntakeAuthority>;
+/** Trusted assembly registers the owned routes on its feature child app. */
+export type CaptureRouteRegistration=(platform:CaptureIntakePlatform)=>void;
+
+/** Compiled trusted H04 owner. PluginHost runs prepare -> start atomically, so the
+ * assembly closure must bind C04 to this ingress inside prepare; the host never
+ * infers routes or authority from contributions. */
+export function createCaptureIntakeFactory(options:CaptureIntakeOptions,dependencies:CaptureIntakeDependencies,bind:CaptureAuthorizationBinding,registerRoutes?:CaptureRouteRegistration){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createCaptureIntake(options,dependencies);
     context.scope.defer(()=>platform.close());
     return {
-      prepare:()=>platform.prepare(),
+      async prepare(){
+        await platform.prepare();
+        platform.bindAuthorization(await bind(platform.ingress));
+        registerRoutes?.(platform);
+      },
       start(){platform.start();context.provide(captureIntakeContribution.id,centralServices.captureIntake,platform.ports.captureIntake);
         context.provide(captureIntakeContribution.id,centralServices.sourceIntake,platform.ports.sourceIntake);},
       quiesce:(reason?:StopReason)=>platform.quiesce(reason),stop:(reason?:StopReason)=>platform.stop(reason),dispose:()=>platform.close(),

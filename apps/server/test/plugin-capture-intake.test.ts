@@ -14,7 +14,8 @@ import {MaterialStore} from '../src/materials.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {centralServices,type RequestAuthority} from '../src/plugins/central-contracts.js';
-import {captureIntakeContribution,captureIntakeReplacement,createCaptureIntake,captureIntakeDeclaration} from '../src/plugins/capture-intake.js';
+import {captureIntakeContribution,captureIntakeReplacement,createCaptureIntake,captureIntakeDeclaration,createCaptureIntakeFactory} from '../src/plugins/capture-intake.js';
+import {PluginHost} from '@mote/plugin-host';
 
 const ownerToken='generated-capture-owner-token';
 const capture=(deviceId='generated-phone-a'):CaptureInput=>captureSchema.parse({id:randomUUID(),deviceId,deviceName:'Generated phone',platform:'android',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:'Generated evidence only'});
@@ -136,4 +137,33 @@ test('quiescing the plugin rejects new intake and keeps the platform authoritati
   const disposed=await f.post('/api/captures',ownerToken,capture());
   assert.equal(disposed.statusCode,503,disposed.body);
   assert.equal(f.store.stats().captures,0);
+});
+
+test('real PluginHost install binds this ingress into C04 before start and registers routes',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-capture-host-'));
+  const store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
+  const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
+  await platform.prepare();
+  sources.register({id:'generated-source',name:'Generated source',kind:'custom',deviceId:'generated-phone-a',platform:'android',enabled:true,retention:'archive'});
+  const app=Fastify(),pins=new WeakMap<FastifyRequest,RequestAuthority>();
+  app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_request,body,done)=>done(null,body));
+  app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'capture_intake_failed'});});
+  app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
+  app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
+  let boundIngress:unknown;
+  const host=new PluginHost({kind:'central',id:'generated-capture-host'});
+  t.after(async()=>{await host.close();await app.close();await platform.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  const factory=createCaptureIntakeFactory({}, {store,sources,files,materials}, async ingress=>{
+    boundIngress=ingress;
+    platform.bindRepositories({sources,files,materials,ingress});
+    await platform.start();
+    return platform;
+  },intake=>intake.routes(app,{request:request=>pins.get(request)}));
+  await host.install({identity:{packageId:'generated.capture-intake',installationId:randomUUID(),instanceId:'capture',activationId:randomUUID(),host:{kind:'central',id:'generated-capture-host'}},
+    contributions:[{id:'capture-intake',apiVersion:'1'}],factory});
+  assert.ok(boundIngress,'the factory hands its own ingress to C04 before start');
+  assert.deepEqual(host.snapshot().contributions.map(entry=>entry.availability.state),['active']);
+  const created=await app.inject({method:'POST',url:'/api/captures',headers:{authorization:`Bearer ${ownerToken}`},payload:capture()});
+  assert.equal(created.statusCode,201,created.body);
+  assert.equal(store.evidence([created.json().id]).length,1);
 });
