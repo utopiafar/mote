@@ -10,7 +10,6 @@ import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.j
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {MemoryTopicsHost} from './memory-topics-host.js';
-import {createContextTrees} from './context-trees.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
 import type {ModelProcessingAuthority} from './model-processing-authority.js';
 import {modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
@@ -58,10 +57,8 @@ import type {RequestAuthority} from './plugins/central-contracts.js';
 import { registerConnectors } from './connectors/index.js';
 import { Conversations } from './conversations.js';
 import { combineDependencies,resolveDependencies } from './conversation-lineage.js';
-import {SourceContextStore} from './source-context.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
 import { safeError,type AgentTraceContext } from './diagnostics.js';
-import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import { ExecutionFailure } from './execution-engine.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
@@ -108,6 +105,7 @@ import {ImageProcessing} from './image-processing.js';
 import {imageUnderstanding} from './image-understanding.js';
 import { ProcessingRuntime } from './processing-runtime.js';
 import { createExecutionPlatform } from './plugins/execution-platform.js';
+import { createEvidenceContextReader } from './plugins/evidence-context-reader.js';
 import { closeSourcePlatforms } from './platform-close-order.js';
 import { createAuthorizationPlatform,type AuthorizationPlatform } from './plugins/authorization-platform.js';
 import { createSourceRuntime,type SourceRuntime } from './plugins/source-runtime.js';
@@ -283,16 +281,20 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
   resources.defer(()=>materialOrganizer.close());
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
-  const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
-    ref=>materialMemoryWork.readyForMemory(ref));
   let catalogChangesEnabled=false;
-  const contextTrees=createContextTrees();
+  // One EvidenceReader and one context registry own every read surface. The
+  // factory borrows the roots repositories; it never constructs a second
+  // Store/Source/File/Material/Indexer or a second reader.
+  const sourceContexts=sources.contexts;
+  const evidenceContext=createEvidenceContextReader({store,sources,files,indexer,fileEvidence,materials,sourcePipelines,
+    sourceItemRecipes:materialOrganizer.sourceItemRecipes,materialMemoryReady:ref=>materialMemoryWork.readyForMemory(ref),sourceContexts});
+  resources.defer(()=>evidenceContext.dispose());
+  const contextTrees=evidenceContext.assembly.contextTrees,evidenceReader=evidenceContext.assembly.reader;
   resources.beforeClose(()=>{catalogChangesEnabled=false;});
-  backendContext.provide('moteContextTrees',contextTrees);
+  backendContext.provide('moteContextTrees',evidenceContext.assembly.contextTrees);
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,conversations=new Conversations(store);
   conversations.onTurnReceived=turnId=>modelAuthorizationHost.conversation(turnId);
-  const sourceContexts=new SourceContextStore(store);
   const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
   resources.beforeClose(()=>pluginCenter.close());
   memoryBindings=new MemoryBindings(store,memories,memoryAutomation,pluginCenter,executor);
@@ -327,7 +329,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Owner inspection and external read-only clients do not send to our model.
   // The same reader enforces model disclosure scope inside an admitted model run.
   const readingForModel=()=>Boolean(modelContext.getStore()||modelAuthorization.currentId);
-  const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
+  const agentFeatures=await installAgentFeatures(backendContext,evidenceContext.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     exposurePolicy:new EvidenceExposurePolicy([],context=>!readingForModel()||modelAuthorization.allowsDisclosure({sourceId:context.sourceId??'device:'+context.deviceId,dataKind:context.representation==='image'?'image':'text'})),
     assertSources:(ids,kind='text')=>{if(readingForModel())modelAuthorization.assertDisclosure(ids.map(sourceId=>({sourceId,dataKind:kind})));},
     assertEvidence:(ids,kind)=>{if(readingForModel())modelAuthorizationHost.assertEvidence(ids,kind);},
@@ -969,7 +971,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,bootstrap,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

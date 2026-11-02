@@ -1,5 +1,5 @@
 import type {ContextReader} from '@mote/agent';
-import {EvidenceReader} from '../evidence-reader.js';
+import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextQuery} from '../context-query.js';
 import {createContextQuery} from '../context-query-composition.js';
 import {ServerDiagnostics} from '../diagnostics.js';
@@ -33,8 +33,8 @@ export interface McpContext {
 /** Composition resolves implementations once. Each MCP server receives only
  * its read or write audience, never the owner token or the global Store. */
 export function mcpContext(context:ConnectorContext):McpContext {
- const {store,sources,files,materials,sourcePipelines,materialOrganizers,config}=context;
- const reader=context.evidenceReader??new EvidenceReader(store,sources,files,undefined,undefined,materials,sourcePipelines,materialOrganizers?.sourceItemRecipes);
+ const {store,sources,materials,sourcePipelines,materialOrganizers,config}=context;
+ const reader=context.evidenceReader;
  const query=context.contextQuery??createContextQuery(store,sources,reader);
  const diagnostics=new ServerDiagnostics({directory:config.dataDir,enabled:false});
  const read:McpReadContext={sources:{getSource:sources.getSource.bind(sources),getItem:sources.getItem.bind(sources),listSources:sources.listSources.bind(sources)},

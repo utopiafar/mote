@@ -29,6 +29,7 @@ import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 
 const owner='synthetic-owner-credential-123456789';
 const readToken='synthetic-read-credential-123456789';
@@ -36,7 +37,7 @@ const writeToken='synthetic-write-credential-123456789';
 const jsonResult=(result:any)=>JSON.parse(result.content[0].text);
 async function fixture(t:any){
   const directory=await mkdtemp(join(tmpdir(),'mote-connectors-')),store=new Store(join(directory,'vault')),sources=new SourceStore(store);
-  const ctx:ConnectorContext={store,sources,config:{dataDir:join(directory,'vault'),token:owner,allowedOrigins:['https://synthetic.invalid'],connectors:{directory:join(directory,'private'),mcpEnabled:true,mcpReadToken:readToken,mcpWriteEnabled:true,mcpWriteToken:writeToken,mcpWriteSourceIds:['allowed'],googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
+  const ctx:ConnectorContext={store,sources,get evidenceReader(){return connectorReader(store,sources,{files:ctx.files,materials:ctx.materials,sourcePipelines:ctx.sourcePipelines,materialOrganizers:ctx.materialOrganizers});},config:{dataDir:join(directory,'vault'),token:owner,allowedOrigins:['https://synthetic.invalid'],connectors:{directory:join(directory,'private'),mcpEnabled:true,mcpReadToken:readToken,mcpWriteEnabled:true,mcpWriteToken:writeToken,mcpWriteSourceIds:['allowed'],googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
   sources.register({id:'allowed',name:'Synthetic source',kind:'custom',deviceId:'synthetic-device',platform:'import'});
   sources.register({id:'other',name:'Other synthetic source',kind:'custom',deviceId:'synthetic-other',platform:'import'});
   t.after(async()=>{await ctx.materialOrganizers?.close();store.close();await rm(directory,{recursive:true,force:true});});return {ctx,directory,store,sources};

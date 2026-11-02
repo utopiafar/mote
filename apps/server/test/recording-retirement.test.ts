@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {RecordingConnector,type RecordingProvider,type ConnectorContext} from '../src/connectors/index.js';
 import {Store} from '../src/store.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {MaterialStore} from '../src/materials.js';
@@ -21,7 +22,7 @@ for(const phase of ['account','discover','metadata','transcript','media'] as con
  const wait=async(boundary:typeof phase)=>{if(enabled&&boundary===phase){entered.resolve();await held.promise;exited=true;}};
  const raw='Generated diary\n\nOwner 00:00:00.000\nI prepared a generated plan.\n';
  const provider:RecordingProvider={id:'generated',version:'fixture@1',account:async()=>{await wait('account');return {id:'generated-owner'};},discover:async()=>{await wait('discover');return {ids:['original'],...(phase==='discover'?{next:'late-page'}:{})};},metadata:async()=>{await wait('metadata');return {id:'original',title:'Generated diary',durationMs:5000,recordedAt:'2026-09-20T00:00:00Z'};},transcript:async()=>{await wait('transcript');return {rawText:raw,transcript:feishuTranscript(raw,5000)};},media:async()=>{await wait('media');return {mimeType:'audio/wav',bytes:Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)])};},close:async()=>{assert.equal(exited,true);retired++;}};
- const context:ConnectorContext={store,sources,files,sourcePipelines:pipelines,config:{dataDir:directory,token:'generated-owner-token',allowedOrigins:[],connectors:{directory}}},connector=new RecordingConnector(context,provider);
+ const context:ConnectorContext={evidenceReader:connectorReader(store,sources),store,sources,files,sourcePipelines:pipelines,config:{dataDir:directory,token:'generated-owner-token',allowedOrigins:[],connectors:{directory}}},connector=new RecordingConnector(context,provider);
  const prepare=store.db.prepare.bind(store.db);let restore=()=>{};
  t.after(async()=>{restore();held.resolve();await connector.close();await files.close();await pipelines.close();await materials.index?.close();await engine.close();store.close();await rm(directory,{recursive:true,force:true});});
  const disposeSibling=engine.register({kind:'generated.sibling',pool:'generated.sibling',policy:EXECUTION_POLICIES.localProcessing,concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{sibling++;}});t.after(disposeSibling);
