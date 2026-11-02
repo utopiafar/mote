@@ -17,8 +17,15 @@ export async function installAgentFeatures(root:Context,implementation:ContextRe
     const fiber=root.plugin((ctx:Context)=>{
       ctx.effect(()=>registry.install({id:featureId,version:'1',components:keys.map(key=>({id:'agent:'+key,version:'1',surface:'agent'}))}));
       for(const key of keys){const fn=implementation[key];if(!fn)continue;
-        ctx.effect(()=>registry.register(featureId,{id:'agent:'+key,version:'1',surface:'agent'},fn));
-        Object.defineProperty(reader,key,{enumerable:true,value:(...args:unknown[])=>{const active=registry.get('agent:'+key);if(!active)throw new StoreError('Agent capability unavailable',503);return active(...args);}});
+        // A registration has its own call identity even if a replacement
+        // provider reuses the same implementation function.
+        ctx.effect(()=>registry.register(featureId,{id:'agent:'+key,version:'1',surface:'agent'},(...args:unknown[])=>(fn as Function)(...args)));
+        Object.defineProperty(reader,key,{enumerable:true,value:async(...args:unknown[])=>{
+          const active=registry.get('agent:'+key);if(!active)throw new StoreError('Agent capability unavailable',503);
+          const result=await active(...args);
+          if(registry.get('agent:'+key)!==active)throw new StoreError('Agent capability unavailable',503);
+          return result;
+        }});
       }
     });
     await fiber;fibers.set(featureId,fiber);
