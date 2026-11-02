@@ -112,3 +112,18 @@ test('the desktop mirror accepts the same fixture with full field metadata', asy
   assert.equal(form.fields[0]?.input, 'boolean');
   assert.throws(() => parseDesktopDeclarative({ components: [{ type: 'status', state: 'pending', input: 'x' }] }, descriptor()), /Invalid object fields/, 'component-level field keys rejected');
 });
+
+test('plugins-domain adapter emits only allowed actions and the real invoker carries id+revision', async () => {
+  const { pluginInstanceDescriptor, pluginInstanceSpec, pluginInstanceInvoker } = await import('../src/features/runtime');
+  const instance = { id: 'inst:one', packageId: 'pkg.x', name: 'One', revision: 7, scope: 'owner', desired: true, observed: 'enabled', allowedActions: ['enable', 'disable'], issues: [], capabilities: [] } as any;
+  const spec = pluginInstanceSpec(instance);
+  const actions = spec.components.filter(c => c.type === 'action').map(c => c.command);
+  assert.deepEqual(actions, ['enable', 'disable'], 'check is not DOMAIN-allowed');
+  const session = new DeclarativeViewSession(pluginInstanceDescriptor(instance), spec, pluginInstanceInvoker(instance, (path, revision) => { calls.push([path, revision]); }));
+  const calls: [string, number][] = [];
+  session.lifetime.show();
+  assert.deepEqual(await session.command('enable'), { ok: true, value: undefined });
+  assert.deepEqual(calls, [['/api/plugin-instances/inst%3Aone/enable', 7]], 'the precise revision-carried path is issued');
+  assert.deepEqual(await session.command('check'), { ok: false, reason: 'undeclared' });
+  assert.equal(calls.length, 1, 'undeclared action never fires');
+});

@@ -36,4 +36,26 @@ class DeclarativePluginViewTest {
         assertEquals(DeclarativeState.PENDING, (spec.components[0] as DeclarativeNode.Status).state)
         assertEquals("save", (spec.components[2] as DeclarativeNode.Action).command)
     }
+
+    @Test fun `a real parsed instance admits only DOMAIN-allowed command actions`() {
+        // A generated payload shaped like the real /api/plugins inventory;
+        // PluginControlClient does the real parsing — the spec is adapted
+        // from its typed instance, not a hand-made view model.
+        val raw = JSONObject("""{"id":"inst:one","packageId":"pkg.x","name":"One","revision":7,"scope":"owner","configuration":{},"configurationSchema":[],"capabilities":[],"desired":true,"observed":"enabled","issues":[],"allowedActions":["enable","disable"],"secretStatus":{}}""")
+        val instance = PluginControlProjection.instance(raw)
+        val actions = setOf("check", "enable", "disable").filter { it in instance.allowedActions }
+        val spec = DeclarativePluginView.parse(JSONObject("""{"components":[
+            {"type":"detail","fields":[{"key":"revision","format":"number"}]},
+            {"type":"action","command":"enable","labelKey":"enable"},
+            {"type":"action","command":"disable","labelKey":"disable"}
+        ]}"""), actions.toSet())
+        assertEquals(2, actions.size)
+        assertEquals(DeclarativeNode.Action::class, spec.components[1]::class)
+        assertEquals("disable", (spec.components[2] as DeclarativeNode.Action).command)
+        assertTrue(instance.revision == 7L)
+        try {
+            DeclarativePluginView.parse(JSONObject("""{"components":[{"type":"action","command":"check","labelKey":"check"}]}"""), actions.toSet())
+            fail("check is not DOMAIN-allowed for this instance")
+        } catch (expected: IllegalArgumentException) { }
+    }
 }

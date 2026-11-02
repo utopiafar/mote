@@ -496,3 +496,43 @@ fun Activity.showMoteAddActions() {
         .setItems(MoteAddAction.entries.map { MoteI18n.text(it.titleKey) }.toTypedArray()) { _, index -> openMoteAdd(MoteAddAction.entries[index]) }
         .setNegativeButton(MoteI18n.text("取消"), null).show()
 }
+
+// U07: declarative plugin surface — maps a strictly-parsed spec into real
+// Views. Only declared command actions can fire; the invoker carries the
+// same revision the DOMAIN issued.
+fun Context.declarativePluginView(
+    spec: dev.mote.collector.plugins.DeclarativeSpec,
+    data: org.json.JSONObject,
+    label: (String) -> String,
+    onCommand: (String) -> Unit,
+): LinearLayout {
+    val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+    val tv = { value: String -> TextView(this).apply { MoteUi.textColor(this, NativeColorRole.INK); setText(value) } }
+    for (component in spec.components) when (component) {
+        is dev.mote.collector.plugins.DeclarativeNode.Status -> body.addView(tv(component.textKey?.let(label) ?: component.state.name.lowercase()))
+        is dev.mote.collector.plugins.DeclarativeNode.Listing -> {
+            val items = data.optJSONArray(component.itemKey) ?: org.json.JSONArray()
+            if (items.length() == 0) body.addView(tv(label("empty")))
+            for (i in 0 until items.length()) {
+                val row = items.optJSONObject(i) ?: continue
+                body.addView(tv(component.fields.joinToString(" · ") { f -> label(f.labelKey ?: f.key) + " " + row.opt(f.key)?.toString() }))
+            }
+        }
+        is dev.mote.collector.plugins.DeclarativeNode.Detail -> for (f in component.fields)
+            body.addView(tv(label(f.labelKey ?: f.key) + " " + (data.opt(f.key)?.toString() ?: "—")))
+        is dev.mote.collector.plugins.DeclarativeNode.Form -> {
+            val inputs = component.fields.map { f ->
+                if (f.input == "boolean") CheckBox(this).apply { text = label(f.labelKey ?: f.key); body.addView(this) } to f.key
+                else EditText(this).apply { hint = label(f.labelKey ?: f.key); body.addView(this) } to f.key
+            }
+            component.submitCommand?.let { command ->
+                body.addView(Button(this).apply { text = label(command); setOnClickListener { onCommand(command) } })
+            }
+        }
+        is dev.mote.collector.plugins.DeclarativeNode.Action -> body.addView(Button(this).apply {
+            text = component.labelKey?.let(label) ?: component.command
+            setOnClickListener { onCommand(component.command) }
+        })
+    }
+    return body
+}

@@ -4,6 +4,7 @@ import {moteText} from '@mote/shared/i18n';
 import type {MemoryBindingView,MemoryPlanView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
 import {ApiError,errorMessage,type Api} from './api';
 import {FeatureInventory} from './FeatureInventory';
+import {PluginInstanceSurface} from './features/runtime';
 import {containDialogFocus} from './dialog-focus';
 import {resources} from './resource-cache';
 import {operationFeed} from './operation-feed';
@@ -110,9 +111,7 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
     <div className="section-heading"><h3>{moteText('配置实例')}</h3>{currentPackage.allowedActions.includes('configure')&&<button className="button subtle" disabled={busy} onClick={event=>open({kind:'configure',package:currentPackage},event.currentTarget)}><Settings2 size={15}/>{moteText('新增实例')}</button>}</div>
     {view.instances.filter(instance=>instance.packageId===currentPackage.id).map(instance=><article className="plugin-instance" key={instance.id}><div className="section-heading"><div><h3>{instance.name}</h3><p>{instance.scope} · {moteText('配置版本 {0}',instance.revision)}</p></div><span className={'badge '+(instance.observed==='enabled'?'green':'muted')}>{packageStateLabel(instance.observed)}</span></div><p>{instance.desired?moteText('已选择启用'):moteText('已选择停用')}{binding?.activePlan.instanceId===instance.id?' · '+moteText('当前记忆方案'):''}</p><Capabilities items={instance.capabilities}/>{instance.issues.map((issue,index)=><p className="notice" key={index}>{issue}</p>)}<div className="plugin-actions">
      {instance.allowedActions.includes('configure')&&<button className="button subtle" disabled={busy} onClick={event=>open({kind:'configure',package:currentPackage,instance},event.currentTarget)}>{moteText('配置')}</button>}
-     {instance.allowedActions.includes('check')&&<button className="button subtle" disabled={busy} onClick={()=>command('/api/plugin-instances/'+encodeURIComponent(instance.id)+'/check',instance.revision)}><ShieldCheck size={15}/>{moteText('核验能力')}</button>}
-     {instance.allowedActions.includes('enable')&&<button className="button primary" disabled={busy} onClick={()=>command('/api/plugin-instances/'+encodeURIComponent(instance.id)+'/enable',instance.revision)}>{moteText('启用')}</button>}
-     {instance.allowedActions.includes('disable')&&<button className="button subtle" disabled={busy} onClick={()=>command('/api/plugin-instances/'+encodeURIComponent(instance.id)+'/disable',instance.revision)}>{moteText('停用')}</button>}
+     <PluginInstanceSurface instance={instance} busy={busy} command={command} labels={{check:moteText('核验能力'),enable:moteText('启用'),disable:moteText('停用')}}/>
      <button className="text-button" onClick={()=>setTab('memory')}>{moteText('查看记忆方案')}<ChevronRight size={14}/></button>
     </div></article>)}
     {!view.instances.some(instance=>instance.packageId===currentPackage.id)&&<p className="plugin-empty">{moteText('此安装包尚无配置实例；没有运行，也没有绑定到记忆方案。')}</p>}
