@@ -81,6 +81,10 @@ test('material catalog uses the untrusted body and material_read verifies origin
   await assert.rejects(execute(snapshot, 'material_catalog', {limit: 0}, session.port), error => error.code === 'invalid_tool_arguments');
   assert.equal(session.calls.length, 1);
 
+  const scoped = port({materialCatalog: catalog}, {limit: 6, after: '2024-01-01T00:00:00.000Z', before: '2024-02-01T00:00:00.000Z'});
+  await execute(snapshot, 'material_catalog', {limit: 100}, scoped.port);
+  assert.equal(scoped.calls[0].args.limit, 6);
+
   const value = await execute(snapshot, 'material_read', {ref: materialRef, offset: 0, length: 4}, session.port);
   assert.equal(value.source, 'untrusted_personal_context');
   assert.equal(value.data.text, 'body');
