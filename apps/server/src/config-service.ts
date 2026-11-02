@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { watch, type FSWatcher } from 'chokidar';
 import { parseDocument, stringify } from 'yaml';
-import type { ZodType } from 'zod';
+import {z,type ZodType} from 'zod';
 import type { ConfigFieldMetadata, ConfigServiceView } from '@mote/shared';
 
 export type ConfigDocument = { version: 1; revision: number; [domain: string]: unknown };
@@ -62,10 +62,42 @@ function merge(base: unknown, patch: unknown): unknown {
   }
   return result;
 }
-function knownPatchPaths(patch:unknown,parsed:unknown):boolean {
-  if(Array.isArray(patch))return Array.isArray(parsed)&&patch.every((value,index)=>Object.hasOwn(parsed,index)&&knownPatchPaths(value,parsed[index]));
-  if(!object(patch))return true;
-  return object(parsed)&&Object.entries(patch).every(([key,value])=>Object.hasOwn(parsed,key)&&knownPatchPaths(value,parsed[key]));
+/** Path membership follows the registered INPUT declaration, independently of its parsed output.
+ * The original schema remains responsible for full candidate validation in the same transaction. */
+function knownInputPath(schema:z.ZodTypeAny,input:unknown,path:string[]):boolean {
+  if(!path.length)return true;
+  if(schema instanceof z.ZodEffects){
+    // A preprocessor explicitly accepts unknown input; its normalized value is checked by parseDomain.
+    return schema._def.effect.type==='preprocess'||knownInputPath(schema.innerType(),input,path);
+  }
+  if(schema instanceof z.ZodOptional||schema instanceof z.ZodNullable||schema instanceof z.ZodBranded||schema instanceof z.ZodReadonly)return knownInputPath(schema.unwrap(),input,path);
+  if(schema instanceof z.ZodDefault)return knownInputPath(schema.removeDefault(),input,path);
+  if(schema instanceof z.ZodPipeline)return knownInputPath(schema._def.in,input,path);
+  if(schema instanceof z.ZodLazy)return knownInputPath(schema.schema,input,path);
+  if(schema instanceof z.ZodUnion||schema instanceof z.ZodDiscriminatedUnion){
+    const selected=schema.options.find((option:z.ZodTypeAny)=>option.safeParse(input).success);
+    return Boolean(selected&&knownInputPath(selected,input,path));
+  }
+  if(schema instanceof z.ZodIntersection)return knownInputPath(schema._def.left,input,path)||knownInputPath(schema._def.right,input,path);
+  const [key,...tail]=path,child=(object(input)||Array.isArray(input))?(input as Record<string,unknown>)[key]:undefined;
+  if(schema instanceof z.ZodObject){
+    const declared=schema.shape[key] as z.ZodTypeAny|undefined;
+    if(declared)return knownInputPath(declared,child,tail);
+    if(!(schema._def.catchall instanceof z.ZodNever))return knownInputPath(schema._def.catchall,child,tail);
+    return schema._def.unknownKeys==='passthrough';
+  }
+  if(schema instanceof z.ZodArray)return /^(0|[1-9][0-9]*)$/.test(key)&&knownInputPath(schema.element,child,tail);
+  if(schema instanceof z.ZodTuple){
+    const item=/^(0|[1-9][0-9]*)$/.test(key)?schema.items[Number(key)]??schema._def.rest:undefined;
+    return Boolean(item&&knownInputPath(item,child,tail));
+  }
+  if(schema instanceof z.ZodRecord)return knownInputPath(schema.element,child,tail);
+  // These declarations intentionally accept arbitrary input keys, including catch fallback input.
+  return schema instanceof z.ZodAny||schema instanceof z.ZodUnknown||schema instanceof z.ZodCatch;
+}
+function knownPatchPaths(patch:unknown,schema:z.ZodTypeAny,input:unknown,path:string[]=[]):boolean {
+  if(!knownInputPath(schema,input,path))return false;
+  return !object(patch)&&!Array.isArray(patch)||Object.entries(patch as object).every(([key,value])=>knownPatchPaths(value,schema,input,[...path,key]));
 }
 function editPath(value: unknown, path: string[], fn: (value: unknown, previous: unknown) => unknown, previous?: unknown): unknown {
   if (!path.length) return fn(value, previous);
@@ -417,7 +449,10 @@ export class ConfigService {
         for (const [id, patch] of Object.entries(patches)) {
           const domain = this.domains.get(id)!, saved = this.saved(id), value = replace ? clone(patch) : merge(this.domainRaw(state, domain) ?? domain.defaultValue, patch);
           if (id === 'plugins' && object(patch) && Object.hasOwn(patch, 'configuration')) throw new ConfigServiceError('config_invalid');
-          if(domain.rejectUnknownUpdates&&!knownPatchPaths(patch,this.parseDomain(domain,value,state)))throw new ConfigServiceError('config_invalid',id);
+          if(domain.rejectUnknownUpdates){
+            this.parseDomain(domain,value,state);
+            if(!knownPatchPaths(patch,domain.schema,value))throw new ConfigServiceError('config_invalid',id);
+          }
           this.assignRaw(next, domain, preserveReferences(this.domainRaw(state, domain), saved, value));
         }
         return await this.commit(this.parse(next), disk?.text ?? null);

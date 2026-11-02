@@ -142,6 +142,22 @@ test('public plugin patches reject paths stripped by non-strict schemas without 
   assert.deepEqual(parse(await readFile(path,'utf8')).plugins.configuration.nonStrict,{enabled:true,nested:{limit:0}});
 });
 
+test('input paths remain writable when registered transforms rename output keys',async t=>{
+  const {platform,path}=await fixture(t);
+  const schema=z.object({enabled:z.boolean(),nested:z.object({label:z.string()}).transform(({label})=>({title:label})).optional()})
+    .transform(({enabled,nested})=>({active:enabled,detail:nested??null}));
+  const domain=await platform.registerDomain({id:'renamed',schema,defaultValue:{enabled:false}});
+  // Raw editor input and parsed output intentionally have distinct shapes.
+  await domain.update({enabled:true,nested:{label:'generated label'}} as never,0);
+  assert.deepEqual(domain.snapshot(),{revision:1,value:{active:true,detail:{title:'generated label'}}});
+  const raw=parse(await readFile(path,'utf8')).plugins.configuration.renamed;
+  assert.deepEqual(raw,{enabled:true,nested:{label:'generated label'}});
+  for(const patch of [{enabled:false,typo:7},{nested:{label:'other',typo:7}}]){
+    await assert.rejects(domain.update(patch as never,1),{code:'config_invalid'});
+  }
+  assert.deepEqual(domain.snapshot(),{revision:1,value:{active:true,detail:{title:'generated label'}}});
+});
+
 test('concurrent platform close waits for the actual watcher teardown started by quiescence',async t=>{
   const {platform}=await fixture(t,true);await platform.start();
   const entered=barrier(),finish=barrier(),original=FSWatcher.prototype.close;
