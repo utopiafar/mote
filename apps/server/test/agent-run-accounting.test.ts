@@ -7,6 +7,13 @@ import {randomUUID} from 'node:crypto';
 import {AgentYieldError,type QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import {ReloadableAgent,createModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
+import {PluginHost,PluginResourceScope} from '@mote/plugin-host';
+import {serviceContract,type ScopeIdentity} from '@mote/plugin-api/contracts';
+import {createHostRunSession} from '../../../packages/agent/dist/host/run-session.js';
+import {hostOutputService} from '../../../packages/agent/dist/host/run-contracts.js';
+import {createHostOutputProvider} from '../../../packages/agent/dist/host/output.js';
+import {runtimeService,type HostRunPort,type RuntimeProvider} from '../../../packages/agent/dist/runtime/contracts.js';
+import {ActiveExecutionBudget} from '../../../packages/agent/dist/active-budget.js';
 import type {ContextReader} from '@mote/agent';
 import type {ModelSettings} from '@mote/shared/models';
 import type {QueryAgent} from '../src/query-agent.js';
@@ -183,20 +190,46 @@ test('a Host leaf that uses the supplied runModel hook starts only the Host rece
   assert.equal(rows[0].status,'completed');
 });
 
-test('a Host model start that fails before the first usage sample leaves one failed receipt',async t=>{
-  const factory:ModelAgentFactory=async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:async(_input,lease)=>{
-    lease?.onFinalizer?.('host');
-    await host!.runModel!(async()=>{});
-    throw Object.assign(new Error('Generated model failure before usage'),{name:'AgentResponseError',reason:'invalid_response'});
-  }});
-  const dataDir=mkdtempSync(join(tmpdir(),'mote-run-accounting-preusage-'));
-  const node=await buildApp(config(dataDir),{backgroundWorker:false,createModelAgent:factory});
+/** Real HostRunSession leaf: no SDK and no network. The provider's model run
+ * throws inside the supplied host.runModel task, so the Host itself stamps the
+ * identity/attempt and emits one failed run.terminal after cleanup. */
+const realHostLeaf=(failure:Error):ModelAgentFactory=>async(_settings,_reader,hooks)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+  lease?.onFinalizer?.('host');
+  const hostIdentity={kind:'central' as const,id:randomUUID()},host=new PluginHost(hostIdentity),resources=new PluginResourceScope();
+  const identity=(id:string):ScopeIdentity=>({packageId:'generated',installationId:'generated-install',instanceId:id,activationId:randomUUID(),host:hostIdentity});
+  const scope=Object.assign(resources,{identity:identity('consumer')});
+  let port:HostRunPort|undefined;
+  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:false,images:false,importWorkspace:false,hostDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,value){
+    port=value;value.emit({type:'tools.ready',tools:[]},null);
+    return {run:request=>value.runModel(request.attempt,async()=>{throw failure;}),repair:async()=>{throw Error('Generated repair is unreachable');},async cancel(){},async close(){}};
+  }};
+  const modelContract=serviceContract<unknown>('generated.model','1'),bindings:Record<string,{service:{id:string;apiVersion:string}}> = {};
+  try{
+    await host.install({identity:identity('foundation'),contributions:[runtimeService,modelContract,hostOutputService],factory:context=>({prepare(){},start(){
+      bindings.runtime=context.provide(runtimeService.id,runtimeService,provider);
+      bindings.model=context.provide(modelContract.id,modelContract,{});
+      bindings.output=context.provide(hostOutputService.id,hostOutputService,createHostOutputProvider());},quiesce(){},stop(){},dispose(){}})});
+    const runtime=await host.acquire(runtimeService,bindings.runtime as never,scope.signal);
+    const model=await host.acquire(modelContract,bindings.model as never,scope.signal);
+    const output=await host.acquire(hostOutputService,bindings.output as never,scope.signal);
+    const selection={modelId:'generated-model',modelRevision:1,profileId:'generated-profile',profileRevision:1,transport:'fixture'};
+    const session=await createHostRunSession({scope:scope as never,input,identity:{runId:randomUUID(),runtime:{id:'fixture',revision:1,profileId:'fixture-runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64)},model:selection},profile:{binding:runtime.binding,runtimeId:'fixture',profileId:'fixture-runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64),taskKind:'query',configuration:{}},runtime,model:{...model,selection},output,tools:{definitions:[],bindings:[],assertCurrent:()=>scope.assertCurrent()},budget:{activeTimeoutMs:null},activeBudget:new ActiveExecutionBudget(null),commitFence:{assertCurrent:()=>scope.assertCurrent()}},{systemPrompt:'Generated Host policy',prompt:'Generated prompt',contextUsage:{unit:'utf16_characters',system:0,tools:0,question:0,conversation:0,task:0,evidence:0,prompt:0,outputTokenReserve:100,toolResults:0},evidence:()=>({records:new Map(),deliveredRanges:[],imageReadReceipts:[],sourceContextDependencies:[],evidenceDependencies:{version:1,complete:true,ids:[]},trace:[],deliveredCharacters:0}),async readTool(){throw Error('This fixture has no tools');},admit:(task,signal)=>hooks!.runModel!(task,signal),async close(){},observe:event=>input.onHostRunEvent?.(event)});
+    try{return await session.execute();}finally{await session.close();}
+  }finally{await resources.close();await host.close();}
+}});
+
+test('a real Host session finalizes one failed receipt through its own terminal, with no app fallback',async t=>{
+  const failure=Object.assign(new Error('Generated model failure before usage'),{name:'AgentResponseError',reason:'invalid_response'});
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-run-accounting-real-host-'));
+  const node=await buildApp(config(dataDir),{backgroundWorker:false,createModelAgent:realHostLeaf(failure)});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
-  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated pre-usage failure question'}});
-  assert.notEqual(response.statusCode,200,response.body);
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated real Host failure question'}});
+  assert.equal(response.statusCode,502,response.body);
+  assert.equal(response.json().error,'agent_response','the original failure classification survives');
   const rows=receipts(node);
-  assert.equal(rows.length,1,'admission must not create a second receipt');
-  assert.equal(rows[0].status,'failed','the selected owner meter is failed once, not left running');
+  assert.equal(rows.length,1,'exactly the selected Host meter row exists');
+  assert.equal(rows[0].status,'failed','the Host run terminal failed the selected receipt');
+  assert.equal(rows[0].tokens,undefined,'no usage sample was fabricated');
 });
 
 test('a legacy yield carrying an unexpected Host event rejects and fails its started receipt',async t=>{

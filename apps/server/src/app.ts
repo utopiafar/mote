@@ -762,11 +762,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       }
       const wait=error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited')?{code:error.details.code,retryAfterMs:error.details.retryAfterMs}:error instanceof ExecutionFailure&&error.category==='waiting'?{code:error.code,retryAfterMs:error.retryAfterMs}:undefined;
       if(runState.mode!=='host')meter?.failed(error);
-      // A model start without any Host event must not leave an orphan running
-      // receipt: the selected Host meter is failed exactly once here. Once Host
-      // events were observed, a missing terminal is a protocol gap and the
-      // primary error stands without app-side finalization.
-      else if(!runState.hostEvents)hostMeter?.fail();
       const accounting=runViolation();
       if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId});
