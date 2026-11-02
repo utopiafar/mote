@@ -321,3 +321,19 @@ test('pausing source intake rejects new receipts while previously accepted work 
   await f.publish();await f.run();assert.equal(f.jobs().length,1);assert.equal(f.jobs()[0].status,'completed');
   f.node.sources.update('diary',{enabled:true});await f.add('diary','after-resume');await f.publish();await f.run();assert.equal(f.jobs().length,2);
 });
+
+test('app.close keeps a held automatic Memory batch interrupted and restartable, never revoked',async t=>{
+  const f=await fixture(t);await f.configure([personal,coding]);f.source('diary');
+  await f.add('diary','held');await f.publish();await f.queue();
+  let entered!:()=>void;const held=new Promise<void>(resolve=>entered=resolve);let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);
+  f.control.duringReview=async()=>{entered();await gate;};
+  const running=f.run();await held;
+  const closing=f.node.app.close();
+  await new Promise(resolve=>setImmediate(resolve));
+  release();await closing;await running;
+  await f.restart();
+  const jobs=f.jobs();assert.ok(jobs.length>0);assert.ok(jobs.every(job=>job.status!=='failed'),'shutdown must not permanently fail accepted automatic Memory work');
+  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM memory_jobs WHERE json_extract(json,'$.errorCode')='memory_authorization_revoked'").get()!.n,0);
+  await f.publish();await f.run();
+  assert.ok(f.jobs().every(job=>job.status==='completed'),'restart resumes the accepted automatic Memory work');
+});
