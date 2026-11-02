@@ -294,3 +294,13 @@ test('close also drains a Host domain validator and fences its late acceptance',
   release.resolve(); await assert.rejects(execution); await closing;
   assert.equal(f.events.at(-1).event.terminal.kind, 'cancelled');
 });
+
+test('invalid question never prepares a runtime and a closed unstarted session emits only a null-attempt cancellation', async () => {
+  const invalid = fixture({input: {question: 42}});
+  await assert.rejects(invalid.create(), {name: 'AgentInputError'}); assert.equal(invalid.calls.includes('prepare'), false);
+  assert.equal(invalid.events.at(-1).attemptId, null); assert.equal(invalid.events.at(-1).event.terminal.kind, 'failed');
+  const closed = fixture(), session = await closed.create(); await session.close();
+  await assert.rejects(session.execute());
+  assert.equal(closed.calls.includes('run'), false); assert.equal(closed.events.at(-1).attemptId, null);
+  assert.equal(closed.events.at(-1).event.terminal.kind, 'cancelled');
+});
