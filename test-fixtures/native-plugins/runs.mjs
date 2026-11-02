@@ -37,16 +37,29 @@ function configFor(dataDir,token){
 
 /** One real Central process surface, owned by the generated fixture directory. */
 export async function createPrivateRun({root,version='1',dataDir,token,backgroundWorker=false,distribution}={}){
+  const ownsDataDir=dataDir===undefined;
   const directory=dataDir??(root?join(root,`run-${randomUUID()}`):mkdtempSync(join(tmpdir(),'mote-native-plugin-run-')));
   if(root&&!dataDir)mkdirSync(directory,{recursive:true,mode:0o700});
   const actualToken=token??randomBytes(32).toString('hex'),runId=randomUUID(),sha=candidateSha();
   let node;
   async function start(){
-    node=await buildApp(configFor(directory,actualToken),{backgroundWorker,...(distribution?{distribution}:{})});
-    const baseUrl=await node.app.listen({host:'127.0.0.1',port:0});
-    return baseUrl;
+    let candidate;
+    try{
+      candidate=await buildApp(configFor(directory,actualToken),{backgroundWorker,...(distribution?{distribution}:{})});
+      const baseUrl=await candidate.app.listen({host:'127.0.0.1',port:0});
+      node=candidate;
+      return baseUrl;
+    }catch(error){
+      try{await candidate?.app.close();}catch(cleanup){throw new AggregateError([error,cleanup],'Native plugin run startup and cleanup failed',{cause:error});}
+      throw error;
+    }
   }
-  let baseUrl=await start();
+  let baseUrl;
+  try{baseUrl=await start();}
+  catch(error){
+    if(ownsDataDir)rmSync(directory,{recursive:true,force:true});
+    throw error;
+  }
   const run={
     runId,candidateSha:sha,version,dataDir:directory,token:actualToken,
     get url(){return baseUrl;},
@@ -60,7 +73,7 @@ export async function createPrivateRun({root,version='1',dataDir,token,backgroun
       baseUrl=await start();
       return this;
     },
-    async close({remove=true}={}){
+    async close({remove=ownsDataDir}={}){
       try{await node?.app.close();}finally{if(remove)rmSync(directory,{recursive:true,force:true});}
     }
   };
@@ -74,8 +87,19 @@ export async function createTwoRuns({versions=['1','2'],backgroundWorker=false}=
   try{
     for(const version of versions)runs.push(await createPrivateRun({root,version,backgroundWorker}));
     return {root,runs,runId:randomUUID(),candidateSha:candidateSha(),
-      async close(){await Promise.allSettled(runs.map(run=>run.close({remove:true})));rmSync(root,{recursive:true,force:true});}};
-  }catch(error){await Promise.allSettled(runs.map(run=>run.close({remove:true})));rmSync(root,{recursive:true,force:true});throw error;}
+      async close(){
+        const results=await Promise.allSettled(runs.map(run=>run.close({remove:true})));
+        rmSync(root,{recursive:true,force:true});
+        const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
+        if(errors.length)throw new AggregateError(errors,'Native plugin run cleanup failed');
+      }};
+  }catch(error){
+    const results=await Promise.allSettled(runs.map(run=>run.close({remove:true})));
+    rmSync(root,{recursive:true,force:true});
+    const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
+    if(errors.length)throw new AggregateError([error,...errors],'Native plugin run setup and cleanup failed',{cause:error});
+    throw error;
+  }
 }
 
 export function generatedNote(seed,{deviceId='generated-native-device',deviceName='Generated native device'}={}){

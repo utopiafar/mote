@@ -1,9 +1,22 @@
 #!/usr/bin/env node
 /** Manual generated native-plugin journey: real buildApp/loopback, no fake host. */
 import assert from 'node:assert/strict';
+import {request as httpRequest} from 'node:http';
 import {createTwoRuns,generatedNote} from '../test-fixtures/native-plugins/runs.mjs';
 import {createAckLossProxy,createControlledHttpBoundary,createRequestGateProxy} from '../test-fixtures/native-plugins/faults.mjs';
 import {createPrivateProcess} from '../test-fixtures/native-plugins/process.mjs';
+
+function chunkedJson(base,path,body,token){
+  const target=new URL(path,base);
+  return new Promise((resolve,reject)=>{
+    const request=httpRequest(target,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','Transfer-Encoding':'chunked'}},response=>{
+      const chunks=[];response.on('data',chunk=>chunks.push(Buffer.from(chunk)));response.on('end',()=>{
+        const text=Buffer.concat(chunks).toString('utf8');resolve({status:response.statusCode,body:text?JSON.parse(text):undefined});
+      });
+    });
+    request.on('error',reject);request.write(JSON.stringify(body));request.end();
+  });
+}
 
 const report={status:'running',mode:process.argv.includes('--subprocess-restart')?'subprocess-restart':'in-process',runId:null,candidateSha:null,checks:[],layers:{T2:false,T3:false,T4:false}};
 let failure;
@@ -45,6 +58,18 @@ async function inProcess(){
       report.checks.push('lost ACK preserves the actual server error, then same-ID retry deduplicates and reads the original');
     }finally{await proxy.close();}
 
+    const chunkedNote=generatedNote('chunked-ack');
+    const chunkedProxy=await createAckLossProxy(oldRun.url,{path:'/api/notes'});
+    try{
+      const lost=await chunkedJson(chunkedProxy.url,'/api/notes',chunkedNote,oldRun.token);
+      assert.equal(lost.status,502);
+      assert.equal(lost.body.error,'generated_receipt_lost');
+      const retry=await oldRun.writeNote(chunkedNote);
+      assert.equal(retry.receipt.duplicate,true);
+      assert.equal((await oldRun.readNote(chunkedNote.id)).ocrText,chunkedNote.text);
+      report.checks.push('chunked producer request reaches Central through the ACK-loss proxy and retries by the same ID');
+    }finally{await chunkedProxy.close();}
+
     const slow=await createControlledHttpBoundary({body:{ok:true}});
     try{
       const controller=new AbortController();
@@ -62,7 +87,9 @@ async function inProcess(){
     assert.equal((await oldRun.writeNote(oldNote)).receipt.duplicate,true);
     report.layers.T4=true;
     report.checks.push('same private profile restart preserves identity and does not duplicate the original');
-  }finally{await pair.close();}
+  }finally{
+    try{await pair.close();}catch(error){report.cleanupFailure=error instanceof Error?error.message:String(error);throw error;}
+  }
 }
 
 async function subprocessRestart(){
@@ -82,7 +109,10 @@ async function subprocessRestart(){
     assert.equal((await run.writeNote(note)).receipt.duplicate,true);
     report.layers.T4=true;
     report.checks.push('actual index.ts private profile stopped and restarted; held real producer completed late and same identity deduplicated');
-  }finally{await gate.close();await run.close();}
+  }finally{
+    const errors=[];try{await gate.close();}catch(error){errors.push(error);}try{await run.close();}catch(error){errors.push(error);}
+    if(errors.length){report.cleanupFailure=errors.map(error=>error instanceof Error?error.message:String(error)).join('; ');throw new AggregateError(errors,'Native plugin subprocess cleanup failed');}
+  }
 }
 
 try{

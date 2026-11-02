@@ -1,13 +1,15 @@
 import {createServer} from 'node:http';
 import {requestJson} from './runs.mjs';
 
+const hopByHop=new Set(['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailer','transfer-encoding','upgrade','host','content-length']);
+const forwardedHeaders=headers=>Object.fromEntries(Object.entries(headers).filter(([key])=>!hopByHop.has(key.toLowerCase())));
+
 /** A real loopback proxy in front of a real run. It drops one successful ACK
  * after the upstream commit, so the retry exercises the actual producer. */
 export async function createAckLossProxy(targetBase,{path='/api/notes',status=502,code='generated_receipt_lost'}={}){
   const target=new URL(targetBase),server=createServer(async(req,res)=>{
     const chunks=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
-    const body=Buffer.concat(chunks),headers={...req.headers};
-    delete headers.host;delete headers['content-length'];delete headers.connection;
+    const body=Buffer.concat(chunks),headers=forwardedHeaders(req.headers);
     let upstream;
     try{
       upstream=await fetch(new URL(req.url??'/',target),{method:req.method,headers,...(body.length?{body}:{})});
@@ -38,8 +40,7 @@ export async function createRequestGateProxy(targetBase,{path='/api/notes'}={}){
   let armed=true;
   const target=new URL(targetBase),server=createServer(async(req,res)=>{
     const chunks=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
-    const body=Buffer.concat(chunks),headers={...req.headers};
-    delete headers.host;delete headers['content-length'];delete headers.connection;
+    const body=Buffer.concat(chunks),headers=forwardedHeaders(req.headers);
     if(armed&&req.method==='POST'&&new URL(req.url??'/',target).pathname===path){armed=false;heldGate();await released;}
     try{
       const upstream=await fetch(new URL(req.url??'/',target),{method:req.method,headers,...(body.length?{body}:{})});
