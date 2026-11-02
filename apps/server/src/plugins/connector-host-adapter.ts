@@ -186,17 +186,20 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       startTask=(async()=>{
         try{
           installCapabilities();
+          const startupFailures:unknown[]=[];
           for(const manifest of options.manifests){
             const scope=scopes.get(manifest.id);if(!scope)throw Error('Connector scope is unavailable');
             try{await registry.startInstance(manifest,scope.scope);}
             catch(error){
               scopes.delete(manifest.id);
-              try{await scope.close();}catch(cleanup){registry.recordFailure(manifest,cleanup);}
+              try{await scope.close();}catch(cleanup){registry.recordFailure(manifest,cleanup);startupFailures.push(new AggregateError([error,cleanup],'Connector instance startup and disposal failed',{cause:error}));continue;}
+              startupFailures.push(error);
             }
           }
           if(closed)throw Error('Connector host adapter is closed');
           registry.mountStatus(options.statusScope);
           started=true;
+          if(startupFailures.length&&!registry.inventory().some(item=>item.state==='active'))throw new AggregateError(startupFailures,'Connector host adapter startup failures');
         }catch(error){
           if(!started){try{await teardownInternal();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host adapter startup and disposal failed',{cause:error});}}
           throw error;
@@ -215,7 +218,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     async restart(id:string){
       if(!started||closed)throw Error('Connector host adapter is not active');
       const manifest=manifests.get(id);if(!manifest)throw Error(`Connector ${id} is not known`);
-      if(scopes.has(id)||hotById.has(id)||registry.inventory().some(item=>item.id===id))throw Error(`Connector ${id} is already started`);
+      if(scopes.has(id)||hotById.has(id)||registry.inventory().some(item=>item.id===id&&item.state==='active'))throw Error(`Connector ${id} is already started`);
       return runHot(manifest);
     },
     async stop(id:string){

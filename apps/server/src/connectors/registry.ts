@@ -223,7 +223,7 @@ export class ConnectorRegistry {
     }
   }
   async stop(id:string,beforeClose?:()=>void|Promise<void>){
-    const index=this.instances.findIndex(item=>item.manifest.id===id);if(index<0)return;
+    const index=this.instances.findIndex(item=>item.manifest.id===id);if(index<0){this.clearFailure(id);return;}
     const [entry]=this.instances.splice(index,1);
     entry.disposed=true;
     const errors:unknown[]=[];

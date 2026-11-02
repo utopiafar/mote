@@ -259,6 +259,40 @@ test('initial start init failure leaves siblings serving',async t=>{
   await adapter.close();
 });
 
+test('initial start rejects only when no connector becomes active',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-all-fail-a',{statusKey:'a',onInit:async()=>{throw new Error('generated fail a');}}),
+    manifest('generated-all-fail-b',{statusKey:'b',prefix:'all-fail-b.',onInit:async()=>{throw new Error('generated fail b');}}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await assert.rejects(adapter.start(),/Connector host adapter startup failures/);
+  assert.deepEqual(adapter.inventory().map(item=>[item.id,item.state]),[['generated-all-fail-a','failed'],['generated-all-fail-b','failed']]);
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{});
+  await adapter.close();
+});
+
+test('restart retries a failed inventory entry with a fresh scope',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-retry-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  let attempts=0;
+  const retry=manifest('generated-retry',{statusKey:'retry',prefix:'retry.',onInit:()=>{attempts++;if(attempts===1)throw new Error('generated transient init');}});
+  await assert.rejects(adapter.install(retry),/generated transient init/);
+  assert.equal(adapter.inventory().find(item=>item.id==='generated-retry')?.state,'failed');
+  await adapter.stop('generated-retry');
+  assert.equal(adapter.inventory().some(item=>item.id==='generated-retry'),false,'stop clears the failed fact');
+  await adapter.restart('generated-retry');
+  assert.equal(attempts,2);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-retry',headers})).body,'generated-retry');
+  assert.equal(adapter.inventory().find(item=>item.id==='generated-retry')?.state,'active');
+  assert.equal(scopes.filter(scope=>scope.scope.identity.instanceId==='generated-retry').length,2,'restart uses a fresh scope');
+  await adapter.close();
+});
+
 test('adapter rejects conflicting source capability descriptors before instances start',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   const conflict={...capabilities,synchronization:'revisions' as const};
