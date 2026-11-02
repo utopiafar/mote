@@ -1,24 +1,14 @@
 import {createHash} from 'node:crypto';
-import type {FeatureInventory,FeatureCapability,FeatureManifest,FeatureSurface} from '@mote/shared';
+import type {FeatureInventory,FeatureCapability,FeatureManifest} from '@mote/shared';
 import type {PluginSnapshot} from '@mote/plugin-api/contracts';
 import type {ServerFeatureHost} from './feature-host.js';
 import type {FeatureServices} from './feature-services.js';
 
-/** Trusted descriptor for one contribution already registered in the common
- * PluginHost. The host snapshot supplies availability; this descriptor supplies
- * the inventory surface/feature grouping that the snapshot does not carry. */
-export interface HostContributionDescriptor {
-  readonly packageId: string;
-  readonly instanceId?: string;
-  readonly contributionId: string;
-  readonly featureId: string;
-  readonly version: string;
-  readonly surface: FeatureSurface;
-}
-
+/** The common PluginHost snapshot supplies actual availability; the existing
+ * FeatureManifest supplies the trusted surface/feature grouping it omits. */
 export interface HostInventoryProjection {
   readonly snapshot: PluginSnapshot;
-  readonly descriptors: readonly HostContributionDescriptor[];
+  readonly manifests: readonly FeatureManifest[];
 }
 
 /** Inputs from the actual host registry and the existing domain ports. This is
@@ -40,19 +30,20 @@ export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureIn
   }));
   const hostCapabilities: FeatureCapability[] = [];
   const hostFeatures: FeatureManifest[] = [];
-  for (const descriptor of parts.host?.descriptors ?? []) {
-    const contribution = parts.host?.snapshot.contributions.find(value =>
-      value.identity.scope.packageId === descriptor.packageId
-      && (!descriptor.instanceId || value.identity.scope.instanceId === descriptor.instanceId)
-      && value.identity.contributionId === descriptor.contributionId);
-    const availability = contribution?.availability;
-    const active = availability?.state === 'active';
-    hostCapabilities.push({
-      id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface, featureId: descriptor.featureId,
-      state: active ? 'active' : 'unavailable',
-      ...(active ? {} : {reason: availability ? availability.reason : 'dependency_unavailable'}),
-    });
-    hostFeatures.push({id: descriptor.featureId, version: descriptor.version, components: [{id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface}]});
+  for (const manifest of parts.host?.manifests ?? []) {
+    const components: FeatureManifest['components'][number][] = [];
+    for (const component of manifest.components) {
+      const contribution = parts.host?.snapshot.contributions.find(value => value.identity.contributionId === component.id);
+      const availability = contribution?.availability;
+      const active = availability?.state === 'active';
+      hostCapabilities.push({
+        ...component, featureId: manifest.id,
+        state: active ? 'active' : 'unavailable',
+        ...(active ? {} : {reason: availability ? availability.reason : 'dependency_unavailable'}),
+      });
+      components.push(component);
+    }
+    if (components.length) hostFeatures.push({id: manifest.id, version: manifest.version, components});
   }
   const capabilities = [
     ...connectorCapabilities,
