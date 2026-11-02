@@ -58,6 +58,21 @@ test('default loader preserves the complete product, owner checks and original n
   assert.throws(()=>node.store.stats());
 });
 
+test('shutdown drains a held execution configuration transaction before stopping execution',async t=>{
+  const {config,headers}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
+  t.after(()=>node.app.close());
+  const initial=(await node.app.inject({url:'/api/execution-settings',headers})).json();
+  let entered!:()=>void,release!:()=>void;const running=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+  node.configService.setHandler('execution',async()=>{entered();await gate;node.executionPlatform.refreshSettings({...node.featureServices.runtimeSettings.execution()});return {apply(){}};});
+  const request=node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:initial.revision,interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2,memoryConcurrency:1}});
+  await running;
+  const closing=node.app.close();
+  await new Promise(resolve=>setImmediate(resolve));
+  release();
+  const response=await request;assert.equal(response.statusCode,200,response.body);
+  await closing;
+});
+
 test('observability startup failure rolls back the bootstrap vault for a clean reopen',async t=>{
   const {config}=fixture(t),failure=new Error('generated observability init failure'),init=ServerDiagnostics.prototype.init;
   ServerDiagnostics.prototype.init=async function(){throw failure;};
