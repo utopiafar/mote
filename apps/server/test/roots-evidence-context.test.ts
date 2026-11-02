@@ -4,6 +4,8 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import http from 'node:http';
+import type {AddressInfo} from 'node:net';
 import {buildApp} from '../src/app.js';
 import {mcpContext} from '../src/connectors/mcp-context.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
@@ -38,4 +40,32 @@ test('roots serves context reads from one evidence factory, MCP consumes it, and
   assert.equal(node.evidenceContext.disposed,true,'close must dispose the evidence factory');
   assert.throws(()=>catalog(),(error:any)=>error?.statusCode===503,'a saved port must reject after disposal');
   assert.throws(()=>view.evidence([] as never,undefined),(error:any)=>error?.statusCode===503,'a saved agent view must reject after disposal');
+});
+
+test('an accepted read finishes before close disposes the evidence factory',async t=>{
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-read-drain-'));
+  const config:Config={dataDir,token:'generated-roots-read-drain-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots read drain fixture');},close:async()=>{}}});
+  t.after(async()=>{try{await node.app.close();}catch{}rmSync(dataDir,{recursive:true,force:true});});
+  let entered!:()=>void;const enteredRead=new Promise<void>(resolve=>{entered=resolve;});
+  node.app.get('/api/roots-slow-read',async()=>{
+    entered();
+    await new Promise(resolve=>setTimeout(resolve,150));
+    return {disposedDuringRead:node.evidenceContext.disposed,catalog:node.evidenceContext.ports.contextTreesRead.catalog()};
+  });
+  await node.app.listen({host:'127.0.0.1',port:0});
+  const {port}=node.app.server.address() as AddressInfo;
+  const read=new Promise<{status:number;body:any}>((resolve,reject)=>{
+    const request=http.request({host:'127.0.0.1',port,path:'/api/roots-slow-read',headers:{authorization:`Bearer ${config.token}`,connection:'close'}},response=>{
+      let text='';response.on('data',chunk=>{text+=chunk;});response.on('end',()=>resolve({status:response.statusCode??0,body:JSON.parse(text)}));
+    });
+    request.on('error',reject);request.end();
+  });
+  await enteredRead;
+  const closing=node.app.close();
+  const response=await read;
+  assert.equal(response.status,200,'the accepted read must not be cut by shutdown');
+  assert.equal(response.body.disposedDuringRead,false,'disposal must wait for accepted reads');
+  await closing;
+  assert.equal(node.evidenceContext.disposed,true);
 });
