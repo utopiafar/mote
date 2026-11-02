@@ -83,16 +83,26 @@ const workerPort=serviceContract<Pick<PluginRuntime,'call'>>('mote.plugin.worker
  * waiting for cleanup. This is a lifetime boundary, never a sandbox or grant. */
 export class HostedPluginRuntime implements PluginRuntime {
   private readonly initialized:Promise<void>;
+  private readonly startupCancellation=new AbortController();
+  private transportClose?:()=>Promise<void>;
   private handle?:PluginHandle;
   private lease?:ServiceLease<Pick<PluginRuntime,'call'>>;
   private closed=false;
   private closing?:Promise<void>;
   constructor(host:PluginHost,identity:ScopeIdentity,owner:ServiceBinding,create:()=>PluginRuntime){
+    const thisOwner=this;
     this.initialized=(async()=>{
       this.handle=await host.install({identity,contributions:[{id:'worker-runtime',apiVersion:'1'}],requires:[owner],factory:context=>{
         let runtime:PluginRuntime;
         return {
-          async prepare(){runtime=create();context.scope.defer(()=>runtime.close());await runtime.ready?.(context.scope.signal);context.scope.assertCurrent();},
+          async prepare(){
+            thisOwner.startupCancellation.signal.throwIfAborted();runtime=create();
+            let closing:Promise<void>|undefined;
+            thisOwner.transportClose=()=>closing??=Promise.resolve().then(()=>runtime.close());
+            context.scope.defer(thisOwner.transportClose);
+            await runtime.ready?.(AbortSignal.any([context.scope.signal,thisOwner.startupCancellation.signal]));
+            thisOwner.startupCancellation.signal.throwIfAborted();context.scope.assertCurrent();
+          },
           start(){context.provide('worker-runtime',workerPort,{call:async(method,params,signal)=>{
             const accepted=await context.scope.run(async scopeSignal=>({value:await runtime.call(method,params,AbortSignal.any([scopeSignal,...(signal?[signal]:[])]))}));
             if(!accepted)throw new StoreError('Plugin runtime is quiescing',503);return accepted.value;
@@ -124,7 +134,25 @@ export class HostedPluginRuntime implements PluginRuntime {
       throw error;
     }
   }
-  close(){if(this.closing)return this.closing;this.closed=true;
-    return this.closing=(async()=>{await this.initialized.catch(()=>{});await this.lease?.release();await this.handle?.close('shutdown');})();
+  close(){
+    if(this.closing)return this.closing;
+    // Publish before abort listeners can reenter. Starting transport cleanup
+    // before joining install reaches its existing physical shutdown deadline,
+    // even when the plugin factory never finishes initializing.
+    let resolve!:()=>void,reject!:(error:unknown)=>void;
+    this.closing=new Promise<void>((done,failed)=>{resolve=done;reject=failed;});this.closed=true;
+    const handle=this.handle,stopping=handle?.close('shutdown');
+    this.startupCancellation.abort(new StoreError('Plugin runtime is closing',503));
+    const transport=this.transportClose?.();
+    void (async()=>{
+      const errors:unknown[]=[];
+      const results=await Promise.allSettled([...(transport?[transport]:[]),...(stopping?[stopping]:[])]);
+      errors.push(...results.flatMap(result=>result.status==='rejected'?[result.reason]:[]));
+      await this.initialized.catch(()=>{}); // The caller retains startup failure.
+      try{await this.lease?.release();}catch(error){errors.push(error);}
+      if(this.handle!==handle)try{await this.handle?.close('shutdown');}catch(error){errors.push(error);}
+      if(errors.length)throw new AggregateError(errors,'Hosted plugin disposal failed');
+    })().then(resolve,reject);
+    return this.closing;
   }
 }

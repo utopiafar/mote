@@ -215,8 +215,7 @@ export class PluginCenter {
     if(!this.hostOwner)throw new StoreError('Trusted build host is unavailable',503);
     const build=input.selection?this.builds.get(input.selection.packageId+'@'+input.selection.version):undefined;
     if(input.selection&&!build)throw new StoreError('Trusted build is not registered',409);
-    const previous=this.control.build(id);
-    const running=this.buildHandles.get(id)?.selection??previous?.desired;
+    const running=this.buildHandles.get(id)?.selection;
     const installed=running&&this.builds.get(running.packageId+'@'+running.version);
     const restart=build?.replacement==='restart'||installed?.replacement==='restart';
     const applied=this.command('build:'+id,input,()=>this.control.build(id)?.revision??this.revision(),()=>{

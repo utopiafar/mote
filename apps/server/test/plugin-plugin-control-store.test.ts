@@ -223,3 +223,37 @@ for(const retained of [false,true])test(`checked disabled instance resumes witho
   assert.deepEqual(f.plugins.action(instance.id,'enable',enable),resumed,'lost response replay does not reapply enable');
   if(retained)assert.equal(bindings.accepting(),true);
 });
+
+for(const mode of ['reset','reconfigure'] as const)test(`${mode} closes an actually stalled hosted worker before initialization settles`,async t=>{
+  const path=directory(t),r=releaseFixture(path),f=await platform(path,[],r.releases);t.after(()=>f.close());
+  const preview=await f.plugins.resolve({repository:r.repository,tag:r.tag});f.plugins.install({...command(f.plugins.revision()),previewId:preview.id});await until(()=>f.plugins.view().packages[0]?.state==='installed');
+  const log=join(path,'old.log');writeFileSync(log+'.hold','');
+  const instance=f.plugins.configure(undefined,{...command(f.plugins.revision()),packageId:f.plugins.view().packages[0]!.id,name:'Stalled initialization',scope:'default',configuration:{log}});
+  const old=f.plugins.runtime(instance.id),pending=old.call('health',{}),rejected=assert.rejects(pending);
+  await until(()=>{try{readFileSync(log+'.initializing');return true;}catch{return false;}});
+  let closing:Promise<void>;
+  if(mode==='reset')closing=f.plugins.resetRuntime(instance.id);
+  else{
+    f.plugins.configure(instance.id,{...command(f.plugins.instanceView(instance.id).revision),name:'Replacement',scope:'default',configuration:{log:join(path,'new.log')}});
+    closing=old.close();
+    assert.deepEqual(await f.plugins.runtime(instance.id).call('health',{}),{capabilities:[{id:'repository',state:'verified'}],issues:[]},'replacement initializes independently of the stalled old worker');
+  }
+  let timer:ReturnType<typeof setTimeout>|undefined,stopped:boolean;
+  try{stopped=await Promise.race([closing.then(()=>true),new Promise<boolean>(done=>{timer=setTimeout(()=>done(false),7000);})]);}
+  finally{if(timer)clearTimeout(timer);rmSync(log+'.hold',{force:true});await closing;await rejected;}
+  assert.equal(stopped,true,'close reaches the existing worker shutdown deadline without releasing initialization');
+  if(mode==='reconfigure')assert.equal(f.host.snapshot().contributions.filter(value=>value.identity.scope.instanceId===instance.id).length,1,'only the replacement scope remains installed');
+  else assert.equal(f.host.snapshot().contributions.filter(value=>value.identity.scope.instanceId===instance.id).length,0);
+});
+
+test('an unstarted restart selection does not prevent hot activation while a live restart provider is preserved',async t=>{
+  const path=directory(t),restart=build({replacement:'restart'}),hot:TrustedPluginBuild={...build(),version:'1.1.0',contribution:{...build().contribution,version:'1.1.0'}};
+  let f=await platform(path,[restart,hot]);t.after(()=>f.close());
+  const pending=await f.plugins.selectBuild('foundation',{...command(f.plugins.revision()),selection});assert.equal(pending.active,null);
+  const active=await f.plugins.selectBuild('foundation',{...command(pending.revision),selection:{...selection,version:'1.1.0'}});
+  assert.equal(active.observed,'active');assert.equal(active.restartRequired,false);assert.equal(active.active!.version,'1.1.0');assert.equal(active.installationId,pending.installationId);
+  const next=await f.plugins.selectBuild('foundation',{...command(active.revision),selection});assert.equal(next.restartRequired,true);assert.equal(next.active!.version,'1.1.0');
+  await f.close();f=await platform(path,[restart,hot]);assert.equal(f.plugins.buildView('foundation').active!.version,'1.0.0');
+  const actual=f.plugins.buildView('foundation'),deferred=await f.plugins.selectBuild('foundation',{...command(actual.revision),selection:{...selection,version:'1.1.0'}});
+  assert.equal(deferred.restartRequired,true);assert.equal(deferred.active!.version,'1.0.0','an actually running restart provider is not hot-unloaded');
+});
