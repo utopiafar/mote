@@ -34,10 +34,12 @@ export type RegisteredConfigurationDomain<Input,Output>=Omit<ConfigurationDomain
 type DomainInput<S extends z.ZodTypeAny,R>=R extends z.AnyZodObject?z.input<R>:z.input<S>;
 
 /** Owns the file/transaction queue, watcher, domain subscriptions, settings stores and their shutdown.
+ * A supplied bootstrap service transfers into this lifecycle unchanged, including its watch option.
+ * Its builtin domains are already registered by the bootstrap caller; model binding remains late.
  * The raw assembly getters are trusted roots-only; none is published through ordinary services. */
-export function createConfigurationPlatform(options:ConfigurationPlatformOptions) {
-  const service=new ConfigService(options);
-  registerBuiltinDomains(service,options.config);
+export function createConfigurationPlatform(options:ConfigurationPlatformOptions,deps:{configService?:ConfigService}={}) {
+  const service=deps.configService??new ConfigService(options);
+  if(!deps.configService)registerBuiltinDomains(service,options.config);
   let ready=false,closing=false,preparing:Promise<void>|undefined,starting:Promise<void>|undefined,closingTask:Promise<void>|undefined;
   let models:ModelSettingsStore|undefined,modelBinding:Promise<void>|undefined,modelsReady=false,quiescing=false;
   const subscriptions=new Set<()=>void>(),registrations=new Map<string,()=>Promise<void>>();

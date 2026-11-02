@@ -12,6 +12,9 @@ import type {ScopeIdentity} from '@mote/plugin-api/contracts';
 import {createConfigurationPlatform,createConfigurationPlatformFactory,configurationPlatformDeclaration,configurationServices} from '../src/plugins/configuration-platform.js';
 import {defaultModelSettings} from '../src/model-settings.js';
 import {ExecutionSettings} from '../src/execution-settings.js';
+import {ConfigService} from '../src/config-service.js';
+import {registerBuiltinDomains} from '../src/config.js';
+import {ReloadableAgent} from '../src/model-agent.js';
 
 const owner='generated-configuration-owner-token';
 const seed=()=>({version:1 as const,revision:0,server:{token:owner},models:{deployment:{...defaultModelSettings(),model:'generated-model',apiKey:'generated-private-key',headers:{'X-Generated':'generated-private-header'},extraBody:{credential:'generated-private-body'}}}});
@@ -319,4 +322,61 @@ test('real H04 factory owns watcher and stores, exact leases fence after provide
   assert.equal(host.snapshot().contributions.length,0);
   const restarted=createConfigurationPlatform({path,watch:false});t.after(()=>restarted.close());await restarted.prepare();
   await restarted.execution.update({agentConcurrency:4},1);await setImmediate();assert.equal(events.length,1);
+});
+
+// ROOTS-1 initializes configuration before constructing its AGENT callbacks.
+// The platform must adopt that exact service, not create a second file owner.
+test('adopted initialized service supplies early execution settings, late AGENT binding and the single watcher owner',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-config-adopt-')),path=join(directory,'mote.yaml');
+  const service=new ConfigService({path,initialDocument:seed()});registerBuiltinDomains(service);await service.initialize();
+  let closes=0;const close=service.close.bind(service);service.close=()=>{closes++;return close();};
+  const platform=createConfigurationPlatform({path:join(directory,'unused.yaml'),initialDocument:seed()},{configService:service}),agent=new ReloadableAgent();
+  t.after(async()=>{await platform.close();if(!closes)await service.close();await agent.close();await rm(directory,{recursive:true,force:true});});
+  await platform.prepare();await platform.prepare();assert.equal(platform.configService,service);assert.equal(platform.configService.path,path);
+  const settings=platform.runtimeSettings;await settings.saveExecution({...settings.execution(),agentConcurrency:3,revision:service.revision});
+  assert.equal(service.current<{agentConcurrency:number}>('execution').agentConcurrency,3);
+  assert.throws(()=>platform.modelSettings,{code:'model_settings_unavailable'});assert.throws(()=>platform.selection.select('chat'),{code:'model_settings_unavailable'});
+  let activeModel='';
+  await platform.bindModels({...modelDependencies(),codex:{home:directory},prepare:async(settings,profiles,defaultProfileId)=>{
+    assert.ok(profiles.some(profile=>profile.id===defaultProfileId));
+    return agent.prepare({configured:true,async query(){throw Error('No live query selected');},async close(){}},()=>{activeModel=settings.model;});
+  }});
+  const models=platform.modelSettings;assert.equal(agent.configured,true);assert.equal(activeModel,'generated-model');assert.equal(platform.selection.select('chat').revision,service.revision);
+  await models.update({revision:service.revision,settings:{...models.current(),model:'late-model'}});assert.equal(activeModel,'late-model');
+  assert.throws(()=>platform.bindModels(modelDependencies()),{code:'config_conflict'});
+  let applied=settings.execution().agentConcurrency;service.setHandler<{agentConcurrency:number}>('execution',(next,previous)=>({apply(){},publish(){applied=next.agentConcurrency;},rollback(){applied=previous.agentConcurrency;}}));
+  const changed=barrier();platform.execution.subscribe(next=>{if(next.value.agentConcurrency===4)changed.release();});
+  await platform.start();await edit(path,document=>{document.execution.agentConcurrency=4;});await changed.promise;
+  assert.equal(applied,4);assert.equal(settings.execution().agentConcurrency,4);assert.equal(platform.configService,service);
+  const lastSettings=models.current(),lastRevision=service.revision;
+  await Promise.all([platform.close(),platform.close()]);assert.equal(closes,1);
+  await assert.rejects(service.reload(),{code:'config_unavailable'});await assert.rejects(models.update({revision:lastRevision,settings:lastSettings}),{code:'model_settings_unavailable'});
+  assert.equal(agent.configured,true,'AGENT dependencies retain their separate owner');
+  await assert.rejects(readFile(join(directory,'unused.yaml')),{code:'ENOENT'});
+});
+
+test('adopted service retains its explicit watch false while platform still owns close',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-config-no-watch-')),path=join(directory,'mote.yaml');
+  const service=new ConfigService({path,initialDocument:seed(),watch:false});registerBuiltinDomains(service);await service.initialize();
+  const platform=createConfigurationPlatform({path,watch:true},{configService:service});
+  const original=FSWatcher.prototype.close,retired:FSWatcher[]=[];FSWatcher.prototype.close=function(){retired.push(this);return original.call(this);};
+  try{
+    await platform.prepare();assert.equal(platform.configService,service);await platform.start();await platform.close();
+    assert.equal(retired.length,0,'adoption must not replace the supplied service watch option');
+    await assert.rejects(service.reload(),{code:'config_unavailable'});
+  }finally{await platform.close();await service.close();FSWatcher.prototype.close=original;await rm(directory,{recursive:true,force:true});}
+});
+
+for(const failure of ['initialize','models'] as const)test(`adopted service closes on H04 startup failure during ${failure}`,async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-config-adopt-fail-')),path=join(directory,'mote.yaml');
+  const service=new ConfigService({path,initialDocument:failure==='initialize'?{...seed(),revision:-1}:seed()});registerBuiltinDomains(service);
+  let closes=0;const close=service.close.bind(service);service.close=()=>{closes++;return close();};
+  const platform=createConfigurationPlatform({path,initialDocument:seed()},{configService:service}),host=new PluginHost({kind:'central',id:'adoption-failure'});
+  t.after(async()=>{await host.close();await platform.close();if(!closes)await service.close();await rm(directory,{recursive:true,force:true});});
+  const installing=host.install({identity:{host:host.identity,packageId:'generated.config',installationId:'adopted',instanceId:'configuration',activationId:failure},contributions:[configurationPlatformDeclaration],factory:context=>{
+    context.scope.defer(()=>platform.close());
+    return {async prepare(){await platform.prepare();if(failure==='models')await platform.bindModels({...modelDependencies(),prepare:async()=>{throw Error('Generated AGENT setup failure');}});},start(){},quiesce:reason=>platform.quiesce(reason),stop:()=>platform.close(),dispose:()=>platform.close()};
+  }});
+  await assert.rejects(installing);assert.equal(closes,1,'the adopted instance is reclaimed even before startup completes');
+  assert.equal(host.snapshot().contributions.length,0);await assert.rejects(service.reload(),{code:'config_unavailable'});
 });
