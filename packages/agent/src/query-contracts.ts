@@ -61,7 +61,7 @@ export interface QueryGrants {
   /** Host-only metadata planning sessions can disable every archive read. */
   hostRetrieval?:'none';
   /** Host-only pinned tool contributions; never accepted from query HTTP input. */
-  toolContributions?:readonly import('./tool-contributions.js').ContextToolContribution[];
+  toolContributions?:readonly import('./tools/official-read-packs.js').ReadPackRegistration[];
   /** Host-verified originals deliberately attached to this dialogue. Bytes remain in the vault. */
   directImages?:{id:string;name:string;mimeType:string;hash:string;sizeBytes:number}[];
   /** Host-only lineage of derived context already included in taskContext. Used

@@ -1,6 +1,5 @@
-import {CONTEXT_TOOLS} from '../dist/context-tools.js';
-import {NATIVE_CONTEXT_TOOLS} from '../dist/tool-contributions.js';
-const special=new Set(CONTEXT_TOOLS.map(([name])=>name).filter(name=>!NATIVE_CONTEXT_TOOLS.has(name)&&name!=='action_catalog'));
+import {createOfficialReadPacks} from '../dist/tools/official-read-packs.js';
+const special=new Set(createOfficialReadPacks().filter(tool=>tool.exposure==='catalog'&&tool.name!=='action_catalog').map(tool=>tool.name));
 const manifests=new WeakMap();
 /** Fixture clients use the actual on-demand gateway, never hidden endpoints. */
 export async function catalogRequest(bridge,tool,args={}){

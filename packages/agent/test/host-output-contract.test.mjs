@@ -89,6 +89,7 @@ test('real bridge image ACK and attribution disclosures alone determine both fix
   const pin = {sourceId: 'generated:source', version: 1, fingerprint: 'c'.repeat(64)};
   const ref = `source-context:${Buffer.from(pin.sourceId).toString('base64url')}@1#${pin.fingerprint}`;
   const sourceReader = {...reader,
+    materialRead: async () => { throw new Error('This source-context fixture must not read a material'); },
     sources: async () => ({items: [{id: pin.sourceId, name: 'Generated source', sourceContextRef: ref}], nextCursor: null}),
     sourceContext: async () => ({attributionContext: {version: 1, ownerRelation: 'unknown', basis: 'default', sourceContextDeclarations: [pin], sourceContextStatements: [{sourceId: pin.sourceId, version: 1, description: 'Generated owner statement'}]}}),
     readImage: async () => ({mimeType: 'image/png', data: bytes.toString('base64'), imageView: {

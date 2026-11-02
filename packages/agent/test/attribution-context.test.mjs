@@ -21,6 +21,7 @@ async function open(t,context,extra={}){
  fixture.reader.materialCatalog=async()=>({items:[{...fixture.material,attributionContext:current},{...fixture.material,id:'mat_'+'e'.repeat(64),ref:'material:mat_'+'e'.repeat(64)+'@'+'f'.repeat(64),revision:'f'.repeat(64),attributionContext:current}],nextCursor:null});
  fixture.reader.materialRead=async args=>{if(!available)throw Error('Generated private context is unavailable');const page=await rawRead(args);return {...page,material:{...page.material,attributionContext:current},spans:page.spans.map(span=>({...span,attributionContext:current}))};};
  fixture.reader.evidence=async({ids})=>available?fixture.originals.filter(record=>ids.includes(record.id)).map(record=>({...record,attributionContext:current})):[];
+ fixture.reader.sourceContext??=async()=>{throw Error('Unexpected source-context operation in this fixture');};
  const bridge=await startBridge(fixture.reader,{question:'Generated attribution transport',...extra},40);t.after(()=>bridge.close());
  const call=async(tool,args={})=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});return {status:response.status,body:await response.json()};};
  return {fixture,bridge,call,get context(){return current;},change(){current={...current,correction:{version:2,ownerRelation:'third_party'},ownerRelation:'third_party',basis:'owner_material'};},deny(){available=false;}};
@@ -118,7 +119,7 @@ test('source descriptions require discovery, read losslessly, strip prose from m
  let pin={sourceId,version:1,fingerprint:'c'.repeat(64)},available=true;
  const ref=()=>`source-context:${Buffer.from(sourceId).toString('base64url')}@${pin.version}#${pin.fingerprint}`;
  const context=()=>({version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[pin],sourceContextStatements:[{sourceId,version:pin.version,description}]});
- const reader={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],devices:async()=>[],activity:async()=>({}),
+ const reader={materialRead:async()=>{throw Error('Unexpected material operation in this source-only fixture');},search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],devices:async()=>[],activity:async()=>({}),
   sources:async args=>({items:[{id:sourceId,name:'Generated recordings',sourceContextRef:ref(),descriptionPreview:description.slice(0,300)}],nextCursor:null}),
   sourceContext:async args=>{if(!available||args.sourceContextRef!==ref())throw Error('Source description changed');return {attributionContext:context()};}};
  const bridge=await startBridge(reader,{question:'Generated context fixture'},40);t.after(()=>bridge.close());

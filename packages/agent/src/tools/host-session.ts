@@ -25,6 +25,7 @@ export type HostReadResult<K extends HostReadOperation>=Awaited<ReturnType<NonNu
  * This port does not alter A01 HostToolPort's attempt-bound sender contract. */
 export interface HostSessionPort {
   readonly tool:RuntimeToolIdentity;
+  /** Effective scope for this call, normalized/clamped by Host (including limit). */
   readonly scope:Readonly<ContextRange>;
   readonly signal:AbortSignal;
   assertCurrent():void;
