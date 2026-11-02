@@ -1,7 +1,7 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {TOPIC_CLASSIFICATION_INSTRUCTION,topicClassificationSchema,type AutomaticTopics} from './automatic-topics.js';
+import {TOPIC_CLASSIFICATION_INSTRUCTION,parseTopicClassification,type AutomaticTopics} from './automatic-topics.js';
 import {type BackgroundModelAuthorization,type ModelConnection} from './background-model-authorization.js';
 import type {ModelAuthorizationHost} from './model-authorization-host.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
@@ -30,10 +30,10 @@ export class MemoryTopicsHost {
    const input:QueryInput={question:TOPIC_CLASSIFICATION_INSTRUCTION+'\n'+JSON.stringify(memories.map(memory=>({id:memory.id,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,attribution:memory.admission?.attribution}))),modelProfileId:context.input.selection.profileId,modelOverride:context.input.selection.model,signal,assertContextAuthority:context.assert,
     validateOutput:result=>{
      context.assert();
-     try{topicClassificationSchema.parse(JSON.parse(result.answer));}
-     catch{return {code:'topic_classification_invalid',feedback:'Return only the requested topic JSON. Use zero to twenty trees, each with one to one hundred nodes. Every node must reference one to one hundred supplied Memory UUIDs. Tree and node IDs must match [a-z][a-z0-9.-]{0,99}; labels must contain one to one hundred characters. Omit parentId for root nodes. Return {"trees":[]} when no supported grouping is useful.'};}
+     try{parseTopicClassification(JSON.parse(result.answer),memories.map(memory=>memory.id));}
+     catch{return {code:'topic_classification_invalid',feedback:'Return only the requested topic JSON. Use zero to twenty trees, each with one to one hundred nodes. Every node must reference one to one hundred supplied Memory UUIDs, without duplicate or invented references. Tree IDs must be unique; node IDs must be unique within each tree. Tree and node IDs must match [a-z][a-z0-9.-]{0,99}; labels must contain one to one hundred characters. Omit parentId for root nodes; every parent must exist in the same tree, with no cycles. Return {"trees":[]} when no supported grouping is useful.'};}
     }};
-   const result=await options.query(input);context.assert();return topicClassificationSchema.parse(JSON.parse(result.answer));
+   const result=await options.query(input);context.assert();return parseTopicClassification(JSON.parse(result.answer),memories.map(memory=>memory.id));
   }}));
   this.disposers.push(executor.register({kind:'memory.topics',pool:'memory.topics',concurrency:()=>1,policy:EXECUTION_POLICIES.modelCall,
    validate:step=>this.current(step),
