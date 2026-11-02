@@ -1076,14 +1076,23 @@ export async function createContextToolSession(
     };
     const restoreBefore=()=>{
       // An HTTP image ACK may arrive while this read is staged. Its live
-      // reservation is authoritative even though the staged map is not.
+      // reservation, record and view receipt are authoritative even though the
+      // staged tool read is not.
+      const acknowledged:{id:string;record:ContextRecord;receipts:{key:string;value:{id:string;imageView:ImageView}}[]}[]=[];
       for(const [key,live] of disclosedImages){
         const base=before.disclosedImages.get(key);
-        if(base&&live.confirmed){
-          base.confirmed=true;base.imageView=live.imageView;base.timer=live.timer;base.ready=live.ready;base.settle=live.settle;
-        }
+        if(!base||!live.confirmed)continue;
+        base.confirmed=true;base.imageView=live.imageView;base.timer=live.timer;base.ready=live.ready;base.settle=live.settle;
+        const id=live.selection.id,record=records.get(id)??live.record;
+        const receipts=[...imageReadReceipts].filter(([,value])=>value.id===id).map(([key,value])=>({key,value}));
+        acknowledged.push({id,record,receipts});
       }
       applyState(before);
+      for(const item of acknowledged){
+        rememberEvidence(records,item.record);disclosedIds.add(item.id);
+        for(const receipt of item.receipts)imageReadReceipts.set(receipt.key,receipt.value);
+        try{bounds.onEvidence?.([item.record]);}catch{/* ACK receipt observation cannot change authority. */}
+      }
     };
     let status=200,body:string|undefined;
     try{

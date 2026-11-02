@@ -159,3 +159,26 @@ test('in-flight preparation does not expose staged records through the public br
     assert.deepEqual(observed,[],'close must not publish undelivered evidence');
   }finally{await bridge.close().catch(()=>{});}
 });
+
+test('an image ACK received during staging keeps its evidence receipt after discard',async()=>{
+  const imageId='66666666-6666-4666-8666-666666666666';
+  let entered,release;
+  const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
+  const imageReader={...reader,readImage:async()=>({mimeType:'image/png',data:'Zml4dHVyZQ=='}),search:async()=>{entered();await gate;return [record];}};
+  const bridge=await startBridge(imageReader,{question:'Generated ack during staging',directImages:[{id:imageId,name:'Generated image',mimeType:'image/png',hash:'a'.repeat(64),sizeBytes:7}]},8);
+  try{
+    const response=await fetch(bridge.url+'/read_image',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({id:imageId})});
+    assert.equal(response.status,200);
+    const image=await response.json();
+    const token=image.imageDelivery;
+    assert.equal(typeof token,'string');
+    const pending=bridge.prepareDelivery('search_context',{query:'Generated'},signal());
+    await started;
+    bridge.imageDelivery(token,true);
+    release();
+    const staged=await pending;
+    staged.discard();
+    assert.equal(bridge.records.has(imageId),true,'ACKed image evidence must survive staged discard');
+    assert.equal(bridge.evidenceDependencies.ids.includes(imageId),true);
+  }finally{await bridge.close().catch(()=>{});}
+});
