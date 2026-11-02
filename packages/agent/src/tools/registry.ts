@@ -7,18 +7,25 @@ import {
   isPlainRecord,
   TOOL_SNAPSHOT_SCHEMA_VERSION,
   toolContractError,
-  toolSchemaFingerprint,
+  toolFingerprint,
   type ToolDescriptor,
-  type ToolFields,
   type ToolSelection,
   type ToolSnapshotEntry,
 } from './descriptor.js';
-import type {HostSessionPort} from './host-session.js';
+import type {HostReadOperation, HostSessionPort} from './host-session.js';
+
+/** Registration lifecycle supplied by the parent. The signal and callback are
+ * checked by every local liveness assertion, before I/O and after the await. */
+export interface ToolLifecycle {
+  readonly signal?: AbortSignal;
+  readonly assertCurrent?: () => void;
+}
 
 interface Registration {
   readonly descriptor: ToolDescriptor;
   readonly fingerprint: string;
   readonly token: symbol;
+  readonly lifecycle: ToolLifecycle;
 }
 
 /** Serializable snapshot body. It is a pure DTO: no callback, token, reader or
@@ -71,6 +78,34 @@ function identityFor(registration: Registration): RuntimeToolIdentity {
   return {name: registration.descriptor.name, version: registration.descriptor.version, fingerprint: registration.fingerprint};
 }
 
+/** Wrap the parent port so a pack can reach only the operations it declared.
+ * This is a refusal facade, not a grant: the parent port still performs the
+ * fresh scope/grant checks for every admitted call. */
+function restrictPort(port: HostSessionPort, registration: Registration): HostSessionPort {
+  const allowed = registration.descriptor.requires;
+  const deny = (operation: string): never => {
+    throw toolContractError('tool_permission_denied', 'This tool did not declare the Host operation it attempted.', {name: registration.descriptor.name, operation});
+  };
+  return {
+    tool: port.tool,
+    scope: port.scope,
+    signal: port.signal,
+    assertCurrent: () => port.assertCurrent(),
+    read: ((operation: HostReadOperation, ...args: unknown[]) => {
+      if (!allowed.includes(operation)) deny(operation);
+      return (port.read as unknown as (operation: HostReadOperation, ...args: unknown[]) => Promise<unknown>)(operation, ...args);
+    }) as HostSessionPort['read'],
+    actionCatalog: args => {
+      if (!allowed.includes('actionCatalog')) deny('actionCatalog');
+      return port.actionCatalog(args);
+    },
+    progress: message => {
+      if (!allowed.includes('progress')) deny('progress');
+      port.progress(message);
+    },
+  };
+}
+
 const entryChange = (entry: ToolSnapshotEntry) => canonicalJson({version: entry.version, fingerprint: entry.fingerprint, kind: entry.kind, exposure: entry.exposure, requires: entry.requires});
 
 /** Compare two wire snapshots by name. Schema identity is covered by fingerprint;
@@ -103,14 +138,15 @@ export class ToolRegistry {
    * Names are unique so a runtime tool list cannot contain two definitions with
    * the same name; replacing a version requires unregistering first, which also
    * retires the old registration identity. */
-  register(input: ToolDescriptor): () => void {
+  register(input: ToolDescriptor, lifecycle: ToolLifecycle = {}): () => void {
     const descriptor = defineToolDescriptor(input);
     const existing = this.entries.get(descriptor.name);
     if (existing) throw toolContractError('duplicate_tool', 'This tool name is already registered; unregister it before replacing its version.', {name: descriptor.name, version: existing.descriptor.version});
     const registration: Registration = Object.freeze({
       descriptor,
-      fingerprint: toolSchemaFingerprint(descriptor.description, descriptor.fields),
+      fingerprint: toolFingerprint(descriptor.description, descriptor.fields, descriptor.kind, descriptor.exposure, descriptor.requires),
       token: Symbol(descriptor.name + '@' + descriptor.version),
+      lifecycle: this.lifecycleFor(lifecycle),
     });
     this.entries.set(descriptor.name, registration);
     let removed = false;
@@ -163,6 +199,8 @@ export class ToolRegistry {
       if (this.entries.get(pin.name) !== registration) {
         throw toolContractError('stale_tool_pin', 'This capability registration was unloaded or replaced.', {name: pin.name, version: pin.version});
       }
+      registration.lifecycle.signal?.throwIfAborted();
+      registration.lifecycle.assertCurrent?.();
     };
     const resolve = (pin: RuntimeToolIdentity): ResolvedTool => {
       assertActive(pin);
@@ -178,7 +216,7 @@ export class ToolRegistry {
           validateCapabilityArguments(registration.descriptor.fields as Record<string, Record<string, unknown>>, args as Record<string, unknown>);
           const parsed = registration.descriptor.parse(Object.freeze({...args}));
           if (!isPlainRecord(parsed)) invalidArguments('Tool parse must return a plain argument object.');
-          const value = await registration.descriptor.execute(Object.freeze({...parsed}), port);
+          const value = await registration.descriptor.execute(Object.freeze({...parsed}), restrictPort(port, registration));
           assertActive(pin);
           port.assertCurrent();
           return value;
@@ -195,13 +233,29 @@ export class ToolRegistry {
     return Object.freeze(snapshot);
   }
 
+  private lifecycleFor(lifecycle: ToolLifecycle): ToolLifecycle {
+    if (!isPlainRecord(lifecycle)) throw toolContractError('invalid_tool_descriptor', 'Registration lifecycle must be a plain object.');
+    const signal = lifecycle.signal as unknown;
+    const assertCurrent = lifecycle.assertCurrent as unknown;
+    if (signal !== undefined && (typeof signal !== 'object' || signal === null || typeof (signal as AbortSignal).throwIfAborted !== 'function')) {
+      throw toolContractError('invalid_tool_descriptor', 'Registration lifecycle signal must be an AbortSignal.');
+    }
+    if (assertCurrent !== undefined && typeof assertCurrent !== 'function') {
+      throw toolContractError('invalid_tool_descriptor', 'Registration lifecycle assertCurrent must be a function.');
+    }
+    return Object.freeze({
+      ...(signal ? {signal: signal as AbortSignal} : {}),
+      ...(assertCurrent ? {assertCurrent: assertCurrent as () => void} : {}),
+    });
+  }
+
   private entryFor(registration: Registration): ToolSnapshotEntry {
     const {descriptor, fingerprint} = registration;
     return Object.freeze({
       name: descriptor.name,
       version: descriptor.version,
       description: descriptor.description,
-      fields: descriptor.fields as ToolFields,
+      fields: descriptor.fields,
       kind: descriptor.kind,
       exposure: descriptor.exposure,
       requires: descriptor.requires,

@@ -45,6 +45,7 @@ export type ToolContractErrorCode =
   | 'unknown_tool'
   | 'tool_version_mismatch'
   | 'invalid_tool_arguments'
+  | 'tool_permission_denied'
   | 'stale_tool_pin';
 
 const hostPermissions = new Set<string>([...HOST_READ_OPERATIONS, 'actionCatalog', 'progress']);
@@ -59,6 +60,7 @@ const errorRecovery: Readonly<Record<ToolContractErrorCode, 'correct_arguments' 
   unknown_tool: 'correct_arguments',
   tool_version_mismatch: 'correct_arguments',
   invalid_tool_arguments: 'correct_arguments',
+  tool_permission_denied: 'stop',
   stale_tool_pin: 'stop',
 });
 
@@ -94,11 +96,24 @@ export function canonicalJson(value: unknown): string {
   return '{' + Object.keys(record).sort().map(key => JSON.stringify(key) + ':' + canonicalJson(record[key])).join(',') + '}';
 }
 
-/** Schema fingerprint of one tool. The serialization matches the existing
- * saved-query capability identity so an already pinned query stays comparable;
- * the snapshot-level fingerprint is canonical instead. */
-export function toolSchemaFingerprint(description: string, fields: ToolFields): string {
-  return createHash('sha256').update(JSON.stringify([description, fields])).digest('hex');
+/** Canonical identity of one tool: schema plus every declaration that changes
+ * its surface. Permission order is normalized; object keys are sorted so a
+ * reordered but equivalent descriptor keeps the same identity. This is the one
+ * current format, not a legacy-compatible hash. */
+export function toolFingerprint(
+  description: string,
+  fields: ToolFields,
+  kind: ToolKind,
+  exposure: ToolExposure,
+  requires: readonly ToolPermission[],
+): string {
+  return createHash('sha256').update(canonicalJson({
+    description,
+    fields,
+    kind,
+    exposure,
+    requires: [...requires].sort(),
+  })).digest('hex');
 }
 
 export type ToolParse = (args: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>>;
