@@ -107,6 +107,22 @@ test('revoked source and closed plugin reject a late final without publishing, a
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM file_versions').get()!.n,1);
 });
 
+test('quiesce fences new upload and metadata admissions while admitted sessions drain',async t=>{
+  const f=fixture(t);await f.source.prepare();f.source.start();
+  const files=f.source.assemblyForRoutes().files,bytes=Buffer.from('Generated admitted bytes'),admitted=files.begin(manifest(bytes,'admitted'),()=>{});
+  await f.source.quiesce('upgrade');
+  files.part(admitted.uploadId,0,bytes,()=>{});
+  const ack=await files.commit(admitted.uploadId,()=>{});
+  assert.deepEqual(Buffer.concat([...files.bytes(ack.id)]),bytes,'a session admitted before quiesce may finish');
+  assert.throws(()=>files.begin(manifest(bytes,'new-admission'),()=>{}),{statusCode:503});
+  const base=manifest(Buffer.alloc(0),'quiesced'),reference:FileRevision={...base,item:{...base.item,layer:'reference',title:'Quiesced reference'},sizeBytes:10**12};
+  delete (reference as {sha256?:string}).sha256;
+  await assert.rejects(files.revision(reference,()=>{}),{statusCode:503});
+  await assert.rejects(files.manifestBatch({items:[{sourceId,previousRevision:null,item:reference.item}]},()=>{}),{statusCode:503});
+  assert.throws(()=>f.source.assemblyForRoutes(),{statusCode:503});
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,1);
+});
+
 test('closed files source rejects late metadata revisions and manifest batches without publishing',async t=>{
   const f=fixture(t);await f.source.prepare();f.source.start();
   const files=f.source.assemblyForRoutes().files;

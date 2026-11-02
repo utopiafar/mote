@@ -154,14 +154,14 @@ export function createFilesSource(dependencies:FilesSourceDependencies,options:F
     },
     quiesce(_reason?:StopReason){
       if(phase==='active')phase='quiescing';
-      stopTimer();playback?.retire();
+      files?.fenceAdmissions();stopTimer();playback?.retire();
     },
     async stop(){if(phase!=='disposed')await closeOnce();},
     dispose:closeOnce,
     close:closeOnce,
     sweep(){if(!files||phase==='created'||phase==='disposed')throw unavailable();files.sweep();},
     assemblyForRoutes(){
-      if(!files||!evidence||!attachments||!reader||!playback||phase==='created'||phase==='stopped'||phase==='disposed')throw unavailable();
+      if(!files||!evidence||!attachments||!reader||!playback||phase!=='prepared'&&phase!=='active')throw unavailable();
       return Object.freeze({files,evidence,attachments,originalRead:Object.freeze({read:reader.read.bind(reader)}),playback,sweep:()=>files!.sweep()});
     },
   });

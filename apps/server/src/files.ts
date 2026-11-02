@@ -31,6 +31,7 @@ export class FileStore {
   private pending=new Map<string,Promise<unknown>>();
   private readonly closing=new AbortController();
   private closed=false;
+  private admitting=true;
   constructor(readonly store:Store,readonly sources:SourceStore){
     const root=join(store.directory,'files');privateDirectory(root);
     this.objects=join(root,'objects');this.uploads=join(root,'uploads');privateDirectory(this.objects);privateDirectory(this.uploads);
@@ -47,7 +48,7 @@ export class FileStore {
     if(version&&!this.store.evidence([version.capture_id]).length)throw new StoreError('Revision was deleted',410);
   }
   async manifestBatch(raw:unknown,authorize:(sourceId:string)=>void){
-    this.assertOpen();
+    this.assertAdmitting();
     // Predecessor discovery is part of this protocol; retries reuse the persisted immutable manifest.
     const batch=z.object({items:z.array(z.record(z.unknown())).min(1).max(100)}).strict().parse(raw);
     const normalized=batch.items.map(entry=>{
@@ -76,15 +77,19 @@ export class FileStore {
     }
     const results=[];
     for(const input of normalized){
-      try{const ack=input.sha256&&!input.item.deleted?this.begin(input,authorize):await this.revision(input,authorize);results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});}
+      try{const ack=input.sha256&&!input.item.deleted?this.begin(input,authorize,true):await this.revision(input,authorize,undefined,true);results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});}
       catch(error){if(!(error instanceof StoreError))throw error;results.push({externalId:input.item.externalId,revision:input.item.revision,state:'rejected',status:error.statusCode});}
     }
     return {results};
   }
   /** The owning factory stops new sessions before draining in-flight commits. */
   private assertOpen(){if(this.closed)throw new StoreError('File uploads are closed',503);}
-  begin(raw:unknown,authorize:(sourceId:string)=>void){
-    this.assertOpen();
+  /** Quiesce stops new sessions/revisions while admitted sessions may still finish. */
+  private assertAdmitting(){if(this.closed)throw new StoreError('File uploads are closed',503);if(!this.admitting)throw new StoreError('File writes are quiescing',503);}
+  /** Owner-scope quiesce boundary; close() also stops admissions. */
+  fenceAdmissions(){this.admitting=false;}
+  begin(raw:unknown,authorize:(sourceId:string)=>void,admitted=false){
+    if(admitted)this.assertOpen();else this.assertAdmitting();
     const input=fileRevisionSchema.parse(raw);authorize(input.sourceId);this.allowed(input);
     if(!input.sha256||!['original','snapshot'].includes(input.item.layer)||input.item.deleted)throw new StoreError('Upload sessions require an original file');
     const manifest=JSON.stringify(input),fingerprint=sha256(manifest);
@@ -121,10 +126,12 @@ export class FileStore {
     this.store.contentEncryption.write(path,bytes);this.store.db.prepare('INSERT INTO file_parts VALUES(?,?,?,?)').run(id,part,hash,bytes.length);
     return {part,hash,bytes:bytes.length};
   }
-  async close(){this.closed=true;this.closing.abort();await Promise.allSettled([...this.pending.values()]);}
+  async close(){this.closed=true;this.admitting=false;this.closing.abort();await Promise.allSettled([...this.pending.values()]);}
   /** Trusted provider intake: retain the original export and publish existing
    * transcript segments atomically, without scheduling ASR or model work here. */
-  async transcriptRevision(sourceId:string,item:Omit<SourceItem,'revision'|'text'|'layer'>,rawText:string,rawTranscript:Transcript,authorize:()=>void){return this.serialize('transcript:'+sourceId+':'+item.externalId,async()=>{
+  async transcriptRevision(sourceId:string,item:Omit<SourceItem,'revision'|'text'|'layer'>,rawText:string,rawTranscript:Transcript,authorize:()=>void){
+    this.assertAdmitting();
+    return this.serialize('transcript:'+sourceId+':'+item.externalId,async()=>{
     const transcript=transcriptSchema.parse(rawTranscript);
     if(!transcript.segments.length||transcript.coverage!=='full')throw new StoreError('Provider transcript is incomplete',409);
     const bytes=Buffer.from(JSON.stringify({version:1,rawText,transcript}));
@@ -142,7 +149,7 @@ export class FileStore {
       writeFileTranscriptChunks(this.store,captureId,artifactId,transcript,{kind:'transcript'});
       this.store.db.prepare("UPDATE file_jobs SET state='succeeded',stage='complete' WHERE capture_id=?").run(captureId);
       return {id:captureId,duplicate:false};
-    });}finally{asset.release();}
+    },true);}finally{asset.release();}
   });}
   async commit(id:string,authorize:(sourceId:string)=>void,signal?:AbortSignal){
     // A final started before close drains or aborts through the signal; a new
@@ -160,12 +167,12 @@ export class FileStore {
     const ack=await this.revision(input,sourceId=>{cancellation.throwIfAborted();authorize(sourceId);},(captureId)=>{
       const value={id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:hash,sha256:hash,sizeBytes:input.sizeBytes,duplicate:false};
       this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(value),id);return value;
-    });
+    },true);
     this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(ack),id);await rm(join(this.uploads,id),{recursive:true,force:true});return ack;
     }finally{release();}
   });}
-  async revision(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown):Promise<any>{
-    this.assertOpen();
+  async revision(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown,admitted=false):Promise<any>{
+    if(admitted)this.assertOpen();else this.assertAdmitting();
     const input=fileRevisionSchema.parse(raw);return this.serialize('item:'+input.sourceId+':'+input.item.externalId,async()=>{
       authorize(input.sourceId);this.allowed(input);
       const prior=this.store.db.prepare('SELECT * FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as Version|undefined;
@@ -198,6 +205,7 @@ export class FileStore {
   /** Owner intake reuses retained bytes and the same file revision transaction as
    * collector uploads. No transcription or semantic attribution happens here. */
   async archivedRevision(file:ArchivedFile,sourceId:string,mimeType:string,observedAt:string,authorize:()=>void,onCommit?:(id:string)=>void,processingProfileId?:string){
+    this.assertAdmitting();
     const externalId='file:'+file.relativePath,revision=sha256(JSON.stringify([file.hash,mimeType])),head=this.sources.getItem(sourceId,externalId);
     let input:FileRevision={sourceId,relativePath:file.relativePath,...(processingProfileId?{processingProfileId}:{}),previousRevision:head?.revision===revision?null:head?.revision??null,
       item:{externalId,revision,kind:'file',layer:'original',title:file.name,text:'',mimeType,observedAt,deleted:false,
@@ -207,7 +215,7 @@ export class FileStore {
     const release=this.store.assets.hold(file.hash);
     try{
       if(this.store.assets.get(file.hash).bytes!==file.sizeBytes)throw new StoreError('Archived media byte size changed',409);
-      return await this.revision(input,authorize,id=>{onCommit?.(id);return {id,captureId:id,sourceId,externalId,revision,duplicate:false};});
+      return await this.revision(input,authorize,id=>{onCommit?.(id);return {id,captureId:id,sourceId,externalId,revision,duplicate:false};},true);
     }finally{release();}
   }
   private commitMetadata(input:FileRevision,captureId:string){
@@ -241,10 +249,11 @@ export class FileStore {
     return {items:rows.filter(v=>this.needsSnapshotInput(v)).map(v=>{const m=JSON.parse(v.manifest) as FileRevision;return {captureId:v.capture_id,externalId:v.external_id,revision:v.revision,sha256:m.sha256!,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt};})};
   }
   beginSnapshotRecovery(id:string,authorize:(sourceId:string)=>void){
+    this.assertAdmitting();
     const v=this.version(id);authorize(v.source_id);const manifest=JSON.parse(v.manifest) as FileRevision;this.allowed(manifest);
     const source=this.sources.getSource(v.source_id);
     if(source.retention!=='snapshot'||manifest.item.layer!=='snapshot'||!manifest.sha256||this.sources.getItem(v.source_id,v.external_id)?.revision!==v.revision)throw new StoreError('Snapshot input recovery is not current or authorized',409);
-    return this.begin(manifest,authorize);
+    return this.begin(manifest,authorize,true);
   }
   version(id:string){const v=this.store.db.prepare('SELECT * FROM file_versions WHERE capture_id=?').get(id) as Version|undefined;if(!v)throw new StoreError('File not found',404);return v;}
   detail(id:string,includeArtifacts=true){
