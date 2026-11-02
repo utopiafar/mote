@@ -150,6 +150,21 @@ test('duplicate, invalid and empty catalogs are rejected before they can shadow 
   assert.throws(() => registry.register('fixture.other', 'en', {'nav.library': '   '}), /translation/);
 });
 
+test('accessor catalogs are rejected before any value is read', () => {
+  const registry = new PluginI18nRegistry();
+  let reads = 0;
+  const catalog = Object.defineProperty({}, 'nav.library', {
+    enumerable: true,
+    get() {
+      reads += 1;
+      return reads === 1 ? 'Library' : '   ';
+    },
+  });
+  assert.throws(() => registry.register('fixture.plugin', 'en', catalog), /catalog fields/);
+  assert.equal(reads, 0, 'registration must reject accessors without executing them');
+  assert.deepEqual(registry.resolve('fixture.plugin', 'nav.library', 'en'), {text: 'nav.library', fallback: 'namespace_missing'});
+});
+
 test('registered catalogs are immutable snapshots and disposal restores the fallback', () => {
   const registry = new PluginI18nRegistry();
   const mutable = {'nav.library': 'Library'};

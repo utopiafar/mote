@@ -33,6 +33,25 @@ export interface ResolvedUiPresentation {
 type Catalog = Readonly<Record<string, string>>;
 const MAX_MESSAGE_LENGTH = 2000;
 
+/** Reads one plain data snapshot and rejects accessors before any value is
+ * read, following the adjacent strictDataObject convention. Registration
+ * therefore validates and stores exactly the same values and never executes
+ * caller getters. */
+function catalogSnapshot(input: unknown): Record<string, string> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Invalid plugin catalog');
+  const prototype = Object.getPrototypeOf(input);
+  if (prototype !== Object.prototype && prototype !== null) throw new TypeError('Invalid plugin catalog');
+  const properties = Object.getOwnPropertyDescriptors(input);
+  const snapshot: Record<string, string> = {};
+  for (const key of Reflect.ownKeys(properties)) {
+    const descriptor = properties[key as string];
+    if (typeof key !== 'string' || !descriptor || !('value' in descriptor))
+      throw new TypeError('Invalid plugin catalog fields');
+    snapshot[key] = descriptor.value;
+  }
+  return snapshot;
+}
+
 /** One registry per host. Catalogs are immutable snapshots: a caller mutating
  * its input object after registration cannot change an active translation. */
 export class PluginI18nRegistry {
@@ -45,8 +64,8 @@ export class PluginI18nRegistry {
   register(namespace: string, locale: Locale, catalog: Catalog): () => void {
     if (!isToken(namespace)) throw new TypeError('Invalid plugin i18n namespace');
     if (!(locales as readonly string[]).includes(locale)) throw new TypeError('Unsupported plugin locale: ' + locale);
-    if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) throw new TypeError('Invalid plugin catalog');
-    const entries = Object.entries(catalog);
+    const snapshot = catalogSnapshot(catalog);
+    const entries = Object.entries(snapshot);
     if (entries.length === 0) throw new TypeError('Empty plugin catalog');
     for (const [key, value] of entries) {
       if (!isToken(key)) throw new TypeError('Invalid plugin message key: ' + key);
@@ -62,12 +81,12 @@ export class PluginI18nRegistry {
     const english = byLocale.get('en');
     if (locale === 'en') {
       for (const [other, otherCatalog] of byLocale)
-        if (other !== 'en' && !Object.keys(otherCatalog).every(key => Object.hasOwn(catalog, key)))
+        if (other !== 'en' && !Object.keys(otherCatalog).every(key => Object.hasOwn(snapshot, key)))
           throw new Error('English catalog is missing plugin keys for ' + other);
-    } else if (english && !Object.keys(catalog).every(key => Object.hasOwn(english, key))) {
+    } else if (english && !Object.keys(snapshot).every(key => Object.hasOwn(english, key))) {
       throw new Error('English catalog is missing plugin keys for ' + locale);
     }
-    const frozen = Object.freeze({...catalog});
+    const frozen = Object.freeze(snapshot);
     byLocale.set(locale, frozen);
     return () => {
       const current = this.namespaces.get(namespace);
