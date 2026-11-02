@@ -30,7 +30,7 @@ import readline from 'node:readline';
 import {writeFileSync,appendFileSync,readFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);
 writeFileSync(${JSON.stringify(join(root,'runtime-config'))},readFileSync(process.env.CODEX_HOME+'/config.toml'));
-const send=(value,callback)=>process.stdout.write(JSON.stringify(value)+'\\n',callback);
+const send=(value,callback)=>{if(value.method==='item/tool/call')value.params.turnId='turn-fixture';return process.stdout.write(JSON.stringify(value)+'\\n',callback);};
 const mode=${JSON.stringify(mode)};let turns=0;
 const usage=(sample,callback)=>send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}},callback);
 // stdin EOF may arrive before SIGTERM; hold the generated provider until its
@@ -43,6 +43,14 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);appendFileSync(${JSON.stringify(join(root,'rpc.ndjson'))},JSON.stringify(m)+'\\n');
  if(m.method==='initialize')send({id:m.id,result:{}});
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='turn/steer'){
+  if(m.params.threadId!=='thread-fixture'||m.params.expectedTurnId!=='turn-fixture'||m.params.input[0].type!=='text'||m.params.input[1].type!=='image')process.exit(6);
+  if(mode==='image-steer-reject'){send({id:m.id,error:{code:-32602,message:'synthetic-private-secret'}});return;}
+  if(mode==='image-steer-stale'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
+  if(mode==='image-steer-pending')return;
+  send({id:m.id,result:{turnId:mode==='image-steer-mismatch'?'other-turn':'turn-fixture'}});
+  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'userMessage',content:m.params.input}}});
+ }
  else if(m.method==='thread/start'){
   if(m.params.ephemeral!==true||m.params.approvalPolicy!=='never')process.exit(2);
   if(mode.startsWith('import')){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
@@ -64,7 +72,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='timeout')return;
   if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:['material-page','attribution-context'].includes(mode)?'material_catalog':mode==='contribution'?'capability_discover':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:mode==='contribution'?{name:'fixture_context'}:{}}});
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:['material-page','attribution-context'].includes(mode)?'material_catalog':mode==='contribution'?'capability_discover':(mode==='image-echo'||mode.startsWith('image-steer-'))?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:mode==='contribution'?{name:'fixture_context'}:{}}});
  }else if(mode==='contribution'&&m.id===999){
   if(!m.result?.success)process.exit(3);
   const capability=JSON.parse(m.result.contentItems[0].text).data;
@@ -193,14 +201,15 @@ test('Codex passes the catalog medium effort to turn/start',async t=>{
   await fake(t,'medium');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'medium',agentTimeoutMs:5000});t.after(()=>agent.close());
   assert.equal((await agent.query({question:'Generated fixture'})).citations[0].id,record.id);
 });
-test('Codex receives an allowed image-sized dynamic tool completion without dropping the session',async t=>{
+test('Codex receives an allowed image-sized steered echo without dropping the session',async t=>{
  const root=await fake(t,'image-echo'),events=[],data=Buffer.alloc(3*1024*1024,123).toString('base64');
  const session=new CodexSession({model:'fixture',agentTimeoutMs:5000},async()=>({id:'generated-parent',attachmentId:'generated-image',image:{mimeType:'image/png',data}}),event=>events.push(event));t.after(()=>session.close());
  await session.start('Generated protocol fixture',codexContextTools);assert.match(await session.run('Read generated image'),/Generated evidence/);
  const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse),response=messages.find(m=>m.id===999);
  assert.deepEqual(JSON.parse(response.result.contentItems[0].text),{id:'generated-parent',attachmentId:'generated-image',source:'untrusted_personal_context'});
- assert.equal(response.result.contentItems[1].imageUrl,'data:image/png;base64,'+data);
- assert.ok(events.some(e=>e.type==='codex.item/completed'&&e.payload.itemType==='dynamicToolCall'));
+ assert.deepEqual(response.result.contentItems.map(item=>item.type),['inputText']);
+ assert.equal(messages.find(m=>m.method==='turn/steer').params.input[1].url,'data:image/png;base64,'+data);
+ assert.ok(events.some(e=>e.type==='codex.item/completed'&&e.payload.itemType==='userMessage'));
  assert.ok(!JSON.stringify(events).includes(data),'trace records event metadata, never echoed image bytes');
 });
 test('Codex still rejects oversized protocol frames with bounded diagnostic metadata',async t=>{
@@ -247,20 +256,43 @@ test('Codex discloses a selected image to the model while keeping its bytes out 
  assert.equal(result.attachmentId,'generated-image');assert.deepEqual(result.image,{mimeType:'image/png',encodedCharacters:data.length});
  assert.ok(!JSON.stringify(events).includes(data.slice(0,200)),'neither model RPC echoes nor tool-completion traces retain image data');
  const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
- assert.equal(messages.find(m=>m.id===1001).result.contentItems[1].imageUrl,'data:image/png;base64,'+data);
+ const steer=messages.find(m=>m.method==='turn/steer');
+ assert.equal(steer.params.expectedTurnId,'turn-fixture');assert.equal(steer.params.input[1].url,'data:image/png;base64,'+data);
+ assert.match(steer.params.input[0].text,/untrusted image evidence/);assert.ok(steer.params.input[0].text.includes('generated-image'));
+ assert.deepEqual(messages.find(m=>m.id===1001).result.contentItems.map(item=>item.type),['inputText']);
+ assert.ok(messages.indexOf(steer)<messages.findIndex(m=>m.id===1001),'the image is accepted before the tool acknowledges delivery');
+ assert.equal(messages.filter(m=>m.method==='turn/start').length,1,'image delivery stays in the original turn');
 });
-test('Codex duplicate image completion succeeds as metadata without appending another inputImage',async t=>{
+test('Codex duplicate image completion succeeds as metadata without steering another image',async t=>{
  const root=await fake(t,'image-repeat'),events=[],data=Buffer.from('generated-image-transport').toString('base64'),parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};let reads=0;
  const agent=createAgent({reader:{...reader,timeline:async()=>({items:([parent]),nextCursor:null}),evidence:async()=>[parent],readImage:async()=>{reads++;return {mimeType:'image/png',data};}},protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
  const answer=await agent.query({question:'Read generated pixels',onTrace:event=>events.push(event)});assert.equal(answer.citations[0].id,record.id);assert.equal(reads,2);
  const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse),first=messages.find(m=>m.id===1001).result,repeat=messages.find(m=>m.id===1002).result;
- assert.equal(first.success,true);assert.equal(first.contentItems.filter(item=>item.type==='inputImage').length,1);
+ assert.equal(first.success,true);assert.deepEqual(first.contentItems.map(item=>item.type),['inputText']);
  assert.equal(repeat.success,true);assert.deepEqual(repeat.contentItems.map(item=>item.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
- assert.equal(messages.flatMap(m=>m.result?.contentItems??[]).filter(item=>item.type==='inputImage').length,1);
+ assert.equal(messages.filter(m=>m.method==='turn/steer').length,1);
  assert.equal(events.filter(e=>e.type==='tool.completed'&&e.tool==='read_image'&&e.status==='succeeded').length,2);assert.ok(!JSON.stringify(events).includes(data));
  assert.ok(!JSON.stringify(messages).includes('imageDelivery'),'host receipts never enter the model protocol');
  await agent.query({question:'Read generated pixels again'});assert.equal(reads,4);
- const restarted=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(restarted.flatMap(m=>m.result?.contentItems??[]).filter(item=>item.type==='inputImage').length,2,'a new query on the same agent must disclose its first image');
+ const restarted=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(restarted.filter(m=>m.method==='turn/steer').length,2,'a new query on the same agent must disclose its first image');
+});
+test('Codex fails closed when same-turn image delivery is rejected, mismatched or completed early',async t=>{
+ for(const mode of ['image-steer-reject','image-steer-mismatch','image-steer-stale'])await t.test(mode,async t=>{
+  const root=await fake(t,mode),session=new CodexSession({model:'fixture',agentTimeoutMs:5000},async()=>({id:record.id,attachmentId:'generated-image',image:{mimeType:'image/png',data:'Z2VuZXJhdGVk'}}));
+  t.after(()=>session.close());await session.start('Generated image transport',codexContextTools);
+  await assert.rejects(session.run('Read generated image'),AgentProviderError);
+  const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(rpc.filter(m=>m.method==='turn/steer').length,1);assert.ok(!rpc.some(m=>m.id===999&&m.result?.success));
+ });
+});
+test('Codex cancellation during image steering cannot acknowledge successful delivery',async t=>{
+ const root=await fake(t,'image-steer-pending');let cancel;
+ const steered=new Promise(resolve=>{cancel=resolve;});
+ const session=new CodexSession({model:'fixture',agentTimeoutMs:5000},async()=>({image:{mimeType:'image/png',data:'Z2VuZXJhdGVk'}}));t.after(()=>session.close());
+ const request=session.request.bind(session);session.request=(method,params)=>{const pending=request(method,params);if(method==='turn/steer')cancel();return pending;};
+ await session.start('Generated cancellation',codexContextTools);const running=session.run('Read generated image');void running.catch(()=>{});
+ await steered;session.cancel(new Error('Generated cancellation'));await assert.rejects(running,AgentProviderError);
+ await session.close();const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.ok(!rpc.some(m=>m.id===999&&m.result?.success));
 });
 test('Codex errors and approval requests are rejected without exposing raw provider output',async t=>{
   for(const mode of ['error','approval']){await fake(t,mode);const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});try{await assert.rejects(agent.query({question:'Fixture'}),e=>e instanceof AgentProviderError&&!e.message.includes('synthetic-private'));}finally{await agent.close();}}
@@ -437,8 +469,8 @@ test('Codex receives a nested region schema and metadata, then native region plu
  const metadata=messages.find(m=>m.id===1001).result,first=messages.find(m=>m.id===1002).result,repeat=messages.find(m=>m.id===1003).result;
  assert.deepEqual(metadata.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(metadata.contentItems[0].text).imageBudget.remainingPayloads,4);
  const delivered=JSON.parse(first.contentItems[0].text);assert.deepEqual(delivered.imageView.region,{x:1,y:2,width:4,height:5});assert.equal(delivered.imageView.delivery,'prepared');assert.equal(delivered.imageBudget.remainingPayloads,3);assert.ok(delivered.toolUsage.calls>0);
- assert.equal(first.contentItems[1].type,'inputImage');assert.deepEqual(repeat.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
- const imageData=first.contentItems[1].imageUrl.split(',')[1];assert.ok(!JSON.stringify(events).includes(imageData));
+ assert.deepEqual(first.contentItems.map(x=>x.type),['inputText']);assert.deepEqual(repeat.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
+ const steers=messages.filter(m=>m.method==='turn/steer');assert.equal(steers.length,1);const imageData=steers[0].params.input[1].url.split(',')[1];assert.deepEqual(await sharp(Buffer.from(imageData,'base64')).metadata().then(m=>[m.width,m.height]),[4,5]);assert.ok(!JSON.stringify(events).includes(imageData));
  assert.deepEqual(answer.trace.filter(t=>t.tool==='read_image').map(t=>t.imageView.delivery),['metadata','prepared','already_disclosed']);
 });
 
