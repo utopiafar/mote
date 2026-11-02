@@ -29,8 +29,9 @@ function instanceScope(name:string):TestScope {
   });
   return {resources,scope,close:()=>resources.close()};
 }
-function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void}={}):ConnectorManifest {
-  return {apiVersion:1,id,sourceKinds:[{kind:'generated.connector',capabilities}],...(options.statusKey?{statusKey:options.statusKey}:{}),
+function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void;kind?:string;stringKind?:boolean}={}):ConnectorManifest {
+  const kind=options.kind??'generated.connector';
+  return {apiVersion:1,id,sourceKinds:[options.stringKind?kind:{kind,capabilities}],...(options.statusKey?{statusKey:options.statusKey}:{}),
     create:()=>({
       status:()=>({id}),
       configure:host=>{
@@ -53,7 +54,7 @@ const headers={authorization:'Bearer generated-owner'};
 test('adapter registers routes/OAuth/status through the dispatcher and releases per-instance scopes',async t=>{
   const f=await fixture(t),closed:string[]=[],scopes:TestScope[]=[];
   const statusScope=instanceScope('status');scopes.push(statusScope);
-  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-a',{statusKey:'a',onClose:()=>closed.push('a')}),manifest('generated-b',{statusKey:'b',prefix:'b.',onClose:()=>closed.push('b')})],
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-a',{statusKey:'a',onClose:()=>closed.push('a')}),manifest('generated-b',{statusKey:'b',prefix:'b.',stringKind:true,onClose:()=>closed.push('b')})],
     context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
     scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
   t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
@@ -75,6 +76,16 @@ test('adapter registers routes/OAuth/status through the dispatcher and releases 
   assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{});
   await adapter.close();
   assert.deepEqual(closed.sort(),['a','b']);
+});
+
+test('adapter never unregisters a preinstalled capability it did not create',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  f.sources.capabilities.register('generated.preinstalled',capabilities);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-pre',{kind:'generated.preinstalled'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();await adapter.stop('generated-pre');await adapter.close();
+  assert.equal(f.sources.capabilities.has('generated.preinstalled'),true);
 });
 
 test('adapter startup installs capability once and close is idempotent',async t=>{

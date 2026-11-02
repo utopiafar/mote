@@ -34,30 +34,42 @@ export interface ConnectorHostAdapter {
  * dispatcher and H04 scopes. It is a trusted assembly bridge: it creates no
  * second host/registry and publishes no raw SourceStore/engine/materials API. */
 export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):ConnectorHostAdapter {
-  const scopes=new Map<string,ConnectorInstanceScope>(),capabilityRefs=new Map<string,number>();
+  const scopes=new Map<string,ConnectorInstanceScope>(),capabilityUsers=new Map<string,number>(),ownedKinds=new Set<string>();
   const scopeFor=(manifest:ConnectorManifest)=>{
     let value=scopes.get(manifest.id);
     if(!value){value=options.scopeFor(manifest,manifest.id);scopes.set(manifest.id,value);}
     value.scope.assertCurrent();return value.scope;
   };
+  const releaseCapability=(kind:string)=>{
+    const current=capabilityUsers.get(kind);if(current===undefined)return;
+    if(current>1){capabilityUsers.set(kind,current-1);return;}
+    capabilityUsers.delete(kind);
+    if(ownedKinds.delete(kind))options.context.sources.capabilities.unregister(kind);
+  };
   const installCapabilities=()=>{
-    for(const manifest of options.manifests){
-      const scope=scopeFor(manifest);
-      for(const entry of manifest.sourceKinds){
-        const kind=typeof entry==='string'?entry:entry.kind;
-        if(typeof entry==='string'){
-          if(!options.context.sources.capabilities.has(kind))throw Error(`Connector source kind ${kind} has no installed capability`);
-          continue;
+    try{
+      // Descriptors install first, independent of manifest order. A descriptor
+      // already present is a preinstalled capability, not adapter-owned.
+      for(const manifest of options.manifests)for(const entry of manifest.sourceKinds){
+        if(typeof entry==='string')continue;
+        if(!options.context.sources.capabilities.has(entry.kind)){
+          options.context.sources.capabilities.register(entry.kind,entry.capabilities);
+          ownedKinds.add(entry.kind);
         }
-        const count=capabilityRefs.get(kind)??0;
-        if(count===0)options.context.sources.capabilities.register(kind,entry.capabilities);
-        capabilityRefs.set(kind,count+1);
-        scope.defer(()=>{
-          const current=capabilityRefs.get(kind)??0;
-          if(current<=1){try{options.context.sources.capabilities.unregister(kind);}finally{capabilityRefs.delete(kind);}}
-          else capabilityRefs.set(kind,current-1);
-        });
       }
+      // Every manifest use, including a string reference, keeps the kind alive.
+      for(const manifest of options.manifests){
+        const scope=scopeFor(manifest);
+        for(const entry of manifest.sourceKinds){
+          const kind=typeof entry==='string'?entry:entry.kind;
+          if(!options.context.sources.capabilities.has(kind))throw Error(`Connector source kind ${kind} has no installed capability`);
+          capabilityUsers.set(kind,(capabilityUsers.get(kind)??0)+1);
+          scope.defer(()=>releaseCapability(kind));
+        }
+      }
+    }catch(error){
+      for(const kind of ownedKinds)try{options.context.sources.capabilities.unregister(kind);}catch{}
+      ownedKinds.clear();capabilityUsers.clear();throw error;
     }
   };
   const http:ConnectorHttpHost={
