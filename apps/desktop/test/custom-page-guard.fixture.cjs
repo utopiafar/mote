@@ -7,11 +7,17 @@
  * direct child frame through the same main-frame claim the desktop uses, and
  * proves that a leaked MessagePort cannot navigate the document or run a
  * replacement script. No network, no product build, no native helper. */
+require('../../../scripts/fixture-background.cjs');
 const {app, BrowserWindow, ipcMain} = require('electron');
 const {createServer} = require('node:http');
 const path = require('node:path');
 const os = require('node:os');
+const {mkdtempSync} = require('node:fs');
 const {buildSync} = require('esbuild');
+
+const profile = mkdtempSync(path.join(os.tmpdir(), 'mote-custom-page-guard-'));
+app.setPath('userData', profile);
+process.env.MOTE_PROFILE = 'default';
 
 const guardModule = path.join(os.tmpdir(), `mote-custom-page-guard-${process.pid}.cjs`);
 buildSync({
@@ -77,8 +83,13 @@ const channel = new MessageChannel();
 parent.postMessage({kind: 'port'}, '*', [channel.port2]);
 channel.port1.onmessage = event => channel.port1.postMessage({kind: 'reply', echo: event.data});
 setTimeout(() => { location.href = '/entry2.html'; }, 250);
+// Cancelling one navigation leaves this document running; retry to prove the
+// frame stays blocked instead of falling through on the next attempt.
+setTimeout(() => { location.href = '/entry2.html'; }, 500);
+setTimeout(() => { location.href = '/entry3.html'; }, 750);
 </script>`,
   '/entry2.html': `<!doctype html><meta charset="utf-8"><body><script>parent.postMessage({kind: 'entry2-ran'}, '*')</script>`,
+  '/entry3.html': `<!doctype html><meta charset="utf-8"><body><script>parent.postMessage({kind: 'entry3-ran'}, '*')</script>`,
   '/same.html': `<!doctype html><meta charset="utf-8"><body><script>parent.postMessage({kind: 'same-ran'}, '*')</script>`,
 };
 
@@ -173,7 +184,8 @@ app.whenReady().then(async () => {
   const sameFrames = finalFrames.filter(frame => frame.url.endsWith('/same.html'));
   const entryEvents = events.filter(event => event.type === 'will-frame-navigate' && /\/entry\d\.html/.test(event.url));
   const entry1 = entryEvents.find(event => event.url.endsWith('/entry1.html?moteFrame=' + nonce));
-  const entry2 = entryEvents.find(event => event.url.endsWith('/entry2.html'));
+  const entry2Events = entryEvents.filter(event => event.url.endsWith('/entry2.html'));
+  const entry3 = entryEvents.find(event => event.url.endsWith('/entry3.html'));
 
   const checks = {
     claimBound: Boolean(claim && Number.isInteger(claim.frameTreeNodeId) && claim.epoch >= 1),
@@ -181,7 +193,10 @@ app.whenReady().then(async () => {
     noChannelInChildFrames: childClaims.length >= 5 && childClaims.every(frame => frame.claimType === 'undefined'),
     sameUrlFramesDistinct: sameFrames.length === 2 && new Set(sameFrames.map(frame => frame.frameTreeNodeId)).size === 2,
     entry2Blocked: !hits['/entry2.html'] && !messages.some(message => message?.kind === 'entry2-ran'),
-    entry2DeniedByFrameIdentity: Boolean(entry2 && entry2.deny && entry1 && entry2.frameTreeNodeId === entry1.frameTreeNodeId),
+    repeatedEntry2Blocked: entry2Events.length >= 2 && entry2Events.every(event => event.deny
+      && entry1 && event.frameTreeNodeId === entry1.frameTreeNodeId) && !hits['/entry2.html'],
+    entry3Blocked: Boolean(entry3 && entry3.deny && entry1 && entry3.frameTreeNodeId === entry1.frameTreeNodeId)
+      && !hits['/entry3.html'] && !messages.some(message => message?.kind === 'entry3-ran'),
     portLeakedBeforeBlock: messages.some(message => message?.kind === 'port'),
     noPrecommitEventForBlankOrSrcdoc: !events.some(event => event.type === 'will-frame-navigate' && (event.url === 'about:blank' || event.url === 'about:srcdoc')),
     lateClaimDenied,
@@ -189,7 +204,7 @@ app.whenReady().then(async () => {
     mainFrameAllowed,
     revokedPendingDenied,
   };
-  const result = {checks, claimResults, claim, messages, finalFrames, childClaims, entry1, entry2, events, hits};
+  const result = {checks, claimResults, claim, messages, finalFrames, childClaims, entry1, entry2Events, entry3, events, hits};
   console.log('CUSTOM_PAGE_GUARD_FIXTURE ' + JSON.stringify(result));
   app.exit(Object.values(checks).every(Boolean) ? 0 : 1);
 }).catch(error => {

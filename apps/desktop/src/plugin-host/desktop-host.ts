@@ -99,8 +99,15 @@ function frameNonce(url: string): string | undefined {
 function matchesEntry(url: string, entryUrl: string): boolean {
   try {
     const actual = new URL(url), entry = new URL(entryUrl);
-    actual.searchParams.delete('moteFrame');
-    return actual.href === entry.href;
+    if (actual.protocol !== entry.protocol || actual.host !== entry.host
+      || actual.pathname !== entry.pathname || actual.hash !== entry.hash) return false;
+    // Compare decoded query values without reserializing the remaining query:
+    // `URLSearchParams` rewrites `%20` to `+`, which would reject a correctly
+    // loaded encoded entry URL.
+    const params = (value: URL) => [...value.searchParams].filter(([key]) => key !== 'moteFrame');
+    const actualParams = params(actual), entryParams = params(entry);
+    return actualParams.length === entryParams.length
+      && actualParams.every(([key, value], index) => key === entryParams[index]![0] && value === entryParams[index]![1]);
   } catch { return false; }
 }
 
@@ -112,6 +119,10 @@ function matchesEntry(url: string, entryUrl: string): boolean {
 export class CustomPageFrameGuard {
   #pending = new Map<string, PendingCustomPage>();
   #active = new Map<string, ActiveCustomPage>();
+  /** Deny-only tombstones for frames whose epoch was revoked. Cancelling one
+   * navigation leaves the live document running, so every later navigation of
+   * the same frame must stay blocked until the frame is destroyed. */
+  #revoked = new Map<string, {webContentsId: number; frameTreeNodeId: number}>();
   #epoch = 0;
 
   prepare(webContentsId: number, target: CustomPageFrameTarget): {epoch: number} {
@@ -131,16 +142,19 @@ export class CustomPageFrameGuard {
     const key = webContentsId + ':' + claim.nonce, pending = this.#pending.get(key);
     if (!pending || pending.instanceId !== claim.instanceId || pending.documentKey !== claim.documentKey)
       throw new Error('Custom page claim is not prepared');
+    // The initial navigation must have pinned this pending entry to a frame.
+    // An unpinned frame (for example about:blank/srcdoc, which emit no
+    // pre-commit navigation event) is never treated as protected.
+    if (pending.frameTreeNodeId === undefined)
+      throw new Error('Custom page frame is not bound to a navigation');
     const frames = (mainFrame as CustomPageFrameLike & {framesInSubtree?: readonly CustomPageFrameLike[]}).framesInSubtree ?? [];
     const candidates = [...frames].filter(frame => frame.parent?.frameTreeNodeId === mainFrame.frameTreeNodeId
       && !frame.isDestroyed?.() && frameNonce(frame.url) === pending.nonce && matchesEntry(frame.url, pending.entryUrl));
     if (candidates.length !== 1) throw new Error('Custom page frame is ambiguous or missing');
     const frame = candidates[0]!;
-    // The initial navigation may have already pinned this pending entry to a
-    // frame; a claim for any other frame is rejected rather than rebound.
-    if (pending.frameTreeNodeId !== undefined && pending.frameTreeNodeId !== frame.frameTreeNodeId)
+    // A claim for any other frame is rejected rather than rebound.
+    if (pending.frameTreeNodeId !== frame.frameTreeNodeId)
       throw new Error('Custom page frame does not match the bound navigation');
-    pending.frameTreeNodeId = frame.frameTreeNodeId;
     this.#pending.delete(key);
     this.#active.set(webContentsId + ':' + frame.frameTreeNodeId, {
       ...pending, frameTreeNodeId: frame.frameTreeNodeId, processId: frame.processId, routingId: frame.routingId, url: frame.url,
@@ -152,10 +166,14 @@ export class CustomPageFrameGuard {
     if (details.isMainFrame) return false;
     if (!details.frame) return true;
     const frameTreeNodeId = details.frame.frameTreeNodeId;
-    const activeKey = webContentsId + ':' + frameTreeNodeId, active = this.#active.get(activeKey);
+    const frameKey = webContentsId + ':' + frameTreeNodeId;
+    // A revoked frame stays blocked until it is destroyed. Cancelling one
+    // navigation does not stop the live document from trying again.
+    if (this.#revoked.has(frameKey)) return true;
+    const active = this.#active.get(frameKey);
     if (active) {
-      this.#active.delete(activeKey);
-      this.#epoch++;
+      this.#active.delete(frameKey);
+      this.#revoke(webContentsId, frameTreeNodeId);
       return true;
     }
     // A pending entry already pinned to this frame may keep only its first
@@ -164,7 +182,7 @@ export class CustomPageFrameGuard {
       && value.frameTreeNodeId === frameTreeNodeId);
     if (bound) {
       this.#pending.delete(webContentsId + ':' + bound.nonce);
-      this.#epoch++;
+      this.#revoke(webContentsId, frameTreeNodeId);
       return true;
     }
     const pending = [...this.#pending.values()].find(value => value.webContentsId === webContentsId
@@ -176,8 +194,13 @@ export class CustomPageFrameGuard {
     }
     // A different frame reusing the prepared nonce is never allowed.
     this.#pending.delete(webContentsId + ':' + pending.nonce);
-    this.#epoch++;
+    this.#revoke(webContentsId, frameTreeNodeId);
     return true;
+  }
+
+  #revoke(webContentsId: number, frameTreeNodeId: number): void {
+    this.#revoked.set(webContentsId + ':' + frameTreeNodeId, {webContentsId, frameTreeNodeId});
+    this.#epoch++;
   }
 
   /** Drop entries whose frame is gone. frameTreeNodeId is never reused, so a
@@ -189,15 +212,32 @@ export class CustomPageFrameGuard {
     for (const [key, value] of this.#pending)
       if (value.webContentsId === webContentsId && value.frameTreeNodeId !== undefined && !live.has(value.frameTreeNodeId))
         this.#pending.delete(key);
+    for (const [key, value] of this.#revoked)
+      if (value.webContentsId === webContentsId && !live.has(value.frameTreeNodeId)) this.#revoked.delete(key);
   }
 
+  /** Main reload/close: revoke pending and active entries, but keep revoked
+   * frames blocked until `prune` observes that they are gone. */
   revokeWindow(webContentsId: number): void {
     for (const [key, value] of this.#pending) if (value.webContentsId === webContentsId) this.#pending.delete(key);
-    for (const [key, value] of this.#active) if (value.webContentsId === webContentsId) this.#active.delete(key);
+    for (const [key, value] of this.#active) {
+      if (value.webContentsId !== webContentsId) continue;
+      this.#active.delete(key);
+      this.#revoked.set(key, {webContentsId, frameTreeNodeId: value.frameTreeNodeId});
+    }
     this.#epoch++;
   }
 
-  revokeAll(): void { this.#pending.clear(); this.#active.clear(); this.#epoch++; }
+  /** Window teardown: every frame of this webContents is gone, so drop the
+   * tombstones as well. */
+  forgetWindow(webContentsId: number): void {
+    for (const [key, value] of this.#pending) if (value.webContentsId === webContentsId) this.#pending.delete(key);
+    for (const [key, value] of this.#active) if (value.webContentsId === webContentsId) this.#active.delete(key);
+    for (const [key, value] of this.#revoked) if (value.webContentsId === webContentsId) this.#revoked.delete(key);
+    this.#epoch++;
+  }
+
+  revokeAll(): void { this.#pending.clear(); this.#active.clear(); this.#revoked.clear(); this.#epoch++; }
 }
 
 export class DesktopPluginHost {
@@ -230,7 +270,7 @@ export class DesktopPluginHost {
   unregisterWindow(senderId: number): void {
     const facts = this.#windows.get(senderId);
     this.#windows.delete(senderId);
-    this.revokeCustomPages(senderId);
+    this.forgetCustomPages(senderId);
     if (facts?.role === 'main') this.#mainWindowOpen = false;
   }
 
@@ -247,8 +287,11 @@ export class DesktopPluginHost {
   customPageWillNavigate(webContentsId: number, details: CustomPageNavigationDetails): boolean {
     return this.#customPages.willNavigate(webContentsId, details);
   }
-  /** Main reload, window close or process loss revokes all pending/bound epochs. */
+  /** Main reload or process loss revokes pending/bound epochs and keeps the
+   * affected frames blocked until they are destroyed. */
   revokeCustomPages(webContentsId: number): void { this.#customPages.revokeWindow(webContentsId); }
+  /** Window teardown drops every frame record for this webContents. */
+  forgetCustomPages(webContentsId: number): void { this.#customPages.forgetWindow(webContentsId); }
   /** Frame destruction is observed lazily: a vanished frame is pruned so its
    * epoch can never be claimed again. */
   pruneCustomPages(webContentsId: number, mainFrame: CustomPageFrameLike): void { this.#customPages.prune(webContentsId, mainFrame); }

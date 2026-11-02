@@ -47,6 +47,11 @@ const navigation = (id: number | null, url: string, isMainFrame = false): Custom
   frame: id === null ? null : frame(id, url, null),
 });
 
+/** The initial iframe load pins the pending entry to the real direct child. */
+const pin = (guard: CustomPageFrameGuard, id: number, nonce: string, entryUrl = entry) => {
+  expect(guard.willNavigate(7, navigation(id, withNonce(entryUrl, nonce)))).toBe(false);
+};
+
 const makeHost = () => {
   const handlers = new Map<string, unknown>();
   const router: IpcRouter = {
@@ -60,8 +65,9 @@ describe('custom page frame guard', () => {
   it('binds exactly the direct child that carries the prepared nonce', () => {
     const guard = new CustomPageFrameGuard();
     expect(guard.prepare(7, target('n1'))).toEqual({epoch: 1});
+    pin(guard, 4, 'n1');
 
-    const other = frame(9, 'http://127.0.0.1/entry.html', mainFrame([]));
+    const other = frame(9, entry, mainFrame([]));
     const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
     const main = mainFrame([other, bound]);
 
@@ -74,6 +80,16 @@ describe('custom page frame guard', () => {
     const guard = new CustomPageFrameGuard();
     const entryUrl = 'http://127.0.0.1/entry.html?x=1';
     guard.prepare(7, target('n1', entryUrl));
+    pin(guard, 4, 'n1', entryUrl);
+    const bound = frame(4, withNonce(entryUrl, 'n1'), mainFrame([]));
+    expect(guard.claim(7, claimOf('n1'), mainFrame([bound]))).toEqual({frameTreeNodeId: 4, epoch: 1});
+  });
+
+  it('matches encoded entry query values without reserializing them', () => {
+    const guard = new CustomPageFrameGuard();
+    const entryUrl = 'https://example.test/entry?q=hello%20world&x=%7E';
+    guard.prepare(7, target('n1', entryUrl));
+    pin(guard, 4, 'n1', entryUrl);
     const bound = frame(4, withNonce(entryUrl, 'n1'), mainFrame([]));
     expect(guard.claim(7, claimOf('n1'), mainFrame([bound]))).toEqual({frameTreeNodeId: 4, epoch: 1});
   });
@@ -81,28 +97,41 @@ describe('custom page frame guard', () => {
   it('allows the first navigation of a pending frame and still claims it', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
-    const main = mainFrame([frame(4, '', mainFrame([]))]);
-
-    // The initial iframe load starts before the document exists; the guard
-    // pins the pending entry to the frame and lets it load.
-    expect(guard.willNavigate(7, navigation(4, withNonce(entry, 'n1')))).toBe(false);
+    pin(guard, 4, 'n1');
     const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
     expect(guard.claim(7, claimOf('n1'), mainFrame([bound]))).toEqual({frameTreeNodeId: 4, epoch: 1});
   });
 
-  it('denies a second navigation of a frame that is still pending', () => {
+  it('denies every navigation of a frame that is still pending', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
-    expect(guard.willNavigate(7, navigation(4, withNonce(entry, 'n1')))).toBe(false);
+    pin(guard, 4, 'n1');
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/other.html'))).toBe(true);
     expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/other.html'))).toBe(true);
     // The revoked pending entry cannot be claimed later.
     expect(() => guard.claim(7, claimOf('n1'), mainFrame([frame(4, withNonce(entry, 'n1'), mainFrame([]))])))
       .toThrow(/not prepared/);
   });
 
+  it('keeps denying repeated navigation attempts after the first cancellation', () => {
+    const guard = new CustomPageFrameGuard();
+    guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
+    const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
+    guard.claim(7, claimOf('n1'), mainFrame([bound]));
+
+    // The first cancellation leaves the original document running; it can
+    // retry, so the frame must stay blocked.
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/entry2.html'))).toBe(true);
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/entry2.html'))).toBe(true);
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/entry3.html'))).toBe(true);
+    expect(() => guard.claim(7, claimOf('n1'), mainFrame([bound]))).toThrow(/not prepared/);
+  });
+
   it('denies and revokes any navigation of a bound frame, regardless of process/routing change', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
     const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
     guard.claim(7, claimOf('n1'), mainFrame([bound]));
 
@@ -114,22 +143,27 @@ describe('custom page frame guard', () => {
       frame: {frameTreeNodeId: 4, processId: 5, routingId: 9, url: 'http://127.0.0.1/entry2.html', parent: null},
     };
     expect(guard.willNavigate(7, swapped)).toBe(true);
-    // Revoked: the same frame is no longer bound.
-    expect(guard.willNavigate(7, swapped)).toBe(false);
-    // A claim for the old epoch is denied.
-    expect(() => guard.claim(7, claimOf('n1'), mainFrame([bound]))).toThrow(/not prepared/);
+    expect(guard.willNavigate(7, swapped)).toBe(true);
   });
 
   it('denies a null frame and a missing frame instead of guessing by URL', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
     expect(guard.willNavigate(7, navigation(null, withNonce(entry, 'n1')))).toBe(true);
-    expect(() => guard.claim(7, claimOf('n1'), mainFrame([]))).toThrow(/ambiguous or missing/);
+    expect(() => guard.claim(7, claimOf('n1'), mainFrame([]))).toThrow(/not bound to a navigation/);
+  });
+
+  it('denies a claim when no navigation pinned the frame', () => {
+    const guard = new CustomPageFrameGuard();
+    guard.prepare(7, target('n1'));
+    const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
+    expect(() => guard.claim(7, claimOf('n1'), mainFrame([bound]))).toThrow(/not bound to a navigation/);
   });
 
   it('rejects a nonce shared by more than one direct child', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
     const main = mainFrame([
       frame(4, withNonce(entry, 'n1'), mainFrame([])),
       frame(5, withNonce(entry, 'n1'), mainFrame([])),
@@ -140,6 +174,7 @@ describe('custom page frame guard', () => {
   it('does not treat a nested frame as a direct child', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
+    pin(guard, 5, 'n1');
     const child = frame(4, entry, mainFrame([]));
     const nested = frame(5, withNonce(entry, 'n1'), child);
     expect(() => guard.claim(7, claimOf('n1'), mainFrame([child, nested]))).toThrow(/ambiguous or missing/);
@@ -148,6 +183,7 @@ describe('custom page frame guard', () => {
   it('rejects a destroyed direct child', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
     const dead = frame(4, withNonce(entry, 'n1'), mainFrame([]), true);
     expect(() => guard.claim(7, claimOf('n1'), mainFrame([dead]))).toThrow(/ambiguous or missing/);
   });
@@ -166,24 +202,36 @@ describe('custom page frame guard', () => {
   it('revokes pending and bound epochs when the window is revoked', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
     const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
     guard.claim(7, claimOf('n1'), mainFrame([bound]));
 
     guard.revokeWindow(7);
-    expect(guard.willNavigate(7, navigation(4, withNonce(entry, 'n1')))).toBe(false);
+    // A revoked frame stays blocked until it is destroyed.
+    expect(guard.willNavigate(7, navigation(4, withNonce(entry, 'n1')))).toBe(true);
     guard.prepare(7, target('n2'));
     expect(() => guard.claim(7, claimOf('n1'), mainFrame([bound]))).toThrow(/not prepared/);
+  });
+
+  it('forgets tombstones when the window is torn down', () => {
+    const guard = new CustomPageFrameGuard();
+    guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
+    guard.claim(7, claimOf('n1'), mainFrame([frame(4, withNonce(entry, 'n1'), mainFrame([]))]));
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/entry2.html'))).toBe(true);
+    guard.forgetWindow(7);
+    // A fresh frame id is never the old frame.
+    expect(guard.willNavigate(7, navigation(9, 'http://127.0.0.1/other.html'))).toBe(false);
   });
 
   it('prunes frames that vanished from the subtree', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
-    const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
-    guard.claim(7, claimOf('n1'), mainFrame([bound]));
+    pin(guard, 4, 'n1');
+    guard.claim(7, claimOf('n1'), mainFrame([frame(4, withNonce(entry, 'n1'), mainFrame([]))]));
 
     guard.prune(7, mainFrame([]));
-    // The vanished frame is no longer active, so a new frame with the same
-    // numeric id would not be treated as the bound document.
+    // The vanished frame is no longer active; a new frame id is a new binding.
     expect(guard.willNavigate(7, navigation(4, withNonce(entry, 'n1')))).toBe(false);
   });
 
@@ -205,6 +253,7 @@ describe('custom page frame guard', () => {
     const host = makeHost();
     host.registerWindow(7, 'main');
     expect(host.prepareCustomPageFrame(7, target('n1'))).toEqual({epoch: 1});
+    expect(host.customPageWillNavigate(7, navigation(4, withNonce(entry, 'n1')))).toBe(false);
     const bound = frame(4, withNonce(entry, 'n1'), mainFrame([]));
     expect(host.claimCustomPageFrame(7, claimOf('n1'), mainFrame([bound]))).toEqual({frameTreeNodeId: 4, epoch: 1});
     expect(host.customPageWillNavigate(7, navigation(4, withNonce(entry, 'n1')))).toBe(true);

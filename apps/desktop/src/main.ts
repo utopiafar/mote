@@ -270,7 +270,7 @@ else {
     window.webContents.on('will-redirect', details => { if (host.customPageWillNavigate(mainSenderId, details)) details.preventDefault(); });
     window.webContents.on('did-start-navigation', details => { if (details.isMainFrame && !details.isSameDocument) host.revokeCustomPages(mainSenderId); });
     window.webContents.on('did-frame-navigate', () => { const current = window; if (current && !current.isDestroyed()) host.pruneCustomPages(mainSenderId, current.webContents.mainFrame); });
-    window.webContents.on('destroyed', () => host.revokeCustomPages(mainSenderId));
+    window.webContents.on('destroyed', () => host.forgetCustomPages(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
       if (!([window,quickNoteWindow].some(owned=>owned && !owned.isDestroyed() && event.sender===owned.webContents && event.senderFrame===owned.webContents.mainFrame && event.senderFrame?.url===(owned===quickNoteWindow?pageUrl+'#quick-note':pageUrl)))) throw new Error(moteText("请求来源不受信任"));
