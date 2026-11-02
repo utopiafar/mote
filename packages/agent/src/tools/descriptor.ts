@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {JsonSchemaError, parameterSchemaSpecToJsonSchema, type ParameterSchemaSpec} from '@deepseek-ai/dsh-tools';
 import type {RuntimeToolIdentity} from '../runtime/contracts.js';
 import {ContextToolError} from '../tool-errors.js';
 import type {HostReadOperation, HostSessionPort} from './host-session.js';
@@ -176,6 +177,16 @@ function validatedFields(value: unknown): ToolFields {
   if (Object.keys(value).length > 64) invalid('Tool fields may declare at most 64 properties');
   for (const [key, schema] of Object.entries(value)) {
     if (!key || key.length > 64 || !isPlainRecord(schema) || !jsonSafe(schema)) invalid('Every tool field must be a bounded JSON schema object');
+  }
+  // Reject a malformed ParameterSchemaSpec before it can enter a snapshot and
+  // break runtime tool-list construction. This is the same production compiler
+  // the DSH/Codex schema adapters use, not a second schema interpreter.
+  try {
+    parameterSchemaSpecToJsonSchema(value as unknown as ParameterSchemaSpec);
+  } catch (error) {
+    throw toolContractError('invalid_tool_descriptor', 'Tool fields must compile as a ParameterSchemaSpec.', {
+      ...(error instanceof JsonSchemaError ? {violations: error.violations.slice(0, 8)} : {}),
+    });
   }
   return deepFreeze(structuredClone(value) as ToolFields);
 }

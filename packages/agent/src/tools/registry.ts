@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {validateCapabilityArguments} from '../capability-schema.js';
+import {validateJsonSchemaValue, type JsonSchemaNode} from '@deepseek-ai/dsh-tools';
 import type {RuntimeToolIdentity} from '../runtime/contracts.js';
 import {
   canonicalJson,
@@ -13,6 +13,7 @@ import {
   type ToolSnapshotEntry,
 } from './descriptor.js';
 import type {HostReadOperation, HostSessionPort} from './host-session.js';
+import {toolInputSchema} from './runtime-schema.js';
 
 /** Registration lifecycle supplied by the parent. The signal and callback are
  * checked by every local liveness assertion, before I/O and after the await. */
@@ -26,6 +27,8 @@ interface Registration {
   readonly fingerprint: string;
   readonly token: symbol;
   readonly lifecycle: ToolLifecycle;
+  /** The same compiled schema the runtime adapters publish. */
+  readonly schema: JsonSchemaNode;
 }
 
 /** Serializable snapshot body. It is a pure DTO: no callback, token, reader or
@@ -147,6 +150,7 @@ export class ToolRegistry {
       fingerprint: toolFingerprint(descriptor.description, descriptor.fields, descriptor.kind, descriptor.exposure, descriptor.requires),
       token: Symbol(descriptor.name + '@' + descriptor.version),
       lifecycle: this.lifecycleFor(lifecycle),
+      schema: toolInputSchema(descriptor.fields) as JsonSchemaNode,
     });
     this.entries.set(descriptor.name, registration);
     let removed = false;
@@ -213,7 +217,11 @@ export class ToolRegistry {
           assertActive(pin);
           port.assertCurrent();
           if (!isPlainRecord(args)) invalidArguments('Tool arguments must be a plain object.');
-          validateCapabilityArguments(registration.descriptor.fields as Record<string, Record<string, unknown>>, args as Record<string, unknown>);
+          // The production validator runs against the same compiled schema the
+          // runtime adapters publish, including const/oneOf/null and the closed
+          // root, so an invalid call can never reach parse or execute.
+          const violations = validateJsonSchemaValue(registration.schema, args);
+          if (violations.length) throw toolContractError('invalid_tool_arguments', 'Capability arguments must match the discovered schema.', {violations: violations.slice(0, 8)});
           const parsed = registration.descriptor.parse(Object.freeze({...args}));
           if (!isPlainRecord(parsed)) invalidArguments('Tool parse must return a plain argument object.');
           const value = await registration.descriptor.execute(Object.freeze({...parsed}), restrictPort(port, registration));

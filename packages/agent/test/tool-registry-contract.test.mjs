@@ -70,6 +70,9 @@ test('descriptor fixes apiVersion/kind/exposure/requires and rejects reserved, d
   assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), requires: ['shell']}), expectCode('invalid_tool_descriptor'));
   assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), requires: ['search', 'search']}), expectCode('invalid_tool_descriptor'));
   assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), fields: {value: {type: 'string', execute: () => {}}}}), expectCode('invalid_tool_descriptor'));
+  assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), fields: {value: {type: 'strng'}}}), expectCode('invalid_tool_descriptor'));
+  assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), fields: {value: {}}}), expectCode('invalid_tool_descriptor'));
+  assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), fields: {value: {type: 'object', properties: {x: {type: 'string'}}}}}), expectCode('invalid_tool_descriptor'));
   assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), parse: undefined}), expectCode('invalid_tool_descriptor'));
   assert.throws(() => defineToolDescriptor({...descriptor('fixture_read'), execute: undefined}), expectCode('invalid_tool_descriptor'));
   for (const name of ['skill', '_ready', 'capability_discover', 'capability_execute', 'delegation_child', '_private']) {
@@ -236,6 +239,36 @@ test('a tool can reach only the Host operations it declared', async () => {
     registry.register(descriptor(name, {requires: ['evidence'], execute: async (_args, host) => {operation(host); return {ok: true};}}));
     await assert.rejects(run(registry, name), expectCode('tool_permission_denied'));
   }
+});
+
+test('execution validates const/oneOf/null against the compiled schema before parse or execute', async () => {
+  const registry = new ToolRegistry();
+  let parsed = 0, executed = 0;
+  registry.register(descriptor('compiled_arguments', {
+    fields: {
+      mode: {type: 'string', const: 'read', required: true},
+      choice: {oneOf: [{type: 'string'}, {type: 'integer'}], required: true},
+      nothing: {type: 'null'},
+    },
+    parse: args => {parsed++; return args;},
+    execute: args => {executed++; return args;},
+  }));
+  const snapshot = registry.snapshot(selection(['compiled_arguments', 'v1']));
+  const tool = snapshot.resolve(pin(snapshot.entries[0]));
+  assertObjectJsonSchema(toRuntimeToolDefinitions(snapshot)[0].inputSchema);
+  assert.deepEqual(toRuntimeToolDefinitions(snapshot)[0].inputSchema, toCodexTools(snapshot)[0].inputSchema);
+  const valid = {mode: 'read', choice: 1, nothing: null};
+  assert.deepEqual(await tool.execute(valid, port()), valid);
+  assert.equal(parsed, 1);
+  assert.equal(executed, 1);
+  for (const args of [
+    {mode: 'anything', choice: 1},
+    {mode: 'read', choice: true},
+    {mode: 'read', choice: 1, nothing: 'unordered'},
+    {mode: 'read', choice: 1, extra: true},
+  ]) await assert.rejects(tool.execute(args, port()), expectCode('invalid_tool_arguments'));
+  assert.equal(parsed, 1);
+  assert.equal(executed, 1);
 });
 
 test('the real registry snapshot drives both production schema consumers identically', () => {
