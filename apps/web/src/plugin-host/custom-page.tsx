@@ -68,7 +68,9 @@ export function CustomPluginPage(props: CustomPageProps) {
     // the issued bridge must be fenced by this signal, not by loads.
     let grantedEpoch = 0;
     const offRevoked = mote!.onCustomPageRevoked!(event => {
-      if (event.instanceId === props.instanceId && event.nonce === props.nonce && event.documentKey === props.documentKey && event.epoch === grantedEpoch)
+      // One binding per mount: a pending (unclaimed) revocation also
+      // matches — its late claim must never rebuild the channel.
+      if (event.instanceId === props.instanceId && event.nonce === props.nonce && event.documentKey === props.documentKey && (grantedEpoch === 0 || event.epoch === grantedEpoch))
         endChannel();
     });
     const endChannel = () => {
