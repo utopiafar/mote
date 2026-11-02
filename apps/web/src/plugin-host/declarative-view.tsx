@@ -113,13 +113,23 @@ export function DeclarativeView({ session, data, translate, onResult }: {
   onResult?: (command: string, ok: boolean) => void;
 }) {
   const t = (k?: string) => (k ? translate(k) : '');
-  const run = (id: string, input?: unknown) => { void session.command(id, input).then(r => onResult?.(id, r.ok)); };
+  const run = (id: string, input?: unknown) => {
+    const generation = session.lifetime.generation;
+    // Stale outcomes never reach onResult: only results admitted by the
+    // issuing generation may update the view.
+    void session.command(id, input).then(r => { if ((r.ok || r.reason !== 'stale') && session.lifetime.admits(generation)) onResult?.(id, r.ok); });
+  };
   return <>
     {session.spec.components.map((c, i) => {
       switch (c.type) {
         case 'status': return <p key={i} role="status" className={`declarative-status ${c.state}`}>{t(c.textKey) || c.state}</p>;
         case 'list': {
-          const rows = strictDataArray(data?.[c.itemKey], MAX_ITEMS) as Record<string, unknown>[];
+          const raw = data?.[c.itemKey];
+          // Absent data is pending; a malformed present array is an explicit
+          // error state — never a render crash.
+          if (raw === undefined) return <p key={i} role="status" className="declarative-status pending">{t() || 'pending'}</p>;
+          const rows = (() => { try { return strictDataArray(raw, MAX_ITEMS) as Record<string, unknown>[]; } catch { return null; } })();
+          if (rows === null) return <p key={i} role="status" className="declarative-status error">{t() || 'error'}</p>;
           if (rows.length === 0) return <p key={i} role="status" className="declarative-status empty">{t() || 'empty'}</p>;
           return <ul key={i} className="declarative-list">{rows.map((row, j) => <li key={j}>{c.fields.map((f, k) => <span key={k}>{t(f.labelKey)}{fieldValue(row, f)} </span>)}</li>)}</ul>;
         }
@@ -128,7 +138,14 @@ export function DeclarativeView({ session, data, translate, onResult }: {
           e.preventDefault();
           if (!c.submitCommand) return;
           const input: Record<string, unknown> = {};
-          for (const f of c.fields) input[f.key] = (e.currentTarget.elements.namedItem(f.key) as HTMLInputElement | null)?.value;
+          for (const f of c.fields) {
+            const el = e.currentTarget.elements.namedItem(f.key) as HTMLInputElement | null;
+            // Serialize per declared input type: checked for booleans, a
+            // numeric conversion for numbers, the raw string for text.
+            input[f.key] = f.input === 'boolean' ? el?.checked === true
+              : f.input === 'number' ? (el?.value === '' || el === null ? undefined : Number(el.value))
+              : el?.value;
+          }
           run(c.submitCommand, input);
         }}>
           {c.fields.map((f, k) => <label key={k}>{t(f.labelKey) || f.key}<input name={f.key} type={f.input === 'boolean' ? 'checkbox' : f.input === 'number' ? 'number' : 'text'} required={f.required} /></label>)}
