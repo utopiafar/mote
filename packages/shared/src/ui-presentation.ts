@@ -106,6 +106,7 @@ export class UiPresentationHost<T> {
         const next:UiPresentationSnapshot<T>={...this.snapshot,[surface]:this.defaults[surface],fallbackReason:surface==='theme'?'theme_removed':'layout_removed'};
         if(surface==='theme')delete next.themePresentation;else delete next.layoutPresentation;
         if(removed)next.fallbackPresentation=resolveContributionPresentation(removed.contribution.descriptor,removed.catalogs,getLocale());
+        else delete next.fallbackPresentation;
         this.publish(next);
       }
     };
@@ -126,7 +127,8 @@ export class UiPresentationHost<T> {
     return this.publish(next);
   }
   /** Registers a contributed theme/layout only when the explicit reference
-   * names the exact pack identity. Labels resolve at bind time against the
+   * names the exact pack identity and the contribution is active. Labels
+   * resolve from the stored source at activation/render time against the
    * runtime locale; removal restores the builtin pack and publishes the
    * removed pack's label as an explicit fallback reason. */
   registerContribution(
@@ -145,6 +147,7 @@ export class UiPresentationHost<T> {
     try{
       const binding=this.bindings.bind(contribution,catalogs,platform,facts,locale);
       if(binding.kind!==kind||binding.reference.id!==pack.id||binding.reference.version!==pack.version)throw new Error('Presentation binding does not match the pack');
+      if(binding.availability.state!=='active')throw new Error('Presentation contribution is not active: '+binding.availability.state);
       const source:PresentationSource={contribution,catalogs,platform,facts};
       const removePack=kind==='theme'
         ?this.registerTheme(pack as UiThemePack,source)

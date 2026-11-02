@@ -167,3 +167,58 @@ test('contributed labels re-resolve from the host on runtime locale changes',()=
     assert.equal(host.getSnapshot().fallbackReason,'theme_removed');
   }finally{configureLocale(()=> 'zh-CN');}
 });
+
+test('unavailable contributions never install or replace the builtin presentation',()=>{
+  const host=fixture();
+  const catalogs=new PluginI18nRegistry();
+  catalogs.register('fixture.plugin','en',{'theme.name':'Studio','layout.name':'Phone'});
+  const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+  const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+  const themeContribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+  })};
+  assert.throws(
+    ()=>host.registerContribution(themeContribution,{id:'fixture.theme',version:'1'},theme,catalogs,'android',facts,'en'),
+    /not active: unsupported/,
+  );
+  assert.throws(
+    ()=>host.registerContribution(themeContribution,{id:'fixture.theme',version:'1'},theme,catalogs,'web',{...facts,revoked:true},'en'),
+    /not active: revoked/,
+  );
+  const layout={...defaultUiLayout,id:'fixture.layout',version:'1',implementation:{name:'phone'}};
+  const layoutContribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.layout',kind:'layout',apiVersion:'1',platforms:['android'],
+    presentation:{labelKey:'layout.name',i18nNamespace:'fixture.plugin'},
+    nativeRequires:[{capability:'ui.panes',apiVersion:'1',platforms:['android'],fallback:'generic-reader'}],
+  })};
+  assert.throws(
+    ()=>host.registerContribution(layoutContribution,{id:'fixture.layout',version:'1'},layout,catalogs,'android',facts,'en'),
+    /not active: requires-build/,
+  );
+  assert.equal(host.getSnapshot().theme.id,linearUiTheme.id);
+  assert.equal(host.getSnapshot().layout.id,defaultUiLayout.id);
+  assert.throws(()=>host.activate({theme,layout:defaultUiLayout}),/unavailable/);
+});
+
+test('a later unlabelled removal clears the previous fallback label',()=>{
+  const host=fixture();
+  const catalogs=new PluginI18nRegistry();
+  catalogs.register('fixture.plugin','en',{'theme.name':'Studio'});
+  const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+  const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+  const contribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+  })};
+  const removeTheme=host.registerContribution(contribution,{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts,'en');
+  const plainLayout={...defaultUiLayout,id:'fixture.plain',version:'1',implementation:{name:'plain'}};
+  const removeLayout=host.registerLayout(plainLayout);
+  host.activate({theme,layout:plainLayout});
+  removeTheme();
+  assert.equal(host.getSnapshot().fallbackReason,'theme_removed');
+  assert.equal(host.getSnapshot().fallbackPresentation.label.text,'Studio');
+  removeLayout();
+  assert.equal(host.getSnapshot().fallbackReason,'layout_removed');
+  assert.equal(host.getSnapshot().fallbackPresentation,undefined);
+});
