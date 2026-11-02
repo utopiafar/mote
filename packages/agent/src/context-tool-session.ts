@@ -1,3 +1,4 @@
+import {attributionMetadata,attributionMetadataResponse} from './tools/result-metadata.js';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
@@ -176,29 +177,6 @@ function projectDevice(value: unknown, timeZone = 'UTC'): Record<string, unknown
 
 const pinnedSourceContextRef=/^source-context:([A-Za-z0-9_-]+)@([1-9][0-9]*)#([a-f0-9]{64})$/;
 const pinnedMaterialRef=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/;
-/** Keep statement identities/scopes in ordinary responses; prose has its own
- * authorized, lossless disclosure path and never affects original grants. */
-function attributionMetadata(value:unknown){
-  const parsed=attributionContextSchema.safeParse(value);if(!parsed.success)return undefined;
-  const {ownerStatements:_owner,importStatements:_import,sourceContextStatements:_source,recordContextStatements:_record,...metadata}=parsed.data;
-  return metadata;
-}
-function attributionMetadataResponse(value:unknown,parentLocator?:{id:string}|{ref:string}):unknown {
-  if(Array.isArray(value))return value.map(item=>attributionMetadataResponse(item,parentLocator));
-  if(!value||typeof value!=='object')return value;
-  const object=value as Record<string,unknown>;
-  const locator=typeof object.ref==='string'&&pinnedMaterialRef.test(object.ref)?{ref:object.ref}:
-    typeof object.id==='string'&&parseEvidenceId(object.id)?{id:parseEvidenceId(object.id)!}:parentLocator;
-  const result:Record<string,unknown>={};
-  for(const [key,item] of Object.entries(object)){
-    if(key==='attributionContext'){
-      const metadata=attributionMetadata(item);if(metadata){result[key]=metadata;if(locator)result.attributionContextLocator=locator;}
-    }else if(key==='attributionContexts'&&item&&typeof item==='object'&&!Array.isArray(item)){
-      result[key]=Object.fromEntries(Object.entries(item).flatMap(([id,context])=>{const metadata=attributionMetadata(context);return metadata?[[id,metadata]]:[];}));
-    }else result[key]=attributionMetadataResponse(item,locator);
-  }
-  return result;
-}
 /** Reader data is untrusted too: explicitly select catalog metadata, never body/member fields. */
 function materialMetadata(value: unknown, scope: ContextRange): Record<string, unknown> | undefined {
   if(!value||typeof value!=='object'||Array.isArray(value))throw hostError('Invalid material catalog row');
