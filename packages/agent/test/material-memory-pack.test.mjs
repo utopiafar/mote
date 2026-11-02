@@ -96,6 +96,8 @@ test('material catalog uses the untrusted body and material_read verifies origin
   const value = await execute(snapshot, 'material_read', {ref: materialRef, offset: 0, length: 4}, session.port);
   assert.equal(value.source, 'untrusted_personal_context');
   assert.equal(value.data.text, 'body');
+  assert.equal(value.data.textRange.total, 4);
+  assert.equal(value.data.originalRefsTotal, 1);
   assert.equal(value.data.material.attributionContext.ownerStatements, undefined);
   assert.equal(JSON.stringify(value).includes('private answer'), false);
   assert.equal(value.data.sourceEvidence.length, 1);
