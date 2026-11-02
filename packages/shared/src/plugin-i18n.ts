@@ -7,6 +7,11 @@
 import {getLocale, locales, type Locale} from './i18n.js';
 import {
   isToken,
+  uiContributionAvailability,
+  type PluginPlatform,
+  type ScopedContribution,
+  type UiAvailability,
+  type UiAvailabilityFacts,
   type UiContributionDescriptor,
   type UiContributionPresentation,
 } from './plugin-ui.js';
@@ -146,4 +151,71 @@ export function resolveContributionPresentation(
     a11y,
     fallbackReasons,
   };
+}
+
+/** A theme/layout contribution paired with one exact presentation reference.
+ * The presentation host still owns registration, activation and the safe
+ * builtin fallback; this only binds the descriptor's availability and
+ * runtime-resolved label roles to the pack identity it names. */
+export interface PresentationContributionBinding {
+  readonly kind: 'theme' | 'layout';
+  readonly reference: {readonly id: string; readonly version: string};
+  readonly availability: UiAvailability;
+  readonly presentation: ResolvedUiPresentation;
+}
+
+const presentationId = /^[a-z][a-z0-9.-]*$/;
+const presentationVersion = /^\d+(?:\.\d+)*$/;
+
+function contributionKey(contribution: ScopedContribution): string {
+  // Tokens may themselves contain '/', so encode the three fields without
+  // delimiter ambiguity.
+  return JSON.stringify([contribution.packageId, contribution.descriptor.id, contribution.descriptor.apiVersion]);
+}
+
+/** Host-owned, explicit mapping from one scoped contribution to the exact
+ * presentation pack it provides. The frozen descriptor has no pack-reference
+ * field, so a binding only exists after this mapping is registered; a pack
+ * cannot be claimed by two contributions and an unmapped contribution never
+ * yields an active binding. */
+export class PresentationContributionRegistry {
+  private readonly mappings = new Map<string, {kind: 'theme' | 'layout'; reference: {id: string; version: string}}>();
+
+  register(contribution: ScopedContribution, reference: {readonly id: string; readonly version: string}): () => void {
+    const {descriptor} = contribution;
+    const kind = descriptor.kind;
+    if (kind !== 'theme' && kind !== 'layout')
+      throw new TypeError('Not a theme or layout contribution');
+    if (!presentationId.test(reference.id) || !presentationVersion.test(reference.version))
+      throw new TypeError('Invalid presentation reference');
+    const key = contributionKey(contribution);
+    if (this.mappings.has(key)) throw new Error('Presentation contribution already mapped');
+    const pack = reference.id + '@' + reference.version;
+    for (const existing of this.mappings.values())
+      if (existing.kind === kind && existing.reference.id + '@' + existing.reference.version === pack)
+        throw new Error('Presentation pack already mapped to another contribution');
+    const mapping = {kind, reference: {id: reference.id, version: reference.version}};
+    this.mappings.set(key, mapping);
+    return () => {
+      if (this.mappings.get(key) === mapping) this.mappings.delete(key);
+    };
+  }
+
+  bind(
+    contribution: ScopedContribution,
+    catalogs: PluginI18nRegistry,
+    platform: PluginPlatform,
+    facts: UiAvailabilityFacts,
+    locale: Locale = getLocale(),
+  ): PresentationContributionBinding {
+    const mapping = this.mappings.get(contributionKey(contribution));
+    if (!mapping) throw new Error('Presentation contribution is not mapped');
+    if (mapping.kind !== contribution.descriptor.kind) throw new Error('Presentation kind mismatch');
+    return {
+      kind: mapping.kind,
+      reference: {id: mapping.reference.id, version: mapping.reference.version},
+      availability: uiContributionAvailability(contribution.descriptor, platform, facts),
+      presentation: resolveContributionPresentation(contribution.descriptor, catalogs, locale),
+    };
+  }
 }

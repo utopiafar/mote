@@ -1,5 +1,8 @@
 import {FeatureRegistry} from './feature-packs.js';
 import {linearThemeTokens,linearLightThemeTokens} from './ui-theme.generated.js';
+import {PresentationContributionRegistry,resolveContributionPresentation,type PluginI18nRegistry,type ResolvedUiPresentation} from './plugin-i18n.js';
+import {getLocale,type Locale} from './i18n.js';
+import type {PluginPlatform,ScopedContribution,UiAvailabilityFacts} from './plugin-ui.js';
 
 /** Presentation identities describe explicit owner-selected UI, never captured content. */
 export type UiDestination='home'|'library'|'ask'|'sources'|'connections'|'activity';
@@ -12,7 +15,13 @@ export type UiLayoutProfile=UiReference & {
   detail:'split'|'stack';
 };
 export type UiLayoutPack<T>=UiLayoutProfile & {implementation:T};
-export type UiPresentationSnapshot<T>={theme:UiThemePack;layout:UiLayoutPack<T>;fallbackReason?:'theme_removed'|'layout_removed'};
+export type UiPresentationSnapshot<T>={
+  theme:UiThemePack;layout:UiLayoutPack<T>;
+  themePresentation?:ResolvedUiPresentation;layoutPresentation?:ResolvedUiPresentation;
+  fallbackReason?:'theme_removed'|'layout_removed';
+  /** Runtime-resolved label of the contributed pack that was removed. */
+  fallbackPresentation?:ResolvedUiPresentation;
+};
 export const linearUiTheme:UiThemePack=Object.freeze({id:'mote.linear',version:'1',tokens:Object.freeze({...linearThemeTokens}),schemes:Object.freeze({light:Object.freeze({...linearLightThemeTokens}),dark:Object.freeze({...linearThemeTokens})})});
 export const defaultUiLayout:UiLayoutProfile=Object.freeze({id:'mote.central',version:'1',primary:Object.freeze(['home','library','sources','connections'] as UiDestination[]),initial:'home',navigation:'adaptive',detail:'split'});
 export const desktopUiLayout:UiLayoutProfile=Object.freeze({...defaultUiLayout,id:'mote.desktop',primary:Object.freeze(['home','library','sources','ask'] as UiDestination[])});
@@ -54,10 +63,16 @@ function layout<T>(pack:UiLayoutPack<T>,required:readonly UiDestination[]=pack.p
   return Object.freeze({...pack,primary:Object.freeze([...pack.primary])});
 }
 
+type PresentationSource={contribution:ScopedContribution;catalogs:PluginI18nRegistry;platform:PluginPlatform;facts:UiAvailabilityFacts};
+
 /** Trusted platform implementations stay local; only metadata and role values are portable.
  * The host owns data, commands, drafts and navigation. Activating a pack changes presentation only. */
 export class UiPresentationHost<T> {
   private readonly registry=new FeatureRegistry<UiThemePack|UiLayoutPack<T>>();
+  private readonly sources=new Map<string,PresentationSource>();
+  private readonly lastPresentations=new Map<string,ResolvedUiPresentation>();
+  private fallback?:{source:PresentationSource;presentation:ResolvedUiPresentation};
+  private readonly bindings=new PresentationContributionRegistry();
   private readonly listeners=new Set<()=>void>();
   private readonly defaults:{theme:UiThemePack;layout:UiLayoutPack<T>};
   private snapshot:UiPresentationSnapshot<T>;
@@ -78,23 +93,94 @@ export class UiPresentationHost<T> {
     this.notificationErrors=Object.freeze(errors);
     return this.notificationErrors;
   }
-  private register(surface:'theme'|'layout',value:UiThemePack|UiLayoutPack<T>,pinned=false){
+  private register(surface:'theme'|'layout',value:UiThemePack|UiLayoutPack<T>,pinned=false,source?:PresentationSource){
     const id=surface+':'+reference(value),featureId='ui.'+surface+'.'+reference(value),descriptor={id,version:value.version,surface};
     const removeFeature=this.registry.install({id:featureId,version:value.version,components:[descriptor]});
     const removeValue=this.registry.register(featureId,descriptor,value);
+    const key=surface+':'+reference(value);
+    if(source)this.sources.set(key,source);
     let disposed=false;
     return ()=>{
       if(disposed||pinned)return;disposed=true;removeValue();removeFeature();
-      if(reference(this.snapshot[surface])===reference(value))this.publish({...this.snapshot,[surface]:this.defaults[surface],fallbackReason:surface==='theme'?'theme_removed':'layout_removed'});
+      const removed=this.sources.get(key);
+      const removedPresentation=removed?this.presentation(surface,value):undefined;
+      this.sources.delete(key);
+      this.lastPresentations.delete(key);
+      if(reference(this.snapshot[surface])===reference(value)){
+        const next:UiPresentationSnapshot<T>={...this.snapshot,[surface]:this.defaults[surface],fallbackReason:surface==='theme'?'theme_removed':'layout_removed'};
+        if(surface==='theme')delete next.themePresentation;else delete next.layoutPresentation;
+        if(removed&&removedPresentation){next.fallbackPresentation=removedPresentation;this.fallback={source:removed,presentation:removedPresentation};}
+        else{delete next.fallbackPresentation;this.fallback=undefined;}
+        this.publish(next);
+      }
     };
   }
-  registerTheme(pack:UiThemePack){return this.register('theme',validateUiTheme(pack));}
-  registerLayout(pack:UiLayoutPack<T>){return this.register('layout',layout(pack,this.defaults.layout.primary));}
+  registerTheme(pack:UiThemePack,source?:PresentationSource){return this.register('theme',validateUiTheme(pack),false,source);}
+  registerLayout(pack:UiLayoutPack<T>,source?:PresentationSource){return this.register('layout',layout(pack,this.defaults.layout.primary),false,source);}
+  private presentation(surface:'theme'|'layout',value:UiReference){
+    const key=surface+':'+reference(value),source=this.sources.get(key);
+    if(!source)return undefined;
+    const resolved=resolveContributionPresentation(source.contribution.descriptor,source.catalogs,getLocale());
+    // A catalog may unregister while its pack is still active. Keep the last
+    // readable label instead of exposing the internal key; an English
+    // translation for a missing target locale is still readable.
+    const unreadable=resolved.label.fallback==='key_missing'||resolved.label.fallback==='namespace_missing';
+    if(!unreadable){this.lastPresentations.set(key,resolved);return resolved;}
+    return this.lastPresentations.get(key)??resolved;
+  }
+  /** Re-resolve the active contributed labels from the current runtime locale. */
+  refresh(){
+    const themePresentation=this.presentation('theme',this.snapshot.theme);
+    const layoutPresentation=this.presentation('layout',this.snapshot.layout);
+    const next:UiPresentationSnapshot<T>={...this.snapshot};
+    if(themePresentation)next.themePresentation=themePresentation;else delete next.themePresentation;
+    if(layoutPresentation)next.layoutPresentation=layoutPresentation;else delete next.layoutPresentation;
+    if(this.fallback){
+      const resolved=resolveContributionPresentation(this.fallback.source.contribution.descriptor,this.fallback.source.catalogs,getLocale());
+      const unreadable=resolved.label.fallback==='key_missing'||resolved.label.fallback==='namespace_missing';
+      const presentation=unreadable?this.fallback.presentation:resolved;
+      this.fallback={source:this.fallback.source,presentation};
+      next.fallbackPresentation=presentation;
+    }else delete next.fallbackPresentation;
+    return this.publish(next);
+  }
+  /** Registers a contributed theme/layout only when the explicit reference
+   * names the exact pack identity and the contribution is active. Labels
+   * resolve from the stored source at activation/render time against the
+   * runtime locale; removal restores the builtin pack and publishes the
+   * removed pack's label as an explicit fallback reason. */
+  registerContribution(
+    contribution:ScopedContribution,
+    packReference:UiReference,
+    pack:UiThemePack|UiLayoutPack<T>,
+    catalogs:PluginI18nRegistry,
+    platform:PluginPlatform,
+    facts:UiAvailabilityFacts,
+    locale?:Locale,
+  ){
+    const kind=contribution.descriptor.kind;
+    if(kind!=='theme'&&kind!=='layout')throw new TypeError('Not a theme or layout contribution');
+    if(packReference.id!==pack.id||packReference.version!==pack.version)throw new Error('Presentation reference does not match the pack');
+    const removeMapping=this.bindings.register(contribution,packReference);
+    try{
+      const binding=this.bindings.bind(contribution,catalogs,platform,facts,locale);
+      if(binding.kind!==kind||binding.reference.id!==pack.id||binding.reference.version!==pack.version)throw new Error('Presentation binding does not match the pack');
+      if(binding.availability.state!=='active')throw new Error('Presentation contribution is not active: '+binding.availability.state);
+      const source:PresentationSource={contribution,catalogs,platform,facts};
+      const removePack=kind==='theme'
+        ?this.registerTheme(pack as UiThemePack,source)
+        :this.registerLayout(pack as UiLayoutPack<T>,source);
+      return ()=>{removePack();removeMapping();};
+    }catch(error){removeMapping();throw error;}
+  }
   activate(binding:{theme:UiReference;layout:UiReference}){
     const theme=this.registry.get('theme:'+reference(binding.theme)) as UiThemePack|undefined;
     const selected=this.registry.get('layout:'+reference(binding.layout)) as UiLayoutPack<T>|undefined;
     if(!theme||!selected)throw Error('Presentation provider unavailable');
-    return this.publish({theme,layout:selected});
+    const themePresentation=this.presentation('theme',binding.theme);
+    const layoutPresentation=this.presentation('layout',binding.layout);
+    this.fallback=undefined;
+    return this.publish({theme,layout:selected,...(themePresentation?{themePresentation}:{}),...(layoutPresentation?{layoutPresentation}:{})});
   }
 }
 

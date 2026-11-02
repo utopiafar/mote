@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseUiContribution} from '../dist/plugin-ui.js';
-import {PluginI18nRegistry, resolveContributionPresentation} from '@mote/shared/plugin-i18n';
+import {PluginI18nRegistry, PresentationContributionRegistry, resolveContributionPresentation} from '@mote/shared/plugin-i18n';
 
 /** A contribution descriptor as a real package manifest projects it; the
  * registry consumes the same frozen wire type the host loads. */
@@ -172,6 +172,144 @@ test('proto-named JSON keys are stored and resolved as ordinary messages', () =>
   registry.register('fixture.mixed', 'en', JSON.parse('{"__proto__":"Prototype label","nav.library":"Library"}'));
   assert.equal(registry.resolve('fixture.mixed', '__proto__', 'en').text, 'Prototype label');
   assert.equal(registry.resolve('fixture.mixed', 'nav.library', 'en').text, 'Library');
+});
+
+const themeDescriptor = parseUiContribution({
+  id: 'fixture.theme', kind: 'theme', apiVersion: '1', platforms: ['web', 'mac'],
+  presentation: {labelKey: 'theme.name', i18nNamespace: 'fixture.plugin'},
+});
+const themeContribution = {packageId: 'fixture.pkg', descriptor: themeDescriptor};
+
+test('a theme contribution binds only through its explicit pack mapping', () => {
+  const registry = registryWith(
+    ['en', {'theme.name': 'Studio'}],
+    ['zh-CN', {'theme.name': '影棚'}],
+  );
+  const bindings = new PresentationContributionRegistry();
+  const dispose = bindings.register(themeContribution, {id: 'fixture.theme', version: '1'});
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  const zh = bindings.bind(themeContribution, registry, 'web', facts, 'zh-CN');
+  assert.equal(zh.kind, 'theme');
+  assert.deepEqual(zh.reference, {id: 'fixture.theme', version: '1'});
+  assert.deepEqual(zh.availability, {state: 'active'});
+  assert.equal(zh.presentation.label.text, '影棚');
+  assert.equal(zh.presentation.routeId, 'fixture.theme');
+  const en = bindings.bind(themeContribution, registry, 'web', facts, 'en');
+  assert.equal(en.presentation.label.text, 'Studio');
+  assert.equal(en.presentation.routeId, 'fixture.theme');
+  dispose();
+  assert.throws(() => bindings.bind(themeContribution, registry, 'web', facts, 'en'), /not mapped/);
+});
+
+test('two valid pack references cannot cross-bind or reuse one pack', () => {
+  const registry = registryWith(['en', {'theme.one': 'One', 'theme.two': 'Two', 'theme.three': 'Three'}]);
+  const bindings = new PresentationContributionRegistry();
+  const contribution = (packageId, id) => ({
+    packageId,
+    descriptor: parseUiContribution({
+      id, kind: 'theme', apiVersion: '1', platforms: ['web'],
+      presentation: {labelKey: id, i18nNamespace: 'fixture.plugin'},
+    }),
+  });
+  const one = contribution('pkg.one', 'theme.one');
+  const two = contribution('pkg.two', 'theme.two');
+  const three = contribution('pkg.three', 'theme.three');
+  bindings.register(one, {id: 'pack.one', version: '1'});
+  bindings.register(two, {id: 'pack.two', version: '2'});
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  assert.deepEqual(bindings.bind(one, registry, 'web', facts, 'en').reference, {id: 'pack.one', version: '1'});
+  assert.deepEqual(bindings.bind(two, registry, 'web', facts, 'en').reference, {id: 'pack.two', version: '2'});
+  assert.equal(bindings.bind(one, registry, 'web', facts, 'en').presentation.label.text, 'One');
+  assert.equal(bindings.bind(two, registry, 'web', facts, 'en').presentation.label.text, 'Two');
+  assert.throws(() => bindings.register(three, {id: 'pack.one', version: '1'}), /already mapped to another/);
+  assert.throws(
+    () => bindings.bind({packageId: 'pkg.other', descriptor: one.descriptor}, registry, 'web', facts, 'en'),
+    /not mapped/,
+  );
+});
+
+test('a theme and a layout may map to the same pack id@version', () => {
+  const bindings = new PresentationContributionRegistry();
+  const theme = {packageId: 'pkg.shared', descriptor: parseUiContribution({
+    id: 'theme.shared', kind: 'theme', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  const layout = {packageId: 'pkg.shared', descriptor: parseUiContribution({
+    id: 'layout.shared', kind: 'layout', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  bindings.register(theme, {id: 'shared.pack', version: '1'});
+  bindings.register(layout, {id: 'shared.pack', version: '1'});
+  const registry = registryWith(['en', {'shared.name': 'Shared'}]);
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  assert.equal(bindings.bind(theme, registry, 'web', facts, 'en').kind, 'theme');
+  assert.equal(bindings.bind(layout, registry, 'web', facts, 'en').kind, 'layout');
+});
+
+test('token-shaped package and contribution ids never share a mapping', () => {
+  const bindings = new PresentationContributionRegistry();
+  const a = {packageId: 'pkg/a', descriptor: parseUiContribution({
+    id: 'b', kind: 'theme', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  const b = {packageId: 'pkg', descriptor: parseUiContribution({
+    id: 'a/b', kind: 'theme', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  bindings.register(a, {id: 'pack.one', version: '1'});
+  const registry = registryWith(['en', {'shared.name': 'Shared'}]);
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  assert.throws(() => bindings.bind(b, registry, 'web', facts, 'en'), /not mapped/);
+  bindings.register(b, {id: 'pack.two', version: '2'});
+  assert.deepEqual(bindings.bind(a, registry, 'web', facts, 'en').reference, {id: 'pack.one', version: '1'});
+  assert.deepEqual(bindings.bind(b, registry, 'web', facts, 'en').reference, {id: 'pack.two', version: '2'});
+});
+
+test('unsupported platforms, wrong kinds and invalid references never bind as active', () => {
+  const registry = registryWith(['en', {'theme.name': 'Studio'}]);
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  const bindings = new PresentationContributionRegistry();
+  bindings.register(themeContribution, {id: 'fixture.theme', version: '1'});
+  const unsupported = bindings.bind(themeContribution, registry, 'android', facts, 'en');
+  assert.deepEqual(unsupported.availability, {state: 'unsupported', reason: 'platform_unsupported'});
+  assert.throws(
+    () => bindings.register(themeContribution, {id: 'fixture.theme', version: '1'}),
+    /already mapped/,
+  );
+  assert.throws(
+    () => bindings.register({packageId: 'fixture.other', descriptor: themeDescriptor}, {id: 'Fixture Theme', version: '1'}),
+    /presentation reference/,
+  );
+  assert.throws(
+    () => bindings.register({packageId: 'fixture.other', descriptor: themeDescriptor}, {id: 'fixture.theme', version: 'v1'}),
+    /presentation reference/,
+  );
+  const page = parseUiContribution({
+    id: 'fixture.page', kind: 'page', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'page.name', i18nNamespace: 'fixture.plugin'},
+  });
+  assert.throws(
+    () => bindings.register({packageId: 'fixture.page.pkg', descriptor: page}, {id: 'fixture.page', version: '1'}),
+    /theme or layout/,
+  );
+});
+
+test('a layout with a missing native provider binds as requires-build', () => {
+  const layout = parseUiContribution({
+    id: 'fixture.layout', kind: 'layout', apiVersion: '1', platforms: ['android'],
+    presentation: {labelKey: 'layout.name', i18nNamespace: 'fixture.plugin'},
+    nativeRequires: [{capability: 'ui.panes', apiVersion: '1', platforms: ['android'], fallback: 'generic-reader'}],
+  });
+  const registry = registryWith(['en', {'layout.name': 'Phone'}]);
+  const bindings = new PresentationContributionRegistry();
+  const contribution = {packageId: 'fixture.layout.pkg', descriptor: layout};
+  bindings.register(contribution, {id: 'fixture.layout', version: '1'});
+  const binding = bindings.bind(
+    contribution, registry, 'android',
+    {requirementsAvailable: true, registeredNativeCapabilities: new Set()}, 'en',
+  );
+  assert.deepEqual(binding.availability, {state: 'requires-build', reason: 'requires_build'});
+  assert.equal(binding.presentation.label.text, 'Phone');
 });
 
 test('registered catalogs are immutable snapshots and disposal restores the fallback', () => {

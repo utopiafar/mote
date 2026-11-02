@@ -64,17 +64,24 @@ export function PresentationSurface({ navigation, toolbar, footer, children, hos
     const restoreTheme=applyAppearanceTheme(root,snapshot.theme,appearance.scheme);
     root.dataset.uiTheme = snapshot.theme.id;
     root.dataset.uiLayout = snapshot.layout.id;
+    const previousThemeLabel=root.dataset.uiThemeLabel,previousLayoutLabel=root.dataset.uiLayoutLabel;
+    if(snapshot.themePresentation)root.dataset.uiThemeLabel=snapshot.themePresentation.label.text;else delete root.dataset.uiThemeLabel;
+    if(snapshot.layoutPresentation)root.dataset.uiLayoutLabel=snapshot.layoutPresentation.label.text;else delete root.dataset.uiLayoutLabel;
     const saved = restore.current;
     if (saved) {
       if (saved.focus?.isConnected) saved.focus.focus({ preventScroll: true });
       window.scrollTo(saved.x, saved.y);
       restore.current = undefined;
     }
-    return restoreTheme;
+    return () => {
+      restoreTheme();
+      if(previousThemeLabel===undefined)delete root.dataset.uiThemeLabel;else root.dataset.uiThemeLabel=previousThemeLabel;
+      if(previousLayoutLabel===undefined)delete root.dataset.uiLayoutLabel;else root.dataset.uiLayoutLabel=previousLayoutLabel;
+    };
   }, [snapshot,appearance]);
   return <>
     <ShellBoundary key={snapshot.layout.id+'@'+snapshot.layout.version} renderer={snapshot.layout.implementation} slots={{layout:snapshot.layout,navigation:navigation(snapshot.layout),toolbar,footer,content:<ContentOutlet container={container}/>}}/>
     {createPortal(children, container)}
-    {snapshot.fallbackReason&&<p role="status" className="notice presentation-notice">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>}
+    {snapshot.fallbackReason&&<p role="status" className="notice presentation-notice">{moteText('专用视图暂不可用，请查看资料库或重试。')}{snapshot.fallbackPresentation&&' · '+snapshot.fallbackPresentation.label.text}</p>}
   </>;
 }
