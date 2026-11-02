@@ -20,7 +20,7 @@ async function freePort(){
 }
 
 /** Actual source entrypoint in a private YAML profile, with explicit stop/start. */
-export async function createPrivateProcess({version='1',directory,healthTimeoutMs=15000,entry:entrypoint=entry}={}){
+export async function createPrivateProcess({version='1',directory,healthTimeoutMs=15000,stopTimeoutMs=10000,entry:entrypoint=entry}={}){
   const parent=directory??mkdtempSync(join(tmpdir(),'mote-native-plugin-process-'));
   if(directory)mkdirSync(parent,{recursive:true,mode:0o700});
   const root=directory?join(parent,`process-${randomUUID()}`):parent;
@@ -43,10 +43,9 @@ export async function createPrivateProcess({version='1',directory,healthTimeoutM
     }
   }
   async function stop({strict=true}={}){
-    const running=child;if(!running)return {code:0,signal:null,forced:false,timeout:false};
-    child=undefined;
+    const running=child;if(!running)return {exited:true,code:0,signal:null,forced:false,timeout:false};
     const closed=new Promise(resolve=>running.once('close',(code,signal)=>resolve({code,signal})));
-    const deadline=Date.now()+10000;
+    const deadline=Date.now()+stopTimeoutMs;
     let forced=false,result;
     if(running.exitCode!==null||running.signalCode!==null)result={code:running.exitCode,signal:running.signalCode};
     else{
@@ -57,16 +56,23 @@ export async function createPrivateProcess({version='1',directory,healthTimeoutM
         await delay(20);
       }
     }
-    const timeout=!result||result.timeout===true;
-    const outcome={...(result??{}),forced,timeout};
-    if(strict&&(forced||timeout||outcome.code!==0||outcome.signal))throw new Error(`Central process did not shut down gracefully: code=${outcome.code??'none'} signal=${outcome.signal??'none'} forced=${forced} timeout=${timeout}`);
+    const timeout=!result||result.timeout===true,outcome={...(result??{}),exited:!timeout,forced,timeout};
+    if(outcome.exited)child=undefined;
+    if(strict&&(forced||timeout||outcome.code!==0||outcome.signal)){
+      const error=new Error(`Central process did not shut down gracefully: code=${outcome.code??'none'} signal=${outcome.signal??'none'} forced=${forced} timeout=${timeout}`);
+      error.outcome=outcome;error.process=running;throw error;
+    }
     return outcome;
   }
   try{await start();}
   catch(error){
-    let cleanup;
-    try{await stop({strict:false});}catch(cleanupError){cleanup=cleanupError;}
-    rmSync(root,{recursive:true,force:true});
+    let cleanup,outcome;
+    try{outcome=await stop({strict:false});}catch(cleanupError){cleanup=cleanupError;}
+    if(!outcome||!outcome.exited||outcome.timeout){
+      cleanup??=Object.assign(new Error('Central process termination was not confirmed'),{outcome,process:child});
+    }else{
+      rmSync(root,{recursive:true,force:true});
+    }
     if(cleanup)throw new AggregateError([error,cleanup],'Central process startup and cleanup failed',{cause:error});
     throw error;
   }
@@ -78,6 +84,13 @@ export async function createPrivateProcess({version='1',directory,healthTimeoutM
     async readNote(id){return this.request('/api/notes/'+encodeURIComponent(id));},
     async stop(){return stop();},
     async restart(){await stop();writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'generated',runtime:'native',host:'127.0.0.1',port,token},storage:{dataDir},models:{deployment:{model:''}},diagnostics:{traceEnabled:false,level:'silent'}}),{mode:0o600});await start();return this;},
-    async close({remove=true,strict=true}={}){let failure;try{await stop({strict});}catch(error){failure=error;}finally{if(remove)rmSync(root,{recursive:true,force:true});}if(failure)throw failure;}
+    async close({remove=true,strict=true}={}){
+      let failure,outcome;
+      try{outcome=await stop({strict});}catch(error){failure=error;outcome=error.outcome;}
+      const confirmed=Boolean(outcome?.exited&&!outcome.timeout);
+      if(remove&&confirmed)rmSync(root,{recursive:true,force:true});
+      if(failure)throw failure;
+      if(remove&&!confirmed)throw Object.assign(new Error('Central process termination was not confirmed; profile retained'),{outcome,process:child});
+    }
   };
 }
