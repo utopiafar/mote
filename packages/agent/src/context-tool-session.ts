@@ -650,7 +650,10 @@ export async function createContextToolSession(
         for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(produced.some(read=>read.operation==='evidence'||read.operation==='memories'))state().expanded.add(record.id);}
         for(const proof of proofs)state().disclosedIds.add(proof.record.id);
         if(!produced.length&&!progressOnly)state().completeLineage=false;
-        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:{...args,...scope},count:Array.isArray(data)?data.length:data===undefined?0:1,...(tool==='attribution_context'&&data&&typeof data==='object'?{attributionPage:{contextFingerprint:String((data as {contextFingerprint?:unknown}).contextFingerprint),offset:Number((data as {offset?:unknown}).offset),total:Number((data as {total?:unknown}).total),requestedLength:Number(args.length??8000),returnedLength:String((data as {text?:unknown}).text??'').length}}:{})});
+        const materialPage=tool==='material_read'?produced.find(read=>read.operation==='materialRead')?.value as {text?:unknown}|undefined:undefined;
+        const traceArguments=materialPage?{ref:args.ref,offset:Number(args.offset??0),length:Number(args.length??4000)}:{...args,...scope};
+        const count=tool==='material_catalog'&&data&&typeof data==='object'&&Array.isArray((data as {items?:unknown}).items)?(data as {items:unknown[]}).items.length:Array.isArray(data)?data.length:data===undefined?0:1;
+        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:traceArguments,count,...(materialPage?{materialPage:{requestedLength:Number(args.length??4000),returnedLength:String(materialPage.text??'').length}}:{}),...(tool==='attribution_context'&&data&&typeof data==='object'?{attributionPage:{contextFingerprint:String((data as {contextFingerprint?:unknown}).contextFingerprint),offset:Number((data as {offset?:unknown}).offset),total:Number((data as {total?:unknown}).total),requestedLength:Number(args.length??8000),returnedLength:String((data as {text?:unknown}).text??'').length}}:{})});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:state().trace.at(-1)!.count});res.end(serialized);return;
       }
       if(pin.requires.includes('readImage')){

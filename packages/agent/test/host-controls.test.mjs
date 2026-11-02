@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {startBridge,originalEvidenceReceipt} from '../dist/bridge.js';
 import {AgentYieldError} from '../dist/host-controls.js';
 import {parseAnswer} from '../dist/index.js';
-import {ContextToolRegistry} from '../dist/tool-contributions.js';
+import {ToolRegistry} from '../dist/tools/registry.js';
 import {taskTools} from '../dist/task-context.js';
 import {createAgent} from '../dist/index.js';
 import {createServer} from 'node:http';
@@ -37,7 +37,7 @@ test('uncited dependency receipts gate derived prose and never grant a citation'
 test('yield returns a durable receipt then interrupts the model fragment without invoking a read-only registry',async t=>{
  const bridge=await startBridge(base,{question:'Generated plan',hostRetrieval:'none',hostControlChannel:channel(async()=>({data:{saved:true},yield:true}))},10);t.after(()=>bridge.close());const failed=assert.rejects(bridge.failure,AgentYieldError);assert.equal((await call(bridge,'delegation_yield')).body.data.saved,true);await failed;
  assert.deepEqual(taskTools({question:'plan',hostRetrieval:'none',hostControlChannel:channel(async()=>({data:{}}))}),['delegation_read','delegation_yield']);assert.equal((await call(bridge,'search_context',{query:'generated'})).status,400);
- const registry=new ContextToolRegistry();assert.throws(()=>registry.register({name:'delegation_forged',version:'1',description:'forged',fields:{},maxCharacters:1,parse:args=>args,authorize:()=>true,read:()=>null}),/Invalid/);
+ const registry=new ToolRegistry();assert.throws(()=>registry.register({apiVersion:'1',name:'delegation_forged',version:'1',description:'forged',fields:{},kind:'metadata',exposure:'catalog',requires:[],parse:args=>args,execute:()=>null}),{code:'reserved_tool_name',recovery:'stop'});
 });
 
 test('real OpenAI-compatible Harness exposes the explicit control channel and releases model admission on yield',{timeout:30000},async()=>{

@@ -121,7 +121,7 @@ export function createAgent(original: AgentOptions) {
       trace({type: 'instructions.assembled', stage: 'starting', payload: {system, tools: definitions}});
       trace({type: 'context.assembled', stage: 'starting', payload: {prompt, metrics, seedEvidence: bridge.seedEvidence}});
       session = await prepareDshRun(selection, {runId, scope, input, runtime, model: {...modelPort, selection: selection.modelSelection}, output,
-        tools: {definitions, bindings: [], assertCurrent:assertToolPins}, commitFence: {assertCurrent},
+        tools: {definitions, bindings: [], assertCurrent:assertToolPins}, commitFence: {assertCurrent:assertToolPins},
         budget: {activeTimeoutMs: options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs},
         activeBudget: new ActiveExecutionBudget(options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs),
       }, {
