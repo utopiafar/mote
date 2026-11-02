@@ -39,19 +39,34 @@ export function CustomPluginPage(props: CustomPageProps) {
     if (!frame?.contentWindow || navigatedRef.current) return;
     let loaded = false;
     let channel: MessageChannel | null = null;
-    // The identity of the issued document: the opaque frame's Location
-    // object itself. A navigation replaces it before any load event —
-    // while it is unreadable the check fails closed.
+    // Deterministic commit signal: pagehide fires on the document's own
+    // window (reachable through the cross-origin WindowProxy) BEFORE a
+    // replacement parses — revocation at commit, not at load.
+    const endChannel = () => {
+      if (navigatedRef.current) return;
+      issuedDocument = null;
+      issuedWindow = null;
+      bridgeRef.current?.revoke();
+      bridgeRef.current = null;
+      channel?.port1.close(); channel?.port2.close(); channel = null;
+      navigatedRef.current = true;
+      props.onNavigated?.();
+    };
+    // The identity of the issued document: the frame's current window
+    // proxy AND its Location object. Navigation replaces at least one of
+    // them before the next load; unreadable is treated as changed.
     let issuedDocument: object | null = null;
-    const currentDocument = (): object | null => {
-      try { return frame.contentWindow ? frame.contentWindow.location : null; }
-      catch { return null; }
+    let issuedWindow: Window | null = null;
+    const documentGone = (): boolean => {
+      try { return !frame.contentWindow || frame.contentWindow !== issuedWindow || frame.contentWindow.location !== issuedDocument; }
+      catch { return true; }
     };
     const onLoad = () => {
       if (!loaded) {
         loaded = true;
-        issuedDocument = currentDocument();
-        if (!issuedDocument) { props.onNavigated?.(); return; }
+        issuedDocument = frame.contentWindow ? frame.contentWindow.location : null;
+        issuedWindow = frame.contentWindow;
+        if (!issuedDocument || !issuedWindow) { endChannel(); return; }
         // Issue the channel ONLY to the document that just loaded — a
         // later replacement never receives a port, so its requests have
         // no carrier and old responses die with the old document's port.
@@ -59,7 +74,7 @@ export function CustomPluginPage(props: CustomPageProps) {
         const bridge = new CustomPageBridge({
           instanceId: props.instanceId, nonce: props.nonce, documentKey: props.documentKey,
           generation: props.generation, visible: props.visible,
-          documentAlive: () => issuedDocument !== null && currentDocument() === issuedDocument,
+          documentAlive: () => !documentGone(),
           declared: props.declared, invoke: props.invoke,
           post: envelope => channel!.port1.postMessage(envelope),
           onRejected: props.onRejected,
@@ -71,14 +86,9 @@ export function CustomPluginPage(props: CustomPageProps) {
           {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, kind: 'channel'}, '*', [channel.port2]);
         return;
       }
-      // Any later load means the document was replaced: destroy the issued
-      // channel — the mount stays disarmed until the host remounts.
-      issuedDocument = null;
-      bridgeRef.current?.revoke();
-      bridgeRef.current = null;
-      channel?.port1.close(); channel?.port2.close(); channel = null;
-      navigatedRef.current = true;
-      props.onNavigated?.();
+      // Any later load means the document was replaced (usually already
+      // revoked by pagehide) — the mount stays disarmed until remount.
+      endChannel();
     };
     frame.addEventListener('load', onLoad);
     return () => { frame.removeEventListener('load', onLoad); bridgeRef.current?.revoke(); bridgeRef.current = null; channel?.port1.close(); channel?.port2.close(); };

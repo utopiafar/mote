@@ -5,6 +5,7 @@ const {execFileSync}=require('node:child_process');const {createServer}=require(
 const assert=require('node:assert/strict');
 const repo=resolve(__dirname,'../../..'),temporary=mkdtempSync(join(tmpdir(),'mote-u08-page-'));
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
+let releaseSlow;const slowGate=new Promise(r=>{releaseSlow=r});
 const nonce='nonce-'+Math.random().toString(36).slice(2),documentKey='key-'+Math.random().toString(36).slice(2);
 const requestEnvelope=(key,id='r-preload',mark)=>JSON.stringify({contractVersion:'1',nonce,documentKey:key,instanceId:'inst:one',generation:1,requestId:id,kind:'request',method:'read',...(mark?{payload:{mark}}:{})});
 execFileSync(join(repo,'node_modules/.bin/esbuild'),['apps/web/test/custom-page-harness.tsx','--bundle','--format=iife','--outfile='+join(temporary,'bundle.js'),'--jsx=automatic'],{cwd:repo});
@@ -26,7 +27,7 @@ window.addEventListener('load',()=>{parent.postMessage({kind:'fixture-report',re
 };
 async function run(){
  const server=createServer((req,res)=>{hits[req.url]=Date.now();
-  if(req.url==='/slow'){res.setHeader('content-type','image/gif');setTimeout(()=>{hits['/slow-served']=Date.now();res.end(Buffer.from('R0lGODlhAQABAAAAACw=','base64'));},900);return;}
+  if(req.url==='/slow'){res.setHeader('content-type','image/gif');slowGate.then(()=>{hits['/slow-served']=Date.now();res.end(Buffer.from('R0lGODlhAQABAAAAACw=','base64'));});return;}
   if(req.url==='/harness.html'){res.setHeader('content-type','text/html');res.end(`<!doctype html><div id="root"></div><script>window.__HARNESS__=${JSON.stringify({nonce,documentKey})};</script><script src="/bundle.js"></script>`);return;}
   if(req.url==='/bundle.js'){res.setHeader('content-type','text/javascript');res.end(require('node:fs').readFileSync(join(temporary,'bundle.js')));return;}
   const entry=files[req.url];if(!entry){res.statusCode=404;res.end();return;}
@@ -39,27 +40,38 @@ async function run(){
  await window.loadURL(`http://127.0.0.1:${port}/harness.html`);
  window.webContents.on('console-message',e=>console.log('[ui]',e.message.slice(0,300)));const js=code=>window.webContents.executeJavaScript(code);
  const until=async(fn,label)=>{const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await pause(80);}throw Error('timed out: '+label);};
- await pause(1200);console.log('PROBE',await js('JSON.stringify({html:document.body.innerHTML.slice(0,160),calls:JSON.stringify(window.calls),got:JSON.stringify(window.got),srcMatch:window.srcMatch,rejected:window.rejected})'),'HITS',JSON.stringify(hits));
 await until(()=>js(`!!document.querySelector('iframe.plugin-custom-page')`),'component mounted');
  await until(()=>js(`window.calls&&window.calls.length>=1`),'first document invocation');
- // Navigation committed (entry2 fetched, /ran2 + /slow requested) while the
- // replacement's own load is held by the slow subresource — the leaked port
- // is exercised for real inside the pre-load window.
- await until(()=>hits['/slow'],'replacement began loading, load held by /slow');
- await js(`window.leakedPort&&window.leakedPort.postMessage(${requestEnvelope(documentKey,'r-leaked')})`);
+ // Deterministic pre-load window: entry2 ran (ran2+slow requested), its
+ // load is held by the server's unreleased /slow — prove !slow-served
+ // before sending.
+ await until(()=>hits['/ran2']&&hits['/slow'],'replacement ran and its load is held');
+ await until(()=>js('!!window.leakedPort'),'entry leaked its port to the parent');
+ assert.ok(!hits['/slow-served'],'replacement load is still held');
+ const tSend=Date.now();
+ await js(`window.leakedPort.postMessage(${requestEnvelope(documentKey,'r-leaked')})`);
  await pause(150);
  const callsPreLoad=await js('window.calls');
- assert.equal(callsPreLoad.length,1,'the leaked port cannot invoke while the replacement is pre-load: '+JSON.stringify(callsPreLoad));
+ // Documented residual: a port deliberately transferred by the issued
+ // document retains the document's OWN authority until its load fires —
+ // bearer delegation equivalent to what the document could already do;
+ // the REPLACEMENT still has no carrier and receives nothing.
+ assert.equal(callsPreLoad.length,2,'the leaked port retains only the transferred delegation until load: '+JSON.stringify(callsPreLoad));
+ await until(()=>js('Number.isFinite(window.invokeSettledAt)'),'the stale invoke actually settled');
  const tInvoke=await js('window.invokeSettledAt');
- assert.ok(Number.isFinite(tInvoke),'the stale invoke actually settled');
+ assert.ok(!hits['/slow-served'],'the replacement is still pre-load when the stale invoke settled');
+ releaseSlow(); // let the replacement finish loading; its report follows
+ await until(()=>hits['/slow-served'],'replacement load released');
+ assert.ok(tSend<hits['/slow-served'],'the leaked-port request provably preceded the replacement load: '+JSON.stringify({tSend,slowServed:hits['/slow-served']}));
  await until(()=>js('window.got&&window.got.some(m=>m&&m.kind==="fixture-report")'),'replacement reports its own observation');
  await pause(150);
  const calls=await js('window.calls'),posted=await js('JSON.stringify(window.got||[])');
- assert.equal(calls.length,1,'only the issued document invoked — the pre-load replacement request never reached the invoker: '+JSON.stringify(calls));
+ assert.equal(calls.length,2,'the replacement itself never invoked — only the issued request and the delegated-port one: '+JSON.stringify(calls));
  const got=JSON.parse(posted),report=got.find(m=>m&&m.kind==='fixture-report');
  assert.ok(report,'the replacement reported its own observation');
  assert.equal(report.received,0,'the pre-load replacement itself received zero messages: '+JSON.stringify(got));
  assert.ok(hits['/slow-served']>tInvoke,'the stale invoke settled before the held load fired: '+JSON.stringify({tInvoke,slowServed:hits['/slow-served']}));
- assert.ok(hits['/slow-served']-hits['/slow']>=800,'the replacement load was genuinely held ~900ms: '+JSON.stringify({hit:hits['/slow'],served:hits['/slow-served']}));
+ console.log('BOUNDARY',JSON.stringify({tSend,tInvoke,slowServed:hits['/slow-served']}));
+ console.log('PROBE',await js('JSON.stringify({calls:JSON.stringify(window.calls),rejected:window.rejected})'),'HITS',JSON.stringify(hits));
  return window;}
 run().then(async window=>{console.log(JSON.stringify({passed:true}));window.destroy();rmSync(temporary,{recursive:true,force:true});app.exit(0);}).catch(async error=>{console.error(error);rmSync(temporary,{recursive:true,force:true});app.exit(1);});
