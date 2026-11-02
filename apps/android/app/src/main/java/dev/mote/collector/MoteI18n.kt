@@ -82,6 +82,81 @@ object MoteI18n {
     }
 }
 
+/** One plugin message resolved for a locale. A missing translation reports an
+ * explicit reason instead of changing route identity, authorization or drafts. */
+internal data class PluginUiText(val text: String, val fallbackReason: String? = null)
+
+/** The label/glyph/accessibility roles a contribution declares. Keys are
+ * opaque authored identifiers resolved against the plugin namespace. */
+internal data class PluginUiPresentation(
+    val labelKey: String,
+    val glyphKey: String? = null,
+    val a11yKey: String? = null,
+    val i18nNamespace: String,
+)
+
+internal data class ResolvedPluginUiPresentation(
+    val routeId: String,
+    val label: PluginUiText,
+    val glyph: PluginUiText?,
+    val a11y: PluginUiText,
+    val fallbackReasons: List<String>,
+)
+
+/** Namespaced plugin-authored catalogs. Host catalogs never resolve plugin
+ * keys; English is the canonical key set and every other locale may only
+ * translate keys English declared. Registration order is free. */
+internal class PluginI18nRegistry {
+    private val namespaces = LinkedHashMap<String, LinkedHashMap<String, Map<String, String>>>()
+    private val token = Regex("[\\x21-\\x7e]{1,256}")
+
+    @Synchronized
+    fun register(namespace: String, locale: String, catalog: Map<String, String>) {
+        require(token.matches(namespace)) { "Invalid plugin i18n namespace" }
+        require(locale in MoteI18n.supported) { "Unsupported plugin locale: $locale" }
+        require(catalog.isNotEmpty()) { "Empty plugin catalog" }
+        catalog.forEach { (key, value) ->
+            require(token.matches(key)) { "Invalid plugin message key: $key" }
+            require(value.isNotBlank() && value.length <= 2000) { "Invalid plugin translation: $key" }
+        }
+        val byLocale = namespaces.getOrPut(namespace) { LinkedHashMap() }
+        require(!byLocale.containsKey(locale)) { "Plugin catalog already registered: $namespace@$locale" }
+        if (locale == "en") {
+            byLocale.forEach { (other, otherCatalog) ->
+                require(otherCatalog.keys.all(catalog::containsKey)) { "English catalog is missing plugin keys for $other" }
+            }
+        } else byLocale["en"]?.let { english ->
+            require(catalog.keys.all(english::containsKey)) { "English catalog is missing plugin keys for $locale" }
+        }
+        byLocale[locale] = java.util.Collections.unmodifiableMap(LinkedHashMap(catalog))
+    }
+
+    /** Resolves one key against the active locale, then English, then the key.
+     * `locale` defaults to the runtime locale at call time. */
+    @Synchronized
+    fun resolve(namespace: String, key: String, locale: String = MoteI18n.language()): PluginUiText {
+        val byLocale = namespaces[namespace] ?: return PluginUiText(key, "namespace_missing")
+        val english = byLocale["en"] ?: return PluginUiText(key, "key_missing")
+        byLocale[locale]?.get(key)?.let { return PluginUiText(it) }
+        english[key]?.let { return PluginUiText(it, "locale_missing") }
+        return PluginUiText(key, "key_missing")
+    }
+
+    /** Resolves a contribution's declared roles. The accessible name falls back
+     * to the visible label; nothing here reads data, commands or drafts. */
+    @Synchronized
+    fun resolve(routeId: String, presentation: PluginUiPresentation, locale: String = MoteI18n.language()): ResolvedPluginUiPresentation {
+        val label = resolve(presentation.i18nNamespace, presentation.labelKey, locale)
+        val glyph = presentation.glyphKey?.let { resolve(presentation.i18nNamespace, it, locale) }
+        val a11y = presentation.a11yKey?.let { resolve(presentation.i18nNamespace, it, locale) } ?: label
+        val reasons = listOfNotNull(label.fallbackReason, glyph?.fallbackReason, a11y.fallbackReason).distinct()
+        return ResolvedPluginUiPresentation(routeId, label, glyph, a11y, reasons)
+    }
+
+    @Synchronized
+    fun clear() { namespaces.clear() }
+}
+
 /** Recreate stale screens after returning from an app-language change. */
 open class MoteActivity : Activity() {
     private var displayedLanguage = ""
