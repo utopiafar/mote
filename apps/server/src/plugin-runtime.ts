@@ -78,6 +78,11 @@ export class WorkerPluginRuntime implements PluginRuntime {
 }
 
 const workerPort=serviceContract<Pick<PluginRuntime,'call'>>('mote.plugin.worker-runtime','1');
+/** Local admission refusal is not evidence of transport loss. Accepted calls
+ * retain their scope until the owner finishes graceful draining. */
+class RuntimeAdmissionError extends StoreError {
+  constructor(){super('Plugin runtime is quiescing',503);this.name='RuntimeAdmissionError';}
+}
 /** A worker transport is owned by a child of the existing host. The required
  * control binding pins its owner; unloading control revokes every child before
  * waiting for cleanup. This is a lifetime boundary, never a sandbox or grant. */
@@ -105,7 +110,7 @@ export class HostedPluginRuntime implements PluginRuntime {
           },
           start(){context.provide('worker-runtime',workerPort,{call:async(method,params,signal)=>{
             const accepted=await context.scope.run(async scopeSignal=>({value:await runtime.call(method,params,AbortSignal.any([scopeSignal,...(signal?[signal]:[])]))}));
-            if(!accepted)throw new StoreError('Plugin runtime is quiescing',503);return accepted.value;
+            if(!accepted)throw new RuntimeAdmissionError();return accepted.value;
           }});},
           quiesce(){},stop(){},dispose(){},
         };
@@ -128,7 +133,7 @@ export class HostedPluginRuntime implements PluginRuntime {
     if(this.closed)throw new StoreError('Plugin runtime is closing',503);
     await this.ready(args[2]);
     try{return await this.lease!.value.call(...args);}catch(error){
-      if(error instanceof StoreError&&error.statusCode===503){
+      if(error instanceof StoreError&&error.statusCode===503&&!(error instanceof RuntimeAdmissionError)){
         this.closed=true;this.closing=this.handle!.close('revoked');void this.closing.catch(()=>{});
       }
       throw error;

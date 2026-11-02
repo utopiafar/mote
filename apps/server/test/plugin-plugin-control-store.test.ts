@@ -105,8 +105,8 @@ test('missing exact dependency is blocked and receipt replay never retries a fac
   await f.plugins.selectBuild('one',input);assert.equal(calls,0);
 });
 
-function releaseFixture(path:string,hold?:{entered:()=>void;wait:Promise<void>},memory=false){
-  const source=memory?`export function createMemoryProvider(){return {health(){return {providerId:'generated.empty',version:'1',ready:true,verified:{persistentCrud:true,scopedRetrieval:true,immutableRecords:true,idempotentReplay:true,history:true,physicalErase:false},problems:[]}},export(){return []},read(){return null},search(){return []},close(){}}}`:`import {appendFileSync,existsSync,writeFileSync} from 'node:fs';import {setTimeout as delay} from 'node:timers/promises'; export async function createMemoryProvider(c){if(existsSync(c.log+'.hold')){writeFileSync(c.log+'.initializing','');while(existsSync(c.log+'.hold'))await delay(5);}return {health(){return {capabilities:[{id:'repository',state:'verified'}],issues:[]}},put(){appendFileSync(c.log,'submitted\\n');process.exit(17)},close(){}}}`;
+function releaseFixture(path:string,hold?:{entered:()=>void;wait:Promise<void>},memory=false,sourceOverride?:string){
+  const source=sourceOverride??(memory?`export function createMemoryProvider(){return {health(){return {providerId:'generated.empty',version:'1',ready:true,verified:{persistentCrud:true,scopedRetrieval:true,immutableRecords:true,idempotentReplay:true,history:true,physicalErase:false},problems:[]}},export(){return []},read(){return null},search(){return []},close(){}}}`:`import {appendFileSync,existsSync,writeFileSync} from 'node:fs';import {setTimeout as delay} from 'node:timers/promises'; export async function createMemoryProvider(c){if(existsSync(c.log+'.hold')){writeFileSync(c.log+'.initializing','');while(existsSync(c.log+'.hold'))await delay(5);}return {health(){return {capabilities:[{id:'repository',state:'verified'}],issues:[]}},put(){appendFileSync(c.log,'submitted\\n');process.exit(17)},close(){}}}`);
   const archive=zipSync({'worker.mjs':strToU8(source)}),repository='generated-fixture/control',tag='v1.0.0',base=`https://github.com/${repository}/releases/download/${tag}/`;
   const manifest:PluginManifest={schemaVersion:1,id:'fixture.worker',name:'Fixture worker',version:'1.0.0',runtime:'worker',entry:'worker.mjs',archive:{asset:'worker.zip',sha256:sha256(Buffer.from(archive))},capabilities:['repository','retrieval'],configuration:[{id:'log',label:'Fixture submission log',type:'text',required:true}],dependencies:[],access:['Generated private profile']};
   const releases=new GitHubPluginReleases(join(path,'packages'),async url=>{
@@ -256,4 +256,26 @@ test('an unstarted restart selection does not prevent hot activation while a liv
   await f.close();f=await platform(path,[restart,hot]);assert.equal(f.plugins.buildView('foundation').active!.version,'1.0.0');
   const actual=f.plugins.buildView('foundation'),deferred=await f.plugins.selectBuild('foundation',{...command(actual.revision),selection:{...selection,version:'1.1.0'}});
   assert.equal(deferred.restartRequired,true);assert.equal(deferred.active!.version,'1.0.0','an actually running restart provider is not hot-unloaded');
+});
+
+test('quiesce refuses a new hosted RPC while an accepted worker mutation drains before cleanup',async t=>{
+  const path=directory(t),source=`import {appendFileSync,existsSync,writeFileSync} from 'node:fs';import {setTimeout as delay} from 'node:timers/promises';export function createMemoryProvider(c){return {health(){appendFileSync(c.log,'unexpected-health\\n');return {}},async put(_,signal){const abort=()=>appendFileSync(c.log,'aborted\\n');signal.addEventListener('abort',abort,{once:true});try{appendFileSync(c.log,'accepted\\n');writeFileSync(c.log+'.entered','');while(!existsSync(c.log+'.release'))await delay(5);signal.throwIfAborted();appendFileSync(c.log,'completed\\n');return {committed:true};}finally{signal.removeEventListener('abort',abort)}},close(){appendFileSync(c.log,'closed\\n')}}}`;
+  const r=releaseFixture(path,undefined,false,source),f=await platform(path,[],r.releases);t.after(()=>f.close());
+  const preview=await f.plugins.resolve({repository:r.repository,tag:r.tag});f.plugins.install({...command(f.plugins.revision()),previewId:preview.id});await until(()=>f.plugins.view().packages[0]?.state==='installed');
+  const log=join(path,'drain.log'),instance=f.plugins.configure(undefined,{...command(f.plugins.revision()),packageId:f.plugins.view().packages[0]!.id,name:'Accepted drain',scope:'default',configuration:{log}});
+  const runtime=f.plugins.runtime(instance.id),first=runtime.call('put',{}).then(value=>({value}),error=>({error}));
+  await until(()=>{try{readFileSync(log+'.entered');return true;}catch{return false;}});
+  const scope=f.host.snapshot().contributions.find(value=>value.identity.scope.instanceId===instance.id)!.identity.scope;
+  const port=serviceContract<unknown>('mote.plugin.worker-runtime','1'),lease=await f.host.acquire(port,{service:port,provider:{scope,contributionId:'worker-runtime'},revision:0});
+  let stopping:Promise<void>|undefined;
+  try{
+    await f.handle.quiesce('upgrade');
+    await assert.rejects(runtime.call('health',{}),/quiescing/);
+    assert.equal(lease.signal.aborted,false,'admission refusal must not revoke the accepted operation');
+    assert.equal(f.host.snapshot().contributions.find(value=>value.identity.scope.activationId===scope.activationId)!.availability.state,'unavailable');
+    let closed=false;stopping=f.handle.close('upgrade');void stopping.then(()=>{closed=true;});
+    await delay(0);assert.equal(closed,false);assert.equal(lease.signal.aborted,false,'graceful close still waits for the held operation');
+    writeFileSync(log+'.release','');assert.deepEqual(await first,{value:{committed:true}});
+    await stopping;assert.equal(readFileSync(log,'utf8'),'accepted\ncompleted\nclosed\n');assert.equal(lease.signal.aborted,true);
+  }finally{writeFileSync(log+'.release','');await first;if(stopping)await stopping;await lease.release();}
 });
