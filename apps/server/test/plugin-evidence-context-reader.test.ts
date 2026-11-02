@@ -65,10 +65,12 @@ test('dispose revokes views and ports, releases retained snapshots, and leaves b
     retainSnapshot:()=>{const state={count:0};released.push(state);return {binding:{namespace:{ownerId:'mote-owner',instanceId:'generated-instance',bindingRevision:1}},catalog:{generated:{memoryId:'generated'}},recordDigests:{},metadata:{},lineage:{},records:undefined,release:()=>{state.count++;}};},
   } as unknown as MemoryBindings;
   const service=createEvidenceContextReader({store,sources,materials,memoryBindings:binding});
-  const view=service.agent({diagnostics}),snapshot=service.ports.memorySnapshots.retainMemorySnapshot({});
+  const view=service.agent({diagnostics}),snapshot=service.ports.memorySnapshots.retainMemorySnapshot({}),retain=service.ports.memorySnapshots.memoryBindings!.retainSnapshot;
   assert.ok(snapshot);
   assert.equal(released[0]!.count,0);
   service.dispose();
+  assert.throws(()=>retain(),{statusCode:503});
+  assert.throws(()=>service.ports.memorySnapshots.memoryBindings!.retainSnapshot(),{statusCode:503});
   assert.equal(service.disposed,true);
   assert.equal(service.assembly.reader.disposed,true);
   assert.equal(released[0]!.count,1);

@@ -125,7 +125,12 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
       assertMemoryReadable:(cards,policy)=>fenced(()=>reader.assertMemoryReadable(cards,policy)),
     },
     memorySnapshots:{
-      get memoryBindings(){return reader.memoryBindings?{retainSnapshot:reader.memoryBindings.retainSnapshot.bind(reader.memoryBindings)}:undefined;},
+      // A caller may retain this capability before disposal. Check the factory
+      // lifecycle at invocation, not only when the property is read.
+      get memoryBindings(){
+        const bindings=reader.memoryBindings;
+        return bindings?{retainSnapshot:(ids?:readonly string[])=>fenced(()=>bindings.retainSnapshot(ids))}:undefined;
+      },
       retainMemorySnapshot:context=>fenced(()=>reader.retainMemorySnapshot(context)),
       memorySnapshot:context=>fenced(()=>reader.memorySnapshot(context)),
       releaseMemorySnapshot:context=>fenced(()=>reader.releaseMemorySnapshot(context)),
