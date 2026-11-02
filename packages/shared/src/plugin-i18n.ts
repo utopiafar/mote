@@ -168,7 +168,9 @@ const presentationId = /^[a-z][a-z0-9.-]*$/;
 const presentationVersion = /^\d+(?:\.\d+)*$/;
 
 function contributionKey(contribution: ScopedContribution): string {
-  return contribution.packageId + '/' + contribution.descriptor.id + '@' + contribution.descriptor.apiVersion;
+  // Tokens may themselves contain '/', so encode the three fields without
+  // delimiter ambiguity.
+  return JSON.stringify([contribution.packageId, contribution.descriptor.id, contribution.descriptor.apiVersion]);
 }
 
 /** Host-owned, explicit mapping from one scoped contribution to the exact
@@ -190,7 +192,7 @@ export class PresentationContributionRegistry {
     if (this.mappings.has(key)) throw new Error('Presentation contribution already mapped');
     const pack = reference.id + '@' + reference.version;
     for (const existing of this.mappings.values())
-      if (existing.reference.id + '@' + existing.reference.version === pack)
+      if (existing.kind === kind && existing.reference.id + '@' + existing.reference.version === pack)
         throw new Error('Presentation pack already mapped to another contribution');
     const mapping = {kind, reference: {id: reference.id, version: reference.version}};
     this.mappings.set(key, mapping);

@@ -228,6 +228,43 @@ test('two valid pack references cannot cross-bind or reuse one pack', () => {
   );
 });
 
+test('a theme and a layout may map to the same pack id@version', () => {
+  const bindings = new PresentationContributionRegistry();
+  const theme = {packageId: 'pkg.shared', descriptor: parseUiContribution({
+    id: 'theme.shared', kind: 'theme', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  const layout = {packageId: 'pkg.shared', descriptor: parseUiContribution({
+    id: 'layout.shared', kind: 'layout', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  bindings.register(theme, {id: 'shared.pack', version: '1'});
+  bindings.register(layout, {id: 'shared.pack', version: '1'});
+  const registry = registryWith(['en', {'shared.name': 'Shared'}]);
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  assert.equal(bindings.bind(theme, registry, 'web', facts, 'en').kind, 'theme');
+  assert.equal(bindings.bind(layout, registry, 'web', facts, 'en').kind, 'layout');
+});
+
+test('token-shaped package and contribution ids never share a mapping', () => {
+  const bindings = new PresentationContributionRegistry();
+  const a = {packageId: 'pkg/a', descriptor: parseUiContribution({
+    id: 'b', kind: 'theme', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  const b = {packageId: 'pkg', descriptor: parseUiContribution({
+    id: 'a/b', kind: 'theme', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'shared.name', i18nNamespace: 'fixture.plugin'},
+  })};
+  bindings.register(a, {id: 'pack.one', version: '1'});
+  const registry = registryWith(['en', {'shared.name': 'Shared'}]);
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  assert.throws(() => bindings.bind(b, registry, 'web', facts, 'en'), /not mapped/);
+  bindings.register(b, {id: 'pack.two', version: '2'});
+  assert.deepEqual(bindings.bind(a, registry, 'web', facts, 'en').reference, {id: 'pack.one', version: '1'});
+  assert.deepEqual(bindings.bind(b, registry, 'web', facts, 'en').reference, {id: 'pack.two', version: '2'});
+});
+
 test('unsupported platforms, wrong kinds and invalid references never bind as active', () => {
   const registry = registryWith(['en', {'theme.name': 'Studio'}]);
   const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};

@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {UiPresentationHost,linearUiTheme,defaultUiLayout,androidUiLayout,desktopUiLayout,uiDestinationPresentation} from '../dist/ui-presentation.js';
 import {PluginI18nRegistry} from '../dist/plugin-i18n.js';
 import {parseUiContribution} from '../dist/plugin-ui.js';
+import {configureLocale} from '../dist/i18n.js';
 
 const fixture=()=>new UiPresentationHost({theme:linearUiTheme,layout:{...defaultUiLayout,implementation:{name:'default'}}});
 test('one failed presentation observer does not split the committed binding across consumers',()=>{
@@ -108,11 +109,11 @@ test('a contributed theme and layout bind exactly and expose runtime labels unti
   })};
   const removeLayout=host.registerContribution(layoutContribution,{id:'fixture.layout',version:'1'},layout,catalogs,'web',facts,'en');
   host.activate({theme:linearUiTheme,layout});
-  assert.equal(host.getSnapshot().layoutPresentation.label.text,'Studio layout');
+  assert.equal(host.getSnapshot().layoutPresentation.label.text,'影棚布局');
   removeLayout();
   assert.equal(host.getSnapshot().layout.id,defaultUiLayout.id);
   assert.equal(host.getSnapshot().fallbackReason,'layout_removed');
-  assert.equal(host.getSnapshot().fallbackPresentation.label.text,'Studio layout');
+  assert.equal(host.getSnapshot().fallbackPresentation.label.text,'影棚布局');
   assert.equal(host.getSnapshot().layoutPresentation,undefined);
 });
 
@@ -138,4 +139,31 @@ test('a contributed pack only binds its exact reference and theme/layout kind',(
     ()=>host.registerContribution({packageId:'fixture.page',descriptor:page},{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts,'en'),
     /theme or layout/,
   );
+});
+
+test('contributed labels re-resolve from the host on runtime locale changes',()=>{
+  let locale='zh-CN';configureLocale(()=>locale);
+  try{
+    const host=fixture();
+    const catalogs=new PluginI18nRegistry();
+    catalogs.register('fixture.plugin','en',{'theme.name':'Studio'});
+    catalogs.register('fixture.plugin','zh-CN',{'theme.name':'影棚'});
+    const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+    const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+    const contribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+      id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+      presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+    })};
+    const remove=host.registerContribution(contribution,{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts,'zh-CN');
+    host.activate({theme,layout:defaultUiLayout});
+    assert.equal(host.getSnapshot().themePresentation.label.text,'影棚');
+    locale='en';
+    host.refresh();
+    assert.equal(host.getSnapshot().themePresentation.label.text,'Studio');
+    assert.equal(host.getSnapshot().theme.id,'fixture.theme');
+    remove();
+    assert.equal(host.getSnapshot().fallbackPresentation.label.text,'Studio');
+    assert.equal(host.getSnapshot().theme.id,linearUiTheme.id);
+    assert.equal(host.getSnapshot().fallbackReason,'theme_removed');
+  }finally{configureLocale(()=> 'zh-CN');}
 });
