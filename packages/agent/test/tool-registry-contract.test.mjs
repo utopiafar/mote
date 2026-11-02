@@ -112,6 +112,26 @@ test('snapshot serializes as a pure DTO in explicit selection order, not registr
   assert.throws(() => forward.snapshot(selection(['fixture_alpha', 'v1'], ['fixture_alpha', 'v1'])), expectCode('invalid_tool_selection'));
 });
 
+test('permission order is normalized while declaration changes alter the persisted per-tool identity', () => {
+  const toolkit = (requires, overrides = {}) => {
+    const registry = new ToolRegistry();
+    registry.register(descriptor('declared_identity', {requires, ...overrides}));
+    return registry.snapshot(selection(['declared_identity', 'v1']));
+  };
+  const ordered = toolkit(['evidence', 'search']);
+  const reordered = toolkit(['search', 'evidence']);
+  assert.equal(ordered.entries[0].fingerprint, reordered.entries[0].fingerprint);
+  assert.equal(ordered.fingerprint, reordered.fingerprint);
+  assert.deepEqual(diffToolSnapshots(ordered, reordered).changed, []);
+
+  const changedExposure = toolkit(['evidence', 'search'], {exposure: 'catalog'});
+  const changedRequires = toolkit(['search']);
+  assert.notEqual(changedExposure.entries[0].fingerprint, ordered.entries[0].fingerprint);
+  assert.notEqual(changedRequires.entries[0].fingerprint, ordered.entries[0].fingerprint);
+  assert.notEqual(changedExposure.fingerprint, ordered.fingerprint);
+  assert.deepEqual(diffToolSnapshots(ordered, changedExposure).changed.map(item => item.name), ['declared_identity']);
+});
+
 test('local assertActive/resolve bind the original registration and never revive an old pin', async () => {
   const registry = new ToolRegistry();
   const remove = registry.register(descriptor('fixture_live'));
