@@ -5,6 +5,7 @@ import { JSDOM } from 'jsdom';
 import { UiPresentationHost, defaultUiLayout, linearUiTheme } from '@mote/shared';
 import { PluginI18nRegistry } from '@mote/shared/plugin-i18n';
 import { parseUiContribution } from '@mote/shared/plugin-ui';
+import { configureLocale } from '@mote/shared/i18n';
 import {webAppearance} from '../src/appearance';
 import { PresentationSurface, WorkspaceShell, type WebShellProps, type WebShellRenderer } from '../src/presentation';
 
@@ -83,5 +84,45 @@ test('contributed presentation labels reach the shell and the removal notice', a
   assert.equal(dom.window.document.documentElement.dataset.uiThemeLabel, 'Studio');
   await act(async () => removeTheme());
   assert.equal(dom.window.document.documentElement.dataset.uiThemeLabel, undefined);
+  assert.match(dom.window.document.querySelector('.presentation-notice')?.textContent ?? '', /Studio/);
+});
+
+test('a removed contributed pack notice re-resolves on a locale change', async t => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/' });
+  const previous = new Map<string, PropertyDescriptor | undefined>();
+  for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })) {
+    previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+  }
+  dom.window.scrollTo = () => {};
+  let locale = 'zh-CN'; configureLocale(() => locale);
+  const { createRoot } = await import('react-dom/client'), root = createRoot(dom.window.document.getElementById('root')!);
+  const host = new UiPresentationHost<WebShellRenderer>({ theme: linearUiTheme, layout: { ...defaultUiLayout, implementation: WorkspaceShell } });
+  const catalogs = new PluginI18nRegistry();
+  catalogs.register('fixture.plugin', 'en', { 'theme.name': 'Studio' });
+  catalogs.register('fixture.plugin', 'zh-CN', { 'theme.name': '影棚' });
+  const facts = { requirementsAvailable: true, registeredNativeCapabilities: new Set<string>() };
+  const theme = { ...linearUiTheme, id: 'fixture.theme', version: '1' };
+  const contribution = {
+    packageId: 'fixture.pkg',
+    descriptor: parseUiContribution({
+      id: 'fixture.theme', kind: 'theme', apiVersion: '1', platforms: ['web'],
+      presentation: { labelKey: 'theme.name', i18nNamespace: 'fixture.plugin' },
+    }),
+  };
+  const removeTheme = host.registerContribution(contribution, { id: 'fixture.theme', version: '1' }, theme, catalogs, 'web', facts);
+  t.after(async () => {
+    await act(async () => root.unmount());
+    removeTheme();
+    configureLocale(() => 'zh-CN');
+    for (const [key, value] of previous) { if (value) Object.defineProperty(globalThis, key, value); else Reflect.deleteProperty(globalThis, key); }
+    dom.window.close();
+  });
+  await act(async () => root.render(React.createElement(PresentationSurface, { host, navigation: () => 'Generated navigation', toolbar: 'Generated toolbar', footer: 'Generated footer' }, React.createElement('p', null, 'Generated content'))));
+  await act(async () => host.activate({ theme, layout: defaultUiLayout }));
+  assert.equal(dom.window.document.documentElement.dataset.uiThemeLabel, '影棚');
+  await act(async () => removeTheme());
+  assert.match(dom.window.document.querySelector('.presentation-notice')?.textContent ?? '', /影棚/);
+  locale = 'en';
+  await act(async () => host.refresh());
   assert.match(dom.window.document.querySelector('.presentation-notice')?.textContent ?? '', /Studio/);
 });
