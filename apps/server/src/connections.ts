@@ -47,12 +47,16 @@ export class Connections {
   private invitations=new Map<string,InvitationRecord>();
   private sequence:Promise<unknown>=Promise.resolve();
   private closed=false;
+  private readonly changed=new Set<()=>void>();
   private file:ConnectionFile;
   private clock:()=>number;
   constructor(private store:Store,private sources:SourceStore,options?:{file?:ConnectionFile;clock?:()=>number}){
     this.file=options?.file??new PrivateFile<Saved>(join(store.directory,'connectors'),'client-connections.json');this.clock=options?.clock??Date.now;
   }
+  /** Trusted assembly checks object provenance before taking lifecycle ownership. */
+  usesStore(store:Store){return this.store===store&&this.sources.store===store;}
   async init(){
+    if(this.closed)throw new ConnectionError('connection_closed',503,'Authorization platform is unavailable');
     try{const raw=await this.file.read();if(raw!==undefined){const saved=savedSchema.parse(raw);const ids=new Set(),hashes=new Set();for(const c of saved.credentials){serverUrl(c.serverUrl);if(ids.has(c.id)||hashes.has(c.hash)||(c.scope==='mcp-write'&&!c.writeSourceIds?.length))throw Error();ids.add(c.id);hashes.add(c.hash);}this.credentials=saved.credentials;}}
     catch{throw new ConnectionError('connection_storage_invalid',503,moteText("连接凭据文件无法读取，请保留数据并检查中央节点文件权限。"));}
   }
@@ -63,6 +67,7 @@ export class Connections {
     if(Buffer.byteLength(JSON.stringify({version:1,credentials:reserved}))>2*1024*1024)throw new ConnectionError('connection_limit',409,moteText("连接记录已达到存储上限，请联系节点管理员。"));
     try{await this.file.write({version:1,credentials});}catch{throw new ConnectionError('connection_storage_failed',503,moteText("连接凭据未保存，操作未生效；请检查中央节点存储后重试。"));}
     this.credentials=credentials;
+    for(const listener of this.changed)listener();
   }
   private pruneInvitations(){for(const [key,value] of this.invitations)if(value.expiresAt<=this.clock())this.invitations.delete(key);}
   invite(raw:unknown,scope:'owner'|'collector'='owner'){
@@ -145,5 +150,7 @@ export class Connections {
     this.assertPlatform(c,input.platform);if(input.provenance!==undefined||!['screen','note','activity','media','notification','device_event'].includes(String(input.source)))throw denied();
     if(typeof input.id==='string'){const prior=this.store.evidence([input.id])[0];if(prior&&prior.deviceId!==c.deviceId)throw denied();}
   }
-  async close(){this.closed=true;this.invitations.clear();await this.sequence.catch(()=>{});}
+  /** Trusted authorization assembly observes durable credential changes, never token values. */
+  onChange(listener:()=>void){this.changed.add(listener);return ()=>{this.changed.delete(listener);};}
+  async close(){this.closed=true;this.invitations.clear();for(const listener of this.changed)listener();await this.sequence.catch(()=>{});this.changed.clear();}
 }

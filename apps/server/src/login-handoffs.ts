@@ -9,10 +9,15 @@ type Grant = Awaited<ReturnType<Connections['session']>>;
 type Request = {input:z.infer<typeof loginDeviceSchema>;deadline:number;grant?:Grant;approval?:Promise<Grant>;authorize?:()=>void};
 /** Short-lived authorization exchanges. Never put long-lived bearer credentials in links. */
 export class LoginHandoffs {
+  private closed=false;
+  private readonly cleanupErrors:unknown[]=[];
+  private assertOpen(){if(this.closed)throw new ConnectionError('connection_closed',503,'Authorization platform is unavailable');}
   private tickets = new Map<string,{token:string;deadline:number;expiresAt?:number;authorize:()=>void}>();
   private requests = new Map<string,Request>();
+  // Expiring request lookup may prune a request while its durable session is in flight.
+  private readonly approvals=new Set<Promise<Grant>>();
   constructor(private connections:Connections,private clock=Date.now) {}
-  private prune(){for(const [k,v] of this.tickets)if(v.deadline<=this.clock())this.tickets.delete(k);for(const [k,v] of this.requests)if(v.deadline<=this.clock())this.requests.delete(k);}
+  private prune(){this.assertOpen();for(const [k,v] of this.tickets)if(v.deadline<=this.clock())this.tickets.delete(k);for(const [k,v] of this.requests)if(v.deadline<=this.clock())this.requests.delete(k);}
   ticket(token:string,authorize:()=>void,expiresAt?:number){
     authorize();this.prune();const code=randomBytes(32).toString('base64url');
     this.tickets.set(hash(code),{token,authorize,deadline:this.clock()+60000,expiresAt});return {code};
@@ -28,11 +33,13 @@ export class LoginHandoffs {
   async approve(id:string,authorize:()=>void){
     const r=this.request(id);authorize();if(r.grant)return {approved:true};
     r.approval??=(async()=>{const {serverUrl,deviceId,deviceName,platform,durationMs}=r.input;const grant=await this.connections.session(serverUrl,deviceName,{deviceId,deviceName,platform},durationMs);
-      try{authorize();if(r.deadline<=this.clock())throw new ConnectionError('login_expired',410,'Login request expired');}
-      catch(e){await this.connections.revoke(grant.credentialId);throw e;}
+      try{this.assertOpen();authorize();if(r.deadline<=this.clock())throw new ConnectionError('login_expired',410,'Login request expired');}
+      catch(error){try{await this.connections.revoke(grant.credentialId);}catch(cleanup){const failure=new AggregateError([error,cleanup],'Login approval and revocation failed',{cause:error});this.cleanupErrors.push(failure);throw failure;}throw error;}
       r.grant=grant;r.authorize=()=>{const c=this.connections.authenticate('Bearer '+grant.token);if(!c)throw new ConnectionError('unauthorized',401,'Login revoked');this.connections.assertActive(c);};return grant;
-    })();try{await r.approval;}catch(e){r.approval=undefined;throw e;}return {approved:true};
+    })();const approval=r.approval;this.approvals.add(approval);
+    try{await approval;}catch(e){r.approval=undefined;throw e;}finally{this.approvals.delete(approval);}return {approved:true};
   }
+  async close(){this.closed=true;const pending=[...this.approvals];this.tickets.clear();this.requests.clear();await Promise.allSettled(pending);if(this.cleanupErrors.length)throw new AggregateError(this.cleanupErrors,'Login handoff disposal failed');}
   poll(raw:unknown,ack=false){const {id,verifier}=z.object({id:secret,verifier:secret}).strict().parse(raw),r=this.request(id);
     if(hash(verifier)!==r.input.challenge)throw new ConnectionError('unauthorized',401,'Invalid login verifier');
     if(ack){if(!r.grant)throw new ConnectionError('login_pending',409,'Login pending');this.requests.delete(hash(id));return {acknowledged:true};}

@@ -33,6 +33,7 @@ export class BackgroundModelAuthorization {
   private readonly context=new AsyncLocalStorage<Authority|undefined>();
   private readonly stepContext=new AsyncLocalStorage<string>();
   private readonly active=new Set<Authority>();
+  private closed=false;
   constructor(private readonly store:Store,private readonly available:()=>ModelConnection[]){
     store.db.exec(`CREATE TABLE IF NOT EXISTS background_model_authorization(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS background_model_receipts(seq INTEGER PRIMARY KEY AUTOINCREMENT,identity TEXT NOT NULL UNIQUE,epoch INTEGER NOT NULL,authorized INTEGER NOT NULL);
@@ -46,7 +47,7 @@ export class BackgroundModelAuthorization {
       store.reserveMetadata(Buffer.byteLength(json)+128);store.db.prepare('INSERT INTO background_model_authorization VALUES(1,?)').run(json);
     }
   }
-  private state():State{return JSON.parse(String(this.store.db.prepare('SELECT json FROM background_model_authorization WHERE id=1').get()!.json));}
+  private state():State{if(this.closed)throw pending();return JSON.parse(String(this.store.db.prepare('SELECT json FROM background_model_authorization WHERE id=1').get()!.json));}
   view():ModelAuthorityView{const {lastOperation:_,lastCommand:__,...view}=this.state();return view;}
   private transaction<T>(write:()=>T):T{const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{const result=write();if(own)db.exec('COMMIT');return result;}catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}}
   command(raw:unknown){
@@ -91,6 +92,7 @@ export class BackgroundModelAuthorization {
   /** A deterministic projection only inherits existing roots. It cannot mint
    * an original receipt, and repeated publication cannot change its lineage. */
   derive(identity:string,originals:readonly string[]){
+    if(this.closed)throw pending();
     if(!this.store.db.isTransaction)throw Error('Model lineage requires the publication transaction');
     const roots=[...new Set(originals.flatMap(original=>this.roots(original)))].sort();
     // Old retained data remains readable and deterministically rebuildable.
@@ -101,6 +103,7 @@ export class BackgroundModelAuthorization {
     const insert=this.store.db.prepare('INSERT INTO background_model_lineage VALUES(?,?)');for(const root of roots){this.store.reserveMetadata(Buffer.byteLength(identity+root)+64);insert.run(identity,root);}
   }
   roots(identity:string):string[]{
+    if(this.closed)throw pending();
     if(this.store.db.prepare('SELECT 1 FROM background_model_receipts WHERE identity=?').get(identity))return [identity];
     return this.store.db.prepare('SELECT original FROM background_model_lineage WHERE identity=? ORDER BY original').all(identity).map(row=>String(row.original));
   }
@@ -120,8 +123,9 @@ export class BackgroundModelAuthorization {
   }
   automaticTriggers(id:string,purpose:AutomaticModelPurpose):readonly string[]|undefined{const work=this.saved(id);if(!work)return;if(work.kind!=='automatic'||work.purpose!==purpose)throw new StoreError('Model operation has a different purpose',409);return [...work.roots];}
   private save(work:Work){const json=JSON.stringify(work);this.store.reserveMetadata(Buffer.byteLength(json+work.id)+128);this.store.db.prepare('INSERT INTO background_model_work VALUES(?,?)').run(work.id,json);return work;}
-  private saved(id:string):Work|undefined{const row=this.store.db.prepare('SELECT json FROM background_model_work WHERE id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
+  private saved(id:string):Work|undefined{if(this.closed)throw pending();const row=this.store.db.prepare('SELECT json FROM background_model_work WHERE id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
   private assert(work:Work,connection?:ModelConnection){
+    if(this.closed)throw pending();
     if(work.kind==='automatic'){
       const state=this.state();
       // Pause drains already admitted work; stop invalidates its epoch.
@@ -212,7 +216,9 @@ export class BackgroundModelAuthorization {
     if(disclosures.some(disclosure=>!this.permits(authority.work.scope,disclosure)))throw pending();
   }
   allowsDisclosure(disclosure:ModelDisclosure){try{this.assertDisclosure([disclosure]);return true;}catch{return false;}}
-  close(){for(const authority of this.active)authority.controller.abort();this.context.disable();this.stepContext.disable();}
+  /** Recheck the existing fences after trusted host invalidation; no new admission policy. */
+  revalidateActive(){for(const authority of this.active)try{this.assert(authority.work);}catch(error){authority.controller.abort(error);}}
+  close(){this.closed=true;for(const authority of this.active)authority.controller.abort();this.context.disable();this.stepContext.disable();}
 }
 
 /** Includes credential/header identity as a hash, never as persisted cleartext. */

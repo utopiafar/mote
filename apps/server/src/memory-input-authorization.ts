@@ -14,6 +14,10 @@ export type MemoryInputGrant={scope:string;binding?:MemoryRecipeBinding;contextT
 /** A host receipt authorizes one automatic job per explicitly enabled scope.
  * No source timestamp, derived revision or retry can issue or renew this grant. */
 export class MemoryInputAuthorization {
+  private readonly invalidated=new Set<()=>void>();
+  private queued=false;
+  private notifyInvalidated(){if(this.queued)return;this.queued=true;queueMicrotask(()=>{this.queued=false;for(const listener of this.invalidated)listener();});}
+  onInvalidated(listener:()=>void){this.invalidated.add(listener);return ()=>{this.invalidated.delete(listener);};}
   onOriginalInput?: (input:Identity,automatic:boolean)=>void;
   constructor(private readonly store:Store,private readonly enabled=()=>false,private readonly now=Date.now,private readonly recipes?:MemoryRecipeSettings){
     store.db.exec(`CREATE TABLE IF NOT EXISTS memory_input_authorizations(
@@ -48,7 +52,7 @@ export class MemoryInputAuthorization {
       .run(value.sourceId,value.inputKey,value.scope,value.captureId??null,Number(automatic&&this.enabled()),receivedAt,json);
   }
   list(sourceId:string,inputKey:string):MemoryInputGrant[]{return this.store.db.prepare('SELECT scope,binding_json,received_at,authorized,revoked_at FROM memory_input_authorizations WHERE source_id=? AND input_key=? ORDER BY rowid').all(sourceId,inputKey).map(row=>({scope:String(row.scope),binding:row.binding_json?memoryRecipeBindingSchema.parse(JSON.parse(String(row.binding_json))):undefined,contextTime:new Date(Number(row.received_at)).toISOString(),authorized:Boolean(row.authorized&&row.revoked_at===null)}));}
-  revokeDisabled(){if(!this.recipes)return;for(const row of this.store.db.prepare('SELECT source_id,input_key,scope,binding_json FROM memory_input_authorizations WHERE authorized=1 AND revoked_at IS NULL').all()){
+  revokeDisabled(){if(!this.recipes)return;this.notifyInvalidated();for(const row of this.store.db.prepare('SELECT source_id,input_key,scope,binding_json FROM memory_input_authorizations WHERE authorized=1 AND revoked_at IS NULL').all()){
     if(!row.binding_json||!this.recipes.enabled(String(row.source_id),memoryRecipeBindingSchema.parse(JSON.parse(String(row.binding_json)))))this.store.db.prepare('UPDATE memory_input_authorizations SET revoked_at=? WHERE source_id=? AND input_key=? AND scope=?').run(this.now(),row.source_id,row.input_key,row.scope);
   }}
   available(sourceId:string,inputKey:string,jobId?:string,scopeId=DEFAULT_MEMORY_INPUT_SCOPE):boolean {
@@ -73,5 +77,11 @@ export class MemoryInputAuthorization {
     try{for(const grant of selected)if(!this.claim(grant.sourceId,grant.inputKey,jobId,grant.scope)){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');return false;}this.store.db.exec('RELEASE memory_package_claim');return true;}
     catch(error){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');throw error;}
   }
-  forgetSource(sourceId:string):void {this.store.db.prepare('DELETE FROM memory_input_authorizations WHERE source_id=?').run(sourceId);}
+  /** Revalidation requires an actual durable claim by this exact job, not a caller-supplied tuple alone. */
+  assertClaimed(raw:AutomaticMemoryGrant,jobId:string):void {
+    const grant=automaticMemoryGrantSchema.parse(raw);z.string().min(1).max(128).parse(jobId);
+    const row=this.store.db.prepare('SELECT authorized,revoked_at,job_id FROM memory_input_authorizations WHERE source_id=? AND input_key=? AND scope=?').get(grant.sourceId,grant.inputKey,grant.scope);
+    if(!row?.authorized||row.revoked_at!==null||row.job_id!==jobId)throw Error('Memory input authorization is unavailable');
+  }
+  forgetSource(sourceId:string):void {this.store.db.prepare('DELETE FROM memory_input_authorizations WHERE source_id=?').run(sourceId);this.notifyInvalidated();}
 }

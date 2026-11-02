@@ -1,8 +1,9 @@
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
 import {pinContextTools,registeredContextToolDefinitions,NATIVE_CONTEXT_TOOLS} from './tool-contributions.js';
 import {validateCapabilityArguments} from './capability-schema.js';
-import {rememberEvidence,evidenceLayers,projectEvidencePresentation,copyEvidencePresentation} from './evidence-ledger.js';
+import {rememberEvidence,evidenceLayers,projectEvidencePresentation,copyEvidencePresentation,snapshotEvidenceLedger,restoreEvidenceLedger} from './evidence-ledger.js';
 import {AgentYieldError,hostControlDefinitions} from './host-controls.js';
 import {taskTools,dispatchTools} from './task-context.js';
 import {actionEvidenceText,parseEvidenceRef,parseEvidenceId,formatEvidenceRef} from '@mote/shared';
@@ -11,7 +12,7 @@ import {AgentResponseError,reportTrace,reportProgress} from './types.js';
 import {sourceProtocolInstructions} from './instructions.js';
 import {extractionSeedScopeValid} from './extraction-seed-scope.js';
 import {randomBytes,createHash} from "node:crypto";
-import type {BridgeToolHandler} from "./bridge-contracts.js";
+import type {BridgeToolHandler,PreparedToolDelivery,PrepareToolDelivery} from "./bridge-contracts.js";
 import { displayTime } from './time.js';
 import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime,attributionContextSchema,sourceContextDeclarationSchema,type SourceContextDeclaration} from '@mote/shared';
 import type {
@@ -233,21 +234,63 @@ export async function createContextToolSession(
   bounds: QueryInput,
   maxToolCalls?: number,
 ) {
+  let closing=false;
+  const canonical={records:new Map<string,ContextRecord>(),
+    trace:[] as ToolTrace[],
+    discoveredCapabilities:new Set<string>(),
+    sourceContextDependencies:new Map<string,SourceContextDeclaration>(),
+    discoveredSourceContexts:new Set<string>(),
+    disclosedIds:new Set<string>(),
+    completeLineage:true,
+    metadataImageIds:new Set<string>(),
+    discovered:new Set<string>(),
+    pinnedMaterials:new Set<string>(),
+    deliveredCharacters:0,
+    deliveredRanges:[] as {id:string;offset:number;length:number}[],
+    expanded:new Set<string>(),
+    imageReadReceipts:new Map<string,{id:string;imageView:ImageView}>()};
+  type State=typeof canonical;
+  type CallbackName='onEvidence'|'onSourceContextDependencies'|'onTrace'|'onProgress'|'onMemoryBodies';
+  interface Stage {
+    base:State;state:State;evidence:ContextRecord[];
+    callbacks:{name:CallbackName;args:unknown[]}[];delivered:(()=>void)[];
+    status:'reading'|'pending'|'committed'|'discarded';fatal?:Error;cancelled?:unknown;
+    reservations:Set<ImageDelivery>;discard():void;
+  }
+  // Pending attachment reservations are resources, not eligible evidence. ACKs
+  // and their timers share one table; each stage disposes only its own entries.
+  const disclosedImages=new Map<string,ImageDelivery>();
+  const execution=new AsyncLocalStorage<Stage>();
+  const state=()=>{
+    const stage=execution.getStore();if(stage&&stage.status!=='committed')return stage.state;
+    if(closing)throw new ContextToolError('bridge_closing','The tool session is closing','stop');
+    bounds.signal?.throwIfAborted();return canonical;
+  };
   bounds=pinContextTools({...bounds,...(bounds.evidenceIds?{evidenceIds:[...bounds.evidenceIds]}:{}),...(bounds.anchorEvidenceIds?{anchorEvidenceIds:[...bounds.anchorEvidenceIds]}:{}),...(bounds.evidenceRanges?{evidenceRanges:bounds.evidenceRanges.map(range=>({...range}))}:{}),...(bounds.evidenceReadRanges?{evidenceReadRanges:Object.freeze(bounds.evidenceReadRanges.map(range=>Object.freeze({...range})))}:{})},reader);
+  const callbacks=new Map<CallbackName,unknown>();
+  for(const name of ['onEvidence','onSourceContextDependencies','onTrace','onProgress','onMemoryBodies'] as const){
+    const original=bounds[name];callbacks.set(name,original);
+    (bounds as unknown as Record<string,unknown>)[name]=(...args:unknown[])=>{
+      const stage=execution.getStore();
+      if(closing||bounds.signal?.aborted)return;
+      if(stage&&stage.status!=='committed'){if(stage.status!=='discarded')stage.callbacks.push({name,args});return;}
+      if(typeof original==='function')return (original as (...args:unknown[])=>unknown)(...args);
+    };
+  }
   const contributions=new Map((bounds.toolContributions??[]).map(tool=>[tool.name,tool]));
   const specialCapabilities=new Map(registeredContextToolDefinitions(bounds).filter(([name])=>dispatchTools(bounds).includes(name)&&!NATIVE_CONTEXT_TOOLS.has(name)&&!name.startsWith('delegation_')).map(([name,description,fields])=>[name,{name,version:contributions.get(name)?.version??'1',description,fields}]));
-  const discoveredCapabilities=new Set<string>();
+
   const controls=new Set(hostControlDefinitions(bounds.hostControlChannel).map(([name])=>name));
-  const trace: ToolTrace[] = [];
-  const records = new Map<string, ContextRecord>();
-  const remember=(record:ContextRecord)=>{rememberEvidence(records,record);try{bounds.onEvidence?.([record]);}catch{/* Receipt observation cannot grant new reads. */}};
-  const sourceContextDependencies=new Map<string,SourceContextDeclaration>();
+
+
+  const remember=(record:ContextRecord)=>{rememberEvidence(state().records,record);execution.getStore()?.evidence.push(record);try{bounds.onEvidence?.([record]);}catch{/* Receipt observation cannot grant new reads. */}};
+
   const rememberSourcePin=(pin:SourceContextDeclaration)=>{
-    const key=JSON.stringify(pin);if(sourceContextDependencies.has(key))return;
-    sourceContextDependencies.set(key,{...pin});bounds.onSourceContextDependencies?.([...sourceContextDependencies.values()].map(value=>Object.freeze({...value})));
+    const key=JSON.stringify(pin);if(state().sourceContextDependencies.has(key))return;
+    state().sourceContextDependencies.set(key,{...pin});bounds.onSourceContextDependencies?.([...state().sourceContextDependencies.values()].map(value=>Object.freeze({...value})));
   };
   for(const pin of [...(bounds.contextSourceContextDependencies??[]),...(bounds.conversation?.sourceContextDependencies??[])])rememberSourcePin(pin);
-  const discoveredSourceContexts=new Set<string>();
+
   const rememberSourceContexts=(value:unknown)=>{
     if(Array.isArray(value)){for(const item of value)rememberSourceContexts(item);return;}
     if(!value||typeof value!=='object')return;
@@ -255,23 +298,23 @@ export async function createContextToolSession(
     if(typeof ref==='string'){
       const match=pinnedSourceContextRef.exec(ref);
       if(match){const sourceId=Buffer.from(match[1],'base64url').toString('utf8'),version=Number(match[2]);
-        if(sourceId.length>0&&sourceId.length<=128&&Number.isSafeInteger(version)){discoveredSourceContexts.add(ref);rememberSourcePin({sourceId,version,fingerprint:match[3]});}}
+        if(sourceId.length>0&&sourceId.length<=128&&Number.isSafeInteger(version)){state().discoveredSourceContexts.add(ref);rememberSourcePin({sourceId,version,fingerprint:match[3]});}}
     }
     const attribution=attributionContextSchema.safeParse(row.attributionContext);
     if(attribution.success)for(const pin of attribution.data.sourceContextDeclarations??[])rememberSourcePin(pin);
     for(const [key,item] of Object.entries(row))if(key!=='attributionContext')rememberSourceContexts(item);
   };
-  const disclosedIds=new Set([...(bounds.conversation?.evidenceDependencies?.ids??[]),...(bounds.contextEvidenceDependencies?.ids??[]),...(bounds.derivedContextEvidenceIds??[])]);
-  let completeLineage=(!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true)&&
+  canonical.disclosedIds=new Set([...(bounds.conversation?.evidenceDependencies?.ids??[]),...(bounds.contextEvidenceDependencies?.ids??[]),...(bounds.derivedContextEvidenceIds??[])]);
+  canonical.completeLineage=(!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true)&&
     (!bounds.contextEvidenceDependencies||bounds.contextEvidenceDependencies.complete)&&
     (!bounds.openingMemories?.length||bounds.contextEvidenceDependencies?.complete===true&&bounds.contextEvidenceDependencies.ids.length>0)&&
     (!bounds.taskContext?.previousSummary&&!bounds.taskContext?.turns?.length||bounds.contextEvidenceDependencies?.complete===true);
   const rememberDisclosureDependencies=(receipt:unknown)=>{
     const value=receipt&&typeof receipt==='object'&&!Array.isArray(receipt)?receipt as Record<string,unknown>:undefined;
     if(!value||value.version!==1||typeof value.complete!=='boolean'||!Array.isArray(value.ids)||
-      Object.keys(value).some(key=>!['version','complete','ids'].includes(key))||value.ids.some(id=>typeof id!=='string'||!parseEvidenceId(id))){completeLineage=false;return;}
-    completeLineage &&= value.complete;
-    for(const id of value.ids as string[])disclosedIds.add(parseEvidenceId(id)!);
+      Object.keys(value).some(key=>!['version','complete','ids'].includes(key))||value.ids.some(id=>typeof id!=='string'||!parseEvidenceId(id))){state().completeLineage=false;return;}
+    state().completeLineage &&= value.complete;
+    for(const id of value.ids as string[])state().disclosedIds.add(parseEvidenceId(id)!);
   };
   const restricted = bounds.evidenceIds !== undefined;
   const processingImages=(bounds.processingImages??[]).map(grant=>Object.freeze({...grant,required:Object.freeze([...grant.required])}));
@@ -307,7 +350,7 @@ export async function createContextToolSession(
     for(const r of readRanges){const text=permitted.get(r.id)?.ocrText;if(text!==undefined&&(r.offset+r.length>text.length||splitsPair(text,r.offset)||splitsPair(text,r.offset+r.length)))throw hostError('Context read range must stay inside original text and UTF-16 boundaries');}
   }
   const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
-  for(const record of seedEvidence){remember(record);disclosedIds.add(record.id);}
+  for(const record of seedEvidence){remember(record);state().disclosedIds.add(record.id);}
   rememberSourceContexts(seedEvidence);
   const directImages=bounds.directImages??[];
   if(directImages.length>8||new Set(directImages.map(image=>image.id)).size!==directImages.length||directImages.some(image=>
@@ -315,51 +358,50 @@ export async function createContextToolSession(
     !/^[a-f0-9]{64}$/.test(image.hash)||!Number.isSafeInteger(image.sizeBytes)||image.sizeBytes<1||image.sizeBytes>8*1024*1024||image.name.length>500))throw hostError('Invalid direct image attachments');
   if(restricted&&directImages.length)throw hostError('Extraction sessions cannot receive dialogue images');
   const directImageRecords=new Map<string,ContextRecord>();
-  const metadataImageIds=new Set<string>();
+
   for(const image of directImages){
     const record:ContextRecord={id:image.id,capturedAt:bounds.contextTime??new Date().toISOString(),appName:image.name,ocrText:'',sourceType:'user_attachment',summary:'User attached image',metadata:{mimeType:image.mimeType}};
     directImageRecords.set(image.id,record);
   }
   // Reference locators may be expanded through the normal current-authorized reader.
   // They contain no delivered text and cannot support citations before a read.
-  const discovered=new Set([...records.keys(),...(!restricted?bounds.anchorEvidenceIds??[]:[])]);
-  const pinnedMaterials=new Set<string>(!restricted&&bounds.anchorMaterialRef&&pinnedMaterialRef.test(bounds.anchorMaterialRef)?[bounds.anchorMaterialRef]:[]);
-  let deliveredCharacters=JSON.stringify(seedEvidence).length;
-  const deliveredRanges=seedEvidence.flatMap(record=>{const span=record.textRange as {start:number;end:number};return span.end>span.start?[{id:record.id,offset:span.start,length:span.end-span.start}]:[];});
-  const expanded=new Set<string>();
-  for(const image of directImages)expanded.add(image.id);
+  canonical.discovered=new Set([...state().records.keys(),...(!restricted?bounds.anchorEvidenceIds??[]:[])]);
+  canonical.pinnedMaterials=new Set<string>(!restricted&&bounds.anchorMaterialRef&&pinnedMaterialRef.test(bounds.anchorMaterialRef)?[bounds.anchorMaterialRef]:[]);
+  canonical.deliveredCharacters=JSON.stringify(seedEvidence).length;
+  canonical.deliveredRanges=seedEvidence.flatMap(record=>{const span=record.textRange as {start:number;end:number};return span.end>span.start?[{id:record.id,offset:span.start,length:span.end-span.start}]:[];});
+
+  for(const image of directImages)state().expanded.add(image.id);
   // Query-local byte identities only: never skip the reader's fresh authorization
   // or merge the source attribution of two selections containing the same image.
   type ImageDelivery={selection:{id:string;attachmentId?:string};record:ContextRecord;imageView?:ImageViewTrace;token:string;confirmed:boolean;ready:Promise<void>;settle:()=>void;timer:ReturnType<typeof setTimeout>};
-  const disclosedImages=new Map<string,ImageDelivery>();
-  const imageReadReceipts=new Map<string,{id:string;imageView:ImageView}>();
+
+
   const rememberImageRead=(id:string,value:ImageViewTrace|undefined)=>{
     if(!value?.output)return;
     const {id:_id,attachmentId:_attachment,delivery:_delivery,...imageView}=value;
-    imageReadReceipts.set(JSON.stringify([id,imageView.viewId]),{id,imageView:structuredClone(imageView)});
+    state().imageReadReceipts.set(JSON.stringify([id,imageView.viewId]),{id,imageView:structuredClone(imageView)});
   };
-  let closing=false;
   const imageDelivery=(token:string,delivered:boolean)=>{
     const entry=[...disclosedImages].find(([,value])=>value.token===token);
     if(!entry){if(delivered)throw hostError('Image delivery receipt expired');return;}
     const [key,value]=entry;clearTimeout(value.timer);
-    if(delivered){value.confirmed=true;if(!records.has(value.selection.id))remember(value.record);disclosedIds.add(value.selection.id);rememberImageRead(value.selection.id,value.imageView);}else disclosedImages.delete(key);
+    if(delivered){value.confirmed=true;if(!state().records.has(value.selection.id))remember(value.record);state().disclosedIds.add(value.selection.id);rememberImageRead(value.selection.id,value.imageView);}else disclosedImages.delete(key);
     if(value.imageView)value.imageView.delivery=delivered?'prepared':'failed';
     value.settle();
   };
   let calls = 0;
   let ready = false;
   let rejectFailure!:(error:Error)=>void;
-  const failure=new Promise<never>((_,reject)=>rejectFailure=reject);void failure.catch(()=>{});
+  const failure=new Promise<never>((_,reject)=>{rejectFailure=error=>{const stage=execution.getStore();if(stage)stage.fatal??=error;reject(error);};});void failure.catch(()=>{});
   let previousFailure='',repeatedFailures=0;
   const countToolCall=()=>{
     calls++;
     if(maxToolCalls!==undefined&&calls>maxToolCalls)throw new ContextToolError('tool_budget_exceeded','The explicitly configured tool call limit was reached. Finish with already retrieved evidence.','use_existing_evidence',{remainingCalls:0});
   };
   // Character counts are observations. Only an explicit caller limit is enforced.
-  const toolUsage=()=>({calls,deliveredCharactersBeforeResult:deliveredCharacters,unit:'utf16_characters',...(maxToolCalls!==undefined?{remainingCalls:Math.max(0,maxToolCalls-calls)}:{})});
+  const toolUsage=()=>({calls,deliveredCharactersBeforeResult:state().deliveredCharacters,unit:'utf16_characters',...(maxToolCalls!==undefined?{remainingCalls:Math.max(0,maxToolCalls-calls)}:{})});
 
-  const handle:BridgeToolHandler = async (request, res) => {
+  const executeTool:BridgeToolHandler = async (request, res) => {
     let tool=request.tool,args:Record<string,unknown>={},metadataOnly=false,dispatchedViaCatalog=false,disclosureDependencies:unknown,disclosureSourceContextDependencies:unknown;
     try {
       args = await request.readArguments();
@@ -391,15 +433,15 @@ export async function createContextToolSession(
         if(args.name!==undefined&&!selected)throw hostError('Unknown or unauthorized capability');
         const data=selected?{...selected,evidencePolicy:'Registered read-only capability; schema and metadata cannot expand authority.'}:{capabilities:[...specialCapabilities.values()].map(({name,version,description})=>({name,version,description:description.split('. ')[0]}))};
         const serialized=JSON.stringify({data,toolUsage:toolUsage()});
-        deliveredCharacters+=serialized.length;if(selected)discoveredCapabilities.add(selected.name);
-        trace.push({tool,arguments:args,count:selected?1:specialCapabilities.size});res.end(serialized);return;
+        state().deliveredCharacters+=serialized.length;if(selected)state().discoveredCapabilities.add(selected.name);
+        state().trace.push({tool,arguments:args,count:selected?1:specialCapabilities.size});res.end(serialized);return;
       }
       if(tool==='capability_execute'){
         if(!taskTools(bounds).includes(tool))throw hostError('Capability execution is unavailable for this task');
         countToolCall();
         if(Object.keys(args).some(key=>!['name','version','argumentsJson'].includes(key))||typeof args.name!=='string'||typeof args.version!=='string'||typeof args.argumentsJson!=='string'||args.argumentsJson.length>65536)throw hostError('Invalid capability execution');
         const selected=specialCapabilities.get(args.name);
-        if(!selected||!discoveredCapabilities.has(selected.name)||selected.version!==args.version)throw hostError('Discover this exact registered capability and version first');
+        if(!selected||!state().discoveredCapabilities.has(selected.name)||selected.version!==args.version)throw hostError('Discover this exact registered capability and version first');
         let decoded:unknown;try{decoded=JSON.parse(args.argumentsJson);}catch{throw hostError('Capability argumentsJson must be a JSON object');}
         if(!decoded||typeof decoded!=='object'||Array.isArray(decoded))throw hostError('Capability argumentsJson must be a JSON object');
         validateCapabilityArguments(selected.fields,decoded as Record<string,unknown>);
@@ -437,10 +479,10 @@ export async function createContextToolSession(
           if(!opened.attributionContext.sourceContextDeclarations?.some(current=>JSON.stringify(current)===JSON.stringify(pin)))throw hostError('Delegated source description is no longer current');
         }
         const serialized=JSON.stringify(attributionMetadataResponse({source:'untrusted_delegated_result',data:result.data,evidence:delivered,toolUsage:toolUsage()}));
-        for(const record of delivered){remember(record);discovered.add(record.id);disclosedIds.add(record.id);expanded.add(record.id);}
-        for(const id of dependencyIds)disclosedIds.add(id);
+        for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);state().expanded.add(record.id);}
+        for(const id of dependencyIds)state().disclosedIds.add(id);
         for(const pin of sourcePins)rememberSourcePin(pin);
-        deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:delivered.length});
+        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:args,count:delivered.length});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:delivered.length});
         res.end(serialized,()=>{if(result.yield)rejectFailure(new AgentYieldError());});return;
       }
@@ -481,15 +523,15 @@ export async function createContextToolSession(
         const value=await contribution.read(parsed,{scope,signal:bounds.signal});
         if(!await contribution.authorize(scope,parsed))throw hostError('Context capability was revoked');
         const serialized=JSON.stringify({source:'untrusted_personal_context',version:contribution.version,data:value??null,evidencePolicy:'Metadata only; no original citation grants.',toolUsage:toolUsage()});
-        deliveredCharacters+=serialized.length;completeLineage=false;
-        trace.push({tool,arguments:{...parsed,...scope},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
+        state().deliveredCharacters+=serialized.length;state().completeLineage=false;
+        state().trace.push({tool,arguments:{...parsed,...scope},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
       }
       if(tool==='action_catalog'){
         if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');
         if(Object.keys(args).some(key=>!['query','id','cursor','limit'].includes(key))||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>200)||args.id!==undefined&&(typeof args.id!=='string'||!/^[0-9a-f-]{36}$/i.test(args.id))||args.cursor!==undefined&&(typeof args.cursor!=='string'||args.cursor.length>4096)||args.limit!==undefined&&(!Number.isInteger(args.limit)||Number(args.limit)<1||Number(args.limit)>20))throw hostError('Invalid action catalog arguments');
         const scope=range({},bounds),effective={...scope,...args,limit:Number(args.limit??8)};
         const value=await bounds.actionCatalog(effective),serialized=JSON.stringify({data:value,evidencePolicy:'Untrusted prior proposals; sameAs identifiers only, not original citation grants.',toolUsage:toolUsage()});
-        deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:value.items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:value.items.length});res.end(serialized);return;
+        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:args,count:value.items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:value.items.length});res.end(serialized);return;
       }
       if(tool==='material_catalog'){
         if(Object.keys(args).some(key=>!['after','before','deviceId','limit','cursor','sourceId','kind','query'].includes(key)))throw hostError('Invalid material catalog filter');
@@ -499,14 +541,14 @@ export async function createContextToolSession(
         if(!page||!Array.isArray(page.items)||(page.nextCursor!==null&&(typeof page.nextCursor!=='string'||page.nextCursor.length>4096)))throw hostError('Invalid material catalog page');
         const items=page.items.slice(0,scope.limit).map(item=>materialMetadata(item,scope)).filter((item):item is Record<string,unknown>=>Boolean(item));
         const serialized=JSON.stringify({source:'untrusted_personal_context',data:{items,nextCursor:page.nextCursor},toolUsage:toolUsage()});
-        deliveredCharacters+=serialized.length;
+        state().deliveredCharacters+=serialized.length;
         rememberSourceContexts(items);
-        for(const item of items)pinnedMaterials.add(item.ref as string);
+        for(const item of items)state().pinnedMaterials.add(item.ref as string);
         rememberDisclosureDependencies(page.disclosureDependencies);
-        trace.push({tool,arguments:effective,count:items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:items.length});res.end(serialized);return;
+        state().trace.push({tool,arguments:effective,count:items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:items.length});res.end(serialized);return;
       }
       if(tool==='material_read'){
-        if(Object.keys(args).some(key=>!['ref','offset','length'].includes(key))||typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!pinnedMaterials.has(args.ref))throw hostError('Use the owner-selected pinned material ref or one returned by material_catalog in this run');
+        if(Object.keys(args).some(key=>!['ref','offset','length'].includes(key))||typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!state().pinnedMaterials.has(args.ref))throw hostError('Use the owner-selected pinned material ref or one returned by material_catalog in this run');
         const offset=args.offset??0,length=args.length??4000;
         if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw hostError('Invalid material read range');
         if(!reader.materialRead)throw hostError('Material reading is unavailable');
@@ -546,12 +588,12 @@ export async function createContextToolSession(
         bounds.signal?.throwIfAborted();
         const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids.map(id=>formatEvidenceRef('capture',id)),originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length,sourceEvidence,sourceCoverage:{references:total,delivered:sourceEvidence.length,partial:total>new Set(sourceEvidence.map(record=>record.id)).size||page.originalRefsTruncated},pagination:{requestedLength:Number(length),returnedLength:page.text.length}};
         const serialized=JSON.stringify(attributionMetadataResponse({source:'untrusted_personal_context',data,toolUsage:toolUsage(),...(sourceProtocolInstructions(sourceEvidence)?{hostSourceSemantics:sourceProtocolInstructions(sourceEvidence)}:{})}));
-        deliveredCharacters+=serialized.length;
+        state().deliveredCharacters+=serialized.length;
         rememberSourceContexts(data);
-        for(const id of ids){discovered.add(id);disclosedIds.add(id);}
-        for(const record of sourceEvidence){remember(record);expanded.add(record.id);}
+        for(const id of ids){state().discovered.add(id);state().disclosedIds.add(id);}
+        for(const record of sourceEvidence){remember(record);state().expanded.add(record.id);}
         rememberDisclosureDependencies(page.disclosureDependencies);
-        trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{requestedLength:Number(length),returnedLength:page.text.length}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
+        state().trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{requestedLength:Number(length),returnedLength:page.text.length}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
       }
       if(tool==='attribution_context'){
         if(Object.keys(args).some(key=>!['id','ref','sourceContextRef','offset','length','expectedFingerprint'].includes(key))||
@@ -564,7 +606,7 @@ export async function createContextToolSession(
         const scope=range({},bounds);let context:unknown,dependencies:unknown;
         let locator:{id:string}|{ref:string}|{sourceContextRef:string};
         if(args.id!==undefined){
-          if(typeof args.id!=='string'||!discovered.has(args.id))throw hostError('Discover the original before reading its attribution context');
+          if(typeof args.id!=='string'||!state().discovered.has(args.id))throw hostError('Discover the original before reading its attribution context');
           locator={id:args.id};
           const record=(await reader.evidence({...scope,ids:[args.id]})).find(record=>record.id===args.id);
           if(!record)throw hostError('Original attribution context is unavailable in the current scope');
@@ -572,11 +614,11 @@ export async function createContextToolSession(
           if(!Number.isFinite(Date.parse(at))||scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))throw hostError('Original attribution context is outside the selected scope');
           context=record.attributionContext;
         }else if(args.sourceContextRef!==undefined){
-          if(typeof args.sourceContextRef!=='string'||!discoveredSourceContexts.has(args.sourceContextRef)||!reader.sourceContext)throw hostError('Discover the source context before reading its statement');
+          if(typeof args.sourceContextRef!=='string'||!state().discoveredSourceContexts.has(args.sourceContextRef)||!reader.sourceContext)throw hostError('Discover the source context before reading its statement');
           locator={sourceContextRef:args.sourceContextRef};
           context=(await reader.sourceContext({...scope,sourceContextRef:args.sourceContextRef})).attributionContext;
         }else{
-          if(typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!pinnedMaterials.has(args.ref))throw hostError('Use an exact pinned Material ref returned in this run');
+          if(typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!state().pinnedMaterials.has(args.ref))throw hostError('Use an exact pinned Material ref returned in this run');
           if(!reader.materialRead)throw hostError('Material context reading is unavailable');
           locator={ref:args.ref};
           // This host read reuses current privacy/revision checks. Its source
@@ -597,12 +639,12 @@ export async function createContextToolSession(
         const serialize=(stop:number)=>JSON.stringify({source:'untrusted_personal_context',data:{...locator,contextFingerprint,offset:start,total:text.length,nextOffset:stop<text.length?stop:null,text:text.slice(start,stop),citationAuthority:false},toolUsage:toolUsage()});
         const serialized=serialize(end);
         if(end===start&&start<text.length)throw hostError('Attribution length must deliver a complete UTF-16 character');
-        deliveredCharacters+=serialized.length;
+        state().deliveredCharacters+=serialized.length;
         // Context disclosure participates in deletion/correction lineage only;
         // it never populates records, discovered or expanded original grants.
         rememberSourceContexts({attributionContext:parsed.data});
-        if('id' in locator)disclosedIds.add(locator.id);else if('ref' in locator)rememberDisclosureDependencies(dependencies);
-        trace.push({tool,arguments:{...locator,offset:start,length:requestedLength,...(args.expectedFingerprint?{expectedFingerprint:args.expectedFingerprint}:{})},count:1,
+        if('id' in locator)state().disclosedIds.add(locator.id);else if('ref' in locator)rememberDisclosureDependencies(dependencies);
+        state().trace.push({tool,arguments:{...locator,offset:start,length:requestedLength,...(args.expectedFingerprint?{expectedFingerprint:args.expectedFingerprint}:{})},count:1,
           attributionPage:{contextFingerprint,offset:start,total:text.length,requestedLength,returnedLength:end-start}});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
       }
@@ -620,9 +662,9 @@ export async function createContextToolSession(
           const serialize=(stop:number)=>{const record=project(fresh,start,stop-start,bounds.timeZone);record.textRange={...(record.textRange as object),nextOffset:stop<grantEnd?stop:null};return {record,text:JSON.stringify({source:'untrusted_personal_context',data:[record],readRange:{offset:grant.offset,length:grant.length},toolUsage:toolUsage()})};};
           if(end<=start)throw new ContextToolError('invalid_evidence_range','This page cannot deliver a complete Unicode character; request at least two UTF-16 units.','correct_arguments');
           const page=serialize(end);
-          remember(page.record);discovered.add(id);disclosedIds.add(id);expanded.add(id);rememberSourceContexts(page.record);
-          deliveredRanges.push({id,offset:start,length:end-start});deliveredCharacters+=page.text.length;
-          trace.push({tool,arguments:{id,offset:start,length:requestedLength,returnedLength:end-start},count:1});
+          remember(page.record);state().discovered.add(id);state().disclosedIds.add(id);state().expanded.add(id);rememberSourceContexts(page.record);
+          state().deliveredRanges.push({id,offset:start,length:end-start});state().deliveredCharacters+=page.text.length;
+          state().trace.push({tool,arguments:{id,offset:start,length:requestedLength,returnedLength:end-start},count:1});
           reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(page.text);return;
         }
         if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
@@ -640,8 +682,8 @@ export async function createContextToolSession(
           });
         }
         const serialized=JSON.stringify({source:'untrusted_personal_context',data,toolUsage:toolUsage()});
-        deliveredCharacters+=serialized.length;
-        trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
+        state().deliveredCharacters+=serialized.length;
+        state().trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:data.length});
         res.end(serialized);return;
       }
@@ -651,7 +693,7 @@ export async function createContextToolSession(
         const selection=parsed.data;
         const imageGrant=processingImages.find(grant=>grant.id===selection.id);
         if((restricted||processingImages.length>0)&&(!imageGrant||selection.attachmentId!==undefined||selection.expectedImageSha256!==undefined&&selection.expectedImageSha256!==imageGrant.originalSha256))throw new ContextToolError('evidence_scope_denied','Use only an exact original-image id and hash listed in authorizedImages. This grant does not permit other captures or attachments.','correct_arguments');
-        if(typeof args.id!=='string'||!expanded.has(args.id)&&!imageGrant||!reader.readImage)throw hostError('Expand derived evidence before reading an authorized image');
+        if(typeof args.id!=='string'||!state().expanded.has(args.id)&&!imageGrant||!reader.readImage)throw hostError('Expand derived evidence before reading an authorized image');
         for(;;){
           if(closing||res.destroyed)return;
           const direct=directImages.some(image=>image.id===args.id);
@@ -677,14 +719,14 @@ export async function createContextToolSession(
           const sendImageResult=(result:Record<string,unknown>,entry:ToolTrace)=>{
             const {image:payload,imageDelivery:receipt,...text}=result;
             const characters=JSON.stringify(text).length;
-            deliveredCharacters+=characters;trace.push(entry);reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(JSON.stringify(result));
+            state().deliveredCharacters+=characters;state().trace.push(entry);reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(JSON.stringify(result));
           };
           if(metadata){
             if(image.data!==undefined||imageView?.output)throw hostError('Metadata must not include image bytes');
             sendImageResult({source:'untrusted_personal_context',...selection,imageView:publicView,imageBudget:imageBudget(),toolUsage:toolUsage()},{tool,arguments:selection,count:1,imageView:publicView});
             // Metadata alone cannot claim empty complete disclosure. A later
             // confirmed pixel read supplies this original's actual lineage.
-            metadataImageIds.add(selection.id);return;
+            state().metadataImageIds.add(selection.id);return;
           }
           if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||typeof image.data!=='string'||!image.data.length||image.data.length>12*1024*1024)throw hostError('Invalid image output');
           const bytes=Buffer.from(image.data,'base64'),sha256=createHash('sha256').update(bytes).digest('hex'),key=image.mimeType+':'+sha256;
@@ -713,13 +755,14 @@ export async function createContextToolSession(
             // reservation after a waiting reader has taken over.
             const timer=setTimeout(()=>imageDelivery(token,false),30_000);timer.unref();
             delivery={selection,record:project({...record,ocrText:''},0,0,bounds.timeZone),imageView:publicView,token,confirmed:false,ready,settle,timer};disclosedImages.set(key,delivery);
+            execution.getStore()?.reservations.add(delivery);
           }
           if(firstSelection&&publicView)publicView.delivery='already_disclosed';
           sendImageResult({source:'untrusted_personal_context',...selection,...(publicView?{imageView:publicView}:{}),...(firstSelection?{
             imageDisclosure:{status:'already_disclosed',sha256,mimeType:image.mimeType,firstSelection,...(existing?.imageView?{firstImageView:existing.imageView}:{})},
             message:'These exact image bytes were already supplied in this query. Use the earlier image with this selection’s own source attribution.',
           }:{image:{mimeType:image.mimeType,data:image.data},imageDelivery:delivery!.token}),imageBudget:imageBudget(),toolUsage:toolUsage()},{tool,arguments:selection,count:1,...(publicView?{imageView:publicView}:{})});
-          if(existing?.confirmed){if(!records.has(selection.id))remember(project({...record,ocrText:''},0,0,bounds.timeZone));disclosedIds.add(selection.id);}
+          if(existing?.confirmed){if(!state().records.has(selection.id))remember(project({...record,ocrText:''},0,0,bounds.timeZone));state().disclosedIds.add(selection.id);}
           return;
         }
       }
@@ -738,21 +781,21 @@ export async function createContextToolSession(
           const page=value as Record<string,unknown>;
           if(!Array.isArray(page.items))throw hostError('Device reader returned invalid metadata');
           disclosureDependencies=page.disclosureDependencies;disclosureSourceContextDependencies=page.sourceContextDependencies;
-          if(typeof page.observedAt==='string'&&Number.isFinite(Date.parse(page.observedAt)))observedAt=page.observedAt;else completeLineage=false;
+          if(typeof page.observedAt==='string'&&Number.isFinite(Date.parse(page.observedAt)))observedAt=page.observedAt;else state().completeLineage=false;
           value=page.items;
         }
         if (bounds.deviceId && Array.isArray(value)) value = value.filter(device => device.deviceId === bounds.deviceId);
         if (Array.isArray(value)) value = value.map(device => ({...projectDevice(device,bounds.timeZone),...(observedAt?{directoryObservedAt:observedAt,displayDirectoryObservedAt:displayTime(observedAt,bounds.timeZone)}:{})}));
       }
       else if(tool==='read_file_evidence'){
-        if(typeof args.id!=='string'||!records.has(args.id))throw hostError('Discover the file before requesting evidence');
+        if(typeof args.id!=='string'||!state().records.has(args.id))throw hostError('Discover the file before requesting evidence');
         const offset=args.offset??0,length=args.length??8000;if(!Number.isSafeInteger(offset)||Number(offset)<0||Number(offset)>10000000||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>16000)throw hostError('Invalid text range');
         const result=await reader.readFileEvidence?.({...range({},bounds),id:args.id,offset:Number(offset),length:Number(length)})??{status:'unavailable'};
         const record=result.record?project(result.record,0,Number(length),bounds.timeZone):undefined;
         value={...result,record};if(record)memoryEvidence.push(record);
       }
       else if(tool==='file_chunks'){
-        if(typeof args.id!=='string'||!records.has(args.id))throw hostError('Discover the file before reading its chunks');
+        if(typeof args.id!=='string'||!state().records.has(args.id))throw hostError('Discover the file before reading its chunks');
         const offset=args.offset??0;if(!Number.isSafeInteger(offset)||Number(offset)<0)throw hostError('Invalid chunk offset');
         const scope=range({},bounds);effective={...scope,id:args.id,offset,limit:30};
         value=await reader.fileChunks?.({...scope,id:args.id,offset:Number(offset)})??[];
@@ -761,7 +804,7 @@ export async function createContextToolSession(
       }
       else if(tool==='context_index'){const scope=range(args,bounds);if(args.path!==undefined&&(typeof args.path!=='string'||args.path.length>100)||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid context index arguments');value=await reader.catalog?.({...scope,path:args.path as string|undefined,query:args.query as string|undefined})??{entries:[],coverage:'unavailable'};metadataOnly=true;}
       else if(tool==='source_history'){
-        if(typeof args.id!=='string'||!records.has(args.id))throw hostError('Discover a source record before requesting history');
+        if(typeof args.id!=='string'||!state().records.has(args.id))throw hostError('Discover a source record before requesting history');
         const scope=range({},bounds);effective={...scope,id:args.id};value=await reader.sourceHistory?.({...scope,id:args.id})??[];
       }
       else if(tool==='sources'){if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid source query');effective={...range(args,bounds),query:args.query};value=await reader.sources?.(effective as ContextRange&{query?:string})??{items:[],nextCursor:null};metadataOnly=true;}
@@ -823,7 +866,7 @@ export async function createContextToolSession(
           throw hostError("ids must contain 1–30 record identifiers");
         // Evidence expansion only reads records discovered in this run, inside its scope.
         const ids = args.ids as string[];
-        if (ids.some((id) => !discovered.has(id)))
+        if (ids.some((id) => !state().discovered.has(id)))
           throw hostError(
             "Discover records with search_context or timeline before expanding evidence",
           );
@@ -920,30 +963,30 @@ export async function createContextToolSession(
         ...(retrieval?{retrieval}:{}),
         ...(pagination ? { pagination } : {}),
       }));
-      deliveredCharacters+=serialized.length;
+      state().deliveredCharacters+=serialized.length;
       rememberSourceContexts(safeValue);
-      for(const id of [...discoveredMemoryIds,...derivedIds])disclosedIds.add(id);
+      for(const id of [...discoveredMemoryIds,...derivedIds])state().disclosedIds.add(id);
       // Private host receipts fence metadata without granting original reads.
       // Aggregate tools without contributor receipts remain conservative.
       if(['sources','context_index','devices','activity','media_activity'].includes(tool)){
         rememberDisclosureDependencies(disclosureDependencies);
         if(disclosureSourceContextDependencies!==undefined){
           const pins=sourceContextDeclarationSchema.array().safeParse(disclosureSourceContextDependencies);
-          if(pins.success)for(const pin of pins.data)rememberSourcePin(pin);else completeLineage=false;
+          if(pins.success)for(const pin of pins.data)rememberSourcePin(pin);else state().completeLineage=false;
         }
       }
       // Changes overviews are projected from the exact current originals above;
       // their contributor IDs are complete even when their bodies remain unread.
-      else if(metadataOnly&&tool!=='changes')completeLineage=false;
-      for(const id of discoveredMemoryIds)discovered.add(id);
+      else if(metadataOnly&&tool!=='changes')state().completeLineage=false;
+      for(const id of discoveredMemoryIds)state().discovered.add(id);
       // Only a successfully serialized, deliverable tool result authorizes evidence.
       if (!metadataOnly&&(tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes')) {
         for (const [index,record] of (safeValue as ContextRecord[]).entries())
-          {copyEvidencePresentation((value as ContextRecord[])[index],record);remember(record);discovered.add(record.id);disclosedIds.add(record.id);}
-        if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
+          {copyEvidencePresentation((value as ContextRecord[])[index],record);remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);}
+        if(tool==='evidence')for(const record of safeValue as ContextRecord[])state().expanded.add(record.id);
       }
-      for(const record of memoryEvidence){remember(record);discovered.add(record.id);disclosedIds.add(record.id);if(tool==='memories')expanded.add(record.id);}
-      trace.push({
+      for(const record of memoryEvidence){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(tool==='memories')state().expanded.add(record.id);}
+      state().trace.push({
         tool,
         arguments: effective,
         count: Array.isArray(safeValue)
@@ -952,7 +995,7 @@ export async function createContextToolSession(
             ? 0
             : 1,
       });
-      reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:trace.at(-1)!.count});
+      reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:state().trace.at(-1)!.count});
       res.end(serialized);
       if(tool==='memories'&&safeValue&&typeof safeValue==='object'){
         const delivered=(safeValue as {items?:{id?:unknown;statement?:unknown;version?:unknown;fingerprint?:unknown}[]}).items??[];
@@ -974,34 +1017,165 @@ export async function createContextToolSession(
 
     }
   };
-  const session = {
-    imageDelivery,
-    failure,
-    trace,
-    records,
-    seedEvidence,
-    /** A catalog range is never included here until its text was delivered. */
+  // Staged execution owns a private working view. The only eligible ledger is
+  // canonical; cached maps, methods and iterators never reference this view.
+  const cloneState=():State=>{
+    const copy:State={
+      records:new Map(canonical.records),
+      sourceContextDependencies:new Map(canonical.sourceContextDependencies),
+      imageReadReceipts:new Map(canonical.imageReadReceipts),
+      disclosedIds:new Set(canonical.disclosedIds),
+      discoveredCapabilities:new Set(canonical.discoveredCapabilities),
+      discovered:new Set(canonical.discovered),
+      expanded:new Set(canonical.expanded),
+      discoveredSourceContexts:new Set(canonical.discoveredSourceContexts),
+      metadataImageIds:new Set(canonical.metadataImageIds),
+      pinnedMaterials:new Set(canonical.pinnedMaterials),
+      trace:[...canonical.trace],deliveredRanges:[...canonical.deliveredRanges],
+      deliveredCharacters:canonical.deliveredCharacters,completeLineage:canonical.completeLineage,
+    };
+    restoreEvidenceLedger(copy.records,snapshotEvidenceLedger(canonical.records));
+    return copy;
+  };
+  const mergeStage=(stage:Stage)=>{
+    // Replay additions, not a whole-state replacement. Independent image ACKs
+    // can update canonical while this reader waits for their readiness promise.
+    for(const key of ['disclosedIds','discoveredCapabilities','discovered','expanded','discoveredSourceContexts','metadataImageIds','pinnedMaterials'] as const)
+      for(const value of stage.state[key])if(!stage.base[key].has(value))canonical[key].add(value);
+    const mergeMap=<K,V>(base:Map<K,V>,working:Map<K,V>,target:Map<K,V>)=>{
+      for(const [key,value]of working)if(!base.has(key)||base.get(key)!==value)target.set(key,value);
+      for(const [key,value]of base)if(!working.has(key)&&target.get(key)===value)target.delete(key);
+    };
+    mergeMap(stage.base.sourceContextDependencies,stage.state.sourceContextDependencies,canonical.sourceContextDependencies);
+    mergeMap(stage.base.imageReadReceipts,stage.state.imageReadReceipts,canonical.imageReadReceipts);
+    for(const record of stage.evidence)rememberEvidence(canonical.records,record);
+    canonical.trace.push(...stage.state.trace.slice(stage.base.trace.length));
+    canonical.deliveredRanges.push(...stage.state.deliveredRanges.slice(stage.base.deliveredRanges.length));
+    canonical.deliveredCharacters+=stage.state.deliveredCharacters-stage.base.deliveredCharacters;
+    canonical.completeLineage&&=stage.state.completeLineage;
+  };
+  const closeSignal=new AbortController();
+  // A stage excludes every ordinary HTTP writer until it settles. Existing
+  // HTTP calls remain concurrent with each other (including image readers
+  // whose external producer waits for another request before returning).
+  type Admission={exclusive:boolean;signal:AbortSignal;grant(release:()=>void):void;abort():void};
+  const admissions:Admission[]=[];
+  let readers=0,exclusive=false;
+  const admit=()=>{
+    if(exclusive||closing)return;
+    while(admissions.length){
+      const next=admissions[0];if(next.exclusive&&readers)return;
+      admissions.shift();next.signal.removeEventListener('abort',next.abort);
+      if(next.exclusive)exclusive=true;else readers++;
+      let released=false;
+      next.grant(()=>{if(released)return;released=true;if(next.exclusive)exclusive=false;else readers--;admit();});
+      if(next.exclusive)return;
+    }
+  };
+  const acquireWriter=(signal:AbortSignal,wantsExclusive=true):Promise<()=>void>=>new Promise((grant,reject)=>{
+    if(signal.aborted){reject(signal.reason);return;}
+    const next:Admission={exclusive:wantsExclusive,signal,grant,abort(){
+      const index=admissions.indexOf(next);if(index<0)return;
+      admissions.splice(index,1);signal.removeEventListener('abort',next.abort);reject(signal.reason);admit();
+    }};
+    admissions.push(next);signal.addEventListener('abort',next.abort,{once:true});admit();
+  });
+  const activeStages=new Set<Stage>();
+  const prepareDelivery:PrepareToolDelivery=async(tool,args,requestedSignal)=>{
+    const signal=AbortSignal.any([requestedSignal,closeSignal.signal,...(bounds.signal?[bounds.signal]:[])]);
+    const release=await acquireWriter(signal);
+    let stage:Stage|undefined;
+    try{
+      if(closing)throw new ContextToolError('bridge_closing','The tool session is closing','stop');
+      signal.throwIfAborted();bounds.assertContextAuthority?.();
+      const base=cloneState(),working=cloneState();
+      let settled=false;
+      const clearImages=()=>{for(const value of stage?.reservations??[]){
+        clearTimeout(value.timer);for(const [key,current]of disclosedImages)if(current===value)disclosedImages.delete(key);
+        if(value.imageView)value.imageView.delivery='failed';value.settle();
+      }};
+      const finish=()=>{signal.removeEventListener('abort',abort);if(stage)activeStages.delete(stage);release();};
+      const discard=()=>{if(settled)return;settled=true;stage!.status='discarded';clearImages();finish();};
+      const abort=()=>{stage!.cancelled=signal.reason;discard();};
+      stage={base,state:working,evidence:[],callbacks:[],delivered:[],reservations:new Set(),status:'reading',discard};activeStages.add(stage);
+      signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();
+      let status=200,body:string|undefined;
+      const reply={get destroyed(){return signal.aborted||closing;},writeHead(code:number){status=code;return reply;},end(value:string,delivered?:()=>void){body=value;if(delivered)stage!.delivered.push(delivered);},once(){},off(){}};
+      await execution.run(stage,()=>executeTool({tool,readArguments:async()=>args},reply));
+      if(stage.status==='discarded'){clearImages();signal.throwIfAborted();throw new ContextToolError('bridge_closing','The tool session closed before delivery','stop');}
+      signal.throwIfAborted();bounds.assertContextAuthority?.();
+      if(stage.fatal)throw stage.fatal;
+      if(status>=400){
+        let issue:Record<string,unknown>|undefined;try{issue=(JSON.parse(body??'{}') as {toolError?:Record<string,unknown>}).toolError;}catch{}
+        const recovery=issue?.recovery==='correct_arguments'||issue?.recovery==='use_existing_evidence'||issue?.recovery==='stop'?issue.recovery:'stop';
+        throw new ContextToolError(typeof issue?.code==='string'?issue.code:'context_tool_failed',typeof issue?.message==='string'?issue.message:'The tool could not complete.',recovery,issue?.details&&typeof issue.details==='object'?issue.details as Record<string,unknown>:{});
+      }
+      if(typeof body!=='string')throw new ContextToolError('context_tool_failed','The tool produced no deliverable response','stop');
+      const value:unknown=JSON.parse(body);stage.status='pending';
+      const current=stage;
+      return {value,
+        confirm(){
+          if(settled){if(current.cancelled!==undefined)throw current.cancelled;return;}
+          try{
+            signal.throwIfAborted();bounds.assertContextAuthority?.();
+            if(closing)throw new ContextToolError('bridge_closing','The tool session closed before confirmation','stop');
+            // Memory receipt persistence is required, unlike observation. A
+            // failure must reach this synchronous confirm/Host sender boundary.
+            for(const event of current.callbacks.filter(event=>event.name==='onMemoryBodies')){
+              const callback=callbacks.get(event.name);
+              try{if(typeof callback==='function')execution.exit(()=>(callback as (...args:unknown[])=>void)(...event.args));}
+              catch(error){rejectFailure(error instanceof Error?error:new Error('Memory delivery receipt could not be recorded'));throw error;}
+            }
+            signal.throwIfAborted();bounds.assertContextAuthority?.();
+            if(closing)throw new ContextToolError('bridge_closing','The tool session closed before confirmation','stop');
+            const token=value&&typeof value==='object'?(value as {imageDelivery?:unknown}).imageDelivery:undefined;
+            if(typeof token==='string'&&![...disclosedImages.values()].some(image=>image.token===token))throw hostError('Image delivery receipt expired');
+            mergeStage(current);current.status='committed';settled=true;
+            if(typeof token==='string')execution.exit(()=>imageDelivery(token,true));
+            for(const event of current.callbacks.filter(event=>event.name!=='onMemoryBodies')){
+              const callback=callbacks.get(event.name);try{if(typeof callback==='function')execution.exit(()=>(callback as (...args:unknown[])=>void)(...event.args));}catch{}
+            }
+            execution.run(current,()=>{for(const callback of current.delivered)callback();});
+            if(current.fatal)throw current.fatal;
+          }catch(error){if(!settled)discard();throw error;}finally{if(settled)finish();}
+        },
+        discard,
+      };
+    }catch(error){stage?.discard();release();throw error;}
+  };
+  // Every ordinary writer shares the complete stage window. Image ACK is an
+  // independent completion, not another read, and must remain able to unblock
+  // a reader waiting on an existing image reservation.
+  const handle:BridgeToolHandler=async(request,res)=>{
+    if(request.tool==='_image_delivery')return execution.exit(()=>executeTool(request,res));
+    const disconnected=new AbortController(),abort=()=>disconnected.abort(new DOMException('Tool client disconnected','AbortError'));
+    res.once('close',abort);
+    const signal=AbortSignal.any([closeSignal.signal,disconnected.signal,...(bounds.signal?[bounds.signal]:[])]);
+    let release:(()=>void)|undefined;
+    try{release=await acquireWriter(signal,false);if(!res.destroyed)await execution.exit(()=>executeTool(request,res));}
+    catch(error){if(!res.destroyed)res.writeHead(400).end(JSON.stringify({error:'The tool session closed before delivery'}));}
+    finally{res.off('close',abort);release?.();}
+  };
+  const session={
+    imageDelivery,prepareDelivery,failure,trace:canonical.trace,records:canonical.records,seedEvidence,
     get deliveredRanges(){
       const merged:{id:string;offset:number;length:number}[]=[];
-      for(const range of [...deliveredRanges].sort((a,b)=>a.id.localeCompare(b.id)||a.offset-b.offset||a.length-b.length)){
+      for(const range of [...canonical.deliveredRanges].sort((a,b)=>a.id.localeCompare(b.id)||a.offset-b.offset||a.length-b.length)){
         const prior=merged.at(-1);if(prior&&prior.id===range.id&&range.offset<=prior.offset+prior.length)prior.length=Math.max(prior.offset+prior.length,range.offset+range.length)-prior.offset;
         else merged.push({...range});
-      }
-      return merged;
+      }return merged;
     },
-    get sourceContextDependencies(){return [...sourceContextDependencies.values()];},
-    get imageReadReceipts(){return [...imageReadReceipts.values()].map(value=>structuredClone(value));},
-    get evidenceDependencies(){return {version:1 as const,complete:completeLineage&&[...metadataImageIds].every(id=>disclosedIds.has(id)),ids:[...disclosedIds]};},
-    get deliveredCharacters(){return deliveredCharacters;},
-    get ready() {
-      return ready;
-    },
+    get sourceContextDependencies(){return [...canonical.sourceContextDependencies.values()];},
+    get imageReadReceipts(){return [...canonical.imageReadReceipts.values()].map(value=>structuredClone(value));},
+    get evidenceDependencies(){return {version:1 as const,complete:canonical.completeLineage&&[...canonical.metadataImageIds].every(id=>canonical.disclosedIds.has(id)),ids:[...canonical.disclosedIds]};},
+    get deliveredCharacters(){return canonical.deliveredCharacters;},get ready(){return ready;},
   };
-  const close=()=>{
-    try{bounds.onEvidence?.(evidenceLayers(records));}catch{/* Host observation cannot grant reads or change the result. */}
-    closing=true;
+  const close=()=>execution.exit(()=>{
+    closing=true;for(const stage of [...activeStages])stage.discard();closeSignal.abort(new DOMException('Tool session closed','AbortError'));
+    const observer=callbacks.get('onEvidence');
+    try{if(typeof observer==='function')observer(evidenceLayers(canonical.records));}catch{}
     for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}
     disclosedImages.clear();
-  };
+  });
   return {handle,session,close};
 }

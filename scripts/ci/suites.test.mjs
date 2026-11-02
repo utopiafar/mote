@@ -20,7 +20,7 @@ test('host changes select the light task that runs host lifecycle contracts once
   const plan = selected.flatMap(task => taskPlan(task));
   const tests = plan.filter(step => step.command === process.execPath && step.args.includes('--test') && step.args.some(arg => arg.startsWith('packages/plugin-host/test/')));
   assert.equal(tests.length, 1);
-  assert.deepEqual(tests[0].args.slice(1), ['packages/plugin-host/test/import-boundary.test.mjs', 'packages/plugin-host/test/lifecycle.test.mjs']);
+  assert.deepEqual(tests[0].args.slice(1), ['packages/plugin-host/test/import-boundary.test.mjs', 'packages/plugin-host/test/lifecycle.test.mjs', 'packages/plugin-host/test/extensions.test.mjs']);
 });
 
 test('Server shards plus explicit scale cases cover the original glob once, with all short Memory guards automatic', () => {
@@ -206,4 +206,17 @@ test('Server contracts build the runnable Central release before update and roll
     const run = plan.findIndex(step => step.args.includes(consumer));
     assert.ok(run > build('@mote/server'), `${consumer} must run after the selected Server release is built`);
   }
+});
+
+
+test('SDK package validation has a dedicated light task with real build and external-package checks', () => {
+  assert.deepEqual(taskPlan('plugin-sdk'), [
+    {command:'npm',args:['run','build','-w','@mote/plugin-sdk']},
+    {command:process.execPath,args:['--test','packages/plugin-sdk/test/package-boundary.test.mjs']},
+  ]);
+  const sdk=JSON.parse(readFileSync('packages/plugin-sdk/package.json','utf8'));
+  const host=JSON.parse(readFileSync('packages/plugin-host/package.json','utf8'));
+  assert.equal(sdk.scripts.prebuild,'npm run build -w @mote/plugin-host');
+  assert.equal(host.scripts.prebuild,'npm run build -w @mote/plugin-api');
+  assert.ok(!taskPlan('tooling').some(step=>step.args.some(arg=>arg.includes('packages/plugin-sdk/')||arg==='@mote/plugin-sdk')));
 });
