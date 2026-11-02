@@ -237,8 +237,11 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     captureIntake.quiesce('shutdown');
     await captureIntake.close();
     await filesPlatform.close();
-    await sourceRuntime.close();
+    // Keep the SourceRuntime authority alive through accepted Memory work;
+    // C05 stop interrupts/drains it before the runtime is retired.
+    sourceRuntime.quiesce('shutdown');
     await executionPlatform.stop('shutdown');
+    await sourceRuntime.close();
   });
   resources.defer(()=>captureIntake.close());resources.defer(()=>filesPlatform.close());resources.defer(()=>sourceRuntime.close());
   const notesSource=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
