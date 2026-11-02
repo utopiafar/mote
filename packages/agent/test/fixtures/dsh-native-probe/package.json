@@ -1,0 +1,17 @@
+{
+  "name": "@mote/dsh-native-probe",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./factory-a": "./factory-a.mjs",
+    "./factory-b": "./factory-b.mjs",
+    "./control": "./control.mjs"
+  },
+  "dsh": {
+    "native": {
+      "capabilities": ["tools", "hooks", "factory", "agents"]
+    }
+  }
+}
