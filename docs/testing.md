@@ -16,6 +16,10 @@ This is the single source for test layers and when to run them. App `AGENTS.md` 
 
 A module test using real SQLite or HTTP is not automatically heavy E2E. A large fixture that checks every record or cancellation is correctness coverage, even if its file contains `performance` or `migration`. Retain that coverage when splitting suites; keeping it does not require running it on every PR. A test that measures time and asserts correctness may need separate entrypoints, with its meaningful assertions, input size, lifecycle states and timeouts preserved. Do not delete or weaken valid tests to hide an existing failure.
 
+## Reusable synthetic persona
+
+For a small fictional owner spanning desktop, Android, Central, imports, files and recording connectors, use the [Lin Zhao dataset and isolated replay guide](synthetic-persona-dataset.md). Offline transport checks, opt-in local-model runs, manual semantic review and physical/cloud boundaries are recorded separately.
+
 ## Daily feedback
 
 Run the narrow command that exercises changed behavior after a coherent batch of edits. Ordinary changes need affected unit/module checks; interface changes also need a light contract against the real consumer. A small fix involving permissions, deletion or restoration still needs the corresponding risk regression, without expanding to unrelated repository suites.
