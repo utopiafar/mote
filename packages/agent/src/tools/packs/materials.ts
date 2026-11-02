@@ -71,7 +71,7 @@ function materialCatalogPage(value: unknown): {items: unknown[]; nextCursor: str
   return page as {items: unknown[]; nextCursor: string | null};
 }
 
-export function createMaterialsPack(input: ReadPackInputs = {}): readonly ToolDescriptor[] {
+export function createMaterialReadPack(input: ReadPackInputs = {}): readonly ToolDescriptor[] {
   const timeZone = input.timeZone ?? 'UTC';
   const catalog = spec('material_catalog'), read = spec('material_read');
   return Object.freeze([

@@ -31,7 +31,7 @@ function withoutSavedQuotes(items: unknown[]): unknown[] {
   });
 }
 
-export function createMemoriesPack(input: ReadPackInputs = {}): readonly ToolDescriptor[] {
+export function createMemoryReadPack(input: ReadPackInputs = {}): readonly ToolDescriptor[] {
   const timeZone = input.timeZone ?? 'UTC', memory = spec('memories');
   return Object.freeze([
     defineToolDescriptor({
