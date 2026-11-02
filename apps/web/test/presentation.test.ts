@@ -3,6 +3,8 @@ import test from 'node:test';
 import React, { act, useEffect, useState } from 'react';
 import { JSDOM } from 'jsdom';
 import { UiPresentationHost, defaultUiLayout, linearUiTheme } from '@mote/shared';
+import { PluginI18nRegistry } from '@mote/shared/plugin-i18n';
+import { parseUiContribution } from '@mote/shared/plugin-ui';
 import {webAppearance} from '../src/appearance';
 import { PresentationSurface, WorkspaceShell, type WebShellProps, type WebShellRenderer } from '../src/presentation';
 
@@ -47,4 +49,39 @@ test('a real shell and theme replacement preserves the mounted draft, selection,
   assert.equal(dom.window.document.documentElement.style.getPropertyValue('--mote-accent'), linearUiTheme.schemes!.light.accent);
   assert.throws(() => host.activate({ theme: { id: 'missing.theme', version: '1' }, layout: defaultUiLayout }), /unavailable/);
   assert.equal(dom.window.document.querySelector('textarea'), field); assert.equal(stops, 0);
+});
+
+test('contributed presentation labels reach the shell and the removal notice', async t => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost/' });
+  const previous = new Map<string, PropertyDescriptor | undefined>();
+  for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })) {
+    previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+  }
+  dom.window.scrollTo = () => {};
+  const { createRoot } = await import('react-dom/client'), root = createRoot(dom.window.document.getElementById('root')!);
+  const host = new UiPresentationHost<WebShellRenderer>({ theme: linearUiTheme, layout: { ...defaultUiLayout, implementation: WorkspaceShell } });
+  const catalogs = new PluginI18nRegistry();
+  catalogs.register('fixture.plugin', 'en', { 'theme.name': 'Studio' });
+  const facts = { requirementsAvailable: true, registeredNativeCapabilities: new Set<string>() };
+  const theme = { ...linearUiTheme, id: 'fixture.theme', version: '1' };
+  const contribution = {
+    packageId: 'fixture.pkg',
+    descriptor: parseUiContribution({
+      id: 'fixture.theme', kind: 'theme', apiVersion: '1', platforms: ['web'],
+      presentation: { labelKey: 'theme.name', i18nNamespace: 'fixture.plugin' },
+    }),
+  };
+  const removeTheme = host.registerContribution(contribution, { id: 'fixture.theme', version: '1' }, theme, catalogs, 'web', facts, 'en');
+  t.after(async () => {
+    await act(async () => root.unmount());
+    removeTheme();
+    for (const [key, value] of previous) { if (value) Object.defineProperty(globalThis, key, value); else Reflect.deleteProperty(globalThis, key); }
+    dom.window.close();
+  });
+  await act(async () => root.render(React.createElement(PresentationSurface, { host, navigation: () => 'Generated navigation', toolbar: 'Generated toolbar', footer: 'Generated footer' }, React.createElement('p', null, 'Generated content'))));
+  await act(async () => host.activate({ theme, layout: defaultUiLayout }));
+  assert.equal(dom.window.document.documentElement.dataset.uiThemeLabel, 'Studio');
+  await act(async () => removeTheme());
+  assert.equal(dom.window.document.documentElement.dataset.uiThemeLabel, undefined);
+  assert.match(dom.window.document.querySelector('.presentation-notice')?.textContent ?? '', /Studio/);
 });

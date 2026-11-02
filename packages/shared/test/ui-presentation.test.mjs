@@ -5,6 +5,8 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {UiPresentationHost,linearUiTheme,defaultUiLayout,androidUiLayout,desktopUiLayout,uiDestinationPresentation} from '../dist/ui-presentation.js';
+import {PluginI18nRegistry} from '../dist/plugin-i18n.js';
+import {parseUiContribution} from '../dist/plugin-ui.js';
 
 const fixture=()=>new UiPresentationHost({theme:linearUiTheme,layout:{...defaultUiLayout,implementation:{name:'default'}}});
 test('one failed presentation observer does not split the committed binding across consumers',()=>{
@@ -77,4 +79,63 @@ test('clients preserve shared destination identities and the final platform-spec
   const kotlin=read('apps/android/app/src/main/java/dev/mote/collector/PrimaryNavigation.kt');
   const tabs=Object.fromEntries([...kotlin.matchAll(/^\s+[A-Z]+\("([^"]+)", "[^"]+", "[A-Z]+", "([a-z]+)"\)/gm)].map(match=>[match[2],match[1]]));
   for(const id of [...androidUiLayout.primary,'activity'])assert.equal(tabs[id],uiDestinationPresentation[id].label,'Android '+id);
+});
+
+test('a contributed theme and layout bind exactly and expose runtime labels until removal',()=>{
+  const host=fixture();
+  const catalogs=new PluginI18nRegistry();
+  catalogs.register('fixture.plugin','en',{'theme.name':'Studio','layout.name':'Studio layout'});
+  catalogs.register('fixture.plugin','zh-CN',{'theme.name':'影棚','layout.name':'影棚布局'});
+  const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+  const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+  const themeContribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+  })};
+  const removeTheme=host.registerContribution(themeContribution,{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts,'zh-CN');
+  host.activate({theme,layout:defaultUiLayout});
+  assert.equal(host.getSnapshot().themePresentation.label.text,'影棚');
+  removeTheme();
+  assert.equal(host.getSnapshot().theme.id,linearUiTheme.id);
+  assert.equal(host.getSnapshot().fallbackReason,'theme_removed');
+  assert.equal(host.getSnapshot().fallbackPresentation.label.text,'影棚');
+  assert.equal(host.getSnapshot().themePresentation,undefined);
+
+  const layout={...defaultUiLayout,id:'fixture.layout',version:'1',implementation:{name:'contributed'}};
+  const layoutContribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.layout',kind:'layout',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'layout.name',i18nNamespace:'fixture.plugin'},
+  })};
+  const removeLayout=host.registerContribution(layoutContribution,{id:'fixture.layout',version:'1'},layout,catalogs,'web',facts,'en');
+  host.activate({theme:linearUiTheme,layout});
+  assert.equal(host.getSnapshot().layoutPresentation.label.text,'Studio layout');
+  removeLayout();
+  assert.equal(host.getSnapshot().layout.id,defaultUiLayout.id);
+  assert.equal(host.getSnapshot().fallbackReason,'layout_removed');
+  assert.equal(host.getSnapshot().fallbackPresentation.label.text,'Studio layout');
+  assert.equal(host.getSnapshot().layoutPresentation,undefined);
+});
+
+test('a contributed pack only binds its exact reference and theme/layout kind',()=>{
+  const host=fixture();
+  const catalogs=new PluginI18nRegistry();
+  catalogs.register('fixture.plugin','en',{'theme.name':'Studio'});
+  const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+  const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+  const themeContribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+  })};
+  assert.throws(
+    ()=>host.registerContribution(themeContribution,{id:'other.theme',version:'2'},theme,catalogs,'web',facts,'en'),
+    /does not match/,
+  );
+  const page=parseUiContribution({
+    id:'fixture.page',kind:'page',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'theme.name',i18nNamespace:'fixture.plugin'},
+  });
+  assert.throws(
+    ()=>host.registerContribution({packageId:'fixture.page',descriptor:page},{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts,'en'),
+    /theme or layout/,
+  );
 });
