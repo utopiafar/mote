@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import type {FeatureInventory,FeatureCapability,FeatureManifest,FeatureSurface} from '@mote/shared';
+import type {FeatureInventory,FeatureCapability,FeatureManifest,FeatureRequirement,FeatureSurface} from '@mote/shared';
 import type {ContributionIdentity,PluginSnapshot} from '@mote/plugin-api/contracts';
 import type {ServerFeatureHost} from './feature-host.js';
 import type {FeatureServices} from './feature-services.js';
@@ -9,8 +9,10 @@ import type {FeatureServices} from './feature-services.js';
  * inventory surface/feature grouping the snapshot does not carry. */
 export type HostContributionDescriptor = ContributionIdentity & {
   readonly featureId: string;
+  readonly featureVersion: string;
   readonly version: string;
   readonly surface: FeatureSurface;
+  readonly requires?: readonly FeatureRequirement[];
 };
 
 export interface HostInventoryProjection {
@@ -50,6 +52,7 @@ export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureIn
     const active = availability?.state === 'active';
     const capability: FeatureCapability = {
       id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface, featureId: descriptor.featureId,
+      ...(descriptor.requires?.length ? {requires: [...descriptor.requires]} : {}),
       state: active ? 'active' : 'unavailable',
       ...(active ? {} : {reason: availability ? availability.reason : 'dependency_unavailable'}),
     };
@@ -57,7 +60,10 @@ export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureIn
     const existing = hostCapabilities.get(key);
     // Duplicate consumer keys never silently overwrite an unavailable scope.
     if (!existing || (existing.state === 'active' && capability.state === 'unavailable')) hostCapabilities.set(key, capability);
-    hostFeatures.push({id: descriptor.featureId, version: descriptor.version, components: [{id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface}]});
+    hostFeatures.push({
+      id: descriptor.featureId, version: descriptor.featureVersion,
+      components: [{id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface, ...(descriptor.requires?.length ? {requires: [...descriptor.requires]} : {})}],
+    });
   }
   const capabilities = [
     ...connectorCapabilities,
