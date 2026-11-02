@@ -5,7 +5,7 @@ import {attributionMetadata,attributionMetadataResponse} from './tools/result-me
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
-import {pinContextTools,contextToolSnapshot,releaseContextTools} from './tool-contributions.js';
+import {pinContextTools,contextToolSnapshot,releaseContextTools,hasPinnedContextTools} from './tool-contributions.js';
 import type {HostSessionPort,HostReadOperation} from './tools/host-session.js';
 import {validateCapabilityArguments} from './capability-schema.js';
 import {rememberEvidence,evidenceLayers,projectEvidencePresentation,copyEvidencePresentation,snapshotEvidenceLedger,restoreEvidenceLedger} from './evidence-ledger.js';
@@ -224,6 +224,7 @@ export async function createContextToolSession(
     if(closing)throw new ContextToolError('bridge_closing','The tool session is closing','stop');
     bounds.signal?.throwIfAborted();return canonical;
   };
+  const inheritedRegistry=hasPinnedContextTools(bounds);
   bounds=pinContextTools({...bounds,...(bounds.evidenceIds?{evidenceIds:[...bounds.evidenceIds]}:{}),...(bounds.anchorEvidenceIds?{anchorEvidenceIds:[...bounds.anchorEvidenceIds]}:{}),...(bounds.evidenceRanges?{evidenceRanges:bounds.evidenceRanges.map(range=>({...range}))}:{}),...(bounds.evidenceReadRanges?{evidenceReadRanges:Object.freeze(bounds.evidenceReadRanges.map(range=>Object.freeze({...range})))}:{})},reader);
   const callbacks=new Map<CallbackName,unknown>();
   for(const name of ['onEvidence','onSourceContextDependencies','onTrace','onProgress','onMemoryBodies'] as const){
@@ -250,18 +251,18 @@ export async function createContextToolSession(
   };
   for(const pin of [...(bounds.contextSourceContextDependencies??[]),...(bounds.conversation?.sourceContextDependencies??[])])rememberSourcePin(pin);
 
-  const rememberSourceContexts=(value:unknown)=>{
-    if(Array.isArray(value)){for(const item of value)rememberSourceContexts(item);return;}
+  const rememberSourceContexts=(value:unknown,mayDiscover:(ref:string)=>boolean=()=>true)=>{
+    if(Array.isArray(value)){for(const item of value)rememberSourceContexts(item,mayDiscover);return;}
     if(!value||typeof value!=='object')return;
     const row=value as Record<string,unknown>,ref=row.sourceContextRef;
-    if(typeof ref==='string'){
+    if(typeof ref==='string'&&mayDiscover(ref)){
       const match=pinnedSourceContextRef.exec(ref);
       if(match){const sourceId=Buffer.from(match[1],'base64url').toString('utf8'),version=Number(match[2]);
         if(sourceId.length>0&&sourceId.length<=128&&Number.isSafeInteger(version)){state().discoveredSourceContexts.add(ref);rememberSourcePin({sourceId,version,fingerprint:match[3]});}}
     }
     const attribution=attributionContextSchema.safeParse(row.attributionContext);
     if(attribution.success)for(const pin of attribution.data.sourceContextDeclarations??[])rememberSourcePin(pin);
-    for(const [key,item] of Object.entries(row))if(key!=='attributionContext')rememberSourceContexts(item);
+    for(const [key,item] of Object.entries(row))if(key!=='attributionContext')rememberSourceContexts(item,mayDiscover);
   };
   canonical.disclosedIds=new Set([...(bounds.conversation?.evidenceDependencies?.ids??[]),...(bounds.contextEvidenceDependencies?.ids??[]),...(bounds.derivedContextEvidenceIds??[])]);
   canonical.completeLineage=(!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true)&&
@@ -521,6 +522,8 @@ export async function createContextToolSession(
             const method=reader[operation] as ((...args:unknown[])=>Promise<unknown>)|undefined;
             if(!method)throw hostError('The requested read operation is unavailable');
             let value=await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual]))),originals:ContextRecord[]|undefined;
+            if(['search','sourceHistory','fileChunks'].includes(operation)&&Array.isArray(value))value=(value as ContextRecord[]).filter(inScope);
+            if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))value={...value,items:(value as {items:ContextRecord[]}).items.filter(inScope)};
             if(operation==='evidence'){
               if(!Array.isArray(value))throw hostError('The evidence reader returned invalid records');
               const ids=actual.ids as string[];
@@ -613,7 +616,7 @@ export async function createContextToolSession(
         const serialized=JSON.stringify(attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),...(grantedReadRange?{readRange:grantedReadRange}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}));
         assertLive();
         for(const {operation,value}of produced){
-          rememberSourceContexts(value);
+          rememberSourceContexts(value,()=>false);
           if(['catalog','sources','activity','mediaActivity','devices'].includes(operation)){
             const raw=value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
             rememberDisclosureDependencies(raw.disclosureDependencies);
@@ -628,6 +631,7 @@ export async function createContextToolSession(
         for(const {operation,value}of produced){
           if(!value||typeof value!=='object')continue;
           const raw=value as Record<string,unknown>;
+          if(operation==='sources'&&Array.isArray(raw.items))for(const item of raw.items as {sourceContextRef?:unknown}[])if(typeof item.sourceContextRef==='string'&&visibleIds.has(item.sourceContextRef))rememberSourceContexts({sourceContextRef:item.sourceContextRef});
           if(operation==='materialCatalog')for(const item of (raw.items as {ref?:string}[]|undefined)??[])if(item.ref&&visibleIds.has(item.ref))state().pinnedMaterials.add(item.ref);
           if(operation==='materialRead')for(const ref of (raw.originalRefs as string[]|undefined)??[]){const parsed=parseEvidenceRef(ref);if(parsed?.kind==='capture'&&visibleIds.has(ref)){state().discovered.add(parsed.id);state().disclosedIds.add(parsed.id);}}
           if(operation==='memories'){
@@ -644,7 +648,8 @@ export async function createContextToolSession(
         }
         if(grantedReadRange)for(const record of delivered){const selection=record.textRange as {start:number;end:number};state().deliveredRanges.push({id:record.id,offset:selection.start,length:selection.end-selection.start});}
         for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(produced.some(read=>read.operation==='evidence'||read.operation==='memories'))state().expanded.add(record.id);}
-        if(!produced.length&&pin.requires.some(permission=>permission!=='progress'))state().completeLineage=false;
+        for(const proof of proofs)state().disclosedIds.add(proof.record.id);
+        if(!produced.length&&!progressOnly)state().completeLineage=false;
         state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:{...args,...scope},count:Array.isArray(data)?data.length:data===undefined?0:1,...(tool==='attribution_context'&&data&&typeof data==='object'?{attributionPage:{contextFingerprint:String((data as {contextFingerprint?:unknown}).contextFingerprint),offset:Number((data as {offset?:unknown}).offset),total:Number((data as {total?:unknown}).total),requestedLength:Number(args.length??8000),returnedLength:String((data as {text?:unknown}).text??'').length}}:{})});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:state().trace.at(-1)!.count});res.end(serialized);return;
       }
@@ -908,7 +913,7 @@ export async function createContextToolSession(
     get deliveredCharacters(){return canonical.deliveredCharacters;},get ready(){return ready;},
   };
   const close=()=>execution.exit(()=>{
-    closing=true;releaseContextTools(bounds);for(const stage of [...activeStages])stage.discard();closeSignal.abort(new DOMException('Tool session closed','AbortError'));
+    closing=true;if(!inheritedRegistry)releaseContextTools(bounds);for(const stage of [...activeStages])stage.discard();closeSignal.abort(new DOMException('Tool session closed','AbortError'));
     const observer=callbacks.get('onEvidence');
     try{if(typeof observer==='function')observer(evidenceLayers(canonical.records));}catch{}
     for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}

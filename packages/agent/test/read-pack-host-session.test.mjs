@@ -1,25 +1,15 @@
+import {hostFixture} from './fixtures/read-pack-host.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge,originalEvidenceReceipt} from '../dist/bridge.js';
-import {createHostRunSession} from '../dist/host/run-session.js';
-import {createHostOutputProvider} from '../dist/host/output.js';
-import {ActiveExecutionBudget} from '../dist/active-budget.js';
 import {pinContextTools,contextToolSnapshot} from '../dist/tool-contributions.js';
-import {toRuntimeToolDefinitions} from '../dist/tools/runtime-schema.js';
 import {createOfficialReadPacks} from '../dist/tools/official-read-packs.js';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 const id='11111111-1111-4111-8111-111111111111';
-const metrics={unit:'utf16_characters',system:0,tools:0,question:0,conversation:0,task:0,evidence:0,prompt:0,outputTokenReserve:100,toolResults:0};
 const readSource={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 const completed=()=>({terminal:{kind:'completed'},candidate:{text:JSON.stringify({answer:'Generated metadata answer',citationIds:[]})}});
-async function hostFixture(bridge,input,run){
-  const controller=new AbortController(),scopeIdentity={packageId:'generated',installationId:'install',instanceId:'instance',host:{kind:'central',id:'fixture'},activationId:'active'};
-  const lease=(id,value)=>{let active=true;return {binding:{service:{id,apiVersion:'1'},provider:{scope:scopeIdentity,contributionId:id},revision:1},value,signal:controller.signal,assertCurrent(){assert.ok(active);},release(){active=false;}};};
-  const definitions=toRuntimeToolDefinitions(contextToolSnapshot(input)),selection={modelId:'generated',modelRevision:1,profileId:'model',profileRevision:1,transport:'fixture'};
-  const runtime=lease('generated.runtime',{capabilities:{},async prepare(_profile,_model,host){host.emit({type:'tools.ready',tools:definitions},null);return {run:request=>host.runModel(request.attempt,()=>run(host,request.attempt)),repair:async()=>{throw Error('Unexpected repair');},cancel:async()=>{},close:async()=>{}};}});
-  return createHostRunSession({scope:{identity:scopeIdentity,signal:controller.signal,assertCurrent(){controller.signal.throwIfAborted();},defer(){}},identity:{runId:'generated-run',runtime:{id:'fixture',revision:1,profileId:'runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64)},model:selection},input,profile:{binding:runtime.binding,runtimeId:'fixture',profileId:'runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64),taskKind:'query',configuration:{}},runtime,model:{...lease('generated.model',{}),selection},output:lease('mote.agent.host-output',createHostOutputProvider()),tools:{definitions,bindings:[],assertCurrent(){}},budget:{activeTimeoutMs:null},activeBudget:new ActiveExecutionBudget(null),commitFence:{assertCurrent(){controller.signal.throwIfAborted();}}},{systemPrompt:'Generated Host policy',prompt:'Generated prompt',contextUsage:metrics,evidence:()=>bridge,async readTool(call,signal){const staged=await bridge.prepareDelivery(call.name,call.arguments,signal);return {payload:{text:JSON.stringify(staged.value)},confirm:staged.confirm,discard:staged.discard};},close:()=>bridge.close()});
-}
+
 
 test('actual Host sender sees only projected pack metadata and confirms exact private contributor receipts afterward',{timeout:5000},async t=>{
   let input={question:'Generated metadata',hostContextToolMode:'all-native'};const started=deferred(),ack=deferred();
@@ -63,4 +53,20 @@ test('mutating a returned producer object cannot rewrite the Host original proof
   const bridge=await startBridge({...readSource,search:async()=>[record],contextTools:()=>[{descriptors:[descriptor],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]},{question:'Generated proof mutation',hostContextToolMode:'all-native'});t.after(()=>bridge.close());
   await assert.rejects(bridge.prepareDelivery('generated_mutation',{},new AbortController().signal),{code:'invalid_tool_arguments'});
   assert.equal(record.ocrText,'Generated actual original');assert.equal(bridge.records.size,0);assert.deepEqual(bridge.evidenceDependencies.ids,[]);
+});
+
+test('ordinary metadata cannot turn a producer record field into a source-context discovery grant',{timeout:5000},async t=>{
+  const lifetime=new AbortController(),sourceId='generated-private',ref=`source-context:${Buffer.from(sourceId).toString('base64url')}@1#${'a'.repeat(64)}`;let sourceReads=0;
+  const descriptor={apiVersion:'1',name:'generated_locator',version:'1',description:'Generated metadata',fields:{},kind:'metadata',exposure:'catalog',requires:['search'],parse:args=>args,async execute(_args,port){const records=await port.read('search',{});return {source:'untrusted_personal_context',data:{sourceContextRef:records[0].sourceContextRef}};}};
+  const attribution=createOfficialReadPacks().filter(tool=>tool.name==='attribution_context');
+  const bridge=await startBridge({...readSource,search:async()=>[{id,capturedAt:'2026-11-01T00:00:00Z',appName:'Generated',ocrText:'Generated',sourceContextRef:ref}],materialRead:async()=>{throw Error('Unexpected material read');},sourceContext:async()=>{sourceReads++;return {attributionContext:{version:1,ownerRelation:'unknown',basis:'default'}};},contextTools:()=>[{descriptors:[descriptor,...attribution],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]},{question:'Generated untrusted locator',hostContextToolMode:'all-native'});t.after(()=>bridge.close());
+  const metadata=await bridge.prepareDelivery('generated_locator',{},new AbortController().signal);metadata.confirm();metadata.discard();
+  await assert.rejects(bridge.prepareDelivery('attribution_context',{sourceContextRef:ref},new AbortController().signal),{code:'invalid_tool_arguments'});assert.equal(sourceReads,0);assert.equal(bridge.records.size,0);
+});
+
+test('showing only a Memory ID does not persist a receipt for its undisclosed statement',{timeout:5000},async t=>{
+  const lifetime=new AbortController();let persisted=0;
+  const descriptor={apiVersion:'1',name:'generated_memory_ids',version:'1',description:'Generated Memory metadata',fields:{},kind:'metadata',exposure:'catalog',requires:['memories'],parse:args=>args,async execute(_args,port){const page=await port.read('memories',{});return {source:'untrusted_personal_context',data:{items:page.items.map(item=>({id:item.id}))}};}};
+  const bridge=await startBridge({...readSource,memories:async()=>({items:[{id:'generated-memory',statement:'Generated actual Memory statement',fingerprint:'b'.repeat(64)}]}),contextTools:()=>[{descriptors:[descriptor],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]},{question:'Generated Memory locator',hostContextToolMode:'all-native',onMemoryBodies(){persisted++;}});t.after(()=>bridge.close());
+  const metadata=await bridge.prepareDelivery('generated_memory_ids',{},new AbortController().signal);assert.equal(persisted,0);metadata.confirm();metadata.discard();assert.equal(persisted,0);assert.equal(bridge.records.size,0);
 });

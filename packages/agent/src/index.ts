@@ -4,7 +4,7 @@ import type {ServiceBinding, ServiceContract, ScopeIdentity} from '@mote/plugin-
 import {toolInputSchema,toRuntimeToolDefinition} from './tools/runtime-schema.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {ActiveExecutionBudget, DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active-budget.js';
-import {contextToolDefinitions, pinContextTools,contextToolSnapshot} from './tool-contributions.js';
+import {contextToolDefinitions, pinContextTools,contextToolSnapshot,releaseContextTools} from './tool-contributions.js';
 import {taskTools} from './task-context.js';
 import {assembleHostContext, settleHostCleanup} from './host/run-session.js';
 import {createHostOutputProvider} from './host/output.js';
@@ -84,6 +84,7 @@ export function createAgent(original: AgentOptions) {
     displayTime(new Date().toISOString(), input.timeZone);
     const runId = randomUUID(), resources = new PluginResourceScope(); scopes.add(resources);
     const scope = Object.assign(resources, {identity: identity('mote.agent.query')});
+    scope.defer(()=>releaseContextTools(input));
     const signal = AbortSignal.any([scope.signal, ...(input.signal ? [input.signal] : [])]);
     const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); input.assertContextAuthority?.(); };
     const trace = (event: Parameters<typeof reportTrace>[1]) => reportTrace(input, {...event, runId});

@@ -34,6 +34,7 @@ function assemble(input:QueryInput,packs:readonly ReadPackRegistration[]):RunToo
 export function contextToolSnapshot(input:QueryInput):ToolSnapshot {
   return (input as PinnedInput)[runTools]?.snapshot??assemble(input,standalonePacks(input)).snapshot;
 }
+export function hasPinnedContextTools(input:QueryInput){return Boolean((input as PinnedInput)[runTools]);}
 export function releaseContextTools(input:QueryInput){(input as PinnedInput)[runTools]?.release();}
 /** This local symbol is copied by trusted Host spreads but never enters the
  * serialized manifest. All consumers of one run use its one pinned registry. */
