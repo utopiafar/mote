@@ -181,6 +181,8 @@ export class ConfigService {
   private watcherGeneration=0;
   private cancelWatcherReady?: () => void;
   private closing = false;
+  private quiescing = false;
+  private quiescePromise?: Promise<void>;
   private closePromise?: Promise<void>;
   private unavailable = false;
   private lastError: { code: string; domain?: string } | null = null;
@@ -232,7 +234,9 @@ export class ConfigService {
       this.effective.set('plugins', this.pluginValues(this.effective.get('plugins'), child => clone(this.effective.get(child.id)))); this.notify();
       return async () => {
         const remove = async () => { this.domains.delete(id); this.effective.delete(id); this.effectiveInputs.delete(id); this.notify(); };
-        if (this.closing) await remove(); else await this.serialize(remove);
+        if (this.closing) await remove();
+        else if (this.quiescing) { try { await this.quiesce(); } finally { await remove(); } }
+        else await this.serialize(remove);
       };
     });
   }
@@ -274,7 +278,7 @@ export class ConfigService {
     return (id === 'plugins' ? this.pluginValues(value, child => this.parseDomain(child, this.domainRaw(raw, child), raw)) : value) as T;
   }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
-    if (this.closing || this.unavailable) return Promise.reject(new ConfigServiceError('config_unavailable'));
+    if (this.closing || this.quiescing || this.unavailable) return Promise.reject(new ConfigServiceError('config_unavailable'));
     const result = this.tail.then(work); this.tail = result.then(() => {}, () => {}); return result;
   }
   private resolveDomainInput(domain: ConfigDomainRegistration, raw: unknown, document?: ConfigDocument): unknown {
@@ -522,15 +526,16 @@ export class ConfigService {
     this.notify();
   }
   async startWatching(): Promise<void> {
+    if (this.closing || this.quiescing) throw new ConfigServiceError('config_unavailable');
     const generation=this.watcherGeneration;
     // Acquire ownership without yielding when no teardown is pending. A stop during a wait fences this start.
     if(this.watcherStopping)await this.watcherStopping;
-    this.state(); if (this.closing||generation!==this.watcherGeneration) throw new ConfigServiceError('config_unavailable');
+    this.state(); if (this.closing||this.quiescing||generation!==this.watcherGeneration) throw new ConfigServiceError('config_unavailable');
     if (this.watcher || this.options.watch === false) return;
     this.watcherStopping=undefined;
     const watcher=this.watcher=watch(dirname(this.path), { depth: 0, ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } });
-    watcher.on('all', (_event, file) => { if (this.watcher===watcher && basename(file) === basename(this.path) && !this.closing) void this.reload().catch(() => {}); });
-    watcher.on('error', () => { if(this.watcher===watcher&&!this.closing){this.lastError = { code: 'config_unavailable' }; this.notify();} });
+    watcher.on('all', (_event, file) => { if (this.watcher===watcher && basename(file) === basename(this.path) && !this.closing && !this.quiescing) void this.reload().catch(() => {}); });
+    watcher.on('error', () => { if(this.watcher===watcher&&!this.closing&&!this.quiescing){this.lastError = { code: 'config_unavailable' }; this.notify();} });
     try {
       await new Promise<void>((resolveReady, reject) => {
         this.cancelWatcherReady=()=>reject(new ConfigServiceError('config_unavailable'));
@@ -558,10 +563,19 @@ export class ConfigService {
     });
     return { version: 1, revision: state.revision, configFile: this.path, domains, lastError: clone(this.lastError) };
   }
+  /** Fence new raw file work synchronously, then retire the watcher and drain
+   * operations already accepted by serialize(). Reads keep their current state;
+   * private commit/reload helpers remain usable by those accepted operations. */
+  quiesce(): Promise<void> {
+    this.quiescing = true;
+    return this.quiescePromise ??= (async () => {
+      try { await this.stopWatching(); } finally { await this.tail; }
+    })();
+  }
   close(): Promise<void> {
     return this.closePromise ??= (async () => {
       this.closing = true;
-      try{await this.stopWatching();}finally{await this.tail;this.listeners.clear();}
+      try { await this.quiesce(); } finally { this.listeners.clear(); }
     })();
   }
 }

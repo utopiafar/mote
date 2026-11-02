@@ -272,3 +272,25 @@ test('synchronous disposal errors leave the original safe error and continue cle
   await edit(file, doc => { doc.execution = { limit: 8 }; doc.secret = { key: '${FIXTURE_KEY}', label: 'new' }; (doc.plugins as { configuration: Record<string, unknown> }).configuration.failing = { n: 1 }; });
   await assert.rejects(service.reload(), { code: 'config_prepare_failed' }); assert.equal(disposed, 2); assert.equal(service.revision, 0);
 });
+
+test('quiesce fences raw file admissions and drains an accepted transaction while reads remain available',async t=>{
+  const {service,file}=await fixture(t);await service.startWatching();
+  const unregister=await service.registerPlugin({id:'quiesceOwned',schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}});
+  let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(done=>enter=done),held=new Promise<void>(done=>finish=done);
+  let applied=3,quiesced=false;
+  service.setHandler<{limit:number}>('execution',async(next,previous)=>{enter();await held;return {apply(){},publish(){applied=next.limit;},rollback(){applied=previous.limit;}};});
+  const first=service.update('execution',{limit:5},0),observed=first.then(value=>({value}),error=>({error}));
+  let draining:Promise<void>|undefined;
+  try{
+    await entered;draining=service.quiesce();void draining.then(()=>{quiesced=true;});
+    await Promise.all([
+      service.update('execution',{limit:6},0),service.updateMany({execution:{limit:6}},0),service.replace('execution',{limit:6},0),
+      service.registerPlugin({id:'tooLate',schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}}),service.reload(),service.startWatching(),
+    ].map(pending=>assert.rejects(pending,{code:'config_unavailable'})));
+    assert.equal(quiesced,false);assert.deepEqual(service.current('execution'),{limit:3});assert.equal(service.view().revision,0);
+    finish();await first;await draining;assert.equal(applied,5);assert.deepEqual(service.current('execution'),{limit:5});assert.equal(service.view().revision,1);
+    assert.equal((parse(await fs.readFile(file,'utf8')) as ConfigDocument).revision,1);
+    await unregister();await service.quiesce();
+    assert.throws(()=>service.current('plugin.quiesceOwned'),{code:'config_invalid'});
+  }finally{finish();await observed;if(draining)await draining;}
+});
