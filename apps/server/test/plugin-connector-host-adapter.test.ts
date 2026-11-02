@@ -301,17 +301,24 @@ test('initial start init failure leaves siblings serving',async t=>{
   await adapter.close();
 });
 
-test('initial start rejects only when no connector becomes active',async t=>{
+test('initial start with all failures keeps diagnostic inventory and a restartable container',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let attempts=0;
   const adapter=createConnectorHostAdapter({manifests:[
-    manifest('generated-all-fail-a',{statusKey:'a',onInit:async()=>{throw new Error('generated fail a');}}),
+    manifest('generated-all-fail-a',{statusKey:'a',onInit:()=>{attempts++;if(attempts===1)throw new Error('generated fail a');}}),
     manifest('generated-all-fail-b',{statusKey:'b',prefix:'all-fail-b.',onInit:async()=>{throw new Error('generated fail b');}}),
   ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
     scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
   t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
-  await assert.rejects(adapter.start(),/Connector host adapter startup failures/);
+  await adapter.start();
   assert.deepEqual(adapter.inventory().map(item=>[item.id,item.state]),[['generated-all-fail-a','failed'],['generated-all-fail-b','failed']]);
   assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{});
+  await adapter.stop('generated-all-fail-a');
+  await adapter.restart('generated-all-fail-a');
+  assert.equal(attempts,2);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-all-fail-a',headers})).body,'generated-all-fail-a');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{a:{id:'generated-all-fail-a'}});
+  assert.equal(adapter.inventory().find(item=>item.id==='generated-all-fail-b')?.state,'failed');
   await adapter.close();
 });
 
