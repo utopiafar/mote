@@ -100,3 +100,13 @@ test('closing the bridge drops an unconfirmed staged read and context_evidence s
   assert.equal(closingBridge.records.size,0,'close must drop an unconfirmed staged read');
   assert.deepEqual(closingBridge.deliveredRanges,[]);
 });
+
+test('discarded staged reads do not leak private evidence layers through close',async t=>{
+  const observed=[];
+  const bridge=await startBridge(reader,{question:'Generated discarded layer',onEvidence:records=>observed.push(...records)});
+  let closed=false;t.after(async()=>{if(!closed)await bridge.close();});
+  const staged=await bridge.prepareDelivery('search_context',{query:'Generated'},signal());
+  staged.discard();
+  await bridge.close();closed=true;
+  assert.deepEqual(observed,[],'the private layer ledger must be restored with the public records map');
+});
