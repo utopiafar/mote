@@ -1,0 +1,49 @@
+{
+  "name": "@mote/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/browser.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/browser.d.ts",
+      "browser": {
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js",
+        "default": "./dist/browser.js"
+      },
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.mjs",
+    "prebuild": "npm run build -w @mote/plugin-host",
+    "prepack": "node scripts/pack.mjs",
+    "pack:sdk": "node scripts/pack.mjs"
+  },
+  "dependencies": {
+    "@mote/plugin-api": "0.1.0",
+    "@mote/plugin-host": "0.1.0"
+  },
+  "bundledDependencies": [
+    "@mote/plugin-api",
+    "@mote/plugin-host"
+  ]
+}

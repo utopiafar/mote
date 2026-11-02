@@ -4,7 +4,7 @@ import {dirname,resolve,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
 
-const sourceDirectories=['packages/agent/src','packages/shared/src','apps/server/src','apps/desktop/src','apps/web/src'];
+const sourceDirectories=['packages/agent/src','packages/shared/src','packages/plugin-api/src','packages/plugin-host/src','packages/plugin-sdk/src','apps/server/src','apps/desktop/src','apps/web/src'];
 const sourceExtension=/\.(?:[cm]?[jt]sx?)$/;
 const builtinNames=new Set(builtinModules.flatMap(name=>[name,name.replace(/^node:/,'')]));
 const nodeBuiltin=name=>name.startsWith('node:')||builtinNames.has(name);
@@ -175,6 +175,13 @@ export function dependencyGraph(root){
     if(!target)throw Error(`Cannot resolve browser export ${entry} to source`);
     browserEntries.push(name(target));load(target);
   }
+  const sdk=manifests.get('@mote/plugin-sdk');
+  if(sdk){
+    if(!sdk.value.exports?.['./browser'])throw Error('Missing declared browser export @mote/plugin-sdk/browser');
+    const target=workspaceTarget('@mote/plugin-sdk/browser');
+    if(!target)throw Error('Cannot resolve browser export @mote/plugin-sdk/browser to source');
+    browserEntries.push(name(target));load(target);
+  }
   browserEntries.push(...files.filter(file=>inside(name(file),'apps/web/src')).map(name));
   return {nodes,browserEntries,unresolved};
 }
@@ -186,6 +193,7 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
     const runtime=edge.kind==='runtime';
     let rule;
     if(edge.specifier===null)rule='analyzable-module-reference';
+    if(inside(edge.from,'packages/plugin-sdk/src')&&(inside(edge.to,'apps')||inside(edge.to,'packages/shared/src')||inside(edge.to,'packages/agent/src')||inside(edge.to,'packages/diagnostics/src')))rule='sdk-public-boundary';
     if(runtime&&inside(edge.from,'packages/agent/src')&&edge.to==='packages/agent/src/index.ts')rule='agent-no-assembly-import';
     if(runtime&&inside(edge.from,'apps/server/src')&&['apps/server/src/index.ts','apps/server/src/app.ts'].includes(edge.to)&&!(edge.from==='apps/server/src/index.ts'&&edge.to==='apps/server/src/app.ts'))rule='server-no-assembly-import';
     if(desktopContract(edge.from)&&inside(edge.to,'apps/desktop/src')&&!desktopContract(edge.to))rule='desktop-contract-leaf';
