@@ -127,6 +127,25 @@ class PluginNavigationContractTest {
         assertThrows(IllegalArgumentException::class.java) { registry.register("fixture.other", "en", mapOf("nav.library" to "   ")) }
     }
 
+    @Test fun changingCallerMapCannotStoreUnvalidatedTranslations() {
+        val registry = PluginI18nRegistry()
+        // First reads return a valid value, the later storage read returns a
+        // blank one; registration must validate and store the same snapshot.
+        val changing = object : java.util.AbstractMap<String, String>() {
+            private var reads = 0
+            override val entries: MutableSet<MutableMap.MutableEntry<String, String>>
+                get() {
+                    val value = if (reads < 2) "Title" else "   "
+                    reads += 1
+                    return mutableSetOf<MutableMap.MutableEntry<String, String>>(
+                        java.util.AbstractMap.SimpleEntry("nav.title", value),
+                    )
+                }
+        }
+        registry.register(namespace, "en", changing)
+        assertEquals(PluginUiText("Title"), registry.resolve(namespace, "nav.title", "en"))
+    }
+
     @Test fun approvedAndroidNavigationKeepsOneHomeAndStableRoutes() {
         assertTrue("Management destinations stay in the secondary menu", MoteNavigation.primaryTabs().isEmpty())
         assertEquals("OVERVIEW", MoteNavigation.initialLocalPage())
