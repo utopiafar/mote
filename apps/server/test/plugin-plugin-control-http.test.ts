@@ -180,6 +180,12 @@ test('common host snapshot drives inventory availability and digest', async t =>
   assert.deepEqual(activeFeature?.components.find(c => c.id === 'fixture.contribution.two')?.requires, ['fixture.contribution']);
   assert.deepEqual(active.capabilities.find(c => c.id === 'fixture.contribution.two')?.requires, ['fixture.contribution']);
   await newHandle.quiesce('upgrade');
+  assert.throws(() => projectFeatureInventory({
+    ...base, host: {snapshot: host.snapshot(), descriptors: [...descriptors(oldIdentity), ...descriptors(newIdentity)]},
+  }), /Ambiguous host inventory descriptor/, 'the same public key from two scopes must be rejected');
+  assert.throws(() => projectFeatureInventory({
+    ...base, host: {snapshot: host.snapshot(), descriptors: [descriptor(oldIdentity), descriptor(oldIdentity)]},
+  }), /Ambiguous host inventory descriptor/, 'an identical duplicate descriptor is also ambiguous');
   const overlapping = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(newIdentity)}});
   assert.deepEqual(overlapping.capabilities.filter(c => c.featureId === 'fixture.feature').map(c => c.state), ['unavailable', 'unavailable'], 'the quiesced new scope must not inherit the old active scope');
   assert.equal(projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(oldIdentity)}}).capabilities.find(c => c.id === 'fixture.contribution')?.state, 'active');

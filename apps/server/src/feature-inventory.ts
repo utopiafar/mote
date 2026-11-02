@@ -57,9 +57,10 @@ export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureIn
       ...(active ? {} : {reason: availability ? availability.reason : 'dependency_unavailable'}),
     };
     const key = descriptor.featureId + '\0' + descriptor.contributionId;
-    const existing = hostCapabilities.get(key);
-    // Duplicate consumer keys never silently overwrite an unavailable scope.
-    if (!existing || (existing.state === 'active' && capability.state === 'unavailable')) hostCapabilities.set(key, capability);
+    // The consumer DTO cannot distinguish two scopes with the same public key.
+    // Trusted assembly must choose the current instance; reject ambiguity.
+    if (hostCapabilities.has(key)) throw new Error('Ambiguous host inventory descriptor: ' + descriptor.featureId + ':' + descriptor.contributionId);
+    hostCapabilities.set(key, capability);
     hostFeatures.push({
       id: descriptor.featureId, version: descriptor.featureVersion,
       components: [{id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface, ...(descriptor.requires?.length ? {requires: [...descriptor.requires]} : {})}],
