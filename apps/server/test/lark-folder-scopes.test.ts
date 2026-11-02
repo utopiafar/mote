@@ -10,6 +10,7 @@ import {SourceStore} from '../src/sources.js';
 import {LarkConnector,LARK_SCOPES} from '../src/connectors/lark.js';
 import type {LarkCommand,LarkRunner} from '../src/connectors/lark-cli.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 
 const selection:LarkSelection={documents:[],folders:['FolderGenerated123'],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false};
 async function done(connector:LarkConnector){
@@ -22,7 +23,7 @@ async function done(connector:LarkConnector){
 }
 async function fixture(t:any,folderScope?:string){
   const directory=await mkdtemp(join(tmpdir(),'mote-lark-folder-scopes-')),store=new Store(join(directory,'vault')),sources=new SourceStore(store);
-  const context:ConnectorContext={store,sources,config:{dataDir:directory,token:'generated-folder-scope-owner-token',allowedOrigins:[]}};
+  const context:ConnectorContext={evidenceReader:connectorReader(store,sources),store,sources,config:{dataDir:directory,token:'generated-folder-scope-owner-token',allowedOrigins:[]}};
   const calls:LarkCommand[]=[],state={granted:new Set([...LARK_SCOPES,...(folderScope?[folderScope]:[])]),grantRequested:false,requested:[] as string[]};
   const runner:LarkRunner=async command=>{
     calls.push(command);

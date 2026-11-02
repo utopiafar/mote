@@ -10,6 +10,7 @@ import {ArchivedFileStore} from '../src/archived-files.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 import type {GoogleDependencies} from '../src/connectors/google.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
@@ -23,7 +24,7 @@ async function fixture(t:any,handle:(url:URL,init?:RequestInit)=>Promise<Respons
   const directory=await mkdtemp(join(tmpdir(),'mote-gmail-'));
   const sourceStore=(store:Store)=>new SourceStore(store,undefined,new MemoryInputAuthorization(store,()=>true));
   let store=new Store(join(directory,'vault')),sources=sourceStore(store);
-  const ctx:ConnectorContext={store,sources,config:{dataDir:directory,token:'generated-owner-token-1234567890',allowedOrigins:[],connectors:{directory:join(directory,'credentials'),googleClientId:'generated-client',googleClientSecret:'generated-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
+  const ctx:ConnectorContext={evidenceReader:connectorReader(store,sources),store,sources,config:{dataDir:directory,token:'generated-owner-token-1234567890',allowedOrigins:[],connectors:{directory:join(directory,'credentials'),googleClientId:'generated-client',googleClientSecret:'generated-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
   const oauth=new OAuth2Client({clientId:'generated-client',redirectUri:ctx.config.connectors!.googleRedirectUri});
   oauth.getToken=(async()=>({tokens:{refresh_token:'generated-refresh-secret',access_token:'generated-access-secret',scope:gmailScope}})) as any;
   oauth.getAccessToken=(async()=>({token:'generated-access-secret'})) as any;

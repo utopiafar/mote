@@ -1,8 +1,8 @@
 import {timingSafeEqual} from 'node:crypto';
 import {join} from 'node:path';
 import type {ManifestContribution} from '@mote/plugin-api';
-import {configDocumentDomains,configFromDocument,documentFromConfig,registerBuiltinDomains,validateResolvedConfigDocument,type ConfigDocument} from '../config.js';
-import {ConfigService} from '../config-service.js';
+import {configDocumentDomains,configFromDocument,documentFromConfig,validateResolvedConfigDocument,type ConfigDocument} from '../config.js';
+import {createConfigurationPlatform} from '../plugins/configuration-platform.js';
 import {createVaultPlatformAssembly} from '../plugins/vault-platform.js';
 import {serverFeatureAdapters} from '../features/index.js';
 import type {CentralDistribution,FoundationKind,FoundationProvider} from '../bootstrap.js';
@@ -16,14 +16,17 @@ const contribution=(kind:FoundationKind):ManifestContribution=>Object.freeze<Man
 export const configurationProvider:FoundationProvider<'configuration'>=Object.freeze<FoundationProvider<'configuration'>>({kind:'configuration',id:'mote.configuration',version:'1.0.0',contribution:contribution('configuration'),
   async create(context,input){
     const supplied=input.configService??input.config.configService;
-    const service=supplied??new ConfigService({path:input.config.configuration?.configFile??join(input.config.dataDir,'mote.yaml'),initialDocument:documentFromConfig(input.config)});
-    context.scope.defer(()=>service.close());
-    if(!supplied)registerBuiltinDomains(service,input.config);
-    await service.initialize();
+    // The supplied bootstrap service transfers into this lifecycle unchanged;
+    // only a self-created service registers builtin domains here.
+    const platform=createConfigurationPlatform({path:input.config.configuration?.configFile??join(input.config.dataDir,'mote.yaml'),initialDocument:documentFromConfig(input.config)},
+      supplied?{configService:supplied}:{});
+    context.scope.defer(()=>platform.close());
+    await platform.prepare();
+    const service=platform.configService;
     const document={version:1,revision:service.revision,...Object.fromEntries(configDocumentDomains().map(domain=>[domain.id,service.current(domain.id)]))} as ConfigDocument;
     const config=configFromDocument(document,service.path,{token:input.config.token,tokenPath:input.config.tokenPath},{resolvedDocument:true});
     service.setValidator(document=>validateResolvedConfigDocument(document,config.token));
-    return {config,service};
+    return {config,service,platform};
   }});
 export const storageProvider:FoundationProvider<'storage'>=Object.freeze<FoundationProvider<'storage'>>({kind:'storage',id:'mote.vault-platform',version:'1.0.0',contribution:contribution('storage'),
   async create(context,{config,store:supplied,backgroundWorker}){

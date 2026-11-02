@@ -41,11 +41,238 @@ const readonlySet = (values: readonly string[]): ReadonlySet<string> => {
   } as ReadonlySet<string>;
 };
 
+export interface CustomPageFrameTarget {
+  readonly instanceId: string;
+  readonly nonce: string;
+  readonly documentKey: string;
+  readonly entryUrl: string;
+}
+
+export interface CustomPageFrameClaim {
+  readonly instanceId: string;
+  readonly nonce: string;
+  readonly documentKey: string;
+}
+
+export interface CustomPageFrameGrant {
+  readonly frameTreeNodeId: number;
+  readonly epoch: number;
+}
+
+/** Pushed to the trusted host when a bound custom page frame is revoked, so
+ * the consumer can end its channel instead of relying on a private counter. */
+export interface CustomPageFrameRevocation {
+  readonly instanceId: string;
+  readonly nonce: string;
+  readonly documentKey: string;
+  readonly frameTreeNodeId: number;
+  readonly epoch: number;
+}
+
+export interface CustomPageFrameLike {
+  readonly frameTreeNodeId: number;
+  readonly processId: number;
+  readonly routingId: number;
+  readonly url: string;
+  readonly parent: CustomPageFrameLike | null;
+  isDestroyed?(): boolean;
+}
+
+export interface CustomPageNavigationDetails {
+  readonly url: string;
+  readonly isMainFrame: boolean;
+  readonly frame: CustomPageFrameLike | null;
+}
+
+interface PendingCustomPage extends CustomPageFrameTarget {
+  readonly webContentsId: number;
+  readonly epoch: number;
+  frameTreeNodeId?: number;
+}
+
+interface ActiveCustomPage extends PendingCustomPage {
+  readonly frameTreeNodeId: number;
+  readonly processId: number;
+  readonly routingId: number;
+  readonly url: string;
+}
+
+const customPageToken = /^[\x21-\x7e]{1,256}$/;
+const validToken = (value: unknown): value is string => typeof value === 'string' && customPageToken.test(value);
+function parseUrl(url: unknown): URL | undefined {
+  if (typeof url !== 'string' || !url.trim()) return undefined;
+  try { return new URL(url); } catch { return undefined; }
+}
+function frameNonce(url: string): string | undefined {
+  try { return new URL(url).searchParams.get('moteFrame') ?? undefined; } catch { return undefined; }
+}
+function matchesEntry(url: string, entryUrl: string): boolean {
+  try {
+    const actual = new URL(url), entry = new URL(entryUrl);
+    if (actual.protocol !== entry.protocol || actual.host !== entry.host
+      || actual.pathname !== entry.pathname || actual.hash !== entry.hash) return false;
+    // Compare decoded query values without reserializing the remaining query:
+    // `URLSearchParams` rewrites `%20` to `+`, which would reject a correctly
+    // loaded encoded entry URL.
+    const params = (value: URL) => [...value.searchParams].filter(([key]) => key !== 'moteFrame');
+    const actualParams = params(actual), entryParams = params(entry);
+    return actualParams.length === entryParams.length
+      && actualParams.every(([key, value], index) => key === entryParams[index]![0] && value === entryParams[index]![1]);
+  } catch { return false; }
+}
+
+/** Main-process-only custom page frame registry. A trusted host prepares a
+ * nonce before creating the iframe; claim binds exactly one direct child whose
+ * URL carries that nonce. frameTreeNodeId is the stable identity; process and
+ * routing ids are observations only. Any child navigation of a bound frame is
+ * denied and revokes its epoch. */
+export class CustomPageFrameGuard {
+  #pending = new Map<string, PendingCustomPage>();
+  #active = new Map<string, ActiveCustomPage>();
+  /** Deny-only tombstones for frames whose epoch was revoked. Cancelling one
+   * navigation leaves the live document running, so every later navigation of
+   * the same frame must stay blocked until the frame is destroyed. */
+  #revoked = new Map<string, {webContentsId: number; frameTreeNodeId: number}>();
+  #onRevoke?: (webContentsId: number, revocation: CustomPageFrameRevocation) => void;
+  #epoch = 0;
+
+  /** The trusted host subscribes here; revocations are pushed to the main
+   * frame so the consumer can end the channel for the exact granted epoch. */
+  setRevocationListener(listener: (webContentsId: number, revocation: CustomPageFrameRevocation) => void): void {
+    this.#onRevoke = listener;
+  }
+
+  prepare(webContentsId: number, target: CustomPageFrameTarget): {epoch: number} {
+    if (!validToken(target.instanceId) || !validToken(target.nonce) || !validToken(target.documentKey))
+      throw new TypeError('Invalid custom page target');
+    if (!parseUrl(target.entryUrl)) throw new TypeError('Invalid custom page entry URL');
+    if ([...this.#pending.values(), ...this.#active.values()].some(value => value.nonce === target.nonce))
+      throw new Error('Custom page nonce is already bound');
+    const epoch = ++this.#epoch;
+    this.#pending.set(webContentsId + ':' + target.nonce, {...target, webContentsId, epoch});
+    return {epoch};
+  }
+
+  claim(webContentsId: number, claim: CustomPageFrameClaim, mainFrame: CustomPageFrameLike): CustomPageFrameGrant {
+    if (!validToken(claim.instanceId) || !validToken(claim.nonce) || !validToken(claim.documentKey))
+      throw new TypeError('Invalid custom page claim');
+    const key = webContentsId + ':' + claim.nonce, pending = this.#pending.get(key);
+    if (!pending || pending.instanceId !== claim.instanceId || pending.documentKey !== claim.documentKey)
+      throw new Error('Custom page claim is not prepared');
+    // The initial navigation must have pinned this pending entry to a frame.
+    // An unpinned frame (for example about:blank/srcdoc, which emit no
+    // pre-commit navigation event) is never treated as protected.
+    if (pending.frameTreeNodeId === undefined)
+      throw new Error('Custom page frame is not bound to a navigation');
+    const frames = (mainFrame as CustomPageFrameLike & {framesInSubtree?: readonly CustomPageFrameLike[]}).framesInSubtree ?? [];
+    const candidates = [...frames].filter(frame => frame.parent?.frameTreeNodeId === mainFrame.frameTreeNodeId
+      && !frame.isDestroyed?.() && frameNonce(frame.url) === pending.nonce && matchesEntry(frame.url, pending.entryUrl));
+    if (candidates.length !== 1) throw new Error('Custom page frame is ambiguous or missing');
+    const frame = candidates[0]!;
+    // A claim for any other frame is rejected rather than rebound.
+    if (pending.frameTreeNodeId !== frame.frameTreeNodeId)
+      throw new Error('Custom page frame does not match the bound navigation');
+    this.#pending.delete(key);
+    this.#active.set(webContentsId + ':' + frame.frameTreeNodeId, {
+      ...pending, frameTreeNodeId: frame.frameTreeNodeId, processId: frame.processId, routingId: frame.routingId, url: frame.url,
+    });
+    return {frameTreeNodeId: frame.frameTreeNodeId, epoch: pending.epoch};
+  }
+
+  willNavigate(webContentsId: number, details: CustomPageNavigationDetails): boolean {
+    if (details.isMainFrame) return false;
+    if (!details.frame) return true;
+    const frameTreeNodeId = details.frame.frameTreeNodeId;
+    const frameKey = webContentsId + ':' + frameTreeNodeId;
+    // A revoked frame stays blocked until it is destroyed. Cancelling one
+    // navigation does not stop the live document from trying again.
+    if (this.#revoked.has(frameKey)) return true;
+    const active = this.#active.get(frameKey);
+    if (active) {
+      this.#active.delete(frameKey);
+      this.#revoke(webContentsId, frameTreeNodeId, active);
+      return true;
+    }
+    // A pending entry already pinned to this frame may keep only its first
+    // (initial) navigation; every later navigation is denied and revoked.
+    const bound = [...this.#pending.values()].find(value => value.webContentsId === webContentsId
+      && value.frameTreeNodeId === frameTreeNodeId);
+    if (bound) {
+      this.#pending.delete(webContentsId + ':' + bound.nonce);
+      this.#revoke(webContentsId, frameTreeNodeId, bound);
+      return true;
+    }
+    const pending = [...this.#pending.values()].find(value => value.webContentsId === webContentsId
+      && value.nonce === frameNonce(details.url) && matchesEntry(details.url, value.entryUrl));
+    if (!pending) return false;
+    if (pending.frameTreeNodeId === undefined) {
+      pending.frameTreeNodeId = frameTreeNodeId;
+      return false;
+    }
+    // A different frame reusing the prepared nonce is never allowed.
+    this.#pending.delete(webContentsId + ':' + pending.nonce);
+    this.#revoke(webContentsId, frameTreeNodeId, pending);
+    return true;
+  }
+
+  #revoke(webContentsId: number, frameTreeNodeId: number,
+    entry: {instanceId: string; nonce: string; documentKey: string; epoch: number}): void {
+    this.#revoked.set(webContentsId + ':' + frameTreeNodeId, {webContentsId, frameTreeNodeId});
+    this.#epoch++;
+    this.#onRevoke?.(webContentsId, {
+      instanceId: entry.instanceId, nonce: entry.nonce, documentKey: entry.documentKey, frameTreeNodeId, epoch: entry.epoch,
+    });
+  }
+
+  /** Drop entries whose frame is gone. frameTreeNodeId is never reused, so a
+   * destroyed frame cannot be rebound to a new document. */
+  prune(webContentsId: number, mainFrame: CustomPageFrameLike & {framesInSubtree?: readonly CustomPageFrameLike[]}): void {
+    const live = new Set((mainFrame.framesInSubtree ?? []).map(frame => frame.frameTreeNodeId));
+    for (const [key, value] of this.#active)
+      if (value.webContentsId === webContentsId && !live.has(value.frameTreeNodeId)) this.#active.delete(key);
+    for (const [key, value] of this.#pending)
+      if (value.webContentsId === webContentsId && value.frameTreeNodeId !== undefined && !live.has(value.frameTreeNodeId))
+        this.#pending.delete(key);
+    for (const [key, value] of this.#revoked)
+      if (value.webContentsId === webContentsId && !live.has(value.frameTreeNodeId)) this.#revoked.delete(key);
+  }
+
+  /** Main reload/close: revoke pending and active entries, but keep revoked
+   * frames blocked until `prune` observes that they are gone. */
+  revokeWindow(webContentsId: number): void {
+    for (const [key, value] of this.#pending) {
+      if (value.webContentsId !== webContentsId) continue;
+      this.#pending.delete(key);
+      // A pinned pending frame may still be alive during reload; block it
+      // before it can navigate to a replacement document.
+      if (value.frameTreeNodeId !== undefined) this.#revoke(webContentsId, value.frameTreeNodeId, value);
+    }
+    for (const [key, value] of this.#active) {
+      if (value.webContentsId !== webContentsId) continue;
+      this.#active.delete(key);
+      this.#revoke(webContentsId, value.frameTreeNodeId, value);
+    }
+    this.#epoch++;
+  }
+
+  /** Window teardown: every frame of this webContents is gone, so drop the
+   * tombstones as well. */
+  forgetWindow(webContentsId: number): void {
+    for (const [key, value] of this.#pending) if (value.webContentsId === webContentsId) this.#pending.delete(key);
+    for (const [key, value] of this.#active) if (value.webContentsId === webContentsId) this.#active.delete(key);
+    for (const [key, value] of this.#revoked) if (value.webContentsId === webContentsId) this.#revoked.delete(key);
+    this.#epoch++;
+  }
+
+  revokeAll(): void { this.#pending.clear(); this.#active.clear(); this.#revoked.clear(); this.#epoch++; }
+}
+
 export class DesktopPluginHost {
   #router: IpcRouter;
   #native: NativeProviderRegistry;
   #ownership = new ChannelOwnership();
   #windows = new Map<number, WindowFacts>();
+  #customPages = new CustomPageFrameGuard();
   #scopes = new Map<string, InternalScope>();
   #mainWindowOpen = false;
   #quitPromise: Promise<void> | null = null;
@@ -70,8 +297,35 @@ export class DesktopPluginHost {
   unregisterWindow(senderId: number): void {
     const facts = this.#windows.get(senderId);
     this.#windows.delete(senderId);
+    this.forgetCustomPages(senderId);
     if (facts?.role === 'main') this.#mainWindowOpen = false;
   }
+
+  /** Trusted main-frame prepare; the renderer then creates the iframe with a
+   * unique `moteFrame=<nonce>` URL. No caller-provided frame identity is trusted. */
+  prepareCustomPageFrame(webContentsId: number, target: CustomPageFrameTarget): {epoch: number} {
+    return this.#customPages.prepare(webContentsId, target);
+  }
+  /** Bind exactly one direct child frame carrying the prepared nonce. */
+  claimCustomPageFrame(webContentsId: number, claim: CustomPageFrameClaim, mainFrame: CustomPageFrameLike): CustomPageFrameGrant {
+    return this.#customPages.claim(webContentsId, claim, mainFrame);
+  }
+  /** True means the caller must call preventDefault(). */
+  customPageWillNavigate(webContentsId: number, details: CustomPageNavigationDetails): boolean {
+    return this.#customPages.willNavigate(webContentsId, details);
+  }
+  /** Main reload or process loss revokes pending/bound epochs and keeps the
+   * affected frames blocked until they are destroyed. */
+  revokeCustomPages(webContentsId: number): void { this.#customPages.revokeWindow(webContentsId); }
+  /** Window teardown drops every frame record for this webContents. */
+  forgetCustomPages(webContentsId: number): void { this.#customPages.forgetWindow(webContentsId); }
+  /** The trusted host ends the exact granted channel when a frame is revoked. */
+  onCustomPageRevoked(listener: (webContentsId: number, revocation: CustomPageFrameRevocation) => void): void {
+    this.#customPages.setRevocationListener(listener);
+  }
+  /** Frame destruction is observed lazily: a vanished frame is pruned so its
+   * epoch can never be claimed again. */
+  pruneCustomPages(webContentsId: number, mainFrame: CustomPageFrameLike): void { this.#customPages.prune(webContentsId, mainFrame); }
 
   createScope(options: {instanceId: string; capabilities: readonly string[]}): PluginScopeHandle {
     if (this.#closing) throw new TypeError('Host is shutting down');

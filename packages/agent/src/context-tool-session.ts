@@ -488,7 +488,7 @@ export async function createContextToolSession(
           const copied=structuredClone(value);
           const preserve=(source:unknown,target:unknown)=>{if(!source||typeof source!=='object'||!target||typeof target!=='object')return;const record=source as ContextRecord;if(typeof record.id==='string'&&typeof record.ocrText==='string')copyEvidencePresentation(record,target as ContextRecord);for(const [key,item]of Object.entries(source))preserve(item,(target as Record<string,unknown>)[key]);};preserve(value,copied);return copied;
         };
-        const produced:{operation:HostReadOperation;value:unknown;originals?:ContextRecord[]}[]=[];
+        const produced:{operation:HostReadOperation;value:unknown;originals?:ContextRecord[];views?:ContextRecord[]}[]=[];
         const port:HostSessionPort={tool:pin,scope,signal,assertCurrent:assertLive,
           async read(operation,...parameters){
             assertLive();if(restricted&&operation!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
@@ -521,7 +521,7 @@ export async function createContextToolSession(
             }
             const method=reader[operation] as ((...args:unknown[])=>Promise<unknown>)|undefined;
             if(!method)throw hostError('The requested read operation is unavailable');
-            let value=await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual]))),originals:ContextRecord[]|undefined;
+            let value=await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual]))),originals:ContextRecord[]|undefined,views:ContextRecord[]|undefined;
             if(['search','sourceHistory','fileChunks'].includes(operation)&&Array.isArray(value))value=(value as ContextRecord[]).filter(inScope);
             if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))value={...value,items:(value as {items:ContextRecord[]}).items.filter(inScope)};
             if(operation==='evidence'){
@@ -532,6 +532,7 @@ export async function createContextToolSession(
               if(restricted){
                 const current=value as ContextRecord[];
                 if(ids.some(id=>{const raw=current.find(record=>record.id===id),record=raw&&(bounds.skill==='calendar-extraction'?{...raw,ocrText:actionEvidenceText(raw)}:raw);return !record||originalPin(record)!==originalPins.get(id);}))throw new ContextToolError('evidence_changed','Source evidence, authorization or its Host attribution changed.','stop');
+                views=detach(current.map(raw=>bounds.skill==='calendar-extraction'?{...raw,ocrText:actionEvidenceText(raw)}:raw));
                 if(tool==='context_evidence'){
                   const id=String(args.id),start=Number(args.offset),length=Number(args.length??4000),grant=readRanges.filter(grant=>grant.id===id&&start>=grant.offset&&start<grant.offset+grant.length).sort((a,b)=>b.offset+b.length-a.offset-a.length)[0];
                   if(!Number.isSafeInteger(start)||start<0||!Number.isSafeInteger(length)||length<1||length>12000)throw new ContextToolError('invalid_evidence_range','Use an absolute UTF-16 offset and length from 1–12000.','correct_arguments');
@@ -553,7 +554,8 @@ export async function createContextToolSession(
                 const offset=Number(requested.offset??0),length=Number(requested.length??12000);
                 if(!Number.isSafeInteger(offset)||offset<0||offset>100000||!Number.isSafeInteger(length)||length<1||length>12000)throw hostError('Invalid original read range');
                 if(requested.layer!==undefined&&!['ocr','semantic'].includes(String(requested.layer)))throw hostError('Invalid derived layer');
-                value=(value as ContextRecord[]).map(record=>project(requested.layer==='semantic'?{...record,ocrText:String(record.summary??''),contentLayer:'L2_model_interpretation'}:{...record,...(record.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})},offset,length,bounds.timeZone));
+                views=detach((value as ContextRecord[]).map(record=>requested.layer==='semantic'?{...record,ocrText:String(record.summary??''),contentLayer:'L2_model_interpretation'}:{...record,...(record.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})}));
+                value=views.map(record=>project(record,offset,length,bounds.timeZone));
               }
             }
             if(operation==='materialCatalog'){
@@ -564,7 +566,7 @@ export async function createContextToolSession(
               const page=value as {material?:unknown}|null,material=materialMetadata(page?.material,scope);
               if(!material||material.ref!==requested.ref)throw hostError('Material is outside the selected scope or has changed');
             }
-            produced.push({operation,value:detach(value),originals});return detach(value) as never;
+            produced.push({operation,value:detach(value),originals,views});return detach(value) as never;
           },
           async actionCatalog(parameters){assertLive();if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');return wait(bounds.actionCatalog({...parameters,...range({...parameters},bounds),limit:parameters.limit}));},
           progress(message){assertLive();if(typeof message!=='string'||!message.trim()||message.length>600)throw hostError('Progress message must contain 1–600 characters');reportProgress(bounds,{stage:'model',message:message.trim()});},
@@ -575,9 +577,11 @@ export async function createContextToolSession(
         if(body.image!==undefined||body.imageDelivery!==undefined)throw hostError('Image delivery requires an actual Host image read');
         type OriginalProof={record:ContextRecord;range?:{start:number;end:number}};
         const proofs:OriginalProof[]=[],spanProofs:OriginalProof[]=[];
-        for(const {operation,value,originals}of produced){
+        for(const {operation,value,originals,views}of produced){
           if(['search','sourceHistory','fileChunks','evidence'].includes(operation)&&Array.isArray(value))for(const record of value as ContextRecord[]){
-            const full=originals?.find(original=>original.id===record.id)??record,selection=record.textRange as {start:number;end:number}|undefined;
+            // Match the exact Host-admitted layer/notification text, while raw
+            // originals remain separate for revision and source-span checks.
+            const full=(views??originals)?.find(original=>original.id===record.id)??record,selection=record.textRange as {start:number;end:number}|undefined;
             proofs.push({record:full,...(selection?{range:selection}:{})});
           }
           else if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))for(const record of (value as {items:ContextRecord[]}).items)proofs.push({record});
@@ -606,14 +610,15 @@ export async function createContextToolSession(
           if(record.ocrText!==item.ocrText||record.evidenceFingerprint!==item.evidenceFingerprint)throw hostError('Tool result does not match the actual original read');
           // The Host grant, not the pack, owns restricted continuation bounds.
           if(grantedReadRange)record.textRange={...(record.textRange as object),nextOffset:(item.textRange as {nextOffset?:unknown})?.nextOffset??null};
-          delivered.push(record);return record;
+          if(record.contentLayer!=='L2_model_interpretation')delivered.push(record);return record;
         };
         let data=body.data;
         if(Array.isArray(data))data=data.map(candidate=>prove(candidate));
         else if(data&&typeof data==='object'&&(data as {record?:unknown}).record)data={...data,record:prove((data as {record:unknown}).record)};
         if(data&&typeof data==='object'&&Array.isArray((data as {sourceEvidence?:unknown}).sourceEvidence))data={...data,sourceEvidence:(data as {sourceEvidence:unknown[]}).sourceEvidence.map(candidate=>prove(candidate,spanProofs))};
         const {disclosureDependencies:_receipt,sourceContextDependencies:_pins,toolUsage:_usage,hostSourceSemantics:_semantics,...publicBody}=body;
-        const serialized=JSON.stringify(attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),...(grantedReadRange?{readRange:grantedReadRange}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}));
+        const publicResult=attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),...(grantedReadRange?{readRange:grantedReadRange}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}) as Record<string,unknown>;
+        const serialized=JSON.stringify(publicResult);
         assertLive();
         for(const {operation,value}of produced){
           rememberSourceContexts(value,()=>false);
@@ -627,7 +632,7 @@ export async function createContextToolSession(
           }
         }
         const visibleIds=new Set<string>();
-        const collectVisible=(value:unknown)=>{if(typeof value==='string')visibleIds.add(value);else if(Array.isArray(value))for(const item of value)collectVisible(item);else if(value&&typeof value==='object')for(const item of Object.values(value))collectVisible(item);};collectVisible(data);
+        const collectVisible=(value:unknown)=>{if(typeof value==='string')visibleIds.add(value);else if(Array.isArray(value))for(const item of value)collectVisible(item);else if(value&&typeof value==='object')for(const item of Object.values(value))collectVisible(item);};collectVisible(publicResult.data);
         for(const {operation,value}of produced){
           if(!value||typeof value!=='object')continue;
           const raw=value as Record<string,unknown>;
@@ -637,7 +642,7 @@ export async function createContextToolSession(
           if(operation==='memories'){
             const page=value as {items?:{id?:string;statement?:string;fingerprint?:string;version?:number}[];references?:{id:string}[];evidence?:ContextRecord[]};
             for(const item of page.items??[])if(item.id&&visibleIds.has(item.id))state().disclosedIds.add(item.id);
-            for(const item of [...(page.references??[]),...(page.evidence??[])])if(visibleIds.has(item.id))state().discovered.add(item.id);
+            for(const item of [...(page.references??[]),...(page.evidence??[])])if(visibleIds.has(item.id)){state().discovered.add(item.id);state().disclosedIds.add(item.id);}
             const shown=data&&typeof data==='object'&&Array.isArray((data as {items?:unknown}).items)?(data as {items:Record<string,unknown>[]}).items:[];
             const cards=(page.items??[]).flatMap(item=>item.id&&typeof item.statement==='string'&&item.statement.length&&typeof item.fingerprint==='string'&&shown.some(row=>row.id===item.id&&row.statement===item.statement&&row.fingerprint===item.fingerprint&&row.version===item.version)?[{id:item.id,fingerprint:item.fingerprint,...(typeof item.version==='number'?{version:item.version}:{})}]:[]);
             if(cards.length)try{bounds.onMemoryBodies?.(cards);}catch(error){rejectFailure(error instanceof Error?error:new Error('Memory delivery receipt could not be recorded'));}
@@ -648,7 +653,12 @@ export async function createContextToolSession(
         }
         if(grantedReadRange)for(const record of delivered){const selection=record.textRange as {start:number;end:number};state().deliveredRanges.push({id:record.id,offset:selection.start,length:selection.end-selection.start});}
         for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(produced.some(read=>read.operation==='evidence'||read.operation==='memories'))state().expanded.add(record.id);}
-        for(const proof of proofs)state().disclosedIds.add(proof.record.id);
+        for(const proof of proofs){
+          state().disclosedIds.add(proof.record.id);
+          // An actually shown original locator permits a later fresh read;
+          // metadata alone still never enters the delivered-original ledger.
+          if(inScope(proof.record)&&visibleIds.has(proof.record.id))state().discovered.add(proof.record.id);
+        }
         if(!produced.length&&!progressOnly)state().completeLineage=false;
         const materialPage=tool==='material_read'?produced.find(read=>read.operation==='materialRead')?.value as {text?:unknown}|undefined:undefined;
         const traceArguments=materialPage?{ref:args.ref,offset:Number(args.offset??0),length:Number(args.length??4000)}:{...args,...scope};

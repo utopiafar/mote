@@ -10,6 +10,7 @@ import {FileStore} from '../src/files.js';
 import {LarkConnector,LARK_SCOPES} from '../src/connectors/lark.js';
 import {larkArguments,type LarkCommand,type LarkRunner} from '../src/connectors/lark-cli.js';
 import {ConnectorError,type ConnectorContext} from '../src/connectors/types.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 import type {LarkSelection} from '@mote/shared';
 const json=JSON.stringify;
 const url=(id:string)=>`https://fixture.feishu.cn/docx/${id}`;
@@ -17,7 +18,7 @@ const selection:LarkSelection={documents:[],calendarIds:[],pastDays:30,futureDay
 async function done(c:LarkConnector){for(let n=0;n<500;n++){if(!['running','waiting'].includes(c.status().job?.state??''))return c.status();await new Promise(r=>setTimeout(r,2));}throw Error('connector did not settle');}
 async function fixture(t:any){
  const dir=await mkdtemp(join(tmpdir(),'mote-lark-docs-')),store=new Store(join(dir,'vault')),sources=new SourceStore(store),files=new FileStore(store,sources);
- const ctx:ConnectorContext={store,sources,files,config:{dataDir:dir,token:'fixture-owner-token-12345678901234567890',allowedOrigins:[]}},calls:LarkCommand[]=[];
+ const ctx:ConnectorContext={evidenceReader:connectorReader(store,sources),store,sources,files,config:{dataDir:dir,token:'fixture-owner-token-12345678901234567890',allowedOrigins:[]}},calls:LarkCommand[]=[];
  const state={account:'fixture-user',documentRevision:1,content:new Map([['DocumentDiary123','# Generated diary\nI prepared an outline and felt calmer.'],['DocumentMeeting123','# Generated meeting\nTeam agreed on read-only sync.']]),fail:new Set<string>(),searchPages:[] as Array<{results:Array<any>;has_more:boolean;page_token?:string}>,searchFailureToken:undefined as string|undefined,afterFetch:undefined as (()=>void)|undefined};
  const runner:LarkRunner=async command=>{
   calls.push(command);
