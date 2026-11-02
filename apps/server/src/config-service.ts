@@ -30,6 +30,8 @@ export interface ConfigDomainRegistration<T = unknown> {
   restartRequired?: boolean;
   /** Public domain editors must not persist submitted paths stripped by their input schema. */
   rejectUnknownUpdates?: boolean;
+  /** Explicit raw-key declaration for public domains with opaque preprocessors. Parsed output is never persisted. */
+  rawInputSchema?: z.AnyZodObject;
   /** Resolve declared credentials and contextual defaults without materializing them in the raw file. */
   resolve?(raw: unknown, document?: Readonly<ConfigDocument>): unknown;
   prepare?(next: T, previous: T): Promise<PreparedConfigChange> | PreparedConfigChange;
@@ -67,12 +69,8 @@ function merge(base: unknown, patch: unknown): unknown {
 function knownInputPath(schema:z.ZodTypeAny,input:unknown,path:string[]):boolean {
   if(!path.length)return true;
   if(schema instanceof z.ZodEffects){
-    if(schema._def.effect.type==='preprocess'){
-      let invalid=false,normalized:unknown;
-      try{normalized=schema._def.effect.transform(clone(input),{addIssue(){invalid=true;},path:[]});}catch{return false;}
-      if(invalid)return false;
-      return knownInputPath(schema.innerType(),normalized,path);
-    }
+    // Opaque raw inputs need their own declaration; never infer keys by executing a preprocessor.
+    if(schema._def.effect.type==='preprocess')return false;
     return knownInputPath(schema.innerType(),input,path);
   }
   if(schema instanceof z.ZodOptional||schema instanceof z.ZodNullable||schema instanceof z.ZodBranded||schema instanceof z.ZodReadonly)return knownInputPath(schema.unwrap(),input,path);
@@ -87,7 +85,7 @@ function knownInputPath(schema:z.ZodTypeAny,input:unknown,path:string[]):boolean
   if(schema instanceof z.ZodIntersection)return knownInputPath(schema._def.left,input,path)||knownInputPath(schema._def.right,input,path);
   const [key,...tail]=path,child=(object(input)||Array.isArray(input))?(input as Record<string,unknown>)[key]:undefined;
   if(schema instanceof z.ZodObject){
-    const declared=schema.shape[key] as z.ZodTypeAny|undefined;
+    const declared=Object.hasOwn(schema.shape,key)?schema.shape[key] as z.ZodTypeAny:undefined;
     if(declared)return knownInputPath(declared,child,tail);
     if(!(schema._def.catchall instanceof z.ZodNever))return knownInputPath(schema._def.catchall,child,tail);
     return schema._def.unknownKeys==='passthrough';
@@ -99,6 +97,16 @@ function knownInputPath(schema:z.ZodTypeAny,input:unknown,path:string[]):boolean
   }
   if(schema instanceof z.ZodRecord)return knownInputPath(schema.element,child,tail);
   return schema instanceof z.ZodAny||schema instanceof z.ZodUnknown;
+}
+function hasPreprocessor(schema:z.ZodTypeAny,seen=new Set<z.ZodTypeAny>()):boolean {
+  if(seen.has(schema))return false;seen.add(schema);
+  if(schema instanceof z.ZodEffects&&schema._def.effect.type==='preprocess')return true;
+  if(schema instanceof z.ZodPipeline)return hasPreprocessor(schema._def.in,seen);
+  if(schema instanceof z.ZodLazy)return hasPreprocessor(schema.schema,seen);
+  if(schema instanceof z.ZodObject&&Object.values(schema.shape).some(child=>hasPreprocessor(child as z.ZodTypeAny,seen)))return true;
+  // Traverse declarations only. Do not call default/refinement/transform functions or interpret their behavior.
+  const children=Object.values(schema._def).flatMap(value=>Array.isArray(value)?value:value instanceof Map?[...value.values()]:[value]);
+  return children.some(value=>value instanceof z.ZodType&&hasPreprocessor(value,seen));
 }
 function knownPatchPaths(patch:unknown,schema:z.ZodTypeAny,input:unknown,path:string[]=[]):boolean {
   if(!knownInputPath(schema,input,path))return false;
@@ -198,6 +206,12 @@ export class ConfigService {
       if (this.domains.has(id)) throw new ConfigServiceError('config_conflict');
       const entry: RegisteredDomain = { ...domain, id, documentPath: ['plugins', 'configuration', domain.id] };
       const raw = this.state(), input = this.domainRaw(raw, entry) ?? entry.defaultValue;
+      if(entry.rejectUnknownUpdates){
+        if(!(entry.schema instanceof z.ZodType))throw new ConfigServiceError('config_invalid',id);
+        if(entry.rawInputSchema){
+          if(!(entry.rawInputSchema instanceof z.ZodObject)||hasPreprocessor(entry.rawInputSchema))throw new ConfigServiceError('config_invalid',id);
+        }else if(hasPreprocessor(entry.schema))throw new ConfigServiceError('config_invalid',id);
+      }
       const resolvedInput=this.resolveDomainInput(entry,input,raw),value=this.parseDomainInput(entry,resolvedInput);
       let candidate: PreparedConfigChange | undefined, applied = false;
       try {
@@ -265,6 +279,7 @@ export class ConfigService {
   }
   private resolveDomainInput(domain: ConfigDomainRegistration, raw: unknown, document?: ConfigDocument): unknown {
     try {
+      this.validateRawInput(domain,raw);
       let value = clone(raw);
       if (domain.resolve) value = domain.resolve(value, document ? clone(document) : undefined);
       else for (const field of domain.fields ?? []) if (field.sensitive) value = editPath(value, field.path.split('.'), resolveSensitive);
@@ -274,6 +289,13 @@ export class ConfigService {
   }
   private parseDomainInput(domain:ConfigDomainRegistration,input:unknown):unknown {
     try{return domain.schema.parse(clone(input));}catch{throw new ConfigServiceError('config_invalid',domain.id);}
+  }
+  private validateRawInput(domain:ConfigDomainRegistration,input:unknown):void {
+    if(!domain.rawInputSchema)return;
+    try{
+      domain.rawInputSchema.parse(clone(input));
+      if(!knownPatchPaths(input,domain.rawInputSchema,input))throw new ConfigServiceError('config_invalid',domain.id);
+    }catch{throw new ConfigServiceError('config_invalid',domain.id);}
   }
   private parseDomain(domain:ConfigDomainRegistration,raw:unknown,document?:ConfigDocument):unknown {
     return this.parseDomainInput(domain,this.resolveDomainInput(domain,raw,document));
@@ -476,7 +498,7 @@ export class ConfigService {
           if (id === 'plugins' && object(patch) && Object.hasOwn(patch, 'configuration')) throw new ConfigServiceError('config_invalid');
           if(domain.rejectUnknownUpdates){
             this.parseDomain(domain,value,state);
-            if(!knownPatchPaths(patch,domain.schema,value))throw new ConfigServiceError('config_invalid',id);
+            if(!knownPatchPaths(patch,domain.rawInputSchema??domain.schema,value))throw new ConfigServiceError('config_invalid',id);
           }
           this.assignRaw(next, domain, preserveReferences(this.domainRaw(state, domain), saved, value));
         }

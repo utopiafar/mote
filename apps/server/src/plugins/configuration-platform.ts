@@ -3,6 +3,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import {serviceContract,type PluginLifecycle,type StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {ModelFeature} from '@mote/shared/models';
+import type {z} from 'zod';
 import {ConfigService,ConfigServiceError,type ConfigDomainRegistration,type ConfigServiceOptions} from '../config-service.js';
 import {registerBuiltinDomains,type Config} from '../config.js';
 import {ExecutionSettings,executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from '../execution-settings.js';
@@ -27,6 +28,10 @@ export interface ConfigurationPlatformOptions extends ConfigServiceOptions {
   readonly config?:Config;
 }
 type ModelDependencies=Omit<ModelSettingsStoreOptions,'configService'>;
+export type RegisteredConfigurationDomain<Input,Output>=Omit<ConfigurationDomain<Output>,'update'>&{
+  update(value:Partial<Input>,expectedRevision:number):ReturnType<ConfigurationDomain<Output>['update']>;
+};
+type DomainInput<S extends z.ZodTypeAny,R>=R extends z.AnyZodObject?z.input<R>:z.input<S>;
 
 /** Owns the file/transaction queue, watcher, domain subscriptions, settings stores and their shutdown.
  * The raw assembly getters are trusted roots-only; none is published through ordinary services. */
@@ -38,10 +43,10 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
   const subscriptions=new Set<()=>void>(),registrations=new Map<string,()=>Promise<void>>();
   const assertReady=()=>{if(!ready||closing)throw new ConfigServiceError('config_unavailable');};
   const assertAdmission=()=>{assertReady();if(quiescing)throw new ConfigServiceError('config_unavailable');};
-  const domain=<T>(id:string,parse:(input:unknown)=>T,parsePatch:(input:unknown)=>unknown=(input)=>input):ConfigurationDomain<T>=>{
+  const domain=<T,Input=T>(id:string,parse:(input:unknown)=>T,parsePatch:(input:unknown)=>unknown=(input)=>input):RegisteredConfigurationDomain<Input,T>=>{
     const snapshot=()=>{assertReady();return {revision:service.revision,value:parse(service.current(id))};};
     return Object.freeze({snapshot,
-      async update(value:Partial<T>,expectedRevision:number){
+      async update(value:Partial<Input>,expectedRevision:number){
         assertAdmission();let patch:unknown;try{patch=parsePatch(value);}catch{throw new ConfigServiceError('config_invalid',id);}
         await service.update(id,patch,expectedRevision);assertReady();return snapshot();
       },
@@ -96,7 +101,9 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
     get modelSettings(){assertReady();if(!models||!modelsReady)throw new ModelSettingsError('model_settings_unavailable');return models;},
     /** Plugins declare schemas in their existing private namespace; unknown schemas have no handle.
      * Sensitive domains remain private. This public-domain helper cannot export their raw values. */
-    async registerDomain<T>(registration:ConfigDomainRegistration<T>):Promise<ConfigurationDomain<T>>{
+    async registerDomain<S extends z.ZodTypeAny,R extends z.AnyZodObject|undefined=undefined>(
+      registration:Omit<ConfigDomainRegistration<z.output<S>>,'schema'|'rawInputSchema'>&{schema:S;rawInputSchema?:R},
+    ):Promise<RegisteredConfigurationDomain<DomainInput<S,R>,z.output<S>>>{
       assertAdmission();if(registration.fields?.some(field=>field.sensitive))throw new ConfigServiceError('config_invalid');
       const unregister=await service.registerPlugin({...registration,rejectUnknownUpdates:true}),id=`plugin.${registration.id}`;
       if(closing){await unregister();throw new ConfigServiceError('config_unavailable');}
@@ -104,7 +111,7 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
       // ConfigService merges partial patches into the saved document and validates the full candidate.
       // Filling omitted keys from effective state here would overwrite pending restart-only values.
       // current() already returns a detached schema output, which need not be valid schema input.
-      return domain<T>(id,input=>input as T);
+      return domain<z.output<S>,DomainInput<S,R>>(id,input=>input as z.output<S>);
     },
   };
 }

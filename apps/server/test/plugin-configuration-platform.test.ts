@@ -148,7 +148,7 @@ test('input paths remain writable when registered transforms rename output keys'
     .transform(({enabled,nested})=>({active:enabled,detail:nested??null}));
   const domain=await platform.registerDomain({id:'renamed',schema,defaultValue:{enabled:false}});
   // Raw editor input and parsed output intentionally have distinct shapes.
-  await domain.update({enabled:true,nested:{label:'generated label'}} as never,0);
+  await domain.update({enabled:true,nested:{label:'generated label'}},0);
   assert.deepEqual(domain.snapshot(),{revision:1,value:{active:true,detail:{title:'generated label'}}});
   const raw=parse(await readFile(path,'utf8')).plugins.configuration.renamed;
   assert.deepEqual(raw,{enabled:true,nested:{label:'generated label'}});
@@ -161,15 +161,51 @@ test('input paths remain writable when registered transforms rename output keys'
 test('preprocess and catch wrappers reject hidden input keys while intentionally open schemas remain open',async t=>{
   const {platform,path}=await fixture(t),shape=z.object({enabled:z.boolean()});
   for(const [id,schema] of [['preprocessed',z.preprocess(value=>value,shape)],['caught',shape.catch({enabled:false})]] as const){
-    const domain=await platform.registerDomain({id,schema,defaultValue:{enabled:false}}),revision=domain.snapshot().revision;
+    const domain=await platform.registerDomain({id,schema,rawInputSchema:shape,defaultValue:{enabled:false}}),revision=domain.snapshot().revision;
     await assert.rejects(domain.update({enabled:true,typo:7} as never,revision),{code:'config_invalid'});
     assert.deepEqual(domain.snapshot(),{revision,value:{enabled:false}});
     assert.equal((await readFile(path,'utf8')).includes('typo'),false);
     await domain.update({enabled:true},revision);assert.equal(domain.snapshot().value.enabled,true);
   }
-  const open=await platform.registerDomain({id:'open',schema:z.preprocess(value=>value,shape.passthrough().catch({enabled:false})),defaultValue:{enabled:false}});
+  const open=await platform.registerDomain({id:'open',schema:z.preprocess(value=>value,shape.passthrough().catch({enabled:false})),rawInputSchema:shape.passthrough(),defaultValue:{enabled:false}});
   await open.update({enabled:true,declaredOpenValue:7} as never,open.snapshot().revision);
   assert.deepEqual(open.snapshot().value,{enabled:true,declaredOpenValue:7});
+});
+
+test('declared raw alias inputs are typed and saved without raw-schema defaults or transformed outputs',async t=>{
+  const {platform,path}=await fixture(t),events:unknown[]=[];
+  const schema=z.preprocess(value=>({enabled:(value as {rawEnabled:boolean}).rawEnabled}),z.object({enabled:z.boolean()}));
+  const rawInputSchema=z.object({rawEnabled:z.boolean().transform(value=>!value),rawLabel:z.string().default('generated default must not persist')});
+  const domain=await platform.registerDomain({id:'alias',schema,rawInputSchema,defaultValue:{rawEnabled:false}});
+  domain.subscribe(snapshot=>events.push(snapshot));
+  await domain.update({rawEnabled:true},0);
+  const enabled:boolean=domain.snapshot().value.enabled;assert.equal(enabled,true);
+  assert.deepEqual(events,[{revision:1,value:{enabled:true}}]);
+  assert.deepEqual(parse(await readFile(path,'utf8')).plugins.configuration.alias,{rawEnabled:true});
+  for(const patch of [{rawEnabled:false,typo:7},{enabled:false}])await assert.rejects(domain.update(patch as never,1),{code:'config_invalid'});
+  assert.deepEqual(domain.snapshot(),{revision:1,value:{enabled:true}});
+  await edit(path,document=>{document.plugins.configuration.alias.rawEnabled=false;});await platform.configService.reload();
+  assert.deepEqual(domain.snapshot(),{revision:2,value:{enabled:false}});
+  assert.deepEqual(parse(await readFile(path,'utf8')).plugins.configuration.alias,{rawEnabled:false});
+  await edit(path,document=>{document.plugins.configuration.alias.typo=7;});
+  await assert.rejects(platform.configService.reload(),{code:'config_invalid'});
+  assert.deepEqual(domain.snapshot(),{revision:2,value:{enabled:false}});
+  if(false){
+    // @ts-expect-error the parsed output key is not an accepted raw editor input key
+    void domain.update({enabled:false},2);
+    // @ts-expect-error output values retain their actual schema type
+    const wrong:string=domain.snapshot().value.enabled;
+    void wrong;
+  }
+});
+
+test('opaque public preprocessors require an explicit non-opaque raw input declaration',async t=>{
+  const {platform}=await fixture(t),schema=z.preprocess(value=>value,z.object({enabled:z.boolean()}));
+  await assert.rejects(platform.registerDomain({id:'missingRaw',schema,defaultValue:{enabled:false}}),{code:'config_invalid'});
+  await assert.rejects(platform.registerDomain({id:'opaqueRaw',schema,rawInputSchema:z.object({enabled:z.preprocess(value=>value,z.boolean())}),defaultValue:{enabled:false}}),{code:'config_invalid'});
+  // Ordinary catch/object inputs keep their existing registration behavior.
+  const caught=await platform.registerDomain({id:'ordinaryCatch',schema:z.object({enabled:z.boolean()}).catch({enabled:false}),defaultValue:{enabled:false}});
+  await caught.update({enabled:true},0);assert.equal(caught.snapshot().value.enabled,true);
 });
 
 test('effective hot and restart-only inputs satisfy cross-field invariants before persistence or publication',async t=>{
