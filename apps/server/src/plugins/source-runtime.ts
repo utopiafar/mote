@@ -12,7 +12,7 @@ import type {ExecutionPlatform} from './execution-platform.js';
 export interface SourceRuntimeOptions {readonly plugins?:readonly Plugin[];}
 export interface SourceRuntimeDependencies {
   readonly store:Store;readonly materials:MaterialStore;readonly execution:ExecutionPlatform;
-  readonly memoryWork?:MaterialMemoryWork;readonly context?:Context;
+  readonly memoryWork:MaterialMemoryWork;readonly context?:Context;
 }
 /** Compiled trusted local factory, not a second package/archive Manifest. Intake
  * is the existing SourceStore -> receive transaction, authorized by C04/C10.
@@ -38,6 +38,7 @@ export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:So
       if(phase!=='created')throw unavailable();phase='preparing';
       try{
         scope.assertCurrent();const engine=dependencies.execution.assembly.executor;
+        if(!dependencies.memoryWork)throw new StoreError('Shared source memory receipts are required',503);
         if(engine.store!==dependencies.store||dependencies.materials.store!==dependencies.store)throw new StoreError('Source runtime repository mismatch',503);
         handlers=dependencies.execution.handlersForAssembly(scope);
         runtime=new SourcePipelineRuntime(dependencies.store,dependencies.materials,plugins,dependencies.context,engine,dependencies.memoryWork,handlers);
