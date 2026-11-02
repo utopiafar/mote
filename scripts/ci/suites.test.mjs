@@ -20,7 +20,7 @@ test('host changes select the light task that runs host lifecycle contracts once
   const plan = selected.flatMap(task => taskPlan(task));
   const tests = plan.filter(step => step.command === process.execPath && step.args.includes('--test') && step.args.some(arg => arg.startsWith('packages/plugin-host/test/')));
   assert.equal(tests.length, 1);
-  assert.deepEqual(tests[0].args.slice(1), ['packages/plugin-host/test/import-boundary.test.mjs', 'packages/plugin-host/test/lifecycle.test.mjs']);
+  assert.deepEqual(tests[0].args.slice(1), ['packages/plugin-host/test/import-boundary.test.mjs', 'packages/plugin-host/test/lifecycle.test.mjs', 'packages/plugin-host/test/extensions.test.mjs']);
 });
 
 test('Server shards plus explicit scale cases cover the original glob once, with all short Memory guards automatic', () => {
