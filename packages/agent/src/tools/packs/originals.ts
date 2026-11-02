@@ -34,8 +34,10 @@ function dateValue(value:unknown,field:string):string|undefined{
 
 /** Merge model arguments with the parent scope exactly as the session does:
  * the narrower bound wins and a contradicted device/cursor fails before I/O. */
-export function originalReadRange(args:Readonly<Record<string,unknown>>,scope:Readonly<ContextRange>,limitDefault=8):ContextRange{
-  const after=dateValue(args.after,'after'),before=dateValue(args.before,'before'),lower=scope.after,upper=scope.before;
+export function originalReadRange(args:Readonly<Record<string,unknown>>,scope:Readonly<ContextRange>):ContextRange{
+  // Normalize both sides before intersecting: an offset-bearing scope timestamp
+  // must not win a lexicographic comparison against a normalized argument.
+  const after=dateValue(args.after,'after'),before=dateValue(args.before,'before'),lower=dateValue(scope.after,'after'),upper=dateValue(scope.before,'before');
   const effectiveAfter=after&&lower?(after>lower?after:lower):(after??lower);
   const effectiveBefore=before&&upper?(before<upper?before:upper):(before??upper);
   if(effectiveAfter&&effectiveBefore&&effectiveAfter>effectiveBefore)throw invalid('Time range is outside the requested scope');
@@ -46,11 +48,14 @@ export function originalReadRange(args:Readonly<Record<string,unknown>>,scope:Re
   if(args.source!==undefined&&!sourceSchema.safeParse(args.source).success)throw invalid('Invalid source');
   if(args.appId!==undefined&&(typeof args.appId!=='string'||!args.appId.trim()||args.appId.length>300))throw invalid('Invalid appId');
   if(args.collection!==undefined&&args.collection!=='content'&&args.collection!=='activity')throw invalid('Invalid collection');
+  // The parent normalizes this call's scope, including its effective limit. The
+  // pack must not reintroduce a task default (8/12/30) or a second clamp.
+  const limit=scope.limit??(args.limit===undefined?undefined:Number(args.limit));
   return {
     ...(effectiveAfter===undefined?{}:{after:effectiveAfter}),
     ...(effectiveBefore===undefined?{}:{before:effectiveBefore}),
     ...(scope.deviceId??args.deviceId as string|undefined ? {deviceId:scope.deviceId??args.deviceId as string}:{}),
-    limit:Math.min(Number(args.limit??scope.limit??limitDefault),12),
+    ...(limit===undefined?{}:{limit}),
     ...(args.cursor===undefined?{}:{cursor:args.cursor as string}),
     ...(args.source===undefined?{}:{source:sourceSchema.parse(args.source)}),
     ...(args.appId===undefined?{}:{appId:args.appId as string}),
@@ -93,7 +98,7 @@ export function createOriginalReadPack(options:OriginalReadPackOptions={}):reado
       const records=assertRecords(await port.read('search',filters));
       port.assertCurrent();
       const retrieval=(records as unknown as {retrieval?:unknown}).retrieval;
-      return {source:'untrusted_personal_context',data:records.slice(0,Number(filters.limit??100)).map(record=>preview(record,args.query,timeZone)),...(retrieval?{retrieval}:{})};
+      return {source:'untrusted_personal_context',data:records.slice(0,Number(filters.limit??records.length)).map(record=>preview(record,args.query,timeZone)),...(retrieval?{retrieval}:{})};
     },
   });
   const timeline=defineToolDescriptor({
@@ -106,7 +111,7 @@ export function createOriginalReadPack(options:OriginalReadPackOptions={}):reado
       port.assertCurrent();
       if(!page||!Array.isArray(page.items)||(page.nextCursor!==null&&typeof page.nextCursor!=='string'))throw invalid('Context reader returned an invalid page');
       if(page.totalCount!==undefined&&(!Number.isSafeInteger(page.totalCount)||page.totalCount<0||page.totalCount<page.items.length))throw invalid('Context reader returned an invalid total count');
-      const data=page.items.slice(0,Number(filters.limit??100)).map(record=>preview(record,undefined,timeZone));
+      const data=page.items.slice(0,Number(filters.limit??page.items.length)).map(record=>preview(record,undefined,timeZone));
       return {source:'untrusted_personal_context',data,pagination:{nextCursor:page.nextCursor,...(page.totalCount===undefined?{}:{totalCount:page.totalCount})}};
     },
   });

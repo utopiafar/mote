@@ -154,3 +154,17 @@ test('attribution resolves only the chosen locator through the scope the parent 
   await assert.rejects(run('attribution_context', {id: 'generated-original'}, makePort({records: {evidence: []}})), error => error.code === 'invalid_tool_arguments');
   await assert.rejects(run('attribution_context', {ref: 'material:not-a-ref'}, makePort({records: {}})), error => error.code === 'invalid_tool_arguments');
 });
+
+test('scope bounds are normalized before intersection and the parent limit is authoritative', async () => {
+  const {run} = registryFixture();
+  const calls = [];
+  await run('search_context', {query: 'generated', after: '2026-09-01T05:00:00Z'}, makePort({calls, scope: {after: '2026-09-01T10:00:00+08:00', before: '2026-09-02T00:00:00+08:00', limit: 30}, records: {search: []}}));
+  const filters = calls.find(([operation]) => operation === 'search')[1][0];
+  assert.equal(filters.after, '2026-09-01T05:00:00.000Z', 'the scope offset is normalized before comparing bounds');
+  assert.equal(filters.before, '2026-09-01T16:00:00.000Z');
+  assert.equal(filters.limit, 30, 'the pack uses the call scope limit, not a task 8/12 default');
+
+  const clamped = [];
+  await run('timeline', {limit: 40}, makePort({calls: clamped, scope: {limit: 12}, records: {timeline: {items: [], nextCursor: null}}}));
+  assert.equal(clamped.find(([operation]) => operation === 'timeline')[1][0].limit, 12, 'the parent-bound limit wins over the raw argument');
+});
