@@ -18,8 +18,8 @@ test('the SDK declares separate node/browser entries and no private app export',
   for (const entry of ['.', './browser', './node']) assert.ok(manifest.exports[entry], entry);
   assert.equal(manifest.exports['.'].browser.import, './dist/browser.js');
   assert.equal(manifest.exports['.'].node.import, './dist/node.js');
-  assert.equal(manifest.exports['./browser'].browser.import, './dist/browser.js');
-  assert.equal(manifest.exports['./node'].node.import, './dist/node.js');
+  assert.equal(manifest.exports['./browser'].import, './dist/browser.js');
+  assert.equal(manifest.exports['./node'].import, './dist/node.js');
   assert.ok(!JSON.stringify(manifest.exports).includes('apps/'));
   const browser = read('dist/browser.js');
   assert.doesNotMatch(browser, /@mote\/plugin-host|node:|from ['"](?:node:)?(?:fs|path|child_process)['"]/);
