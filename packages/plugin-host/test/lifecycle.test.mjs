@@ -269,3 +269,26 @@ test('host shutdown fences every scope before synchronous abort observers can co
   });
   await host.close(); assert.deepEqual(observed, [true, true]);
 });
+
+test('a stopping dependent rejects provider quiesce without changing the provider admission or snapshot', {timeout: 5000}, async t => {
+  const host = new PluginHost(hostId), entered = gate(), held = gate(); let binding, providerQuiesced = 0;
+  t.after(async () => { held.resolve(); await host.close(); });
+  const provider = await host.install({identity: identity('quiesce-preflight-provider'), contributions: [reader], factory: context => {
+    binding = context.provide(reader.id, reader, {read() { return 'still-active'; }});
+    return lifecycle({quiesce() { providerQuiesced++; }});
+  }});
+  const consumer = await host.install({identity: identity('quiesce-preflight-consumer'), contributions: [], requires: [binding], factory() {
+    return lifecycle({async stop() { entered.resolve(); await held.promise; }});
+  }});
+  const lease = await host.acquire(reader, binding);
+  const stopping = consumer.close('disabled'); await entered.promise;
+  const before = host.snapshot();
+  await assert.rejects(provider.quiesce(), {code: 'stale_scope'});
+  assert.deepEqual(host.snapshot(), before); assert.equal(providerQuiesced, 0);
+  assert.equal(lease.signal.aborted, false); lease.assertCurrent(); assert.equal(lease.value.read(), 'still-active');
+  const fresh = await host.acquire(reader, binding); assert.equal(fresh.value.read(), 'still-active'); await fresh.release();
+  held.resolve(); await stopping;
+  await provider.quiesce(); assert.equal(providerQuiesced, 1);
+  await assert.rejects(host.acquire(reader, binding), {code: 'dependency_unavailable'});
+  assert.equal(lease.value.read(), 'still-active'); await lease.release();
+});

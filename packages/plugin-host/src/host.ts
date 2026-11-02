@@ -219,9 +219,9 @@ export class PluginHost implements ServiceResolver {
     return Object.freeze(lease);
   }
   private quiesce(runtime: Runtime, reason: StopReason) {
-    if (runtime.phase === 'stopping') return Promise.reject(new PluginHostError('stale_scope'));
-    for (const target of this.requiredGraph(runtime)) {
-      if (target.phase === 'stopping') return Promise.reject(new PluginHostError('stale_scope'));
+    const affected = this.requiredGraph(runtime);
+    if ([...affected].some(target => target.phase === 'stopping')) return Promise.reject(new PluginHostError('stale_scope'));
+    for (const target of affected) {
       target.resources.quiesce(); target.phase = 'quiescing';
     }
     this.revision++;
