@@ -134,6 +134,8 @@ test('selected A06 journey: owner HTTP query traverses default Host and real DSH
   const note=await post('/api/notes',{id,deviceId:'generated-a06-device',deviceName:'Generated fixture',platform:'android',capturedAt:'2026-11-01T12:00:00.000Z',text:original});assert.equal(note.status,201,await note.text());
   const runId=randomUUID(),input={question:'When was the generated observatory release approved?',evidenceIds:[id]};
   const denied=await post('/api/query-runs',{id:randomUUID(),input},false);assert.equal(denied.status,401);assert.equal(requests.length,0);assert.ok(!(await denied.text()).includes(original));
+  const invalid=await post('/api/query',{...input,modelProfileId:'generated-missing-profile'});
+  assert.equal(invalid.status,400,await invalid.text());assert.equal(requests.length,0,'invalid profile pairing never reaches the model');
   const accepted=await post('/api/query-runs',{id:runId,input});assert.equal(accepted.status,202,await accepted.text());
   let run:any;const deadline=Date.now()+30000;
   do{const response=await fetch(url+'/api/query-runs/'+runId,{headers:f.headers});assert.equal(response.status,200);run=await response.json();if(run.status!=='running')break;await delay(25);}while(Date.now()<deadline);
