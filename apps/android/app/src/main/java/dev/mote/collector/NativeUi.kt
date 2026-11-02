@@ -504,7 +504,8 @@ fun Context.declarativePluginView(
     spec: dev.mote.collector.plugins.DeclarativeSpec,
     data: org.json.JSONObject,
     label: (String) -> String,
-    onCommand: (String) -> Unit,
+    busy: () -> Boolean,
+    onCommand: (String, org.json.JSONObject) -> Unit,
 ): LinearLayout {
     val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     val tv = { value: String -> TextView(this).apply { MoteUi.textColor(this, NativeColorRole.INK); setText(value) } }
@@ -522,16 +523,41 @@ fun Context.declarativePluginView(
             body.addView(tv(label(f.labelKey ?: f.key) + " " + (data.opt(f.key)?.toString() ?: "—")))
         is dev.mote.collector.plugins.DeclarativeNode.Form -> {
             val inputs = component.fields.map { f ->
-                if (f.input == "boolean") CheckBox(this).apply { text = label(f.labelKey ?: f.key); body.addView(this) } to f.key
-                else EditText(this).apply { hint = label(f.labelKey ?: f.key); body.addView(this) } to f.key
+                if (f.input == "boolean") CheckBox(this).apply { text = label(f.labelKey ?: f.key); body.addView(this) } to f
+                else EditText(this).apply { hint = label(f.labelKey ?: f.key); if (f.input == "number") inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL; body.addView(this) } to f
             }
             component.submitCommand?.let { command ->
-                body.addView(Button(this).apply { text = label(command); setOnClickListener { onCommand(command) } })
+                // Serialize per declared input type before submitting —
+                // the same contract as the web serializeFormInput.
+                body.addView(Button(this).apply { text = label(command); isEnabled = !busy(); setOnClickListener {
+                    if (busy()) return@setOnClickListener
+                    val input = org.json.JSONObject()
+                    for ((view, f) in inputs) when (f.input) {
+                        "boolean" -> {
+                            // A required checkbox must be affirmed before dispatch.
+                            val box = view as CheckBox
+                            if (f.required && !box.isChecked) { box.hint = label(f.labelKey ?: f.key); box.requestFocus(); return@setOnClickListener }
+                            input.put(f.key, box.isChecked)
+                        }
+                        "number" -> {
+                            val raw = (view as EditText).text.toString()
+                            if (raw.isBlank()) { if (f.required) { view.error = label(f.labelKey ?: f.key); view.requestFocus(); return@setOnClickListener } }
+                            else raw.toDoubleOrNull()?.let { input.put(f.key, it) } ?: run { view.error = label(f.labelKey ?: f.key); view.requestFocus(); return@setOnClickListener }
+                        }
+                        else -> {
+                            val raw = (view as EditText).text.toString()
+                            if (f.required && raw.isBlank()) { view.error = label(f.labelKey ?: f.key); view.requestFocus(); return@setOnClickListener }
+                            input.put(f.key, raw)
+                        }
+                    }
+                    onCommand(command, input)
+                } })
             }
         }
         is dev.mote.collector.plugins.DeclarativeNode.Action -> body.addView(Button(this).apply {
             text = component.labelKey?.let(label) ?: component.command
-            setOnClickListener { onCommand(component.command) }
+            isEnabled = !busy()
+            setOnClickListener { if (!busy()) onCommand(component.command, org.json.JSONObject()) }
         })
     }
     return body

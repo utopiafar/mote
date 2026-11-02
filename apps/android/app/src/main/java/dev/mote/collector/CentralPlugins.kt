@@ -116,7 +116,7 @@ internal class CentralPlugins(private val screens: CentralScreens, private val r
                     val spec = dev.mote.collector.plugins.DeclarativePluginView.parse(org.json.JSONObject().put("components", org.json.JSONArray().apply {
                         actions.forEach { action -> put(org.json.JSONObject().put("type", "action").put("command", action).put("labelKey", action)) }
                     }), actions.toSet())
-                    target.addView(ui.declarativePluginView(spec, org.json.JSONObject(), { k -> labels[k] ?: k }, { action -> submit(PluginControlClient.instanceAction(instance.id, action, instance.revision)) }))
+                    target.addView(ui.declarativePluginView(spec, org.json.JSONObject(), { k -> labels[k] ?: k }, { ui.isWorking }, { action, _ -> submit(PluginControlClient.instanceAction(instance.id, action, instance.revision)) }))
                 }
                 ui.button(MoteI18n.text("查看记忆方案"), parent = target) { tab = "memory"; load() }
             }

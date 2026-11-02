@@ -98,7 +98,6 @@ export function pluginInstanceSpec(instance: PluginInstanceView) {
     { type: 'detail', fields: [
       { key: 'scope', labelKey: 'scope' },
       { key: 'observed', labelKey: 'state', format: 'badge' },
-      { key: 'revision', labelKey: 'revision', format: 'number' },
     ] },
     ...(instanceCommandActions.filter(a => instance.allowedActions.includes(a)).map(a => ({ type: 'action' as const, command: a, labelKey: a }))),
   ] }, pluginInstanceDescriptor(instance));
@@ -112,18 +111,21 @@ export function pluginInstanceInvoker(instance: PluginInstanceView, invoke: (pat
 
 /** Delegated instance action surface for PluginCenter: same DOMAIN fields
  * and the same precise commands, rendered through the schema-bound runtime. */
-export function PluginInstanceSurface({ instance, busy, command, labels }: {
+export function PluginInstanceSurface({ instance, busy, command, labels, stateLabel }: {
   instance: PluginInstanceView;
   busy: boolean;
   command: (path: string, revision: number) => void;
   labels: Record<string, string>;
+  /** Existing localized state presentation (packageStateLabel); the raw
+   * observed value never reaches the UI. */
+  stateLabel: (observed: string) => string;
 }) {
   const session = useMemo(() => new DeclarativeViewSession(
     pluginInstanceDescriptor(instance),
     pluginInstanceSpec(instance),
     async cmd => pluginInstanceInvoker(instance, command)(cmd),
   ), [instance, command]);
-  const data = { scope: instance.scope, observed: instance.observed, revision: instance.revision };
+  const data = { scope: instance.scope, observed: stateLabel(instance.observed) };
   if (busy) return null;
   return createElement(DeclarativeView, { session, data, translate: k => labels[k] ?? k });
 }
