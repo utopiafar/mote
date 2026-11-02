@@ -42,6 +42,11 @@ export function affectedComponents(paths, graph = workspaceGraph()) {
       mark(groups); result.tooling = true; continue;
     }
     if (path.startsWith('apps/android/')) { mark(['android']); continue; }
+    // New public plugin packages are build inputs even before every host has a
+    // runtime dependency edge. The host/API packages are consumed by Central;
+    // the SDK is a build/tooling surface and must not imply a desktop/Android build.
+    if (path.startsWith('packages/plugin-api/') || path.startsWith('packages/plugin-host/')) { mark(['central']); result.tooling = true; continue; }
+    if (path.startsWith('packages/plugin-sdk/')) { result.tooling = true; continue; }
     const workspace = graph.find(entry => path.startsWith(entry.path + '/'));
     if (workspace) {
       mark(groups.filter(group => roots[group].some(root => uses(root, workspace.name))));

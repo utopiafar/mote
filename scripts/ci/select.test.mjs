@@ -21,6 +21,18 @@ test('unknown inputs and locks conservatively select all light scopes and explai
   assert.deepEqual(changed('docs/testing.md', 'AGENTS.md', '.agents/skills/real-world-testing/SKILL.md').scopes, []);
   assert.deepEqual(changed('scripts/ci/select.mjs', '.github/workflows/component-checks.yml').scopes, ['tooling']);
 });
+test('new plugin API/host paths select Central and tooling without all-light fallback', () => {
+  for (const path of ['packages/plugin-api/src/index.ts', 'packages/plugin-host/src/host.ts']) {
+    const selection = changed(path);
+    assert.deepEqual(selection, { scopes: ['server', 'tooling'], fallback: [], serverGroups: ['all'] }, path);
+    const tasks = automaticTasks(selection).tasks;
+    assert.deepEqual(tasks, ['architecture', 'tooling', 'server-build', 'server-1', 'server-2', 'server-3', 'server-4']);
+    assert.ok(!tasks.some(task => /benchmark|scale|recovery/.test(task)), path);
+  }
+  const sdk = changed('packages/plugin-sdk/src/browser.ts');
+  assert.deepEqual(sdk, { scopes: ['tooling'], fallback: [] });
+  assert.deepEqual(automaticTasks(sdk).tasks, ['architecture', 'tooling']);
+});
 test('the exact browser login smoke path selects its current clients without broadening unknown scripts', () => {
   const login = changed('scripts/test-web-login.cjs');
   assert.deepEqual(login, { scopes: ['web', 'i18n', 'desktop'], fallback: [] });
