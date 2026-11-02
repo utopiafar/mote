@@ -74,11 +74,13 @@ export interface RuntimeToolPayload {
 }
 export interface HostToolPort {
   readonly definitions: readonly RuntimeToolDefinition[];
-  /** Host rechecks scope/grant/plugin before and after I/O and owns all receipt mutation.
+  /** Host verifies this issued attempt is still active, plus scope/grant/plugin, before I/O,
+   * after reading/before disclosure and after awaiting the sender, before any receipt mutation.
+   * A valid run lease alone cannot admit a late callback from an already settled attempt.
    * The sender resolves only after the adapter's actual delivery boundary. A05/A12 implement it:
    * DSH attachment preparation; Codex same-active-turn steer ACK, including exact turn identity.
    * Failure/cancellation/stale identity cannot confirm a delivery. No provider-supplied receipt is accepted. */
-  deliver<T>(call: RuntimeToolCall, sender: (payload: RuntimeToolPayload) => Promise<T>): Promise<T>;
+  deliver<T>(attempt: RuntimeAttempt, call: RuntimeToolCall, sender: (payload: RuntimeToolPayload) => Promise<T>): Promise<T>;
 }
 
 export type RuntimeEvent =
@@ -96,12 +98,14 @@ export interface HostRunPort {
    * A10 additionally fences each observable DSH HTTP attempt. Codex internal retries are not observable. */
   runModel<T>(attempt: RuntimeAttempt, task: () => Promise<T>): Promise<T>;
   /** Host validates its issued attempt, stamps identity, normalizes usage and isolates observers.
-   * null is only for tool readiness during prepare; late/unknown attempts cannot update Host state. */
+   * null is only for tool readiness during prepare; Host also rejects readiness after prepare.
+   * Late/unknown attempts cannot update Host state. */
   emit(event: Extract<RuntimeEvent, {type: 'tools.ready'}>, attempt: null): void;
-  emit(event: RuntimeEvent, attempt: RuntimeAttempt): void;
+  emit(event: Exclude<RuntimeEvent, {type: 'tools.ready'}>, attempt: RuntimeAttempt): void;
 }
 
 export interface RuntimeAttempt {
+  /** Host-issued, scoped to this run; neither a tool callId nor a provider-chosen turn identity. */
   readonly id: string;
   readonly index: number;
 }

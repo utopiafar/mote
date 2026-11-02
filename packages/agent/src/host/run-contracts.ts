@@ -62,13 +62,15 @@ export type HostRunTerminal =
   | {readonly kind: 'yielded'};
 export type HostRunEvent = {
   readonly identity: RuntimeRunIdentity;
+  /** Preparation has no model attempt yet. Only Host can emit its failed/cancelled final terminal. */
   readonly attemptId: null;
-  readonly event: Extract<RuntimeEvent, {type: 'tools.ready'}>;
+  readonly event: Extract<RuntimeEvent, {type: 'tools.ready'}>
+    | {readonly type: 'run.terminal'; readonly terminal: Extract<HostRunTerminal, {kind: 'failed' | 'cancelled'}>};
 } | {
   readonly identity: RuntimeRunIdentity;
   readonly attemptId: string;
   /** Host derives terminal observations from outcomes; RuntimeProvider.emit cannot forge them. */
-  readonly event: RuntimeEvent
+  readonly event: Exclude<RuntimeEvent, {type: 'tools.ready'}>
     | {readonly type: 'attempt.terminal'; readonly terminal: RuntimeTerminal}
     | {readonly type: 'run.terminal'; readonly terminal: HostRunTerminal};
 };
