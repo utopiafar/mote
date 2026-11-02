@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {compileNativeDshProfile, createRuntimePatch, DSH_RUNTIME_ID} from '../dist/runtime/dsh/profile-compiler.js';
 import {createDshHostChannel, contextToolPayload} from '../dist/runtime/dsh/context-plugin.js';
 import {createDshRuntimeProvider, dshRuntimePlugin} from '@mote/agent/runtime/dsh';
@@ -25,6 +25,7 @@ import {contextToolDefinitions, pinContextTools} from '../dist/tool-contribution
 import {taskTools} from '../dist/task-context.js';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {AgentYieldError} from '../dist/host-controls.js';
+import {SYSTEM_PROMPT} from '../dist/instructions.js';
 
 const scope = {packageId: 'generated.runtime', installationId: 'generated-install', instanceId: 'generated-instance', activationId: 'generated-active', host: {kind: 'central', id: 'generated-host'}};
 const reference = exportName => ({contribution: {instance: {packageId: scope.packageId, installationId: scope.installationId, instanceId: scope.instanceId}, contributionId: 'native'}, revision: 1, artifactDigest: 'a'.repeat(64), exportName});
@@ -182,10 +183,10 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
   const requests = [], events = [], resources = [];
   const record = {id: '22222222-2222-4222-8222-222222222222', capturedAt: '2026-11-01T10:00:00.000Z', appName: 'Generated notes', ocrText: 'The generated observatory review finished on Sunday.'};
   let reads = 0, validations = 0;
-  const reader = {search: async () => [record], timeline: async () => ({items: [record], nextCursor: null}), evidence: async () => { reads++; return [record]; }, activity: async () => ({captures: 0}), devices: async () => []};
+  const reader = {search: async () => { reads++; return [record]; }, timeline: async () => ({items: [record], nextCursor: null}), evidence: async () => { reads++; return [record]; }, activity: async () => ({captures: 0}), devices: async () => []};
   const server = createServer(async (req, res) => {
     let raw = ''; for await (const part of req) raw += part; requests.push(JSON.parse(raw));
-    writeMessagesResponse(res, {stage: requests.length - 1, model: 'generated', ...(requests.length === 1 ? {tool: {name: 'evidence', args: {ids: [record.id]}}} : {}), text: JSON.stringify({answer: `The generated observatory review finished on Sunday. [${record.id}]`, citationIds: [record.id]}), reasoning: true});
+    writeMessagesResponse(res, {stage: requests.length - 1, model: 'generated', ...(requests.length === 1 ? {tool: {name: 'search_context', args: {query: 'generated observatory'}}} : {}), text: JSON.stringify({answer: `The generated observatory review finished on Sunday. [${record.id}]`, citationIds: [record.id]}), reasoning: true});
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
@@ -218,10 +219,16 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
 
 test('selected A05 journey: generated original reaches the real DSH child and only Host validates the cited candidate', {timeout: 30000}, async t => {
   const f = await selectedJourney(t), session = await f.prepare();
-  const result = await session.execute();
+  const patch = JSON.parse(await readFile(join(f.resources[0].root, 'runtime.patch.json'), 'utf8'));
+  assert.notEqual(f.context.system, SYSTEM_PROMPT);
+  assert.equal(patch.find(entry => entry.id === 'system-prompt').config.personaPrefix, f.context.system);
+  let result;
+  try { result = await session.execute(); }
+  catch (error) { t.diagnostic(JSON.stringify({reads: f.reads, requests: f.requests.length, toolResults: f.requests.flatMap(request => request.messages.flatMap(message => Array.isArray(message.content) ? message.content.filter(block => block.type === 'tool_result') : []))})); throw error; }
   assert.equal(f.reads, 1); assert.equal(f.validations, 1); assert.equal(result.citations[0].id, f.record.id); assert.equal(result.trace.length, 1);
   assert.equal(f.requests.length, 2); assert.ok(f.requests[1].messages.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'tool_result' && JSON.stringify(block).includes(f.record.ocrText))));
-  assert.ok(f.requests[0].system.some(block => block.text.includes(f.context.system)), 'the exact Host Memory system policy reaches the model');
+  const system = f.requests[0].system;
+  assert.ok((typeof system === 'string' ? system : system.map(block => block.text).join('\n')).includes(f.context.system), 'the exact Host Memory system policy reaches the model');
   assert.equal(f.events.filter(({event}) => event.type === 'tools.ready').length, 1);
   assert.equal(f.events.at(-1).event.terminal.kind, 'completed');
   assert.deepEqual(f.resources.map(event => event.type), ['created', 'closed']);
@@ -238,13 +245,25 @@ test('selected A05 journey: an actual native write schema blocks Provider prepar
   assert.equal(f.requests.length, 0); assert.equal(f.reads, 0); assert.equal(f.validations, 0);
   assert.equal(f.events.some(({event}) => event.type === 'tools.ready'), false);
   assert.deepEqual(f.resources.map(event => event.type), ['created', 'closed']); await assert.rejects(access(f.resources[0].root), {code: 'ENOENT'});
+  const child = JSON.parse((await readFile(f.tracePath, 'utf8')).trim().split('\n')[0]);
+  assert.equal(child.event, 'loaded'); assert.notEqual(child.pid, process.pid);
+  assert.equal(child.home, join(f.resources[0].root, 'home'));
+  assert.throws(() => process.kill(child.pid, 0), {code: 'ESRCH'});
 });
 
-test('selected A05 journey: the actual context plugin refuses a child without a Host session', {timeout: 15000}, async t => {
+test('selected A05 journey: a missing context plugin prevents child readiness and leaves no process or private profile', {timeout: 15000}, async t => {
   const root = await mkdtemp(join(tmpdir(), 'mote-a05-no-host-')); t.after(() => rm(root, {recursive: true, force: true}));
-  const patch = join(root, 'runtime.patch.json');
-  await writeFile(patch, createRuntimePatch(fileURLToPath(new URL('../dist/plugin.mjs', import.meta.url)), 'generated-model'));
-  const harness = new DeepSeekHarness({profile: 'sdk-minimal', patches: [patch], dshHome: join(root, 'home'), cwd: root, processCwd: root, model: 'generated-model', initializeTimeoutMs: 3000, env: {PATH: process.env.PATH, HOME: join(root, 'home'), DEEPSEEK_API_KEY: 'generated-key'}});
+  const patch = join(root, 'runtime.patch.json'), witness = join(root, 'witness.mjs'), tracePath = join(root, 'child.jsonl');
+  await writeFile(witness, `import {appendFileSync} from 'node:fs'; export function apply(){appendFileSync(${JSON.stringify(tracePath)},JSON.stringify({pid:process.pid,home:process.env.HOME})+'\\n');}`);
+  const entries = JSON.parse(createRuntimePatch(fileURLToPath(new URL('../dist/plugin.mjs', import.meta.url)), 'generated-model', undefined, undefined, 1024, {}, 'Generated Host policy', [{id: 'generated-lifecycle-witness', specifier: pathToFileURL(witness).href}]));
+  for (const entry of entries) if (entry.insert) entry.insert = entry.insert.filter(plugin => plugin.id !== 'mote-context');
+  assert.ok(entries.find(entry => entry.id === 'sdk-jsonrpc-server').inject.includes('moteReady'));
+  await writeFile(patch, JSON.stringify(entries));
+  const harness = new DeepSeekHarness({profile: 'sdk-minimal', patches: [patch], dshHome: join(root, 'home'), cwd: root, processCwd: root, model: 'generated-model', initializeTimeoutMs: 3000, env: {PATH: process.env.PATH, HOME: join(root, 'home'), DEEPSEEK_API_KEY: 'generated-key', MOTE_HOST_RUN: ''}});
   t.after(() => harness.close());
   await assert.rejects(harness.start()); await harness.close();
+  const child = JSON.parse((await readFile(tracePath, 'utf8')).trim().split('\n')[0]);
+  assert.notEqual(child.pid, process.pid); assert.equal(child.home, join(root, 'home'));
+  assert.throws(() => process.kill(child.pid, 0), {code: 'ESRCH'});
+  await rm(root, {recursive: true, force: true}); await assert.rejects(access(root), {code: 'ENOENT'});
 });

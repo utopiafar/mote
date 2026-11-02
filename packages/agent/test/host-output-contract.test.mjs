@@ -306,8 +306,8 @@ test('invalid question never prepares a runtime and a closed unstarted session e
 });
 
 test('Host system instructions are fixed on the formal port before runtime preparation', async () => {
-  let received;
-  const f = fixture({prepare: async host => {
+  let received; const traces = [];
+  const f = fixture({input: {onTrace: event => traces.push(event)}, prepare: async host => {
     received = host.systemPrompt; host.emit({type: 'tools.ready', tools}, null);
     return {async run() { return outcome(); }, async repair() { return outcome(); }, async cancel() {}, async close() {}};
   }});
@@ -315,6 +315,9 @@ test('Host system instructions are fixed on the formal port before runtime prepa
   f.assembly.systemPrompt = expected;
   const s = await f.create(); f.assembly.systemPrompt = 'Changed after prepare';
   assert.equal(received, expected); assert.equal(s.port.systemPrompt, expected); await s.execute();
+  const model = traces.filter(event => event.type.startsWith('model.'));
+  assert.deepEqual(model.map(event => event.type), ['model.started', 'model.completed']);
+  assert.equal(model[0].payload.prompt, f.assembly.prompt); assert.equal(model[1].payload.terminal.kind, 'completed');
 });
 
 test('staged delivery is discarded immediately after confirmation or sender failure and preserves the primary error', async () => {
@@ -347,6 +350,21 @@ test('cancelling a pending sender discards its stage promptly without confirming
   const s = await f.create(), execution = s.execute(); void execution.catch(() => {}); await entered.promise; f.stop();
   await assert.rejects(execution); assert.equal(confirmed, 0); assert.equal(discarded, 1);
   assert.equal(f.events.at(-1).event.terminal.kind, 'cancelled');
+});
+
+test('Host retains a required confirmation failure when the runtime reports a typed tool terminal', async () => {
+  const primary = Error('Generated required receipt failure'), secondary = Error('Generated later cleanup failure');
+  let discarded = 0;
+  const f = fixture({readTool: async () => ({payload: {text: 'Generated delivered payload'}, confirm() { throw primary; }, discard() { discarded++; }}),
+    runtimeClose: async () => { throw secondary; },
+    run: async (request, host) => {
+      await assert.rejects(host.tools.deliver(request.attempt, {callId: 'generated-call', name: tools[0].name, arguments: {}}, async () => {}), error => error === primary);
+      return {terminal: {kind: 'failed', reason: 'tool_failure'}};
+    },
+  });
+  await assert.rejects((await f.create()).execute(), error => error === primary);
+  assert.equal(discarded, 1); assert.deepEqual(f.cleanupErrors, [secondary]);
+  assert.equal(f.events.at(-1).event.terminal.kind, 'failed');
 });
 
 for (const service of ['mote.agent.runtime', 'generated.model', 'mote.agent.host-output']) {

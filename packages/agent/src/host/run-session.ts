@@ -128,6 +128,7 @@ class ManagedHostRunSession implements HostRunSession {
   private lastAttempt?: RuntimeAttempt;
   private pending = new Set<Promise<unknown>>();
   private deliveryCleanupErrors: unknown[] = [];
+  private confirmationFailure?: {error: unknown};
   private execution?: Promise<AgentAnswer>;
   private preparing?: Promise<void>;
   private runtimeWork?: Promise<RuntimeOutcome>;
@@ -166,7 +167,8 @@ class ManagedHostRunSession implements HostRunSession {
           this.assertAttempt(attempt);
           const result = await sender(delivery.payload);
           this.assertAttempt(attempt);
-          delivery.confirm();
+          try { delivery.confirm(); }
+          catch (error) { this.confirmationFailure ??= {error}; throw error; }
           return result;
         } catch (error) { primary = true; throw error; }
         finally {
@@ -233,6 +235,9 @@ class ManagedHostRunSession implements HostRunSession {
     this.dependencies.scope.assertCurrent();
   }
   private assertCurrent() {
+    // A provider may translate a failed local confirmation into a typed tool
+    // terminal. The Host still owns this mandatory receipt's original failure.
+    if (this.confirmationFailure) throw this.confirmationFailure.error;
     this.assertLifetime();
     if (this.deliveryCleanupErrors.length) throw new AgentProviderError();
     if (this.phase === 'closed' || this.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
@@ -270,11 +275,15 @@ class ManagedHostRunSession implements HostRunSession {
     this.attempt = attempt; this.lastAttempt = attempt; this.phase = 'running';
     if (index) this.repairs = index;
     const request: RuntimeRunRequest = {attempt, prompt, ...(this.assembly.outputSchema ? {outputSchema: this.assembly.outputSchema} : {})};
+    const started = performance.now(), repair = index ? {repair: true, repairAttempt: index} : {};
+    reportProgress(this.dependencies.input, {stage: 'model'});
+    reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.started', stage: 'model', phase: 'started', payload: {prompt, ...repair}});
     try {
       this.runtimeWork = Promise.resolve().then(() => error ? this.handle.repair({...request, validation: {reason: error.reason, feedback: error.message}} satisfies RuntimeRepairRequest) : this.handle.run(request));
       const raw = await this.runtimeWork;
       this.assertAttempt(attempt);
       const outcome = parseRuntimeOutcome(raw);
+      reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.completed', stage: 'model', phase: 'completed', durationMs: performance.now() - started, payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...repair}});
       this.observe({identity: this.dependencies.identity, attemptId: attempt.id, event: {type: 'attempt.terminal', terminal: outcome.terminal}});
       return outcome;
     } finally { this.runtimeWork = undefined; this.attempt = undefined; if (this.phase === 'running') this.phase = 'idle'; }

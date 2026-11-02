@@ -9,14 +9,18 @@ import {taskTools} from './task-context.js';
 import {assembleHostContext, settleHostCleanup} from './host/run-session.js';
 import {createHostOutputProvider} from './host/output.js';
 import {hostOutputService, type HostRunSession} from './host/run-contracts.js';
-import {runtimeService} from './runtime/contracts.js';
+import {runtimeService, type RuntimeToolDefinition} from './runtime/contracts.js';
 import {resolveRunSelection} from './runtime/profile.js';
 import {DSH_RUNTIME_ID, dshRuntimePlugin, dshModelConfigured, prepareDshRun, type DshModelAdapter} from './runtime/dsh/provider.js';
+import {contextToolPayload} from './runtime/dsh/context-plugin.js';
+import {ContextToolError} from './tool-errors.js';
 import {createCodexAgent} from './codex-agent.js';
 import {startBridge} from './bridge.js';
 import {displayTime} from './time.js';
 import {validateModelOptions} from './model-runtime.js';
-import {AgentInputError, AgentNotConfiguredError, AgentProviderError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput} from './types.js';
+import {bundledSkills, SKILL_VERSION} from './skills.js';
+import {AgentYieldError} from './host-controls.js';
+import {AgentInputError, AgentNotConfiguredError, AgentResponseError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput} from './types.js';
 
 export {ContextToolRegistry, contextToolDefinitions, type ContextToolContribution} from './tool-contributions.js';
 export {buildContextEnvelope, taskTools} from './task-context.js';
@@ -47,6 +51,11 @@ export function createAgent(original: AgentOptions) {
   const options = {...original, headers: original.headers && {...original.headers}, extraBody: original.extraBody && structuredClone(original.extraBody)};
   const {reader, runModel, contextToolMode, codex: _codex, ...adapter} = options;
   const configured = dshModelConfigured(adapter);
+  const skills = Object.freeze(bundledSkills.filter(skill => skill.id !== 'document-import').map(skill => Object.freeze({...skill})));
+  const skillTool = Object.freeze({name: 'skill', version: SKILL_VERSION, fingerprint: hash(skills),
+    description: 'Load the full instructions for a Host-granted bundled skill. Available skills:\n' + skills.map(skill => `${skill.name}: ${skill.description}`).join('\n'),
+    inputSchema: {type: 'object', properties: {name: {type: 'string', enum: skills.map(skill => skill.name)}}, required: ['name'], additionalProperties: false},
+  });
   const hostIdentity = {kind: 'central' as const, id: randomUUID()};
   const identity = (id: string): ScopeIdentity => ({packageId: id, installationId: hostIdentity.id, instanceId: id, activationId: randomUUID(), host: hostIdentity});
   const host = new PluginHost(hostIdentity);
@@ -91,14 +100,18 @@ export function createAgent(original: AgentOptions) {
         profile: {id: 'fixed-dsh', name: 'DSH', revision: 0, runtimeProviderId: DSH_RUNTIME_ID, providerRef: {service: runtime.binding.service, revision: runtime.binding.revision, provider: {instance: {packageId: runtimeIdentity.packageId, installationId: runtimeIdentity.installationId, instanceId: runtimeIdentity.instanceId}, contributionId: runtime.binding.provider.contributionId}}, assembly: {packages: [], hooks: []}, allowedHostCapabilities: ['tools', 'images', 'hostDelegation']},
         providers: [{id: DSH_RUNTIME_ID, binding: runtime.binding, capabilities: runtime.value.capabilities, availability: {state: 'active'}}], installedModules: [],
         model: {profile: {id: 'fixed-model', name: 'Fixed model', settings: {provider: options.provider ?? 'custom', protocol: options.protocol ?? 'deepseek', baseUrl: options.baseUrl ?? '', model: options.model!, apiKey: options.apiKey ?? '', headers: options.headers ?? {}, extraBody: options.extraBody ?? {}, allowUnauthenticatedLocal: options.allowUnauthenticatedLocal ?? false, reasoningEffort: options.reasoningEffort ?? 'auto', maxTokens: options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS, modelRequestTimeoutMs: options.requestTimeoutMs ?? null, agentTimeoutMs: options.agentTimeoutMs ?? null}}, profileRevision: 0, modelRevision: 0, connectionFingerprint: hash(adapter), capabilities: {tools: true, images: true}},
-        requirements: {taskKind: 'query', capabilities: taskTools(input).length ? ['tools'] : []},
+        // This fixed-settings facade mirrors the existing model adapter's
+        // declared tool and text/image surface. Catalogue discovery and dynamic
+        // model/configuration revisions remain with A10/A09.
+        requirements: {taskKind: 'query', capabilities: ['tools']},
       });
       bridge = await startBridge(reader, {...input, signal, onTrace: trace}, options.maxToolCalls); assertCurrent();
-      const definitions = contextToolDefinitions(input).filter(([name]) => taskTools(input).includes(name)).map(([name, description, fields]) => {
+      const definitions: RuntimeToolDefinition[] = contextToolDefinitions(input).filter(([name]) => taskTools(input).includes(name)).map(([name, description, fields]) => {
         const pin = input.contextCapabilitySnapshot?.find(tool => tool.name === name);
         return {name, description, inputSchema: {...parameterSchemaSpecToJsonSchema(fields as unknown as Parameters<typeof parameterSchemaSpecToJsonSchema>[0]), additionalProperties: false}, version: pin?.version ?? '1', fingerprint: pin?.fingerprint ?? hash([description, fields])};
       });
-      const {system, prompt, metrics} = assembleHostContext(input, bridge.seedEvidence, options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS, options.maxToolCalls);
+      definitions.push(skillTool);
+      const {system, prompt, metrics} = assembleHostContext(input, bridge.seedEvidence, options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS, options.maxToolCalls, definitions);
       trace({type: 'instructions.assembled', stage: 'starting', payload: {system, tools: definitions}});
       trace({type: 'context.assembled', stage: 'starting', payload: {prompt, metrics, seedEvidence: bridge.seedEvidence}});
       session = await prepareDshRun(selection, {runId, scope, input, runtime, model: {...modelPort, selection: selection.modelSelection}, output,
@@ -108,15 +121,39 @@ export function createAgent(original: AgentOptions) {
       }, {
         systemPrompt: system, prompt, contextUsage: {...metrics, toolResults: 0}, maxTokens: options.maxTokens,
         evidence: () => bridge!,
-        // The stable A08 staged read is connected here before this facade is published.
-        readTool: async () => { throw new AgentProviderError(); },
+        async readTool(call, toolSignal) {
+          if (!call.arguments || typeof call.arguments !== 'object' || Array.isArray(call.arguments)) throw new ContextToolError('invalid_tool_arguments', 'Expected object arguments.', 'correct_arguments');
+          if (call.name === skillTool.name) {
+            const args = call.arguments as Record<string, unknown>, skill = skills.find(skill => skill.name === args.name);
+            if (Object.keys(args).some(key => key !== 'name') || !skill) throw new ContextToolError('invalid_tool_arguments', 'Use an exact Host-granted skill name.', 'correct_arguments');
+            return {payload: {text: skill.content}, confirm() {}, discard() {}};
+          }
+          const staged = await bridge!.prepareDelivery(call.name, call.arguments as Record<string, unknown>, toolSignal);
+          try { return {payload: contextToolPayload(staged.value), confirm: staged.confirm, discard: staged.discard}; }
+          catch (error) {
+            try { staged.discard(); }
+            catch { trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: 1, resource: 'tool_delivery'}}); }
+            throw error;
+          }
+        },
         admit: (task, admissionSignal) => runModel ? runModel(task, admissionSignal) : task(),
         close: closeBridge,
-        observe: ({event}) => { if (event.type === 'usage') input.onUsage?.(event.usage); else if (event.type === 'progress') reportProgress(input, event.progress); },
+        observe: ({event}) => {
+          if (event.type === 'usage') input.onUsage?.(event.usage);
+          else if (event.type === 'progress') reportProgress(input, event.progress);
+          else if (event.type === 'tools.ready') trace({type: 'bridge.ready', stage: 'starting', status: 'succeeded', payload: {tools: event.tools.length}});
+        },
         cleanupFailed: errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}),
       });
-      return await session.execute();
-    } catch (error) { primary = true; throw error; }
+      const answer = await session.execute();
+      trace({type: 'run.completed', stage: 'validating', phase: 'completed', status: 'succeeded', payload: {citations: answer.citations.map(citation => citation.id), toolCalls: answer.trace}});
+      return answer;
+    } catch (error) {
+      primary = true;
+      if (error instanceof AgentYieldError) trace({type: 'run.yielded', status: 'waiting'});
+      else trace({type: 'run.failed', status: 'failed', payload: {errorName: error instanceof Error ? error.name : 'UnknownError', reason: error instanceof AgentResponseError ? error.reason : undefined}});
+      throw error;
+    }
     finally {
       try {
         await settleHostCleanup([() => session?.close(), closeBridge, () => scope.close()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
