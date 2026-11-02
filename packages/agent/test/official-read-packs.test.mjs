@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ToolRegistry} from '../dist/tools/registry.js';
-import {installReadPacks} from '../dist/tools/official-read-packs.js';
+import {installReadPacks,resolveReadTool} from '../dist/tools/official-read-packs.js';
 
 const descriptor=name=>({apiVersion:'1',name,version:'1',description:'Generated metadata',fields:{},kind:'metadata',exposure:'catalog',requires:[],parse:args=>args,execute:()=>({generated:true})});
 const lifetime=()=>{const controller=new AbortController();return {controller,lease:{signal:controller.signal,assertCurrent(){controller.signal.throwIfAborted();}}};};
@@ -26,4 +26,24 @@ test('a scope revoked during preparation cannot leave a partly advertised pack',
   const lifecycle={signal:controller.signal,assertCurrent(){if(++checks===2)controller.abort(cause);controller.signal.throwIfAborted();}};
   assert.throws(()=>installReadPacks(registry,[{descriptors:[descriptor('generated_pending')],lifecycle}]),error=>error===cause);
   assert.deepEqual(registry.registered(),[]);
+});
+
+test('catalog dispatch requires parent discovery and the exact version before reaching a handler',async()=>{
+  const registry=new ToolRegistry(),{lease}=lifetime();let calls=0;
+  registry.register({...descriptor('generated_catalog'),execute:()=>{calls++;return null;}},lease);
+  const snapshot=registry.snapshot([{name:'generated_catalog',version:'1'}]),discovered=new Set();
+  for(const options of [{discovered},{discovered,catalogVersion:'1'}])assert.throws(()=>resolveReadTool(snapshot,'generated_catalog',options),{code:'invalid_tool_arguments'});
+  discovered.add('generated_catalog');
+  assert.throws(()=>resolveReadTool(snapshot,'generated_catalog',{discovered,catalogVersion:'2'}),{code:'invalid_tool_arguments'});
+  assert.equal(calls,0);
+  const invocation=resolveReadTool(snapshot,'generated_catalog',{discovered,catalogVersion:'1'});
+  await invocation.execute({},{tool:invocation.identity,scope:{},signal:lease.signal,assertCurrent:lease.assertCurrent,read:async()=>{throw Error('Unreachable');},actionCatalog:()=>{throw Error('Unreachable');},progress:()=>{throw Error('Unreachable');}});
+  assert.equal(calls,1);
+});
+
+test('explicit Host direct mode does not bypass stale-registration checks or alter discovery',()=>{
+  const registry=new ToolRegistry(),{lease}=lifetime(),remove=registry.register(descriptor('generated_catalog'),lease);
+  const snapshot=registry.snapshot([{name:'generated_catalog',version:'1'}]),discovered=new Set();
+  resolveReadTool(snapshot,'generated_catalog',{discovered,allowDirectCatalog:true});assert.equal(discovered.size,0);
+  remove();assert.throws(()=>resolveReadTool(snapshot,'generated_catalog',{discovered,allowDirectCatalog:true}),{code:'stale_tool_pin'});
 });
