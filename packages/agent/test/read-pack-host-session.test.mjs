@@ -70,3 +70,11 @@ test('showing only a Memory ID does not persist a receipt for its undisclosed st
   const bridge=await startBridge({...readSource,memories:async()=>({items:[{id:'generated-memory',statement:'Generated actual Memory statement',fingerprint:'b'.repeat(64)}]}),contextTools:()=>[{descriptors:[descriptor],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]},{question:'Generated Memory locator',hostContextToolMode:'all-native',onMemoryBodies(){persisted++;}});t.after(()=>bridge.close());
   const metadata=await bridge.prepareDelivery('generated_memory_ids',{},new AbortController().signal);assert.equal(persisted,0);metadata.confirm();metadata.discard();assert.equal(persisted,0);assert.equal(bridge.records.size,0);
 });
+
+test('the final Host fence rejects a source provider revoked during required output lease release',{timeout:5000},async t=>{
+  const lifetime=new AbortController(),stopped=Error('Generated source revoked during output release');
+  const descriptors=createOfficialReadPacks().filter(tool=>tool.name==='media_activity'),source={...readSource,mediaActivity:async()=>({observations:0}),contextTools:()=>[{descriptors,lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]};
+  const input=pinContextTools({question:'Generated final fence',hostContextToolMode:'all-native'},source),bridge=await startBridge(source,input);t.after(async()=>{try{await bridge.close();}catch(error){if(error.code!=='ERR_SERVER_NOT_RUNNING')throw error;}});
+  const session=await hostFixture(bridge,input,async()=>completed(),{afterOutputRelease:()=>lifetime.abort(stopped)});
+  await assert.rejects(session.execute(),error=>error===stopped);assert.equal(bridge.records.size,0);
+});

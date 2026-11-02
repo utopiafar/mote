@@ -17,10 +17,11 @@ export async function hostFixture(
   bridge:HostEvidenceSnapshot&{prepareDelivery:PrepareToolDelivery;close():Promise<void>},
   input:QueryInput,
   run:(host:HostRunPort,attempt:RuntimeAttempt)=>Promise<RuntimeOutcome>,
+  options:{afterOutputRelease?:()=>void}={},
 ){
   const controller=new AbortController();
   const identity={packageId:'generated',installationId:'install',instanceId:'instance',host:{kind:'central' as const,id:'fixture'},activationId:'active'};
-  const lease=<T,>(id:string,value:T):ServiceLease<T>=>{let active=true;return {binding:{service:{id,apiVersion:'1'},provider:{scope:identity,contributionId:id},revision:1},value,signal:controller.signal,assertCurrent(){assert.ok(active);},async release(){active=false;}};};
+  const lease=<T,>(id:string,value:T):ServiceLease<T>=>{let active=true;return {binding:{service:{id,apiVersion:'1'},provider:{scope:identity,contributionId:id},revision:1},value,signal:controller.signal,assertCurrent(){assert.ok(active);},async release(){active=false;if(id==='mote.agent.host-output')options.afterOutputRelease?.();}};};
   const snapshot=contextToolSnapshot(input),definitions=toRuntimeToolDefinitions(snapshot),selection={modelId:'generated',modelRevision:1,profileId:'model',profileRevision:1,transport:'fixture'};
   const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:true,images:false,importWorkspace:false,hostDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,host){
     host.emit({type:'tools.ready',tools:definitions},null);
@@ -33,7 +34,7 @@ export async function hostFixture(
     profile:{binding:runtime.binding,runtimeId:'fixture',profileId:'runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64),taskKind:'query',configuration:{}},runtime,
     model:{...lease('generated.model',{}),selection},output:lease('mote.agent.host-output',createHostOutputProvider()),
     tools:{definitions,bindings:[],assertCurrent(){for(const pin of snapshot.entries)snapshot.assertActive(pin);}},
-    budget:{activeTimeoutMs:null},activeBudget:new ActiveExecutionBudget(null),commitFence:{assertCurrent(){controller.signal.throwIfAborted();}},
+    budget:{activeTimeoutMs:null},activeBudget:new ActiveExecutionBudget(null),commitFence:{assertCurrent(){controller.signal.throwIfAborted();for(const pin of snapshot.entries)snapshot.assertActive(pin);}},
   },{
     systemPrompt:'Generated Host policy',prompt:'Generated prompt',contextUsage:metrics,evidence:()=>bridge,
     async readTool(call,signal){const staged=await bridge.prepareDelivery(call.name,call.arguments as Record<string,unknown>,signal);return {payload:{text:JSON.stringify(staged.value)},confirm:staged.confirm,discard:staged.discard};},close:()=>bridge.close(),
