@@ -60,14 +60,14 @@ declare module '@deepseek-ai/cordis' {interface Context {moteSourcePipelines:Sou
  * There is one work row per logical group, never one SQL row per raw event. */
 export class SourcePipelineRuntime {
   readonly registry=new SourcePipelineRegistry();readonly recipes=new SourceRecipeExecutor();readonly context:Context;readonly archive:SourceArchive;private readonly pluginScope:BackendPluginScope;
-  readonly engine:ExecutionEngine;private readonly ownsEngine:boolean;private readonly unregisterHandler:()=>Promise<void>;private closing?:Promise<void>;private stopped=false;
+  readonly engine:ExecutionEngine;private readonly ownsEngine:boolean;private readonly unregisterHandler:()=>Promise<void>;private closing?:Promise<void>;private stopped=false;private accepting=true;private initializing=true;
   // Engine cancellation fences publication before an uncooperative plugin exits.
   private tasks=new Set<Promise<unknown>>();
   readonly memoryWork:MaterialMemoryWork;
   readonly ready:Promise<void>;
   private productConsumer?:{observeProducts:(ref:string,bindingIds:readonly string[])=>void};
   setProductConsumer(consumer:{observeProducts:(ref:string,bindingIds:readonly string[])=>void}){this.productConsumer=consumer;}
-  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],root?:Context,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork){
+  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],root?:Context,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork,handlers?:Pick<ExecutionEngine,'register'>){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.engine=executor??new ExecutionEngine(store);this.ownsEngine=!executor;
     materials.bindIndexEngine(this.engine);
@@ -77,14 +77,17 @@ export class SourcePipelineRuntime {
         recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
       CREATE TABLE IF NOT EXISTS source_pipeline_config(source_id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
     this.memoryWork=memoryWork??new MaterialMemoryWork(store,materials);
-    this.unregisterHandler=this.engine.register({kind:STEP_KIND,pool:'source.archive',concurrency:()=>2,policy:EXECUTION_POLICIES.orchestration,
+    this.unregisterHandler=(handlers??this.engine).register({kind:STEP_KIND,pool:'source.archive',concurrency:()=>2,policy:EXECUTION_POLICIES.orchestration,
       resourceKeys:step=>[`source.archive:${(step.input as unknown as GroupInput).workId}`],
       validate:step=>this.validWork(step),admit:step=>this.admitWork(step),
       execute:(step,signal)=>{const task=this.organizeGroup(step,signal);this.tasks.add(task);void task.finally(()=>this.tasks.delete(task)).catch(()=>{});return task;},commit:(step,result)=>this.publishGroup(step,result as PreparedGroup),
       project:step=>this.projectWork(step),classify:()=>new ExecutionFailure('permanent','organization_failed')});
     const pluginScope=this.pluginScope;
-    this.ready=(async()=>{for(const plugin of plugins)await pluginScope.install(plugin);})();
+    this.ready=(async()=>{try{for(const plugin of plugins)await pluginScope.install(plugin);}finally{this.initializing=false;}})();
   }
+  private assertAccepting(){if(!this.accepting||this.stopped||this.initializing)throw new StoreError('Source pipeline unavailable',409);}
+  start(){if(this.stopped)throw new StoreError('Source pipeline unavailable',409);this.accepting=true;}
+  quiesce(){this.accepting=false;}
   private recipeFor(pipeline:SourcePipeline,source:SourceConnection):InstalledRecipe|undefined {
     if(!pipeline.recipe){if(pipeline.storage==='records')return undefined;throw new StoreError('Source archive pipelines require a recipe',409);}
     let recipe:InstalledRecipe;
@@ -138,11 +141,12 @@ export class SourcePipelineRuntime {
     }catch{return false;}
   }
   private admitWork(step:ExecutionStep){
+    if(!this.accepting||this.stopped||this.initializing)return new ExecutionFailure('waiting','source_pipeline_unavailable',1000);
     try{
       const input=this.input(step),pipeline=this.registry.get(input.pipelineId);
       if(!pipeline||pipeline.version!==input.version||pipeline.storage!=='archive'||this.policyFingerprint(pipeline)!==input.policyFingerprint)throw Error('pipeline_unavailable');
       const source=JSON.parse(String((this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.sourceId) as {json:string}).json)) as SourceConnection;
-      if(this.select(source)!==pipeline)throw Error('pipeline_unavailable');
+      if(this.selected(source)!==pipeline)throw Error('pipeline_unavailable');
       const recipe=this.recipeFor(pipeline,source),options=this.storedOptions(input.sourceId);
       if(recipe){const metadata=this.recipeMetadata(recipe,input.sourceId,options);
         if(input.recipeId!==metadata.id||input.recipeVersion!==metadata.version||input.recipeDefinitionFingerprint!==metadata.definitionFingerprint||input.recipeConfigFingerprint!==metadata.configFingerprint||input.recipeComponentPins!==metadata.componentPins)throw Error('recipe_unavailable');
@@ -186,7 +190,7 @@ export class SourcePipelineRuntime {
       configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(input.sourceId) as {json:string}|undefined)?.json??null;
     if(!sourceJson||this.sourceFingerprint(sourceJson)!==this.sourceFingerprint(result.sourceJson)||JSON.stringify(organizationOptions(configuration.parse(configJson?JSON.parse(configJson):{})))!==JSON.stringify(organizationOptions(configuration.parse(result.configJson?JSON.parse(result.configJson):{})))||this.archive.groupCheckpoint(input.sourceId,input.group)!==result.checkpoint)throw new ExecutionFailure('stale','input_changed');
     const source=JSON.parse(sourceJson!) as SourceConnection;
-    try{if(this.select(source)!==pipeline||result.recipe&&this.recipeFor(pipeline,source)!==result.recipe)throw Error('Component changed');}
+    try{if(this.selected(source)!==pipeline||result.recipe&&this.recipeFor(pipeline,source)!==result.recipe)throw Error('Component changed');}
     catch{throw new ExecutionFailure('blocked','recipe_unavailable');}
     if(result.recipe){const metadata=this.recipeMetadata(result.recipe,input.sourceId,result.options);
       if(metadata.id!==input.recipeId||metadata.version!==input.recipeVersion||metadata.definitionFingerprint!==input.recipeDefinitionFingerprint||metadata.configFingerprint!==input.recipeConfigFingerprint||metadata.componentPins!==input.recipeComponentPins)throw new ExecutionFailure('blocked','recipe_unavailable');}
@@ -206,12 +210,14 @@ export class SourcePipelineRuntime {
     const input=this.input(step),state=step.state==='waiting'||step.state==='running'?'pending':step.state==='succeeded'?'complete':step.state==='stale'||step.state==='cancelled'?'blocked':step.state;
     this.store.db.prepare("UPDATE source_pipeline_work SET state=?,error=?,updated_at=? WHERE id=? AND generation=? AND state!='complete'").run(state,step.error??null,Date.now(),input.workId,input.generation);
   }
-  select(source:SourceConnection){
+  select(source:SourceConnection){this.assertAccepting();return this.selected(source);}
+  private selected(source:SourceConnection){
+    if(this.stopped)throw new StoreError('Source pipeline unavailable',409);
     const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(source.id);
     const pipeline=binding?this.registry.get(String(binding.pipeline_id)):this.registry.forKind(source.kind);
     if(binding&&!pipeline)throw new StoreError('Source pipeline unavailable',409);
     if(pipeline&&!pipeline.sourceKinds.includes(source.kind))throw new StoreError('Source pipeline kind mismatch',409);
-    if(pipeline){this.recipeFor(pipeline,source);if(binding&&!binding.storage)throw new StoreError('Source binding requires storage semantics',409);}
+    if(pipeline){if(binding&&!binding.storage)throw new StoreError('Source binding requires storage semantics',409);if(binding&&binding.storage!==pipeline.storage)throw new StoreError('Changing physical storage requires a fresh source identity',409);this.recipeFor(pipeline,source);}
     // Ordinary sources retain the record-store path. A declared plugin kind
     // may never silently fall through after uninstall.
     if(!pipeline&&this.registry.declared(source.kind))throw new StoreError('Source pipeline unavailable',409);
@@ -259,7 +265,7 @@ export class SourcePipelineRuntime {
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   async tick(limit=10){
-    if(this.stopped)return 0;
+    if(this.stopped||!this.accepting||this.initializing)return 0;
     const db=this.store.db,superseded:string[]=[];
     db.exec('BEGIN IMMEDIATE');
     let rows:WorkRow[]=[];
@@ -320,7 +326,7 @@ export class SourcePipelineRuntime {
   // govern receipt authorization or current execution.
   private storedOptions(sourceId:string){const row=this.store.db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(sourceId);return configuration.parse(row?JSON.parse(String(row.json)):{});}
   options(sourceId:string){return this.storedOptions(sourceId);}
-  configure(sourceId:string,input:unknown){const value=configuration.parse(input),priorOptions=this.storedOptions(sourceId);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
+  configure(sourceId:string,input:unknown){this.assertAccepting();const value=configuration.parse(input),priorOptions=this.storedOptions(sourceId);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
     const sourceRow=db.prepare('SELECT json FROM source_connections WHERE id=?').get(sourceId);
     const source=sourceRow?JSON.parse(String(sourceRow.json)) as SourceConnection:undefined;
     let selected:SourcePipeline|undefined;
@@ -345,9 +351,11 @@ export class SourcePipelineRuntime {
     for(const prior of previous){const old=stepId(prior.id,prior.generation);this.revoke(old);superseded.push(old);this.enqueueWork(this.row(prior.id)!);}
     db.exec('COMMIT');for(const id of superseded)this.engine.abortLocal(id);return this.options(sourceId);}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
   memoryAllowed(sourceId:string):boolean {
+    if(!this.accepting||this.stopped||this.initializing)return false;
     try{const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(sourceId);
       if(!binding||binding.storage!=='archive')return true;
-      return Boolean(this.registry.get(String(binding.pipeline_id)));
+      const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(sourceId);
+      return Boolean(row&&this.selected(JSON.parse(String(row.json)) as SourceConnection)?.storage==='archive');
     }catch{return false;}
   }
   private memoryPlanner?:MaterialMemoryPlanner;
@@ -364,6 +372,7 @@ export class SourcePipelineRuntime {
   }
 
   forget(sourceId:string){
+    if(this.stopped)throw new StoreError('Source pipeline unavailable',409);
     if(!this.store.db.prepare('SELECT 1 FROM source_pipeline_bindings WHERE source_id=?').get(sourceId))throw new StoreError('Source has no archive pipeline',409);
     const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE source_connections SET json=json_set(json,'$.enabled',json('false')) WHERE id=?").run(sourceId);
@@ -387,7 +396,14 @@ export class SourcePipelineRuntime {
     this.archive.forget(sourceId);return {erased:true,sourcePaused:true};
   }
   status(){return {pipelines:this.registry.list(),work:this.store.db.prepare('SELECT state,count(*) count FROM source_pipeline_work GROUP BY state').all()};}
-  close(){return this.closing??=(async()=>{this.stopped=true;await this.ready.catch(()=>{});try{await this.unregisterHandler();await Promise.allSettled([...this.tasks]);}finally{try{if(this.ownsEngine)await this.engine.close();}finally{await this.pluginScope.close();}}})();}
+  close(){
+    if(this.closing)return this.closing;this.stopped=true;this.accepting=false;
+    // Remove receipt/model admission and the local execution lease before waiting
+    // for readers or plugin startup. Retain all archive checkpoints and jobs.
+    const unregister=this.unregisterHandler(),plugins=this.initializing?this.pluginScope.close():undefined;
+    void plugins?.catch(()=>{});
+    this.closing=(async()=>{await this.ready.catch(()=>{});try{await unregister;await Promise.allSettled([...this.tasks]);}finally{try{if(this.ownsEngine)await this.engine.close();}finally{await (plugins??this.pluginScope.close());}}})();return this.closing;
+  }
 }
 
 const configuration=z.object({pipelineId:z.string().regex(/^[a-z0-9.-]+$/).optional(),index:z.boolean().optional(),memoryDependencies:z.array(z.string().regex(/^[a-z0-9][a-z0-9._/-]*$/).max(128)).min(1).max(16).optional(),consumers:z.array(z.string().regex(/^[a-zA-Z0-9_.-]{1,100}$/)).max(32).refine(values=>new Set(values).size===values.length).default([]),settleSeconds:z.number().int().min(0).max(86400).default(300)}).strict();
