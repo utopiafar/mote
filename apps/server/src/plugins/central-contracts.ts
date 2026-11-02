@@ -28,19 +28,27 @@ import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-pub
  * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
  * neither constructs current services nor registers a second host or Manifest. */
 
-/** C04's authorization boundary issues concrete subclasses with a synchronous domain
- * grant check. The private nominal marker prevents a service lease or a plain liveness
- * callback from accidentally becoming commit authority. It is a type boundary, not proof
- * that a grant is current: providers must still invoke assertCurrent inside the commit. */
-export abstract class CommitAuthority {
-  private readonly domainCommitAuthority = true;
-  protected constructor() {}
-  abstract assertCurrent(): void;
+declare const commitAuthorityBrand: unique symbol;
+/** An opaque C04-issued reference, never a constructor, callback, serialized grant or proof
+ * of permission. Its private brand prevents accidental structural substitution only. */
+export interface CommitAuthority { readonly [commitAuthorityBrand]: true }
+/** Trusted assembly fixes this C04 service in each writer; consumers cannot supply or
+ * select a verifier/issuer with a write call. C04 owns issuance/provenance storage.
+ * No issuer registry or runtime authorization implementation is introduced by C01. */
+export interface CommitAuthorization {
+  /** Capture the already admitted request/job's domain grant, never a caller validator. */
+  capture(): CommitAuthority;
+  /** Synchronously reject unknown, forged, cross-issuer and invalidated references and
+   * revalidate the admitted domain grant/fence in trusted context. Writers must also keep
+   * resource/action/owner checks against the actual write input in that same transaction;
+   * reference validity is not their substitute. Never invoke a consumer-carried validator. */
+  assertCurrent(authority: CommitAuthority): void;
 }
 
 /** C02 owns SQLite/locks. Repository implementations close over their private SQL;
  * callers receive typed repositories separately, never a database argument or service bag.
- * No asynchronous work may run between the final authority check and commit. */
+ * The writer checks authority via its fixed C04 CommitAuthorization, not a method on
+ * the handle. No asynchronous work may run between that domain/fence check and commit. */
 export interface VaultTransactions {
   transaction<T>(authority: CommitAuthority, work: () => T & (T extends PromiseLike<unknown> ? never : unknown)): T;
 }
@@ -53,21 +61,23 @@ export type ContextNavigationRead = Pick<EvidenceReader, 'segments' | 'catalogAs
 export type ContextInventoryRead = ConstructorParameters<typeof ContextQuery>[2];
 export type ContextTreesRead = Pick<ContextTreeRegistry, 'catalog' | 'page'>;
 
-/** C04 binds this handle to the authenticated request without exposing token hashes.
- * The host still rejects disallowed routes before dispatch. Source content cannot mint it. */
-export interface RequestAuthority extends CommitAuthority {
-  assertCapture(input: CaptureInput): void;
-  assertOwnSource(sourceId: string): void;
-  assertOwnDevice(input: {deviceId: string}): void;
-}
+declare const requestAuthorityBrand: unique symbol;
+/** C04-issued request reference. The host rejects disallowed routes before dispatch;
+ * source content cannot mint a reference and a callback is never its verifier. */
+export interface RequestAuthority extends CommitAuthority { readonly [requestAuthorityBrand]: true }
 export interface RequestAuthorization {
   authenticate(authorization: string | undefined): RequestAuthority | undefined;
+  assertCurrent(authority: RequestAuthority): void;
+  assertCapture(authority: RequestAuthority, input: CaptureInput): void;
+  assertOwnSource(authority: RequestAuthority, sourceId: string): void;
+  assertOwnDevice(authority: RequestAuthority, input: {deviceId: string}): void;
 }
 export type ModelAuthority = Pick<BackgroundModelAuthorization, 'capture' | 'assertCurrent' | 'run'>;
 export type ModelAdmission = Pick<ModelAuthorizationHost, 'manual' | 'automatic' | 'assertEvidence' | 'evidenceTriggers'>;
 
 /** The returned v2 receipt means recoverable intake, not processing/Material/Memory readiness.
- * Preserve RecordContext binding in the same transaction as the capture and final guard. */
+ * Preserve RecordContext binding in the same transaction as the capture and final C04
+ * domain/fence verification. A consumer callback or consumer-selected issuer is not used. */
 export interface CaptureIntake {
   capture(input: CaptureInput, authority: CommitAuthority): ReturnType<IngressService['capture']>;
   captureSettled(inputs: CaptureInput[], authority: CommitAuthority): ReturnType<IngressService['captureSettled']>;
@@ -81,6 +91,7 @@ export type SourceBindings = Pick<SourcePipelineRuntime, 'options' | 'configure'
 
 export type MaterialRepositoryRead = Pick<MaterialStore, 'get' | 'read' | 'members' | 'input' | 'isCurrentEvidence' | 'contextForEvidence'>;
 export interface MaterialPublication {
+  /** The provider's fixed C04 verifier checks the grant/fence within atomic publication. */
   publish(draft: Parameters<MaterialStore['publish']>[0], options: Parameters<MaterialStore['publish']>[1], authority: CommitAuthority): ReturnType<MaterialStore['publish']>;
 }
 export type FileOriginalRead = Pick<FileRawReader, 'read'>;
@@ -106,6 +117,7 @@ export const centralServices = {
   vault: serviceContract<VaultTransactions>('mote.central.vault-transactions', '1'),
   contentRead: serviceContract<ArchivedContentRead>('mote.central.archived-content-read', '1'),
   requestAuthorization: serviceContract<RequestAuthorization>('mote.central.request-authorization', '1'),
+  commitAuthorization: serviceContract<CommitAuthorization>('mote.central.commit-authorization', '1'),
   modelAuthority: serviceContract<ModelAuthority>('mote.central.model-authority', '1'),
   modelAdmission: serviceContract<ModelAdmission>('mote.central.model-admission', '1'),
   captureIntake: serviceContract<CaptureIntake>('mote.central.capture-intake', '1'),
@@ -151,7 +163,7 @@ export interface CentralMigrationSlice {
 export const centralMigrationSlices = {
   vault: {task:'C02', factory:'vault-platform', replacement:'restart', legacy:['store','archivedFiles','contentStorage','maintenanceWorker'], objects:['Store/DB/locks','ArchivedFileStore','ContentStorageService','MaintenanceWorker/retention'], consumers:['C10','C11','C19','C21','C24']},
   configuration: {task:'C03', factory:'configuration-platform', replacement:'restart', legacy:['configService','runtimeSettings','modelSettings','config'], objects:['ConfigService/validator/domain handlers/watchers','ExecutionSettings','ModelSettingsStore'], consumers:['C05','C17','C18','C21','AGENT']},
-  authorization: {task:'C04', factory:'authorization-platform', replacement:'restart', legacy:['connections','connectionIdentity','credential','assertRequestActive','sourceOwner','modelAuthorization','modelAuthorizationHost','availableModelConnections'], objects:['Connections/LoginHandoffs','BackgroundModelAuthorization','ModelAuthorizationHost/evidence authority','request identities/grant fences'], consumers:['C10','C11','C12','C19','C22','C25','C27','HOST']},
+  authorization: {task:'C04', factory:'authorization-platform', replacement:'restart', legacy:['connections','connectionIdentity','credential','assertRequestActive','sourceOwner','modelAuthorization','modelAuthorizationHost','availableModelConnections'], objects:['Connections/LoginHandoffs','BackgroundModelAuthorization','ModelAuthorizationHost/evidence authority','request identities/grant fences','opaque commit references/fixed issuer verification'], consumers:['C02','C10','C11','C12','C19','C22','C25','C27','HOST']},
   execution: {task:'C05', factory:'execution-platform', replacement:'restart', legacy:['executor','providerAdmission','agentGate','llmGate','interactiveGate','interactiveModelGate'], objects:['ExecutionEngine','ProviderAdmission','four ConcurrencyGate lanes','scoped handler registrations'], consumers:['C09','C17','C19','C22','C24','C25','C27','AGENT']},
   observability: {task:'C06', factory:'observability-platform', replacement:'restart', legacy:['diagnostics','usageLedger','eventLoop','diagnosticSnapshot','softwareUpdate','serverVersion','webVersion'], objects:['ServerDiagnostics/writer','executionObserver','UsageLedger/admittedUsage','eventLoop monitor','update service'], consumers:['C05','C17','C22','C26','C27','HOST','AGENT']},
   control: {task:'C07/C08', factory:'plugin-control', replacement:'hot', legacy:['pluginCenter'], objects:['PluginCenter','WorkerPluginRuntime','durable commands/references','control HTTP/snapshot projection'], consumers:['C21','C23','C24','C25','WEB','HOST']},
@@ -179,7 +191,7 @@ export type CentralSlice = keyof typeof centralMigrationSlices;
  * from installation order. These are migration/consumption edges, not a startup DAG;
  * H05 derives prepare/start ordering from the actual H03 factory descriptors. */
 export const centralServiceOwners = {
-  vault:'vault', contentRead:'vault', requestAuthorization:'authorization',
+  vault:'vault', contentRead:'vault', requestAuthorization:'authorization', commitAuthorization:'authorization',
   modelAuthority:'authorization', modelAdmission:'authorization',
   captureIntake:'capture', sourceIntake:'capture', sources:'capture', sourceBindings:'sourceRuntime',
   captureRead:'materials', captureImageRead:'materials', captureContextRead:'materials',

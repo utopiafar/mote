@@ -7,7 +7,7 @@ import {
 } from '@mote/plugin-api/contracts';
 import {
   centralServices, centralServiceOwners, centralMigrationSlices, centralFeatureMigrations, checkCentralServiceDeclarations,
-  type CaptureIntake, type MaterialPublication, type VaultTransactions, CommitAuthority,
+  type CaptureIntake, type MaterialPublication, type VaultTransactions, type CommitAuthority, type CommitAuthorization,
   type CentralMigrationSlice, type CaptureImageRead, type ContextNavigationRead, type ContextInventoryRead, type ContextTreesRead,
 } from '../src/plugins/central-contracts.js';
 import type {CaptureRead, CaptureContextRead, MemoryRead, MemoryReadSnapshots, MemoryInputSelection} from '../src/evidence-read-ports.js';
@@ -18,6 +18,7 @@ import type {EvidenceReader} from '../src/evidence-reader.js';
 import type {registerEvidenceRoutes} from '../src/evidence-routes.js';
 import type {registerMemoryRoutes} from '../src/memory-routes.js';
 import type {MemoryOwnerPublication} from '../src/memory-publication-contract.js';
+import * as contractExports from '../src/plugins/central-contracts.js';
 
 // These are T1 declaration/type checks. No provider/host or runtime authorization is implemented
 // by C01, and a successful preflight is not evidence of a real startup/HTTP/SQLite T3 journey.
@@ -148,14 +149,20 @@ test('preflight validates a supplied binding rather than accepting a malformed s
 // This protects the real current producer's receipt type, read/write separation and sync commit.
 function checkDomainTypes(vault: VaultTransactions, intake: CaptureIntake, read: CaptureRead, publication: MaterialPublication,
   input: CaptureInput, authority: CommitAuthority, lease: ServiceLease<CaptureIntake>,
-  draft: Parameters<MaterialPublication['publish']>[0], options: Parameters<MaterialPublication['publish']>[1]) {
+  draft: Parameters<MaterialPublication['publish']>[0], options: Parameters<MaterialPublication['publish']>[1], verifier: CommitAuthorization) {
   const received: ReturnType<IngressService['capture']> = intake.capture(input, authority);
   void received;
-  class ProviderAuthority extends CommitAuthority {
+  const issued = verifier.capture();
+  intake.capture(input, issued);
+  // @ts-expect-error the opaque authority has no public constructor
+  new contractExports.CommitAuthority();
+  // @ts-expect-error consumers cannot derive a no-op grant from a public base class
+  class ForgedAuthority extends contractExports.CommitAuthority {
     constructor() { super(); }
-    assertCurrent() { authority.assertCurrent(); }
+    assertCurrent() {}
   }
-  intake.capture(input, new ProviderAuthority());
+  // @ts-expect-error writers must use the fixed C04 verifier, not a handle callback
+  authority.assertCurrent();
   vault.transaction(authority, () => ({id:input.id,duplicate:false}));
   // @ts-expect-error transactions cannot await preparation or remote effects inside SQLite
   vault.transaction(authority, async () => ({id:input.id}));
@@ -174,6 +181,15 @@ function checkDomainTypes(vault: VaultTransactions, intake: CaptureIntake, read:
   vault.transaction(leaseShaped, () => input.id);
   // @ts-expect-error plain callbacks cannot authorize Material publication
   publication.publish(draft, options, leaseShaped);
+  const consumerValidator = () => {};
+  // @ts-expect-error a consumer validator cannot authorize capture
+  intake.capture(input, consumerValidator);
+  // @ts-expect-error a consumer validator cannot authorize a transaction
+  vault.transaction(consumerValidator, () => input.id);
+  // @ts-expect-error a consumer validator cannot authorize Material publication
+  publication.publish(draft, options, consumerValidator);
+  // @ts-expect-error writers do not accept a consumer-selected issuer/verifier as a grant
+  intake.capture(input, verifier);
   // @ts-expect-error the read handle cannot publish captures
   read.capture(input, authority);
   // @ts-expect-error no raw database is exposed to publication consumers
