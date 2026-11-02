@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {startBridge,originalEvidenceReceipt} from '../dist/bridge.js';
 import {pinContextTools,contextToolSnapshot} from '../dist/tool-contributions.js';
 import {createOfficialReadPacks} from '../dist/tools/official-read-packs.js';
+import {parseAnswer} from '../dist/answer-parser.js';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 const id='11111111-1111-4111-8111-111111111111';
@@ -90,4 +91,33 @@ test('the final Host fence rejects a source provider revoked during required out
   const input=pinContextTools({question:'Generated final fence',hostContextToolMode:'all-native'},source),bridge=await startBridge(source,input);t.after(async()=>{try{await bridge.close();}catch(error){if(error.code!=='ERR_SERVER_NOT_RUNNING')throw error;}});
   const session=await hostFixture(bridge,input,async()=>completed(),{afterOutputRelease:()=>lifetime.abort(stopped)});
   await assert.rejects(session.execute(),error=>error===stopped);assert.equal(bridge.records.size,0);
+});
+
+test('the parent verifies the admitted semantic evidence view without granting it an original citation',{timeout:5000},async t=>{
+  const original={id,capturedAt:'2026-11-01T00:00:00Z',appName:'Generated original',ocrText:'Actual original wording',summary:'A different model interpretation'};
+  const bridge=await startBridge({...readSource,evidence:async()=>[original]},{question:'Generated semantic read',skill:'personal-insight',incrementalEvidenceIds:[id],hostContextToolMode:'all-native'});t.after(()=>bridge.close());
+  const signal=new AbortController().signal,overview=await bridge.prepareDelivery('changes',{},signal);overview.confirm();overview.discard();assert.equal(bridge.records.size,0);
+  const semantic=await bridge.prepareDelivery('evidence',{ids:[id],layer:'semantic',length:100},signal);assert.equal(semantic.value.data[0].ocrText,original.summary);assert.equal(semantic.value.data[0].contentLayer,'L2_model_interpretation');semantic.confirm();semantic.discard();assert.equal(bridge.records.size,0);
+  assert.throws(()=>parseAnswer(JSON.stringify({answer:'Generated interpretation',citationIds:[id]}),bridge.records),{reason:'unretrieved_citation'});
+  const text=await bridge.prepareDelivery('evidence',{ids:[id],layer:'ocr',length:100},signal);text.confirm();text.discard();assert.equal(bridge.records.get(id).ocrText,original.ocrText);
+  const another=await bridge.prepareDelivery('evidence',{ids:[id],layer:'semantic',length:100},signal);another.confirm();another.discard();assert.equal(bridge.records.get(id).ocrText,original.ocrText);
+  assert.equal(parseAnswer(JSON.stringify({answer:'Generated original claim',citationIds:[id]}),bridge.records).citations[0].excerpt,original.ocrText);
+});
+
+test('calendar evidence rereads prove the Host notification text view and still reject a changed raw revision',{timeout:5000},async t=>{
+  const original={id,capturedAt:'2026-11-01T00:00:00Z',appName:'Generated notification',ocrText:'',metadata:{observedAt:'2026-11-01T00:00:00Z',notification:{title:'Generated title',text:'Generated calendar notice 😀'}}},expected='Generated title\nGenerated calendar notice 😀';
+  const bridge=await startBridge({...readSource,evidence:async()=>[original]},{question:'Generated calendar extraction',skill:'calendar-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:expected.length}]});t.after(()=>bridge.close());
+  const signal=new AbortController().signal;assert.equal(bridge.seedEvidence[0].ocrText,expected);
+  const page=await bridge.prepareDelivery('evidence',{ids:[id],offset:3,length:12},signal);assert.equal(page.value.data[0].ocrText,expected.slice(3,15));assert.deepEqual(page.value.data[0].textRange,{start:3,end:15,total:expected.length,nextOffset:15});page.confirm();page.discard();
+  assert.equal(parseAnswer(JSON.stringify({answer:'Generated notification claim',citationIds:[id]}),bridge.records).citations[0].excerpt,expected);
+  const accepted=structuredClone(bridge.records.get(id));original.metadata.notification.text='Changed notification';const refused=await fetch(bridge.url+'/evidence',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({ids:[id]})});assert.equal(refused.status,400);const rejection=await refused.json();assert.equal(rejection.toolError.code,'evidence_changed');assert.equal(rejection.toolError.recovery,'stop');await assert.rejects(bridge.failure,{reason:'tool_failure'});assert.deepEqual(bridge.records.get(id),accepted);
+});
+
+test('the actual Host retains displayed Memory source references as lineage without original receipts',{timeout:5000},async t=>{
+  let input={question:'Generated Memory metadata',hostContextToolMode:'all-native'};const entered=deferred(),ack=deferred();
+  const source={...readSource,memories:async()=>({items:[{id:'generated-memory',title:'Generated derived card'}],references:[{id,capturedAt:'2026-11-01T00:00:00Z',characters:40}]})};input=pinContextTools(input,source);const bridge=await startBridge(source,input);t.after(async()=>{try{await bridge.close();}catch(error){if(error.code!=='ERR_SERVER_NOT_RUNNING')throw error;}});
+  const session=await hostFixture(bridge,input,async(host,attempt)=>{await host.tools.deliver(attempt,{callId:'memory-reference',name:'memories',arguments:{id:'generated-memory'}},async payload=>{assert.equal(JSON.parse(payload.text).data.evidence[0].id,id);assert.deepEqual(bridge.evidenceDependencies.ids,[]);assert.equal(bridge.records.size,0);entered.resolve();await ack.promise;});return completed();});
+  const execution=session.execute();await Promise.race([entered.promise,execution.then(()=>{throw Error('Host ended before Memory metadata delivery');})]);ack.resolve();const result=await execution;
+  assert.deepEqual(new Set(result.evidenceDependencies.ids),new Set([id,'generated-memory']));assert.equal(result.evidenceDependencies.complete,true);assert.equal(bridge.records.size,0);assert.deepEqual(result.citations,[]);
+  assert.throws(()=>parseAnswer(JSON.stringify({answer:'Generated uninspected source',citationIds:[id]}),bridge.records),{reason:'unretrieved_citation'});
 });
