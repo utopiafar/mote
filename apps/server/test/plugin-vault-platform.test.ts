@@ -8,13 +8,15 @@ import {Store} from '../src/store.js';
 import {StoreDatabase} from '../src/sqlite-database.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 import {FileStore} from '../src/files.js';
+import {AssetStore} from '../src/assets.js';
 import {MaintenanceWorker} from '../src/maintenance.js';
 import {setImmediate} from 'node:timers/promises';
 import {sha256} from '../src/store.js';
 import {PluginHost} from '@mote/plugin-host';
 import type {PluginScope,ScopeIdentity,ServiceBinding} from '@mote/plugin-api/contracts';
-import {createVaultPlatform,createVaultPlatformAssembly,createVaultPlatformFactory,vaultRepositoryService,vaultPlatformContribution,vaultPlatformDeclaration} from '../src/plugins/vault-platform.js';
+import {createVaultPlatform,createVaultPlatformAssembly,createVaultPlatformFactory,vaultPlatformContribution,vaultPlatformDeclaration} from '../src/plugins/vault-platform.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization} from '../src/plugins/central-contracts.js';
+import * as vaultExports from '../src/plugins/vault-platform.js';
 
 
 const contender = (directory: string) => spawnSync(process.execPath,['--input-type=module','-e',`
@@ -93,7 +95,7 @@ test('scoped real FileStore and MaterialStore retain IDs, revisions, encrypted b
   const config={dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,maxStorageBytes:2_000_000};
   let platform=createVaultPlatform(config,auth.authorization);const owner=consumer();
   t.after(async()=>{owner.close();await platform.close();rmSync(directory,{recursive:true,force:true});});
-  await platform.prepare();await platform.start();let access=platform.acquire(owner.scope);
+  await platform.prepare();await platform.start();let access=platform.repositoriesForAssembly(owner.scope);
   assert.equal('store' in access,false);assert.equal('db' in access.transactions,false);assert.equal('directory' in access.originals,false);
   const bytes=Buffer.from('Generated archived bytes'),original=access.originals.put({name:'generated.txt',bytes},auth.token);
   const portable=access.exportPortable(200_000);assert.equal(portable.files[0].id,original.id);
@@ -112,7 +114,7 @@ test('scoped real FileStore and MaterialStore retain IDs, revisions, encrypted b
   assert.equal(contender(directory).stdout,'acquired');
   const iterator=access.files.bytes(receipt.id)[Symbol.iterator]();assert.deepEqual(iterator.next().value,input);
   const before=access.stats();await platform.close();assert.throws(()=>access.stats(),/unavailable/);assert.throws(()=>iterator.next(),/unavailable/);
-  platform=createVaultPlatform(config,auth.authorization);await platform.prepare();await platform.start();access=platform.acquire(owner.scope);
+  platform=createVaultPlatform(config,auth.authorization);await platform.prepare();await platform.start();access=platform.repositoriesForAssembly(owner.scope);
   assert.deepEqual(access.originals.read(original.id),bytes);assert.deepEqual(Buffer.concat([...access.files.bytes(receipt.id)]),input);
   assert.equal(access.materials.get(first.ref)?.revision,first.revision);assert.equal(access.materials.get(second.id)?.revision,second.revision);
   assert.equal(access.materials.read(second.ref).text,'Generated revised text\n');
@@ -124,9 +126,9 @@ test('scoped real FileStore and MaterialStore retain IDs, revisions, encrypted b
 test('release, scope revocation and quiesce isolate consumers while stop revokes all accesses without deleting data',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-vault-scopes-')),auth=boundary(),platform=createVaultPlatform({dataDir:directory},auth.authorization),a=consumer('a'),b=consumer('b');
   t.after(async()=>{a.close();b.close();await platform.close();rmSync(directory,{recursive:true,force:true});});
-  await platform.prepare();await platform.start();const first=platform.acquire(a.scope),second=platform.acquire(b.scope);
+  await platform.prepare();await platform.start();const first=platform.repositoriesForAssembly(a.scope),second=platform.repositoriesForAssembly(b.scope);
   first.release();first.release();assert.throws(()=>first.stats(),/unavailable/);assert.ok(second.stats());
-  await platform.quiesce('restart');assert.throws(()=>platform.acquire(consumer('late').scope),/unavailable/);assert.ok(second.stats(),'accepted pin remains usable while quiescing');
+  await platform.quiesce('restart');assert.throws(()=>platform.repositoriesForAssembly(consumer('late').scope),/unavailable/);assert.ok(second.stats(),'accepted pin remains usable while quiescing');
   b.close();assert.throws(()=>second.stats());await platform.stop('disabled');await platform.dispose();
   assert.ok(existsSync(join(directory,'mote.sqlite')),'business disable must preserve the vault');assert.equal(contender(directory).stdout,'acquired');
 });
@@ -134,7 +136,7 @@ test('release, scope revocation and quiesce isolate consumers while stop revokes
 test('fixed verifier rejection rolls back the actual Material write and quota failures do not publish an original',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-vault-fences-')),auth=boundary(),platform=createVaultPlatform({dataDir:directory,maxStorageBytes:100_000},auth.authorization),owner=consumer();
   t.after(async()=>{owner.close();await platform.close();rmSync(directory,{recursive:true,force:true});});
-  await platform.prepare();await platform.start();const access=platform.acquire(owner.scope);
+  await platform.prepare();await platform.start();const access=platform.repositoriesForAssembly(owner.scope);
   assert.throws(()=>access.originals.put({name:'too-large.bin',bytes:Buffer.alloc(100_001)},auth.token),{statusCode:507});
   const before=access.stats().logicalBytes;
   assert.throws(()=>access.transactions.transaction(auth.token,()=>{access.materials.publish(draft(),{},auth.token);auth.revoke();}),/fixture grant revoked/);
@@ -149,7 +151,7 @@ test('closing waits for an accepted real FileStore result before closing its dat
   const originalCommit=FileStore.prototype.commit,originalClose=StoreDatabase.prototype.close;
   let databaseClosed=false;
   t.after(async()=>{release();FileStore.prototype.commit=originalCommit;StoreDatabase.prototype.close=originalClose;owner.close();await platform.close();rmSync(directory,{recursive:true,force:true});});
-  await platform.prepare();await platform.start();const access=platform.acquire(owner.scope);
+  await platform.prepare();await platform.start();const access=platform.repositoriesForAssembly(owner.scope);
   access.sources.register({id:'generated-source',name:'Generated source',kind:'local-files',deviceId:'generated-device',platform:'android',retention:'archive'},auth.token);
   const bytes=Buffer.from('generated held receipt');
   const upload=access.files.begin({sourceId:'generated-source',previousRevision:null,item:{externalId:'generated-held',revision:'v1',observedAt:'2026-11-02T00:00:00Z',title:'Generated',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},relativePath:'held.txt',sizeBytes:bytes.length,sha256:sha256(bytes)},auth.token);
@@ -161,6 +163,37 @@ test('closing waits for an accepted real FileStore result before closing its dat
   let closed=false;const closing=platform.close().then(()=>{closed=true;});await setImmediate();
   assert.equal(databaseClosed,false);assert.equal(closed,false);release();
   const saved=await receipt;await closing;assert.ok(saved.id);assert.equal(databaseClosed,true);
+});
+
+for(const ending of ['graceful','scope-revoked','grant-revoked','explicit-stop'] as const) test(`accepted upload at pre-commit: ${ending} preserves its own admission boundary`,async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-vault-accepted-')),auth=boundary(),platform=createVaultPlatform({dataDir:directory},auth.authorization),owner=consumer();
+  let release!:()=>void,entered!:()=>void;
+  const held=new Promise<void>(resolve=>{release=resolve;}),prepared=new Promise<void>(resolve=>{entered=resolve;}),put=AssetStore.prototype.putUpload;
+  t.after(async()=>{release();AssetStore.prototype.putUpload=put;owner.close();await platform.close();rmSync(directory,{recursive:true,force:true});});
+  await platform.prepare();await platform.start();const access=platform.repositoriesForAssembly(owner.scope);
+  access.sources.register({id:'generated-source',name:'Generated source',kind:'local-files',deviceId:'generated-device',platform:'android',retention:'archive'},auth.token);
+  const bytes=Buffer.from('generated accepted bytes');
+  const upload=access.files.begin({sourceId:'generated-source',previousRevision:null,item:{externalId:'generated-accepted',revision:'v1',observedAt:'2026-11-02T00:00:00Z',title:'Generated',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},relativePath:'accepted.txt',sizeBytes:bytes.length,sha256:sha256(bytes)},auth.token);
+  access.files.part(upload.uploadId,0,bytes,auth.token);
+  AssetStore.prototype.putUpload=async function(...args){const result=await put.apply(this,args);entered();await held;return result;};
+  const receipt=access.files.commit(upload.uploadId,auth.token);await prepared;AssetStore.prototype.putUpload=put;
+  if(ending==='scope-revoked')owner.close();if(ending==='grant-revoked')auth.revoke();
+  const closing=ending==='explicit-stop'?platform.stop('revoked'):platform.close();assert.throws(()=>access.files.commit(upload.uploadId,auth.token),/unavailable/);
+  const outcome=receipt.then(value=>({value,error:undefined}),error=>({value:undefined,error}));
+  await setImmediate();release();const result=await outcome;await closing;
+  const recovery=boundary(),recoveryOwner=consumer('recovery'),restarted=createVaultPlatform({dataDir:directory},recovery.authorization);
+  try{
+    await restarted.prepare();await restarted.start();const reopened=restarted.repositoriesForAssembly(recoveryOwner.scope);
+    if(ending==='graceful'){assert.equal(result.error,undefined);assert.ok(result.value);assert.deepEqual(Buffer.concat([...reopened.files.bytes(result.value.id)]),bytes);}
+    else{assert.ok(result.error);const retry=reopened.files.begin({sourceId:'generated-source',previousRevision:null,item:{externalId:'generated-accepted',revision:'v1',observedAt:'2026-11-02T00:00:00Z',title:'Generated',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},relativePath:'accepted.txt',sizeBytes:bytes.length,sha256:sha256(bytes)},recovery.token);assert.equal(retry.ack,null,'revocation must not publish an upload acknowledgement');}
+  }finally{recoveryOwner.close();await restarted.close();}
+});
+
+test('stop during asynchronous prepare prevents late repository assembly and releases the database',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-vault-prepare-stop-')),auth=boundary(),platform=createVaultPlatform({dataDir:directory},auth.authorization);
+  t.after(async()=>{await platform.close();rmSync(directory,{recursive:true,force:true});});
+  const preparing=platform.prepare(),stopping=platform.stop('revoked');await assert.rejects(async()=>{await preparing;},/unavailable/);await stopping;
+  assert.equal(contender(directory).stdout,'acquired');const reopened=new Store(directory);reopened.close();
 });
 
 test('maintenance exits before the owning database closes',async t=>{
@@ -181,7 +214,7 @@ test('repository initialization failure after Store creation releases its resour
   await assert.rejects(async()=>{await platform.prepare();});assert.equal(contender(directory).stdout,'acquired');
   rmSync(join(directory,'files','objects'));
   const restarted=createVaultPlatform({dataDir:directory},auth.authorization);
-  try{await restarted.prepare();await restarted.start();assert.ok(restarted.acquire(consumer().scope).stats());}finally{await restarted.close();}
+  try{await restarted.prepare();await restarted.start();assert.ok(restarted.repositoriesForAssembly(consumer().scope).stats());}finally{await restarted.close();}
 });
 
 test('trusted bootstrap assembly owns newly created storage and borrows injected storage without publishing it',async t=>{
@@ -214,11 +247,27 @@ test('H04 mounts the real restart factory and publishes a read-only content port
   const lease=await host.acquire(centralServices.contentRead,readBinding!);
   const reader=lease.value;assert.deepEqual(Object.keys(reader).sort(),['get','listForCapture','read']);assert.equal('put' in reader,false);
   assert.equal(vaultPlatformContribution.requires[0].id,centralServices.commitAuthorization.id);
+  assert.deepEqual(vaultPlatformContribution.provides.map(service=>service.id),[centralServices.contentRead.id]);
+  assert.equal('vaultRepositoryService' in vaultExports,false);
+  for(const key of ['transaction','acquire','put','publish','files','materials','sources','exportPortable'])assert.equal(key in reader,false,key);
+  await assert.rejects(host.acquire(centralServices.vault,{...readBinding!,service:centralServices.vault}),{code:'dependency_unavailable'});
+  let retainedRead:((id:string)=>unknown)|undefined;
+  const caller=await host.install({identity:{...identity,instanceId:'generated-caller',activationId:'generated-caller-activation'},contributions:[],requires:[readBinding!],factory:async context=>{
+    const access=await context.services.acquire(centralServices.contentRead,readBinding!);retainedRead=access.value.listForCapture;
+    return {prepare(){},start(){},quiesce(){},stop(){},dispose(){}};
+  }});
+  assert.deepEqual(retainedRead!('generated-capture'),[]);await caller.close('revoked');
+  const foreign=consumer('still-active-foreign');
+  try{assert.throws(()=>Reflect.apply(retainedRead!,undefined,['generated-capture',foreign.scope]),{code:'stale_scope'});}
+  finally{foreign.close();}
+  assert.deepEqual(reader.listForCapture('generated-capture'),[],'another live caller is unaffected');
   await handle.close('disabled');assert.throws(()=>lease.assertCurrent());assert.throws(()=>reader.listForCapture('generated-capture'));
   assert.equal(contender(directory).stdout,'acquired');
 });
 
 function checkScopedTypes(access:import('../src/plugins/vault-platform.js').VaultRepositoryAccess,authority:CommitAuthority){
+  // @ts-expect-error generic repository service is deliberately not exported for ordinary consumers
+  vaultExports.vaultRepositoryService;
   // @ts-expect-error scoped repository access never exposes Store.db
   access.db.prepare('SELECT 1');
   // @ts-expect-error transaction callbacks receive no database capability
