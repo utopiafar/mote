@@ -30,6 +30,7 @@ export class PluginViewSession {
   #polls = new Set<{handle: unknown | null; tick: () => void; intervalMs: number}>();
   #pendingWrites = new Set<string>();
   #saveFailure = false;
+  #inflightFlush: Promise<SaveOutcome> | null = null;
 
   constructor(options: {scope?: DraftScope; ownerKey: string; writer: DraftWriter; scheduler?: ViewScheduler}) {
     this.#scope = options.scope ?? 'view';
@@ -58,10 +59,13 @@ export class PluginViewSession {
   /** Poll while visible; suspend clears the interval so no new read fires. */
   poll(execute: (signal: AbortSignal) => Promise<unknown>, apply: (value: unknown) => void, intervalMs: number, onError?: (error: unknown) => void): () => void {
     const entry = {handle: null as unknown, intervalMs, tick: () => {
+      // Gate by the issuing generation and signal: an abort or stale error from
+      // an earlier epoch never reaches this owner's error path.
+      const generation = this.lifetime.generation;
+      const signal = this.lifetime.viewSignal;
       void this.requestRead(execute, apply).catch(error => {
-        // Lifecycle cancellation is expected and quiet; other failures go to
-        // the explicit error path instead of floating as unhandled rejections.
-        if (!this.lifetime.viewSignal.aborted) onError?.(error);
+        if (signal.aborted || !this.lifetime.admits(generation)) return;
+        onError?.(error);
       });
     }};
     const start = () => { if (this.lifetime.state === 'visible' && entry.handle === null) entry.handle = this.#scheduler.schedule(entry.tick, intervalMs); };
@@ -101,13 +105,22 @@ export class PluginViewSession {
    * owners never overwrite the same storage slot. */
   #storageKey(key: string): string { return `${this.#scope}:${this.#ownerKey}:${key}`; }
 
+  /** Flushes are serialized per session: a second suspend/owner-switch joins
+   * the in-flight flush instead of racing out-of-order saves. */
+  async #flushDrafts(): Promise<SaveOutcome> {
+    if (this.#inflightFlush) return this.#inflightFlush;
+    const flush = this.#flushUntilClean();
+    this.#inflightFlush = flush;
+    try { return await flush; } finally { this.#inflightFlush = null; }
+  }
+
   /** Flush dirty drafts through the host writer, repeating until the current
    * owner's entries are clean: an edit racing a pending save is never marked
    * persisted. Any failure is an explicit outcome: the caller must show the
    * failure or block the lossy transition. */
-  async #flushDrafts(): Promise<SaveOutcome> {
+  async #flushUntilClean(): Promise<SaveOutcome> {
     for (;;) {
-      const dirty = [...this.#draftMap()].filter(([, draft]) => draft.dirty);
+      const dirty = [...this.#draftMap()].filter(([, draft]) => draft.dirty && draft.scope !== 'view');
       if (dirty.length === 0) { this.#saveFailure = false; return {ok: true}; }
       for (const [key, draft] of dirty) {
         const outcome = await this.#writer.save(this.#storageKey(key), draft.value);
@@ -118,16 +131,23 @@ export class PluginViewSession {
   }
 
   /** Hydrate a draft persisted under this owner's partition. A staged unsaved
-   * value always wins over the in-flight load. */
+   * value always wins over the in-flight load. View-scoped drafts are session
+   * memory only: they are never persisted and never revive in a new view. */
   async loadDraft(key: string): Promise<unknown | null> {
-    const staged = this.#draftMap().get(key);
+    const owner = this.#ownerKey;
+    const map = this.#draftMap();
+    const staged = map.get(key);
     if (staged?.dirty) return staged.value;
+    if (this.#scope === 'view') return staged?.value ?? null;
     const persisted = await this.#writer.load(this.#storageKey(key));
+    if (this.#ownerKey !== owner) return null;
+    const current = map.get(key);
+    if (current?.dirty) return current.value;
     if (persisted !== null && persisted !== undefined) {
-      if (!staged) this.#draftMap().set(key, {scope: this.#scope, value: persisted, dirty: false});
+      if (!current) map.set(key, {scope: this.#scope, value: persisted, dirty: false});
       return persisted;
     }
-    return staged?.value ?? null;
+    return current?.value ?? null;
   }
 
   /** Suspend ordering: save drafts, release reads, then hide. A failed save

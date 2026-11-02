@@ -24,7 +24,7 @@ const manualScheduler = () => {
     schedule: tick => { const handle = {}; ticks.push({tick, handle}); return handle; },
     cancel: handle => { const i = ticks.findIndex(t => t.handle === handle); if (i >= 0) ticks.splice(i, 1); },
   };
-  return {scheduler, fire: () => { for (const t of [...ticks]) t.tick(); }, pending: () => ticks.length};
+  return {scheduler, fire: () => { for (const t of [...ticks]) t.tick(); }, fireLast: () => ticks.at(-1)?.tick(), pending: () => ticks.length};
 };
 
 test('hidden page stops polling and isolates late responses; resume restores snapshot and draft', async () => {
@@ -84,7 +84,7 @@ test('detail-stack return preserves question, attachments, refs and turn draft; 
 
 test('failed draft save blocks unload and owner switch; old owner never writes new owner draft', async () => {
   const writer = memoryWriter(true);
-  const session = new PluginViewSession({ownerKey: 'owner-a', writer});
+  const session = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer});
   session.lifetime.show();
   session.saveDraft('note-draft', {text: 'must not lose'});
   const outcome = await session.suspend();
@@ -158,7 +158,7 @@ test('edits racing a pending draft save are flushed before suspend resolves', as
     save: async (_key, value) => { await gate.promise; saved.push(value); return {ok: true as const}; },
     load: async () => null, clear: async () => {},
   };
-  const session = new PluginViewSession({ownerKey: 'owner-a', writer});
+  const session = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer});
   session.lifetime.show();
   session.saveDraft('note', {text: 'first'});
   const suspending = session.suspend();
@@ -170,7 +170,7 @@ test('edits racing a pending draft save are flushed before suspend resolves', as
 });
 
 test('poll cancellations are quiet while other failures reach the error path', async () => {
-  const {scheduler, fire} = manualScheduler();
+  const {scheduler, fire, fireLast} = manualScheduler();
   const errors: unknown[] = [];
   const session = new PluginViewSession({ownerKey: 'owner-a', writer: memoryWriter(), scheduler});
   session.lifetime.show();
@@ -183,9 +183,82 @@ test('poll cancellations are quiet while other failures reach the error path', a
   // Abort-driven rejection on suspend does not reach the error path.
   const aborted = deferred<unknown>();
   session.poll(() => aborted.promise, () => {}, 10, error => errors.push(error));
-  fire();
+  fireLast();
   await session.suspend();
   aborted.reject(new DOMException('cancelled', 'AbortError'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 1);
+});
+
+test('view-scoped drafts die with the session and never revive in a new view', async () => {
+  const writer = memoryWriter();
+  const first = new PluginViewSession({ownerKey: 'owner-a', writer});
+  first.lifetime.show();
+  first.saveDraft('note', {text: 'expired'});
+  assert.deepEqual(await first.suspend(), {ok: true});
+  assert.equal(writer.saved.size, 0, 'view drafts are not persisted');
+  first.lifetime.dispose();
+  const second = new PluginViewSession({ownerKey: 'owner-a', writer});
+  second.lifetime.show();
+  assert.equal(await second.loadDraft('note'), null, 'a reopened view starts with an empty draft slot');
+});
+
+test('hydration discards old-owner results and lets intervening edits win', async () => {
+  const gate = deferred<unknown>();
+  const writer: DraftWriter = {
+    save: async () => ({ok: true as const}),
+    load: async () => gate.promise,
+    clear: async () => {},
+  };
+  const session = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer});
+  session.lifetime.show();
+  const loading = session.loadDraft('note');
+  assert.deepEqual(await session.switchOwner('owner-b'), {ok: true});
+  gate.resolve({text: 'stale-A'});
+  assert.equal(await loading, null, 'an old-owner load is discarded, never installed under B');
+  assert.equal(session.draft('note'), null);
+  // An edit staged while the load is pending wins over the older stored value.
+  const gate2 = deferred<unknown>();
+  const session2 = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer: {...writer, load: async () => gate2.promise}});
+  session2.lifetime.show();
+  const loading2 = session2.loadDraft('note');
+  session2.saveDraft('note', {text: 'user edit'});
+  gate2.resolve({text: 'older stored'});
+  assert.deepEqual(await loading2, {text: 'user edit'});
+  assert.deepEqual(session2.draft('note'), {text: 'user edit'});
+});
+
+test('overlapping suspends share one serialized flush with ordered saves', async () => {
+  const gate = deferred<void>();
+  const saved: Array<unknown> = [];
+  const writer: DraftWriter = {
+    save: async (_k, v) => { await gate.promise; saved.push(v); return {ok: true as const}; },
+    load: async () => null, clear: async () => {},
+  };
+  const session = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer});
+  session.lifetime.show();
+  session.saveDraft('note', {text: 'v1'});
+  const s1 = session.suspend();
+  await Promise.resolve();
+  session.saveDraft('note', {text: 'v2'});
+  const s2 = session.suspend();
+  gate.resolve();
+  assert.deepEqual(await s1, {ok: true});
+  assert.deepEqual(await s2, {ok: true});
+  assert.deepEqual(saved.at(-1), {text: 'v2'}, 'an older pending save cannot overwrite the newer draft');
+});
+
+test('poll errors from an obsolete generation never reach the error path', async () => {
+  const {scheduler, fire} = manualScheduler();
+  const errors: unknown[] = [];
+  const session = new PluginViewSession({ownerKey: 'owner-a', writer: memoryWriter(), scheduler});
+  session.lifetime.show();
+  const pending = deferred<unknown>();
+  session.poll(() => pending.promise, () => {}, 10, error => errors.push(error));
+  fire();
+  await session.suspend();
+  session.resume();
+  pending.reject(new Error('stale generation failure'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(errors.length, 0, 'rejection bound to an older generation is suppressed');
 });
