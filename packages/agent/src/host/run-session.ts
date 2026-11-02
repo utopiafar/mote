@@ -212,7 +212,7 @@ class ManagedHostRunSession implements HostRunSession {
     try {
       this.assertCurrent();
       if (!isDeepStrictEqual(this.dependencies.profile.binding, this.dependencies.runtime.binding) || !isDeepStrictEqual(this.dependencies.output.binding.service, hostOutputService)) throw new RuntimeContractError();
-      if (!this.dependencies.input.question?.trim()) throw new AgentInputError();
+      if (typeof this.dependencies.input.question !== 'string' || !this.dependencies.input.question.trim()) throw new AgentInputError();
       this.runtimeHandle = await this.dependencies.runtime.value.prepare(this.dependencies.profile, this.dependencies.model, this.port);
       this.assertCurrent(); this.phase = 'idle';
     } catch (error) {
@@ -258,6 +258,7 @@ class ManagedHostRunSession implements HostRunSession {
       : cancelledBeforeCleanup ? {kind: 'cancelled' as const, cause: this.cancellation?.kind ?? 'cancelled' as const}
       : {kind: 'failed' as const, failure: {code: 'internal' as const}};
     if (this.lastAttempt) this.observe({identity: this.dependencies.identity, attemptId: this.lastAttempt.id, event: {type: 'run.terminal', terminal}});
+    else if (terminal.kind === 'failed' || terminal.kind === 'cancelled') this.observe({identity: this.dependencies.identity, attemptId: null, event: {type: 'run.terminal', terminal}});
     if (primary) throw failure;
     return result!;
   }

@@ -1,12 +1,18 @@
 import {parseAnswer} from '../answer-parser.js';
 import {restoreMemoryCoverageKeys} from '../memory-context.js';
-import {AgentResponseError, validateHostOutput, type AgentAnswer} from '../types.js';
+import {AgentResponseError, reportTrace, validateHostOutput, type AgentAnswer} from '../types.js';
 import type {HostEvidenceSnapshot, HostOutputDecision, HostOutputInput, HostOutputProvider} from './run-contracts.js';
 import type {QueryInput} from '../query-contracts.js';
 import {copyEvidencePresentation} from '../evidence-ledger.js';
 
 export function hostOutputPolicy(input: QueryInput): HostOutputInput['policy'] {
-  return {responseMode: input.responseMode, skill: input.skill, taskContext: input.taskContext, validateOutput: input.validateOutput};
+  return {responseMode: input.responseMode, skill: input.skill, taskContext: input.taskContext,
+    ...(input.validateOutput ? {validateOutput: async (answer: AgentAnswer) => {
+      const issue = await input.validateOutput!(answer);
+      if (issue) reportTrace(input, {type: 'validation.host_rejected', runId: answer.runId, stage: 'validating', status: 'rejected', payload: {code: issue.code, feedback: issue.feedback}});
+      return issue;
+    }} : {}),
+  };
 }
 
 /** Copy the Host ledger at evaluation time; neither model JSON nor validators own it. */

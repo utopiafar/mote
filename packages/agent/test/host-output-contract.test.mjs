@@ -154,6 +154,16 @@ test('Memory coverage identities are restored before the real Host domain valida
   const result = await (await f.create()).execute(); assert.equal(validations, 1); assert.equal(JSON.parse(result.answer).coverage[0].key, key);
 });
 
+test('pure output policy preserves trusted rejection observations without passing a control channel', async () => {
+  const events = []; let checks = 0;
+  const f = fixture({input: {onTrace: event => events.push(event), hostControlChannel: {execute() { throw Error('not an output port'); }}, validateOutput: () => ++checks === 1 ? {code: 'generated_coverage', feedback: 'Generated correction'} : undefined}});
+  const original = f.deps.output.value;
+  f.deps.output.value = {evaluate(input) { assert.equal('hostControlChannel' in input.policy, false); assert.equal('onTrace' in input.policy, false); return original.evaluate(input); }};
+  await (await f.create()).execute();
+  const rejected = events.filter(event => event.type === 'validation.host_rejected');
+  assert.equal(rejected.length, 1); assert.deepEqual(rejected[0].payload, {code: 'generated_coverage', feedback: 'Generated correction'});
+});
+
 test('all corrections share one active budget while admission queue time remains excluded', async () => {
   let now = 0, corrections = 0;
   const f = fixture({activeBudget: new ActiveExecutionBudget(20, () => now),
