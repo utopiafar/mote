@@ -42,17 +42,21 @@ export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureIn
   const connectorCapabilities: FeatureCapability[] = parts.connectors.map(c => ({
     id: 'connector:' + c.id, featureId: 'mote.connector.' + c.id, version: c.version, surface: 'ingress', state: c.active ? 'active' : 'unavailable',
   }));
-  const hostCapabilities: FeatureCapability[] = [];
+  const hostCapabilities = new Map<string, FeatureCapability>();
   const hostFeatures: FeatureManifest[] = [];
   for (const descriptor of parts.host?.descriptors ?? []) {
     const contribution = parts.host?.snapshot.contributions.find(value => sameContribution(value.identity, descriptor));
     const availability = contribution?.availability;
     const active = availability?.state === 'active';
-    hostCapabilities.push({
+    const capability: FeatureCapability = {
       id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface, featureId: descriptor.featureId,
       state: active ? 'active' : 'unavailable',
       ...(active ? {} : {reason: availability ? availability.reason : 'dependency_unavailable'}),
-    });
+    };
+    const key = descriptor.featureId + '\0' + descriptor.contributionId;
+    const existing = hostCapabilities.get(key);
+    // Duplicate consumer keys never silently overwrite an unavailable scope.
+    if (!existing || (existing.state === 'active' && capability.state === 'unavailable')) hostCapabilities.set(key, capability);
     hostFeatures.push({id: descriptor.featureId, version: descriptor.version, components: [{id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface}]});
   }
   const capabilities = [
@@ -62,14 +66,19 @@ export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureIn
     ...parts.pipelines,
     ...parts.processing,
     ...parts.workflows,
-    ...hostCapabilities,
+    ...hostCapabilities.values(),
   ];
-  const features: FeatureManifest[] = [...new Map([
+  const featureMap = new Map<string, FeatureManifest>();
+  for (const feature of [
     ...parts.server.features,
     ...parts.agent.features,
     ...parts.connectors.map(c => ({id: 'mote.connector.' + c.id, version: c.version, components: []})),
     ...hostFeatures,
-  ].map(f => [f.id, f])).values()].map(f => ({
+  ]) {
+    const existing = featureMap.get(feature.id);
+    featureMap.set(feature.id, existing ? {...existing, components: [...existing.components, ...feature.components]} : feature);
+  }
+  const features: FeatureManifest[] = [...featureMap.values()].map(f => ({
     ...f,
     components: capabilities.filter(c => c.featureId === f.id).map(({featureId: _, state: _state, reason: _reason, ...descriptor}) => descriptor),
   }));

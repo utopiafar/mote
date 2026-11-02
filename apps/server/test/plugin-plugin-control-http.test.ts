@@ -156,28 +156,32 @@ test('common host snapshot drives inventory availability and digest', async t =>
     host: host.identity, packageId: 'fixture.package', installationId, instanceId: 'fixture-instance', activationId: randomUUID(),
   });
   const install = (identity: ScopeIdentity) => host.install({
-    identity, contributions: [{id: 'fixture.contribution', apiVersion: '1'}],
+    identity, contributions: [{id: 'fixture.contribution', apiVersion: '1'}, {id: 'fixture.contribution.two', apiVersion: '1'}],
     factory: () => ({prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}}),
   });
   const oldIdentity = scope('old-install'), newIdentity = scope('new-install');
   const oldHandle = await install(oldIdentity), newHandle = await install(newIdentity);
   t.after(async () => { await newHandle.close('shutdown'); await oldHandle.close('shutdown'); await host.close(); });
-  const descriptor = (identity: ScopeIdentity): HostContributionDescriptor => ({
-    scope: identity, contributionId: 'fixture.contribution', featureId: 'fixture.feature', version: '1', surface: 'data',
+  const descriptor = (identity: ScopeIdentity, contributionId = 'fixture.contribution'): HostContributionDescriptor => ({
+    scope: identity, contributionId, featureId: 'fixture.feature', version: '1', surface: 'data',
   });
+  const descriptors = (identity: ScopeIdentity) => [descriptor(identity), descriptor(identity, 'fixture.contribution.two')];
   const base = {
     server: {schemaVersion: 1 as const, revision: 0, features: [], capabilities: []},
     agent: {schemaVersion: 1 as const, revision: 0, features: [], capabilities: []},
     connectors: [], pipelines: [], processing: [], workflows: [],
   };
-  const active = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: [descriptor(oldIdentity)]}});
-  assert.equal(active.capabilities.find(c => c.id === 'fixture.contribution')?.state, 'active');
+  const active = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(oldIdentity)}});
+  assert.deepEqual(active.capabilities.filter(c => c.featureId === 'fixture.feature').map(c => c.state), ['active', 'active']);
+  assert.deepEqual(active.features.find(f => f.id === 'fixture.feature')?.components.map(c => c.id).sort(), ['fixture.contribution', 'fixture.contribution.two']);
   await newHandle.quiesce('upgrade');
-  const overlapping = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: [descriptor(newIdentity)]}});
-  assert.equal(overlapping.capabilities.find(c => c.id === 'fixture.contribution' && c.featureId === 'fixture.feature')?.state, 'unavailable', 'the quiesced new scope must not inherit the old active scope');
-  assert.equal(projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: [descriptor(oldIdentity)]}}).capabilities.find(c => c.id === 'fixture.contribution')?.state, 'active');
+  const overlapping = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(newIdentity)}});
+  assert.deepEqual(overlapping.capabilities.filter(c => c.featureId === 'fixture.feature').map(c => c.state), ['unavailable', 'unavailable'], 'the quiesced new scope must not inherit the old active scope');
+  assert.equal(projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(oldIdentity)}}).capabilities.find(c => c.id === 'fixture.contribution')?.state, 'active');
   assert.notEqual(overlapping.revision, active.revision, 'availability changes the content digest');
+  await oldHandle.close('shutdown');
+  assert.equal(projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(oldIdentity)}}).capabilities.find(c => c.id === 'fixture.contribution')?.state, 'unavailable', 'an old installation must not bind the new installation');
   await newHandle.close('revoked');
-  const revoked = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: [descriptor(newIdentity)]}});
-  assert.equal(revoked.capabilities.find(c => c.id === 'fixture.contribution')?.state, 'unavailable');
+  const revoked = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(newIdentity)}});
+  assert.deepEqual(revoked.capabilities.filter(c => c.featureId === 'fixture.feature').map(c => c.state), ['unavailable', 'unavailable']);
 });
