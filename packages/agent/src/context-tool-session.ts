@@ -2,7 +2,8 @@ import {attributionMetadata,attributionMetadataResponse} from './tools/result-me
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
-import {pinContextTools,registeredContextToolDefinitions,NATIVE_CONTEXT_TOOLS} from './tool-contributions.js';
+import {pinContextTools,contextToolSnapshot,releaseContextTools} from './tool-contributions.js';
+import type {HostSessionPort,HostReadOperation} from './tools/host-session.js';
 import {validateCapabilityArguments} from './capability-schema.js';
 import {rememberEvidence,evidenceLayers,projectEvidencePresentation,copyEvidencePresentation,snapshotEvidenceLedger,restoreEvidenceLedger} from './evidence-ledger.js';
 import {AgentYieldError,hostControlDefinitions} from './host-controls.js';
@@ -151,30 +152,6 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
 /** Host adapters may create receipts only from a freshly authorized full original. */
 export function originalEvidenceReceipt(record:ContextRecord,offset=0,length=600,timeZone='UTC'){return project(record,offset,length,timeZone);}
 
-/** Health reports are not archive coverage. Keep their timestamps out of the record namespace. */
-function projectDevice(value: unknown, timeZone = 'UTC'): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const device = value as Record<string, unknown>;
-  const result: Record<string, unknown> = {};
-  for (const key of ['deviceId', 'deviceName', 'platform']) {
-    if (typeof device[key] === 'string') result[key] = device[key].slice(0, 300);
-  }
-  const healthReport: Record<string, unknown> = {};
-  for (const [key, label] of [['status', 'statusAsReported'], ['lastSeenAt', 'receivedAt'], ['lastCaptureAt', 'lastCaptureAtAsReported']]) {
-    if (typeof device[key] === 'string') {
-      healthReport[label] = device[key].slice(0, 100);
-      if (key !== 'status' && Number.isFinite(Date.parse(device[key])))
-        healthReport['display' + label[0].toUpperCase() + label.slice(1)] = displayTime(device[key], timeZone);
-    }
-  }
-  if (typeof device.queueDepth === 'number' && Number.isSafeInteger(device.queueDepth) && device.queueDepth >= 0)
-    healthReport.queueDepthAsReported = device.queueDepth;
-  if (Object.keys(healthReport).length) result.healthReport = healthReport;
-  const metadata = recordMetadataSchema.safeParse(device.metadata);
-  if (metadata.success) result.metadata = {...metadata.data, displayObservedAt: displayTime(metadata.data.observedAt, timeZone)};
-  return result;
-}
-
 const pinnedSourceContextRef=/^source-context:([A-Za-z0-9_-]+)@([1-9][0-9]*)#([a-f0-9]{64})$/;
 const pinnedMaterialRef=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/;
 /** Reader data is untrusted too: explicitly select catalog metadata, never body/member fields. */
@@ -230,10 +207,10 @@ export async function createContextToolSession(
   type State=typeof canonical;
   type CallbackName='onEvidence'|'onSourceContextDependencies'|'onTrace'|'onProgress'|'onMemoryBodies';
   interface Stage {
-    base:State;state:State;evidence:ContextRecord[];
+    base:State;state:State;evidence:ContextRecord[];signal:AbortSignal;
     callbacks:{name:CallbackName;args:unknown[]}[];delivered:(()=>void)[];
     status:'reading'|'pending'|'committed'|'discarded';fatal?:Error;cancelled?:unknown;
-    reservations:Set<ImageDelivery>;discard():void;
+    reservations:Set<ImageDelivery>;checks:Set<()=>void>;discard():void;
   }
   // Pending attachment reservations are resources, not eligible evidence. ACKs
   // and their timers share one table; each stage disposes only its own entries.
@@ -255,8 +232,9 @@ export async function createContextToolSession(
       if(typeof original==='function')return (original as (...args:unknown[])=>unknown)(...args);
     };
   }
-  const contributions=new Map((bounds.toolContributions??[]).map(tool=>[tool.name,tool]));
-  const specialCapabilities=new Map(registeredContextToolDefinitions(bounds).filter(([name])=>dispatchTools(bounds).includes(name)&&!NATIVE_CONTEXT_TOOLS.has(name)&&!name.startsWith('delegation_')).map(([name,description,fields])=>[name,{name,version:contributions.get(name)?.version??'1',description,fields}]));
+  const pinnedTools=contextToolSnapshot(bounds);
+  const contributions=new Map(pinnedTools.entries.map(tool=>[tool.name,tool]));
+  const specialCapabilities=new Map(pinnedTools.entries.filter(entry=>dispatchTools(bounds).includes(entry.name)&&entry.exposure==='catalog').map(entry=>[entry.name,entry]));
 
   const controls=new Set(hostControlDefinitions(bounds.hostControlChannel).map(([name])=>name));
 
@@ -464,19 +442,14 @@ export async function createContextToolSession(
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:delivered.length});
         res.end(serialized,()=>{if(result.yield)rejectFailure(new AgentYieldError());});return;
       }
-      if (!TOOL_NAMES.includes(tool)&&!contributions.has(tool)) {
+      if (!contributions.has(tool)) {
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
       if(!dispatchTools(bounds).includes(tool)||!dispatchedViaCatalog&&!taskTools(bounds).includes(tool))throw hostError('Tool is unavailable for this task; use the discovered capability gateway');
-      if(tool==='progress_update'){
-        if(typeof args.message!=='string'||!args.message.trim()||args.message.length>600)throw hostError('Progress message must contain 1–600 characters');
-        reportProgress(bounds,{stage:'model',message:args.message.trim()});
-        res.end('{"ok":true}');return;
-      }
-      if (!contributions.has(tool)&&!['timeline','search_context','activity','media_activity','segments','context_index'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
+      if (TOOL_NAMES.includes(tool)&&!['timeline','search_context','activity','media_activity','segments','context_index'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
         throw hostError('App/source/collection filters require a context or activity tool');
-      if (!contributions.has(tool)&&tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
+      if (TOOL_NAMES.includes(tool)&&tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
         throw hostError('Media state filters require media_activity');
       // Normalize typed references before discovery/range checks, never after them.
       // Original-only tools use a declared UUID resource identity or an explicit capture ref.
@@ -490,27 +463,93 @@ export async function createContextToolSession(
       };
       if(tool==='evidence'&&Array.isArray(args.ids))args={...args,ids:args.ids.map(captureId)};
       if(['read_image','read_file_evidence','file_chunks','source_history','context_evidence'].includes(tool)||tool==='attribution_context'&&args.id!==undefined)args={...args,id:captureId(args.id)};
-      if(!dispatchedViaCatalog)countToolCall();
+      const progressOnly=contributions.get(tool)!.requires.length>0&&contributions.get(tool)!.requires.every(permission=>permission==='progress');
+      if(!dispatchedViaCatalog&&!progressOnly)countToolCall();
       reportProgress(bounds,{stage:'tool',tool,phase:'started'});
       if(bounds.skill==='working-memory')throw hostError('Working memory uses only the supplied dialogue; retrieval is disabled');
-      const contribution=contributions.get(tool);
-      if(contribution){
-        const scope=Object.freeze(range(args,bounds)),parsed=Object.freeze(contribution.parse(args));
-        if(!await contribution.authorize(scope,parsed))throw hostError('Context capability is unavailable or outside the authorized scope');
-        bounds.signal?.throwIfAborted();
-        const value=await contribution.read(parsed,{scope,signal:bounds.signal});
-        if(!await contribution.authorize(scope,parsed))throw hostError('Context capability was revoked');
-        const serialized=JSON.stringify({source:'untrusted_personal_context',version:contribution.version,data:value??null,evidencePolicy:'Metadata only; no original citation grants.',toolUsage:toolUsage()});
-        state().deliveredCharacters+=serialized.length;state().completeLineage=false;
-        state().trace.push({tool,arguments:{...parsed,...scope},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
+      const pin=contributions.get(tool)!;
+      const assertTool=()=>{bounds.signal?.throwIfAborted();try{pinnedTools.assertActive(pin);}catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}bounds.assertContextAuthority?.();if(closing)throw new ContextToolError('bridge_closing','The tool session is closing','stop');};
+      assertTool();execution.getStore()?.checks.add(assertTool);
+      validateCapabilityArguments(pin.fields as Record<string,Record<string,unknown>>,args);
+      const ordinaryReads=new Set<HostReadOperation>(['catalog','search','timeline','sources','sourceItems','sourceHistory','readFileEvidence','fileChunks','activity','mediaActivity','devices','segments']);
+      if(pin.requires.every(permission=>permission==='actionCatalog'||permission==='progress'||ordinaryReads.has(permission as HostReadOperation))){
+        const scope=Object.freeze(range(args,bounds)),produced:{operation:HostReadOperation;value:unknown}[]=[];
+        const signals=[closeSignal.signal,execution.getStore()?.signal,bounds.signal,...(bounds.toolContributions??[]).filter(pack=>pack.descriptors.some(descriptor=>descriptor.name===pin.name)).map(pack=>pack.lifecycle.signal)].filter((signal):signal is AbortSignal=>Boolean(signal));
+        const signal=AbortSignal.any(signals);
+        const assertLive=()=>{assertTool();signal.throwIfAborted();};
+        const wait=async<T>(task:Promise<T>):Promise<T>=>{
+          let aborted!:()=>void;
+          const cancelled=new Promise<never>((_,reject)=>{aborted=()=>{try{assertLive();}catch(error){reject(error);}};signal.addEventListener('abort',aborted,{once:true});if(signal.aborted)aborted();});
+          try{const value=await Promise.race([task,cancelled]);assertLive();return value;}finally{signal.removeEventListener('abort',aborted);}
+        };
+        const port:HostSessionPort={tool:pin,scope,signal,assertCurrent:assertLive,
+          async read(operation,...parameters){
+            assertLive();if(restricted)throw hostError('This extraction session uses only the supplied evidence ranges');
+            if(!ordinaryReads.has(operation))throw hostError('This read operation is unavailable through this tool');
+            const requested=(parameters[0]??{}) as Record<string,unknown>;
+            const normalized=range(requested,{...bounds,after:scope.after,before:scope.before,deviceId:scope.deviceId});
+            const actual:Record<string,unknown>={...requested,...normalized,limit:Math.min(normalized.limit??scope.limit??8,scope.limit??normalized.limit??8),
+              ...(scope.source?{source:scope.source}:{}),...(scope.appId?{appId:scope.appId}:{}),...(scope.collection?{collection:scope.collection}:{})};
+            if(['sourceHistory','readFileEvidence','fileChunks'].includes(operation)&&
+              (typeof requested.id!=='string'||!state().records.has(requested.id)))throw hostError('Discover the original before requesting this read');
+            if(operation==='search'&&requested.query!==undefined&&(typeof requested.query!=='string'||requested.query.length>2000))throw hostError('query must be at most 2000 characters');
+            if(operation==='mediaActivity'&&actual.source!==undefined&&actual.source!=='media')throw hostError('media_activity requires the media source');
+            if(operation==='readFileEvidence'&&(!Number.isSafeInteger(actual.offset??0)||Number(actual.offset??0)<0||Number(actual.offset??0)>10000000||!Number.isSafeInteger(actual.length??8000)||Number(actual.length??8000)<1||Number(actual.length??8000)>16000))throw hostError('Invalid text range');
+            if(operation==='fileChunks'&&(!Number.isSafeInteger(actual.offset??0)||Number(actual.offset??0)<0))throw hostError('Invalid chunk offset');
+            const method=reader[operation] as ((...args:unknown[])=>Promise<unknown>)|undefined;
+            if(!method)throw hostError('The requested read operation is unavailable');
+            const value=await wait(Promise.resolve(method.apply(reader,operation==='devices'?[]:[actual])));
+            produced.push({operation,value});return value as never;
+          },
+          async actionCatalog(parameters){assertLive();if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');return wait(bounds.actionCatalog({...parameters,...range({...parameters},bounds),limit:parameters.limit}));},
+          progress(message){assertLive();if(typeof message!=='string'||!message.trim()||message.length>600)throw hostError('Progress message must contain 1–600 characters');reportProgress(bounds,{stage:'model',message:message.trim()});},
+        };
+        let result:unknown;try{result=await pinnedTools.resolve(pin).execute(args,port);}catch(error){assertLive();throw error;}assertLive();
+        if(progressOnly){res.end(JSON.stringify(result));return;}
+        const body=result&&typeof result==='object'&&!Array.isArray(result)?result as Record<string,unknown>:{data:result};
+        if(body.image!==undefined||body.imageDelivery!==undefined)throw hostError('Image delivery requires an actual Host image read');
+        const proofs:ContextRecord[]=[];
+        for(const {operation,value}of produced){
+          if(['search','sourceHistory','fileChunks'].includes(operation)&&Array.isArray(value))proofs.push(...value);
+          else if(['timeline','sourceItems'].includes(operation)&&value&&typeof value==='object'&&Array.isArray((value as {items?:unknown}).items))proofs.push(...(value as {items:ContextRecord[]}).items);
+          else if(operation==='readFileEvidence'&&value&&typeof value==='object'&&(value as {record?:ContextRecord}).record)proofs.push((value as {record:ContextRecord}).record);
+        }
+        const delivered:ContextRecord[]=[];
+        const prove=(candidate:unknown):unknown=>{
+          if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return candidate;
+          const item=candidate as ContextRecord;
+          if(typeof item.id!=='string'||typeof item.ocrText!=='string')return candidate;
+          const original=proofs.find(record=>record.id===item.id);if(!original)return candidate;
+          const selected=item.textRange as {start?:unknown;end?:unknown}|undefined;
+          const start=Number(selected?.start??0),end=Number(selected?.end??item.ocrText.length);
+          if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>original.ocrText.length||splitsPair(original.ocrText,start)||splitsPair(original.ocrText,end))throw hostError('Tool result exceeds the actual original read');
+          const record=project(original,start,end-start,bounds.timeZone);
+          if(record.ocrText!==item.ocrText||record.evidenceFingerprint!==item.evidenceFingerprint)throw hostError('Tool result does not match the actual original read');
+          delivered.push(record);return record;
+        };
+        let data=body.data;
+        if(Array.isArray(data))data=data.map(prove);
+        else if(data&&typeof data==='object'&&(data as {record?:unknown}).record)data={...data,record:prove((data as {record:unknown}).record)};
+        const {disclosureDependencies:_receipt,sourceContextDependencies:_pins,toolUsage:_usage,hostSourceSemantics:_semantics,...publicBody}=body;
+        const serialized=JSON.stringify(attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}));
+        assertLive();
+        for(const {operation,value}of produced){
+          rememberSourceContexts(value);
+          if(['catalog','sources','activity','mediaActivity','devices'].includes(operation)){
+            const raw=value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
+            rememberDisclosureDependencies(raw.disclosureDependencies);
+            if(raw.sourceContextDependencies!==undefined){const pins=sourceContextDeclarationSchema.array().safeParse(raw.sourceContextDependencies);if(pins.success)for(const pin of pins.data)rememberSourcePin(pin);else state().completeLineage=false;}
+          }
+          if(operation==='segments'&&value&&typeof value==='object')for(const item of (value as {items?:{id?:string;members?:string[];metadata?:{citations?:string[]}}[]}).items??[]){
+            if(item.id)state().disclosedIds.add(item.id);for(const id of [...(item.members??[]),...(item.metadata?.citations??[])])state().discovered.add(id);
+          }
+        }
+        for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);}
+        if(!produced.length&&pin.requires.some(permission=>permission!=='progress'))state().completeLineage=false;
+        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:{...args,...scope},count:Array.isArray(data)?data.length:data===undefined?0:1});
+        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:state().trace.at(-1)!.count});res.end(serialized);return;
       }
-      if(tool==='action_catalog'){
-        if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');
-        if(Object.keys(args).some(key=>!['query','id','cursor','limit'].includes(key))||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>200)||args.id!==undefined&&(typeof args.id!=='string'||!/^[0-9a-f-]{36}$/i.test(args.id))||args.cursor!==undefined&&(typeof args.cursor!=='string'||args.cursor.length>4096)||args.limit!==undefined&&(!Number.isInteger(args.limit)||Number(args.limit)<1||Number(args.limit)>20))throw hostError('Invalid action catalog arguments');
-        const scope=range({},bounds),effective={...scope,...args,limit:Number(args.limit??8)};
-        const value=await bounds.actionCatalog(effective),serialized=JSON.stringify({data:value,evidencePolicy:'Untrusted prior proposals; sameAs identifiers only, not original citation grants.',toolUsage:toolUsage()});
-        state().deliveredCharacters+=serialized.length;state().trace.push({tool,arguments:args,count:value.items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:value.items.length});res.end(serialized);return;
-      }
+      if(!TOOL_NAMES.includes(tool))throw hostError('The registered read operation is unavailable');
       if(tool==='material_catalog'){
         if(Object.keys(args).some(key=>!['after','before','deviceId','limit','cursor','sourceId','kind','query'].includes(key)))throw hostError('Invalid material catalog filter');
         for(const key of ['sourceId','kind','query'])if(args[key]!==undefined&&(typeof args[key]!=='string'||!args[key]||String(args[key]).length>128))throw hostError(`Invalid ${key}`);
@@ -752,53 +791,7 @@ export async function createContextToolSession(
       const derivedIds:string[]=[];
       let memoryEvidence:ContextRecord[]=[];
       let pagination: { nextCursor: string | null; totalCount?: number } | undefined;
-      if (tool === "devices") {
-        value = await reader.devices();
-        let observedAt:string|undefined;
-        if(value&&typeof value==='object'&&!Array.isArray(value)){
-          const page=value as Record<string,unknown>;
-          if(!Array.isArray(page.items))throw hostError('Device reader returned invalid metadata');
-          disclosureDependencies=page.disclosureDependencies;disclosureSourceContextDependencies=page.sourceContextDependencies;
-          if(typeof page.observedAt==='string'&&Number.isFinite(Date.parse(page.observedAt)))observedAt=page.observedAt;else state().completeLineage=false;
-          value=page.items;
-        }
-        if (bounds.deviceId && Array.isArray(value)) value = value.filter(device => device.deviceId === bounds.deviceId);
-        if (Array.isArray(value)) value = value.map(device => ({...projectDevice(device,bounds.timeZone),...(observedAt?{directoryObservedAt:observedAt,displayDirectoryObservedAt:displayTime(observedAt,bounds.timeZone)}:{})}));
-      }
-      else if(tool==='read_file_evidence'){
-        if(typeof args.id!=='string'||!state().records.has(args.id))throw hostError('Discover the file before requesting evidence');
-        const offset=args.offset??0,length=args.length??8000;if(!Number.isSafeInteger(offset)||Number(offset)<0||Number(offset)>10000000||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>16000)throw hostError('Invalid text range');
-        const result=await reader.readFileEvidence?.({...range({},bounds),id:args.id,offset:Number(offset),length:Number(length)})??{status:'unavailable'};
-        const record=result.record?project(result.record,0,Number(length),bounds.timeZone):undefined;
-        value={...result,record};if(record)memoryEvidence.push(record);
-      }
-      else if(tool==='file_chunks'){
-        if(typeof args.id!=='string'||!state().records.has(args.id))throw hostError('Discover the file before reading its chunks');
-        const offset=args.offset??0;if(!Number.isSafeInteger(offset)||Number(offset)<0)throw hostError('Invalid chunk offset');
-        const scope=range({},bounds);effective={...scope,id:args.id,offset,limit:30};
-        value=await reader.fileChunks?.({...scope,id:args.id,offset:Number(offset)})??[];
-        if(Array.isArray(value))value=value.filter(r=>{const document=documentSchema.safeParse(r.provenance?.document),at=sourceContentTime({capturedAt:r.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));});
-        pagination={nextCursor:Array.isArray(value)&&value.length===30?String(Number(offset)+30):null};
-      }
-      else if(tool==='context_index'){const scope=range(args,bounds);if(args.path!==undefined&&(typeof args.path!=='string'||args.path.length>100)||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid context index arguments');value=await reader.catalog?.({...scope,path:args.path as string|undefined,query:args.query as string|undefined})??{entries:[],coverage:'unavailable'};metadataOnly=true;}
-      else if(tool==='source_history'){
-        if(typeof args.id!=='string'||!state().records.has(args.id))throw hostError('Discover a source record before requesting history');
-        const scope=range({},bounds);effective={...scope,id:args.id};value=await reader.sourceHistory?.({...scope,id:args.id})??[];
-      }
-      else if(tool==='sources'){if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid source query');effective={...range(args,bounds),query:args.query};value=await reader.sources?.(effective as ContextRange&{query?:string})??{items:[],nextCursor:null};metadataOnly=true;}
-      else if(tool==='segments'){
-        const scope=range(args,bounds);
-        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>1600))throw hostError('Invalid segment id');
-        if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid segment query');
-        effective={...scope,id:args.id,query:args.query};
-        const page=await reader.segments?.({...scope,id:args.id as string|undefined,query:args.query as string|undefined})??{items:[],nextCursor:null};
-        // IDs become discoverable, never citable until original text is delivered.
-        const items=page.items.filter(item=>(!scope.deviceId||item.deviceId===scope.deviceId)&&(!scope.after||typeof item.firstAt==='string'&&Date.parse(item.firstAt)>=Date.parse(scope.after))&&(!scope.before||typeof item.lastAt==='string'&&Date.parse(item.lastAt)<Date.parse(scope.before)));
-        discoveredMemoryIds.push(...items.flatMap(item=>[...item.members,...((item.metadata as {citations?:string[]}|undefined)?.citations??[])]));
-        derivedIds.push(...items.flatMap(item=>typeof item.id==='string'?[item.id]:[]));
-        value={...page,items};pagination={nextCursor:page.nextCursor};
-      }
-      else if(tool==='memories'){
+      if(tool==='memories'){
         const scope=range(args,bounds);
         if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw hostError('Invalid memory id');
         if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid memory query');
@@ -873,46 +866,11 @@ export async function createContextToolSession(
         if(metadataOnly){discoveredMemoryIds.push(...(value as ContextRecord[]).map(r=>r.id));value=(value as ContextRecord[]).map(r=>({id:r.id,capturedAt:r.capturedAt,contentAt:sourceContentTime(r),appName:r.appName,sourceType:r.sourceType,characters:r.ocrText.length}));}
         pagination={nextCursor:offset+limit<ids.length?String(offset+limit):null,totalCount:ids.length};
       }
-      else if (tool === "search_context") {
-          if (
-            args.query !== undefined &&
-            (typeof args.query !== "string" || args.query.length > 2000)
-          )
-            throw hostError("query must be at most 2000 characters");
-          effective = { ...filters, query: args.query };
-          value = await reader.search(
-            effective as ContextRange & { query?: string },
-          );
-          retrieval=(value as {retrieval?:unknown})?.retrieval;
-        } else if (tool === "timeline"||tool==='source_items') {
-          if(tool==='source_items')for(const field of ['sourceId','kind'])if(args[field]!==undefined&&(typeof args[field]!=='string'||String(args[field]).length>128))throw hostError('Invalid source filter');
-          if(tool==='source_items'&&args.includeDeleted!==undefined&&typeof args.includeDeleted!=='boolean')throw hostError('includeDeleted must be boolean');
-          if(tool==='source_items')effective={...filters,sourceId:args.sourceId,kind:args.kind,includeDeleted:args.includeDeleted};
-          const page = tool==='timeline'?await reader.timeline(filters):await reader.sourceItems?.({...filters,sourceId:args.sourceId as string|undefined,kind:args.kind as string|undefined,includeDeleted:args.includeDeleted as boolean|undefined})??{items:[],nextCursor:null};
-          {
-            if (!page || !Array.isArray(page.items) || (page.nextCursor !== null && typeof page.nextCursor !== "string")) throw hostError("Context reader returned an invalid page");
-            if (page.totalCount !== undefined && (!Number.isSafeInteger(page.totalCount) || page.totalCount < 0 || page.totalCount < page.items.length)) throw hostError("Context reader returned an invalid total count");
-            value = page.items; pagination = { nextCursor:page.nextCursor, ...(page.totalCount === undefined ? {} : { totalCount:page.totalCount }) };
-          }
-        }
-        else if (tool === 'media_activity') {
-          if (args.source !== undefined && args.source !== 'media') throw hostError('media_activity requires the media source');
-          if (args.appVisibility !== undefined && (typeof args.appVisibility !== 'string' || !['foreground','background','unknown'].includes(args.appVisibility))) throw hostError('Invalid appVisibility');
-          if (args.playbackType !== undefined && (typeof args.playbackType !== 'string' || !['local','remote','unknown'].includes(args.playbackType))) throw hostError('Invalid playbackType');
-          if (args.screenLocked !== undefined && typeof args.screenLocked !== 'boolean') throw hostError('screenLocked must be boolean');
-          if (!reader.mediaActivity) throw hostError('Media activity is unavailable from this archive reader');
-          effective = {...filters, source:'media',
-            ...(args.appVisibility === undefined ? {} : {appVisibility:args.appVisibility}),
-            ...(args.screenLocked === undefined ? {} : {screenLocked:args.screenLocked}),
-            ...(args.playbackType === undefined ? {} : {playbackType:args.playbackType})};
-          value = await reader.mediaActivity(effective as MediaContextRange);
-        }
-        else value = await reader.activity(filters);
+      else throw hostError('The registered read operation is unavailable');
+
       }
       if (!metadataOnly && (
-        tool === "search_context" ||
-        tool === "timeline" ||
-        tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes'
+        tool === "evidence" || tool==='changes'
       )) {
         if (!Array.isArray(value))
           throw hostError("Context reader returned invalid records");
@@ -920,12 +878,6 @@ export async function createContextToolSession(
           .slice(0, tool === "evidence" ? 30 : Number(effective.limit ?? 100))
           .map(record => {
             let offset=textOffset;
-            if(tool==='search_context'&&typeof args.query==='string'){
-              // Literal lexical localization only: no task/topic/intent classification.
-              const terms=args.query.match(/[\p{L}\p{N}_-]+/gu)??[];
-              const positions=terms.map(term=>record.ocrText.search(new RegExp(term,'iu'))).filter(n=>n>=0);
-              if(positions.length)offset=Math.max(0,Math.min(...positions)-120);
-            }
             return project(record,offset,textLength,bounds.timeZone);
           });
       }
@@ -958,7 +910,7 @@ export async function createContextToolSession(
       else if(metadataOnly&&tool!=='changes')state().completeLineage=false;
       for(const id of discoveredMemoryIds)state().discovered.add(id);
       // Only a successfully serialized, deliverable tool result authorizes evidence.
-      if (!metadataOnly&&(tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes')) {
+      if (!metadataOnly&&(tool === "evidence" || tool==='changes')) {
         for (const [index,record] of (safeValue as ContextRecord[]).entries())
           {copyEvidencePresentation((value as ContextRecord[])[index],record);remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);}
         if(tool==='evidence')for(const record of safeValue as ContextRecord[])state().expanded.add(record.id);
@@ -1075,7 +1027,7 @@ export async function createContextToolSession(
       const finish=()=>{signal.removeEventListener('abort',abort);if(stage)activeStages.delete(stage);release();};
       const discard=()=>{if(settled)return;settled=true;stage!.status='discarded';clearImages();finish();};
       const abort=()=>{stage!.cancelled=signal.reason;discard();};
-      stage={base,state:working,evidence:[],callbacks:[],delivered:[],reservations:new Set(),status:'reading',discard};activeStages.add(stage);
+      stage={base,state:working,evidence:[],signal,callbacks:[],delivered:[],reservations:new Set(),checks:new Set(),status:'reading',discard};activeStages.add(stage);
       signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();
       let status=200,body:string|undefined;
       const reply={get destroyed(){return signal.aborted||closing;},writeHead(code:number){status=code;return reply;},end(value:string,delivered?:()=>void){body=value;if(delivered)stage!.delivered.push(delivered);},once(){},off(){}};
@@ -1095,7 +1047,7 @@ export async function createContextToolSession(
         confirm(){
           if(settled){if(current.cancelled!==undefined)throw current.cancelled;return;}
           try{
-            signal.throwIfAborted();bounds.assertContextAuthority?.();
+            signal.throwIfAborted();bounds.assertContextAuthority?.();for(const check of current.checks)check();
             if(closing)throw new ContextToolError('bridge_closing','The tool session closed before confirmation','stop');
             // Memory receipt persistence is required, unlike observation. A
             // failure must reach this synchronous confirm/Host sender boundary.
@@ -1104,7 +1056,7 @@ export async function createContextToolSession(
               try{if(typeof callback==='function')execution.exit(()=>(callback as (...args:unknown[])=>void)(...event.args));}
               catch(error){rejectFailure(error instanceof Error?error:new Error('Memory delivery receipt could not be recorded'));throw error;}
             }
-            signal.throwIfAborted();bounds.assertContextAuthority?.();
+            signal.throwIfAborted();bounds.assertContextAuthority?.();for(const check of current.checks)check();
             if(closing)throw new ContextToolError('bridge_closing','The tool session closed before confirmation','stop');
             const token=value&&typeof value==='object'?(value as {imageDelivery?:unknown}).imageDelivery:undefined;
             if(typeof token==='string'&&![...disclosedImages.values()].some(image=>image.token===token))throw hostError('Image delivery receipt expired');
@@ -1149,7 +1101,7 @@ export async function createContextToolSession(
     get deliveredCharacters(){return canonical.deliveredCharacters;},get ready(){return ready;},
   };
   const close=()=>execution.exit(()=>{
-    closing=true;for(const stage of [...activeStages])stage.discard();closeSignal.abort(new DOMException('Tool session closed','AbortError'));
+    closing=true;releaseContextTools(bounds);for(const stage of [...activeStages])stage.discard();closeSignal.abort(new DOMException('Tool session closed','AbortError'));
     const observer=callbacks.get('onEvidence');
     try{if(typeof observer==='function')observer(evidenceLayers(canonical.records));}catch{}
     for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}

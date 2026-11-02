@@ -1,3 +1,13 @@
+import {createOriginalReadPack} from './packs/originals.js';
+import {createAttributionPack} from './packs/attribution.js';
+import {createMaterialReadPack} from './packs/materials.js';
+import {createMemoryReadPack} from './packs/memories.js';
+import {createDerivedNavigationPack} from './packs/derived-navigation.js';
+import {createSourceReadPack} from './packs/sources.js';
+import {createFileReadPack} from './packs/files.js';
+import {createMeasurementReadPack} from './packs/measurements.js';
+import {createOwnerMetadataPack} from './packs/owner-metadata.js';
+import {createImageReadPack} from './packs/images.js';
 import type {ToolDescriptor} from './descriptor.js';
 import {ToolRegistry,type ToolLifecycle,type ToolSnapshot,type ResolvedTool} from './registry.js';
 import {ContextToolError} from '../tool-errors.js';
@@ -12,6 +22,19 @@ export interface DerivedNavigationInputs extends ReadPackInputs {
   readonly incrementalEvidenceIds?:readonly string[];
 }
 export type ReadPackFactory=(input:ReadPackInputs)=>readonly ToolDescriptor[];
+
+/** One thin composition point for official and plugin packs. Nothing here
+ * reads context or authorizes a result; the caller supplies the actual Host
+ * lifecycle when registering this batch in its one run registry. */
+export function createOfficialReadPacks(input:DerivedNavigationInputs={}):readonly ToolDescriptor[] {
+  const facts=Object.freeze({...input,...(input.incrementalEvidenceIds?{incrementalEvidenceIds:Object.freeze([...input.incrementalEvidenceIds])}:{})});
+  return Object.freeze([
+    ...createOriginalReadPack(facts),...createAttributionPack(facts),
+    ...createMaterialReadPack(facts),...createMemoryReadPack(facts),...createDerivedNavigationPack(facts),
+    ...createSourceReadPack(facts),...createFileReadPack(facts),
+    ...createMeasurementReadPack(facts),...createOwnerMetadataPack(facts),...createImageReadPack(),
+  ]);
+}
 
 export interface ReadToolDispatch {
   /** The existing parent session set (or its private stage view), not a copy. */

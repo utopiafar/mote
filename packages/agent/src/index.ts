@@ -22,7 +22,10 @@ import {bundledSkills, SKILL_VERSION} from './skills.js';
 import {AgentYieldError} from './host-controls.js';
 import {AgentInputError, AgentNotConfiguredError, AgentResponseError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput} from './types.js';
 
-export {ContextToolRegistry, contextToolDefinitions, type ContextToolContribution} from './tool-contributions.js';
+export {contextToolDefinitions} from './tool-contributions.js';
+export {ToolRegistry} from './tools/registry.js';
+export {defineToolDescriptor,type ToolDescriptor} from './tools/descriptor.js';
+export {createOfficialReadPacks,type ReadPackRegistration,type DerivedNavigationInputs} from './tools/official-read-packs.js';
 export {buildContextEnvelope, taskTools} from './task-context.js';
 export {parseAnswer} from './answer-parser.js';
 export {skillCatalog, SKILL_VERSION} from './skills.js';

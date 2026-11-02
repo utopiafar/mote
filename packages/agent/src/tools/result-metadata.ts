@@ -17,6 +17,9 @@ export function attributionMetadataResponse(value:unknown,parentLocator?:{id:str
     typeof object.id==='string'&&parseEvidenceId(object.id)?{id:parseEvidenceId(object.id)!}:parentLocator;
   const result:Record<string,unknown>={};
   for(const [key,item] of Object.entries(object)){
+    // These are private Host lineage receipts, never model-visible content.
+    // The read owner records their actual producer values before projection.
+    if(key==='disclosureDependencies'||key==='sourceContextDependencies')continue;
     if(key==='attributionContext'){
       const metadata=attributionMetadata(item);if(metadata){result[key]=metadata;if(locator)result.attributionContextLocator=locator;}
     }else if(key==='attributionContexts'&&item&&typeof item==='object'&&!Array.isArray(item)){

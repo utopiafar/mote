@@ -52,11 +52,14 @@ test('explicit Host direct mode does not bypass stale-registration checks or alt
 
 test('the Host final projection strips opened attribution prose from a pack sourceEvidence body without modifying its private source',()=>{
   const id='11111111-1111-4111-8111-111111111111',declaration='22222222-2222-4222-8222-222222222222';
-  const body={source:'untrusted_personal_context',data:{sourceEvidence:[{id,ocrText:'Generated original',attributionContext:{version:1,ownerRelation:'unknown',basis:'default',ownerStatements:[{id:declaration,question:'Generated private question',answer:'Generated private answer'}]}}]}};
+  const body={source:'untrusted_personal_context',disclosureDependencies:{version:1,complete:true,ids:[id]},data:{sourceContextDependencies:[{private:'Generated private pin'}],sourceEvidence:[{id,ocrText:'Generated original',attributionContext:{version:1,ownerRelation:'unknown',basis:'default',ownerStatements:[{id:declaration,question:'Generated private question',answer:'Generated private answer'}]}}]}};
   const projected=attributionMetadataResponse(body);
   assert.equal(projected.data.sourceEvidence[0].ocrText,'Generated original');
   assert.deepEqual(projected.data.sourceEvidence[0].attributionContextLocator,{id});
   assert.equal(projected.data.sourceEvidence[0].attributionContext.ownerStatements,undefined);
   assert.equal(body.data.sourceEvidence[0].attributionContext.ownerStatements[0].answer,'Generated private answer');
   assert.ok(!JSON.stringify(projected).includes('Generated private'));
+  assert.ok(!JSON.stringify(projected).includes('disclosureDependencies'));
+  assert.ok(!JSON.stringify(projected).includes('sourceContextDependencies'));
+  assert.deepEqual(body.disclosureDependencies.ids,[id]);
 });

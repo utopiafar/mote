@@ -47,7 +47,7 @@ export interface MemorySourceSpan {
 
 export interface ContextReader {
   /** Host registry, snapshotted before each model run. */
-  contextTools?():readonly import('./tool-contributions.js').ContextToolContribution[];
+  contextTools?(facts?:import('./tools/official-read-packs.js').DerivedNavigationInputs):readonly import('./tools/official-read-packs.js').ReadPackRegistration[];
   catalog?(args:ContextRange&{path?:string;query?:string}):Promise<unknown>;
   /** Private host lineage receipt. Recording dependencies never grants model reads. */
   materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null;disclosureDependencies?:import('@mote/shared').EvidenceDependencies}>;
