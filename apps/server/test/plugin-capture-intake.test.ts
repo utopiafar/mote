@@ -12,6 +12,7 @@ import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {MaterialStore} from '../src/materials.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
+import {ServerDiagnostics} from '../src/diagnostics.js';
 import {centralServices,type RequestAuthority} from '../src/plugins/central-contracts.js';
 import {captureIntakeContribution,captureIntakeReplacement,createCaptureIntake,captureIntakeDeclaration} from '../src/plugins/capture-intake.js';
 
@@ -23,7 +24,9 @@ const sourceItem=(externalId=randomUUID())=>({externalId,revision:'1',observedAt
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-capture-intake-'));
   const store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
-  const intake=createCaptureIntake({}, {store,sources,files,materials});
+  const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),level:'debug'});
+  await diagnostics.init();
+  const intake=createCaptureIntake({diagnostics}, {store,sources,files,materials});
   await intake.prepare();
   const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
   await platform.prepare();platform.bindRepositories({sources,files,materials,ingress:intake.ingress});await platform.start();
@@ -34,12 +37,12 @@ async function fixture(t:TestContext){
   app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
   intake.routes(app,{request:request=>pins.get(request)});
-  t.after(async()=>{await app.close();await intake.close();await platform.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  t.after(async()=>{await app.close();await intake.close();await platform.close();await diagnostics.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'generated-source',name:'Generated source',kind:'custom',deviceId:'generated-phone-a',platform:'android',enabled:true,retention:'archive'});
   const post=(path:string,token:string,body:unknown,contentType='application/json')=>app.inject({method:'POST',url:path,headers:{authorization:`Bearer ${token}`,'content-type':contentType},payload:contentType==='application/gzip'?body as Buffer:JSON.stringify(body)});
   const bundleBody=(inputs:CaptureInput[])=>gzipSync(Buffer.from(inputs.map(input=>JSON.stringify(input)).join('\n')+'\n'));
   const upload=async(sourceId:string,name:string,bytes:Buffer)=>{const pending=files.begin({sourceId,item:{externalId:name,revision:'1',observedAt:new Date().toISOString(),title:name,kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});files.part(pending.uploadId,0,bytes,()=>{});return (await files.commit(pending.uploadId,()=>{})).id;};
-  return {store,sources,files,materials,platform,intake,app,post,bundleBody,upload};
+  return {store,sources,files,materials,platform,intake,app,diagnostics,post,bundleBody,upload};
 }
 
 test('real gzip bundle keeps per-item receipts, rejects duplicate ids and never re-archives',async t=>{
@@ -121,7 +124,8 @@ test('actual intake output is readable through the published source repository',
 test('quiescing the plugin rejects new intake and keeps the platform authoritative',async t=>{
   const f=await fixture(t);
   assert.equal(captureIntakeReplacement,'restart');
-  assert.deepEqual(captureIntakeContribution.provides.map(service=>service.id).sort(),[centralServices.captureIntake.id,centralServices.sources.id,centralServices.sourceIntake.id].sort());
+  assert.deepEqual(captureIntakeContribution.provides.map(service=>service.id).sort(),[centralServices.captureIntake.id,centralServices.sourceIntake.id].sort());
+  assert.ok(!captureIntakeContribution.provides.some(service=>service.id===centralServices.sources.id),'source registration is not published to ordinary plugins');
   assert.equal(captureIntakeDeclaration.apiVersion,'1');
   assert.deepEqual(Object.keys(f.intake.ports).sort(),['captureIntake','sourceIntake','sources']);
   assert.ok(!Object.keys(f.intake.ports).some(name=>/ocr|reconcile|ingress/i.test(name)),'OCR and browser reconcile stay with their existing owners');

@@ -26,7 +26,11 @@ export type CaptureIntakeAuthority=Pick<AuthorizationPlatform,
 export const captureIntakeContribution={
   id:'capture-intake',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'},{kind:'host',id:'mote.owner-authorization',version:'1.0.0'}],
-  provides:[centralServices.captureIntake,centralServices.sourceIntake,centralServices.sources].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
+  // `sources` is deliberately not published: SourceStore.register writes owner
+  // control-plane state and has no commit-authority parameter, so an ordinary
+  // plugin must not receive it. The C10 parent publishes it with source-route
+  // admission; this slice keeps only the authority-bearing intake facades.
+  provides:[centralServices.captureIntake,centralServices.sourceIntake].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
 } as const satisfies ManifestContribution;
 export const captureIntakeDeclaration={id:captureIntakeContribution.id,apiVersion:'1'} as const;
 export const captureIntakeReplacement='restart' as const;
@@ -84,9 +88,10 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
   let routesInstalled=false,closing:Promise<void>|undefined;
   const current=()=>{if(phase!=='active')throw unavailable();};
   const measure=async <T>(stage:'ingest'|'source',operation:'capture'|'timeline',task:()=>Promise<T>|T,metrics?:(result:T)=>Record<string,unknown>):Promise<T>=>{
-    if(!options.diagnostics)return task();
-    const record=options.diagnostics.measure as unknown as (stage:string,operation:string,task:()=>Promise<T>|T,metrics?:(result:T)=>Record<string,unknown>)=>Promise<T>;
-    return record(stage,operation,task,metrics);
+    const diagnostics=options.diagnostics;
+    if(!diagnostics)return task();
+    // Call through the instance: measure() records with this.record(...).
+    return diagnostics.measure(stage,operation,task,metrics as never);
   };
   const captureIntake:CaptureIntake=Object.freeze({
     capture:(input:CaptureInput,authority:CommitAuthority)=>{current();return bound().captureIntake.capture(input,authority);},
@@ -157,7 +162,9 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
     get ingress(){return ingress;},
     /** Trusted assembly registers these on the feature child app, never globally. */
     routes,
-    /** Frozen ordinary-consumer ports; raw IngressService, Store and commit issuer stay private. */
+    /** Published intake facades plus the trusted source read/control surface used by
+   * trusted assembly only (`sources` is intentionally not a host contribution).
+   * Raw IngressService, Store and the commit issuer stay private. */
     ports,
   });
 }
@@ -172,8 +179,7 @@ export function createCaptureIntakeFactory(options:CaptureIntakeOptions,dependen
     return {
       prepare:()=>platform.prepare(),
       start(){platform.start();context.provide(captureIntakeContribution.id,centralServices.captureIntake,platform.ports.captureIntake);
-        context.provide(captureIntakeContribution.id,centralServices.sourceIntake,platform.ports.sourceIntake);
-        context.provide(captureIntakeContribution.id,centralServices.sources,platform.ports.sources);},
+        context.provide(captureIntakeContribution.id,centralServices.sourceIntake,platform.ports.sourceIntake);},
       quiesce:(reason?:StopReason)=>platform.quiesce(reason),stop:(reason?:StopReason)=>platform.stop(reason),dispose:()=>platform.close(),
     };
   };
