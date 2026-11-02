@@ -178,6 +178,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const diagnostics=observabilityAssembly.diagnostics,executionObserver=observabilityAssembly.observer,eventLoop=observabilityAssembly.eventLoop,usageLedger=observabilityAssembly.usage,softwareUpdate=observabilityAssembly.softwareUpdate;
   resources.defer(()=>observabilityPlatform.close());
   const executionPlatform=createExecutionPlatform({store,modelAuthorization,settings:runtimeSettings});
+  resources.defer(()=>executionPlatform.stop('shutdown'));
   await executionPlatform.prepare();executionPlatform.start();
   const {executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate}=executionPlatform.assembly;
   const modelContext=new AsyncLocalStorage<QueryInput>();
@@ -215,6 +216,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     assertCurrent:()=>sourceScopeResources.assertCurrent(),defer:dispose=>sourceScopeResources.defer(dispose)};
   resources.defer(()=>sourceScopeResources.close());
   const sourceRuntime=createSourceRuntime({plugins:[codingSourcePlugin]},{store,materials,execution:executionPlatform,memoryWork:materialMemoryWork,context:backendContext});
+  resources.defer(()=>sourceRuntime.close());
   await sourceRuntime.prepare(sourceScope);sourceRuntime.start();
   const sourcePipelines=sourceRuntime.runtimeForAssembly;
   const sources=new SourceStore(store,sourcePipelines);
@@ -223,10 +225,12 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     mayReadFileVersion:(_sourceId,id)=>{try{const current=filesForAccess;if(!current)return false;const version=current.version(id);return Boolean(version.object_hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&!store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted);}catch{return false;}},
     mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
   }});
+  resources.defer(()=>filesPlatform.close());
   await filesPlatform.prepare();filesPlatform.start();
   const filesAssembly=filesPlatform.assemblyForRoutes(),files=filesAssembly.files,fileEvidence=filesAssembly.evidence,fileRawReader=filesAssembly.originalRead;
   filesForAccess=files;
   const captureIntake=createCaptureIntake({diagnostics},{store,sources,files,materials});
+  resources.defer(()=>captureIntake.close());
   await captureIntake.prepare();
   await authorizationPlatform.bindRepositories({sources,files,materials,ingress:captureIntake.ingress,memoryInputs:materialMemoryWork.inputs,memoryWork:materialMemoryWork});
   await authorizationPlatform.start();
@@ -243,7 +247,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     await executionPlatform.stop('shutdown');
     await sourceRuntime.close();
   });
-  resources.defer(()=>captureIntake.close());resources.defer(()=>filesPlatform.close());resources.defer(()=>sourceRuntime.close());
   const notesSource=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
   await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
