@@ -4,6 +4,7 @@ import type {ContextReader} from './context-contracts.js';
 import type {QueryInput} from './query-contracts.js';
 
 export {TOOL_NAMES,originalEvidenceReceipt} from './context-tool-session.js';
+export type {PreparedToolDelivery,PrepareToolDelivery} from './bridge-contracts.js';
 
 /** Compose a private transport with one query-local authorization/disclosure session. */
 export async function startBridge(reader:ContextReader,bounds:QueryInput,maxToolCalls?:number) {
