@@ -47,6 +47,7 @@ type InstanceSnapshotInput=import('../plugin-host/contributions').InstanceSnapsh
 
 export const featuresTeardown=async()=>{
   const result=await teardownPlugins(featureScopes);
+  featureScopes.clear();
   await webFeatures.close();
   return result;
 };

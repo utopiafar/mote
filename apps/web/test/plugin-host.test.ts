@@ -157,3 +157,16 @@ test('a throwing lifetime dispose does not strand sibling scopes on teardown', a
   assert.equal(result.errors.length, 1);
   assert.equal(host.pages().length, 0, 'sibling scope still released');
 });
+
+
+test('production bootstrap/teardown entrypoint owns and releases real scopes', async () => {
+  const { featuresReady, featuresTeardown, featureScopes } = await import('../src/features/bootstrap');
+  const { webFeatures } = await import('../src/features/registry');
+  await featuresReady;
+  assert.ok(featureScopes.size > 0, 'production bootstrap retains its scopes');
+  assert.ok(webFeatures.pages().length > 0, 'builtin pages mounted through the same path');
+  const result = await featuresTeardown();
+  assert.equal(result.errors.length, 0);
+  assert.equal(featureScopes.size, 0);
+  assert.equal(webFeatures.pages().length, 0, 'teardown released every builtin registration');
+});
