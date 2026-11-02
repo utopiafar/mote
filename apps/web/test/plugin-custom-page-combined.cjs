@@ -17,7 +17,8 @@ const assert = require('node:assert/strict');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'mote-u08-combo-'));
-app.setPath('userData', mkdtempSync(path.join(os.tmpdir(), 'mote-u08-profile-')));
+const profilePath = mkdtempSync(path.join(os.tmpdir(), 'mote-u08-profile-'));
+app.setPath('userData', profilePath);
 // Real producer pieces pinned to the exact reviewed commit — FETCH_HEAD
 // would drift under our feet.
 const DESKTOP_SHA = 'b1447b25ba2a55f1cdd5193f6b8660720b2a94cf';
@@ -49,6 +50,7 @@ contextBridge.exposeInMainWorld('mote', {
 const nonce = 'combo-nonce-1', nonce2 = 'combo-nonce-2', nonce3 = 'combo-nonce-3', nonceLate = 'combo-nonce-late', instanceId = 'combo-inst', documentKey = 'combo-doc';
 let releaseClaim; const claimBarrier = new Promise(r => {releaseClaim = r;});
 let releasePrepare; const prepareBarrier = new Promise(r => {releasePrepare = r;});
+let claimComputed = null, prepareEntered = false; const revocations = [];
 const hits = {};
 const pages = {
   '/harness.html': `<!doctype html><div id="root"></div><script>window.__HARNESS__=${JSON.stringify({nonce, nonce2, nonce3, nonceLate, instanceId, documentKey})};</script><script src="/bundle.js"></script>`,
@@ -66,9 +68,11 @@ setTimeout(()=>{parent.postMessage({kind:'e1-report',received},'*');},900);
   '/entry2.html': `<script>parent.postMessage({kind:'entry2-ran'},'*');</script>`,
   '/entry3.html': `<script>parent.postMessage({kind:'entry3-ran'},'*');</script>`,
   '/entry5.html': `<script>new Image().src='/ran5';let channels=0;
-addEventListener('message',e=>{if(e.data&&e.data.kind==='channel')channels++;});
-setTimeout(()=>{try{location.href='/entry2.html';}catch(_){}},200);
-setTimeout(()=>{parent.postMessage({kind:'e5-report',channels},'*');},700);
+addEventListener('message',e=>{
+  if(e.data&&e.data.kind==='channel')channels++;
+  if(e.data&&e.data.kind==='navigate'){try{location.href='/entry2.html';}catch(_){}}
+  if(e.data&&e.data.kind==='report')parent.postMessage({kind:'e5-report',channels},'*');
+});
 </script>`,
   '/entry6.html': `<script>new Image().src='/ran6';parent.postMessage({kind:'e6-ran'},'*');</script>`,
   '/entry4.html': `<script>new Image().src='/ran4';
@@ -96,13 +100,13 @@ app.whenReady().then(async () => {
   contents.on('did-start-navigation', d => { events.push({t: Date.now(), type: 'did-start', url: d.url, main: d.isMainFrame}); if (d.isMainFrame) guard.revokeWindow(wcId); });
   contents.on('did-frame-navigate', d => { events.push({t: Date.now(), type: 'did-frame', url: d.url, main: d.isMainFrame}); guard.prune(wcId, contents.mainFrame); });
   contents.on('destroyed', () => guard.revokeWindow(wcId));
-  guard.setRevocationListener((id, revocation) => { events.push({t: Date.now(), type: 'revocation', revocation}); if (!win.isDestroyed()) contents.send('mote:custom-page-revoked', revocation); });
+  guard.setRevocationListener((id, revocation) => { revocations.push(revocation); events.push({t: Date.now(), type: 'revocation', revocation}); if (!win.isDestroyed()) contents.send('mote:custom-page-revoked', revocation); });
   const trustedMain = event => {
     if (!(win && !win.isDestroyed() && event.sender === contents && event.senderFrame === contents.mainFrame && event.senderFrame?.url === hostUrl))
       throw new Error('untrusted custom page sender');
   };
-  ipcMain.handle('mote:custom-page-prepare', async (e, t) => { trustedMain(e); const out = guard.prepare(wcId, t); if (t.nonce === nonce3) await prepareBarrier; return out; });
-  ipcMain.handle('mote:custom-page-claim', async (e, c) => { trustedMain(e); const grant = guard.claim(wcId, c, e.sender.mainFrame); if (c.nonce === nonceLate) await claimBarrier; return grant; });
+  ipcMain.handle('mote:custom-page-prepare', async (e, t) => { trustedMain(e); if (t.nonce === nonce3) { prepareEntered = true; await prepareBarrier; } return guard.prepare(wcId, t); });
+  ipcMain.handle('mote:custom-page-claim', async (e, c) => { trustedMain(e); const grant = guard.claim(wcId, c, e.sender.mainFrame); if (c.nonce === nonceLate) { claimComputed = {grant}; await claimBarrier; } return grant; });
   await win.loadURL(hostUrl);
   contents.on('console-message', e => console.log('[ui]', e.message.slice(0, 200)));
   const js = code => contents.executeJavaScript(code);
@@ -136,13 +140,17 @@ app.whenReady().then(async () => {
   const e4 = got2.find(m => m && m.kind === 'e4-response');
   assert.ok(e4 && e4.value && e4.value.ok === true, 'the remount received a real response: ' + JSON.stringify(got2));
 
-  // In-flight claim: the real grant is computed in main, its IPC response
-  // held, the entry navigates (denied+revoked), then the stale grant lands
-  // — it must NOT rebuild a channel.
+  // In-flight claim: the real grant is computed in main (claimComputed
+  // marker), its IPC response held; the entry navigates ONLY when told;
+  // the denial+revocation lands, then the stale grant resolves — it must
+  // never rebuild a channel.
   await js('window.__mountLate()');
-  await until(() => hits['/ran5'], 'late-claim entry loaded');
-  await pause(400); // entry5 navigates at ~200ms: deny + revocation pushed
+  await until(() => claimComputed, 'the real grant was computed before navigation');
+  await js(`(() => { const f = [...document.querySelectorAll('iframe.plugin-custom-page')].pop(); f.contentWindow.postMessage({kind:'navigate'}, '*'); })()`);
+  await until(() => revocations.some(r => r.nonce === nonceLate), 'main revoked the in-flight claim');
   releaseClaim();
+  await pause(300);
+  await js(`(() => { const f = [...document.querySelectorAll('iframe.plugin-custom-page')].pop(); f.contentWindow.postMessage({kind:'report'}, '*'); })()`);
   await until(() => js('window.got&&window.got.some(m=>m&&m.kind==="e5-report")'), 'entry5 reported');
   const e5 = (await js('window.got||[]')).find(m => m && m.kind === 'e5-report');
   assert.ok(e5 && e5.channels === 0, 'the late grant never rebuilt a channel: ' + JSON.stringify(e5));
@@ -152,7 +160,7 @@ app.whenReady().then(async () => {
   // Deferred prepare: props swap while the prepare response is held — the
   // stale continuation must not navigate the frame to the old entry.
   await js('window.__mountSwappable()');
-  await pause(300);
+  await until(() => prepareEntered, 'the stale prepare was provably in flight');
   await js('window.__swapProps()');
   // React applies the swap asynchronously — wait for the NEW effect's own
   // prepare/navigation before releasing the old barrier, so the release
@@ -162,6 +170,6 @@ app.whenReady().then(async () => {
   await pause(600);
   assert.ok(!hits['/entry5.html?moteFrame=' + nonce3], 'the stale prepare never navigated the swapped frame: ' + JSON.stringify(Object.keys(hits).filter(u=>/entry5|entry6/.test(u))));
 
-  console.log('COMBINED ' + JSON.stringify({calls: await js('window.calls'), e1Received: e1.received.length, late, passed: true}));
-  server.close(); rmSync(tmp, {recursive: true, force: true}); app.exit(0);
-}).catch(error => { console.error(error); rmSync(tmp, {recursive: true, force: true}); app.exit(1); });
+  console.log('COMBINED ' + JSON.stringify({calls: await js('window.calls'), e1Received: e1.received.length, late, markers: {claimComputed: !!claimComputed, prepareEntered, revocations: revocations.length}, passed: true}));
+  win.destroy(); server.close(); rmSync(tmp, {recursive: true, force: true}); rmSync(profilePath, {recursive: true, force: true}); app.exit(0);
+}).catch(error => { console.error(error); try { rmSync(tmp, {recursive: true, force: true}); rmSync(profilePath, {recursive: true, force: true}); } catch {} app.exit(1); });
