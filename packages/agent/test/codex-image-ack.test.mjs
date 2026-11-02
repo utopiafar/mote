@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import {parseAnswer} from '../dist/index.js';
 import {startBridge} from '../dist/bridge.js';
 import {CodexSession,ImageAcknowledgementRejected} from '../dist/codex-session.js';
+import {ContextToolError} from '../dist/tool-errors.js';
 import {generatedImageRead,digest} from './image-region-fixture.mjs';
 
 const id = 'b54d3aaa-4ca3-5073-bb47-ad2db6e84a13';
@@ -59,6 +60,7 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   const reader = {search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[],readImage:async args=>generatedImageRead(bytes,args)};
   const bridge = await startBridge(reader,{question:'Generated Codex image ack',directImages:[{id,name:'Generated image',mimeType:'image/png',hash:digest(bytes),sizeBytes:bytes.length}]},12);
   t.after(()=>bridge.close());
+  let revoked=false;
   const tokens = [], ackBodies = [], originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
     if (String(url).endsWith('/_image_delivery')) {
@@ -80,10 +82,10 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   const session = new CodexSession({model:'fixture',agentTimeoutMs:5000},toolCall,undefined,undefined,async (token, delivered) => {
     const response = await fetch(bridge.url + '/_image_delivery',{method:'POST',headers:{Authorization:'Bearer ' + bridge.token,'Content-Type':'application/json'},body:JSON.stringify({token,delivered})});
     if (!response.ok) throw new ImageAcknowledgementRejected();
-  });
+  },()=>{if(revoked)throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');});
   t.after(() => session.close());
   await session.start('Generated image ack', []);
-  return {bridge, session, tokens, ackBodies, started, release};
+  return {bridge, session, tokens, ackBodies, started, release, revoke:()=>{revoked=true;}};
 }
 
 test('Codex confirms the same bridge token only after the same-active steer succeeds', async t => {
@@ -138,7 +140,7 @@ test('a definitive true acknowledgement rejection still sends one false fallback
   const running = f.session.run('Read generated image');
   await waitFor(f.started);
   await writeFile(f.release, '');
-  await running;
+  await assert.rejects(running, error => error?.name === 'ImageAcknowledgementRejected');
   assert.deepEqual(f.ackBodies, [{token:f.tokens[0], delivered:true}, {token:f.tokens[0], delivered:false}]);
   assert.equal(f.bridge.records.size, 0);
   assert.deepEqual(f.bridge.evidenceDependencies.ids, []);
@@ -159,4 +161,17 @@ test('a lost true acknowledgement response keeps the real receipt and is not con
   assert.equal(f.bridge.records.get(id).ocrText, '');
   assert.deepEqual(f.bridge.evidenceDependencies.ids, [id]);
   assert.equal(parseAnswer(JSON.stringify({answer:`Generated [${id}]`,citationIds:[id]}), f.bridge.records).citations[0].id, id);
+});
+
+
+test('revoking the snapshot during a held steer sends false and no receipt', async t => {
+  const f = await fixture(t, 'success');
+  const running = f.session.run('Read generated image');
+  await waitFor(f.started);
+  f.revoke();
+  await writeFile(f.release, '');
+  await assert.rejects(running, error => error?.code === 'stale_tool_pin' && error?.recovery === 'stop');
+  assert.deepEqual(f.ackBodies, [{token:f.tokens[0], delivered:false}]);
+  assert.equal(f.bridge.records.size, 0);
+  assert.deepEqual(f.bridge.evidenceDependencies.ids, []);
 });

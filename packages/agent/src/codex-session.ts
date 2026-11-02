@@ -65,7 +65,7 @@ export class CodexSession {
   private turnError?:unknown;
   private usageInterrupted=false;
   private imageSettlements=new Map<string,'true-pending'|'true'|'true-rejected'|'true-unknown'|'false'>();
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>,private assertImageDeliveryCurrent?:()=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
 
   /** True is attempted at most once. A definitive non-2xx rejection allows one
    * false fallback to release the Host reservation; a network-unknown true
@@ -75,6 +75,8 @@ export class CodexSession {
     if(delivered){
       if(state==='true-pending'||state==='true'||state==='true-rejected'||state==='true-unknown'||state==='false')return;
       this.imageSettlements.set(token,'true-pending');
+      try{this.assertImageDeliveryCurrent?.();}
+      catch(error){this.imageSettlements.set(token,'true-rejected');throw error;}
       try{await this.confirmImageDeliveryPort?.(token,true);this.imageSettlements.set(token,'true');}
       catch(error){
         if(error instanceof ImageAcknowledgementRejected){this.imageSettlements.set(token,'true-rejected');throw error;}
@@ -249,6 +251,7 @@ export class CodexSession {
                 await this.settleImageDelivery(token,true);
               }catch(error){
                 await this.settleImageDelivery(token,false);
+                this.fail(error instanceof Error?error:new AgentProviderError());
                 throw error;
               }
             }else{

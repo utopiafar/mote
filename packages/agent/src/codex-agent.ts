@@ -92,7 +92,7 @@ export function createCodexAgent(options:AgentOptions){
       session=new CodexSession(options,call,trace,input.onUsage,async(token,delivered)=>{
         const response=await fetch(bridge.url+'/_image_delivery',{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify({token,delivered})});
         if(!response.ok)throw new ImageAcknowledgementRejected();
-      });sessions.add(session);
+      },()=>assertCurrent());sessions.add(session);
       await session.start(system,runTools);
       const assertCurrent=()=>{input.signal?.throwIfAborted();if(closed)throw new AgentProviderError();input.assertContextAuthority?.();assertToolPins();};
       const drive=async(prompt:string,repairAttempt=0):Promise<RuntimeOutcome>=>{
