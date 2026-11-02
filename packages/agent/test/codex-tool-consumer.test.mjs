@@ -1,4 +1,9 @@
 import '../dist/index.js';
+import {mkdtemp,writeFile,rm,access} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createAgent} from '../dist/index.js';
+import {createSourceReadPack} from '../dist/tools/packs/sources.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {codexContextTools} from '../dist/codex-agent.js';
@@ -81,4 +86,57 @@ test('Codex image adapters keep metadata free of bytes and build the bounded ste
   assert.equal(inputs[1].url, `data:image/png;base64,${data}`);
   assert.equal(JSON.stringify(inputs[0]).includes(data), false);
   assert.throws(() => codexImageSteerInputs(metadata, {mimeType: 'text/plain', data}), /authorized/);
+});
+
+
+async function waitFor(path, attempts = 1000) {
+  for (let index = 0; index < attempts; index++) {
+    try { await access(path); return; } catch {}
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  throw new Error(`timeout waiting for ${path}`);
+}
+
+test('a revoked pinned pack survives the model-pending boundary as stale_tool_pin stop', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'mote-codex-pin-'));
+  const auth = join(root, 'auth.json'), bin = join(root, 'fake-codex');
+  const release = join(root, 'release'), started = join(root, 'turn-started');
+  const previous = {home: process.env.MOTE_CODEX_HOME, bin: process.env.MOTE_CODEX_BIN};
+  t.after(async () => {
+    if (previous.home === undefined) delete process.env.MOTE_CODEX_HOME; else process.env.MOTE_CODEX_HOME = previous.home;
+    if (previous.bin === undefined) delete process.env.MOTE_CODEX_BIN; else process.env.MOTE_CODEX_BIN = previous.bin;
+    await rm(root, {recursive: true, force: true});
+  });
+  await writeFile(auth, '{}', {mode: 0o600});
+  await writeFile(bin, `#!${process.execPath}
+import readline from 'node:readline';
+import {writeFileSync,existsSync} from 'node:fs';
+const release=${JSON.stringify(release)},started=${JSON.stringify(started)};
+const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+readline.createInterface({input:process.stdin}).on('line',async line=>{
+ const m=JSON.parse(line);
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'thread-fixture',model:m.params.model},model:m.params.model,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='turn/start'){
+  send({id:m.id,result:{turn:{id:'turn-fixture'}}});
+  writeFileSync(started,'');
+  while(!existsSync(release))await new Promise(resolve=>setTimeout(resolve,5));
+  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:'Generated',citationIds:[]})}}});
+  send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
+ }
+});
+`, {mode: 0o700});
+  process.env.MOTE_CODEX_HOME = root;
+  process.env.MOTE_CODEX_BIN = bin;
+  let revoked = false;
+  const lifecycle = {signal: new AbortController().signal, assertCurrent() {if (revoked) throw new Error('generated pack revoked');}};
+  const reader = {search: async () => [], timeline: async () => ({items: [], nextCursor: null}), evidence: async () => [], activity: async () => ({}), devices: async () => []};
+  const agent = createAgent({reader, protocol: 'codex-app-server', model: 'fixture', agentTimeoutMs: 5000});
+  t.after(() => agent.close());
+  const pending = agent.query({question: 'Generated pin revocation', toolContributions: [{descriptors: createSourceReadPack(), lifecycle}]});
+  await waitFor(started);
+  revoked = true;
+  await writeFile(release, '');
+  await assert.rejects(pending, error => error?.code === 'stale_tool_pin' && error?.recovery === 'stop' && error?.name === 'ContextToolError');
 });

@@ -105,7 +105,7 @@ export function createCodexAgent(options:AgentOptions){
       }));
       assertCurrent();
       accepted=answer;return answer;
-    }catch(error){primaryFailure=true;if(error instanceof AgentYieldError){trace({type:'run.yielded',status:'waiting'});throw error;}trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError||error instanceof ProviderFailure)throw error;throw new AgentProviderError();}
+    }catch(error){primaryFailure=true;if(error instanceof AgentYieldError){trace({type:'run.yielded',status:'waiting'});throw error;}trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});if(error instanceof ContextToolError&&error.recovery==='stop')throw error;if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError||error instanceof ProviderFailure)throw error;throw new AgentProviderError();}
     finally{
       input.signal?.removeEventListener('abort',abort);
       const cleanupErrors:unknown[]=[];
