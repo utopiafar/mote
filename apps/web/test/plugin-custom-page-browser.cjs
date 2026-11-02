@@ -26,10 +26,10 @@ window.addEventListener('load',()=>{parent.postMessage({kind:'fixture-report',re
 };
 async function run(){
  const server=createServer((req,res)=>{hits[req.url]=Date.now();
+  if(req.url==='/slow'){res.setHeader('content-type','image/gif');setTimeout(()=>{hits['/slow-served']=Date.now();res.end(Buffer.from('R0lGODlhAQABAAAAACw=','base64'));},900);return;}
   if(req.url==='/harness.html'){res.setHeader('content-type','text/html');res.end(`<!doctype html><div id="root"></div><script>window.__HARNESS__=${JSON.stringify({nonce,documentKey})};</script><script src="/bundle.js"></script>`);return;}
   if(req.url==='/bundle.js'){res.setHeader('content-type','text/javascript');res.end(require('node:fs').readFileSync(join(temporary,'bundle.js')));return;}
   const entry=files[req.url];if(!entry){res.statusCode=404;res.end();return;}
-  if(req.url==='/slow'){res.setHeader('content-type','image/gif');setTimeout(()=>res.end(Buffer.from('R0lGODlhAQABAAAAACw=','base64')),900);return;}
   res.setHeader('content-type',entry.type);res.end(entry.body);});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
  await app.whenReady();

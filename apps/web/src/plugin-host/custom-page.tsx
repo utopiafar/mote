@@ -51,6 +51,7 @@ export function CustomPluginPage(props: CustomPageProps) {
       if (!loaded) {
         loaded = true;
         issuedDocument = currentDocument();
+        if (!issuedDocument) { props.onNavigated?.(); return; }
         // Issue the channel ONLY to the document that just loaded — a
         // later replacement never receives a port, so its requests have
         // no carrier and old responses die with the old document's port.
@@ -58,7 +59,7 @@ export function CustomPluginPage(props: CustomPageProps) {
         const bridge = new CustomPageBridge({
           instanceId: props.instanceId, nonce: props.nonce, documentKey: props.documentKey,
           generation: props.generation, visible: props.visible,
-          documentAlive: () => currentDocument() === issuedDocument,
+          documentAlive: () => issuedDocument !== null && currentDocument() === issuedDocument,
           declared: props.declared, invoke: props.invoke,
           post: envelope => channel!.port1.postMessage(envelope),
           onRejected: props.onRejected,
