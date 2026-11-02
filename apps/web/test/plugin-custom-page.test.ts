@@ -6,19 +6,20 @@ const frame = { postMessage(env: unknown) { posted.push(env); } };
 const posted: unknown[] = [];
 let visible = true;
 const base = {
-  instanceId: 'inst:one', nonce: 'n-9', frame,
+  instanceId: 'inst:one', nonce: 'n-9', documentKey: 'doc-1', frame,
   generation: () => generation, visible: () => visible, declared: ['read', 'command'],
   invoke: async (m: string, p: unknown) => { calls.push([m, p]); return 'value-' + m; },
   post: (e: unknown) => posted.push(e),
 };
 let generation = 1, calls: [string, unknown][] = [];
-const env = (over: object = {}) => ({ contractVersion: bridgeContractVersion, nonce: 'n-9', instanceId: 'inst:one', generation, requestId: 'r1', kind: 'request', method: 'read', ...over });
+const env = (over: object = {}) => ({ contractVersion: bridgeContractVersion, nonce: 'n-9', documentKey: 'doc-1', instanceId: 'inst:one', generation, requestId: 'r1', kind: 'request', method: 'read', ...over });
 const event = (data: unknown, source = frame) => ({ data, source }) as MessageEvent;
 
 test('foreign source, forged nonce, guessed instance and stale generation never reach the invoker', async () => {
   const bridge = new CustomPageBridge(base);
   assert.equal(await bridge.accept(event(env(), { postMessage: () => {} })), false, 'wrong source');
   assert.equal(await bridge.accept(event(env({ nonce: 'x' }))), false, 'forged nonce');
+  assert.equal(await bridge.accept(event(env({ documentKey: 'doc-2' }))), false, 'a replaced document never inherits the key');
   assert.equal(await bridge.accept(event(env({ instanceId: 'inst:two' }))), false, 'guessed instance');
   assert.equal(await bridge.accept(event(env({ generation: 2 }))), false, 'stale generation');
   assert.equal(await bridge.accept(event(env({ contractVersion: '9' }))), false);
@@ -78,8 +79,14 @@ test('duplicate pending requestIds and non-request kinds never invoke', async ()
   const slow = new CustomPageBridge({ ...base, invoke: async () => { calls.push(['read', undefined]); await gate; } });
   const first = slow.accept(event(env({requestId: 'dup'})));
   assert.equal(await slow.accept(event(env({requestId: 'dup'}))), false, 'a pending requestId is rejected, not overwritten');
+  // Same id in a new generation is a new request — the pending key is
+  // (generation, requestId), not the bare id.
+  generation += 1;
+  const second = slow.accept(event(env({requestId: 'dup'})));
   release(); await first;
-  assert.equal(calls.length, 1, 'the duplicate never invoked');
+  assert.equal(await second, true, 'a new-generation request with the same id is admitted');
+  generation = 1;
+  assert.equal(calls.length, 2, 'each admitted request invoked once; the same-generation duplicate never invoked');
   const bridge = new CustomPageBridge(base);
   for (const kind of ['response', 'event'] as const)
     assert.equal(await bridge.accept(event(env({kind, requestId: 'k-' + kind}))), false, kind + ' carries no request authority');
@@ -91,6 +98,45 @@ test('the total allowance renews per generation', async () => {
   assert.equal(await bridge.accept(event(env())), true);
   generation = 2; // a new view generation opens a fresh allowance
   assert.equal(await bridge.accept(event(env({requestId: 'g2'}))), true);
+});
+
+test('strict wire: binary, cyclic, BigInt, non-JSON and oversized fields are refused without throwing', async () => {
+  calls = [];
+  const bridge = new CustomPageBridge(base);
+  const cyclic: {self?: unknown} = {}; cyclic.self = cyclic;
+  const cases: [unknown, string][] = [
+    [{buffer: new ArrayBuffer(1 << 20)}, 'ArrayBuffer payload'],
+    [cyclic, 'cyclic payload'],
+    [{big: BigInt(1)}, 'BigInt payload'],
+    [{fn: () => 1}, 'function payload'],
+    ['raw string', 'non-envelope value'],
+    [env({requestId: 'x'.repeat(400)}), 'oversized requestId'],
+    [env({payload: {blob: new Uint8Array(4)}}), 'typed-array payload'],
+  ];
+  for (const [data, what] of cases)
+    assert.equal(await bridge.accept(event(data)), false, what);
+  assert.equal(calls.length, 0, 'no case invoked');
+});
+
+test('a rejected invoke posts one correlated bounded failure and releases the slot', async () => {
+  calls = []; posted.length = 0;
+  const bridge = new CustomPageBridge({...base, invoke: async () => { throw new Error('failure-' + 'x'.repeat(400)); }});
+  assert.equal(await bridge.accept(event(env())), true, 'rejection resolves accept — no unhandled rejection');
+  const reply = posted.at(-1) as {kind: string; ok: boolean; error: string; requestId: string};
+  assert.equal(reply.kind, 'response'); assert.equal(reply.ok, false);
+  assert.equal(reply.requestId, 'r1');
+  assert.ok(reply.error.length <= 256, 'the failure is bounded');
+  assert.equal(await bridge.accept(event(env())), true, 'the pending slot was released');
+});
+
+test('a late failure after revocation or generation change never posts', async () => {
+  posted.length = 0;
+  let release!: () => void; const gate = new Promise<void>((_, reject) => { release = () => reject(new Error('late')); });
+  const bridge = new CustomPageBridge({...base, invoke: async () => { await gate; }});
+  const done = bridge.accept(event(env()));
+  bridge.revoke(); release();
+  assert.equal(await done, true);
+  assert.equal(posted.length, 0, 'revoked-channel failure is suppressed');
 });
 
 test('checkpoints are host-bounded only — oversized writes are rejected', () => {
