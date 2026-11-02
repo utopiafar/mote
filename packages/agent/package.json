@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./runtime/profile": {
+      "types": "./dist/runtime/profile.d.ts",
+      "default": "./dist/runtime/profile.js"
     }
   },
   "scripts": {
