@@ -39,9 +39,18 @@ export function CustomPluginPage(props: CustomPageProps) {
     if (!frame?.contentWindow || navigatedRef.current) return;
     let loaded = false;
     let channel: MessageChannel | null = null;
+    // The identity of the issued document: the opaque frame's Location
+    // object itself. A navigation replaces it before any load event —
+    // while it is unreadable the check fails closed.
+    let issuedDocument: object | null = null;
+    const currentDocument = (): object | null => {
+      try { return frame.contentWindow ? frame.contentWindow.location : null; }
+      catch { return null; }
+    };
     const onLoad = () => {
       if (!loaded) {
         loaded = true;
+        issuedDocument = currentDocument();
         // Issue the channel ONLY to the document that just loaded — a
         // later replacement never receives a port, so its requests have
         // no carrier and old responses die with the old document's port.
@@ -49,6 +58,7 @@ export function CustomPluginPage(props: CustomPageProps) {
         const bridge = new CustomPageBridge({
           instanceId: props.instanceId, nonce: props.nonce, documentKey: props.documentKey,
           generation: props.generation, visible: props.visible,
+          documentAlive: () => currentDocument() === issuedDocument,
           declared: props.declared, invoke: props.invoke,
           post: envelope => channel!.port1.postMessage(envelope),
           onRejected: props.onRejected,
@@ -62,6 +72,7 @@ export function CustomPluginPage(props: CustomPageProps) {
       }
       // Any later load means the document was replaced: destroy the issued
       // channel — the mount stays disarmed until the host remounts.
+      issuedDocument = null;
       bridgeRef.current?.revoke();
       bridgeRef.current = null;
       channel?.port1.close(); channel?.port2.close(); channel = null;

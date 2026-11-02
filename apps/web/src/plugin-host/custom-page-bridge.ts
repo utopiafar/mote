@@ -35,6 +35,10 @@ interface BridgeOptions {
   /** The real view-lifetime visibility predicate — admission and results
    * bind to it, not to the generation counter alone. */
   readonly visible: () => boolean;
+  /** Document liveness: true only while the exact issued document still
+   * owns the frame (location-object identity survives transfers and
+   * pending requests — a navigation ends authority before any load). */
+  readonly documentAlive: () => boolean;
   readonly declared: readonly string[];
   readonly invoke: BridgeInvoker;
   readonly post: (envelope: BridgeEnvelope) => void;
@@ -46,15 +50,14 @@ function measuredEnvelope(value: unknown): number {
   try { const raw = JSON.stringify(value); return raw === undefined ? -1 : encoder.encode(raw).length; }
   catch { return -1; }
 }
-function isJsonValue(value: unknown): boolean {
-  // Iterative traversal — nesting depth is bounded by the whole-envelope
-  // byte limit, not an artificial cap; total nodes stay budgeted.
+/** Deep JSON check — every nested value must be an actual JSON value;
+ * undefined inside objects or arrays is refused (sparse slots included). */
+function isJsonDeep(value: unknown): boolean {
   const stack = [value];
   let nodes = 0;
   while (stack.length) {
     const item = stack.pop();
     if (++nodes > 10000) return false;
-    if (item === undefined) continue; // an absent optional field is not a wire value
     if (item === null || typeof item === 'boolean' || typeof item === 'string') continue;
     if (typeof item === 'number') { if (!Number.isFinite(item)) return false; continue; }
     if (Array.isArray(item)) { stack.push(...item); continue; }
@@ -62,6 +65,11 @@ function isJsonValue(value: unknown): boolean {
     return false;
   }
   return true;
+}
+/** The whole actual envelope: only absent top-level optional fields are
+ * exempt — every present field must be a real JSON value. */
+function isJsonEnvelope(envelope: object): boolean {
+  return Object.values(envelope).every(value => value === undefined || isJsonDeep(value));
 }
 
 /** One bound channel. Admission requires the envelope to arrive over the
@@ -91,14 +99,15 @@ export class CustomPageBridge {
     if (env.instanceId !== this.options.instanceId) return drop('instance');
     if (env.generation !== this.options.generation()) return drop('generation');
     if (env.kind !== 'request') return drop('kind');
-    if (this.#revoked || this.#hidden || !this.options.visible()) return drop('lifecycle');
+    if (this.#revoked || this.#hidden || !this.options.visible() || !this.options.documentAlive()) return drop('lifecycle');
     if (!this.options.declared.includes(env.method)) return drop('undeclared');
     if (typeof env.requestId !== 'string' || !env.requestId || env.requestId.length > MAX_ID_CHARS) return drop('requestId');
     const bytes = measuredEnvelope(env);
     if (bytes < 0 || bytes > BRIDGE_MAX_MESSAGE_BYTES) return drop('oversized');
     // The whole actual envelope must be a JSON value — extra fields
-    // carrying binary or cyclic content cannot bypass the wire limit.
-    if (!isJsonValue(env)) return drop('payload');
+    // carrying binary, cyclic or nested-undefined content cannot bypass
+    // or diverge from the measured wire representation.
+    if (!isJsonEnvelope(env)) return drop('payload');
     const pendingKey = env.generation + ':' + env.requestId;
     if (this.#pending.has(pendingKey)) return drop('duplicate');
     // The total allowance renews per view generation — a long-lived page
@@ -107,7 +116,7 @@ export class CustomPageBridge {
     if (this.#total >= BRIDGE_MAX_TOTAL || this.#pending.size >= BRIDGE_MAX_PENDING) return drop('budget');
     this.#total++;
     this.#pending.set(pendingKey, {generation: env.generation});
-    const fenced = () => this.options.generation() === env.generation && this.options.visible() && !this.#revoked && !this.#hidden;
+    const fenced = () => this.options.generation() === env.generation && this.options.visible() && !this.#revoked && !this.#hidden && this.options.documentAlive();
     const respond = (envelope: BridgeEnvelope) => { if (fenced()) this.options.post(envelope); };
     try {
       const value = await this.options.invoke(env.method, env.payload);

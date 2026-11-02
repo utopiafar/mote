@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { CustomPageBridge, bridgeContractVersion, BRIDGE_MAX_PENDING } from '../src/plugin-host/custom-page-bridge';
 
 const posted: unknown[] = [];
-let visible = true;
+let visible = true, alive = true;
 const base = {
-  instanceId: 'inst:one', nonce: 'n-9', documentKey: 'doc-1',
+  instanceId: 'inst:one', nonce: 'n-9', documentKey: 'doc-1', documentAlive: () => alive,
   generation: () => generation, visible: () => visible, declared: ['read', 'command'],
   invoke: async (m: string, p: unknown) => { calls.push([m, p]); return 'value-' + m; },
   post: (e: unknown) => posted.push(e),
@@ -111,6 +111,9 @@ test('strict wire: binary, cyclic, BigInt, non-JSON and oversized fields are ref
     ['raw string', 'non-envelope value'],
     [env({requestId: 'x'.repeat(400)}), 'oversized requestId'],
     [env({payload: {blob: new Uint8Array(4)}}), 'typed-array inside a real envelope'],
+    [env({payload: {limit: undefined}}), 'nested undefined is not a wire value'],
+    [env({payload: [1, undefined, 3]}), 'sparse array slot is not a wire value'],
+    [env({extraField: new ArrayBuffer(8)}), 'binary extra field is not a wire value'],
     [env({extraField: 'x'.repeat(70000)}), 'extra field cannot bypass the wire budget'],
   ];
   for (const [data, what] of cases)

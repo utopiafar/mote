@@ -10,7 +10,7 @@ const requestEnvelope=(key,id='r-preload',mark)=>JSON.stringify({contractVersion
 execFileSync(join(repo,'node_modules/.bin/esbuild'),['apps/web/test/custom-page-harness.tsx','--bundle','--format=iife','--outfile='+join(temporary,'bundle.js'),'--jsx=automatic'],{cwd:repo});
 const hits={};const files={
  '/harness.html':{type:'text/html'},
- '/entry1.html':{type:'text/html',body:`<script>new Image().src='/ran1';addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){const port=e.ports[0];setTimeout(()=>{window.location.href='/entry2.html';},120);port.postMessage(${requestEnvelope(documentKey)});}});</script>`},
+ '/entry1.html':{type:'text/html',body:`<script>new Image().src='/ran1';addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){const port=e.ports[0];setTimeout(()=>{window.location.href='/entry2.html';},120);port.postMessage(${requestEnvelope(documentKey)});parent.postMessage({kind:'fixture-port'},'*',[port]);}});</script>`},
  // The replacement reuses the leaked nonce but never learns the rotated
  // document key — it posts BEFORE its own load event.
  // The replacement holds the leaked nonce+documentKey but never received a

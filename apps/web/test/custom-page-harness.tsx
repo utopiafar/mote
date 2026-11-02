@@ -6,7 +6,7 @@ let generation = 1, visible = true;
 (window as any).got = [];
 (window as any).calls = [];
 (window as any).responseCount = 0;
-window.addEventListener('message', e => {(window as any).got.push(e.data);const f=document.querySelector('iframe');(window as any).srcMatch=e.source===f?.contentWindow;});
+window.addEventListener('message', e => {(window as any).got.push(e.data);const f=document.querySelector('iframe');(window as any).srcMatch=e.source===f?.contentWindow;if(e.ports&&e.ports[0])(window as any).leakedPort=e.ports[0];});
 const HarnessApp = () => {
   const [docKey, setDocKey] = useState(Harness.documentKey);
   const calls: string[] = (window as any).calls;
