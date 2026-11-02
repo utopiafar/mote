@@ -13,13 +13,17 @@
     "./runtime/profile": {
       "types": "./dist/runtime/profile.d.ts",
       "default": "./dist/runtime/profile.js"
+    },
+    "./runtime/dsh": {
+      "types": "./dist/runtime/dsh/provider.d.ts",
+      "default": "./dist/runtime/dsh/provider.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && cp src/plugin.mjs dist/plugin.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prebuild": "npm run build -w @mote/plugin-api"
+    "prebuild": "npm run build -w @mote/plugin-host"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -35,7 +39,8 @@
     "remark-parse": "11.0.0",
     "unified": "11.0.5",
     "@deepseek-ai/dsh-attachment-local": "0.2.0-rc.2",
-    "@mote/plugin-api": "0.1.0"
+    "@mote/plugin-api": "0.1.0",
+    "@mote/plugin-host": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
