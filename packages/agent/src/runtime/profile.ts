@@ -15,6 +15,7 @@ export interface RuntimeProfileConfiguration {
   readonly launch: TrustedRuntimeLaunch;
 }
 /** C03/A10 supply explicit revisions and model capability facts around the current ModelProfile.
+ * Facts apply exactly to profile.settings.model; changing that ID requires fresh model facts/revision.
  * connectionFingerprint includes local-login identity when applicable; this module never reads auth files. */
 export interface ModelProfileInput {
   readonly profile: ModelProfile;

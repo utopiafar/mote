@@ -72,9 +72,57 @@ test('a third runtime is selected from its binding/capabilities without a protoc
   assert.equal(second.modelFingerprint, first.modelFingerprint);
   assert.notEqual(second.runtimeFingerprint, first.runtimeFingerprint);
   f.context.defaultModels = {chat: 'generated-other-model'};
+  f.context.modelVariants = [{profileId: 'generated-http', profileRevision: 7, modelId: 'generated-other-model',
+    modelRevision: 3, capabilities: {tools: true, images: true}}];
   const third = select(f);
   assert.equal(third.runtimeFingerprint, second.runtimeFingerprint);
   assert.notEqual(third.modelFingerprint, second.modelFingerprint);
+});
+
+test('shared-profile model overrides use exact effective tools/images facts and model revision', () => {
+  const f = fixture();
+  f.context.defaultModels = Object.fromEntries(features.map(feature => [feature, 'generated-vision']));
+  f.context.defaultModels.chat = 'generated-text';
+  f.context.modelVariants = [
+    {profileId: 'generated-http', profileRevision: 7, modelId: 'generated-text', modelRevision: 11, capabilities: {tools: false, images: false}},
+    {profileId: 'generated-http', profileRevision: 7, modelId: 'generated-vision', modelRevision: 12, capabilities: {tools: true, images: true}},
+  ];
+  f.context.requirements.chat.capabilities = ['images'];
+  f.context.requirements.insight.capabilities = ['images'];
+  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('runtime_capability_missing'));
+  assert.throws(() => select(f), code('runtime_capability_missing'));
+  const vision = select(f, 'insight');
+  assert.equal(vision.receipt.modelRevision, 12);
+  assert.equal(vision.modelSelection.modelRevision, 12);
+  assert.equal(vision.model.profile.id, 'generated-http');
+  assert.equal(vision.model.profile.settings.model, 'generated-vision');
+  f.context.requirements.chat.capabilities = ['hostDelegation'];
+  assert.equal(validateAgentRuntimeSettings(f.configuration, f.context).profiles.length, 1);
+  assert.equal(select(f).modelSelection.modelRevision, 11);
+  f.context.requirements.chat.capabilities = ['tools'];
+  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('runtime_capability_missing'));
+  assert.throws(() => select(f), code('runtime_capability_missing'));
+  f.context.defaultModels.chat = 'generated-vision';
+  f.context.requirements.chat.capabilities = ['tools', 'images'];
+  f.context.models[0].capabilities = {tools: false, images: false};
+  assert.equal(validateAgentRuntimeSettings(f.configuration, f.context).profiles.length, 1);
+  assert.equal(select(f).model.capabilities.images, true);
+  assert.equal(select(f).model.capabilities.tools, true);
+  assert.equal(f.context.models[0].profile.settings.model, 'generated-model', 'base profile remains unchanged');
+});
+
+test('missing, ambiguous or stale effective-model facts never fall back to the base model', () => {
+  const f = fixture(); f.context.defaultModels = {chat: 'generated-override'};
+  for (const resolve of [() => select(f), () => validateAgentRuntimeSettings(f.configuration, f.context)]) {
+    assert.throws(resolve, code('model_capabilities_unavailable'));
+  }
+  const facts = {profileId: 'generated-http', profileRevision: 7, modelId: 'generated-override', modelRevision: 13, capabilities: {tools: true, images: true}};
+  f.context.modelVariants = [{...facts, profileRevision: 6}];
+  assert.throws(() => select(f), code('model_capabilities_unavailable'));
+  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('model_capabilities_unavailable'));
+  f.context.modelVariants = [facts, structuredClone(facts)];
+  assert.throws(() => select(f), code('runtime_settings_invalid'));
+  assert.throws(() => validateAgentRuntimeSettings(f.configuration, f.context), code('runtime_settings_invalid'));
 });
 
 test('exact persistent identities survive host recreation, reject reinstall/stale versions, and ignore registration order', () => {

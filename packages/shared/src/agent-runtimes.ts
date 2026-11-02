@@ -72,7 +72,7 @@ export const runSelectionReceiptSchema = z.object({
 export type RunSelectionReceipt = z.infer<typeof runSelectionReceiptSchema>;
 export const runtimeSelectionErrorCodes = [
   'runtime_settings_invalid', 'runtime_profile_missing', 'runtime_provider_missing', 'runtime_provider_unavailable',
-  'runtime_binding_stale', 'runtime_module_unavailable', 'model_profile_missing', 'model_not_configured', 'incompatible_runtime_model',
+  'runtime_binding_stale', 'runtime_module_unavailable', 'model_profile_missing', 'model_not_configured', 'model_capabilities_unavailable', 'incompatible_runtime_model',
   'runtime_capability_missing', 'runtime_capability_denied',
 ] as const;
 export type RuntimeSelectionErrorCode = typeof runtimeSelectionErrorCodes[number];

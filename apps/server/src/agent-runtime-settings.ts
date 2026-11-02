@@ -8,11 +8,22 @@ import {
   type ModelProfileInput, type ResolvedRunSelection, type RuntimeSelectionInput, type TrustedRuntimeLaunch,
 } from '@mote/agent/runtime/profile';
 
+/** C03/A10 facts for an alternative model on the same profile/connection. No credentials or resolver callback. */
+export interface ModelVariantFacts {
+  readonly profileId: string;
+  readonly profileRevision: number;
+  readonly modelId: string;
+  readonly modelRevision: number;
+  readonly capabilities: ModelProfileInput['capabilities'];
+}
 /** Local inputs supplied by C03/A09, never query/config HTTP fields. No global ConfigService bag. */
 export interface AgentRuntimeSettingsContext {
+  /** One base record per profile; its facts apply only to its own settings.model. */
   readonly models: readonly ModelProfileInput[];
   readonly modelDefaults: ModelFeatureDefaults;
   readonly defaultModels?: ModelFeatureModels;
+  /** Exact effective-model facts are required for an override different from the base model. */
+  readonly modelVariants?: readonly ModelVariantFacts[];
   readonly providers: readonly RuntimeProviderDescriptor[];
   readonly installedModules: readonly RuntimeModuleReference[];
   readonly requirements: Readonly<Record<ModelFeature, RuntimeTaskRequirements>>;
@@ -30,7 +41,15 @@ function selectionInput(snapshot: RuntimeSettings, feature: ModelFeature, contex
   const model = context.models.find(value => value.profile.id === context.modelDefaults[feature]);
   if (!model) throw new RuntimeSelectionError('model_profile_missing');
   const override = context.defaultModels?.[feature];
-  const selected = override === undefined ? model : {...model, profile: {...model.profile, settings: {...model.profile.settings, model: override}}};
+  let selected = model;
+  if (override !== undefined && override !== model.profile.settings.model) {
+    const facts = (context.modelVariants ?? []).filter(value => value.profileId === model.profile.id &&
+      value.profileRevision === model.profileRevision && value.modelId === override);
+    if (facts.length > 1) throw new RuntimeSelectionError('runtime_settings_invalid');
+    if (!facts.length) throw new RuntimeSelectionError('model_capabilities_unavailable');
+    selected = {...model, profile: {...model.profile, settings: {...model.profile.settings, model: override}},
+      modelRevision: facts[0]!.modelRevision, capabilities: facts[0]!.capabilities};
+  }
   return {revision: snapshot.revision, profile, model: selected, providers: context.providers,
     installedModules: context.installedModules, requirements: context.requirements[feature],
     launch: context.launches?.[profile.id]};
