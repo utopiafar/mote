@@ -39,9 +39,13 @@ export function CustomPluginPage(props: CustomPageProps) {
     if (!frame?.contentWindow || navigatedRef.current) return;
     let loaded = false;
     let channel: MessageChannel | null = null;
-    // Deterministic commit signal: pagehide fires on the document's own
-    // window (reachable through the cross-origin WindowProxy) BEFORE a
-    // replacement parses — revocation at commit, not at load.
+    // Revocation boundary. The open web exposes no pre-load navigation
+    // signal for opaque frames (WindowProxy/Location identity do not
+    // change at commit, and listener attachment through the proxy is
+    // sandbox-blocked): 'load' is the only guaranteed signal. A port a
+    // document deliberately transfers keeps its own authority until the
+    // next load — the replacement itself still has no carrier and
+    // receives nothing.
     const endChannel = () => {
       if (navigatedRef.current) return;
       issuedDocument = null;
@@ -86,8 +90,8 @@ export function CustomPluginPage(props: CustomPageProps) {
           {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, kind: 'channel'}, '*', [channel.port2]);
         return;
       }
-      // Any later load means the document was replaced (usually already
-      // revoked by pagehide) — the mount stays disarmed until remount.
+      // The next load means the document was replaced — end the issued
+      // channel; the mount stays disarmed until the host remounts.
       endChannel();
     };
     frame.addEventListener('load', onLoad);
