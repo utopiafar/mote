@@ -242,6 +242,17 @@ describe('custom page frame guard', () => {
     expect(() => guard.claim(7, claimOf('n1'), mainFrame([bound]))).toThrow(/not prepared/);
   });
 
+  it('tombstones a pinned pending frame when the window is revoked', () => {
+    const guard = new CustomPageFrameGuard();
+    guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
+    guard.revokeWindow(7);
+    // The old frame may still be alive during reload; it cannot navigate.
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/other.html'))).toBe(true);
+    expect(() => guard.claim(7, claimOf('n1'), mainFrame([frame(4, withNonce(entry, 'n1'), mainFrame([]))])))
+      .toThrow(/not prepared/);
+  });
+
   it('forgets tombstones when the window is torn down', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));

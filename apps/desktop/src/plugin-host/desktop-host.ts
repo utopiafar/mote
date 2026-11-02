@@ -240,7 +240,13 @@ export class CustomPageFrameGuard {
   /** Main reload/close: revoke pending and active entries, but keep revoked
    * frames blocked until `prune` observes that they are gone. */
   revokeWindow(webContentsId: number): void {
-    for (const [key, value] of this.#pending) if (value.webContentsId === webContentsId) this.#pending.delete(key);
+    for (const [key, value] of this.#pending) {
+      if (value.webContentsId !== webContentsId) continue;
+      this.#pending.delete(key);
+      // A pinned pending frame may still be alive during reload; block it
+      // before it can navigate to a replacement document.
+      if (value.frameTreeNodeId !== undefined) this.#revoke(webContentsId, value.frameTreeNodeId, value);
+    }
     for (const [key, value] of this.#active) {
       if (value.webContentsId !== webContentsId) continue;
       this.#active.delete(key);
