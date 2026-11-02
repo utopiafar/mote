@@ -65,6 +65,18 @@ function layout<T>(pack:UiLayoutPack<T>,required:readonly UiDestination[]=pack.p
 
 type PresentationSource={contribution:ScopedContribution;catalogs:PluginI18nRegistry;platform:PluginPlatform;facts:UiAvailabilityFacts};
 
+/** Keep the last readable label but take the newly resolved glyph/a11y roles,
+ * so a replacement catalog that only updates accessibility text is not lost.
+ * When the accessible name was derived from the label, it follows the label. */
+function mergeReadableLabel(resolved:ResolvedUiPresentation,cached?:ResolvedUiPresentation):ResolvedUiPresentation{
+  if(!cached)return resolved;
+  const label={text:cached.label.text,...(resolved.label.fallback?{fallback:resolved.label.fallback}:{})};
+  const a11yWasLabel=resolved.a11y.text===resolved.label.text;
+  const a11y=a11yWasLabel?{text:label.text,...(label.fallback?{fallback:label.fallback}:{})}:resolved.a11y;
+  const fallbackReasons=[...new Set([label,resolved.glyph,a11y].flatMap(item=>item?.fallback?[item.fallback]:[]))];
+  return {routeId:resolved.routeId,label,...(resolved.glyph?{glyph:resolved.glyph}:{}),a11y,fallbackReasons};
+}
+
 /** Trusted platform implementations stay local; only metadata and role values are portable.
  * The host owns data, commands, drafts and navigation. Activating a pack changes presentation only. */
 export class UiPresentationHost<T> {
@@ -126,7 +138,9 @@ export class UiPresentationHost<T> {
     // translation for a missing target locale is still readable.
     const unreadable=resolved.label.fallback==='key_missing'||resolved.label.fallback==='namespace_missing';
     if(!unreadable){this.lastPresentations.set(key,resolved);return resolved;}
-    return this.lastPresentations.get(key)??resolved;
+    const merged=mergeReadableLabel(resolved,this.lastPresentations.get(key));
+    if(merged.label.fallback!=='key_missing'&&merged.label.fallback!=='namespace_missing')this.lastPresentations.set(key,merged);
+    return merged;
   }
   /** Re-resolve the active contributed labels from the current runtime locale. */
   refresh(){
@@ -138,7 +152,7 @@ export class UiPresentationHost<T> {
     if(this.fallback){
       const resolved=resolveContributionPresentation(this.fallback.source.contribution.descriptor,this.fallback.source.catalogs,getLocale());
       const unreadable=resolved.label.fallback==='key_missing'||resolved.label.fallback==='namespace_missing';
-      const presentation=unreadable?this.fallback.presentation:resolved;
+      const presentation=unreadable?mergeReadableLabel(resolved,this.fallback.presentation):resolved;
       this.fallback={source:this.fallback.source,presentation};
       next.fallbackPresentation=presentation;
     }else delete next.fallbackPresentation;

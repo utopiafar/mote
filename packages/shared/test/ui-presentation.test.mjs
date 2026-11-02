@@ -266,3 +266,28 @@ test('a removed pack notice re-resolves on runtime locale changes',()=>{
     assert.equal(host.getSnapshot().fallbackReason,'theme_removed');
   }finally{configureLocale(()=> 'zh-CN');}
 });
+
+test('a replacement catalog updates accessibility text while the label stays readable',()=>{
+  const host=fixture();
+  const catalogs=new PluginI18nRegistry();
+  const dispose=catalogs.register('fixture.plugin','en',{'theme.name':'Studio','theme.a11y':'Studio theme'});
+  const facts={requirementsAvailable:true,registeredNativeCapabilities:new Set()};
+  const theme={...linearUiTheme,id:'fixture.theme',version:'1'};
+  const contribution={packageId:'fixture.pkg',descriptor:parseUiContribution({
+    id:'fixture.theme',kind:'theme',apiVersion:'1',platforms:['web'],
+    presentation:{labelKey:'theme.name',a11yKey:'theme.a11y',i18nNamespace:'fixture.plugin'},
+  })};
+  const remove=host.registerContribution(contribution,{id:'fixture.theme',version:'1'},theme,catalogs,'web',facts,'en');
+  host.activate({theme,layout:defaultUiLayout});
+  assert.equal(host.getSnapshot().themePresentation.a11y.text,'Studio theme');
+  dispose();
+  catalogs.register('fixture.plugin','en',{'theme.a11y':'Updated accessible name'});
+  host.refresh();
+  const snapshot=host.getSnapshot();
+  assert.equal(snapshot.themePresentation.label.text,'Studio');
+  assert.equal(snapshot.themePresentation.a11y.text,'Updated accessible name');
+  assert.deepEqual(snapshot.themePresentation.fallbackReasons,['key_missing','locale_missing']);
+  remove();
+  assert.equal(host.getSnapshot().fallbackPresentation.label.text,'Studio');
+  assert.equal(host.getSnapshot().fallbackPresentation.a11y.text,'Updated accessible name');
+});
