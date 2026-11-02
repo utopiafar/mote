@@ -83,6 +83,7 @@ export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureIn
     ...hostFeatures,
   ]) {
     const existing = featureMap.get(feature.id);
+    if (existing && existing.version !== feature.version) throw new Error('Conflicting feature version for ' + feature.id);
     featureMap.set(feature.id, existing ? {...existing, components: [...existing.components, ...feature.components]} : feature);
   }
   const features: FeatureManifest[] = [...featureMap.values()].map(f => ({

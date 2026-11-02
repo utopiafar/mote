@@ -171,6 +171,11 @@ test('common host snapshot drives inventory availability and digest', async t =>
     agent: {schemaVersion: 1 as const, revision: 0, features: [], capabilities: []},
     connectors: [], pipelines: [], processing: [], workflows: [],
   };
+  assert.throws(() => projectFeatureInventory({
+    ...base,
+    server: {...base.server, features: [{id: 'fixture.feature', version: '1', components: []}]},
+    host: {snapshot: host.snapshot(), descriptors: descriptors(oldIdentity)},
+  }), /Conflicting feature version/, 'a host feature must not silently inherit a different server version');
   const active = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: descriptors(oldIdentity)}});
   assert.deepEqual(active.capabilities.filter(c => c.featureId === 'fixture.feature').map(c => c.state), ['active', 'active']);
   const activeFeature = active.features.find(f => f.id === 'fixture.feature');
