@@ -40,6 +40,8 @@ flowchart TD
 
 完整默认组合只选择包、贡献及初始实现，不成为第二份 Memory Recipe、来源 binding 或 DSH Profile 权威。Central/Web/Mac/Android 各自声明实际平台支持；一包可含多平台贡献，不支持项必须可见。保持组件独立版本，协议不匹配明确拒绝，不引入旧 reader。
 
+当前发布 `pluginManifestSchema`（worker/entry/archive/capabilities/configuration）与 `FeatureManifest`（id/version/components/requires）是两套不同用途的描述。H03 收敛为 `plugin-api` 中唯一规范包 Manifest：保留固定 release tag/commit、archive digest、来源身份、配置、trust、运行位置、精确依赖与多 contribution。FeatureRegistry 和 UI/native 描述均从其贡献投影，不再手写第二份包权威；U01 扩贡献描述/平台 DTO，不把现有 FeatureManifest 当另一包 schema。旧入口同批切到当前格式，不添加旧 reader 或双写。preview 只解析元数据，不 import、调用模型或扫历史；resolve/install/verifyInstalled 的路径、尺寸、entry、摘要、缓存重验和操作重放保护保留，官方/外部用同一规则。
+
 ## 3. 公共合同的责任与生命周期
 
 H02 先交可审版本的最小合同，H03/H04/H06、C01、A01/A02、U01/U02 再补各自语义与真实使用样本。以下为职责决定，不抢先规定尚未实现的类型签名。
@@ -55,6 +57,8 @@ H02 先交可审版本的最小合同，H03/H04/H06、C01、A01/A02、U01/U02 �
 | 持久执行 | C05；所有后台任务 owner | 使用原 ExecutionEngine/任务与操作身份；stop admission、cancel、drain、receipt/unknown 保持，不另建调度权威 |
 | Runtime/Model/Host 输出 | A01/A02/A04/A09；DSH、Codex、Central | runtime 与 model 正交；普通配置对新 run 生效，已接纳 run 固定版本排空；Host 单独裁决输出、证据递送与终态 |
 | UI/设备 DTO 与页面生命周期 | U01/U02；C/A producer、Web/Mac/Kotlin consumer | 跨端是 schema DTO 和有限命令，不传 Node 对象/函数；精确实例依赖、可挂起 view、草稿/返回票据、平台支持与实际 receipt |
+
+UI/设备可用性至少能区分 active、依赖不可用、requires-build、平台 unsupported、撤权及等待设备；与 installed/desired/observed、verified/unknown 是不同事实，不把现有 `CapabilityState` 三值冒充完整可用性。必需 native provider 缺失显示 requires-build，OS grant 缺失仍走权限状态，不等同需要构建。U01 定义版本化贡献元数据及有限命令/依赖，U23 投影随 build 注册的实际 provider 与实例 binding；U02 冻结 draft/return 生命周期。具体枚举/字段由 H02/U01 共同收敛，分域提案尚非已冻结 API；现有 `ui-page` 是屏幕证据格式，不改作 UI schema。
 
 创建权、注册权和关闭权归同一插件 scope。`prepare` 校验依赖并取得可回收资源；`start` 才接纳工作/发布可用贡献；`quiesce` 停新准入和定时器；`stop` 取消/排空受管工作并撤销提交资格；`dispose` 反向释放回调、监听器、连接、子进程和注册。若领域允许固定版本工作排空，必须保持其依赖资源到排空完成。撤权、删除、显式停止及安装身份失效优先于排空许可；取消信号不能单独证明不合作任务已经失去写资格。
 
@@ -189,6 +193,23 @@ A03 只读准备仅核实 package/lock 固定 DSH rc.2，准备 worker 的 workt
 - Android 当前 `MoteApplication` 启动 LocalStateRepository 和恢复/retention/upload/source 工作。`LocalStateRepository` 持 application coroutine、preference listener，并向 notification 发状态；U20B 接管唯一 producer 且关闭时注销 listener/cancel coroutine，Activity 只取消自己订阅。不得由 Application/UI 再建第二 producer。
 - Android 当前 `RecordEditorActivity` 在明确麦克风授权后创建 MediaRecorder，在 `onPause` 停止、release 并保存草稿，播放器也 release。U19 的 Record factory 保持这条 view 录音生命周期；它不同于允许独立后台运行的 capture/transport scope。OS 授权、原生重建和系统入口仍需阶段 native 验证。
 
+三端只读清点发现的漏列文件按下列职责补清；这是既有功能的 writer 归属，不新增任务卡或产品政策：
+
+| 接缝 | 明确 writer / 所有权与关闭责任 |
+| --- | --- |
+| Mac `background.ts`/`background-worker.ts`、`queue.ts` | U16 持四条 lane 的 worker/pending futures、DurableQueue 的批次/transport producer、lease/cancel/drain；U17/U18 只消费 lease，不共关 worker |
+| Mac `calendar-actions.ts`、`source-selection.ts`、`sync-content.ts` | calendar native executor/ledger 归 U16，列入 J17 Mac 实际 consumer；source picker/identity 归 U18A；sync/readCentralContent 归 U17A；均由 U04 串行接 roots |
+| Mac 最小宿主文件 | `secret-storage.ts`/`profile.ts`/`response-body.ts` 的 OS/私有 IO/有界传输原语由 U04 持；`login-session.ts` 的连接续期业务归 U18A；`contracts/*` 由 H02/U01 冻结跨端语义，U04 适配；`native-status.ts` 归 U23 投影，U16 提供实际运行事实，不在壳另造状态源 |
+| Mac capture/source 族辅助对象 | Chrome protocol/constants/native-host、source-types、app-capture、privacy、image-dedupe、original-spool、record-metadata、priority-scheduler、directory-catalog、file-index、ingress-protocol 随 U16 的 factory/资源 scope；系统权限/IO 原语由 U04 adapter 提供，不留下固定业务 factory |
+| Web `api.ts` 与共享 view 原语 | `api.ts` U03 先持安全 transport 最小切片 → U08 串行页面桥切片；不把 P2 整卡作为 P1 前置。`unsaved.ts`/`resource-cache.ts`/useResource/useForegroundResources 为 U03 持有、服从 U02 scope 的通用原语；业务 cache/策略仍归各插件 |
+| Web 草稿/记录/来源 | `chat-drafts.ts` 归 U13；`open-question-draft.ts` 归 U14A；`features/notes.tsx` 归 U06；`CodingUploads.tsx` 归 U15A，随实际业务 controller 迁移 |
+| Web route/壳/轮询与 PageProps | route-query/owner-question-route/memory-source-route/workspace-focus/navigation 的跨端引用/返回语义归 U24；WorkspaceSidebar/shell-components/session/login-handoff 的通用壳/transport 归 U03，theme/layout 贡献 U10，授权操作 UI 仍归 U15C。U03 负责退出巨型 PageProps 接线；status/devices 管理读 scope 归 U15C（消费现有端口，U23 后续补能力投影，不反等 P4），activity 归 U14C，insight history 归 U14B，range/timelineRevision 归 U11 collection；各自隐藏停读。U03 只保留连接/session 状态 |
+| Android transport/notes/import/壳 | `CentralClient.kt` 的有界 HTTP/错误原语归 U05；`CentralNotes.kt` 的加密 draft/outbox/同 ID ambiguous ACK 归 U06；`CentralImports.kt` 的 durable 分段上传归 U20B；`CentralActivity.kt` 壳归 U05 → U24 深链切片。共享 IO 不携业务 defaults/策略 |
+| Android 状态/catalog/notification/retention | `NativeStatus.kt` 归 U23 投影、U20B 供实际本地 producer；`CentralCatalogDescriptor.kt` 归 U09；`NotificationObservations.kt` 归 U19 的 SystemEventCollector；`RetentionWorker.kt` 归 U20C，调度与 scope 停止随 storage provider |
+| Android `MoteApplication` 每段编排 | U05 唯一改 root，仅调用 factory：Notifications/MediaCollectionService/Accessibility refresh 归 U19；SourceWork 归 U20A；LocalState/UploadHistoryRecovery/UploadWorker 归 U20B；QueueStorage recovering/maintaining、orphan recovery/dedupe/RetentionWorker 归 U20C。producer 重建、flags 和工作顺序由对应 provider 合同保持，不复制新旧两套调度 |
+
+当前 Web `webFeatures` 是模块级单例，bootstrap 在 import 期安装 builtins，install/register 的 disposer 未由 bootstrap 保存，Host.close 尚无实际调用者；U03 要把这些真实创建与释放纳入启动根。当前 Mac lane 懒启动/unref 和 Android LocalState 无 dispose 也不能算已有插件关闭保证；上述 owner 实现后才可验真，本文没有将它们标为通过。
+
 ## 7. 最短真实链与风险验收
 
 G0 交设计及合同，不运行全仓测试凑证明。G1 的第一条真实链由 H05+C29 接通，U06 接三端真实 consumer：
@@ -208,6 +229,8 @@ G0 交设计及合同，不运行全仓测试凑证明。G1 的第一条真实�
 | 新 provider 安装抢占 binding，卸载后静默换算法 | H06/C09、领域/二级插件；J05/J11 | 反向安装顺序不改变显式选择；依赖失效实际停用并拒绝晚提交，不自动选另一个 |
 | 页面替换/连接切换丢 draft、隐藏仍读旧 owner 内容 | U02/U08/U24；J12/J13 | view read scope/current owner/frame identity 失效；draft/return ticket 和后台 durable scope 各守生命周期 |
 | Query 因插件启用取得写权限，未递送证据产生 citation | C04/A04/A08/C27；J08/J10 | Host fresh auth/delivery ledger/最终校验；只读工具，无 shell/外部效果旁路 |
+
+J17 的三端真实效果消费者除 C25、Web U14C、Android U22B 外，明确包含 Mac U16 的 `calendar-actions.ts`/native ledger（U18A 提供现有权限/连接 UI，U23 投影能力）。既有 EventKit/device/calendar/version/grant 检查与真实 receipt/readback 保持；未获 OS 授权或未有实际 calendar 的环境不得由 fixture 冒称 Mac 已执行。
 
 按 [testing](../testing.md) 和 [real-world-testing](../../.agents/skills/real-world-testing/SKILL.md) 选择回归。现有真实起点包括 server 的 `notes.test.ts`、`source-pipelines.test.ts`、`backend-plugin-scope.test.ts`、`memory-publication-retirement.test.ts`、`plugin-control-journeys.test.ts`，Web 的 `feature-bootstrap.test.ts`/`feature-host.test.ts`，以及 `apps/android/test-fixtures/central-kotlin-contract.ts` 的实际 HTTP→Kotlin 消费。它们是后续风险检查入口，本 H01 未执行，也不能据此声称新路径已通过。H15 复用生成数据与可控故障；新 heavy runner 放手选目录，不进入普通 test glob。
 
@@ -237,4 +260,4 @@ H01 当前唯一写入文件是本文。未取得 `feature-inventory.ts`、`app.
 
 H02 的最小拟写范围为 `packages/plugin-api/src/contracts/` 内身份、服务引用、生命周期、能力/错误/取消及 snapshot 的平台中性模块与聚焦 T1；公开出口由本 owner 串行提交。Manifest 形状留 H03、扩展选择留 H06、状态实现留 H17、领域端口留 C/A/U。包清单/tsconfig/exports/测试接入若为合同可运行所必需，先向 root/构建 owner 提交准确增量并取得租约；不借 H02 先写 SDK、Host runtime、业务 consumer 或原生 adapter。`feature-services.ts` 仅在确需最小过渡端口且 root 明确交接时改，不能整袋公开导出。
 
-独立架构审查针对当前集中创建 → 插件对象所有权、平台 trust/公共服务边界、持久身份/提交资格、跨端 DTO 与 view/durable scope 这些实质决定，由 root 协调；本 worker 是本 PR native review 的唯一触发者。有效问题按真实调用链与当前版本修复，同轮成批复验失效范围；命名/低风险偏好不当阻塞。若改变已定授权/删除/产品能力政策，再向 Owner 提供具体差异；普通既有合同修复不新增设计审批。
+独立架构审查针对当前集中创建 → 插件对象所有权、平台 trust/公共服务边界、持久身份/提交资格、唯一 Manifest/贡献投影、跨端 DTO 与 view/durable scope 这些实质决定。root 协调确认以本 PR 一次完整 native review 覆盖该范围，本 worker 为唯一触发者，不再并行触发第二个同范围审查。有效问题按真实调用链与当前版本修复，同轮成批复验失效范围；命名/低风险偏好不当阻塞。若改变已定授权/删除/产品能力政策，再向 Owner 提供具体差异；普通既有合同修复不新增设计审批。
