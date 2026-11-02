@@ -110,3 +110,15 @@ test('discarded staged reads do not leak private evidence layers through close',
   await bridge.close();closed=true;
   assert.deepEqual(observed,[],'the private layer ledger must be restored with the public records map');
 });
+
+test('discarded capability discovery cannot authorize a later execute',async()=>{
+  const bridge=await startBridge({...reader,mediaActivity:async()=>({observations:1})},{question:'Generated staged capability',deviceId:'selected'},12);
+  try{
+    const discovery=await bridge.prepareDelivery('capability_discover',{name:'media_activity'},signal());
+    discovery.discard();
+    await assert.rejects(
+      bridge.prepareDelivery('capability_execute',{name:'media_activity',version:'1',argumentsJson:'{}'},signal()),
+      /Discover this exact registered capability/,
+    );
+  }finally{await bridge.close();}
+});
