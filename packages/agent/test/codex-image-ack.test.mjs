@@ -4,10 +4,11 @@ import {mkdtemp,writeFile,rm,access} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
-import {parseAnswer} from '../dist/index.js';
+import {parseAnswer,createOfficialReadPacks} from '../dist/index.js';
 import {startBridge} from '../dist/bridge.js';
 import {CodexSession,ImageAcknowledgementRejected} from '../dist/codex-session.js';
 import {ContextToolError} from '../dist/tool-errors.js';
+import {contextToolSnapshot,pinContextTools} from '../dist/tool-contributions.js';
 import {generatedImageRead,digest} from './image-region-fixture.mjs';
 
 const id = 'b54d3aaa-4ca3-5073-bb47-ad2db6e84a13';
@@ -58,9 +59,14 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   process.env.MOTE_CODEX_BIN = bin;
   const bytes = await sharp({create:{width:4,height:4,channels:3,background:'#abcabc'}}).png().toBuffer();
   const reader = {search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[],readImage:async args=>generatedImageRead(bytes,args)};
-  const bridge = await startBridge(reader,{question:'Generated Codex image ack',directImages:[{id,name:'Generated image',mimeType:'image/png',hash:digest(bytes),sizeBytes:bytes.length}]},12);
-  t.after(()=>bridge.close());
   let revoked=false;
+  const lifecycle = {signal:new AbortController().signal,assertCurrent(){if(revoked)throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}};
+  const input = {question:'Generated Codex image ack',directImages:[{id,name:'Generated image',mimeType:'image/png',hash:digest(bytes),sizeBytes:bytes.length}],toolContributions:[{descriptors:createOfficialReadPacks(),lifecycle}]};
+  const pinned = pinContextTools(input, reader);
+  const bridge = await startBridge(reader,pinned,12);
+  const snapshot = contextToolSnapshot(pinned);
+  const assertPins = () => {for(const pin of snapshot.entries)snapshot.assertActive(pin);};
+  t.after(()=>bridge.close());
   const tokens = [], ackBodies = [], originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
     if (String(url).endsWith('/_image_delivery')) {
@@ -82,8 +88,8 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   const session = new CodexSession({model:'fixture',agentTimeoutMs:5000},toolCall,undefined,undefined,async (token, delivered) => {
     const response = await fetch(bridge.url + '/_image_delivery',{method:'POST',headers:{Authorization:'Bearer ' + bridge.token,'Content-Type':'application/json'},body:JSON.stringify({token,delivered})});
     if (!response.ok) throw new ImageAcknowledgementRejected();
-  },()=>{if(revoked)throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');});
-  t.after(() => session.close());
+  },assertPins);
+  t.after(async () => {await session.close().catch(() => {});});
   await session.start('Generated image ack', []);
   return {bridge, session, tokens, ackBodies, started, release, revoke:()=>{revoked=true;}};
 }
