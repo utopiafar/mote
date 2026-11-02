@@ -24,7 +24,11 @@ const agent={configured:false,query:async()=>{throw Error('No model in bootstrap
 test('default loader preserves the complete product, owner checks and original note write/read, then closes its vault',async t=>{
   const {config,headers}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(()=>node.app.close());
-  assert.deepEqual(node.featureHost.registry.inventory().features.map(feature=>feature.id),defaultDistribution.features.map(entry=>entry.descriptor.id));
+  assert.deepEqual(node.featureHost.registry.inventory().features.map(feature=>feature.id),[
+    'mote.activity','mote.files','mote.actions','mote.connections','mote.system','mote.storage','mote.capture','mote.context','mote.materials',
+    'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
+    'mote.imports','mote.ask','mote.usage','mote.insights','mote.diagnostics','mote.agent-view','mote.features',
+  ]);
   assert.equal(node.bootstrap.snapshot().contributions.length,3);
   assert.deepEqual(node.bootstrap.hostDependencies,defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})));
   const input=note();
@@ -46,6 +50,8 @@ test('missing or duplicate foundation providers reject before any factory or HTT
     await assert.rejects(buildApp(config,{distribution}),{code:'MOTE_BOOTSTRAP_INVALID'});
   }
   await assert.rejects(buildApp(config,{distribution:{...defaultDistribution,foundations:[configuration,...defaultDistribution.foundations]}}),{code:'MOTE_BOOTSTRAP_INVALID'});
+  const wrongApi:FoundationProvider<'storage'>={...storageProvider,contribution:{...storageProvider.contribution,provides:[{kind:'service',id:'mote.platform.storage',apiVersion:'2',cardinality:'single'}]}};
+  await assert.rejects(buildApp(config,{distribution:{...defaultDistribution,foundations:defaultDistribution.foundations.map(provider=>provider.kind==='storage'?wrongApi:provider.kind==='configuration'?configuration:provider)}}),{code:'MOTE_BOOTSTRAP_INVALID'});
   assert.equal(opened,0);
 });
 
