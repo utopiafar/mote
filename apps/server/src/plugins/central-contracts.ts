@@ -71,6 +71,8 @@ export interface RequestAuthorization {
   assertCapture(authority: RequestAuthority, input: CaptureInput): void;
   assertOwnSource(authority: RequestAuthority, sourceId: string): void;
   assertOwnDevice(authority: RequestAuthority, input: {deviceId: string}): void;
+  /** Existing collector platform identity check; this does not admit a write. */
+  assertOwnPlatform(authority: RequestAuthority, platform: unknown): void;
 }
 export type ModelAuthority = Pick<BackgroundModelAuthorization, 'capture' | 'assertCurrent' | 'run'>;
 export type ModelAdmission = Pick<ModelAuthorizationHost, 'manual' | 'automatic' | 'assertEvidence' | 'evidenceTriggers'>;

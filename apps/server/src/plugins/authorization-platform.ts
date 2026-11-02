@@ -112,6 +112,10 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     },
     assertCurrent(request:RequestAuthority){assertRequest(request);},
     assertOwnDevice(request:RequestAuthority,input:{deviceId:string}){const value=assertRequest(request);if(!owner(value)){if(value.mcp)throw denied();connections!.assertOwnDevice(value.credential!,input);}},
+    assertOwnPlatform(request:RequestAuthority,platform:unknown){
+      const value=assertRequest(request);
+      if(!owner(value)){if(value.mcp)throw denied();connections!.assertPlatform(value.credential!,platform);}
+    },
     assertOwnSource(request:RequestAuthority,sourceId:string){
       const value=assertRequest(request);
       if(value.mcp){if(!value.mcp.write||!value.mcp.sourceIds.includes(sourceId)||!configuration()?.mcpWriteSourceIds?.includes(sourceId))throw denied('mcp_write_scope_denied');}
