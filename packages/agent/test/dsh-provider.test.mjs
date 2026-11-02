@@ -69,7 +69,7 @@ test('private DSH transport binds the native turn/call identity and confirms onl
   const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}});
   const frame = await response.json(); assert.equal(response.status, 200); assert.deepEqual(f.calls[0].attempt, attempt);
   assert.equal(f.delivered, false, 'HTTP body receipt is not the separate delivery ACK');
-  assert.equal((await f.send('/ack', {id: frame.id, delivered: true})).status, 200);
+  assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 200);
   await new Promise(resolve => setImmediate(resolve)); assert.equal(f.delivered, true);
 });
 
@@ -85,6 +85,18 @@ test('child ACK response waits for Host post-sender eligibility and cannot repor
   f.host.tools.deliver = async (_attempt, _call, sender) => { await sender({text: 'Generated payload'}); throw Error('Generated stale attempt after sender'); };
   f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0});
   const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}}), frame = await response.json();
-  assert.equal((await f.send('/ack', {id: frame.id, delivered: true})).status, 400);
+  assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 400);
   await assert.rejects(f.channel.failure, {reason: 'tool_failure'}); assert.equal(f.delivered, false);
+});
+
+test('runtime delivery receipt is bound to the run, fixed attempt, native call and exact payload and is one-shot', async t => {
+  const f = await channelFixture(t), attempt = {id: 'host-initial', index: 0};
+  f.channel.bindCall(1, 'native-call', definition.name, attempt);
+  const response = await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}}), frame = await response.json();
+  assert.equal(frame.receipt.runId, 'generated-run'); assert.equal(frame.receipt.attemptId, attempt.id); assert.equal(frame.receipt.callId, 'native-call');
+  for (const changed of [{runId: 'other-run'}, {attemptId: 'host-repair'}, {callId: 'other-call'}, {payloadFingerprint: '0'.repeat(64)}]) {
+    assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, ...changed, delivered: true})).status, 400); assert.equal(f.delivered, false);
+  }
+  assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 200);
+  assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 400); assert.equal(f.calls.length, 1);
 });

@@ -99,6 +99,7 @@ export async function settleHostCleanup(tasks: readonly (() => unknown | Promise
 /** A08 supplies staged reads: no ledger mutation before confirm. The Host
  * checks the issued attempt before read, before disclosure and after ACK. */
 export interface HostSessionAssembly {
+  readonly systemPrompt: string;
   readonly prompt: string;
   readonly outputSchema?: Readonly<Record<string, unknown>>;
   readonly contextUsage: NonNullable<AgentAnswer['contextUsage']>;
@@ -154,7 +155,7 @@ class ManagedHostRunSession implements HostRunSession {
     };
     signal.addEventListener('abort', this.abortListener, {once: true});
     this.port = {
-      identity: dependencies.identity, signal,
+      identity: dependencies.identity, systemPrompt: assembly.systemPrompt, signal,
       tools: {definitions: dependencies.tools.definitions, deliver: (attempt, call, sender) => this.track(async () => {
         this.assertAttempt(attempt);
         if (typeof call.callId !== 'string' || !call.callId || !dependencies.tools.definitions.some(tool => tool.name === call.name)) throw new RuntimeContractError();

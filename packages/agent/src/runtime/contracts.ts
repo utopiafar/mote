@@ -91,6 +91,8 @@ export type RuntimeEvent =
 /** All callbacks are local trusted adapters, not RPC escape hatches or a sandbox. */
 export interface HostRunPort {
   readonly identity: RuntimeRunIdentity;
+  /** Exact Host-assembled system policy, fixed before runtime prepare. */
+  readonly systemPrompt: string;
   readonly signal: AbortSignal;
   readonly tools: HostToolPort;
   assertCurrent(): void;

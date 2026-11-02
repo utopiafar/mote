@@ -12,9 +12,10 @@ import {AgentProviderError, AgentResponseError, AgentTimeoutError, type AgentOpt
 import {observeModelTransport} from '../../model-transport-observer.js';
 import {observeHarness} from '../../usage.js';
 import {modelConnection, validateModelOptions} from '../../model-runtime.js';
-import {SYSTEM_PROMPT} from '../../instructions.js';
 import {runtimeService, type RuntimeProvider, type RuntimeHandle, type RuntimeRunRequest, type RuntimeOutcome, type RuntimeAttempt} from '../contracts.js';
-import type {RuntimeProfileConfiguration} from '../profile.js';
+import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
+import {createHostRunSession, type HostSessionAssembly} from '../../host/run-session.js';
+import type {HostRunDependencies} from '../../host/run-contracts.js';
 import {createDshHostChannel} from './context-plugin.js';
 import {DSH_RUNTIME_ID, compileNativeDshProfile, createRuntimePatch, DshProfileError, type InstalledDshModule} from './profile-compiler.js';
 
@@ -25,10 +26,16 @@ export type {InstalledDshModule} from './profile-compiler.js';
 export type DshModelAdapter = Omit<AgentOptions, 'reader' | 'codex' | 'runModel' | 'contextToolMode'>;
 export interface DshProviderOptions {
   readonly installedModules?: readonly InstalledDshModule[];
-  /** Host assembly input; never selected from model output or query parameters. */
-  readonly systemPrompt?: string;
   /** Safe lifecycle observation for selected local integration checks. */
   readonly resourceObserver?: (event: {type: 'created' | 'closed'; runId: string; root: string}) => void;
+}
+
+/** Assemble only an already resolved selection with real Host-owned leases.
+ * Configuration admission/persistence and model adapter construction remain outside this provider. */
+export function prepareDshRun(selection: ResolvedRunSelection, dependencies: Omit<HostRunDependencies, 'profile' | 'identity'> & {readonly runId: string}, assembly: HostSessionAssembly) {
+  if (selection.runtime.runtimeId !== DSH_RUNTIME_ID || !isDeepStrictEqual(selection.modelSelection, dependencies.model.selection)) throw new DshProfileError('dsh_profile_invalid');
+  const {runId, ...ports} = dependencies, profile = selection.runtime;
+  return createHostRunSession({...ports, profile, identity: {runId, runtime: {id: profile.runtimeId, revision: profile.binding.revision, profileId: profile.profileId, profileRevision: profile.profileRevision, assemblyFingerprint: profile.assemblyFingerprint}, model: selection.modelSelection}}, assembly);
 }
 
 /** One real SDK child per handle. Runtime/provider objects own all private resources;
@@ -44,6 +51,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
       if (!accepting || stopped) return Promise.reject(new AgentProviderError({category: 'blocked', code: 'runtime_unavailable', executionStarted: false}));
       const preparing = (async (): Promise<RuntimeHandle> => {
         host.assertCurrent(); model.assertCurrent();
+        if (typeof host.systemPrompt !== 'string' || !host.systemPrompt.trim()) throw new DshProfileError('dsh_profile_invalid');
         const adapter = structuredClone({...model.value, authorizeModelRequest: undefined});
         const authorize = model.value.authorizeModelRequest;
         validateModelOptions(adapter);
@@ -78,7 +86,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
           await mkdir(join(root, 'workspace'));
           const patch = join(root, 'runtime.patch.json');
           const entry = fileURLToPath(new URL('../../plugin.mjs', import.meta.url));
-          await writeFile(patch, createRuntimePatch(entry, adapter.model!, adapter.baseUrl, adapter.reasoningEffort, adapter.maxTokens, adapter, options.systemPrompt ?? SYSTEM_PROMPT, native), {mode: 0o600});
+          await writeFile(patch, createRuntimePatch(entry, adapter.model!, adapter.baseUrl, adapter.reasoningEffort, adapter.maxTokens, adapter, host.systemPrompt, native), {mode: 0o600});
           host.assertCurrent(); if (stopped) throw new AgentProviderError();
           harness = new DeepSeekHarness({profile: 'sdk-minimal', patches: [patch], dshHome: join(root, 'home'), cwd: join(root, 'workspace'), processCwd: join(root, 'workspace'),
             provider: connection.route, model: adapter.model!, maxTokens: adapter.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS, initializeTimeoutMs: 30_000, requestTimeoutMs: adapter.requestTimeoutMs ?? 120_000,

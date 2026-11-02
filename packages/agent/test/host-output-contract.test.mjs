@@ -51,7 +51,7 @@ function fixture(overrides = {}) {
     commitFence: {assertCurrent() { if (!active) throw new Error('revoked grant'); }},
   };
   const assembly = {
-    prompt: 'Generated assembled prompt', contextUsage: metrics, evidence: overrides.evidence ?? empty,
+    systemPrompt: 'Generated Host system policy', prompt: 'Generated assembled prompt', contextUsage: metrics, evidence: overrides.evidence ?? empty,
     async readTool(call, signal) { return overrides.readTool ? overrides.readTool(call, signal) : {payload: {text: 'Generated payload'}, confirm() { calls.push('confirm'); }}; },
     async close() { calls.push('bridge.close'); await overrides.close?.(); },
     observe(event) { events.push(event); }, cleanupFailed(errors) { cleanupErrors.push(...errors); },
@@ -303,6 +303,18 @@ test('invalid question never prepares a runtime and a closed unstarted session e
   await assert.rejects(session.execute());
   assert.equal(closed.calls.includes('run'), false); assert.equal(closed.events.at(-1).attemptId, null);
   assert.equal(closed.events.at(-1).event.terminal.kind, 'cancelled');
+});
+
+test('Host system instructions are fixed on the formal port before runtime preparation', async () => {
+  let received;
+  const f = fixture({prepare: async host => {
+    received = host.systemPrompt; host.emit({type: 'tools.ready', tools}, null);
+    return {async run() { return outcome(); }, async repair() { return outcome(); }, async cancel() {}, async close() {}};
+  }});
+  const expected = assembleHostContext({question: 'Generated Memory instruction', skill: 'memory-extraction'}, []).system;
+  f.assembly.systemPrompt = expected;
+  const s = await f.create(); f.assembly.systemPrompt = 'Changed after prepare';
+  assert.equal(received, expected); assert.equal(s.port.systemPrompt, expected); await s.execute();
 });
 
 for (const service of ['mote.agent.runtime', 'generated.model', 'mote.agent.host-output']) {

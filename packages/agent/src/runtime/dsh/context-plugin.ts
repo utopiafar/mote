@@ -1,5 +1,5 @@
 import {createServer} from 'node:http';
-import {randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
+import {createHash, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import type {Context} from '@deepseek-ai/cordis';
 import {assertObjectJsonSchema, type ToolDefinition} from '@deepseek-ai/dsh-tools';
@@ -9,6 +9,8 @@ import {ContextToolError} from '../../tool-errors.js';
 
 interface ChildConfiguration {url: string; token: string; runId: string; tools: readonly RuntimeToolDefinition[]}
 interface NativeCall {attempt: RuntimeAttempt; name: string}
+interface RuntimeReceipt {runId: string; attemptId: string; callId: string; payloadFingerprint: string}
+const fingerprint = (payload: RuntimeToolPayload) => createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 const failure = () => new AgentResponseError('The native context tools could not be verified or delivered.', 'tools_unverified');
 
 /** Private process transport only. This owns no reader, ledger or data grant. */
@@ -17,7 +19,7 @@ export async function createDshHostChannel(host: HostRunPort) {
   let rejectFailure!: (error: Error) => void, closing = false;
   const failurePromise = new Promise<never>((_resolve, reject) => { rejectFailure = reject; }); void failurePromise.catch(() => {});
   const calls = new Map<string, NativeCall>(), waiters = new Map<string, Set<() => void>>();
-  const acknowledgements = new Map<string, {resolve(): void; reject(error: Error): void; completed: Promise<void>}>();
+  const acknowledgements = new Map<string, {resolve(): void; reject(error: Error): void; completed: Promise<void>; receipt: RuntimeReceipt}>();
   const pending = new Set<Promise<void>>();
   const keyFor = (turn: number, callId: string) => `${turn}:${callId}`;
   const cancel = () => {
@@ -45,8 +47,10 @@ export async function createDshHostChannel(host: HostRunPort) {
           res.writeHead(200).end('{}'); return;
         }
         if (req.url === '/ack') {
-          if (typeof body.id !== 'string' || typeof body.delivered !== 'boolean' || Object.keys(body).some(key => !['id', 'delivered'].includes(key))) throw failure();
-          const ack = acknowledgements.get(body.id); if (!ack) throw failure(); acknowledgements.delete(body.id);
+          if (typeof body.id !== 'string' || typeof body.delivered !== 'boolean' || Object.keys(body).some(key => !['id', 'delivered', 'runId', 'attemptId', 'callId', 'payloadFingerprint'].includes(key))) throw failure();
+          const ack = acknowledgements.get(body.id);
+          if (!ack || !isDeepStrictEqual(ack.receipt, {runId: body.runId, attemptId: body.attemptId, callId: body.callId, payloadFingerprint: body.payloadFingerprint})) throw failure();
+          acknowledgements.delete(body.id);
           body.delivered ? ack.resolve() : ack.reject(new AgentResponseError('Native tool preparation failed.', 'tool_failure'));
           await ack.completed;
           res.writeHead(200).end('{}'); return;
@@ -61,8 +65,9 @@ export async function createDshHostChannel(host: HostRunPort) {
         try {
           await host.tools.deliver(call.attempt, {callId: body.callId, name: body.name, arguments: body.arguments}, async (payload: RuntimeToolPayload) => {
             const id = randomUUID();
-            const delivered = new Promise<void>((resolve, reject) => acknowledgements.set(id, {resolve, reject, completed}));
-            res.writeHead(200, {'Content-Type': 'application/json'}).end(JSON.stringify({id, payload}));
+            const receipt: RuntimeReceipt = {runId: host.identity.runId, attemptId: call.attempt.id, callId: body.callId, payloadFingerprint: fingerprint(payload)};
+            const delivered = new Promise<void>((resolve, reject) => acknowledgements.set(id, {resolve, reject, completed, receipt}));
+            res.writeHead(200, {'Content-Type': 'application/json'}).end(JSON.stringify({id, receipt, payload}));
             await delivered;
           });
           confirmed();
@@ -85,7 +90,9 @@ export async function createDshHostChannel(host: HostRunPort) {
     failure: failurePromise,
     bindCall(turn: number, callId: string, name: string, attempt: RuntimeAttempt) {
       if (closing) return;
-      const key = keyFor(turn, callId); calls.set(key, {attempt, name});
+      const key = keyFor(turn, callId), existing = calls.get(key);
+      if (existing && (existing.attempt !== attempt || existing.name !== name)) { rejectFailure(failure()); return; }
+      calls.set(key, {attempt, name});
       for (const wake of waiters.get(key) ?? []) wake(); waiters.delete(key);
     },
     close() {
@@ -123,20 +130,22 @@ export async function applyContextPlugin(ctx: Context) {
         return [{type: 'text', text: result.text}, ...(result.attachments ?? []).map(attachment => ({type: 'image' as const, attachment: attachment as never}))];
       }},
       async execute(args, exec) {
+        exec.signal.throwIfAborted();
         const event = [...(exec.agent?.session.snapshotEvents() ?? [])].reverse().find(event => event.type === 'tool/call' && event.data.callId === exec.callId);
         if (!event || event.type !== 'tool/call' || exec.agent?.id !== config.runId) throw failure();
-        const delivered = await call('/call', {sessionId: config.runId, turn: event.data.turn, callId: exec.callId, name: tool.name, arguments: args}, exec.signal) as {id: string; payload: RuntimeToolPayload};
+        const delivered = await call('/call', {sessionId: config.runId, turn: event.data.turn, callId: exec.callId, name: tool.name, arguments: args}, exec.signal) as {id: string; receipt: RuntimeReceipt; payload: RuntimeToolPayload};
         try {
+          if (delivered.receipt.runId !== config.runId || delivered.receipt.callId !== exec.callId || delivered.receipt.payloadFingerprint !== fingerprint(delivered.payload)) throw failure();
           const attachments = [];
           for (const image of delivered.payload.images ?? []) {
             const service = ctx.get('attachments') as {saveImage(input: {data: Buffer; mediaType: string; name: string}): Promise<unknown>} | undefined;
             if (!service) throw failure();
             attachments.push(await service.saveImage({data: Buffer.from(image.data, 'base64'), mediaType: image.mimeType, name: 'capture'}));
           }
-          await call('/ack', {id: delivered.id, delivered: true}, exec.signal);
+          await call('/ack', {id: delivered.id, ...delivered.receipt, delivered: true}, exec.signal);
           return {text: delivered.payload.text, ...(attachments.length ? {attachments} : {})};
         } catch (error) {
-          await call('/ack', {id: delivered.id, delivered: false}, AbortSignal.timeout(5000)).catch(() => {}); throw error;
+          await call('/ack', {id: delivered.id, ...delivered.receipt, delivered: false}, AbortSignal.timeout(5000)).catch(() => {}); throw error;
         }
       },
     };
