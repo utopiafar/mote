@@ -1,6 +1,7 @@
 /** Host-owned, instance-scoped plugin state. The host binds the namespace from
  * the executing ScopeIdentity; callers never pass a namespace or instance ID.
- * Values are private plugin data, not host snapshots or authorization grants. */
+ * Values are private plugin metadata, not host snapshots, authorization grants
+ * or a credential store; use a manifest secret-reference for secrets. */
 export type StateValue =
   | null
   | boolean
