@@ -54,6 +54,7 @@ function isJsonValue(value: unknown): boolean {
   while (stack.length) {
     const item = stack.pop();
     if (++nodes > 10000) return false;
+    if (item === undefined) continue; // an absent optional field is not a wire value
     if (item === null || typeof item === 'boolean' || typeof item === 'string') continue;
     if (typeof item === 'number') { if (!Number.isFinite(item)) return false; continue; }
     if (Array.isArray(item)) { stack.push(...item); continue; }
@@ -95,7 +96,9 @@ export class CustomPageBridge {
     if (typeof env.requestId !== 'string' || !env.requestId || env.requestId.length > MAX_ID_CHARS) return drop('requestId');
     const bytes = measuredEnvelope(env);
     if (bytes < 0 || bytes > BRIDGE_MAX_MESSAGE_BYTES) return drop('oversized');
-    if (env.payload !== undefined && !isJsonValue(env.payload)) return drop('payload');
+    // The whole actual envelope must be a JSON value — extra fields
+    // carrying binary or cyclic content cannot bypass the wire limit.
+    if (!isJsonValue(env)) return drop('payload');
     const pendingKey = env.generation + ':' + env.requestId;
     if (this.#pending.has(pendingKey)) return drop('duplicate');
     // The total allowance renews per view generation — a long-lived page

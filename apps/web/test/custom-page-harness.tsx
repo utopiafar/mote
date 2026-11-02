@@ -15,7 +15,7 @@ const HarnessApp = () => {
     instanceId: 'inst:one', nonce: Harness.nonce, documentKey: docKey,
     generation: () => generation, visible: () => visible,
     declared: ['read'], title: 'generated page',
-    invoke: async (method: string, p: unknown) => { calls.push(method + ':' + JSON.stringify(p ?? null)); await new Promise(r => setTimeout(r, 400)); return 'ok-' + method; },
+    invoke: async (method: string, p: unknown) => { calls.push(method + ':' + JSON.stringify(p ?? null)); await new Promise(r => setTimeout(r, 400)); (window as any).invokeSettledAt = Date.now(); return 'ok-' + method; },
     onNavigated: () => { setDocKey('rotated-' + Math.random().toString(36).slice(2)); },
     onRejected: (r: string) => { (window as any).rejected = ((window as any).rejected || '') + r + ';'; },
   });

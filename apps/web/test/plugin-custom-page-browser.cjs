@@ -14,20 +14,22 @@ const hits={};const files={
  // The replacement reuses the leaked nonce but never learns the rotated
  // document key — it posts BEFORE its own load event.
  // The replacement holds the leaked nonce+documentKey but never received a
-// port — its window.postMessage requests have no carrier. It also listens
-// for stray response messages and reports its own reception to the host.
+// port — its window.postMessage requests have no carrier. Its own load is
+// held by a slow subresource until AFTER the old invocation settles, so
+// the request provably runs before its load event.
 '/entry2.html':{type:'text/html',body:`<script>new Image().src='/ran2';
 window.received=[];
 addEventListener('message',e=>window.received.push(e.data));
-setTimeout(()=>{parent.postMessage({kind:'fixture-report',received:window.received.length},'*');},900);
 parent.postMessage(${requestEnvelope(documentKey,'r-replacement','e2')},'*');
-</script>`},
+window.addEventListener('load',()=>{parent.postMessage({kind:'fixture-report',received:window.received.length},'*');});
+</script><img src="/slow">`},
 };
 async function run(){
- const server=createServer((req,res)=>{hits[req.url]=(hits[req.url]||0)+1;
+ const server=createServer((req,res)=>{hits[req.url]=Date.now();
   if(req.url==='/harness.html'){res.setHeader('content-type','text/html');res.end(`<!doctype html><div id="root"></div><script>window.__HARNESS__=${JSON.stringify({nonce,documentKey})};</script><script src="/bundle.js"></script>`);return;}
   if(req.url==='/bundle.js'){res.setHeader('content-type','text/javascript');res.end(require('node:fs').readFileSync(join(temporary,'bundle.js')));return;}
   const entry=files[req.url];if(!entry){res.statusCode=404;res.end();return;}
+  if(req.url==='/slow'){res.setHeader('content-type','image/gif');setTimeout(()=>res.end(Buffer.from('R0lGODlhAQABAAAAACw=','base64')),900);return;}
   res.setHeader('content-type',entry.type);res.end(entry.body);});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
  await app.whenReady();
