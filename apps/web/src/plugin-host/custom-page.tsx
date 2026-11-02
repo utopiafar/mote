@@ -18,6 +18,10 @@ import {CustomPageBridge, bridgeContractVersion, type BridgeInvoker} from './cus
 interface CustomPageMoteApi {
   customPagePrepare?: (target: {instanceId: string; nonce: string; documentKey: string; entryUrl: string}) => Promise<{epoch: number}>;
   customPageClaim?: (claim: {instanceId: string; nonce: string; documentKey: string}) => Promise<{frameTreeNodeId: number; epoch: number}>;
+  /** Main-owned revocation notification — required for guarded
+   * activation: a cancelled navigation revokes the epoch without
+   * producing another load, and the bridge must die with it. */
+  onCustomPageRevoked?: (listener: (event: {instanceId: string; nonce: string; documentKey: string; frameTreeNodeId: number}) => void) => () => void;
 }
 
 export interface CustomPageProps {
@@ -45,7 +49,7 @@ export function CustomPluginPage(props: CustomPageProps) {
   const bridgeRef = useRef<CustomPageBridge | null>(null);
   const navigatedRef = useRef(false);
   const mote = (window as unknown as {mote?: CustomPageMoteApi}).mote;
-  const guarded = Boolean(mote?.customPagePrepare && mote?.customPageClaim && props.entryUrl && props.instanceId && props.nonce && props.documentKey && props.declared?.length && props.invoke && props.visible);
+  const guarded = Boolean(mote?.customPagePrepare && mote?.customPageClaim && mote?.onCustomPageRevoked && props.entryUrl && props.instanceId && props.nonce && props.documentKey && props.declared?.length && props.invoke && props.visible);
 
   useEffect(() => {
     if (!guarded) return;
@@ -59,6 +63,13 @@ export function CustomPluginPage(props: CustomPageProps) {
     let loadSeq = 0;
     let channel: MessageChannel | null = null;
     let alive = true;
+    // Subscribe to the main-owned revocation BEFORE the claim: a
+    // cancelled navigation revokes the epoch with no further load, so
+    // the issued bridge must be fenced by this signal, not by loads.
+    const offRevoked = mote!.onCustomPageRevoked!(event => {
+      if (event.instanceId === props.instanceId && event.nonce === props.nonce && event.documentKey === props.documentKey)
+        endChannel();
+    });
     const endChannel = () => {
       if (navigatedRef.current) return;
       alive = false;
@@ -77,9 +88,9 @@ export function CustomPluginPage(props: CustomPageProps) {
       let grant: {frameTreeNodeId: number; epoch: number};
       try { grant = await mote!.customPageClaim!({instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!}); }
       catch { return; }
-      // The port is delivered ONLY if this is still the latest load —
-      // a document that started replacing itself can never receive it.
-      if (loadSeq !== claimingSeq || navigatedRef.current) return;
+      // The port is delivered ONLY if this is still the latest load and
+      // the effect is still live — a replaced document can never get it.
+      if (loadSeq !== claimingSeq || navigatedRef.current || !alive || frameRef.current !== frame) return;
       channel = new MessageChannel();
       const bridge = new CustomPageBridge({
         instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!,
@@ -91,23 +102,26 @@ export function CustomPluginPage(props: CustomPageProps) {
       channel.port1.onmessage = event => { void bridge.accept(event); };
       channel.port1.start();
       bridgeRef.current = bridge;
+      // The handshake carries the bound identity AND granted epoch —
+      // the page constructs every request solely from what it receives.
       frame.contentWindow?.postMessage(
-        {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, kind: 'channel'}, '*', [channel.port2]);
+        {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, instanceId: props.instanceId, generation: grant.epoch, kind: 'channel'}, '*', [channel.port2]);
     };
     frame.addEventListener('load', onLoad);
     // Prepare the nonce-bound frame before it navigates anywhere; a
     // refused prepare degrades to the trusted entry render-only.
     void mote!.customPagePrepare!({instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!, entryUrl: props.entryUrl!})
       .then(() => {
-        const frame = frameRef.current;
-        if (!frame || navigatedRef.current) return;
+        // Fence the continuation: only the live effect that started this
+        // prepare may navigate the still-mounted frame.
+        if (!alive || frameRef.current !== frame || navigatedRef.current) return;
         const bound = new URL(props.entryUrl!, window.location.href);
         bound.searchParams.set('moteFrame', props.nonce!);
         entryStarted = true;
         frame.src = bound.toString();
       })
-      .catch(() => { if (frameRef.current && !navigatedRef.current) frameRef.current.src = props.entryUrl!; });
-    return () => { alive = false; frame.removeEventListener('load', onLoad); bridgeRef.current?.revoke(); bridgeRef.current = null; channel?.port1.close(); channel?.port2.close(); };
+      .catch(() => { if (alive && frameRef.current === frame && !navigatedRef.current) frame.src = props.entryUrl!; });
+    return () => { alive = false; offRevoked(); frame.removeEventListener('load', onLoad); bridgeRef.current?.revoke(); bridgeRef.current = null; channel?.port1.close(); channel?.port2.close(); };
   }, [props.instanceId, props.nonce, props.documentKey, props.entryUrl]);
 
   useEffect(() => { if (props.visible && bridgeRef.current) props.visible() ? bridgeRef.current.show() : bridgeRef.current.hide(); }, [props.visible && props.visible()]);

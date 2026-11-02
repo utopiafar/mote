@@ -146,6 +146,18 @@ test('a late failure after revocation or generation change never posts', async (
   assert.equal(posted.length, 0, 'revoked-channel failure is suppressed');
 });
 
+test('a request built solely from the channel handshake is admitted — epoch other than 1', async () => {
+  calls = [];
+  const epoch = 7;
+  const bridge = new CustomPageBridge({...base, generation: () => epoch});
+  // The handshake delivers contractVersion, nonce, documentKey,
+  // instanceId and the granted epoch — nothing else is needed.
+  const handshake = {contractVersion: '1', nonce: 'n-9', documentKey: 'doc-1', instanceId: 'inst:one', generation: epoch, kind: 'channel'};
+  const request = {...env(), contractVersion: handshake.contractVersion, nonce: handshake.nonce, documentKey: handshake.documentKey, instanceId: handshake.instanceId, generation: handshake.generation, requestId: 'first', kind: 'request' as const, method: 'read'};
+  assert.equal(await bridge.accept(event(request)), true);
+  assert.deepEqual(calls, ['read:null']);
+});
+
 test('checkpoints are host-bounded only — oversized writes are rejected', () => {
   assert.throws(() => CustomPageBridge.checkpoint('x'.repeat(200), null), /budget/);
   assert.throws(() => CustomPageBridge.checkpoint('id', 'y'.repeat(70000)), /budget/);
