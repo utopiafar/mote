@@ -253,3 +253,26 @@ describe('cleanup ordering', () => {
       .toEqual({ok: true, value: undefined});
   });
 });
+
+describe('stopScope', () => {
+  it('reports cleanup errors and keeps the scope retryable', async () => {
+  const {host, router} = hostWith();
+  host.registerWindow(7, 'main');
+  const scope = host.createScope({instanceId: 'inst-retry', capabilities: ['cap']});
+  scope.registerIpc({channel: 'r.one', capability: 'cap'}, () => 1);
+  scope.registerIpc({channel: 'r.two', capability: 'cap'}, () => 2);
+  // First removal throws; the other channel must still be attempted.
+  const original = router.router.removeHandler;
+  let failedOnce = false;
+  router.router.removeHandler = channel => {
+    if (channel === 'r.one' && !failedOnce) { failedOnce = true; throw new Error('remove failed'); }
+    original(channel);
+  };
+  const errors = host.stopScope('inst-retry');
+  expect(errors.length).toBe(1);
+  expect(router.has('r.two')).toBe(false);
+  expect(router.has('r.one')).toBe(true, 'failed removal stays registered for retry');
+  expect(host.stopScope('inst-retry')).toEqual([], 'retry finishes and releases the scope');
+  expect(router.has('r.one')).toBe(false);
+});
+});

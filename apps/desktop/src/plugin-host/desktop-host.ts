@@ -140,11 +140,14 @@ export class DesktopPluginHost {
     if (errors.length > 0) throw errors.length === 1 ? errors[0] : new AggregateError(errors, 'quit cleanup failed');
   }
 
-  stopScope(instanceId: string): void {
+  /** Attempt all cleanup steps and report the collected errors; a scope with
+   * leftover registrations stays tracked so the caller can retry. */
+  stopScope(instanceId: string): unknown[] {
     const scope = this.#scopes.get(instanceId);
-    if (!scope) return;
-    this.#revokeScope(scope, {keepDurable: false});
-    this.#scopes.delete(instanceId);
+    if (!scope) return [];
+    const errors = this.#revokeScope(scope, {keepDurable: false});
+    if (errors.length === 0) this.#scopes.delete(instanceId);
+    return errors;
   }
 
   /** Every cleanup step is attempted independently; failures are collected

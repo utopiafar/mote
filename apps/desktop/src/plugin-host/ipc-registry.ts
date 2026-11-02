@@ -123,12 +123,19 @@ export class IpcScope {
     return null;
   }
 
-  /** Revoke only the channels this scope actually owns. */
+  /** Revoke only the channels this scope actually owns. Each removal is
+   * attempted independently; a channel whose removal fails keeps its
+   * registration so a retry can finish it, and the failures surface to the
+   * caller after all attempts. */
   dispose(): void {
-    for (const channel of this.#registrations.keys()) {
-      this.#router.removeHandler(channel);
-      this.#ownership.release(channel, this.access.instanceId);
+    const errors: unknown[] = [];
+    for (const channel of [...this.#registrations.keys()]) {
+      try {
+        this.#router.removeHandler(channel);
+        this.#ownership.release(channel, this.access.instanceId);
+        this.#registrations.delete(channel);
+      } catch (error) { errors.push(error); }
     }
-    this.#registrations.clear();
+    if (errors.length > 0) throw new AggregateError(errors, 'IPC dispose incomplete');
   }
 }
