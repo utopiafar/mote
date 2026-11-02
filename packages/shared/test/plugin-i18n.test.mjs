@@ -165,6 +165,15 @@ test('accessor catalogs are rejected before any value is read', () => {
   assert.deepEqual(registry.resolve('fixture.plugin', 'nav.library', 'en'), {text: 'nav.library', fallback: 'namespace_missing'});
 });
 
+test('proto-named JSON keys are stored and resolved as ordinary messages', () => {
+  const registry = new PluginI18nRegistry();
+  registry.register('fixture.proto', 'en', JSON.parse('{"__proto__":"Prototype label"}'));
+  assert.deepEqual(registry.resolve('fixture.proto', '__proto__', 'en'), {text: 'Prototype label'});
+  registry.register('fixture.mixed', 'en', JSON.parse('{"__proto__":"Prototype label","nav.library":"Library"}'));
+  assert.equal(registry.resolve('fixture.mixed', '__proto__', 'en').text, 'Prototype label');
+  assert.equal(registry.resolve('fixture.mixed', 'nav.library', 'en').text, 'Library');
+});
+
 test('registered catalogs are immutable snapshots and disposal restores the fallback', () => {
   const registry = new PluginI18nRegistry();
   const mutable = {'nav.library': 'Library'};

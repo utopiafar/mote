@@ -42,7 +42,9 @@ function catalogSnapshot(input: unknown): Record<string, string> {
   const prototype = Object.getPrototypeOf(input);
   if (prototype !== Object.prototype && prototype !== null) throw new TypeError('Invalid plugin catalog');
   const properties = Object.getOwnPropertyDescriptors(input);
-  const snapshot: Record<string, string> = {};
+  // A null prototype keeps every accepted own key, including "__proto__",
+  // which an ordinary object's inherited setter would swallow.
+  const snapshot: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const key of Reflect.ownKeys(properties)) {
     const descriptor = properties[key as string];
     if (typeof key !== 'string' || !descriptor || !('value' in descriptor))
