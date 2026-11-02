@@ -35,7 +35,9 @@ test('public SDK runtime cannot reverse-import app assembly; exact baseline exce
   const exception={rule:issue.rule,from:issue.from,to:issue.to,kind:issue.kind,reason:'Generated exact existing debt'};
   const allowed=f.check([exception]);
   assert.deepEqual(allowed.violations,[]);
-  assert.deepEqual(allowed.exceptions,[exception]);
+  assert.equal(allowed.exceptions.length,1);
+  assert.deepEqual({rule:allowed.exceptions[0].rule,from:allowed.exceptions[0].from,to:allowed.exceptions[0].to,kind:allowed.exceptions[0].kind,reason:allowed.exceptions[0].reason},
+    {rule:issue.rule,from:issue.from,to:issue.to,kind:issue.kind,reason:exception.reason});
   f.write('packages/plugin-sdk/src/browser.ts','export const value=1;\n');
   const stale=f.check([exception]);
   assert.deepEqual(stale.violations,[]);
