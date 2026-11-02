@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {compileNativeDshProfile, createRuntimePatch, DSH_RUNTIME_ID} from '../dist/runtime/dsh/profile-compiler.js';
-import {createDshHostChannel} from '../dist/runtime/dsh/context-plugin.js';
+import {createDshHostChannel, contextToolPayload} from '../dist/runtime/dsh/context-plugin.js';
 import {createDshRuntimeProvider, dshRuntimePlugin} from '@mote/agent/runtime/dsh';
 import {PluginHost} from '@mote/plugin-host';
 import {runtimeService} from '../dist/runtime/contracts.js';
@@ -158,6 +158,14 @@ test('a Host delegation yield crosses the real parent channel as a typed stoppin
   await assert.rejects(f.channel.failure, error => error === yielded); assert.equal(f.delivered, false);
 });
 
+test('Host image payload keeps private preparation tokens and pixels out of model text', () => {
+  const payload = contextToolPayload({id: 'generated-image', image: {mimeType: 'image/png', data: 'generated-base64'}, imageDelivery: 'private-preparation-token', imageView: {delivery: 'pending'}, imageBudget: {remaining: 1}});
+  assert.deepEqual(payload.images, [{mimeType: 'image/png', data: 'generated-base64'}]);
+  assert.deepEqual(JSON.parse(payload.text), {id: 'generated-image', imageView: {delivery: 'prepared'}, imageBudget: {remaining: 1}});
+  assert.doesNotMatch(payload.text, /generated-base64|private-preparation-token|imageDelivery/);
+  assert.throws(() => contextToolPayload({image: {mimeType: 'image/png', data: 'generated-base64'}}), {reason: 'tools_unverified'});
+});
+
 // Manually selected A05 journey: real SDK child, generated data and loopback only.
 async function selectedJourney(t, mode = 'success') {
   const root = await mkdtemp(join(tmpdir(), 'mote-a05-journey-')), tracePath = join(root, 'child.jsonl');
@@ -200,7 +208,8 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
   const assembly = {systemPrompt: context.system, prompt: context.prompt, contextUsage: {...context.metrics, toolResults: 0}, maxTokens: 1024, evidence: () => bridge,
     async readTool(call, signal) {
       const staged = await bridge.prepareDelivery(call.name, call.arguments, signal);
-      return {payload: {text: JSON.stringify(staged.value)}, confirm: staged.confirm, discard: staged.discard};
+      try { return {payload: contextToolPayload(staged.value), confirm: staged.confirm, discard: staged.discard}; }
+      catch (error) { staged.discard(); throw error; }
     }, close: closeBridge, observe: event => events.push(event)};
   return {root, tracePath, resources, requests, record, context, bridge, input, events, model, nativeRoot, nativeRef, module, selection, runtime, modelLease, output, runScope, assembly, get reads() { return reads; }, get validations() { return validations; },
     prepare: () => prepareDshRun(selection, {runId: randomUUID(), scope: runScope, input, runtime, model: {...modelLease, selection: selection.modelSelection}, output, tools: {definitions, bindings: [], assertCurrent() {}}, commitFence: {assertCurrent() {}}, budget: {activeTimeoutMs: 15000}, activeBudget: new ActiveExecutionBudget(15000)}, assembly),

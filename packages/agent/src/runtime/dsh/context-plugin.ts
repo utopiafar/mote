@@ -14,6 +14,18 @@ interface RuntimeReceipt {runId: string; attemptId: string; callId: string; payl
 const fingerprint = (payload: RuntimeToolPayload) => createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 const failure = () => new AgentResponseError('The native context tools could not be verified or delivered.', 'tools_unverified');
 
+/** Adapt only an already Host-projected tool body. Image bytes and the private
+ * preparation token are never rendered as ordinary model text. The child only
+ * returns this text after saveImage and the Host's post-sender confirmation. */
+export function contextToolPayload(value: unknown): RuntimeToolPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {text: JSON.stringify(value)};
+  const {image, imageDelivery: _token, ...body} = value as Record<string, unknown>;
+  if (!image) return {text: JSON.stringify(body)};
+  if (typeof image !== 'object' || typeof (image as {mimeType?: unknown}).mimeType !== 'string' || typeof (image as {data?: unknown}).data !== 'string' || typeof _token !== 'string') throw failure();
+  const {mimeType, data} = image as {mimeType: string; data: string};
+  return {text: JSON.stringify({...body, ...(body.imageView && typeof body.imageView === 'object' ? {imageView: {...body.imageView, delivery: 'prepared'}} : {})}), images: [{mimeType, data}]};
+}
+
 /** Private process transport only. This owns no reader, ledger or data grant. */
 export async function createDshHostChannel(host: HostRunPort) {
   const token = randomBytes(32).toString('hex');
