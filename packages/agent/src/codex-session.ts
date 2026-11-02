@@ -11,6 +11,12 @@ import {AgentNotConfiguredError,AgentProviderError,AgentTimeoutError,type AgentO
 import {codexImageMetadata,codexImageSteerInputs,type ImagePayload} from './tools/image-result.js';
 
 export type CodexTool={type:'function';name:string;description:string;inputSchema:unknown};
+/** The receipt writer definitively rejected the request (non-2xx), so the Host
+ * did not apply it. Network/transport failures are not this error and remain
+ * ambiguous. */
+export class ImageAcknowledgementRejected extends Error {
+  constructor(){super('The image acknowledgement was rejected');this.name='ImageAcknowledgementRejected';}
+}
 type Rpc={id?:number|string;method?:string;params?:any;result?:any;error?:unknown};
 type Pending={resolve:(value:any)=>void;reject:(error:Error)=>void};
 // A steered user image may echo the base64 payload. Permit one
@@ -58,7 +64,32 @@ export class CodexSession {
   private usage?:TokenUsage;
   private turnError?:unknown;
   private usageInterrupted=false;
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
+  private imageSettlements=new Map<string,'true-pending'|'true'|'true-rejected'|'true-unknown'|'false'>();
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>,private assertImageDeliveryCurrent?:()=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
+
+  /** True is attempted at most once. A definitive non-2xx rejection allows one
+   * false fallback to release the Host reservation; a network-unknown true
+   * failure does not, because the writer may already have applied it. */
+  private async settleImageDelivery(token:string,delivered:boolean){
+    const state=this.imageSettlements.get(token);
+    if(delivered){
+      if(state==='true-pending'||state==='true'||state==='true-rejected'||state==='true-unknown'||state==='false')return;
+      this.imageSettlements.set(token,'true-pending');
+      try{this.assertImageDeliveryCurrent?.();}
+      catch(error){this.imageSettlements.set(token,'true-rejected');throw error;}
+      try{await this.confirmImageDeliveryPort?.(token,true);this.imageSettlements.set(token,'true');}
+      catch(error){
+        if(error instanceof ImageAcknowledgementRejected){this.imageSettlements.set(token,'true-rejected');throw error;}
+        this.imageSettlements.set(token,'true-unknown');
+        this.fail(error instanceof AgentProviderError?error:new AgentProviderError());throw this.failure;
+      }
+      return;
+    }
+    if(state==='true-pending'||state==='true'||state==='true-unknown'||state==='false')return;
+    this.imageSettlements.set(token,'false');
+    try{await this.confirmImageDeliveryPort?.(token,false);}
+    catch{/* Preserve the original steer/ack failure; a false retry cannot become true. */}
+  }
 
   async start(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
     if(this.initializing)throw new AgentProviderError();
@@ -213,7 +244,19 @@ export class CodexSession {
           if(args.tool==='read_image'&&result&&typeof result==='object'&&'image' in result){
             const value=result as any;
             content=codexImageMetadata({source:'untrusted_personal_context',...value} as ImagePayload);
-            await this.deliverToolImage(args.turnId,content,value.image);
+            const token=typeof value.imageDelivery==='string'?value.imageDelivery:undefined;
+            if(token){
+              try{
+                await this.deliverToolImage(args.turnId,content,value.image);
+                await this.settleImageDelivery(token,true);
+              }catch(error){
+                await this.settleImageDelivery(token,false);
+                this.fail(error instanceof Error?error:new AgentProviderError());
+                throw error;
+              }
+            }else{
+              await this.deliverToolImage(args.turnId,content,value.image);
+            }
           }
           this.send({id:message.id,result:{contentItems:[{type:'inputText',text:JSON.stringify(content)}],success:true}});
         }
