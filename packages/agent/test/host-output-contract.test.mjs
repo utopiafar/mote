@@ -19,13 +19,13 @@ const tools = [{name: 'generated_read', version: '1', fingerprint: 'a'.repeat(64
 const outcome = (text = JSON.stringify({answer: 'Generated answer', citationIds: []})) => ({terminal: {kind: 'completed'}, candidate: {text}});
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return {promise, resolve}; };
 function fixture(overrides = {}) {
-  const calls = [], events = [], cleanupErrors = [], scope = new AbortController(), disposers = [];
+  const calls = [], events = [], cleanupErrors = [], scope = new AbortController(), disposers = [], leaseControllers = new Map();
   let active = true, port;
   const scopeIdentity = {packageId: 'generated', installationId: 'install', instanceId: 'instance', host: {kind: 'central', id: 'fixture'}, activationId: 'active'};
   const binding = service => ({service: {id: service, apiVersion: '1'}, provider: {scope: scopeIdentity, contributionId: service}, revision: 1});
   const lease = (service, value) => {
-    let live = true;
-    return {binding: binding(service), value, signal: scope.signal, assertCurrent() { if (!live) throw new Error('released lease'); }, release() { if (live) { live = false; calls.push(`release:${service}`); } }};
+    let live = true; const provider = new AbortController(), released = new AbortController(); leaseControllers.set(service, provider);
+    return {binding: binding(service), value, signal: AbortSignal.any([scope.signal, provider.signal, released.signal]), assertCurrent() { if (!live || provider.signal.aborted) throw new Error('released/revoked lease'); }, release() { if (live) { live = false; calls.push(`release:${service}`); released.abort(); } return Promise.resolve(); }};
   };
   const modelSelection = {modelId: 'generated', modelRevision: 1, profileId: 'model-profile', profileRevision: 1, transport: 'fixture'};
   const provider = {capabilities: {}, async prepare(_profile, _model, host) {
@@ -35,7 +35,7 @@ function fixture(overrides = {}) {
     return {
       async run(request) { calls.push('run'); return host.runModel(request.attempt, () => overrides.run?.(request, host) ?? Promise.resolve(outcome())); },
       async repair(request) { calls.push('repair'); return host.runModel(request.attempt, () => overrides.repair?.(request, host) ?? Promise.resolve(outcome())); },
-      async cancel() { calls.push('cancel'); },
+      async cancel() { calls.push('cancel'); await overrides.cancel?.(); },
       async close() { calls.push('runtime.close'); await overrides.runtimeClose?.(); },
     };
   }};
@@ -57,7 +57,7 @@ function fixture(overrides = {}) {
     observe(event) { events.push(event); }, cleanupFailed(errors) { cleanupErrors.push(...errors); },
     ...(overrides.admit ? {admit: overrides.admit} : {}),
   };
-  return {deps, calls, events, cleanupErrors, assembly, disposers, get port() { return port; }, revoke() { active = false; }, stop() { scope.abort(); }, create: () => createHostRunSession(deps, assembly)};
+  return {deps, calls, events, cleanupErrors, assembly, disposers, get port() { return port; }, revoke() { active = false; }, stop() { scope.abort(); }, revokeLease(service) { leaseControllers.get(service).abort({kind: 'revoked'}); }, create: () => createHostRunSession(deps, assembly)};
 }
 
 for (const engine of ['dsh-fixture', 'codex-fixture']) test(`${engine}: real bridge selected ranges feed the same Host output and cannot be widened by candidate JSON`, async () => {
@@ -303,4 +303,69 @@ test('invalid question never prepares a runtime and a closed unstarted session e
   await assert.rejects(session.execute());
   assert.equal(closed.calls.includes('run'), false); assert.equal(closed.events.at(-1).attemptId, null);
   assert.equal(closed.events.at(-1).event.terminal.kind, 'cancelled');
+});
+
+for (const service of ['mote.agent.runtime', 'generated.model', 'mote.agent.host-output']) {
+  for (const stage of ['admission', 'model']) test(`required lease revocation cancels ${stage} and drains ${service} independently of the consumer scope`, {timeout: 2000}, async t => {
+    const entered = deferred(); let cancelled = false, settled = false;
+    const wait = signal => new Promise((_resolve, reject) => {
+      entered.resolve();
+      signal.addEventListener('abort', () => { cancelled = true; reject(new DOMException('Generated cancellation', 'AbortError')); }, {once: true});
+    });
+    const f = fixture(stage === 'admission' ? {admit: (_task, signal) => wait(signal)} : {run: (_request, host) => wait(host.signal)});
+    const s = await f.create(), execution = s.execute().finally(() => { settled = true; }); void execution.catch(() => {});
+    t.after(async () => { if (!settled) { f.stop(); await execution.catch(() => {}); } });
+    await entered.promise; f.revokeLease(service); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.deps.scope.signal.aborted, false); assert.equal(f.port.signal.aborted, true); assert.equal(cancelled, true);
+    await assert.rejects(execution); assert.ok(f.calls.includes('cancel'));
+    assert.ok(f.calls.includes('runtime.close')); assert.ok(f.calls.includes('bridge.close')); assert.equal(f.calls.filter(c => c.startsWith('release:')).length, 3);
+    assert.deepEqual(f.events.at(-1).event.terminal, {kind: 'cancelled', cause: 'revoked'});
+  });
+}
+
+for (const lease of ['output', 'model', 'runtime']) {
+  for (const change of ['input', 'scope', 'domain']) test(`async lease release rechecks ${change} eligibility after awaiting ${lease}`, async () => {
+    const entered = deferred(), release = deferred(), input = new AbortController(); let granted = true;
+    const f = fixture({input: {signal: input.signal}}), original = f.deps[lease].release;
+    f.deps.commitFence.assertCurrent = () => { if (!granted) throw Error('domain grant revoked'); };
+    f.deps[lease].release = async () => { await original(); entered.resolve(); await release.promise; };
+    const s = await f.create(), execution = s.execute(); void execution.catch(() => {}); await entered.promise;
+    if (change === 'input') input.abort(); else if (change === 'scope') f.stop(); else granted = false;
+    release.resolve(); await assert.rejects(execution);
+    assert.notEqual(f.events.at(-1).event.terminal.kind, 'completed'); assert.equal(f.calls.filter(c => c.startsWith('release:')).length, 3);
+  });
+}
+
+test('an already revoked required lease prevents preparation and retains the revoked cancellation cause', async () => {
+  const f = fixture(); f.revokeLease('mote.agent.host-output');
+  await assert.rejects(f.create()); assert.equal(f.calls.includes('prepare'), false);
+  assert.deepEqual(f.events.at(-1).event.terminal, {kind: 'cancelled', cause: 'revoked'});
+  assert.equal(f.calls.filter(c => c.startsWith('release:')).length, 3);
+});
+
+test('a still-required sibling lease remains monitored while an earlier lease release awaits', async () => {
+  const entered = deferred(), release = deferred(), f = fixture(), original = f.deps.output.release;
+  f.deps.output.release = async () => { await original(); entered.resolve(); await release.promise; };
+  const s = await f.create(), execution = s.execute(); void execution.catch(() => {}); await entered.promise;
+  assert.equal(f.deps.output.signal.aborted, true); assert.equal(f.port.signal.aborted, false, 'intentional output release is not a revocation');
+  f.revokeLease('generated.model'); assert.equal(f.port.signal.aborted, true); release.resolve();
+  await assert.rejects(execution); assert.deepEqual(f.events.at(-1).event.terminal, {kind: 'cancelled', cause: 'revoked'});
+});
+
+test('the outer deadline stays monitored until asynchronous lease release settles', {timeout: 5000}, async () => {
+  const f = fixture({budget: {deadline: Date.now() + 1000}}), original = f.deps.output.release;
+  f.deps.output.release = async () => {
+    await original();
+    if (!f.port.signal.aborted) await new Promise(resolve => f.port.signal.addEventListener('abort', resolve, {once: true}));
+  };
+  await assert.rejects((await f.create()).execute(), AgentTimeoutError);
+  assert.equal(f.port.signal.aborted, true); assert.equal(f.calls.filter(c => c.startsWith('release:')).length, 3);
+  assert.deepEqual(f.events.at(-1).event.terminal, {kind: 'cancelled', cause: 'deadline_exceeded'});
+});
+
+test('a secondary cancel failure is reported once without hiding the primary tool failure', async () => {
+  const f = fixture({run: async () => ({terminal: {kind: 'failed', reason: 'tool_failure'}}), cancel: async () => { throw Error('Generated cancel cleanup failure'); }});
+  await assert.rejects((await f.create()).execute(), {reason: 'tool_failure'});
+  assert.equal(f.cleanupErrors.length, 1); assert.match(f.cleanupErrors[0].message, /cancel cleanup failure/);
+  assert.ok(f.calls.includes('runtime.close')); assert.ok(f.calls.includes('bridge.close')); assert.equal(f.calls.filter(c => c.startsWith('release:')).length, 3);
 });
