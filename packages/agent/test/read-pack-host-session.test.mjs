@@ -64,6 +64,19 @@ test('ordinary metadata cannot turn a producer record field into a source-contex
   await assert.rejects(bridge.prepareDelivery('attribution_context',{sourceContextRef:ref},new AbortController().signal),{code:'invalid_tool_arguments'});assert.equal(sourceReads,0);assert.equal(bridge.records.size,0);
 });
 
+test('delivered overview locators permit only shown in-scope producer originals to be expanded',{timeout:5000},async t=>{
+  const hidden='22222222-2222-4222-8222-222222222222',forged='33333333-3333-4333-8333-333333333333',outside='44444444-4444-4444-8444-444444444444',lifetime=new AbortController();
+  const originals=[id,hidden,outside].map(recordId=>({id:recordId,capturedAt:'2026-11-01T00:00:00Z',deviceId:recordId===outside?'other':'selected',appName:'Generated original',ocrText:'Generated original '+recordId}));
+  const descriptor={apiVersion:'1',name:'generated_overview',version:'1',description:'Generated overview',fields:{},kind:'metadata',exposure:'native',requires:['search'],parse:args=>args,async execute(_args,port){const records=await port.read('search',{});assert.deepEqual(records.map(record=>record.id),[id,hidden]);return {source:'untrusted_personal_context',data:[{id:records[0].id},{disclosureDependencies:{version:1,complete:true,ids:[hidden]}},{id:forged},{id:outside}]};}};
+  const evidence=createOfficialReadPacks().filter(tool=>tool.name==='evidence'),reads=[];
+  const bridge=await startBridge({...readSource,search:async()=>originals,evidence:async({ids})=>{reads.push(ids);return originals.filter(record=>ids.includes(record.id));},contextTools:()=>[{descriptors:[descriptor,...evidence],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]},{question:'Generated overview expansion',deviceId:'selected',hostContextToolMode:'all-native'},16);t.after(()=>bridge.close());
+  const signal=new AbortController().signal,discarded=await bridge.prepareDelivery('generated_overview',{},signal);discarded.discard();
+  await assert.rejects(bridge.prepareDelivery('evidence',{ids:[id]},signal),{code:'invalid_tool_arguments'});assert.equal(reads.length,0);
+  const overview=await bridge.prepareDelivery('generated_overview',{},signal);assert.equal(bridge.records.size,0);assert.ok(!JSON.stringify(overview.value).includes(hidden));overview.confirm();overview.discard();assert.equal(bridge.records.size,0);
+  for(const recordId of [hidden,forged,outside])await assert.rejects(bridge.prepareDelivery('evidence',{ids:[recordId]},signal),{code:'invalid_tool_arguments'});
+  assert.equal(reads.length,0);const expanded=await bridge.prepareDelivery('evidence',{ids:[id],length:10},signal);assert.equal(bridge.records.size,0);expanded.confirm();expanded.discard();assert.deepEqual(reads,[[id]]);assert.deepEqual([...bridge.records.keys()],[id]);assert.equal(bridge.records.get(id).ocrText,originals[0].ocrText.slice(0,10));
+});
+
 test('showing only a Memory ID does not persist a receipt for its undisclosed statement',{timeout:5000},async t=>{
   const lifetime=new AbortController();let persisted=0;
   const descriptor={apiVersion:'1',name:'generated_memory_ids',version:'1',description:'Generated Memory metadata',fields:{},kind:'metadata',exposure:'catalog',requires:['memories'],parse:args=>args,async execute(_args,port){const page=await port.read('memories',{});return {source:'untrusted_personal_context',data:{items:page.items.map(item=>({id:item.id}))}};}};

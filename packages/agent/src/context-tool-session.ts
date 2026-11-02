@@ -613,7 +613,8 @@ export async function createContextToolSession(
         else if(data&&typeof data==='object'&&(data as {record?:unknown}).record)data={...data,record:prove((data as {record:unknown}).record)};
         if(data&&typeof data==='object'&&Array.isArray((data as {sourceEvidence?:unknown}).sourceEvidence))data={...data,sourceEvidence:(data as {sourceEvidence:unknown[]}).sourceEvidence.map(candidate=>prove(candidate,spanProofs))};
         const {disclosureDependencies:_receipt,sourceContextDependencies:_pins,toolUsage:_usage,hostSourceSemantics:_semantics,...publicBody}=body;
-        const serialized=JSON.stringify(attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),...(grantedReadRange?{readRange:grantedReadRange}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}));
+        const publicResult=attributionMetadataResponse({...publicBody,...('data' in body?{source:'untrusted_personal_context',data}:{}),...(grantedReadRange?{readRange:grantedReadRange}:{}),toolUsage:toolUsage(),...(sourceProtocolInstructions(delivered)?{hostSourceSemantics:sourceProtocolInstructions(delivered)}:{})}) as Record<string,unknown>;
+        const serialized=JSON.stringify(publicResult);
         assertLive();
         for(const {operation,value}of produced){
           rememberSourceContexts(value,()=>false);
@@ -627,7 +628,7 @@ export async function createContextToolSession(
           }
         }
         const visibleIds=new Set<string>();
-        const collectVisible=(value:unknown)=>{if(typeof value==='string')visibleIds.add(value);else if(Array.isArray(value))for(const item of value)collectVisible(item);else if(value&&typeof value==='object')for(const item of Object.values(value))collectVisible(item);};collectVisible(data);
+        const collectVisible=(value:unknown)=>{if(typeof value==='string')visibleIds.add(value);else if(Array.isArray(value))for(const item of value)collectVisible(item);else if(value&&typeof value==='object')for(const item of Object.values(value))collectVisible(item);};collectVisible(publicResult.data);
         for(const {operation,value}of produced){
           if(!value||typeof value!=='object')continue;
           const raw=value as Record<string,unknown>;
@@ -648,7 +649,12 @@ export async function createContextToolSession(
         }
         if(grantedReadRange)for(const record of delivered){const selection=record.textRange as {start:number;end:number};state().deliveredRanges.push({id:record.id,offset:selection.start,length:selection.end-selection.start});}
         for(const record of delivered){remember(record);state().discovered.add(record.id);state().disclosedIds.add(record.id);if(produced.some(read=>read.operation==='evidence'||read.operation==='memories'))state().expanded.add(record.id);}
-        for(const proof of proofs)state().disclosedIds.add(proof.record.id);
+        for(const proof of proofs){
+          state().disclosedIds.add(proof.record.id);
+          // An actually shown original locator permits a later fresh read;
+          // metadata alone still never enters the delivered-original ledger.
+          if(inScope(proof.record)&&visibleIds.has(proof.record.id))state().discovered.add(proof.record.id);
+        }
         if(!produced.length&&!progressOnly)state().completeLineage=false;
         const materialPage=tool==='material_read'?produced.find(read=>read.operation==='materialRead')?.value as {text?:unknown}|undefined:undefined;
         const traceArguments=materialPage?{ref:args.ref,offset:Number(args.offset??0),length:Number(args.length??4000)}:{...args,...scope};
