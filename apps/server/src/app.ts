@@ -44,7 +44,6 @@ import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
 import { Actions } from './actions.js';
 import { ActivityProjection } from './activity.js';
-import { Operations } from './operations.js';
 import { assertCurrentDelegationSchema,DelegationRuntime } from './delegation-runtime.js';
 import { DelegatedQueryRuns } from './delegated-query-runs.js';
 import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityCheckpoint} from './query-quality-experiment.js';
@@ -883,7 +882,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // C02 stops the worker before content accessors; DB remains alive until every
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
-  const activity=new ActivityProjection(store,new Operations(store),{delegation});
+  const activity=new ActivityProjection(store,executionPlatform.assembly.operations,{delegation});
   const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(value);
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(next));
