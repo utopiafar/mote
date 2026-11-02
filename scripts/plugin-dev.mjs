@@ -112,7 +112,7 @@ async function dev(values) {
   if (await exists(paths.configFile)) { p = await loadProfile(paths); await assertOwnership(paths, p); }
   else { await initialize(paths, {port, runtime: 'native'}); await writeOwnership(paths); p = await loadProfile(paths); }
   if ((await nativeIdentity(p)).running) throw Error('The plugin-dev profile is already running; use a separate --home/--profile for this smoke test.');
-  let started, interrupted = false;
+  let started, interrupted = false, stopped = false;
   const onSignal = () => { interrupted = true; if (started && !started.alreadyRunning) void stopNative(p).catch(() => undefined); };
   process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
   try {
@@ -133,20 +133,22 @@ async function dev(values) {
     connectors = await status.json();
     if (values.once) {
       if (values.seed) await runSeed(p, plugin);
+      await stopNative(p);
+      stopped = true;
       print({profile, home, url: p.url, pid: started.pid, started: true, stopped: true, connectors});
       return;
     }
     print({profile, home, url: p.url, pid: started.pid, started: true, view: 'foreground'});
     if (values.seed) await runSeed(p, plugin);
     const result = await started.wait();
-    if (interrupted) throw Error('plugin-dev was interrupted');
+    if (interrupted) return;
     if (result?.code !== 0 || result?.signal) throw Error(`Central exited ${result?.signal ? 'on ' + result.signal : 'with status ' + result?.code}`);
   } catch (error) {
-    if (started && !started.alreadyRunning) await stopNative(p).catch(() => undefined);
+    if (started && !started.alreadyRunning && !stopped) await stopNative(p).catch(() => undefined);
     throw error;
   } finally {
     process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal);
-    if (values.once && started && !started.alreadyRunning) await stopNative(p);
+    if (values.once && started && !started.alreadyRunning && !stopped) await stopNative(p).catch(() => undefined);
   }
 }
 
