@@ -1,7 +1,12 @@
 /* Combined hidden fixture (Electron 41) — real CustomPluginPage + real
- * CustomPageFrameGuard + real preload IPC. Covers prepare->claim->channel/
- * invoke, two navigation denials, revocation ends the channel, late claim
- * denied, and a fresh remount getting a new epoch/channel. */
+ * CustomPageFrameGuard + a generated IPC adapter mirroring the frozen
+ * preload contract (the production preload itself is NOT under test here —
+ * this fixture proves the real main-process guard and IPC path, not the
+ * production preload file). Covers prepare->claim->channel/invoke, two
+ * navigation denials, revocation ending the channel, an in-flight claim
+ * whose success lands after revocation, a deferred prepare whose props
+ * change, late claim denied, and a fresh remount earning a new epoch. */
+require('../../../scripts/fixture-background.cjs');
 const {app, BrowserWindow, ipcMain} = require('electron');
 const {createServer} = require('node:http');
 const path = require('node:path');
@@ -12,18 +17,24 @@ const assert = require('node:assert/strict');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'mote-u08-combo-'));
-// Real producer pieces from the desktop branch, vendored via git objects.
+app.setPath('userData', mkdtempSync(path.join(os.tmpdir(), 'mote-u08-profile-')));
+// Real producer pieces pinned to the exact reviewed commit — FETCH_HEAD
+// would drift under our feet.
+const DESKTOP_SHA = 'b1447b25ba2a55f1cdd5193f6b8660720b2a94cf';
 const {execSync} = require('node:child_process');
-execSync('git show FETCH_HEAD:apps/desktop/src/plugin-host/desktop-host.ts > ' + path.join(tmp, 'desktop-host.ts'), {cwd: __dirname});
-execSync('git show FETCH_HEAD:apps/desktop/src/plugin-host/ipc-registry.ts > ' + path.join(tmp, 'ipc-registry.ts'), {cwd: __dirname});
-execSync('git show FETCH_HEAD:apps/desktop/src/plugin-host/native-registry.ts > ' + path.join(tmp, 'native-registry.ts'), {cwd: __dirname});
-execSync('git show FETCH_HEAD:apps/desktop/src/plugin-host/declarative-view.ts > ' + path.join(tmp, 'declarative-view.ts'), {cwd: __dirname});
+const actualSha = execSync('git rev-parse ' + DESKTOP_SHA + '^{commit}', {cwd: __dirname, encoding: 'utf8'}).trim();
+if (actualSha !== DESKTOP_SHA) throw new Error('desktop source drifted: ' + actualSha);
+for (const f of ['desktop-host.ts', 'ipc-registry.ts', 'native-registry.ts', 'declarative-view.ts'])
+  execSync('git show ' + DESKTOP_SHA + ':apps/desktop/src/plugin-host/' + f + ' > ' + path.join(tmp, f), {cwd: __dirname});
+console.log('COMBINED-HEADS ' + JSON.stringify({desktop: actualSha, consumer: execSync('git rev-parse HEAD', {encoding: 'utf8'}).trim()}));
 buildSync({entryPoints: [path.join(tmp, 'desktop-host.ts')], bundle: true, platform: 'node', format: 'cjs', outfile: path.join(tmp, 'guard.cjs'), external: ['electron', '@mote/*'], logLevel: 'silent'});
 // The guard imports shared types only — external is fine for test scope.
 const {CustomPageFrameGuard} = require(path.join(tmp, 'guard.cjs'));
 buildSync({entryPoints: [path.join(__dirname, 'custom-page-combined-harness.tsx')], bundle: true, platform: 'browser', format: 'iife', outfile: path.join(tmp, 'bundle.js'), logLevel: 'silent', external: ['@mote/*']});
 
-// Real preload: same contract shape as apps/desktop/src/preload.ts.
+// Generated IPC adapter mirroring the frozen preload contract — the
+// production preload file is not under test; the IPC surface and the real
+// main-process guard are.
 writeFileSync(path.join(tmp, 'preload.cjs'), `const {contextBridge, ipcRenderer} = require('electron');
 contextBridge.exposeInMainWorld('mote', {
   customPagePrepare: target => ipcRenderer.invoke('mote:custom-page-prepare', target),
@@ -35,21 +46,31 @@ contextBridge.exposeInMainWorld('mote', {
   },
 });`);
 
-const nonce = 'combo-nonce-1', nonce2 = 'combo-nonce-2', instanceId = 'combo-inst', documentKey = 'combo-doc';
+const nonce = 'combo-nonce-1', nonce2 = 'combo-nonce-2', nonce3 = 'combo-nonce-3', nonceLate = 'combo-nonce-late', instanceId = 'combo-inst', documentKey = 'combo-doc';
+let releaseClaim; const claimBarrier = new Promise(r => {releaseClaim = r;});
+let releasePrepare; const prepareBarrier = new Promise(r => {releasePrepare = r;});
 const hits = {};
-const req = (key, id = 'r1', method = 'read') => ({contractVersion: '1', nonce, documentKey, instanceId, generation: 1, requestId: id, kind: 'request', method});
 const pages = {
-  '/harness.html': `<!doctype html><div id="root"></div><script>window.__HARNESS__=${JSON.stringify({nonce, nonce2, instanceId, documentKey})};</script><script src="/bundle.js"></script>`,
+  '/harness.html': `<!doctype html><div id="root"></div><script>window.__HARNESS__=${JSON.stringify({nonce, nonce2, nonce3, nonceLate, instanceId, documentKey})};</script><script src="/bundle.js"></script>`,
   '/entry1.html': `<script>new Image().src='/ran1';let received=[];
-addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){const port=e.ports[0];window.__port=port;port.onmessage=m=>received.push(m.data);
+addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){const port=e.ports[0];window.__port=port;window.__handshake=e.data;port.onmessage=m=>received.push(m.data);
 port.postMessage({contractVersion:e.data.contractVersion,nonce:e.data.nonce,documentKey:e.data.documentKey,instanceId:e.data.instanceId,generation:e.data.generation,requestId:'r1',kind:'request',method:'read'});}});
 setTimeout(()=>{try{location.href='/entry2.html';}catch(_){}},250);
 setTimeout(()=>{try{location.href='/entry3.html';}catch(_){}},450);
-setTimeout(()=>{window.__port&&window.__port.postMessage({contractVersion:'1',nonce:'${nonce}',documentKey:'${documentKey}',instanceId:'${instanceId}',generation:2,requestId:'r2',kind:'request',method:'read'});},650);
+// The post-death request reuses the handshake identity/generation exactly —
+// only requestId changes — so refusal can only be revocation, not a stale
+// epoch mismatch.
+setTimeout(()=>{if(window.__port&&window.__handshake){const h=window.__handshake;window.__port.postMessage({contractVersion:h.contractVersion,nonce:h.nonce,documentKey:h.documentKey,instanceId:h.instanceId,generation:h.generation,requestId:'r2',kind:'request',method:'read'});}},650);
 setTimeout(()=>{parent.postMessage({kind:'e1-report',received},'*');},900);
 </script>`,
   '/entry2.html': `<script>parent.postMessage({kind:'entry2-ran'},'*');</script>`,
   '/entry3.html': `<script>parent.postMessage({kind:'entry3-ran'},'*');</script>`,
+  '/entry5.html': `<script>new Image().src='/ran5';let channels=0;
+addEventListener('message',e=>{if(e.data&&e.data.kind==='channel')channels++;});
+setTimeout(()=>{try{location.href='/entry2.html';}catch(_){}},200);
+setTimeout(()=>{parent.postMessage({kind:'e5-report',channels},'*');},700);
+</script>`,
+  '/entry6.html': `<script>new Image().src='/ran6';parent.postMessage({kind:'e6-ran'},'*');</script>`,
   '/entry4.html': `<script>new Image().src='/ran4';
 addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){const port=e.ports[0];port.onmessage=m=>parent.postMessage({kind:'e4-response',value:m.data},'*');port.postMessage({contractVersion:e.data.contractVersion,nonce:e.data.nonce,documentKey:e.data.documentKey,instanceId:e.data.instanceId,generation:e.data.generation,requestId:'r9',kind:'request',method:'read'});}});
 setTimeout(()=>{parent.postMessage({kind:'e4-done'},'*');},800);
@@ -80,8 +101,8 @@ app.whenReady().then(async () => {
     if (!(win && !win.isDestroyed() && event.sender === contents && event.senderFrame === contents.mainFrame && event.senderFrame?.url === hostUrl))
       throw new Error('untrusted custom page sender');
   };
-  ipcMain.handle('mote:custom-page-prepare', (e, t) => { trustedMain(e); return guard.prepare(wcId, t); });
-  ipcMain.handle('mote:custom-page-claim', (e, c) => { trustedMain(e); return guard.claim(wcId, c, e.sender.mainFrame); });
+  ipcMain.handle('mote:custom-page-prepare', async (e, t) => { trustedMain(e); const out = guard.prepare(wcId, t); if (t.nonce === nonce3) await prepareBarrier; return out; });
+  ipcMain.handle('mote:custom-page-claim', async (e, c) => { trustedMain(e); const grant = guard.claim(wcId, c, e.sender.mainFrame); if (c.nonce === nonceLate) await claimBarrier; return grant; });
   await win.loadURL(hostUrl);
   contents.on('console-message', e => console.log('[ui]', e.message.slice(0, 200)));
   const js = code => contents.executeJavaScript(code);
@@ -115,6 +136,32 @@ app.whenReady().then(async () => {
   const e4 = got2.find(m => m && m.kind === 'e4-response');
   assert.ok(e4 && e4.value && e4.value.ok === true, 'the remount received a real response: ' + JSON.stringify(got2));
 
-  console.log('COMBINED ' + JSON.stringify({calls: calls2, e1Received: e1.received.length, late, passed: true}));
-  server.close(); app.exit(0);
+  // In-flight claim: the real grant is computed in main, its IPC response
+  // held, the entry navigates (denied+revoked), then the stale grant lands
+  // — it must NOT rebuild a channel.
+  await js('window.__mountLate()');
+  await until(() => hits['/ran5'], 'late-claim entry loaded');
+  await pause(400); // entry5 navigates at ~200ms: deny + revocation pushed
+  releaseClaim();
+  await until(() => js('window.got&&window.got.some(m=>m&&m.kind==="e5-report")'), 'entry5 reported');
+  const e5 = (await js('window.got||[]')).find(m => m && m.kind === 'e5-report');
+  assert.ok(e5 && e5.channels === 0, 'the late grant never rebuilt a channel: ' + JSON.stringify(e5));
+  const calls3 = await js('window.calls');
+  assert.equal(calls3.length, 2, 'no stale-grant invocation: ' + JSON.stringify(calls3));
+
+  // Deferred prepare: props swap while the prepare response is held — the
+  // stale continuation must not navigate the frame to the old entry.
+  await js('window.__mountSwappable()');
+  await pause(300);
+  await js('window.__swapProps()');
+  // React applies the swap asynchronously — wait for the NEW effect's own
+  // prepare/navigation before releasing the old barrier, so the release
+  // provably lands after the old effect was cleaned up.
+  await until(() => hits['/entry6.html?moteFrame=late-doc'], 'new effect navigated');
+  releasePrepare();
+  await pause(600);
+  assert.ok(!hits['/entry5.html?moteFrame=' + nonce3], 'the stale prepare never navigated the swapped frame: ' + JSON.stringify(Object.keys(hits).filter(u=>/entry5|entry6/.test(u))));
+
+  console.log('COMBINED ' + JSON.stringify({calls: await js('window.calls'), e1Received: e1.received.length, late, passed: true}));
+  server.close(); rmSync(tmp, {recursive: true, force: true}); app.exit(0);
 }).catch(error => { console.error(error); rmSync(tmp, {recursive: true, force: true}); app.exit(1); });
