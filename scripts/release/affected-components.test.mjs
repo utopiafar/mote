@@ -28,6 +28,15 @@ test('shared workspace changes traverse actual npm dependencies', () => {
   assert.deepEqual(groups(changed('packages/shared/src/connection.ts')), ['central', 'desktop', 'android']);
   assert.equal(changed('packages/shared/src/connection.ts').protocol, true);
 });
+test('new plugin API, host and SDK paths retain their actual release consumers', () => {
+  assert.deepEqual(groups(changed('packages/plugin-api/src/index.ts')), ['central', 'desktop']);
+  assert.equal(changed('packages/plugin-api/src/index.ts').tooling, true);
+  assert.deepEqual(groups(changed('packages/plugin-host/src/host.ts')), ['central']);
+  assert.equal(changed('packages/plugin-host/src/host.ts').tooling, true);
+  const sdk = changed('packages/plugin-sdk/src/browser.ts');
+  assert.deepEqual(groups(sdk), []);
+  assert.equal(sdk.tooling, true);
+});
 test('protocol and release infrastructure check every affected platform without publishing', () => {
   assert.deepEqual(changed('protocol/contract.json'), { central: true, desktop: true, android: true, protocol: true, tooling: false });
   assert.deepEqual(groups(changed('scripts/release/components.mjs')), ['central', 'desktop', 'android']);

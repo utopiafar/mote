@@ -44,6 +44,7 @@ export function taskPlan(task, root = '.', selectedServer = ['all']) {
     node('--test', ...listTests('scripts/release', '.test.mjs', root), ...listTests('scripts/ci', '.test.mjs', root), 'scripts/media-workers.test.mjs', 'scripts/security-tests.mjs', 'scripts/reset-mvp-vault.test.mjs', 'scripts/journey-network-proxy.test.mjs'),
     node('--import', 'tsx', '--test', 'scripts/client.test.ts'), node('scripts/test-central-runner.mjs'),
   ];
+  if (task === 'plugin-sdk') return [npm('build', '-w', '@mote/plugin-sdk'), node('--test', 'packages/plugin-sdk/test/package-boundary.test.mjs')];
   if (task === 'tooling') return [node('--test', ...listTests('scripts/ci', '.test.mjs', root), ...listTests('scripts/release', '.test.mjs', root))];
   if (task === 'i18n') return [sharedBuild(), npm('check:i18n'), node('--test', 'packages/shared/test/i18n.test.mjs')];
   if (task === 'shared') return [sharedBuild(), npm('test', '-w', '@mote/shared')];
