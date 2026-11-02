@@ -54,6 +54,7 @@ export class EvidenceStore {
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new StoreDatabase(join(directory,'mote.sqlite'));
+    try {
     this.db.function('mote_image_device_hash',{deterministic:true},value=>sha256(JSON.stringify(String(value))));
     this.db.function('mote_image_policy',{deterministic:true},(raw,sourceId,mime,override)=>{
       if(raw===null)return null;
@@ -68,11 +69,13 @@ export class EvidenceStore {
       const settingsTable=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
       const epoch=settingsTable?this.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value:undefined;
       if(epoch!=='4'){
-        this.db.close();
         throw new StoreError('Unsupported Mote vault epoch. Backend epoch 4 requires a new empty data directory; existing data is retained.',409);
       }
     }
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000');
+    // A failed first installation must not leave a populated, epoch-less vault.
+    // Closing this connection rolls back its own unfinished schema transaction.
+    if(!priorTable)this.db.exec('BEGIN IMMEDIATE');
     this.db.function('mote_central_ocr_status',{deterministic:true},(state,error,enabled)=>centralOcrState({state:String(state),error:error===null?null:String(error)},enabled!==0).status);
     this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
     this.db.function('mote_context_end',{deterministic:true},json=>{const c=JSON.parse(String(json));return new Date(c.stateSeries?.samples?.at(-1)?.at??sourceContentTime(c)).toISOString();});
@@ -81,13 +84,19 @@ export class EvidenceStore {
     installVaultSchema(this.db);
     this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','4')").run();
     this.db.exec('PRAGMA user_version=4');
-    try{this.contentEncryption=new ContentEncryption(directory,this.db,options);}catch(error){this.db.close();throw error;}
+    this.contentEncryption=new ContentEncryption(directory,this.db,options);
     this.assets=new AssetStore(this);
     this.archive=new EvidenceArchive(this);
     this.ledger=new StorageLedger(this.db);
     this.ledger.bytes();
+    if(!priorTable)this.db.exec('COMMIT');
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
     if(!options.maintenance)this.sweep();
+    } catch(error) {
+      try { this.close(); }
+      catch(cleanup) { throw new AggregateError([error,cleanup],'Vault initialization and cleanup failed',{cause:error}); }
+      throw error;
+    }
   }
   private record(row:Row,metadataOnly=false):CaptureRecord {
     const ocrRow=this.db.prepare(`SELECT ${metadataOnly?"json_remove(json,'$.text','$.transcript')":"json"} json FROM perception_results WHERE capture_id=? AND kind='ocr' AND current=1`).get(row.id);
@@ -749,5 +758,5 @@ export class EvidenceStore {
     if(!row)throw new StoreError('Insight not found',404);
     return {...JSON.parse(row.json),id:row.id,createdAt:row.created_at};
   }
-  close() {this.db.close();}
+  close() {if(this.db.isOpen)this.db.close();}
 }
