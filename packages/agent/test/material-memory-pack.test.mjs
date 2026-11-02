@@ -159,6 +159,20 @@ test('derived navigation returns untrusted bodies, overview metadata, and scope-
   assert.equal(boundedResult.pagination.nextCursor, '1');
 });
 
+test('changes accepts a caller limit above 30 and caps by 30 then the Host scope', async () => {
+  const ids = Array.from({length: 8}, (_, index) => 'wide-' + index);
+  const descriptors = createDerivedNavigationPack({timeZone: 'UTC', incrementalEvidenceIds: ids});
+  const registry = new ToolRegistry(), lease = lifecycle();
+  for (const descriptor of descriptors) registry.register(descriptor, lease);
+  const snapshot = registry.snapshot([{name: 'changes', version: '1'}]);
+  const records = ids.map((id, index) => ({id, capturedAt: '2024-01-0' + (index + 1) + 'T00:00:00.000Z', appName: 'W', sourceType: 'screen', ocrText: 'text-' + index}));
+  const session = port({evidence: args => records.filter(record => args.ids.includes(record.id))}, {limit: 6, after: '2024-01-01T00:00:00.000Z', before: '2024-02-01T00:00:00.000Z'});
+  const value = await execute(snapshot, 'changes', {view: 'overview', limit: 100}, session.port);
+  assert.equal(session.calls[0].args.ids.length, 6);
+  assert.equal(value.data.length, 6);
+  assert.deepEqual(value.pagination, {nextCursor: '6', totalCount: 8});
+});
+
 test('spotlight defaults use the frozen defaultChangesView and empty runs make no evidence call', async () => {
   const descriptors = createDerivedNavigationPack({timeZone: 'UTC', incrementalEvidenceIds: ['a'], defaultChangesView: 'overview'});
   const registry = new ToolRegistry(), lease = lifecycle();

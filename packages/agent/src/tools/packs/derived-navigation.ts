@@ -76,7 +76,7 @@ export function createDerivedNavigationPack(input: DerivedNavigationInputs = {})
       parse(args) {
         if (args.view !== undefined && !['overview', 'text'].includes(String(args.view))) invalidPackArgument('Invalid changes view');
         if (args.cursor !== undefined && (typeof args.cursor !== 'string' || !/^(0|[1-9][0-9]*)$/.test(args.cursor))) invalidPackArgument('Invalid changes page');
-        if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 30)) invalidPackArgument('Invalid changes page');
+        if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || Number(args.limit) < 1)) invalidPackArgument('Invalid changes page');
         return args;
       },
       async execute(args, port) {
