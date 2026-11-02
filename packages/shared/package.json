@@ -49,6 +49,12 @@
       "require": "./dist/model-providers.js",
       "default": "./dist/model-providers.js"
     },
+    "./agent-runtimes": {
+      "types": "./dist/agent-runtimes.d.ts",
+      "import": "./dist/agent-runtimes.js",
+      "require": "./dist/agent-runtimes.js",
+      "default": "./dist/agent-runtimes.js"
+    },
     "./capture-sessions": {
       "types": "./dist/capture-sessions.d.ts",
       "import": "./dist/capture-sessions.js",
@@ -131,6 +137,9 @@
       ],
       "models": [
         "dist/model-providers.d.ts"
+      ],
+      "agent-runtimes": [
+        "dist/agent-runtimes.d.ts"
       ],
       "capture-sessions": [
         "dist/capture-sessions.d.ts"
