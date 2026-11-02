@@ -3,7 +3,7 @@ import type {QueryInput} from '../query-contracts.js';
 import type {ContextRecord} from '../context-contracts.js';
 import type {AgentAnswer, AgentResponseReason} from '../types.js';
 import type {
-  HostRunPort, ModelLease, RuntimeCandidate, RuntimeEvent, RuntimeHandle, RuntimeProvider,
+  HostRunPort, ModelLease, ResolvedRuntimeProfile, RuntimeCandidate, RuntimeEvent, RuntimeHandle, RuntimeProvider,
   RuntimeRunIdentity, RuntimeTerminal, RuntimeToolDefinition,
 } from '../runtime/contracts.js';
 
@@ -81,6 +81,7 @@ export interface HostRunDependencies {
   readonly scope: PluginScope;
   readonly identity: RuntimeRunIdentity;
   readonly input: QueryInput;
+  readonly profile: ResolvedRuntimeProfile;
   readonly runtime: ServiceLease<RuntimeProvider>;
   readonly model: ModelLease;
   /** Mandatory exact binding; absence/unavailability rejects BEFORE runtime prepare or disclosure. */
@@ -103,6 +104,10 @@ export interface HostRunSession {
   readonly dependencies: HostRunDependencies;
   readonly port: HostRunPort;
   readonly handle: RuntimeHandle;
+  /** Host getter/snapshot; never exposed on the provider's port. */
+  readonly evidence: HostEvidenceSnapshot;
+  /** Number of model-authored corrections already requested, between zero and repairLimit. */
+  readonly repairs: number;
   readonly repairLimit: typeof HOST_MAX_OUTPUT_REPAIRS;
   /** Reject unverified tools/tool failure/cancelled/failed/yielded terminals as successful answers.
    * output_limit rejects the candidate but may request a shorter model-authored repair in the same session.
