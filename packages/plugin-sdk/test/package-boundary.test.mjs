@@ -17,9 +17,11 @@ test('the SDK declares separate node/browser entries and no private app export',
   assert.equal(manifest.name, '@mote/plugin-sdk');
   for (const entry of ['.', './browser', './node']) assert.ok(manifest.exports[entry], entry);
   assert.equal(manifest.exports['.'].browser.import, './dist/browser.js');
-  assert.equal(manifest.exports['.'].node.import, './dist/node.js');
+  assert.equal(manifest.exports['.'].browser.types, './dist/browser.d.ts');
+  assert.equal(manifest.exports['.'].types, './dist/browser.d.ts');
   assert.equal(manifest.exports['./browser'].import, './dist/browser.js');
   assert.equal(manifest.exports['./node'].import, './dist/node.js');
+  assert.doesNotMatch(read('dist/browser.d.ts'), /planComposition/);
   assert.ok(!JSON.stringify(manifest.exports).includes('apps/'));
   const browser = read('dist/browser.js');
   assert.doesNotMatch(browser, /@mote\/plugin-host|node:|from ['"](?:node:)?(?:fs|path|child_process)['"]/);
@@ -50,7 +52,8 @@ test('an external project consumes the packed SDK tarball and browser bundle wit
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], external);
 
   writeFileSync(join(external, 'consumer.ts'), `
-import { packageManifestSchema, planComposition, PLUGIN_SDK_VERSION } from '@mote/plugin-sdk';
+import { packageManifestSchema, PLUGIN_SDK_VERSION } from '@mote/plugin-sdk';
+import { planComposition } from '@mote/plugin-sdk/node';
 const manifest = packageManifestSchema.parse({
   schemaVersion: 1, id: 'external.fixture', name: 'External fixture', version: '1.0.0', runtime: 'worker',
   entry: 'main.mjs', archive: {asset: 'fixture.zip', sha256: 'a'.repeat(64)},
