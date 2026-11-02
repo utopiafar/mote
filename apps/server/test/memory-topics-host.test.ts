@@ -22,6 +22,8 @@ async function fixture(t:TestContext){
    if(checkTopicValidation){
     const invalid={...answer,answer:JSON.stringify({trees:[{id:'generated',label:'Generated navigation',nodes:[{id:'empty',label:'Empty generated node',memoryIds:[]}]}]})};
     await assert.rejects(validateHostOutput(input,invalid),error=>error instanceof AgentResponseError&&error.reason==='host_validation');
+    const unknownMemory={...answer,answer:JSON.stringify({trees:[{id:'generated',label:'Generated navigation',nodes:[{id:'unknown',label:'Unknown generated member',memoryIds:[randomUUID()]}]}]})};
+    await assert.rejects(validateHostOutput(input,unknownMemory),error=>error instanceof AgentResponseError&&error.reason==='host_validation');
     await validateHostOutput(input,answer);validatedTopics++;
    }
    return answer;
@@ -60,7 +62,7 @@ test('actual fresh Memory publication schedules durable topics under its origina
 test('topic output reaches the Agent repair validator before a corrected classification publishes',async t=>{
  const f=await fixture(t);f.checkTopicValidation();await f.command('authorize');
  const done=await f.intake();assert.equal(done.status,'completed');await f.settle();
- assert.equal(f.validatedTopics,1,'an empty topic node must be rejected within the model conversation');
+ assert.equal(f.validatedTopics,1,'invalid topic structure and membership must be rejected within the model conversation');
  assert.equal(f.calls,1,'output repair must not require a new topic operation');
  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
  assert.ok(f.node.memories.list().length>0,'topic validation preserves published Memory');

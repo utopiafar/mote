@@ -14,6 +14,21 @@ const id=z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/);
 const label=z.string().trim().min(1).max(100);
 export const topicClassificationSchema=z.object({trees:z.array(z.object({id,label,nodes:z.array(z.object({id,label,parentId:id.optional(),memoryIds:z.array(z.string().uuid()).min(1).max(100)}).strict()).min(1).max(100)}).strict()).max(20)}).strict();
 type Classification=z.infer<typeof topicClassificationSchema>;
+/** Pure output checks shared by in-session repair and fenced publication. */
+export function parseTopicClassification(raw:unknown,memoryIds:readonly string[]):Classification {
+ const result=topicClassificationSchema.parse(raw),known=new Set(memoryIds),treeIds=new Set<string>();
+ for(const tree of result.trees){
+  if(treeIds.has(tree.id))throw new StoreError('Duplicate model topic tree');treeIds.add(tree.id);
+  const nodes=new Map(tree.nodes.map(node=>[node.id,node]));
+  if(nodes.size!==tree.nodes.length)throw new StoreError('Duplicate model topic node');
+  for(const node of tree.nodes){
+   if(new Set(node.memoryIds).size!==node.memoryIds.length||node.memoryIds.some(id=>!known.has(id)))throw new StoreError('Topic references an unknown or duplicate Memory');
+   const seen=new Set([node.id]);let parent=node.parentId;
+   while(parent){if(!nodes.has(parent)||seen.has(parent))throw new StoreError('Invalid model topic ancestry');seen.add(parent);parent=nodes.get(parent)!.parentId;}
+  }
+ }
+ return result;
+}
 type Dependency={id:string;version:number;fingerprint:string;digest:string};
 type Batch={snapshotKey:string;operationId:string;admissionId:string;classifierId:string;classifierVersion:string;dependencies:Dependency[];result:Classification};
 export type TopicClassifier={id:string;version:string;classify:(input:{memories:readonly Memory[];signal:AbortSignal})=>Promise<unknown>};
@@ -89,17 +104,7 @@ export class AutomaticTopics {
       // not infer intent from source instructions or promote attribution to fact.
       const raw=await classifier.classify({memories:structuredClone(memories),signal:authority.signal});
       fence();this.assertInputs(memories);
-      const result=topicClassificationSchema.parse(raw),known=new Set(ids),treeIds=new Set<string>();
-      for(const tree of result.trees){
-        if(treeIds.has(tree.id))throw new StoreError('Duplicate model topic tree');treeIds.add(tree.id);
-        const nodes=new Map(tree.nodes.map(node=>[node.id,node]));
-        if(nodes.size!==tree.nodes.length)throw new StoreError('Duplicate model topic node');
-        for(const node of tree.nodes){
-          if(new Set(node.memoryIds).size!==node.memoryIds.length||node.memoryIds.some(id=>!known.has(id)))throw new StoreError('Topic references an unknown or duplicate Memory');
-          const seen=new Set([node.id]);let parent=node.parentId;
-          while(parent){if(!nodes.has(parent)||seen.has(parent))throw new StoreError('Invalid model topic ancestry');seen.add(parent);parent=nodes.get(parent)!.parentId;}
-        }
-      }
+      const result=parseTopicClassification(raw,ids);
       const batch:Batch={snapshotKey,operationId,admissionId:authority.admissionId,classifierId:classifier.id,classifierVersion:classifier.version,dependencies,result};
       const json=JSON.stringify(batch);
       // Synchronous publication: no await between the final fences and commit.
