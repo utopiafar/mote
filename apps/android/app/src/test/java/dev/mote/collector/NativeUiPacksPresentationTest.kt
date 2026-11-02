@@ -159,4 +159,49 @@ class NativeUiPacksPresentationTest {
         assertEquals("Studio theme", registry.themeA11y()?.text)
         assertEquals("namespace_missing", registry.themeA11y()?.fallbackReason)
     }
+
+    @Test fun fallbackRefreshesLastReadableAfterLocaleChangeAndUnload() = withLocale("zh-CN") {
+        val registry = registryWithBuiltin()
+        catalogs()
+        registry.register(themeProvider("fixture.theme", "1", PluginUiPresentation("theme.name", i18nNamespace = "fixture.plugin")))
+        registry.register(layoutProvider("fixture.layout", "1", PluginUiPresentation("layout.name", i18nNamespace = "fixture.plugin")))
+        registry.bind(NativeUiBinding(NativeUiIdentity("fixture.theme", "1"), NativeUiIdentity("fixture.layout", "1")))
+        registry.removeTheme(NativeUiIdentity("fixture.theme", "1"))
+        assertEquals("影棚", registry.fallbackLabel()?.text)
+        selected.set(null, "en")
+        assertEquals("Studio", registry.fallbackLabel()?.text)
+        MoteI18n.pluginCatalogs.clear()
+        assertEquals("Studio", registry.fallbackLabel()?.text)
+    }
+
+    @Test fun removalCapturesCurrentLocaleBeforeCatalogUnload() = withLocale("zh-CN") {
+        val registry = registryWithBuiltin()
+        catalogs()
+        registry.register(themeProvider("fixture.theme", "1", PluginUiPresentation("theme.name", i18nNamespace = "fixture.plugin")))
+        registry.register(layoutProvider("fixture.layout", "1", PluginUiPresentation("layout.name", i18nNamespace = "fixture.plugin")))
+        registry.bind(NativeUiBinding(NativeUiIdentity("fixture.theme", "1"), NativeUiIdentity("fixture.layout", "1")))
+        assertEquals("影棚", registry.themeLabel()?.text)
+        selected.set(null, "en")
+        registry.removeTheme(NativeUiIdentity("fixture.theme", "1"))
+        MoteI18n.pluginCatalogs.clear()
+        assertEquals("Studio", registry.fallbackLabel()?.text)
+    }
+
+    @Test fun distinctAccessibleNameSurvivesRemovalLocaleChangeAndUnload() = withLocale("zh-CN") {
+        val registry = registryWithBuiltin()
+        MoteI18n.pluginCatalogs.register("fixture.plugin", "en", mapOf("theme.name" to "Studio", "theme.a11y" to "Studio theme"))
+        MoteI18n.pluginCatalogs.register("fixture.plugin", "zh-CN", mapOf("theme.name" to "影棚", "theme.a11y" to "影棚主题"))
+        registry.register(themeProvider("fixture.theme", "1", PluginUiPresentation("theme.name", a11yKey = "theme.a11y", i18nNamespace = "fixture.plugin")))
+        registry.register(layoutProvider("fixture.layout", "1", PluginUiPresentation("layout.name", i18nNamespace = "fixture.plugin")))
+        registry.bind(NativeUiBinding(NativeUiIdentity("fixture.theme", "1"), NativeUiIdentity("fixture.layout", "1")))
+        assertEquals("影棚", registry.themeLabel()?.text)
+        assertEquals("影棚主题", registry.themeA11y()?.text)
+        registry.removeTheme(NativeUiIdentity("fixture.theme", "1"))
+        selected.set(null, "en")
+        assertEquals("Studio", registry.fallbackLabel()?.text)
+        assertEquals("Studio theme", registry.fallbackA11y()?.text)
+        MoteI18n.pluginCatalogs.clear()
+        assertEquals("Studio", registry.fallbackLabel()?.text)
+        assertEquals("Studio theme", registry.fallbackA11y()?.text)
+    }
 }

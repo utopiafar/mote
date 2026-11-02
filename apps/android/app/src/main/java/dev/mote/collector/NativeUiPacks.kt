@@ -87,7 +87,10 @@ internal class NativeUiPackRegistry {
         val source = fallbackSource ?: return null
         val resolved = MoteI18n.pluginCatalogs.resolve(source.identity.id, source.declared, MoteI18n.language())
         val unreadable = resolved.label.fallbackReason == "key_missing" || resolved.label.fallbackReason == "namespace_missing"
-        return if (unreadable) mergeReadableLabel(resolved, source.lastReadable) else resolved
+        val presentation = if (unreadable) mergeReadableLabel(resolved, source.lastReadable) else resolved
+        val readable = presentation.label.fallbackReason != "key_missing" && presentation.label.fallbackReason != "namespace_missing"
+        if (readable) fallbackSource = source.copy(lastReadable = presentation)
+        return presentation
     }
     @Synchronized fun register(provider: NativeThemeProvider) {
         val supplied = provider.snapshot
@@ -129,7 +132,8 @@ internal class NativeUiPackRegistry {
         val key = PresentationKey("theme", identity)
         if (activeBinding().theme == identity) {
             val declared = themes[identity]?.presentation
-            val removed = declared?.let { FallbackSource(identity, it, lastPresentations[key]) }
+            val current = declared?.let { presentation("theme", identity, it) }
+            val removed = declared?.let { FallbackSource(identity, it, current ?: lastPresentations[key]) }
             bind(activeBinding().copy(theme = requireNotNull(builtin).theme), "theme_removed", removed)
         }
         themes.remove(identity)
@@ -140,7 +144,8 @@ internal class NativeUiPackRegistry {
         val key = PresentationKey("layout", identity)
         if (activeBinding().layout == identity) {
             val declared = layouts[identity]?.presentation
-            val removed = declared?.let { FallbackSource(identity, it, lastPresentations[key]) }
+            val current = declared?.let { presentation("layout", identity, it) }
+            val removed = declared?.let { FallbackSource(identity, it, current ?: lastPresentations[key]) }
             bind(activeBinding().copy(layout = requireNotNull(builtin).layout), "layout_removed", removed)
         }
         layouts.remove(identity)
