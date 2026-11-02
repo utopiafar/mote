@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseUiContribution} from '../dist/plugin-ui.js';
-import {PluginI18nRegistry, resolveContributionPresentation} from '@mote/shared/plugin-i18n';
+import {PluginI18nRegistry, bindPresentationContribution, resolveContributionPresentation} from '@mote/shared/plugin-i18n';
 
 /** A contribution descriptor as a real package manifest projects it; the
  * registry consumes the same frozen wire type the host loads. */
@@ -172,6 +172,66 @@ test('proto-named JSON keys are stored and resolved as ordinary messages', () =>
   registry.register('fixture.mixed', 'en', JSON.parse('{"__proto__":"Prototype label","nav.library":"Library"}'));
   assert.equal(registry.resolve('fixture.mixed', '__proto__', 'en').text, 'Prototype label');
   assert.equal(registry.resolve('fixture.mixed', 'nav.library', 'en').text, 'Library');
+});
+
+const themeDescriptor = parseUiContribution({
+  id: 'fixture.theme', kind: 'theme', apiVersion: '1', platforms: ['web', 'mac'],
+  presentation: {labelKey: 'theme.name', i18nNamespace: 'fixture.plugin'},
+});
+
+test('a theme contribution binds to its exact pack reference with runtime labels', () => {
+  const registry = registryWith(
+    ['en', {'theme.name': 'Studio'}],
+    ['zh-CN', {'theme.name': '影棚'}],
+  );
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  const zh = bindPresentationContribution(themeDescriptor, {id: 'fixture.theme', version: '1'}, registry, 'web', facts, 'zh-CN');
+  assert.equal(zh.kind, 'theme');
+  assert.deepEqual(zh.reference, {id: 'fixture.theme', version: '1'});
+  assert.deepEqual(zh.availability, {state: 'active'});
+  assert.equal(zh.presentation.label.text, '影棚');
+  assert.equal(zh.presentation.routeId, 'fixture.theme');
+  const en = bindPresentationContribution(themeDescriptor, {id: 'fixture.theme', version: '1'}, registry, 'web', facts, 'en');
+  assert.equal(en.presentation.label.text, 'Studio');
+  assert.equal(en.presentation.routeId, 'fixture.theme');
+});
+
+test('unsupported platforms and wrong references never bind as active', () => {
+  const registry = registryWith(['en', {'theme.name': 'Studio'}]);
+  const facts = {requirementsAvailable: true, registeredNativeCapabilities: new Set()};
+  const unsupported = bindPresentationContribution(themeDescriptor, {id: 'fixture.theme', version: '1'}, registry, 'android', facts, 'en');
+  assert.deepEqual(unsupported.availability, {state: 'unsupported', reason: 'platform_unsupported'});
+  assert.throws(
+    () => bindPresentationContribution(themeDescriptor, {id: 'Fixture Theme', version: '1'}, registry, 'web', facts, 'en'),
+    /presentation reference/,
+  );
+  assert.throws(
+    () => bindPresentationContribution(themeDescriptor, {id: 'fixture.theme', version: 'v1'}, registry, 'web', facts, 'en'),
+    /presentation reference/,
+  );
+  const page = parseUiContribution({
+    id: 'fixture.page', kind: 'page', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'page.name', i18nNamespace: 'fixture.plugin'},
+  });
+  assert.throws(
+    () => bindPresentationContribution(page, {id: 'fixture.page', version: '1'}, registry, 'web', facts, 'en'),
+    /theme or layout/,
+  );
+});
+
+test('a layout with a missing native provider binds as requires-build', () => {
+  const layout = parseUiContribution({
+    id: 'fixture.layout', kind: 'layout', apiVersion: '1', platforms: ['android'],
+    presentation: {labelKey: 'layout.name', i18nNamespace: 'fixture.plugin'},
+    nativeRequires: [{capability: 'ui.panes', apiVersion: '1', platforms: ['android'], fallback: 'generic-reader'}],
+  });
+  const registry = registryWith(['en', {'layout.name': 'Phone'}]);
+  const binding = bindPresentationContribution(
+    layout, {id: 'fixture.layout', version: '1'}, registry, 'android',
+    {requirementsAvailable: true, registeredNativeCapabilities: new Set()}, 'en',
+  );
+  assert.deepEqual(binding.availability, {state: 'requires-build', reason: 'requires_build'});
+  assert.equal(binding.presentation.label.text, 'Phone');
 });
 
 test('registered catalogs are immutable snapshots and disposal restores the fallback', () => {

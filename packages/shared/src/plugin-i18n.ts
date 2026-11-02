@@ -7,6 +7,10 @@
 import {getLocale, locales, type Locale} from './i18n.js';
 import {
   isToken,
+  uiContributionAvailability,
+  type PluginPlatform,
+  type UiAvailability,
+  type UiAvailabilityFacts,
   type UiContributionDescriptor,
   type UiContributionPresentation,
 } from './plugin-ui.js';
@@ -145,5 +149,40 @@ export function resolveContributionPresentation(
     ...(glyph ? {glyph} : {}),
     a11y,
     fallbackReasons,
+  };
+}
+
+/** A theme/layout contribution paired with one exact presentation reference.
+ * The presentation host still owns registration, activation and the safe
+ * builtin fallback; this only binds the descriptor's availability and
+ * runtime-resolved label roles to the pack identity it names. */
+export interface PresentationContributionBinding {
+  readonly kind: 'theme' | 'layout';
+  readonly reference: {readonly id: string; readonly version: string};
+  readonly availability: UiAvailability;
+  readonly presentation: ResolvedUiPresentation;
+}
+
+const presentationId = /^[a-z][a-z0-9.-]*$/;
+const presentationVersion = /^\d+(?:\.\d+)*$/;
+
+export function bindPresentationContribution(
+  descriptor: UiContributionDescriptor,
+  reference: {readonly id: string; readonly version: string},
+  registry: PluginI18nRegistry,
+  platform: PluginPlatform,
+  facts: UiAvailabilityFacts,
+  locale: Locale = getLocale(),
+): PresentationContributionBinding {
+  const kind = descriptor.kind;
+  if (kind !== 'theme' && kind !== 'layout')
+    throw new TypeError('Not a theme or layout contribution');
+  if (!presentationId.test(reference.id) || !presentationVersion.test(reference.version))
+    throw new TypeError('Invalid presentation reference');
+  return {
+    kind,
+    reference: {id: reference.id, version: reference.version},
+    availability: uiContributionAvailability(descriptor, platform, facts),
+    presentation: resolveContributionPresentation(descriptor, registry, locale),
   };
 }
