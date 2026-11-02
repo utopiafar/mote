@@ -200,3 +200,56 @@ describe('real ipcMain adapter seam', () => {
     await expect(registered.get('real.call')!({sender: {id: 7, mainFrame}, senderFrame: {url: 'file:///evil.html'}})).rejects.toThrow('IPC denied');
   });
 });
+
+describe('cleanup ordering', () => {
+  it('a throwing disposer never strands later disposers, scopes or the quit latch', async () => {
+    const {host, router} = hostWith();
+    host.registerWindow(7, 'main');
+    const a = host.createScope({instanceId: 'inst-d1', capabilities: ['cap']});
+    a.registerIpc({channel: 'd1.call', capability: 'cap'}, () => 'a');
+    const order: string[] = [];
+    a.defer(() => { order.push('a1'); throw new Error('disposer blew'); });
+    a.defer(() => { order.push('a2'); });
+    const b = host.createScope({instanceId: 'inst-d2', capabilities: ['cap']});
+    b.registerIpc({channel: 'd2.call', capability: 'cap'}, () => 'b');
+    await expect(host.requestQuit()).rejects.toThrow('disposer blew');
+    expect(order).toEqual(['a1', 'a2']);
+    expect(router.has('d1.call')).toBe(false);
+    expect(router.has('d2.call')).toBe(false);
+    // The shared quit promise reports the same failure, not a stuck latch.
+    await expect(host.requestQuit()).rejects.toThrow('disposer blew');
+  });
+
+  it('quit fences admission before draining: no invokes, jobs or new scopes', async () => {
+    const {host, router} = hostWith();
+    host.registerWindow(7, 'main');
+    const scope = host.createScope({instanceId: 'inst-f', capabilities: ['cap']});
+    scope.registerIpc({channel: 'f.call', capability: 'cap'}, () => 'x');
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    scope.registerJob({id: 'slow', durable: true, drain: async () => { await gate; }});
+    const quitting = host.requestQuit();
+    // While the drain is pending, admission is already closed.
+    expect(await router.invoke('f.call', MAIN())).toEqual({ok: false, denial: 'scope-revoked'});
+    expect(() => scope.registerJob({id: 'late'})).toThrow('Scope is revoked');
+    expect(() => host.createScope({instanceId: 'inst-late', capabilities: []})).toThrow('shutting down');
+    release();
+    await quitting;
+    expect(router.has('f.call')).toBe(false);
+  });
+
+  it('a role absent from roleFrameUrls is denied even on the main frame', async () => {
+    const {host, router} = hostWith();
+    host.registerWindow(7, 'main');
+    host.registerWindow(8, 'quick-note');
+    const scope = host.createScope({instanceId: 'inst-url', capabilities: ['cap']});
+    let calls = 0;
+    scope.registerIpc({channel: 'url.call', capability: 'cap', windowRoles: ['main', 'quick-note'], roleFrameUrls: {main: ['file:///index.html']}}, () => { calls++; });
+    const frame = {url: 'file:///index.html'};
+    expect(await router.invoke('url.call', {senderId: 8, frameIsMain: true, windowRole: 'quick-note', frameUrl: frame.url}))
+      .toEqual({ok: false, denial: 'wrong-window'});
+    expect(calls).toBe(0);
+    expect(await router.invoke('url.call', {senderId: 7, frameIsMain: true, windowRole: 'main', frameUrl: 'file:///index.html'}))
+      .toEqual({ok: true, value: undefined});
+  });
+});

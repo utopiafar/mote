@@ -114,8 +114,10 @@ export class IpcScope {
     if (spec.mainFrameOnly !== false && !view.frameIsMain) return 'subframe';
     const allowedRoles = spec.windowRoles ?? ['main'];
     if (!allowedRoles.includes(caller.role) || caller.role !== view.windowRole) return 'wrong-window';
-    const urls = spec.roleFrameUrls?.[caller.role];
-    if (urls !== undefined && (view.frameUrl === undefined || !urls.includes(view.frameUrl))) return 'wrong-window';
+    if (spec.roleFrameUrls !== undefined) {
+      const urls = spec.roleFrameUrls[caller.role];
+      if (urls === undefined || view.frameUrl === undefined || !urls.includes(view.frameUrl)) return 'wrong-window';
+    }
     if (!this.access.capabilities.has(spec.capability)) return 'no-capability';
     if (spec.callerCapability !== undefined && !caller.capabilities.has(spec.callerCapability)) return 'no-capability';
     return null;

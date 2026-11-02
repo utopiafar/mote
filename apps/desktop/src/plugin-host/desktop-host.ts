@@ -49,6 +49,7 @@ export class DesktopPluginHost {
   #scopes = new Map<string, InternalScope>();
   #mainWindowOpen = false;
   #quitPromise: Promise<void> | null = null;
+  #closing = false;
 
   constructor(options: {router: IpcRouter; native: NativeProviderRegistry}) {
     this.#router = options.router;
@@ -73,6 +74,7 @@ export class DesktopPluginHost {
   }
 
   createScope(options: {instanceId: string; capabilities: readonly string[]}): PluginScopeHandle {
+    if (this.#closing) throw new TypeError('Host is shutting down');
     if (this.#scopes.has(options.instanceId)) throw new TypeError('Plugin scope already exists');
     const scope: InternalScope = {
       id: options.instanceId,
@@ -96,15 +98,15 @@ export class DesktopPluginHost {
   /** Run a plugin factory inside its scope. Any startup failure revokes every
    * handler, job and subscription the scope registered; durable queue bytes
    * stay, other plugins keep running, and quit remains available. */
-  async startPlugin(scope: PluginScopeHandle, factory: (scope: PluginScopeHandle) => unknown): Promise<{started: true} | {started: false; error: unknown}> {
+  async startPlugin(scope: PluginScopeHandle, factory: (scope: PluginScopeHandle) => unknown): Promise<{started: true} | {started: false; error: unknown; rollbackErrors?: unknown[]}> {
     const internal = scopeInternals.get(scope);
     if (!internal) throw new TypeError('Unknown plugin scope');
     try {
       await factory(scope);
       return {started: true};
     } catch (error) {
-      this.#revokeScope(internal, {keepDurable: true});
-      return {started: false, error};
+      const rollbackErrors = this.#revokeScope(internal, {keepDurable: true});
+      return {started: false, error, ...(rollbackErrors.length > 0 ? {rollbackErrors} : {})};
     }
   }
 
@@ -121,14 +123,21 @@ export class DesktopPluginHost {
   }
 
   async #doQuit(): Promise<void> {
+    // Fence new admission before snapshotting work: no new scopes, IPC calls
+    // or jobs may enter while durable drains are awaited; already accepted
+    // work keeps its resources until its drain completes.
+    this.#closing = true;
+    for (const scope of this.#scopes.values()) scope.revoked = true;
     const drains: Promise<unknown>[] = [];
     for (const scope of this.#scopes.values())
       for (const job of scope.jobs.values()) if (job.durable && job.drain) drains.push(Promise.resolve().then(job.drain));
     const results = await Promise.allSettled(drains);
-    for (const scope of this.#scopes.values()) this.#revokeScope(scope, {keepDurable: false});
+    const cleanupErrors: unknown[] = [];
+    for (const scope of this.#scopes.values()) cleanupErrors.push(...this.#revokeScope(scope, {keepDurable: false}));
     this.#scopes.clear();
-    const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-    if (failed.length > 0) throw failed.length === 1 ? failed[0]!.reason : new AggregateError(failed.map(f => f.reason), 'durable drains failed');
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map(r => r.reason);
+    const errors = [...failed, ...cleanupErrors];
+    if (errors.length > 0) throw errors.length === 1 ? errors[0] : new AggregateError(errors, 'quit cleanup failed');
   }
 
   stopScope(instanceId: string): void {
@@ -138,13 +147,20 @@ export class DesktopPluginHost {
     this.#scopes.delete(instanceId);
   }
 
-  #revokeScope(scope: InternalScope, options: {keepDurable: boolean}): void {
+  /** Every cleanup step is attempted independently; failures are collected
+   * and reported after cleanup so one throwing disposer never strands later
+   * scopes or registrations. */
+  #revokeScope(scope: InternalScope, options: {keepDurable: boolean}): unknown[] {
+    const errors: unknown[] = [];
     scope.revoked = true;
-    scope.ipc.dispose();
+    try { scope.ipc.dispose(); } catch (error) { errors.push(error); }
     for (const [id, job] of [...scope.jobs]) if (!(options.keepDurable && job.durable)) scope.jobs.delete(id);
     scope.controller.abort();
-    for (const dispose of scope.disposers) dispose();
+    for (const dispose of scope.disposers) {
+      try { dispose(); } catch (error) { errors.push(error); }
+    }
     scope.disposers.clear();
+    return errors;
   }
 }
 
@@ -201,6 +217,7 @@ export class PluginScopeHandle {
     this.#ipc.register(spec, handler);
   }
   registerJob(job: PluginJob): void {
+    if (this.#revoked()) throw new TypeError('Scope is revoked');
     if (this.#jobs.has(job.id)) throw new TypeError(`Job already registered: ${job.id}`);
     this.#jobs.set(job.id, job);
   }
