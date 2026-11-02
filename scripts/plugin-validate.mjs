@@ -13,8 +13,8 @@ export function releaseCompatibilityFailures(manifest) {
   return manifest.runtime === 'service' ? [{code: 'unsupported_runtime', message: 'The generic release resolver does not provide a service runtime'}] : [];
 }
 
-export async function validatePackage({manifestPath, zipPath, host = 'central', hostDependencies = []}) {
-  const release = await import(pathToFileURL(join(repository, 'apps/server/dist/plugin-release.js')).href);
+export async function validatePackage({manifestPath, zipPath, host = 'central', hostDependencies = [], releaseContract}) {
+  const release = releaseContract ?? await import(pathToFileURL(join(repository, 'apps/server/dist/plugin-release.js')).href);
   const manifest = release.pluginManifestSchema.parse(JSON.parse(await readFile(resolve(manifestPath), 'utf8')));
   const archive = await readFile(resolve(zipPath));
   const digest = hash(archive);

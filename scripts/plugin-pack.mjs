@@ -4,8 +4,8 @@
  * The release Manifest is external to the ZIP payload. This intentionally
  * avoids a self-reference when the Manifest carries the archive digest. */
 import {createHash} from 'node:crypto';
-import {mkdir, readFile, readdir, lstat, writeFile} from 'node:fs/promises';
-import {join, resolve} from 'node:path';
+import {mkdir, readFile, readdir, lstat, realpath, writeFile} from 'node:fs/promises';
+import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zipSync} from 'fflate';
 
@@ -14,6 +14,20 @@ import {zipSync} from 'fflate';
 const ZIP_MTIME = new Date(1980, 0, 1, 0, 0, 0);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const safePath = value => Boolean(value) && !value.startsWith('/') && !value.includes('\\') && !value.split('/').some(part => !part || part === '.' || part === '..');
+async function canonicalPath(path) {
+  const pending = [];
+  let current = resolve(path);
+  while (true) {
+    try { return join(await realpath(current), ...pending); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      pending.unshift(current.slice(current.lastIndexOf('/') + 1));
+      const parent = dirname(current);
+      if (parent === current) return resolve(path);
+      current = parent;
+    }
+  }
+}
 
 async function collect(directory, base = '') {
   const files = [];
@@ -33,7 +47,7 @@ async function collect(directory, base = '') {
 
 export async function packPlugin({manifestPath, payload, out, manifestSchema, validateArchive}) {
   const manifestFile = resolve(manifestPath);
-  const payloadRoot = resolve(payload), output = resolve(out);
+  const payloadRoot = await canonicalPath(payload), output = await canonicalPath(out);
   if (output === payloadRoot || output.startsWith(payloadRoot + '/')) throw Error('Output directory must be outside the payload tree');
   let release;
   if (!manifestSchema || !validateArchive) {

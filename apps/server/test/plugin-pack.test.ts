@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {zipSync} from 'fflate';
 import {packPlugin} from '../../../scripts/plugin-pack.mjs';
-import {releaseCompatibilityFailures} from '../../../scripts/plugin-validate.mjs';
+import {releaseCompatibilityFailures, validatePackage} from '../../../scripts/plugin-validate.mjs';
 import {GitHubPluginReleases, pluginManifestSchema, validatePluginArchive} from '../src/plugin-release.js';
 import type {PluginManifest} from '../src/plugin-release.js';
 
@@ -39,6 +41,42 @@ test('pack produces a deterministic external manifest and ZIP payload without a 
   assert.ok(!first.entries.includes('mote-plugin.json'));
   assert.equal(first.manifest.archive.sha256, first.digest);
   assert.doesNotThrow(() => validatePluginArchive(readFileSync(first.zipPath), first.manifest));
+});
+
+test('ZIP bytes are independent of the packing timezone and the consumer budget is enforced', async t => {
+  const f = fixture();
+  t.after(() => rmSync(f.directory, {recursive: true, force: true}));
+  const child = join(f.directory, 'pack-child.mjs');
+  const packUrl = pathToFileURL(new URL('../../../scripts/plugin-pack.mjs', import.meta.url).pathname).href;
+  const releaseUrl = pathToFileURL(new URL('../src/plugin-release.ts', import.meta.url).pathname).href;
+  writeFileSync(child, `import {packPlugin} from ${JSON.stringify(packUrl)};\nimport {pluginManifestSchema, validatePluginArchive} from ${JSON.stringify(releaseUrl)};\nconst result=await packPlugin({manifestPath:process.argv[2],payload:process.argv[3],out:process.argv[4],manifestSchema:pluginManifestSchema,validateArchive:validatePluginArchive});\nconsole.log(result.digest);\n`);
+  const digests = ['America/Los_Angeles', 'UTC'].map((tz, index) => execFileSync(process.execPath, ['--import', 'tsx', child, join(f.directory, 'mote-plugin.json'), f.payload, join(f.directory, 'tz-' + index)], {env: {...process.env, TZ: tz}, encoding: 'utf8'}).trim());
+  assert.equal(digests[0], digests[1]);
+  writeFileSync(join(f.payload, 'oversized.mjs'), '');
+  truncateSync(join(f.payload, 'oversized.mjs'), 65 * 1024 * 1024);
+  await assert.rejects(packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: join(f.directory, 'budget-out'), manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive}), /resource budget/);
+});
+
+test('pack rejects an output symlink resolving into the payload', async t => {
+  const f = fixture();
+  t.after(() => rmSync(f.directory, {recursive: true, force: true}));
+  mkdirSync(join(f.payload, 'release'));
+  const outside = join(f.directory, 'outside');
+  symlinkSync(f.payload, outside);
+  await assert.rejects(packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: outside, manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive}), /outside the payload/);
+});
+
+test('validatePackage accepts matching bytes and rejects a tampered ZIP', async t => {
+  const f = fixture();
+  t.after(() => rmSync(f.directory, {recursive: true, force: true}));
+  const packed = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out, manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive});
+  const contract = {pluginManifestSchema, validatePluginArchive};
+  assert.equal((await validatePackage({manifestPath: packed.manifestPath, zipPath: packed.zipPath, releaseContract: contract})).ok, true);
+  const tampered = join(f.directory, 'tampered.zip');
+  writeFileSync(tampered, Buffer.concat([readFileSync(packed.zipPath), Buffer.from([0])]));
+  const result = await validatePackage({manifestPath: packed.manifestPath, zipPath: tampered, releaseContract: contract});
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some(failure => failure.code === 'digest_mismatch'));
 });
 
 test('pack rejects an output tree inside the payload and an invalid calendar declaration', async t => {
