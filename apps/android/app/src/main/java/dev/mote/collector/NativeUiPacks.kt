@@ -66,7 +66,7 @@ internal class NativeUiPackRegistry {
         val a11y = if (a11yWasLabel) {
             // The current a11y came from the missing label; keep the cached
             // distinct accessible name when one exists.
-            if (cached.a11y.text != cached.label.text) cached.a11y else PluginUiText(label.text, label.fallbackReason)
+            if (cached.a11y.text != cached.label.text) PluginUiText(cached.a11y.text, resolved.a11y.fallbackReason) else PluginUiText(label.text, label.fallbackReason)
         } else resolved.a11y
         val reasons = listOfNotNull(label.fallbackReason, resolved.glyph?.fallbackReason, a11y.fallbackReason).distinct()
         return ResolvedPluginUiPresentation(resolved.routeId, label, resolved.glyph, a11y, reasons)

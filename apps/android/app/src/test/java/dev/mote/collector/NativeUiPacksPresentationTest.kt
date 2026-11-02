@@ -157,5 +157,6 @@ class NativeUiPacksPresentationTest {
         MoteI18n.pluginCatalogs.clear()
         assertEquals("Studio", registry.themeLabel()?.text)
         assertEquals("Studio theme", registry.themeA11y()?.text)
+        assertEquals("namespace_missing", registry.themeA11y()?.fallbackReason)
     }
 }
