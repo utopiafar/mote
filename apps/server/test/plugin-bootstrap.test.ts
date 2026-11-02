@@ -57,7 +57,7 @@ test('missing or duplicate foundation providers reject before any factory or HTT
 
 test('failure after storage preparation rolls back the owned vault and publishes no running app',async t=>{
   const {config}=fixture(t);let prepared:Store|undefined;
-  const storage:FoundationProvider<'storage'>={...storageProvider,create(context,input){const value=storageProvider.create(context,input);assert.ok(!(value instanceof Promise));prepared=value.store;return value;}};
+  const storage:FoundationProvider<'storage'>={...storageProvider,async create(context,input){const value=await storageProvider.create(context,input);prepared=value.store;return value;}};
   const primary=Error('generated authorization startup failure');
   const distribution:CentralDistribution={...defaultDistribution,foundations:defaultDistribution.foundations.map(provider=>provider.kind==='storage'?storage:provider.kind==='authorization'?{...provider,create(){throw primary;}}:provider)};
   await assert.rejects(buildApp(config,{distribution}),error=>error===primary);
@@ -68,8 +68,8 @@ test('failure after storage preparation rolls back the owned vault and publishes
 
 test('restart replacement sends real HTTP writes to the newly selected provider and retains the same-profile original',async t=>{
   const {config,headers}=fixture(t);const writes={first:0,second:0};
-  const provider=(which:'first'|'second'):FoundationProvider<'storage'>=>({...storageProvider,id:`fixture.vault-${which}`,create(context,input){
-    const value=storageProvider.create(context,input);assert.ok(!(value instanceof Promise));
+  const provider=(which:'first'|'second'):FoundationProvider<'storage'>=>({...storageProvider,id:`fixture.vault-${which}`,async create(context,input){
+    const value=await storageProvider.create(context,input);
     const ingest=value.store.ingest.bind(value.store);
     value.store.ingest=async(...args)=>{writes[which]++;return ingest(...args);};return value;
   }});

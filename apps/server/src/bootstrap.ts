@@ -5,6 +5,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {Config} from './config.js';
 import type {ConfigService} from './config-service.js';
 import type {Store} from './store.js';
+import type {createVaultPlatformAssembly} from './plugins/vault-platform.js';
 import type {ServerFeatureAdapter} from './features/index.js';
 import {defaultDistribution} from './distribution/default.js';
 
@@ -12,7 +13,7 @@ import {defaultDistribution} from './distribution/default.js';
  * bag. C02/C04 replace the storage/authorization adapters with domain ports. */
 export interface FoundationValues {
   configuration:{readonly config:Config;readonly service:ConfigService};
-  storage:{readonly store:Store};
+  storage:{readonly store:Store;readonly assembly:ReturnType<typeof createVaultPlatformAssembly>};
   authorization:{validOwnerBearer(authorization:string|undefined):boolean};
 }
 export interface FoundationInput {
@@ -85,7 +86,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     const current={...input,config:configuration.value.config};
     const storage=await install('storage',current),authorization=await install('authorization',current);
     let closing:Promise<void>|undefined;
-    return Object.freeze({config:configuration.value.config,configService:configuration.value.service,store:storage.value.store,
+    return Object.freeze({config:configuration.value.config,configService:configuration.value.service,store:storage.value.store,vault:storage.value.assembly,
       authorization:authorization.value,features:Object.freeze(features),hostDependencies:Object.freeze(facts),snapshot:()=>host.snapshot(),
       close:()=>closing??=(async()=>{try{await host.close();}finally{await Promise.all(leases.map(lease=>lease.release()));}})()});
   }catch(error){

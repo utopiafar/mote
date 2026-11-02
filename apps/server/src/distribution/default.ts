@@ -3,7 +3,7 @@ import {join} from 'node:path';
 import type {ManifestContribution} from '@mote/plugin-api';
 import {configDocumentDomains,configFromDocument,documentFromConfig,registerBuiltinDomains,validateResolvedConfigDocument,type ConfigDocument} from '../config.js';
 import {ConfigService} from '../config-service.js';
-import {Store} from '../store.js';
+import {createVaultPlatformAssembly} from '../plugins/vault-platform.js';
 import {serverFeatureAdapters} from '../features/index.js';
 import type {CentralDistribution,FoundationKind,FoundationProvider} from '../bootstrap.js';
 
@@ -26,13 +26,14 @@ export const configurationProvider:FoundationProvider<'configuration'>=Object.fr
     return {config,service};
   }});
 export const storageProvider:FoundationProvider<'storage'>=Object.freeze<FoundationProvider<'storage'>>({kind:'storage',id:'mote.vault-platform',version:'1.0.0',contribution:contribution('storage'),
-  create(context,{config,store:supplied,backgroundWorker}){
-    // Transitional trusted assembly bridge. C02 owns constructor-failure cleanup
-    // and the restricted vault factory; do not expose this Store through the SDK.
-    const store=supplied??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,
-      embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(backgroundWorker)});
-    if(!supplied)context.scope.defer(()=>store.close());
-    return {store};
+  async create(context,{config,store:supplied,backgroundWorker}){
+    // C02's trusted assembly bridge owns the actual resources. Its raw access is
+    // private to this transitional root, never a published scoped write service.
+    const assembly=createVaultPlatformAssembly({dataDir:config.dataDir,dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,
+      embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(backgroundWorker)},supplied?{store:supplied}:{});
+    context.scope.defer(()=>assembly.close());
+    await assembly.prepare();
+    return {store:assembly.store,assembly};
   }});
 export const authorizationProvider:FoundationProvider<'authorization'>=Object.freeze<FoundationProvider<'authorization'>>({kind:'authorization',id:'mote.owner-authorization',version:'1.0.0',contribution:contribution('authorization'),
   create(_context,{config}){

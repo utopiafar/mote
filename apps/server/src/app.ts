@@ -52,14 +52,12 @@ import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityChe
 import { registerMemoryDelegation } from './memory-delegation.js';
 import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
-import { ArchivedFileStore } from './archived-files.js';
 import { codingSourcePlugin } from './coding-source-plugin.js';
 import { ConcurrencyGate } from './concurrency.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
 import { registerConnectors } from './connectors/index.js';
-import { ContentStorageService } from './content-storage.js';
 import { Conversations } from './conversations.js';
 import { combineDependencies,resolveDependencies } from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';
@@ -85,7 +83,6 @@ import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
 import {MemoryIntegrationSettings} from './memory-integration-settings.js';
-import { MaintenanceWorker } from './maintenance.js';
 import { MaterialMemoryWork } from './material-memory-work.js';
 import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import {AutomaticActivity} from './automatic-activity.js';
@@ -273,9 +270,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   evidenceReader.memoryBindings=memoryBindings;
   const ownerQuestions=new OwnerQuestions(store);
   backendContext.provide('moteOwnerQuestions',ownerQuestions);
-  const archivedFiles=new ArchivedFileStore(store);
-  const contentStorage=new ContentStorageService(store,files,archivedFiles,configService,enabled=>{config.contentEncryptionEnabled=enabled;maintenanceWorker?.configureContentEncryption(enabled);});
-  resources.defer(()=>contentStorage.close());
+  const archivedFiles=bootstrap.vault.archivedFiles;
+  const contentStorage=bootstrap.vault.attachContent(files,configService,enabled=>{config.contentEncryptionEnabled=enabled;});
   const connections=dependencies?.connections??new Connections(store,sources);resources.defer(()=>connections.close());await connections.init();
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const connectionIdentity=(req:FastifyRequest)=>identities.get(req);
@@ -908,8 +904,10 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       return payload;
     });
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
-  const maintenanceWorker=dependencies?.backgroundWorker?new MaintenanceWorker(config):undefined;
-  resources.defer(()=>maintenanceWorker?.close());
+  const maintenanceWorker=bootstrap.vault.startMaintenance();
+  // C02 stops the worker before content accessors; DB remains alive until every
+  // other root consumer has closed and bootstrap releases the vault last.
+  resources.defer(()=>bootstrap.vault.stopAccessors());
   const activity=new ActivityProjection(store,new Operations(store),{delegation});
   const applyExecution=(value:ExecutionSettingsValue)=>{
     interactiveGate.configure(value.interactiveConcurrency);interactiveModelGate.configure(value.interactiveConcurrency);
