@@ -900,7 +900,13 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('preClose',async()=>{
-    closing=true;featureHost.stop();
+    closing=true;
+    // Stop watcher/subscriptions and join accepted configuration transactions
+    // while execution/model consumers are still alive; bootstrap retains the
+    // final platform/model close.
+    configurationPlatform.quiesce('shutdown');
+    await configurationPlatform.configService.initialize();
+    featureHost.stop();
     // Polling/admission stops without retiring the runtime's Memory authority;
     // the runtime closes only after accepted engine work is interrupted/drained.
     sourcePipelines.quiesce();
