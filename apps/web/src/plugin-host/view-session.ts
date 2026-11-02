@@ -106,12 +106,21 @@ export class PluginViewSession {
   #storageKey(key: string): string { return `${this.#scope}:${this.#ownerKey}:${key}`; }
 
   /** Flushes are serialized per session: a second suspend/owner-switch joins
-   * the in-flight flush instead of racing out-of-order saves. */
+   * the in-flight flush instead of racing out-of-order saves. Joiners recheck
+   * for newly staged drafts after the joined flush resolves; a completed
+   * empty flush never stands in for drafts staged after it. */
   async #flushDrafts(): Promise<SaveOutcome> {
-    if (this.#inflightFlush) return this.#inflightFlush;
-    const flush = this.#flushUntilClean();
-    this.#inflightFlush = flush;
-    try { return await flush; } finally { this.#inflightFlush = null; }
+    for (;;) {
+      if (!this.#inflightFlush) {
+        const flush = this.#flushUntilClean();
+        this.#inflightFlush = flush;
+        void flush.finally(() => { if (this.#inflightFlush === flush) this.#inflightFlush = null; });
+      }
+      const outcome = await this.#inflightFlush;
+      if (!outcome.ok) return outcome;
+      const hasDirty = [...this.#draftMap()].some(([, draft]) => draft.dirty && draft.scope !== 'view');
+      if (!hasDirty) return outcome;
+    }
   }
 
   /** Flush dirty drafts through the host writer, repeating until the current

@@ -262,3 +262,16 @@ test('poll errors from an obsolete generation never reach the error path', async
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(errors.length, 0, 'rejection bound to an older generation is suppressed');
 });
+
+test('a transition joining a completed flush still persists newly staged drafts', async () => {
+  const writer = memoryWriter();
+  const session = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer});
+  session.lifetime.show();
+  const s1 = session.suspend();
+  session.saveDraft('note', {text: 'staged between transitions'});
+  const s2 = session.switchOwner('owner-b');
+  assert.deepEqual(await s1, {ok: true});
+  assert.deepEqual(await s2, {ok: true});
+  assert.deepEqual(writer.saved.get('owner:owner-a:note'), {text: 'staged between transitions'},
+    'the second transition runs another flush instead of reusing the completed empty one');
+});
