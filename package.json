@@ -10,7 +10,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build:libs": "npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/diagnostics",
+    "build:libs": "npm run build -w @mote/plugin-api && npm run build -w @mote/plugin-host && npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/diagnostics",
     "dev": "npm run build:libs && node scripts/mote.mjs exec --profile dev -- npm run dev:workspace",
     "build": "npm run build:libs && npm run build -w @mote/server && npm run build -w @mote/web && npm run build -w @mote/desktop",
     "start": "npm run start -w @mote/server",
@@ -43,7 +43,7 @@
     "desktop:dev": "node scripts/mote.mjs exec --profile dev -- npm run start -w @mote/desktop",
     "release:version": "node scripts/release/version.mjs",
     "release:verify": "node scripts/release/verify-version.mjs",
-    "build:central": "npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/server && npm run build -w @mote/web",
+    "build:central": "npm run build -w @mote/plugin-api && npm run build -w @mote/plugin-host && npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/server && npm run build -w @mote/web",
     "check:central": "npm run build:central && npm run typecheck -w @mote/shared -w @mote/agent -w @mote/server -w @mote/web && npm run test -w @mote/shared -w @mote/agent -w @mote/server -w @mote/web && node scripts/test-central-runner.mjs && node --test scripts/release/*.test.mjs",
     "check:desktop": "npm run build:libs && npm run typecheck -w @mote/shared -w @mote/diagnostics -w @mote/desktop && npm run test -w @mote/shared -w @mote/diagnostics -w @mote/desktop && node --test scripts/release/*.test.mjs",
     "connectors:prepare": "node scripts/connector-runtime.mjs"

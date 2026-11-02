@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "types": "./dist/index.d.ts",
-  "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js"}},
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prebuild": "npm run build -w @mote/plugin-api",
@@ -13,5 +21,8 @@
     "pretest": "npm run build",
     "test": "node --test test/*.test.mjs"
   },
-  "dependencies": {"@mote/plugin-api": "0.1.0", "@deepseek-ai/cordis": "4.0.4"}
+  "dependencies": {
+    "@mote/plugin-api": "0.1.0",
+    "@deepseek-ai/cordis": "4.0.4"
+  }
 }
