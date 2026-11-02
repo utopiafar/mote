@@ -119,12 +119,15 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
   };
   const close=()=>{
     if(closing)return closing;
-    const internal=teardownInternal();
+    // Observe teardown rejection immediately; it may settle while a pending
+    // init still blocks startTask.
+    const settledInternal=teardownInternal().then(()=>({error:undefined}),error=>({error}));
     closing=(async()=>{
       // Join late factory/init cleanup; start's own rejection is observed by
       // its caller, while teardown cleanup errors remain aggregated here.
       await (startTask?.catch(()=>{})??Promise.resolve());
-      try{await internal;}catch(error){throw error instanceof AggregateError?error:new AggregateError([error],'Connector host adapter disposal failed');}
+      const {error}=await settledInternal;
+      if(error!==undefined)throw error instanceof AggregateError?error:new AggregateError([error],'Connector host adapter disposal failed');
     })();
     return closing;
   };

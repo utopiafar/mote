@@ -166,6 +166,27 @@ test('close during a pending connector create disposes the late instance without
   assert.equal(closed,1,'the late instance is disposed and awaited by close');
 });
 
+test('teardown rejection during pending init is handled and aggregated',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveInit!:()=>void,enteredInit!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveInit=resolve;}),entered=new Promise<void>(resolve=>{enteredInit=resolve;});
+  let initCalls=0;
+  const initializing:ConnectorManifest={apiVersion:1,id:'generated-init-cleanup',sourceKinds:[{kind:'generated.init-cleanup',capabilities}],create:()=>({init:async()=>{initCalls++;enteredInit();await held;},close:()=>{}})};
+  const adapter=createConnectorHostAdapter({manifests:[initializing],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveInit();for(const scope of scopes)await scope.close().catch(()=>{});});
+  const starting=adapter.start();await entered;
+  const startResult=starting.then(()=>({error:undefined}),error=>({error}));
+  scopes.find(scope=>scope.scope.identity.instanceId==='generated-init-cleanup')!.resources.defer(()=>{throw new Error('generated cleanup failure');});
+  const closing=adapter.close();const closingResult=closing.then(()=>({error:undefined}),error=>({error}));
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  resolveInit();
+  const result=await closingResult;
+  assert.ok(result.error instanceof AggregateError,'teardown failure is aggregated');
+  assert.ok((await startResult).error,'startup still rejects after init');
+  assert.equal(initCalls,1);
+});
+
 test('an early close-only scope rejection is handled and aggregated',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   let releaseClose!:()=>void,enteredClose!:()=>void;
