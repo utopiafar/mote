@@ -18,8 +18,11 @@ const hits={};const files={
  '/harness.html':{type:'text/html'},
  '/entry1.html':{type:'text/html',body:`<script>new Image().src='/ran1';
 // The entry still tries its leaked-key request and navigates itself —
-// the fail-closed page never issues a carrier for any of it.
+// and reports every channel envelope or port it was actually handed.
+let channels=0,ports=0;
+addEventListener('message',e=>{if(e.data&&e.data.kind==='channel')channels++;ports+=e.ports.length;});
 setTimeout(()=>{window.location.href='/entry2.html';},120);
+parent.postMessage({kind:'entry1-report',channels,ports},'*');
 parent.postMessage(${requestEnvelope(documentKey)},'*');
 </script>`},
  // The replacement reuses the leaked nonce but never learns the rotated
@@ -32,7 +35,7 @@ parent.postMessage(${requestEnvelope(documentKey)},'*');
 window.received=[];
 addEventListener('message',e=>window.received.push(e.data));
 parent.postMessage(${requestEnvelope(documentKey,'r-replacement','e2')},'*');
-window.addEventListener('load',()=>{parent.postMessage({kind:'fixture-report',received:window.received.length},'*');});
+window.addEventListener('load',()=>{parent.postMessage({kind:'fixture-report',received:window.received.length,channels:window.received.filter(m=>m&&m.kind==='channel').length},'*');});
 </script><img src="/slow">`},
 };
 async function run(){
@@ -61,13 +64,14 @@ await until(()=>js(`!!document.querySelector('iframe.plugin-custom-page')`),'com
  releaseSlow();
  await until(()=>js('window.got&&window.got.some(m=>m&&m.kind==="fixture-report")'),'replacement reports its own observation');
  await pause(150);
- const invokeCalls=await js('JSON.stringify(window.invokeCalls||[])'),posted=await js('JSON.stringify(window.got||[])');
+ const channelsCreated=await js('window.channelsCreated'),posted=await js('JSON.stringify(window.got||[])');
  const got=JSON.parse(posted);
- assert.deepEqual(JSON.parse(invokeCalls),[],'no channel was issued — entry and replacement requests have no carrier: '+invokeCalls);
+ assert.equal(channelsCreated,0,'the host constructed zero MessageChannels');
+ const entry1=got.find(m=>m&&m.kind==='entry1-report');
+ assert.ok(entry1&&entry1.channels===0&&entry1.ports===0,'the issued document received no channel or port: '+JSON.stringify(entry1));
  const report=got.find(m=>m&&m.kind==='fixture-report');
  assert.ok(report,'the replacement reported its own observation');
  assert.equal(report.received,0,'no channel or response reached the replacement: '+JSON.stringify(got));
- const channelIssue=got.find(m=>m&&m.kind==='channel');
- assert.equal(channelIssue,undefined,'no channel was ever issued: '+JSON.stringify(got));
+ assert.equal(report.channels,0,'the replacement received no channel envelope');
  return window;}
 run().then(async window=>{console.log(JSON.stringify({passed:true}));window.destroy();rmSync(temporary,{recursive:true,force:true});app.exit(0);}).catch(async error=>{console.error(error);rmSync(temporary,{recursive:true,force:true});app.exit(1);});
