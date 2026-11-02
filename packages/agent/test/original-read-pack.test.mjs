@@ -55,7 +55,6 @@ test('pack descriptors pin the existing schemas and only declare Host read opera
   assert.deepEqual(byName.get('evidence').requires, ['evidence']);
   assert.deepEqual(byName.get('context_evidence').requires, ['evidence']);
   assert.deepEqual(byName.get('attribution_context').requires, ['evidence', 'sourceContext', 'materialRead']);
-  // The published schema is the one production adapters compile, closed at the root.
   for (const entry of snapshot.entries) {
     const expected = {...parameterSchemaSpecToJsonSchema(entry.fields), additionalProperties: false};
     assert.deepEqual(toolInputSchema(entry.fields), expected);
@@ -90,27 +89,34 @@ test('search and timeline project UTF-16 safe previews and keep pagination', asy
   assert.equal(timeline.data[0].timeZone, 'UTC');
 });
 
-test('evidence pages stay inside the model paging window and never split a surrogate pair', async () => {
+test('evidence forwards only explicit paging arguments and returns the parent-bound page untouched', async () => {
   const {run} = registryFixture();
-  const text = 'ab😀cd';
-  const page = await run('evidence', {ids: ['generated-original'], offset: 2, length: 1}, makePort({records: {evidence: [record({ocrText: text})]}}));
-  assert.equal(page.data.length, 1);
-  const projected = page.data[0];
-  assert.equal(projected.textRange.total, text.length);
-  assert.ok(!/[\uD800-\uDBFF]$/.test(projected.ocrText), 'page never ends on a lone high surrogate');
-  assert.ok(!/^[\uDC00-\uDFFF]/.test(projected.ocrText), 'page never starts on a lone low surrogate');
+  const boundPage = [{...record(), ocrText: 'granted page', textRange: {start: 40, end: 52, total: 120, nextOffset: 52}}];
+  const calls = [];
+  const untouched = await run('evidence', {ids: ['generated-original']}, makePort({calls, records: {evidence: boundPage}}));
+  assert.deepEqual(untouched.data, boundPage, 'the pack never re-projects the parent page');
+  assert.deepEqual(calls.find(([operation]) => operation === 'evidence')[1][0], {ids: ['generated-original']}, 'no shared offset/length default is injected');
+
+  const explicitCalls = [];
+  await run('evidence', {ids: ['generated-original'], offset: 12, length: 8, layer: 'semantic'}, makePort({calls: explicitCalls, records: {evidence: boundPage}}));
+  assert.deepEqual(explicitCalls.find(([operation]) => operation === 'evidence')[1][0], {ids: ['generated-original'], offset: 12, length: 8, layer: 'semantic'});
+
   await assert.rejects(run('evidence', {ids: []}, makePort({records: {evidence: []}})), error => error.code === 'invalid_tool_arguments');
   await assert.rejects(run('evidence', {ids: ['generated-original'], offset: -1}, makePort({records: {evidence: []}})), error => error.code === 'invalid_tool_arguments');
   await assert.rejects(run('evidence', {ids: ['generated-original'], length: 12001}, makePort({records: {evidence: []}})), error => error.code === 'invalid_tool_arguments');
 });
 
-test('context_evidence reads one authorized id and rejects an unavailable original', async () => {
+test('context_evidence returns the granted page without re-slicing or a second envelope', async () => {
   const {run} = registryFixture();
-  const page = await run('context_evidence', {id: 'generated-original', offset: 4, length: 12}, makePort({records: {evidence: [record()]}}));
-  assert.equal(page.record.id, 'generated-original');
-  assert.deepEqual([page.record.textRange.start, page.record.textRange.end], [4, 16]);
-  await assert.rejects(run('context_evidence', {id: 'generated-missing', offset: 0}, makePort({records: {evidence: []}})), error => error instanceof ContextToolError && error.code === 'invalid_evidence_range');
-  await assert.rejects(run('context_evidence', {id: 'generated-original', offset: 2}, makePort({records: {evidence: [record({ocrText: 'a😀b'})]}})), error => error.code === 'invalid_evidence_range', 'a low-surrogate start splits a UTF-16 pair');
+  const granted = [{...record(), ocrText: 'granted slice only', textRange: {start: 4, end: 22, total: 200, nextOffset: 22}}];
+  const calls = [];
+  const page = await run('context_evidence', {id: 'generated-original', offset: 4, length: 18}, makePort({calls, records: {evidence: granted}}));
+  assert.equal(page.source, 'untrusted_personal_context');
+  assert.deepEqual(page.data, granted, 'parent projection is authoritative');
+  assert.deepEqual(calls.find(([operation]) => operation === 'evidence')[1][0], {ids: ['generated-original']});
+  const empty = await run('context_evidence', {id: 'generated-missing', offset: 0}, makePort({records: {evidence: []}}));
+  assert.deepEqual(empty.data, [], 'the parent decides whether an empty granted page is an error');
+  await assert.rejects(run('context_evidence', {id: 'generated-original', offset: -1}, makePort({records: {evidence: []}})), error => error.code === 'invalid_tool_arguments');
 });
 
 test('attribution pages keep the fingerprint continuation and never grant citations', async () => {
@@ -133,17 +139,18 @@ test('attribution pages keep the fingerprint continuation and never grant citati
   await assert.rejects(run('attribution_context', {id: 'generated-original', sourceContextRef: 'source_ctx'}, portFor()), error => error.code === 'invalid_tool_arguments');
 });
 
-test('attribution resolves only the locator it was given and keeps scope failures before disclosure', async () => {
+test('attribution resolves only the chosen locator through the scope the parent bound', async () => {
   const {run} = registryFixture();
   const materialRefValue = `material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`;
-  const materialPage = await run('attribution_context', {ref: materialRefValue}, makePort({records: {materialRead: {material: {ref: materialRefValue, attributionContext: {version: 1, ownerRelation: 'owner', basis: 'owner_material'}}, text: '', textRange: {offset: 0, total: 0, nextOffset: null}, spans: [], originalRefs: [], originalRefsTotal: 0, originalRefsTruncated: false}}}));
+  const calls = [];
+  const materialPage = await run('attribution_context', {ref: materialRefValue}, makePort({calls, scope: {after: '2026-08-01T00:00:00.000Z', deviceId: 'generated-device'}, records: {materialRead: {material: {ref: materialRefValue, attributionContext: {version: 1, ownerRelation: 'owner', basis: 'owner_material'}}, text: '', textRange: {offset: 0, total: 0, nextOffset: null}, spans: [], originalRefs: [], originalRefsTotal: 0, originalRefsTruncated: false}}}));
   assert.equal(materialPage.data.ref, materialRefValue);
   assert.equal(materialPage.data.citationAuthority, false);
+  assert.equal(calls.filter(([operation]) => operation === 'evidence').length, 0, 'only the chosen locator is read');
 
   const sourcePage = await run('attribution_context', {sourceContextRef: 'generated-source-context'}, makePort({records: {sourceContext: {attributionContext: {version: 1, ownerRelation: 'unknown', basis: 'owner_source'}}}}));
   assert.equal(sourcePage.data.sourceContextRef, 'generated-source-context');
 
-  await assert.rejects(run('attribution_context', {id: 'generated-original'}, makePort({scope: {deviceId: 'another-device'}, records: {evidence: [record()]}})), error => error.code === 'invalid_tool_arguments');
+  await assert.rejects(run('attribution_context', {id: 'generated-original'}, makePort({records: {evidence: []}})), error => error.code === 'invalid_tool_arguments');
   await assert.rejects(run('attribution_context', {ref: 'material:not-a-ref'}, makePort({records: {}})), error => error.code === 'invalid_tool_arguments');
 });
-

@@ -1,11 +1,10 @@
 import {sourceSchema} from '@mote/shared';
 import {CONTEXT_TOOLS} from '../../context-tools.js';
-import {originalEvidenceReceipt} from '../../context-tool-session.js';
+import {originalEvidenceReceipt} from '../../bridge.js';
 import {ContextToolError} from '../../tool-errors.js';
 import {defineToolDescriptor, type ToolDescriptor, type ToolFields} from '../descriptor.js';
 import type {HostSessionPort} from '../host-session.js';
 import type {ContextRange, ContextRecord} from '../../context-contracts.js';
-import {sourceContentTime} from '@mote/shared';
 
 /** C10/A08B original-read pack. It owns the five original-facing tool schemas,
  * argument parsing and read request shape; the parent Host still owns discovery,
@@ -59,8 +58,6 @@ export function originalReadRange(args:Readonly<Record<string,unknown>>,scope:Re
   };
 }
 
-const splitsPair=(text:string,at:number)=>at>0&&at<text.length&&/[\uD800-\uDBFF]/.test(text[at-1]!)&&/[\uDC00-\uDFFF]/.test(text[at]!);
-
 /** Literal lexical localization only; no intent or topic classification. */
 function preview(record:ContextRecord,query:unknown,timeZone:string):ContextRecord{
   let offset=0;
@@ -77,10 +74,6 @@ function assertRecords(value:unknown):ContextRecord[]{
   return value as ContextRecord[];
 }
 
-function inScope(record:ContextRecord,scope:Readonly<ContextRange>):boolean{
-  const at=sourceContentTime(record);
-  return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));
-}
 
 /** The five original-facing descriptors. Versioning is explicit so a pinned
  * snapshot cannot silently inherit a schema change. */
@@ -122,20 +115,20 @@ export function createOriginalReadPack(options:OriginalReadPackOptions={}):reado
     parse(args){
       if(!Array.isArray(args.ids)||args.ids.length<1||args.ids.length>30||args.ids.some(id=>typeof id!=='string'||id.length>300))throw invalid('ids must contain 1–30 record identifiers');
       if(args.layer!==undefined&&!['ocr','semantic'].includes(String(args.layer)))throw invalid('Invalid derived layer');
-      if(args.offset!==undefined&&(typeof args.offset!=='number'||!Number.isSafeInteger(args.offset)||args.offset<0||args.offset>100000))throw invalid('offset must be an integer from 0 to 100000');
+      if(args.offset!==undefined&&(typeof args.offset!=='number'||!Number.isSafeInteger(args.offset)||args.offset<0))throw invalid('offset must be a nonnegative integer');
       if(args.length!==undefined&&(typeof args.length!=='number'||!Number.isSafeInteger(args.length)||args.length<1||args.length>12000))throw invalid('length must be an integer from 1 to 12000');
       return {...args};
     },
     async execute(args,port:HostSessionPort){
-      const ids=args.ids as string[],offset=Number(args.offset??0),length=Number(args.length??12000),layer=args.layer as 'ocr'|'semantic'|undefined;
+      const ids=args.ids as string[];
+      // The parent binds this tool call to its own offset/length/layer and returns
+      // the final allowed page (archive vs selected evidence). Only explicit
+      // arguments are forwarded; the pack never fills shared defaults.
+      const request={ids,...(args.offset===undefined?{}:{offset:args.offset}),...(args.length===undefined?{}:{length:args.length}),...(args.layer===undefined?{}:{layer:args.layer})};
       port.assertCurrent();
-      const records=assertRecords(await port.read('evidence',{...originalReadRange({},port.scope),ids}));
+      const records=assertRecords(await port.read('evidence',request));
       port.assertCurrent();
-      const data=records.filter(record=>ids.includes(record.id)&&inScope(record,port.scope)).map(record=>{
-        const projected=originalEvidenceReceipt(layer==='semantic'?{...record,ocrText:String(record.summary??'')}:record,offset,length,timeZone);
-        return layer==='semantic'?{...projected,contentLayer:'L2_model_interpretation'}:record.sourceType==='screen'?{...projected,contentLayer:'L1_machine_extraction'}:projected;
-      });
-      return {source:'untrusted_personal_context',data};
+      return {source:'untrusted_personal_context',data:records};
     },
   });
   const contextEvidence=defineToolDescriptor({
@@ -147,16 +140,14 @@ export function createOriginalReadPack(options:OriginalReadPackOptions={}):reado
       return {...args};
     },
     async execute(args,port:HostSessionPort){
-      const id=args.id as string,start=Number(args.offset),length=Number(args.length??4000);
+      const id=args.id as string;
+      // The parent binds this tool call to its readRanges/originalPins and returns
+      // records already projected to the granted UTF-16 page. The pack must not
+      // re-slice, append readRange or serialize a second envelope.
       port.assertCurrent();
-      const records=assertRecords(await port.read('evidence',{...originalReadRange({},port.scope),ids:[id]}));
+      const records=assertRecords(await port.read('evidence',{ids:[id]}));
       port.assertCurrent();
-      const record=records.find(candidate=>candidate.id===id);
-      if(!record)throw new ContextToolError('invalid_evidence_range','Original evidence is unavailable in the current scope.','correct_arguments',{evidenceId:id});
-      const text=record.ocrText;
-      if(splitsPair(text,start))throw new ContextToolError('invalid_evidence_range','Context offset splits a UTF-16 pair. Use the returned continuation offset.','correct_arguments');
-      const projected=originalEvidenceReceipt(record,start,length,timeZone);
-      return {record:projected};
+      return {source:'untrusted_personal_context',data:records};
     },
   });
   return Object.freeze([search,timeline,evidence,contextEvidence]);

@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {attributionContextSchema,sourceContentTime} from '@mote/shared';
+import {attributionContextSchema} from '@mote/shared';
 import {CONTEXT_TOOLS} from '../../context-tools.js';
 import {ContextToolError} from '../../tool-errors.js';
 import {defineToolDescriptor, type ToolDescriptor, type ToolFields} from '../descriptor.js';
@@ -29,11 +29,6 @@ function scopeOf(scope:Readonly<ContextRange>):ContextRange{
   return {...(scope.after===undefined?{}:{after:scope.after}),...(scope.before===undefined?{}:{before:scope.before}),...(scope.deviceId===undefined?{}:{deviceId:scope.deviceId})};
 }
 
-function inScope(record:ContextRecord,scope:Readonly<ContextRange>):boolean{
-  const at=sourceContentTime(record);
-  return Number.isFinite(Date.parse(at))&&(!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));
-}
-
 /** The single attribution descriptor. Versioning is explicit so a pinned
  * snapshot cannot silently inherit a schema change. */
 export function createAttributionPack(options:AttributionPackOptions={}):readonly ToolDescriptor[]{
@@ -61,8 +56,9 @@ export function createAttributionPack(options:AttributionPackOptions={}):readonl
         const records=await port.read('evidence',{...scope,ids:[id]});
         port.assertCurrent();
         const record=Array.isArray(records)?(records as ContextRecord[]).find(candidate=>candidate.id===id):undefined;
+        // Scope, privacy and discovery are parent checks; an empty bound read
+        // simply means the locator is unavailable here.
         if(!record)throw invalid('Original attribution context is unavailable in the current scope');
-        if(!inScope(record,scope))throw invalid('Original attribution context is outside the selected scope');
         context=record.attributionContext;locator={id};
       }else if(args.sourceContextRef!==undefined){
         const sourceContextRef=args.sourceContextRef as string;
