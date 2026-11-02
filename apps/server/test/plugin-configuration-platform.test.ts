@@ -158,6 +158,46 @@ test('input paths remain writable when registered transforms rename output keys'
   assert.deepEqual(domain.snapshot(),{revision:1,value:{active:true,detail:{title:'generated label'}}});
 });
 
+test('preprocess and catch wrappers reject hidden input keys while intentionally open schemas remain open',async t=>{
+  const {platform,path}=await fixture(t),shape=z.object({enabled:z.boolean()});
+  for(const [id,schema] of [['preprocessed',z.preprocess(value=>value,shape)],['caught',shape.catch({enabled:false})]] as const){
+    const domain=await platform.registerDomain({id,schema,defaultValue:{enabled:false}}),revision=domain.snapshot().revision;
+    await assert.rejects(domain.update({enabled:true,typo:7} as never,revision),{code:'config_invalid'});
+    assert.deepEqual(domain.snapshot(),{revision,value:{enabled:false}});
+    assert.equal((await readFile(path,'utf8')).includes('typo'),false);
+    await domain.update({enabled:true},revision);assert.equal(domain.snapshot().value.enabled,true);
+  }
+  const open=await platform.registerDomain({id:'open',schema:z.preprocess(value=>value,shape.passthrough().catch({enabled:false})),defaultValue:{enabled:false}});
+  await open.update({enabled:true,declaredOpenValue:7} as never,open.snapshot().revision);
+  assert.deepEqual(open.snapshot().value,{enabled:true,declaredOpenValue:7});
+});
+
+test('effective hot and restart-only inputs satisfy cross-field invariants before persistence or publication',async t=>{
+  const {platform,path}=await fixture(t);
+  for(const transformed of [false,true]){
+    const id=transformed?'transformedRange':'range';
+    const schema:z.ZodTypeAny=transformed
+      ?z.object({min:z.string().transform(Number),max:z.string().transform(Number)}).refine(value=>value.min<=value.max).transform(({min,max})=>({floor:min,ceiling:max}))
+      :z.object({min:z.number(),max:z.number()}).refine(value=>value.min<=value.max);
+    const value=(min:number,max:number)=>transformed?{floor:min,ceiling:max}:{min,max};
+    const raw=(n:number)=>transformed?String(n):n,events:unknown[]=[],prepared:unknown[]=[];
+    const domain=await platform.registerDomain({id,schema,defaultValue:{min:raw(5),max:raw(10)},fields:[{path:'min',effect:'restart'},{path:'max',effect:'immediate'}],
+      prepare(next){prepared.push(next);return {apply(){}};}});
+    prepared.length=0;domain.subscribe(snapshot=>events.push(snapshot));
+    const revision=domain.snapshot().revision;await domain.update({min:raw(1)},revision);
+    assert.deepEqual(domain.snapshot(),{revision:revision+1,value:value(5,10)});
+    const before=await readFile(path,'utf8');
+    await assert.rejects(domain.update({max:raw(2)},revision+1),{code:'config_invalid'});
+    assert.equal(await readFile(path,'utf8'),before,'an invalid effective combination must not reach disk');
+    assert.deepEqual(domain.snapshot(),{revision:revision+1,value:value(5,10)});
+    assert.deepEqual(events,[]);assert.deepEqual(prepared,[],'invalid effective values never reach runtime prepare');
+    await domain.update({max:raw(6)},revision+1);
+    assert.deepEqual(domain.snapshot(),{revision:revision+2,value:value(5,6)});
+    assert.deepEqual(events,[{revision:revision+2,value:value(5,6)}]);assert.deepEqual(prepared,[value(5,6)]);
+    assert.deepEqual(platform.configService.saved(`plugin.${id}`),value(1,6));
+  }
+});
+
 test('concurrent platform close waits for the actual watcher teardown started by quiescence',async t=>{
   const {platform}=await fixture(t,true);await platform.start();
   const entered=barrier(),finish=barrier(),original=FSWatcher.prototype.close;
