@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ToolRegistry} from '../dist/tools/registry.js';
-import {createMaterialsPack} from '../dist/tools/packs/materials.js';
-import {createMemoriesPack} from '../dist/tools/packs/memories.js';
+import {createMaterialReadPack} from '../dist/tools/packs/materials.js';
+import {createMemoryReadPack} from '../dist/tools/packs/memories.js';
 import {createDerivedNavigationPack} from '../dist/tools/packs/derived-navigation.js';
 
 const materialRef = 'material:mat_' + 'a'.repeat(64) + '@' + 'b'.repeat(64);
@@ -11,8 +11,8 @@ const lifecycle = () => {
   return {signal: controller.signal, assertCurrent() { controller.signal.throwIfAborted(); }};
 };
 const packs = () => [
-  ...createMaterialsPack({timeZone: 'UTC'}),
-  ...createMemoriesPack({timeZone: 'UTC'}),
+  ...createMaterialReadPack({timeZone: 'UTC'}),
+  ...createMemoryReadPack({timeZone: 'UTC'}),
   ...createDerivedNavigationPack({timeZone: 'UTC', contextTime: '2024-01-03T00:00:00.000Z', incrementalEvidenceIds: ['a', 'b', 'c']}),
 ];
 function assembly() {

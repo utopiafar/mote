@@ -1,4 +1,5 @@
-import {defineToolDescriptor, toolContractError, type ToolDescriptor} from '../descriptor.js';
+import {CONTEXT_TOOLS} from '../../context-tools.js';
+import {defineToolDescriptor, toolContractError, type ToolDescriptor, type ToolFields} from '../descriptor.js';
 import type {HostSessionPort} from '../host-session.js';
 import type {ContextRange} from '../../context-contracts.js';
 import {sourceSchema} from '@mote/shared';
@@ -10,30 +11,11 @@ export interface ReadPackInputs {
 
 export const invalidPackArgument = (message: string) => toolContractError('invalid_tool_arguments', message);
 
-export const rangeFields = {
-  after: {type: 'string', description: 'Inclusive ISO timestamp lower bound'},
-  before: {type: 'string', description: 'Exclusive ISO timestamp upper bound (records at this instant are excluded)'},
-  deviceId: {type: 'string', description: 'Optional exact device identifier'},
-  limit: {type: 'integer', description: 'Maximum records, from 1 to 100; default 30'},
-};
-export const filterFields = {
-  ...rangeFields,
-  source: {type: 'string', description: 'Exact source type: screen, ui_page, activity, media, notification, device_event, note, file, calendar, event, message, metric or memory'},
-  appId: {type: 'string', description: 'Exact application identity discovered in evidence; not an intent or topic'},
-  collection: {type: 'string', description: 'activity for app identity/time without contents; content for other permitted records'},
-};
-const materialCatalogFields = {
-  query: {type: 'string', description: 'Literal search in published material text; prefer this for Coding conversations.'},
-  ...rangeFields,
-  sourceId: {type: 'string', description: 'Exact source ID, if known'},
-  kind: {type: 'string', description: 'Exact registered material kind'},
-  cursor: {type: 'string', description: 'Opaque cursor from the previous material_catalog page'},
-};
-const materialReadFields = {
-  ref: {type: 'string', required: true, description: 'Exact pinned Material ref supplied as referenceMaterialRef or returned by material_catalog'},
-  offset: {type: 'integer', description: 'UTF-16 body page offset; default 0'},
-  length: {type: 'integer', description: 'Maximum body UTF-16 units, 1–12000; default 4000.'},
-};
+function spec(name: string): readonly [string, string, ToolFields] {
+  const entry = CONTEXT_TOOLS.find(([candidate]) => candidate === name);
+  if (!entry) throw Error(`Missing context-tool schema for ${name}`);
+  return entry as unknown as readonly [string, string, ToolFields];
+}
 
 function iso(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
@@ -76,12 +58,14 @@ export function scopedRange(port: HostSessionPort, args: Readonly<Record<string,
  * locators before a read; parent still verifies the exact pin. */
 export const materialRefPattern = /^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/;
 
-export function createMaterialsPack(_input: ReadPackInputs = {}): readonly ToolDescriptor[] {
+export function createMaterialReadPack(_input: ReadPackInputs = {}): readonly ToolDescriptor[] {
+  void _input;
+  const catalog = spec('material_catalog'), read = spec('material_read');
   return Object.freeze([
     defineToolDescriptor({
       apiVersion: '1', name: 'material_catalog', version: '1',
-      description: 'Browse formal archived materials as bounded metadata only. Returns pinned revision refs, titles, source identity, time coverage, processing coverage, named artifact readiness and read costs; it does not expose bodies or original evidence IDs. Pending and partial materials remain queryable using the content available so far. Inspect artifact states and mention relevant processing gaps; they are not proof of completeness. Use material_read with an exact ref returned in this run to inspect a relevant page. Prefer this for Coding sessions and sampled screen segments. Missing results do not prove absence of original captures.',
-      fields: materialCatalogFields, kind: 'metadata', exposure: 'native', requires: ['materialCatalog'],
+      description: catalog[1],
+      fields: catalog[2], kind: 'metadata', exposure: 'native', requires: ['materialCatalog'],
       parse(args) {
         for (const key of ['sourceId', 'kind', 'query']) {
           if (args[key] !== undefined && (typeof args[key] !== 'string' || !args[key] || String(args[key]).length > 128)) throw invalidPackArgument(`Invalid ${key}`);
@@ -101,8 +85,8 @@ export function createMaterialsPack(_input: ReadPackInputs = {}): readonly ToolD
     }),
     defineToolDescriptor({
       apiVersion: '1', name: 'material_read', version: '1',
-      description: 'Read a pinned material page with bounded, freshly authorized sourceEvidence where exact source mapping exists. Cite only delivered sourceEvidence original IDs/ranges; body, originalRefs and private lineage alone grant no citations. Body and originals have independent UTF-16 offsets. Reuse sufficient sourceEvidence; use evidence for unresolved original ranges. Follow textRange.nextOffset; sourceCoverage.partial reports evidence gaps.',
-      fields: materialReadFields, kind: 'originals', exposure: 'native', requires: ['materialRead'],
+      description: read[1],
+      fields: read[2], kind: 'originals', exposure: 'native', requires: ['materialRead'],
       parse(args) {
         if (typeof args.ref !== 'string' || !materialRefPattern.test(args.ref)) throw invalidPackArgument('Use the owner-selected pinned material ref or one returned by material_catalog in this run');
         const offset = args.offset ?? 0, length = args.length ?? 4000;
@@ -122,5 +106,3 @@ export function createMaterialsPack(_input: ReadPackInputs = {}): readonly ToolD
     }),
   ]);
 }
-
-export const materialsPack = createMaterialsPack;

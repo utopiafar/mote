@@ -1,6 +1,7 @@
 import {sourceContentTime} from '@mote/shared';
-import {defineToolDescriptor, type ToolDescriptor} from '../descriptor.js';
-import {filterFields, invalidPackArgument, rangeFields, scopedRange, type ReadPackInputs} from './materials.js';
+import {CONTEXT_TOOLS} from '../../context-tools.js';
+import {defineToolDescriptor, type ToolDescriptor, type ToolFields} from '../descriptor.js';
+import {invalidPackArgument, scopedRange, type ReadPackInputs} from './materials.js';
 
 /** Frozen run facts for navigation. The Host still checks every actual read. */
 export interface DerivedNavigationInputs extends ReadPackInputs {
@@ -8,17 +9,20 @@ export interface DerivedNavigationInputs extends ReadPackInputs {
   readonly incrementalEvidenceIds?: readonly string[];
 }
 
-const contextIndexFields = {...rangeFields, path: {type: 'string'}, query: {type: 'string'}};
-const segmentFields = {...filterFields, id: {type: 'string'}, query: {type: 'string'}, cursor: {type: 'string'}};
-const changesFields = {view: {type: 'string', enum: ['overview', 'text']}, cursor: {type: 'string'}, limit: {type: 'number'}};
+function spec(name: string): readonly [string, string, ToolFields] {
+  const entry = CONTEXT_TOOLS.find(([candidate]) => candidate === name);
+  if (!entry) throw Error(`Missing context-tool schema for ${name}`);
+  return entry as unknown as readonly [string, string, ToolFields];
+}
 
 export function createDerivedNavigationPack(input: DerivedNavigationInputs = {}): readonly ToolDescriptor[] {
   const incremental = Object.freeze([...(input.incrementalEvidenceIds ?? [])]);
+  const index = spec('context_index'), segment = spec('segments'), change = spec('changes');
   return Object.freeze([
     defineToolDescriptor({
       apiVersion: '1', name: 'context_index', version: '1',
-      description: 'Read the virtual /context directory or search source names/descriptions, memory and processed episode layers together with query. Returns bounded metadata, previews, revisions, coverage and expansion costs; never original bodies. Use paths /context/memory, /context/episodes or /context/sources. Expand selected IDs using memories or segments. Direct original search is appropriate for fresh or exact facts; this index is not proof of absence.',
-      fields: contextIndexFields, kind: 'metadata', exposure: 'native', requires: ['catalog'],
+      description: index[1],
+      fields: index[2], kind: 'metadata', exposure: 'native', requires: ['catalog'],
       parse(args) {
         if (args.path !== undefined && (typeof args.path !== 'string' || args.path.length > 100)) throw invalidPackArgument('Invalid context index arguments');
         if (args.query !== undefined && (typeof args.query !== 'string' || args.query.length > 500)) throw invalidPackArgument('Invalid context index arguments');
@@ -34,8 +38,8 @@ export function createDerivedNavigationPack(input: DerivedNavigationInputs = {})
     }),
     defineToolDescriptor({
       apiVersion: '1', name: 'segments', version: '1',
-      description: 'Browse bounded processed activity segments after memory cards. These are exact-text reductions with original members and times, not inferred tasks or independent facts. Pass its returned ref as id to pin the segment revision; use evidence on member ids to verify facts. Raw sampled screenshots are omitted from default search and timeline discovery, so use published segments or materials to locate them. Missing or pending segments never mean no original evidence exists.',
-      fields: segmentFields, kind: 'derived', exposure: 'native', requires: ['segments'],
+      description: segment[1],
+      fields: segment[2], kind: 'derived', exposure: 'native', requires: ['segments'],
       parse(args) {
         if (args.id !== undefined && (typeof args.id !== 'string' || args.id.length > 1600)) throw invalidPackArgument('Invalid segment id');
         if (args.query !== undefined && (typeof args.query !== 'string' || args.query.length > 500)) throw invalidPackArgument('Invalid segment query');
@@ -53,8 +57,8 @@ export function createDerivedNavigationPack(input: DerivedNavigationInputs = {})
     }),
     defineToolDescriptor({
       apiVersion: '1', name: 'changes', version: '1',
-      description: 'Inspect the host-selected incremental snapshot in pages. Scheduled insights default to lightweight overview metadata (not citable); use evidence for selected originals. view=text explicitly reads bounded original text. Do not exhaust the entire snapshot unless the task requires full coverage. No time filter is implied: late arrivals can refer to much earlier dates. Empty outside scheduled insight runs. Discovered IDs can be expanded with evidence; use search_context and memories for related history.',
-      fields: changesFields, kind: 'derived', exposure: 'native', requires: ['evidence'],
+      description: change[1],
+      fields: change[2], kind: 'derived', exposure: 'native', requires: ['evidence'],
       parse(args) {
         if (args.view !== undefined && !['overview', 'text'].includes(String(args.view))) throw invalidPackArgument('Invalid changes view');
         if (args.cursor !== undefined && (typeof args.cursor !== 'string' || !/^(0|[1-9][0-9]*)$/.test(args.cursor))) throw invalidPackArgument('Invalid changes page');
@@ -80,5 +84,3 @@ export function createDerivedNavigationPack(input: DerivedNavigationInputs = {})
     }),
   ]);
 }
-
-export const derivedNavigationPack = createDerivedNavigationPack;

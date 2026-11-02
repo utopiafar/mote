@@ -1,18 +1,12 @@
-import {defineToolDescriptor, type ToolDescriptor} from '../descriptor.js';
-import {invalidPackArgument, rangeFields, scopedRange, type ReadPackInputs} from './materials.js';
+import {CONTEXT_TOOLS} from '../../context-tools.js';
+import {defineToolDescriptor, type ToolDescriptor, type ToolFields} from '../descriptor.js';
+import {invalidPackArgument, scopedRange, type ReadPackInputs} from './materials.js';
 
-const memoryFields = {
-  ...rangeFields,
-  cursor: {type: 'string'},
-  includeHistory: {type: 'boolean'},
-  includeEvidence: {type: 'boolean', description: 'With id only: include bounded, host-verified supporting original ranges for citation.'},
-  asOf: {type: 'string'},
-  query: {type: 'string', description: 'Literal full-text search terms. Chinese and English are supported; reformulate when needed.'},
-  layer: {type: 'string', enum: ['observation', 'memory']},
-  tier: {type: 'string', enum: ['episode', 'consolidated']},
-  kind: {type: 'string', enum: ['episodic', 'semantic', 'procedural']},
-  id: {type: 'string', description: 'Memory id from a previous overview'},
-};
+function spec(name: string): readonly [string, string, ToolFields] {
+  const entry = CONTEXT_TOOLS.find(([candidate]) => candidate === name);
+  if (!entry) throw Error(`Missing context-tool schema for ${name}`);
+  return entry as unknown as readonly [string, string, ToolFields];
+}
 
 function withoutSavedQuotes(result: unknown): unknown {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
@@ -30,12 +24,14 @@ function withoutSavedQuotes(result: unknown): unknown {
   })};
 }
 
-export function createMemoriesPack(_input: ReadPackInputs = {}): readonly ToolDescriptor[] {
+export function createMemoryReadPack(_input: ReadPackInputs = {}): readonly ToolDescriptor[] {
+  void _input;
+  const memory = spec('memories');
   return Object.freeze([
     defineToolDescriptor({
       apiVersion: '1', name: 'memories', version: '1',
-      description: 'Selected durable memories by default; set layer=observation on demand for task breadcrumbs and source/event summaries (what was requested, evidenced outcome and artifact/evidence locator). For daily recall of what appeared, was browsed or done, use layer=observation with explicit local-day after/before bounds and paginate. Event histories preserve displayed/browsed, planned, unpaid, paid, completed, cancelled and unknown outcomes without promoting them to owner preferences or article endorsement. Verify original proof where needed; incomplete capture/processing does not establish a complete day. Observations do not establish personal preferences. Progressive memory disclosure: omit id for short memory cards; pass a discovered id for its statement, uncertainty and original supporting evidence identifiers and read costs. Set includeEvidence=true with that id to receive up to three bounded original supporting ranges whose current permissions, fingerprint and quote were verified by the host. Only delivered sourceEvidence ranges are citable using their original record ids; a memory id or saved locator is never an original citation. Check sourceCoverage.partial and textRange before deciding whether deeper evidence reads are needed. Reuse sufficient delivered ranges without rereading them. Effective memories are model-derived and may be subjective or scoped, never independent facts. Current valid memories are returned by default. Set includeHistory=true to inspect superseded/expired history, or asOf to select validity at an ISO instant. Relations and versions describe unresolved conflicts or changes applied after model review and host validation. A correction/supersession replaces only the specified memory claim within its explicit scope, not every fact in its original source. Other original facts and uncertainty remain independently valid; inspect the original quotes before describing what was replaced. Stale memories are excluded. This searches selected derived summaries only. When no supporting memory is found, use search_context to search the original archive; a memory miss does not mean original evidence is absent.',
-      fields: memoryFields, kind: 'derived', exposure: 'native', requires: ['memories'],
+      description: memory[1],
+      fields: memory[2], kind: 'derived', exposure: 'native', requires: ['memories'],
       parse(args) {
         if (args.id !== undefined && (typeof args.id !== 'string' || args.id.length > 128)) throw invalidPackArgument('Invalid memory id');
         if (args.query !== undefined && (typeof args.query !== 'string' || args.query.length > 500)) throw invalidPackArgument('Invalid memory query');
@@ -65,5 +61,3 @@ export function createMemoriesPack(_input: ReadPackInputs = {}): readonly ToolDe
     }),
   ]);
 }
-
-export const memoriesPack = createMemoriesPack;
