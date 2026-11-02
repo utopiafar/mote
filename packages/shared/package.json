@@ -89,6 +89,18 @@
       "require": "./dist/native-status.js",
       "default": "./dist/native-status.js"
     },
+    "./plugin-ui": {
+      "types": "./dist/plugin-ui.d.ts",
+      "import": "./dist/plugin-ui.js",
+      "require": "./dist/plugin-ui.js",
+      "default": "./dist/plugin-ui.js"
+    },
+    "./plugin-native": {
+      "types": "./dist/plugin-native.d.ts",
+      "import": "./dist/plugin-native.js",
+      "require": "./dist/plugin-native.js",
+      "default": "./dist/plugin-native.js"
+    },
     "./document-decoder": {
       "types": "./dist/document-decoder.d.ts",
       "import": "./dist/document-decoder.js",
@@ -158,6 +170,12 @@
       ],
       "native-status": [
         "dist/native-status.d.ts"
+      ],
+      "plugin-ui": [
+        "dist/plugin-ui.d.ts"
+      ],
+      "plugin-native": [
+        "dist/plugin-native.d.ts"
       ],
       "document-decoder": [
         "dist/document-decoder.d.ts"
