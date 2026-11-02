@@ -134,6 +134,12 @@
       "import": "./dist/i18n-all.js",
       "require": "./dist/i18n-all.js",
       "default": "./dist/i18n-all.js"
+    },
+    "./plugin-i18n": {
+      "types": "./dist/plugin-i18n.d.ts",
+      "import": "./dist/plugin-i18n.js",
+      "require": "./dist/plugin-i18n.js",
+      "default": "./dist/plugin-i18n.js"
     }
   },
   "typesVersions": {
@@ -200,6 +206,9 @@
       ],
       "i18n-all": [
         "dist/i18n-all.d.ts"
+      ],
+      "plugin-i18n": [
+        "dist/plugin-i18n.d.ts"
       ]
     }
   },
