@@ -10,11 +10,10 @@ import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.j
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {MemoryTopicsHost} from './memory-topics-host.js';
-import {createContextTrees} from './context-trees.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
 import type {ModelProcessingAuthority} from './model-processing-authority.js';
-import {BackgroundModelAuthorization,modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
-import {ModelAuthorizationHost,agentModelConnection,captureModelIdentity,sourceModelIdentity} from './model-authorization-host.js';
+import {modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
+import {agentModelConnection,captureModelIdentity,sourceModelIdentity} from './model-authorization-host.js';
 import {MODEL_FEATURES,DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
 import type {ObservationIdentity,ObservationName} from './execution-observability.js';
 import {memoryIntegrationImageInputs} from './memory-image-grants.js';
@@ -54,28 +53,26 @@ import { codingSourcePlugin } from './coding-source-plugin.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
+import type {RequestAuthority} from './plugins/central-contracts.js';
 import { registerConnectors } from './connectors/index.js';
 import { Conversations } from './conversations.js';
 import { combineDependencies,resolveDependencies } from './conversation-lineage.js';
-import {SourceContextStore} from './source-context.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
 import { safeError,type AgentTraceContext } from './diagnostics.js';
-import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import { ExecutionFailure } from './execution-engine.js';
-import { ExecutionSettings,type ExecutionSettingsValue,type DiagnosticsSettingsValue } from './execution-settings.js';
+import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
 import { installServerFeatures } from './features/index.js';
-import { FileEvidence } from './file-evidence.js';
 import { FileProcessing,type FileAnalysis,type TranscriptionProvider } from './file-processing.js';
-import { FileRawReader,fileOriginalRawRef } from './file-raw-reader.js';
+import {fileOriginalRawRef } from './file-raw-reader.js';
 import { registerFileRoutes } from './file-routes.js';
 import { FileStore } from './files.js';
 import { moteText,requestLocale } from './i18n.js';
 import { prepareImportInput } from './import-runtime.js';
 import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
 import { Indexer } from './indexer.js';
-import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from './ingress.js';
+import { INGRESS_PROTOCOL_VERSION,collectorIngressWrite } from './ingress.js';
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
@@ -102,18 +99,27 @@ import { reviewMemory } from './memory-review.js';
 import { ReloadableAgent,applyModelSettings,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
-import { ModelSettingsError,ModelSettingsStore } from './model-settings.js';
+import { ModelSettingsError } from './model-settings.js';
 import { linkOperationParent } from './operation-projection.js';
 import {ImageProcessing} from './image-processing.js';
 import {imageUnderstanding} from './image-understanding.js';
 import { ProcessingRuntime } from './processing-runtime.js';
 import { createExecutionPlatform } from './plugins/execution-platform.js';
+import { createEvidenceContextReader } from './plugins/evidence-context-reader.js';
+import { closeSourcePlatforms } from './platform-close-order.js';
+import { createAuthorizationPlatform,type AuthorizationPlatform } from './plugins/authorization-platform.js';
+import { createSourceRuntime,type SourceRuntime } from './plugins/source-runtime.js';
+import { createFilesSource,type FilesSource } from './plugins/files-source.js';
+import { createCaptureIntake,type CaptureIntakePlatform } from './plugins/capture-intake.js';
+import { createNotesSource,type NotesSource } from './plugins/notes-source.js';
+import { MaterialNoteDeletion } from './material-note-deletion.js';
+import { PluginResourceScope } from '@mote/plugin-host';
+import type { PluginScope } from '@mote/plugin-api/contracts';
 import { PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput } from './python-source-pack-executor.js';
 import type {QueryScope} from './query-scope.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
 import { semanticProcessor } from './semantic-extraction.js';
 import { conversationUnderstandingProcessor } from './conversation-understanding.js';
-import { SourcePipelineRuntime } from './source-pipelines.js';
 import { SourceStore } from './sources.js';
 import { Store,StoreError,sha256 } from './store.js';
 import { UsageLedger } from './usage.js';
@@ -139,13 +145,16 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const bootstrap=await bootstrapCentral({config:{...config},...(dependencies?.configService?{configService:dependencies.configService}:{}),...(dependencies?.store?{store:dependencies.store}:{}),...(dependencies?.backgroundWorker!==undefined?{backgroundWorker:dependencies.backgroundWorker}:{})},dependencies?.distribution);
   resources.defer(()=>bootstrap.close());
   config=bootstrap.config;
-  const configService=bootstrap.configService,store=bootstrap.store;
-  resources.beforeClose(()=>configService.close());
+  const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store;
   assertCurrentDelegationSchema(store);
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   let availableModelConnections=():ModelConnection[]=>[];
-  const modelAuthorization=new BackgroundModelAuthorization(store,()=>availableModelConnections());
-  resources.defer(()=>modelAuthorization.close());
+  const authorizationPlatform=createAuthorizationPlatform({ownerToken:config.token,connectorConfiguration:()=>config.connectors,allowedOrigins:config.allowedOrigins},{
+    store,availableModelConnections:()=>availableModelConnections(),...(dependencies?.connections?{connections:dependencies.connections}:{}),
+  });
+  resources.defer(()=>authorizationPlatform.close());
+  await authorizationPlatform.prepare();
+  const modelAuthorization=authorizationPlatform.assembly.modelAuthorization;
   // MVP cut-over is explicit: never silently keep the old Coding event indexes live.
   if(store.db.prepare("SELECT 1 FROM captures WHERE json_extract(json,'$.provenance.document.coding') IS NOT NULL LIMIT 1").get()){throw new Error('Legacy Coding event vault: back up and use a fresh data directory for the source-pipeline architecture. No automatic migration is performed.');}
   projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
@@ -157,7 +166,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>backendContext.fiber.dispose());
   backendContext.provide('moteMaterials',materials);
   backendContext.provide('moteConfig',configService);
-  const runtimeSettings=new ExecutionSettings(configService);
+  const runtimeSettings=configurationPlatform.runtimeSettings;
   const observability=await bootstrap.installObservabilityPlatform({
     logDirectory:config.logDirectory??join(config.dataDir,'logs'),
     diagnostics:{...runtimeSettings.diagnostics(),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries},
@@ -168,7 +177,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const diagnostics=observabilityAssembly.diagnostics,executionObserver=observabilityAssembly.observer,eventLoop=observabilityAssembly.eventLoop,usageLedger=observabilityAssembly.usage,softwareUpdate=observabilityAssembly.softwareUpdate;
   resources.defer(()=>observabilityPlatform.close());
   const executionPlatform=createExecutionPlatform({store,modelAuthorization,settings:runtimeSettings});
-  resources.beforeClose(()=>executionPlatform.stop('shutdown'));
+  resources.defer(()=>executionPlatform.stop('shutdown'));
   await executionPlatform.prepare();executionPlatform.start();
   const {executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate}=executionPlatform.assembly;
   const modelContext=new AsyncLocalStorage<QueryInput>();
@@ -201,11 +210,34 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   let memoryBindings:MemoryBindings|undefined;
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
   const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>true,memoryRecipeSettings,()=>memoryBindings?.accepting()??memoryAutomation.accepting());
-  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor,materialMemoryWork);resources.defer(()=>sourcePipelines.close());await sourcePipelines.ready;
-  const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources);
-  resources.defer(()=>files.close());
-  const ingress=new IngressService(store,sources,files),fileEvidence=new FileEvidence(sources);
-  const modelAuthorizationHost=new ModelAuthorizationHost(modelAuthorization,store,materials,files);
+  const sourceScopeResources=new PluginResourceScope(()=>{},'Source runtime scope disposal failed');
+  const sourceScope:PluginScope={identity:{packageId:'mote.roots',installationId:'build',instanceId:'source-runtime',activationId:randomUUID(),host:bootstrap.snapshot().host},signal:sourceScopeResources.signal,
+    assertCurrent:()=>sourceScopeResources.assertCurrent(),defer:dispose=>sourceScopeResources.defer(dispose)};
+  resources.defer(()=>sourceScopeResources.close());
+  const sourceRuntime=createSourceRuntime({plugins:[codingSourcePlugin]},{store,materials,execution:executionPlatform,memoryWork:materialMemoryWork,context:backendContext});
+  resources.defer(()=>sourceRuntime.close());
+  await sourceRuntime.prepare(sourceScope);sourceRuntime.start();
+  const sourcePipelines=sourceRuntime.runtimeForAssembly;
+  const sources=new SourceStore(store,sourcePipelines);
+  let filesForAccess:FileStore|undefined;
+  const filesPlatform=createFilesSource({store,sources,archivedFiles:bootstrap.vault.archivedFiles,rawAccess:{
+    mayReadFileVersion:(_sourceId,id)=>{try{const current=filesForAccess;if(!current)return false;const version=current.version(id);return Boolean(version.object_hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&!store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted);}catch{return false;}},
+    mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
+  }});
+  resources.defer(()=>filesPlatform.close());
+  await filesPlatform.prepare();filesPlatform.start();
+  const filesAssembly=filesPlatform.assemblyForRoutes(),files=filesAssembly.files,fileEvidence=filesAssembly.evidence,fileRawReader=filesAssembly.originalRead;
+  filesForAccess=files;
+  const captureIntake=createCaptureIntake({diagnostics},{store,sources,files,materials});
+  resources.defer(()=>captureIntake.close());
+  await captureIntake.prepare();
+  await authorizationPlatform.bindRepositories({sources,files,materials,ingress:captureIntake.ingress,memoryInputs:materialMemoryWork.inputs,memoryWork:materialMemoryWork});
+  await authorizationPlatform.start();
+  captureIntake.bindAuthorization(authorizationPlatform);captureIntake.start();
+  const ingress=captureIntake.ingress,modelAuthorizationHost=authorizationPlatform.assembly.modelAuthorizationHost!;
+  resources.beforeClose(()=>closeSourcePlatforms({authorization:authorizationPlatform,capture:captureIntake,files:filesPlatform,source:sourceRuntime,execution:executionPlatform}));
+  const notesSource=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
+  await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
   const mediaAssets=new MediaAssets(config.media?.modelDirectory??join(store.directory,'media-models'));
   resources.defer(()=>mediaAssets.close());
@@ -249,16 +281,20 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
   resources.defer(()=>materialOrganizer.close());
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
-  const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
-    ref=>materialMemoryWork.readyForMemory(ref));
   let catalogChangesEnabled=false;
-  const contextTrees=createContextTrees();
+  // One EvidenceReader and one context registry own every read surface. The
+  // factory borrows the roots repositories; it never constructs a second
+  // Store/Source/File/Material/Indexer or a second reader.
+  const sourceContexts=sources.contexts;
+  const evidenceContext=createEvidenceContextReader({store,sources,files,indexer,fileEvidence,materials,sourcePipelines,
+    sourceItemRecipes:materialOrganizer.sourceItemRecipes,materialMemoryReady:ref=>materialMemoryWork.readyForMemory(ref),sourceContexts});
+  resources.defer(()=>evidenceContext.dispose());
+  const contextTrees=evidenceContext.assembly.contextTrees,evidenceReader=evidenceContext.assembly.reader;
   resources.beforeClose(()=>{catalogChangesEnabled=false;});
-  backendContext.provide('moteContextTrees',contextTrees);
+  backendContext.provide('moteContextTrees',evidenceContext.assembly.contextTrees);
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,conversations=new Conversations(store);
   conversations.onTurnReceived=turnId=>modelAuthorizationHost.conversation(turnId);
-  const sourceContexts=new SourceContextStore(store);
   const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
   resources.beforeClose(()=>pluginCenter.close());
   memoryBindings=new MemoryBindings(store,memories,memoryAutomation,pluginCenter,executor);
@@ -268,7 +304,15 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   backendContext.provide('moteOwnerQuestions',ownerQuestions);
   const archivedFiles=bootstrap.vault.archivedFiles;
   const contentStorage=bootstrap.vault.attachContent(files,configService,enabled=>{config.contentEncryptionEnabled=enabled;});
-  const connections=dependencies?.connections??new Connections(store,sources);resources.defer(()=>connections.close());await connections.init();
+  const connections=authorizationPlatform.assembly.connections!;
+  const pins=new WeakMap<FastifyRequest,RequestAuthority>();
+  let liveRequestPins=0;
+  const bindRequestPin=(req:FastifyRequest)=>authorizationPlatform.bindRequest({authorization:req.headers.authorization,method:req.method,route:req.routeOptions.url??'unknown',params:req.params as {id?:string},origin:req.headers.origin});
+  // A client that disconnects before the response finishes never reaches
+  // onResponse, and its C04 pin is a strong entry. Release idempotently from
+  // response completion and from a premature socket close.
+  const releaseRequestPin=(req:FastifyRequest)=>{const pin=pins.get(req);if(!pin)return;pins.delete(req);liveRequestPins--;authorizationPlatform.releaseRequest(pin);};
+  const assignRequestPin=(req:FastifyRequest,reply:FastifyReply)=>{pins.set(req,bindRequestPin(req));liveRequestPins++;reply.raw.once('close',()=>releaseRequestPin(req));};
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const connectionIdentity=(req:FastifyRequest)=>identities.get(req);
   // Device metadata does not narrow a human client's owner permissions.
@@ -285,7 +329,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Owner inspection and external read-only clients do not send to our model.
   // The same reader enforces model disclosure scope inside an admitted model run.
   const readingForModel=()=>Boolean(modelContext.getStore()||modelAuthorization.currentId);
-  const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
+  const agentFeatures=await installAgentFeatures(backendContext,evidenceContext.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     exposurePolicy:new EvidenceExposurePolicy([],context=>!readingForModel()||modelAuthorization.allowsDisclosure({sourceId:context.sourceId??'device:'+context.deviceId,dataKind:context.representation==='image'?'image':'text'})),
     assertSources:(ids,kind='text')=>{if(readingForModel())modelAuthorization.assertDisclosure(ids.map(sourceId=>({sourceId,dataKind:kind})));},
     assertEvidence:(ids,kind)=>{if(readingForModel())modelAuthorizationHost.assertEvidence(ids,kind);},
@@ -300,9 +344,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
         !store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted);
     }catch{return false;}
   };
-  const fileRawReader=new FileRawReader(store,files,archivedFiles,{
-    mayReadFileVersion:(_sourceId,id)=>directImageAllowed(id),mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
-  });
   const baseReader:ContextReader={...archiveReader,
     evidence:async args=>{
       const direct=args.ids.flatMap(id=>{const image=directImage(id);return image?[{id,capturedAt:modelContext.getStore()?.contextTime??new Date().toISOString(),appName:image.name,ocrText:'',sourceType:'user_attachment',summary:'User attached image',metadata:{mimeType:image.mimeType}}]:[];});
@@ -346,8 +387,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>runtimeHost.close());
   const factory:ModelAgentFactory=runtimeHost.factory;
   let initialAgent=dependencies?.agent?runtimeHost.wrap(dependencies.agent,modelSettingsFromConfig(config),{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
-  const modelSettings=new ModelSettingsStore({
-    configService,codex,
+  await configurationPlatform.bindModels({
+    codex,
     prepare:async (settings,profiles,defaultProfileId,previousSettings)=>{
       const candidate=await createModelRegistry(profiles,reader,factory,initialAgent,defaultProfileId);initialAgent=undefined;
       return agent.prepare(candidate,()=>applyModelSettings(config,settings),()=>applyModelSettings(config,previousSettings??settings));
@@ -357,8 +398,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       return {...candidate,query:input=>modelAuthorizationHost.manual('model-probe:'+id,[connection],signal=>candidate.query({...input,signal}),input.signal,'probe')};
     }),
   });
-  resources.defer(()=>modelSettings.close());
-  await modelSettings.initialize();
+  const modelSettings=configurationPlatform.modelSettings;
   let additionalModelConnections=():ModelConnection[]=>[];
   availableModelConnections=()=>{
     const models=[...modelSettings.profiles(),...MODEL_FEATURES.map(feature=>modelSettings.select(feature))].map(profile=>agentModelConnection({kind:'profile',id:profile.id},profile.settings));
@@ -522,13 +562,21 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     reply.header('X-Content-Type-Options','nosniff').header('Referrer-Policy','no-referrer');
     if(isApi)reply.header('Cache-Control','no-store');
     if(req.method==='OPTIONS'||req.routeOptions.url==='/api/health'||!isApi||(req.method==='POST'&&['/api/connections/redeem','/api/login/exchange','/api/login/requests','/api/login/poll','/api/login/ack'].includes(req.routeOptions.url??'')))return;
-    if(validBearer(req)||playbackAuthorization(req))return;
+    const playback=playbackAuthorization(req);
+    if(validBearer(req)||playback){
+      if(!playback)assignRequestPin(req,reply);
+      return;
+    }
     const c=connections.authenticate(req.headers.authorization);
     if(!c)return reply.code(401).send({error:'unauthorized',message:moteText("请提供有效访问令牌；管理网页请重新登录"),requestId:req.id});
-    identities.set(req,c);connections.assertCollectorRoute(c,req.method,req.routeOptions.url??'');
+    identities.set(req,c);connections.assertCollectorRoute(c,req.method,req.routeOptions.url??'');assignRequestPin(req,reply);
     if(!connections.isOwner(c)&&collectorIngressWrite(req.method,req.routeOptions.url??'')&&req.headers['x-mote-ingress-version']!==INGRESS_PROTOCOL_VERSION)
       return reply.code(426).send({error:'ingress_protocol_upgrade_required',requiredVersion:INGRESS_PROTOCOL_VERSION,requestId:req.id});
   });
+  app.addHook('onResponse',async req=>{releaseRequestPin(req);});
+  // The client can close the connection before the response is finished; that
+  // path emits onRequestAbort instead of onResponse.
+  app.addHook('onRequestAbort',async req=>{releaseRequestPin(req);});
   app.setErrorHandler((error,req,reply)=>{
     const failure=safeError(error);
     diagnostics.record('request.failed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),category:failure.category,reason:failure.reason,statusCode:failure.status},failure.status>=500?'error':'warn');
@@ -883,26 +931,32 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
   const activity=new ActivityProjection(store,executionPlatform.assembly.operations,{delegation});
-  const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(value);
+  const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(value));
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
-  configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(next));
+  configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const automaticActivity=new AutomaticActivity(store,materials,executor,configService,{query:input=>queryAgent(input,'query','activity'),selection:profileId=>{const selected=modelSettings.select('chat',profileId);return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},lane:()=>workflows.settings().semantic});
   resources.defer(()=>automaticActivity.close());
-  const featureServices={pluginCenter,withMediaOwnerBatch,launchOwnerImport,withMediaOwnerIntent,modelAuthorization,modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),contextTrees,automaticActivity,configService,memoryBindings,memoryPublication,ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaPreparation,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows} satisfies FeatureServices;
+  const featureServices={pluginCenter,withMediaOwnerBatch,launchOwnerImport,withMediaOwnerIntent,modelAuthorization,modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),contextTrees,automaticActivity,configService,memoryBindings,memoryPublication,ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlatform.assemblyForRoutes().playback},notesSource:notesSource.assemblyForRoutes(),notesCapture:{authority:authorizationPlatform,route:{request:request=>pins.get(request)},intake:captureIntake.ports.captureIntake},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaPreparation,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows} satisfies FeatureServices;
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   resources.defer(()=>featureHost.close());
   registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   await installServerFeatures(featureHost,featureServices,bootstrap.features);
   memoryTopics=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader,()=>catalogChangesEnabled&&!closing),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query:input=>queryAgent(input,'query','memories')});
   resources.defer(()=>memoryTopics?.close());
-  await configService.startWatching();
+  await configurationPlatform.start();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('preClose',async()=>{
-    closing=true;featureHost.stop();
+    closing=true;
+    // Stop watcher/subscriptions and join accepted configuration transactions
+    // while execution/model consumers are still alive; a config-service failure
+    // must not abort the remaining cleanup. Bootstrap retains final close.
+    let configDrainFailure:unknown;
+    try{await configurationPlatform.quiesce('shutdown');}catch(error){configDrainFailure=error;}
+    try{featureHost.stop();
     // Polling/admission stops without retiring the runtime's Memory authority;
     // the runtime closes only after accepted engine work is interrupted/drained.
     sourcePipelines.quiesce();
@@ -911,12 +965,13 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     automaticActivity.stop();memoryPublication.stop();
     // Interrupt transports while handlers, checkpoints and storage remain live.
     await resources.stop();
+    }finally{if(configDrainFailure)try{diagnostics.record('config.shutdown_drain_failed',{category:'internal'},'error');}catch{/* cleanup continues */}}
   });
   app.addHook('onClose',async()=>resources.close());
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,bootstrap,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

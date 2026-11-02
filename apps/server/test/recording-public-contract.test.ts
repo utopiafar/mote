@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {RecordingConnector,type ConnectorContext,type RecordingProvider} from '../src/connectors/index.js';
 import {Store} from '../src/store.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
@@ -18,7 +19,7 @@ test('public recording constructor accepts the documented extension context, acq
  const raw='Generated diary\n\nOwner 00:00:00.000\nI prepared a generated plan.\n',audio=Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)]);
  let mediaCalls=0,retired=0;
  const provider:RecordingProvider={id:'generated',version:'fixture@1',account:async()=>({id:'generated-owner'}),discover:async()=>({ids:['original']}),metadata:async()=>({id:'original',title:'Generated diary',durationMs:5000,recordedAt:'2026-09-20T00:00:00Z'}),transcript:async()=>({rawText:raw,transcript:feishuTranscript(raw,5000)}),media:async()=>{mediaCalls++;return {mimeType:'audio/wav',bytes:audio};},close:async()=>{retired++;}};
- const context:ConnectorContext={store,sources,files,config:{dataDir:directory,token:'generated-owner-token',allowedOrigins:[],connectors:{directory}}};
+ const context:ConnectorContext={evidenceReader:connectorReader(store,sources),store,sources,files,config:{dataDir:directory,token:'generated-owner-token',allowedOrigins:[],connectors:{directory}}};
  const connector=new RecordingConnector(context,provider);
  t.after(async()=>{await connector.close();await files.close();store.close();await rm(directory,{recursive:true,force:true});});
  assert.ok(connector.engine instanceof ExecutionEngine);assert.equal(typeof connector.engine.close,'function');assert.equal(typeof connector.engine.cancel,'function');

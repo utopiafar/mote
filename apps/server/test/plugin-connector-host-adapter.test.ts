@@ -13,6 +13,7 @@ import {createDynamicHttpDispatcher} from '../src/plugins/dynamic-http-dispatche
 import {createConnectorHostAdapter,type ConnectorInstanceScope} from '../src/plugins/connector-host-adapter.js';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 
 const capabilities:SourceCapabilityDescriptor={lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false};
 type TestScope=ConnectorInstanceScope&{resources:PluginResourceScope};
@@ -44,7 +45,7 @@ function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:(
 }
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-connector-adapter-')),store=new Store(directory),sources=new SourceStore(store);
-  const context:ConnectorContext={sources,store,config:{dataDir:directory,token:'generated-owner-token',allowedOrigins:[],connectors:{directory:join(directory,'connectors')}}};
+  const context:ConnectorContext={evidenceReader:connectorReader(store,sources),sources,store,config:{dataDir:directory,token:'generated-owner-token',allowedOrigins:[],connectors:{directory:join(directory,'connectors')}}};
   const app=Fastify(),dispatcher=createDynamicHttpDispatcher({authorize:request=>request.headers.authorization==='Bearer generated-owner'});
   dispatcher.attach(app);
   t.after(async()=>{await app.close();store.close();rmSync(directory,{recursive:true,force:true});});

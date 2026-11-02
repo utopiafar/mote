@@ -81,6 +81,13 @@ const api: DesktopApi = {
   readEvents: () => ipcRenderer.invoke('mote:events-read'),
   openQuickNote: () => ipcRenderer.invoke('mote:quick-note'),
   resizeQuickNote: expanded => ipcRenderer.invoke('mote:quick-note-size', expanded),
+  customPagePrepare: target => ipcRenderer.invoke('mote:custom-page-prepare', target),
+  customPageClaim: claim => ipcRenderer.invoke('mote:custom-page-claim', claim),
+  onCustomPageRevoked: callback => {
+    const handler = (_event: Electron.IpcRendererEvent, value: Parameters<typeof callback>[0]) => callback(value);
+    ipcRenderer.on('mote:custom-page-revoked', handler);
+    return () => ipcRenderer.removeListener('mote:custom-page-revoked', handler);
+  },
   noteDraft: () => ipcRenderer.invoke('mote:note-draft'),
   updateNoteDraft: input => ipcRenderer.invoke('mote:note-draft-update', input),
   saveNote: input => ipcRenderer.invoke('mote:note', input),

@@ -1,10 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
+import {contextToolSnapshot,contextToolDefinitions,pinContextTools,releaseContextTools} from '../dist/tool-contributions.js';
+import {toRuntimeToolDefinitions,toCodexTools} from '../dist/tools/runtime-schema.js';
 const base={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 async function call(b,tool,args={}){const r=await fetch(b.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+b.token,'Content-Type':'application/json'},body:JSON.stringify(args)});return {status:r.status,body:await r.json()};}
 const contributionHost=()=>{const entries=[];return {register(descriptor){const lifetime=new AbortController();const entry={descriptors:[descriptor],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}};entries.push(entry);return ()=>lifetime.abort(Error('Generated provider unloaded'));},snapshot:()=>entries.filter(entry=>!entry.lifecycle.signal.aborted)};};
 const tool=(name,read)=>({apiVersion:'1',kind:'metadata',exposure:'catalog',requires:[],name,version:'1',description:'Generated metadata',fields:{after:{type:'string'},deviceId:{type:'string'}},parse:args=>args,async execute(args,port){return {source:'untrusted_personal_context',data:await read(args,{scope:port.scope})};}});
+test('explicit pack selection feeds both runtime schemas before pinning and cannot restore omitted official tools',()=>{
+ const registry=contributionHost();registry.register({...tool('selected_context',()=>({})),exposure:'native'});
+ const input={question:'Generated explicit selection',toolContributions:registry.snapshot()},snapshot=contextToolSnapshot(input);
+ assert.deepEqual(snapshot.entries.map(entry=>entry.name),['selected_context']);
+ assert.deepEqual(contextToolDefinitions(input).map(([name])=>name),['selected_context','capability_discover','capability_execute']);
+ const [dsh]=toRuntimeToolDefinitions(snapshot),[codex]=toCodexTools(snapshot);assert.equal(dsh.name,'selected_context');assert.equal(codex.name,dsh.name);assert.deepEqual(codex.inputSchema,dsh.inputSchema);
+ const pinned=pinContextTools(input,base);try{assert.deepEqual(contextToolSnapshot(pinned).toJSON(),snapshot.toJSON());}finally{releaseContextTools(pinned);}
+});
 test('contributed schema and dispatch are pinned per run while revocation remains live',async t=>{
  const registry=contributionHost(),seen=[];
  const remove=registry.register(tool('fixture_context',(_args,{scope})=>{seen.push(scope);return {message:'Untrusted generated metadata'};}));

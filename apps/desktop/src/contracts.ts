@@ -1,3 +1,4 @@
+import type {CustomPageFrameTarget, CustomPageFrameClaim, CustomPageFrameGrant, CustomPageFrameRevocation} from './plugin-host/desktop-host';
 export type SyncMode = 'realtime' | 'interval' | 'batch' | 'manual';
 export interface SyncStatus { uploadBytesPerSecond?: number; state: 'unconfigured' | 'idle' | 'waiting' | 'uploading' | 'error' | 'manual'; mode: SyncMode; message: string; nextUploadAt?: string; lastUploadAt?: string; pendingRecords: number; localBacklogUnbound?: boolean }
 export interface CollectionMode { duration: boolean; screenshots: boolean; structured: boolean }
@@ -163,6 +164,13 @@ export interface DesktopApi {
   status(): Promise<Status>;
   openQuickNote?(): Promise<void>;
   resizeQuickNote?(expanded: boolean): Promise<void>;
+  /** Main-owned trusted guard: register a nonce before the host creates the
+   * custom-page iframe, then bind exactly one direct child after it loads. */
+  customPagePrepare(target: CustomPageFrameTarget): Promise<{epoch: number}>;
+  customPageClaim(claim: CustomPageFrameClaim): Promise<CustomPageFrameGrant>;
+  /** Subscribe before claim; a matching revocation means the granted epoch is
+   * dead and the consumer must end its channel. */
+  onCustomPageRevoked(callback: (value: CustomPageFrameRevocation) => void): () => void;
   noteDraft(): Promise<import('./contracts/note').NoteDraft>;
   updateNoteDraft(input: import('./contracts/note').NoteDraft): Promise<import('./contracts/note').NoteDraft>;
   saveNote(input: import('./contracts/note').NoteDraft): Promise<{ id: string; draft: import('./contracts/note').NoteDraft }>;
