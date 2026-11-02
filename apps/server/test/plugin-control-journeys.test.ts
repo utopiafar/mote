@@ -177,6 +177,12 @@ async function verifiedPreparation(f: Fixture, targetPlanId: string) {
   return result.preparation!.operationId;
 }
 
+test('a service runtime release is rejected before install when this host has no service runtime', async t => {
+  const release = generatedRelease(); (release.manifest as any).runtime = 'service';
+  const f = fixture(t, release);
+  await assert.rejects(f.plugins.resolve({repository: release.repository, tag: release.tag}), /service runtime/);
+});
+
 test('fixed GitHub preview, install and lost-response replay remain durable; check and enable never bind', async t => {
   const f = fixture(t), {preview, command, packageId} = await install(f);
   assert.deepEqual(preview.source, {repository: f.release.repository, tag: f.release.tag, commit: f.release.commit, digest: f.release.manifest.archive.sha256});
@@ -454,6 +460,17 @@ test('actual HTTP plugin controls authorize owner sessions, reject MCP credentia
   assert.equal(node.memoryBindings.view().revision, revision);
   const resumed = await request('resume', {operationId: randomUUID(), expectedRevision: revision}); assert.equal(resumed.statusCode, 200);
   assert.equal(resumed.json().admission.generation, initial.admission.generation + 1);
+  const invalidBase = 'https://github.com/generated-invalid/manifest/releases/download/v1/';
+  Object.defineProperty(node.pluginCenter.releases, 'transport', {value: async (url: string) => {
+    if (url.includes('/releases/tags/v1')) return {bytes: strToU8(JSON.stringify({tag_name: 'v1', draft: false, assets: [{name: 'mote-plugin.json', browser_download_url: invalidBase + 'mote-plugin.json'}]}))};
+    if (url.includes('/commits/v1')) return {bytes: strToU8(JSON.stringify({sha: 'a'.repeat(40)}))};
+    if (url === invalidBase + 'mote-plugin.json') return {bytes: strToU8(JSON.stringify({schemaVersion: 2, id: 'generated.invalid'}))};
+    throw Error('Unexpected generated invalid manifest URL');
+  }});
+  const invalid = await node.app.inject({method: 'POST', url: '/api/plugins/resolve', headers: headers(owner), payload: {repository: 'generated-invalid/manifest', tag: 'v1'}});
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(invalid.json().error, 'validation');
+  assert.doesNotMatch(invalid.body, /internal server|PluginContractError/i);
   await node.connections.revoke(session.credentialId);
   assert.equal((await node.app.inject({url: '/api/plugins', headers: headers(session.token)})).statusCode, 401);
 });

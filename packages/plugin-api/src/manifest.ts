@@ -23,7 +23,7 @@ export type RuntimeLocation = typeof runtimeLocations[number];
 export const trustLevels = ['official', 'external'] as const;
 export type TrustLevel = typeof trustLevels[number];
 
-export const dependencyKinds = ['package', 'service', 'contribution'] as const;
+export const dependencyKinds = ['package', 'service', 'contribution', 'host'] as const;
 export type DependencyKind = typeof dependencyKinds[number];
 
 export const providerKinds = ['service', 'collection', 'chain'] as const;
@@ -195,13 +195,19 @@ export function featureManifestForPackage(manifest: PackageManifest): FeatureMan
   return {
     id: manifest.id,
     version: manifest.version,
-    components: (manifest.contributions ?? []).map(contribution => ({
-      id: contribution.id,
-      version: contribution.version,
-      surface: contribution.surface,
-      ...(contribution.requires?.length
-        ? {requires: contribution.requires.map(dependency => ({id: dependency.id, version: dependency.version}))}
-        : {}),
-    })),
+    components: (manifest.contributions ?? []).map(contribution => {
+      // FeatureRegistry can only resolve sibling contribution registrations.
+      // Service/package/host dependencies are satisfied by the activation plan,
+      // and optional dependencies must not become hard registry requirements.
+      const requires = (contribution.requires ?? [])
+        .filter(dependency => dependency.kind === 'contribution' && dependency.required !== false)
+        .map(dependency => ({id: dependency.id, version: dependency.version}));
+      return {
+        id: contribution.id,
+        version: contribution.version,
+        surface: contribution.surface,
+        ...(requires.length ? {requires} : {}),
+      };
+    }),
   };
 }
