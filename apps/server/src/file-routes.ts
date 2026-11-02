@@ -1,7 +1,6 @@
 import type {CaptureRead} from './evidence-read-ports.js';
 import {navigationScopeSchema} from './context-navigation.js';
 import type {ServerDiagnostics,Operation} from './diagnostics.js';
-import {randomBytes} from 'node:crypto';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {FILE_PART_BYTES,formatEvidenceRef,fileDiarizationOptionsSchema} from '@mote/shared';
@@ -13,14 +12,18 @@ import {isLoopback,requestLocalJson} from './local-http.js';
 import {FileProcessing} from './file-processing.js';
 import {StoreError} from './store.js';
 import {FileAttachments} from './file-attachments.js';
+import {PlaybackGrants,type FilePlaybackGrants} from './plugins/files-source.js';
 import type {IngressService} from './ingress.js';
 
-export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'>,diagnostics?:ServerDiagnostics,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>=async(_id,task)=>task(),withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>=async(_ids,task)=>task()){
+export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:Pick<CaptureRead,'evidence'>,diagnostics?:ServerDiagnostics,withOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>=async(_id,task)=>task(),withOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>=async(_ids,task)=>task(),playback?:FilePlaybackGrants){
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
   const attachments=new FileAttachments(files);
   const thumbnails=createFileThumbnails();
-  const grants=new Map<string,{id:string;until:number;check:()=>void}>();
+  // C11's files-source plugin owns the grant scope. The local registry is only
+  // for current callers that have not migrated to the plugin assembly yet.
+  const grants:FilePlaybackGrants=playback??new PlaybackGrants();
+  const ownsGrants=playback===undefined;
   const cookieName=(id:string)=>'mote_file_'+id.replace(/-/g,'');
   const id=(req:FastifyRequest)=>(req.params as {id:string}).id;
   const check=(req:FastifyRequest)=>(sourceId:string)=>authorize(req,sourceId);
@@ -50,10 +53,10 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(fileId(req)),cancellation:processing.cancellation(fileId(req))}));
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({...navigationScopeSchema.shape,offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(fileId(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});
   app.post('/api/files/:id/playback',async(req,reply)=>{
-    file(req);const token=randomBytes(32).toString('hex');for(const [key,value] of grants)if(value.until<Date.now())grants.delete(key);
-    const sourceId=files.version(fileId(req)).source_id;grants.set(token,{id:fileId(req),until:Date.now()+300000,check:()=>authorize(req,sourceId)});
-    reply.header('Set-Cookie',`${cookieName(fileId(req))}=${token}; HttpOnly; SameSite=Strict; Max-Age=300; Path=/api/files/${fileId(req)}/content${req.protocol==='https'?'; Secure':''}`);
-    return {url:'/api/files/'+fileId(req)+'/content'};
+    const id=fileId(req);file(req);
+    const sourceId=files.version(id).source_id,issued=grants.issue(id,sourceId,()=>authorize(req,sourceId));
+    reply.header('Set-Cookie',`${cookieName(id)}=${issued.token}; HttpOnly; SameSite=Strict; Max-Age=${issued.maxAgeSeconds}; Path=/api/files/${id}/content${req.protocol==='https'?'; Secure':''}`);
+    return {url:'/api/files/'+id+'/content'};
   });
   app.get('/api/files/:id/content',async(req,reply)=>{
     const v=file(req);if(!v.hasOriginal)throw new StoreError('Original is not archived',404);
@@ -75,7 +78,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
       return reply.type('image/jpeg').send(bytes);
     }finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
   });
-  app.addHook('onClose',async()=>{thumbnails.clear();});
+  app.addHook('onClose',async()=>{thumbnails.clear();if(ownsGrants)grants.retire();});
   // Owner-only routes are excluded from the collector route allowlist.
   app.post('/api/records/:id/attachments/:attachmentId/processing',{bodyLimit:1024},async req=>attachments.prepare(id(req),(req.params as {attachmentId:string}).attachmentId,req.body,check(req)));
   app.delete('/api/files/:id',async req=>files.forget(fileId(req)));
@@ -97,9 +100,8 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.put('/api/file-processing',{bodyLimit:262144},async req=>processing.save(req.body));
   return (req:FastifyRequest)=>{
     if(req.routeOptions.url!=='/api/files/:id/content'||!['GET','HEAD'].includes(req.method))return false;
-    if(!z.string().uuid().safeParse(id(req)).success?z.string().uuid().parse(id(req)):undefined)return false;
-    const token=req.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName(fileId(req))+'='))?.split('=')[1];
-    const grant=token?grants.get(token):undefined;if(!grant||grant.id!==fileId(req)||grant.until<Date.now())return false;
-    grant.check();return true;
+    const parsed=z.string().uuid().safeParse(id(req));if(!parsed.success)return false;
+    const token=req.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName(parsed.data)+'='))?.split('=')[1];
+    return grants.verify(parsed.data,token);
   };
 }
