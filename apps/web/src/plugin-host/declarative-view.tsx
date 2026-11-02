@@ -22,10 +22,16 @@ export interface DeclarativeViewSpec { readonly components: readonly Declarative
 export type DeclarativeRejection = { readonly reason: string; readonly path: string };
 
 const MAX_COMPONENTS = 64, MAX_FIELDS = 32, MAX_ITEMS = 500;
+const optToken = (o: Record<string, unknown>, name: string, path: string): string | undefined => {
+  if (o[name] === undefined) return undefined;
+  if (typeof o[name] !== 'string' || !isToken(o[name])) throw new Error(`${path}: ${name} must be a token string`);
+  return o[name] as string;
+};
 const field = (input: unknown, path: string): FieldRef => {
   const o = strictDataObject(input, ['key', 'labelKey', 'format']);
   if (!isToken(o.key)) throw new Error(`${path}: field key must be a token`);
   if (o.format !== undefined && !['text', 'number', 'date', 'badge'].includes(o.format as string)) throw new Error(`${path}: unknown format`);
+  optToken(o, 'labelKey', path);
   return o as unknown as FieldRef;
 };
 
@@ -40,7 +46,7 @@ export function parseDeclarativeView(input: unknown, descriptor: UiContributionD
     switch (c.type) {
       case 'status':
         if (!declarativeStates.includes(c.state as DeclarativeState)) throw new Error(`${path}: unknown state`);
-        return { type: 'status', state: c.state, textKey: c.textKey } as DeclarativeComponent;
+        return { type: 'status', state: c.state, textKey: optToken(c, 'textKey', path) } as DeclarativeComponent;
       case 'list':
         if (!isToken(c.itemKey)) throw new Error(`${path}: itemKey must be a token`);
         return { type: 'list', itemKey: c.itemKey, fields: strictDataArray(c.fields, MAX_FIELDS).map((f, j) => field(f, `${path}.fields[${j}]`)) };
@@ -50,6 +56,8 @@ export function parseDeclarativeView(input: unknown, descriptor: UiContributionD
         const fields = strictDataArray(c.fields, MAX_FIELDS).map((f, j) => {
           const o = strictDataObject(f, ['key', 'labelKey', 'input', 'required']);
           if (!isToken(o.key) || !['text', 'number', 'boolean'].includes(o.input as string)) throw new Error(`${path}.fields[${j}]: invalid form field`);
+          if (o.required !== undefined && typeof o.required !== 'boolean') throw new Error(`${path}.fields[${j}]: required must be boolean`);
+          optToken(o, 'labelKey', `${path}.fields[${j}]`);
           return o as unknown as FormFieldSpec;
         });
         if (c.submitCommand !== undefined && !declared.has(c.submitCommand as string)) throw new Error(`${path}: undeclared submitCommand`);
@@ -57,7 +65,7 @@ export function parseDeclarativeView(input: unknown, descriptor: UiContributionD
       }
       case 'action':
         if (!isToken(c.command) || !declared.has(c.command as string)) throw new Error(`${path}: undeclared action command`);
-        return { type: 'action', command: c.command, labelKey: c.labelKey } as DeclarativeComponent;
+        return { type: 'action', command: c.command, labelKey: optToken(c, 'labelKey', path) } as DeclarativeComponent;
       default: throw new Error(`${path}: unknown component type`);
     }
   });
@@ -92,7 +100,7 @@ export class DeclarativeViewSession {
       const value = await this.#invoke({ id, apiVersion }, input);
       if (!this.lifetime.admits(generation)) return { ok: false, reason: 'stale' };
       return { ok: true, value };
-    } catch { return { ok: false, reason: 'failed' }; }
+    } catch { return this.lifetime.admits(generation) ? { ok: false, reason: 'failed' } : { ok: false, reason: 'stale' }; }
   }
 }
 
@@ -106,6 +114,20 @@ const fieldValue = (row: Record<string, unknown>, ref: FieldRef): React.ReactNod
 
 /** Render one spec into React nodes. Only declared commands are wired;
  * results flow through the session's generation gate. */
+/** Serialize a submitted form per declared input types: checked for
+ * boolean, Number() for numeric (empty becomes undefined), raw string for
+ * text. This is the real call site used by DeclarativeView's onSubmit. */
+export function serializeFormInput(form: { elements: { namedItem: (k: string) => unknown } }, fields: readonly FormFieldSpec[]): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  for (const f of fields) {
+    const el = form.elements.namedItem(f.key) as HTMLInputElement | null;
+    input[f.key] = f.input === 'boolean' ? el?.checked === true
+      : f.input === 'number' ? (el == null || el.value === '' ? undefined : Number(el.value))
+      : el?.value;
+  }
+  return input;
+}
+
 export function DeclarativeView({ session, data, translate, onResult }: {
   session: DeclarativeViewSession;
   data?: Record<string, unknown>;
@@ -137,15 +159,7 @@ export function DeclarativeView({ session, data, translate, onResult }: {
         case 'form': return <form key={i} className="declarative-form" onSubmit={e => {
           e.preventDefault();
           if (!c.submitCommand) return;
-          const input: Record<string, unknown> = {};
-          for (const f of c.fields) {
-            const el = e.currentTarget.elements.namedItem(f.key) as HTMLInputElement | null;
-            // Serialize per declared input type: checked for booleans, a
-            // numeric conversion for numbers, the raw string for text.
-            input[f.key] = f.input === 'boolean' ? el?.checked === true
-              : f.input === 'number' ? (el?.value === '' || el === null ? undefined : Number(el.value))
-              : el?.value;
-          }
+          const input = serializeFormInput(e.currentTarget, c.fields);
           run(c.submitCommand, input);
         }}>
           {c.fields.map((f, k) => <label key={k}>{t(f.labelKey) || f.key}<input name={f.key} type={f.input === 'boolean' ? 'checkbox' : f.input === 'number' ? 'number' : 'text'} required={f.required} /></label>)}

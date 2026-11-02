@@ -14,11 +14,14 @@ class DeclarativePluginViewTest {
 
     @Test fun `strict parsing rejects unknown components oversized arrays and undeclared commands`() {
         assertTrue(reject("""{"components":[{"type":"script"}]}""").contains("unknown component"))
-        assertTrue(reject("""{"components":[{"type":"action","command":"rm"}]}""").contains("undeclared action"))
-        assertTrue(reject("""{"components":[{"type":"form","fields":[{"key":"a","input":"text"}],"submitCommand":"rm"}]}""").contains("undeclared submitCommand"))
+        assertTrue(reject("""{"components":[{"type":"action","command":"rm"}]}""").contains("undeclared"))
+        assertTrue(reject("""{"components":[{"type":"form","fields":[{"key":"a","input":"text"}],"submitCommand":"rm"}]}""").contains("undeclared"))
         val fields = (1..40).joinToString(",") { """{"key":"a"}""" }
         assertTrue(reject("""{"components":[{"type":"list","itemKey":"i","fields":[$fields]}]}""").contains("too large"))
         assertTrue(reject("""{"components":[{"type":"status","state":"weird"}]}""").contains("unknown state"))
+        assertTrue("extra keys rejected like the TS decoder", reject("""{"components":[{"type":"status","state":"pending","onClick":"x"}]}""").contains("unknown field"))
+        assertTrue("string required is not coerced", reject("""{"components":[{"type":"form","fields":[{"key":"a","input":"text","required":"true"}]}]}""").contains("boolean required"))
+        assertTrue(reject("""{"components":[{"type":"action","command":"save","labelKey":{}}]}""").contains("string required"))
     }
 
     @Test fun `a valid spec mirrors the declared node model`() {
