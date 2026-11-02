@@ -102,4 +102,49 @@ class NativeUiPacksPresentationTest {
         registry.removeTheme(NativeUiIdentity("fixture.theme", "1"))
         assertEquals("Studio", registry.fallbackLabel()?.text)
     }
+
+    @Test fun themeAndLayoutSharingIdentityKeepSeparateLabels() = withLocale("en") {
+        val registry = registryWithBuiltin()
+        catalogs()
+        val theme = PluginUiPresentation("theme.name", i18nNamespace = "fixture.plugin")
+        val layout = PluginUiPresentation("layout.name", i18nNamespace = "fixture.plugin")
+        registry.register(themeProvider("fixture.pack", "1", theme))
+        registry.register(layoutProvider("fixture.pack", "1", layout))
+        registry.bind(NativeUiBinding(NativeUiIdentity("fixture.pack", "1"), NativeUiIdentity("fixture.pack", "1")))
+        assertEquals("Phone layout", registry.layoutLabel()?.text)
+        assertEquals("Studio", registry.themeLabel()?.text)
+        MoteI18n.pluginCatalogs.clear()
+        assertEquals("Studio", registry.themeLabel()?.text)
+        assertEquals("Phone layout", registry.layoutLabel()?.text)
+        registry.removeTheme(NativeUiIdentity("fixture.pack", "1"))
+        assertEquals("Studio", registry.fallbackLabel()?.text)
+        assertEquals("fixture.builtin", registry.activeBinding().theme.id)
+        registry.removeLayout(NativeUiIdentity("fixture.pack", "1"))
+        assertEquals("Phone layout", registry.fallbackLabel()?.text)
+    }
+
+    @Test fun fallbackLabelReResolvesAfterLanguageChange() = withLocale("zh-CN") {
+        val registry = registryWithBuiltin()
+        catalogs()
+        registry.register(themeProvider("fixture.theme", "1", PluginUiPresentation("theme.name", i18nNamespace = "fixture.plugin")))
+        registry.register(layoutProvider("fixture.layout", "1", PluginUiPresentation("layout.name", i18nNamespace = "fixture.plugin")))
+        registry.bind(NativeUiBinding(NativeUiIdentity("fixture.theme", "1"), NativeUiIdentity("fixture.layout", "1")))
+        registry.removeTheme(NativeUiIdentity("fixture.theme", "1"))
+        assertEquals("影棚", registry.fallbackLabel()?.text)
+        selected.set(null, "en")
+        assertEquals("Studio", registry.fallbackLabel()?.text)
+    }
+
+    @Test fun replacementCatalogUpdatesAccessibilityWhileLabelStaysReadable() = withLocale("en") {
+        val registry = registryWithBuiltin()
+        MoteI18n.pluginCatalogs.register("fixture.plugin", "en", mapOf("theme.name" to "Studio", "theme.a11y" to "Studio theme"))
+        registry.register(themeProvider("fixture.theme", "1", PluginUiPresentation("theme.name", a11yKey = "theme.a11y", i18nNamespace = "fixture.plugin")))
+        registry.bind(NativeUiBinding(NativeUiIdentity("fixture.theme", "1"), NativeUiIdentity("fixture.builtin", "1")))
+        assertEquals("Studio theme", registry.themeA11y()?.text)
+        MoteI18n.pluginCatalogs.clear()
+        MoteI18n.pluginCatalogs.register("fixture.plugin", "en", mapOf("theme.a11y" to "Updated accessible name"))
+        assertEquals("Studio", registry.themeLabel()?.text)
+        assertEquals("Updated accessible name", registry.themeA11y()?.text)
+        assertEquals("key_missing", registry.themeLabel()?.fallbackReason)
+    }
 }
