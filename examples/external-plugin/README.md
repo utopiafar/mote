@@ -22,7 +22,10 @@ Central connector registry, waits for `/api/status`, and stops it again for
 generated source and one generated item; no vault, model, credential or user
 profile is touched. Without `--once` it stays in the foreground until Ctrl+C.
 Reusing `--home <private-directory> --profile <name>` starts and stops the same
-profile without leaving a process or port behind.
+profile without leaving a process or port behind. A profile is reused only when
+it was created by `plugin-dev` (ownership marker) and remains native/loopback/
+private; ordinary profiles are rejected without modification. `plugin-dev stop`
+requires the private `--home` printed by `dev`.
 
 Only `--host central` is supported by this template. Other client hosts build
 their own native UI/device providers and are rejected with a concrete error.

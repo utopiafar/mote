@@ -13,12 +13,13 @@ import {basename, dirname, join, resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {
-  initialize, loadProfile, profilePaths, startNative, stopNative,
+  initialize, loadProfile, nativeIdentity, profilePaths, startNative, stopNative,
   updateProfileConfiguration, withProfileLock,
 } from './profile-lib.mjs';
 
 const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const template = join(repository, 'examples', 'external-plugin');
+const ownershipFile = 'plugin-dev.json';
 const help = `Mote external plugin development (Node 24+)
   create <directory> [--sdk-tarball PATH]  copy the source template; install a packed SDK when supplied
   dev --plugin DIRECTORY [--home PATH] [--profile NAME] [--port N] [--once] [--seed]
@@ -45,6 +46,28 @@ async function freePort() {
   });
 }
 async function exists(path) { try { await stat(path); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; } }
+function loopbackHost(host) { return ['127.0.0.1', 'localhost', '[::1]'].includes(host); }
+async function writeOwnership(paths) {
+  await writeFile(join(paths.directory, ownershipFile), JSON.stringify({version: 1, createdBy: 'mote-plugin-dev', profile: paths.profile, home: paths.directory}) + '\n', {mode: 0o600, flag: 'wx'});
+}
+async function assertOwnership(paths, p) {
+  let marker;
+  try { marker = JSON.parse(await readFile(join(paths.directory, ownershipFile), 'utf8')); }
+  catch { throw Error('Refusing to modify an existing profile not created by plugin-dev; use a new --home/--profile or run init explicitly.'); }
+  if (marker.version !== 1 || marker.createdBy !== 'mote-plugin-dev' || marker.profile !== paths.profile || marker.home !== paths.directory) throw Error('Refusing an existing profile without a valid plugin-dev ownership marker');
+  if (p.meta.runtime !== 'native' || p.profile === 'prod' || !loopbackHost(p.env.MOTE_HOST)) throw Error('plugin-dev only reuses a native loopback profile not named prod');
+  if (!resolve(p.dataDir).startsWith(resolve(paths.directory) + '/')) throw Error('plugin-dev reuses only profiles whose storage stays inside the private home');
+}
+async function runSeed(p, plugin) {
+  const seed = join(plugin, 'seed.mjs');
+  if (!(await exists(seed))) throw Error(`--seed requires ${seed}`);
+  const {execute} = await import('./profile-lib.mjs');
+  await execute(process.execPath, [seed], {
+    cwd: plugin,
+    env: {PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', TMPDIR: process.env.TMPDIR ?? '', LANG: process.env.LANG ?? '', MOTE_URL: p.url, MOTE_TOKEN: p.env.MOTE_TOKEN},
+    timeoutMs: 30000,
+  });
+}
 async function copyTemplate(target, sdkTarball) {
   if (await exists(target)) {
     const entries = await import('node:fs/promises').then(({readdir}) => readdir(target));
@@ -86,36 +109,47 @@ async function dev(values) {
   const profile = validateProfile(values.profile);
   const paths = profilePaths(profile, home);
   let p;
-  if (await exists(paths.configFile)) p = await loadProfile(paths);
-  else { await initialize(paths, {port, runtime: 'native'}); p = await loadProfile(paths); }
-  await withProfileLock(p, () => updateProfileConfiguration(p, document => {
-    document.connectors = {...(document.connectors ?? {}), modules: [source]};
-    document.plugins = {...(document.plugins ?? {}), backendModules: []};
-  }));
-  p = await loadProfile(paths);
-  if (values.once) {
-    const started = await startNative(p);
+  if (await exists(paths.configFile)) { p = await loadProfile(paths); await assertOwnership(paths, p); }
+  else { await initialize(paths, {port, runtime: 'native'}); await writeOwnership(paths); p = await loadProfile(paths); }
+  if ((await nativeIdentity(p)).running) throw Error('The plugin-dev profile is already running; use a separate --home/--profile for this smoke test.');
+  let started, interrupted = false;
+  const onSignal = () => { interrupted = true; if (started && !started.alreadyRunning) void stopNative(p).catch(() => undefined); };
+  process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
+  try {
+    started = await withProfileLock(p, async () => {
+      if ((await nativeIdentity(p)).running) throw Error('The plugin-dev profile is already running; use a separate --home/--profile for this smoke test.');
+      await updateProfileConfiguration(p, document => {
+        document.connectors = {...(document.connectors ?? {}), modules: [source]};
+        document.plugins = {...(document.plugins ?? {}), backendModules: []};
+      });
+      p = await loadProfile(paths);
+      return startNative(p, !values.once);
+    });
+    if (started.alreadyRunning) throw Error('The plugin-dev profile was started by another process; refusing to stop or reuse it');
+    if (interrupted) throw Error('plugin-dev was interrupted before verification completed');
     let connectors;
-    try {
-      const status = await fetch(p.url + '/api/connectors/status', {headers: {Authorization: `Bearer ${p.env.MOTE_TOKEN}`}, redirect: 'error', signal: AbortSignal.timeout(5000)});
-      if (!status.ok) throw Error(`Central started but the connector status endpoint returned HTTP ${status.status}`);
-      connectors = await status.json();
-      if (values.seed) {
-        const seed = join(plugin, 'seed.mjs');
-        if (!(await exists(seed))) throw Error(`--seed requires ${seed}`);
-        const {execute} = await import('./profile-lib.mjs');
-        await execute(process.execPath, [seed], {cwd: plugin, env: {...process.env, MOTE_URL: p.url, MOTE_TOKEN: p.env.MOTE_TOKEN}, timeoutMs: 30000});
-      }
-    } finally {
-      await stopNative(p);
+    const status = await fetch(p.url + '/api/connectors/status', {headers: {Authorization: `Bearer ${p.env.MOTE_TOKEN}`}, redirect: 'error', signal: AbortSignal.timeout(5000)});
+    if (!status.ok) throw Error(`Central started but the connector status endpoint returned HTTP ${status.status}`);
+    connectors = await status.json();
+    if (values.once) {
+      if (values.seed) await runSeed(p, plugin);
+      print({profile, home, url: p.url, pid: started.pid, started: true, stopped: true, connectors});
+      return;
     }
-    print({profile, home, url: p.url, pid: started.pid, started: true, stopped: true, connectors});
-    return;
+    print({profile, home, url: p.url, pid: started.pid, started: true, view: 'foreground'});
+    if (values.seed) await runSeed(p, plugin);
+    const result = await started.wait();
+    if (interrupted) throw Error('plugin-dev was interrupted');
+    if (result?.code !== 0 || result?.signal) throw Error(`Central exited ${result?.signal ? 'on ' + result.signal : 'with status ' + result?.code}`);
+  } catch (error) {
+    if (started && !started.alreadyRunning) await stopNative(p).catch(() => undefined);
+    throw error;
+  } finally {
+    process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal);
+    if (values.once && started && !started.alreadyRunning) await stopNative(p);
   }
-  const started = await startNative(p, true);
-  print({profile, home, url: p.url, pid: started.pid, started: true, view: 'foreground'});
-  await started.wait();
 }
+
 async function main(argv) {
   const {values, positionals} = parseArgs({
     args: argv, allowPositionals: true,
@@ -137,8 +171,11 @@ async function main(argv) {
   if (command === 'dev') return dev(values);
   if (command === 'stop') {
     requireCentral(values.host);
-    const home = resolve(values.home ?? join(tmpdir(), 'mote-plugin-dev'));
-    const p = await loadProfile(profilePaths(validateProfile(values.profile), home));
+    if (!values.home) throw Error('stop requires the private --home printed by plugin-dev dev');
+    const home = resolve(values.home);
+    const paths = profilePaths(validateProfile(values.profile), home);
+    const p = await loadProfile(paths);
+    await assertOwnership(paths, p);
     print({profile: p.profile, home, ...(await stopNative(p))});
     return;
   }
