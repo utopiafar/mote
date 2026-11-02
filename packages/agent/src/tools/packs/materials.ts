@@ -71,6 +71,46 @@ function materialCatalogPage(value: unknown): {items: unknown[]; nextCursor: str
   return page as {items: unknown[]; nextCursor: string | null};
 }
 
+function attributionMetadata(value: unknown) {
+  const parsed = attributionContextSchema.safeParse(value);
+  if (!parsed.success) return undefined;
+  const {ownerStatements: _owner, importStatements: _import, sourceContextStatements: _source, recordContextStatements: _record, ...metadata} = parsed.data;
+  return metadata;
+}
+
+function materialMetadata(value: unknown, scope: Readonly<ContextRange>): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('Invalid material catalog row');
+  const row = value as Record<string, unknown>, match = typeof row.ref === 'string' ? pinnedMaterialRef.exec(row.ref) : null;
+  const origin = row.origin as Record<string, unknown> | undefined;
+  if (!match || row.id !== match[1] || row.revision !== match[2] || typeof row.title !== 'string' || typeof row.kind !== 'string' ||
+    !/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(row.kind) || !origin || typeof origin!.sourceId !== 'string' || origin!.sourceId.length > 128 ||
+    !Number.isSafeInteger(row.textLength) || Number(row.textLength) < 0 || !Number.isSafeInteger(row.memberCount) || Number(row.memberCount) < 0) invalid('Invalid material catalog row');
+  const firstAt = typeof origin!.firstAt === 'string' && Number.isFinite(Date.parse(origin!.firstAt)) ? new Date(origin!.firstAt).toISOString() : undefined;
+  const lastAt = typeof origin!.lastAt === 'string' && Number.isFinite(Date.parse(origin!.lastAt)) ? new Date(origin!.lastAt).toISOString() : undefined;
+  if (scope.deviceId && origin!.deviceId !== scope.deviceId || scope.after && (!firstAt || firstAt < scope.after) || scope.before && (!lastAt || lastAt >= scope.before)) return;
+  const attribution = attributionMetadata(row.attributionContext);
+  return {
+    id: row.id, ref: row.ref, kind: row.kind, title: String(row.title).slice(0, 500),
+    ...(attribution ? {attributionContext: attribution, attributionContextLocator: {ref: row.ref}} : {}),
+    ...(Number.isSafeInteger(row.schemaVersion) ? {schemaVersion: row.schemaVersion} : {}),
+    origin: {sourceId: origin!.sourceId, ...(typeof origin!.deviceId === 'string' ? {deviceId: origin!.deviceId} : {}), ...(firstAt ? {firstAt} : {}), ...(lastAt ? {lastAt} : {})},
+    revision: row.revision,
+    ...(typeof row.updatedAt === 'string' && Number.isFinite(Date.parse(row.updatedAt)) ? {updatedAt: new Date(row.updatedAt).toISOString()} : {}),
+    memberCount: row.memberCount, textLength: row.textLength,
+    ...(Number.isSafeInteger(row.blockCount) ? {blockCount: row.blockCount} : {}),
+    ...(Number.isSafeInteger(row.assetCount) ? {assetCount: row.assetCount} : {}),
+    coverage: {state: ['complete', 'partial', 'pending'].includes(String((row.coverage as Record<string, unknown> | undefined)?.state)) ? (row.coverage as Record<string, unknown>).state : 'unknown'},
+    artifacts: (Array.isArray(row.artifacts) ? row.artifacts : []).slice(0, 32).flatMap(value => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+      const artifact = value as Record<string, unknown>;
+      if (typeof artifact.key !== 'string' || !/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(artifact.key) || !['ready', 'pending', 'failed', 'unavailable'].includes(String(artifact.state))) return [];
+      return [{key: artifact.key, state: artifact.state}];
+    }),
+    fidelity: {state: ['lossless', 'derived', 'summary-only'].includes(String((row.fidelity as Record<string, unknown> | undefined)?.state)) ? (row.fidelity as Record<string, unknown>).state : 'unknown'},
+    retention: {original: ['retained', 'unavailable'].includes(String((row.retention as Record<string, unknown> | undefined)?.original)) ? (row.retention as Record<string, unknown>).original : 'unknown'},
+  };
+}
+
 export function createMaterialReadPack(input: ReadPackInputs = {}): readonly ToolDescriptor[] {
   const timeZone = input.timeZone ?? 'UTC';
   const catalog = spec('material_catalog'), read = spec('material_read');
@@ -93,7 +133,9 @@ export function createMaterialReadPack(input: ReadPackInputs = {}): readonly Too
           query: args.query as string | undefined,
         }));
         port.assertCurrent();
-        return {source: 'untrusted_personal_context', data: {items: page.items, nextCursor: page.nextCursor}};
+        const scope = scopedRange(port, args);
+        const items = page.items.map(item => materialMetadata(item, scope)).filter((item): item is Record<string, unknown> => Boolean(item));
+        return {source: 'untrusted_personal_context', data: {items, nextCursor: page.nextCursor}};
       },
     }),
     defineToolDescriptor({
@@ -110,7 +152,7 @@ export function createMaterialReadPack(input: ReadPackInputs = {}): readonly Too
         port.assertCurrent();
         const page = await port.read('materialRead', {...scope, ref: args.ref as string, offset, length});
         port.assertCurrent();
-        const material = (page as {material?: unknown} | null)?.material as {ref?: unknown} | undefined;
+        const material = materialMetadata((page as {material?: unknown} | null)?.material, scope);
         const text = (page as {text?: unknown} | null)?.text as string | undefined;
         const textRange = (page as {textRange?: {offset?: number; total?: number; nextOffset?: number | null}} | null)?.textRange;
         if (!material || material.ref !== args.ref || typeof text !== 'string' || text.length > length || !textRange ||

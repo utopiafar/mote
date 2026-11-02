@@ -65,16 +65,24 @@ test('all six descriptors register with exact kind/exposure/requires', () => {
 
 test('material catalog uses the untrusted body and material_read verifies original evidence', async () => {
   const {snapshot} = assembly();
-  const catalog = {items: [{id: 'mat_' + 'a'.repeat(64), ref: materialRef}], nextCursor: null};
+  const material = {id: 'mat_' + 'a'.repeat(64), ref: materialRef, revision: 'b'.repeat(64), title: 'Generated material', kind: 'generated.material',
+    origin: {sourceId: 'generated-source', deviceId: 'generated-device', firstAt: '2024-01-01T00:00:00.000Z', lastAt: '2024-01-01T00:00:00.000Z'},
+    textLength: 4, memberCount: 1, coverage: {state: 'complete'}, fidelity: {state: 'lossless'}, retention: {original: 'retained'},
+    attributionContext: {version: 1, ownerRelation: 'owner', basis: 'owner_source', ownerStatements: [{id: originalId, question: 'generated question', answer: 'private answer'}]}};
+  const catalog = {items: [material], nextCursor: null};
   const original = {id: originalId, capturedAt: '2024-01-01T00:00:00.000Z', appName: 'A', deviceId: 'generated-device', ocrText: 'body', contentLayer: 'L1_machine_extraction'};
   const readPage = {
-    material: {id: 'mat_' + 'a'.repeat(64), ref: materialRef}, text: 'body',
+    material, text: 'body',
     textRange: {offset: 0, total: 4, nextOffset: null},
     spans: [{blockId: 'block-1', kind: 'text', memberIds: [originalId], pageRange: {start: 0, end: 4}, materialRange: {start: 0, end: 4}}],
     originalRefs: [formatEvidenceRef('capture', originalId)], originalRefsTotal: 1, sourceSpans: [{record: original, offset: 0, length: 4}],
   };
   const session = port({materialCatalog: catalog, materialRead: readPage, evidence: [original]});
-  assert.deepEqual(await execute(snapshot, 'material_catalog', {query: 'coding', limit: 2}, session.port), {source: 'untrusted_personal_context', data: catalog});
+  const catalogResult = await execute(snapshot, 'material_catalog', {query: 'coding', limit: 2}, session.port);
+  assert.equal(catalogResult.source, 'untrusted_personal_context');
+  assert.equal(catalogResult.data.items[0].ref, materialRef);
+  assert.equal(catalogResult.data.items[0].attributionContext.ownerStatements, undefined);
+  assert.equal(JSON.stringify(catalogResult).includes('private answer'), false);
   assert.equal(session.calls[0].operation, 'materialCatalog');
   assert.equal(session.calls[0].args.query, 'coding');
   await assert.rejects(execute(snapshot, 'material_catalog', {deviceId: 'other'}, session.port), error => error.code === 'invalid_tool_arguments');
@@ -88,6 +96,8 @@ test('material catalog uses the untrusted body and material_read verifies origin
   const value = await execute(snapshot, 'material_read', {ref: materialRef, offset: 0, length: 4}, session.port);
   assert.equal(value.source, 'untrusted_personal_context');
   assert.equal(value.data.text, 'body');
+  assert.equal(value.data.material.attributionContext.ownerStatements, undefined);
+  assert.equal(JSON.stringify(value).includes('private answer'), false);
   assert.equal(value.data.sourceEvidence.length, 1);
   assert.equal(value.data.sourceEvidence[0].ocrText, 'body');
   assert.deepEqual(value.data.originalRefs, [formatEvidenceRef('capture', originalId)]);
