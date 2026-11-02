@@ -318,21 +318,35 @@ test('Host system instructions are fixed on the formal port before runtime prepa
 });
 
 test('staged delivery is discarded immediately after confirmation or sender failure and preserves the primary error', async () => {
-  for (const fail of [false, true]) {
+  for (const mode of ['success', 'sender_failure', 'discard_failure']) {
+    const fail = mode !== 'success', senderFails = mode === 'sender_failure';
     const primary = Error('Generated sender failure'), secondary = Error('Generated discard cleanup failure'); let confirmed = 0, discarded = 0;
     const f = fixture({readTool: async () => ({payload: {text: 'Generated stage'}, confirm() { confirmed++; }, discard() { discarded++; if (fail) throw secondary; }}),
       run: async (request, host) => {
-        const result = host.tools.deliver(request.attempt, {callId: 'generated', name: tools[0].name, arguments: {}}, async () => { if (fail) throw primary; return 42; });
-        if (fail) await assert.rejects(result, error => error === primary); else assert.equal(await result, 42);
+        const result = host.tools.deliver(request.attempt, {callId: 'generated', name: tools[0].name, arguments: {}}, async () => { if (senderFails) throw primary; return 42; });
+        if (fail) await assert.rejects(result, error => error === (senderFails ? primary : secondary)); else assert.equal(await result, 42);
         assert.equal(discarded, 1, 'release occurs before runtime run settles');
         return outcome();
       },
     });
     const session = await f.create();
     if (fail) await assert.rejects(session.execute(), {name: 'AgentProviderError'}); else await session.execute();
-    assert.equal(confirmed, fail ? 0 : 1); assert.equal(discarded, 1);
+    assert.equal(confirmed, senderFails ? 0 : 1); assert.equal(discarded, 1);
     if (fail) assert.deepEqual(f.cleanupErrors, [secondary]);
   }
+});
+
+test('cancelling a pending sender discards its stage promptly without confirming a receipt', async () => {
+  const entered = deferred(); let confirmed = 0, discarded = 0;
+  const f = fixture({readTool: async () => ({payload: {text: 'Generated stage'}, confirm() { confirmed++; }, discard() { discarded++; }}), run: async (request, host) => {
+    await host.tools.deliver(request.attempt, {callId: 'generated', name: tools[0].name, arguments: {}}, () => new Promise((_resolve, reject) => {
+      entered.resolve(); host.signal.addEventListener('abort', () => reject(new DOMException('Generated sender cancellation', 'AbortError')), {once: true});
+    }));
+    return outcome();
+  }});
+  const s = await f.create(), execution = s.execute(); void execution.catch(() => {}); await entered.promise; f.stop();
+  await assert.rejects(execution); assert.equal(confirmed, 0); assert.equal(discarded, 1);
+  assert.equal(f.events.at(-1).event.terminal.kind, 'cancelled');
 });
 
 for (const service of ['mote.agent.runtime', 'generated.model', 'mote.agent.host-output']) {
