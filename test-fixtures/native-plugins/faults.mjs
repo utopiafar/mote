@@ -30,6 +30,28 @@ export async function createAckLossProxy(targetBase,{path='/api/notes',status=50
     request(pathname,options={}){return requestJson(url,pathname,options);}};
 }
 
+/** Hold one matching request before forwarding it. The caller can stop and
+ * restart the real target, then release the same input/identity. */
+export async function createRequestGateProxy(targetBase,{path='/api/notes'}={}){
+  let releaseGate,heldGate;
+  const released=new Promise(resolve=>releaseGate=resolve),held=new Promise(resolve=>heldGate=resolve);
+  let armed=true;
+  const target=new URL(targetBase),server=createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
+    const body=Buffer.concat(chunks),headers={...req.headers};
+    delete headers.host;delete headers['content-length'];delete headers.connection;
+    if(armed&&req.method==='POST'&&new URL(req.url??'/',target).pathname===path){armed=false;heldGate();await released;}
+    try{
+      const upstream=await fetch(new URL(req.url??'/',target),{method:req.method,headers,...(body.length?{body}:{})});
+      res.writeHead(upstream.status,{'content-type':upstream.headers.get('content-type')??'application/json'});res.end(Buffer.from(await upstream.arrayBuffer()));
+    }catch(error){res.writeHead(502,{'content-type':'application/json'});res.end(JSON.stringify({error:'generated_upstream_unavailable',message:String(error)}));}
+  });
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  const url=`http://127.0.0.1:${server.address().port}`;
+  return {url,waitForHeld:()=>held,release(){releaseGate();},close(){server.closeAllConnections();return new Promise(resolve=>server.close(()=>resolve()));},
+    request(pathname,options={}){return requestJson(url,pathname,options);}};
+}
+
 /** Held loopback request with explicit release/abort observation; no sleep. */
 export async function createControlledHttpBoundary({body={ok:true},status=200}={}){
   let releaseGate,seenGate,abortGate;
