@@ -4,9 +4,10 @@ import { CustomPageBridge, bridgeContractVersion, BRIDGE_MAX_PENDING } from '../
 
 const frame = { postMessage(env: unknown) { posted.push(env); } };
 const posted: unknown[] = [];
+let visible = true;
 const base = {
   instanceId: 'inst:one', nonce: 'n-9', frame,
-  generation: () => generation, declared: ['read', 'command'],
+  generation: () => generation, visible: () => visible, declared: ['read', 'command'],
   invoke: async (m: string, p: unknown) => { calls.push([m, p]); return 'value-' + m; },
   post: (e: unknown) => posted.push(e),
 };
@@ -50,10 +51,14 @@ test('hide refuses new reads, revoke kills the bridge and a stale channel can ne
   const bridge = new CustomPageBridge(base);
   bridge.hide();
   assert.equal(await bridge.accept(event(env())), false, 'hidden view reads nothing');
+  visible = false;
   bridge.show();
+  assert.equal(await bridge.accept(event(env())), false, 'a suspended lifetime still refuses reads');
+  visible = true;
+  assert.equal(await bridge.accept(event(env())), true, 'a visible lifetime admits again');
   bridge.revoke();
   assert.equal(await bridge.accept(event(env())), false, 'a revoked bridge never invokes');
-  assert.equal(calls.length, 0);
+  assert.equal(calls.length, 1, 'only the visible-era request invoked');
 });
 
 test('a late result in an old generation never posts back', async () => {
@@ -65,6 +70,27 @@ test('a late result in an old generation never posts back', async () => {
   release(null);
   assert.equal(await done, true);
   assert.equal(posted.filter((p: any) => p.kind === 'response').length, 0, 'stale-generation response dropped');
+});
+
+test('duplicate pending requestIds and non-request kinds never invoke', async () => {
+  calls = []; posted.length = 0;
+  let release!: () => void; const gate = new Promise<void>(r => { release = r; });
+  const slow = new CustomPageBridge({ ...base, invoke: async () => { calls.push(['read', undefined]); await gate; } });
+  const first = slow.accept(event(env({requestId: 'dup'})));
+  assert.equal(await slow.accept(event(env({requestId: 'dup'}))), false, 'a pending requestId is rejected, not overwritten');
+  release(); await first;
+  assert.equal(calls.length, 1, 'the duplicate never invoked');
+  const bridge = new CustomPageBridge(base);
+  for (const kind of ['response', 'event'] as const)
+    assert.equal(await bridge.accept(event(env({kind, requestId: 'k-' + kind}))), false, kind + ' carries no request authority');
+});
+
+test('the total allowance renews per generation', async () => {
+  calls = [];
+  const bridge = new CustomPageBridge(base);
+  assert.equal(await bridge.accept(event(env())), true);
+  generation = 2; // a new view generation opens a fresh allowance
+  assert.equal(await bridge.accept(event(env({requestId: 'g2'}))), true);
 });
 
 test('checkpoints are host-bounded only — oversized writes are rejected', () => {

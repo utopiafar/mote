@@ -24,6 +24,9 @@ interface BridgeOptions {
   readonly nonce: string;
   readonly frame: Window;
   readonly generation: () => number;
+  /** The real view-lifetime visibility predicate — admission and results
+   * bind to it, not to the generation counter alone. */
+  readonly visible: () => boolean;
   readonly declared: readonly string[];
   readonly invoke: BridgeInvoker;
   readonly post: (envelope: BridgeEnvelope) => void;
@@ -36,6 +39,7 @@ export class CustomPageBridge {
   readonly options: BridgeOptions;
   #pending = new Map<string, {generation: number}>();
   #total = 0;
+  #countedGeneration = -1;
   #revoked = false;
   #hidden = false;
 
@@ -53,16 +57,22 @@ export class CustomPageBridge {
     if (!env || typeof env !== 'object' || env.contractVersion !== bridgeContractVersion) return false;
     if (env.nonce !== this.options.nonce || env.instanceId !== this.options.instanceId) return false;
     if (env.generation !== this.options.generation()) return false;
-    if (this.#revoked || this.#hidden) return false;
+    if (env.kind !== 'request') return false;
+    if (this.#revoked || this.#hidden || !this.options.visible()) return false;
     if (!this.options.declared.includes(env.method)) return false;
+    if (this.#pending.has(env.requestId)) return false;
+    // The total allowance renews per view generation — a long-lived page
+    // keeps its budget; only in-flight concurrency is hard-bounded.
+    if (env.generation !== this.#countedGeneration) { this.#total = 0; this.#countedGeneration = env.generation; }
     if (this.#total >= BRIDGE_MAX_TOTAL || this.#pending.size >= BRIDGE_MAX_PENDING) return false;
     if (env.payload !== undefined && JSON.stringify(env.payload).length > BRIDGE_MAX_MESSAGE_BYTES) return false;
     this.#total++;
     this.#pending.set(env.requestId, {generation: env.generation});
     try {
       const value = await this.options.invoke(env.method, env.payload);
-      // A result only lands while the issuing generation is still current.
-      if (this.options.generation() === env.generation && !this.#revoked && !this.#hidden)
+      // A result only lands while the issuing generation is still current
+      // and the view is still visible.
+      if (this.options.generation() === env.generation && this.options.visible() && !this.#revoked && !this.#hidden)
         this.options.post({contractVersion: bridgeContractVersion, nonce: this.options.nonce, instanceId: this.options.instanceId, generation: env.generation, requestId: env.requestId, kind: 'response', method: env.method, payload: value});
       return true;
     } finally { this.#pending.delete(env.requestId); }
