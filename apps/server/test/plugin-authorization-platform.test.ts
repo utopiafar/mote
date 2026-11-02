@@ -267,3 +267,29 @@ test('a pruned expired login approval still drains and revokes before Connection
   const reloaded=new Connections(f.store,f.sources);
   try{await reloaded.init();const records=reloaded.inventory().items;assert.equal(records.length,1);assert.ok(records[0].revokedAt);assert.equal(reloaded.authenticate('Bearer '+issued!.token),undefined,'expired pending approval must not leave an active credential after restart');}finally{await reloaded.close();}
 });
+
+test('fixed request platform checks preserve owner and collector rules and reject released or MCP pins',async t=>{
+  const f=await fixture(t),platform=f.platform,paired=await f.collector();
+  const bind=(token:string)=>platform.bindRequest({authorization:'Bearer '+token,method:'POST',route:'/api/devices/heartbeat'});
+  const collector=bind(paired.token);
+  try{platform.requests.assertOwnPlatform(collector,'android');assert.throws(()=>platform.requests.assertOwnPlatform(collector,'macos'),{statusCode:403});}
+  finally{platform.releaseRequest(collector);}
+  assert.throws(()=>platform.requests.assertOwnPlatform(collector,'android'),{statusCode:401});
+
+  const owner=bind(ownerToken);
+  try{platform.requests.assertOwnPlatform(owner,'macos');platform.requests.assertOwnPlatform(owner,'import');}
+  finally{platform.releaseRequest(owner);}
+  assert.throws(()=>platform.requests.assertOwnPlatform(owner,'macos'),{statusCode:401},'an owner token does not revive a released request');
+
+  const invitation=f.connections().invite({serverUrl:'https://generated.invalid',label:'Generated other collector',deviceId:'generated-phone-other'},'collector');
+  const other=await f.connections().redeem({code:invitation.invitation.code,deviceId:'generated-phone-other',deviceName:'Generated other phone',platform:'other'}),otherPin=bind(other.token);
+  try{platform.requests.assertOwnPlatform(otherPin,'import');assert.throws(()=>platform.requests.assertOwnPlatform(otherPin,'other'),{statusCode:403});}
+  finally{platform.releaseRequest(otherPin);}
+
+  const ownerInvitation=f.connections().invite({serverUrl:'https://generated.invalid',label:'Generated owner connection',deviceId:'generated-owner-device'},'owner');
+  const ownerConnection=await f.connections().redeem({code:ownerInvitation.invitation.code,deviceId:'generated-owner-device',deviceName:'Generated owner device',platform:'android'}),ownerPin=bind(ownerConnection.token);
+  try{platform.requests.assertOwnPlatform(ownerPin,'macos');}finally{platform.releaseRequest(ownerPin);}
+
+  const mcp=platform.bindRequest({authorization:'Bearer '+f.connectorConfig.mcpReadToken,method:'POST',route:'/mcp'});
+  try{assert.throws(()=>platform.requests.assertOwnPlatform(mcp,'android'),{statusCode:403});}finally{platform.releaseRequest(mcp);}
+});
