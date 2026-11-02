@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { watch, type FSWatcher } from 'chokidar';
 import { parseDocument, stringify } from 'yaml';
-import type { ZodType } from 'zod';
+import {z,type ZodType} from 'zod';
 import type { ConfigFieldMetadata, ConfigServiceView } from '@mote/shared';
 
 export type ConfigDocument = { version: 1; revision: number; [domain: string]: unknown };
@@ -28,6 +28,10 @@ export interface ConfigDomainRegistration<T = unknown> {
   defaultValue: unknown;
   fields?: ConfigFieldMetadata[];
   restartRequired?: boolean;
+  /** Public domain editors must not persist submitted paths stripped by their input schema. */
+  rejectUnknownUpdates?: boolean;
+  /** Explicit raw-key declaration for public domains with opaque preprocessors. Parsed output is never persisted. */
+  rawInputSchema?: z.AnyZodObject;
   /** Resolve declared credentials and contextual defaults without materializing them in the raw file. */
   resolve?(raw: unknown, document?: Readonly<ConfigDocument>): unknown;
   prepare?(next: T, previous: T): Promise<PreparedConfigChange> | PreparedConfigChange;
@@ -59,6 +63,54 @@ function merge(base: unknown, patch: unknown): unknown {
     result[key] = merge(result[key], value);
   }
   return result;
+}
+/** Path membership follows the registered INPUT declaration, independently of its parsed output.
+ * The original schema remains responsible for full candidate validation in the same transaction. */
+function knownInputPath(schema:z.ZodTypeAny,input:unknown,path:string[]):boolean {
+  if(!path.length)return true;
+  if(schema instanceof z.ZodEffects){
+    // Opaque raw inputs need their own declaration; never infer keys by executing a preprocessor.
+    if(schema._def.effect.type==='preprocess')return false;
+    return knownInputPath(schema.innerType(),input,path);
+  }
+  if(schema instanceof z.ZodOptional||schema instanceof z.ZodNullable||schema instanceof z.ZodBranded||schema instanceof z.ZodReadonly)return knownInputPath(schema.unwrap(),input,path);
+  if(schema instanceof z.ZodDefault)return knownInputPath(schema.removeDefault(),input,path);
+  if(schema instanceof z.ZodCatch)return knownInputPath(schema._def.innerType,input,path);
+  if(schema instanceof z.ZodPipeline)return knownInputPath(schema._def.in,input,path);
+  if(schema instanceof z.ZodLazy)return knownInputPath(schema.schema,input,path);
+  if(schema instanceof z.ZodUnion||schema instanceof z.ZodDiscriminatedUnion){
+    const selected=schema.options.find((option:z.ZodTypeAny)=>option.safeParse(input).success);
+    return Boolean(selected&&knownInputPath(selected,input,path));
+  }
+  if(schema instanceof z.ZodIntersection)return knownInputPath(schema._def.left,input,path)||knownInputPath(schema._def.right,input,path);
+  const [key,...tail]=path,child=(object(input)||Array.isArray(input))?(input as Record<string,unknown>)[key]:undefined;
+  if(schema instanceof z.ZodObject){
+    const declared=Object.hasOwn(schema.shape,key)?schema.shape[key] as z.ZodTypeAny:undefined;
+    if(declared)return knownInputPath(declared,child,tail);
+    if(!(schema._def.catchall instanceof z.ZodNever))return knownInputPath(schema._def.catchall,child,tail);
+    return schema._def.unknownKeys==='passthrough';
+  }
+  if(schema instanceof z.ZodArray)return /^(0|[1-9][0-9]*)$/.test(key)&&knownInputPath(schema.element,child,tail);
+  if(schema instanceof z.ZodTuple){
+    const item=/^(0|[1-9][0-9]*)$/.test(key)?schema.items[Number(key)]??schema._def.rest:undefined;
+    return Boolean(item&&knownInputPath(item,child,tail));
+  }
+  if(schema instanceof z.ZodRecord)return knownInputPath(schema.element,child,tail);
+  return schema instanceof z.ZodAny||schema instanceof z.ZodUnknown;
+}
+function hasPreprocessor(schema:z.ZodTypeAny,seen=new Set<z.ZodTypeAny>()):boolean {
+  if(seen.has(schema))return false;seen.add(schema);
+  if(schema instanceof z.ZodEffects&&schema._def.effect.type==='preprocess')return true;
+  if(schema instanceof z.ZodPipeline)return hasPreprocessor(schema._def.in,seen);
+  if(schema instanceof z.ZodLazy)return hasPreprocessor(schema.schema,seen);
+  if(schema instanceof z.ZodObject&&Object.values(schema.shape).some(child=>hasPreprocessor(child as z.ZodTypeAny,seen)))return true;
+  // Traverse declarations only. Do not call default/refinement/transform functions or interpret their behavior.
+  const children=Object.values(schema._def).flatMap(value=>Array.isArray(value)?value:value instanceof Map?[...value.values()]:[value]);
+  return children.some(value=>value instanceof z.ZodType&&hasPreprocessor(value,seen));
+}
+function knownPatchPaths(patch:unknown,schema:z.ZodTypeAny,input:unknown,path:string[]=[]):boolean {
+  if(!knownInputPath(schema,input,path))return false;
+  return !object(patch)&&!Array.isArray(patch)||Object.entries(patch as object).every(([key,value])=>knownPatchPaths(value,schema,input,[...path,key]));
 }
 function editPath(value: unknown, path: string[], fn: (value: unknown, previous: unknown) => unknown, previous?: unknown): unknown {
   if (!path.length) return fn(value, previous);
@@ -120,9 +172,14 @@ export class ConfigService {
   private domains = new Map<string, RegisteredDomain>();
   private raw?: ConfigDocument;
   private effective = new Map<string, unknown>();
+  /** Resolved schema inputs pin restart fields without reparsing transformed outputs or secret references. */
+  private effectiveInputs = new Map<string, unknown>();
   private diskText: string | null = null;
   private tail: Promise<void> = Promise.resolve();
   private watcher?: FSWatcher;
+  private watcherStopping?: Promise<void>;
+  private watcherGeneration=0;
+  private cancelWatcherReady?: () => void;
   private closing = false;
   private closePromise?: Promise<void>;
   private unavailable = false;
@@ -149,7 +206,13 @@ export class ConfigService {
       if (this.domains.has(id)) throw new ConfigServiceError('config_conflict');
       const entry: RegisteredDomain = { ...domain, id, documentPath: ['plugins', 'configuration', domain.id] };
       const raw = this.state(), input = this.domainRaw(raw, entry) ?? entry.defaultValue;
-      const value = this.parseDomain(entry, input, raw);
+      if(entry.rejectUnknownUpdates){
+        if(!(entry.schema instanceof z.ZodType))throw new ConfigServiceError('config_invalid',id);
+        if(entry.rawInputSchema){
+          if(!(entry.rawInputSchema instanceof z.ZodObject)||hasPreprocessor(entry.rawInputSchema))throw new ConfigServiceError('config_invalid',id);
+        }else if(hasPreprocessor(entry.schema))throw new ConfigServiceError('config_invalid',id);
+      }
+      const resolvedInput=this.resolveDomainInput(entry,input,raw),value=this.parseDomainInput(entry,resolvedInput);
       let candidate: PreparedConfigChange | undefined, applied = false;
       try {
         candidate = await entry.prepare?.(clone(value), clone(value));
@@ -165,10 +228,10 @@ export class ConfigService {
         if (uncertain) this.unavailable = true;
         this.recordError(error); throw error;
       }
-      this.domains.set(id, entry); this.effective.set(id, value); this.assignRaw(raw, entry, clone(input));
+      this.domains.set(id, entry); this.effective.set(id, value); this.effectiveInputs.set(id,resolvedInput); this.assignRaw(raw, entry, clone(input));
       this.effective.set('plugins', this.pluginValues(this.effective.get('plugins'), child => clone(this.effective.get(child.id)))); this.notify();
       return async () => {
-        const remove = async () => { this.domains.delete(id); this.effective.delete(id); this.notify(); };
+        const remove = async () => { this.domains.delete(id); this.effective.delete(id); this.effectiveInputs.delete(id); this.notify(); };
         if (this.closing) await remove(); else await this.serialize(remove);
       };
     });
@@ -214,23 +277,38 @@ export class ConfigService {
     if (this.closing || this.unavailable) return Promise.reject(new ConfigServiceError('config_unavailable'));
     const result = this.tail.then(work); this.tail = result.then(() => {}, () => {}); return result;
   }
-  private parseDomain(domain: ConfigDomainRegistration, raw: unknown, document?: ConfigDocument): unknown {
+  private resolveDomainInput(domain: ConfigDomainRegistration, raw: unknown, document?: ConfigDocument): unknown {
     try {
+      this.validateRawInput(domain,raw);
       let value = clone(raw);
       if (domain.resolve) value = domain.resolve(value, document ? clone(document) : undefined);
       else for (const field of domain.fields ?? []) if (field.sensitive) value = editPath(value, field.path.split('.'), resolveSensitive);
-      return domain.schema.parse(value);
+      return clone(value);
     }
     catch { throw new ConfigServiceError('config_invalid', domain.id); }
   }
-  private parse(raw: unknown): { raw: ConfigDocument; values: Map<string, unknown> } {
+  private parseDomainInput(domain:ConfigDomainRegistration,input:unknown):unknown {
+    try{return domain.schema.parse(clone(input));}catch{throw new ConfigServiceError('config_invalid',domain.id);}
+  }
+  private validateRawInput(domain:ConfigDomainRegistration,input:unknown):void {
+    if(!domain.rawInputSchema)return;
+    try{
+      domain.rawInputSchema.parse(clone(input));
+      if(!knownPatchPaths(input,domain.rawInputSchema,input))throw new ConfigServiceError('config_invalid',domain.id);
+    }catch{throw new ConfigServiceError('config_invalid',domain.id);}
+  }
+  private parseDomain(domain:ConfigDomainRegistration,raw:unknown,document?:ConfigDocument):unknown {
+    return this.parseDomainInput(domain,this.resolveDomainInput(domain,raw,document));
+  }
+  private parse(raw: unknown): { raw: ConfigDocument; inputs:Map<string,unknown>; values: Map<string, unknown> } {
     if (this.normalizeDocument) { try { raw = this.normalizeDocument(raw); } catch { throw new ConfigServiceError('config_invalid'); } }
     if (!object(raw) || raw.version !== 1 || !Number.isSafeInteger(raw.revision) || Number(raw.revision) < 0 || Object.keys(raw).some(key => !['version', 'revision'].includes(key) && !this.domains.has(key))) throw new ConfigServiceError('config_invalid');
-    const next = clone(raw) as ConfigDocument, values = new Map<string, unknown>();
+    const next = clone(raw) as ConfigDocument, values = new Map<string, unknown>(),inputs=new Map<string,unknown>();
     for (const domain of this.domains.values()) {
       const value = clone(this.domainRaw(next, domain) ?? domain.defaultValue);
       this.assignRaw(next, domain, value);
-      values.set(domain.id, this.parseDomain(domain, value, next));
+      const input=this.resolveDomainInput(domain,value,next);inputs.set(domain.id,input);
+      values.set(domain.id, this.parseDomainInput(domain,input));
     }
     if (values.has('plugins')) values.set('plugins', this.pluginValues(values.get('plugins'), domain => clone(values.get(domain.id))));
     if (this.validateDocument) {
@@ -238,7 +316,7 @@ export class ConfigService {
       for (const domain of this.domains.values()) this.assignRaw(resolved, domain, values.get(domain.id));
       try { this.validateDocument(resolved); } catch { throw new ConfigServiceError('config_invalid'); }
     }
-    return { raw: next, values };
+    return { raw: next, inputs,values };
   }
   private async read(): Promise<{ text: string; document: unknown } | null> {
     let handle: Awaited<ReturnType<typeof fs.open>>;
@@ -269,7 +347,7 @@ export class ConfigService {
           const result = candidate.apply(); if (result && typeof result.then === 'function') await result;
         }
         for (const candidate of prepared) this.publishCandidate(candidate,'configuration');
-        this.raw = parsed.raw; this.effective = parsed.values; this.diskText = disk?.text ?? stringify(parsed.raw,{aliasDuplicateObjects:false,lineWidth:0}); this.lastError = null;
+        this.raw = parsed.raw; this.effective = parsed.values; this.effectiveInputs=parsed.inputs; this.diskText = disk?.text ?? stringify(parsed.raw,{aliasDuplicateObjects:false,lineWidth:0}); this.lastError = null;
         for (const candidate of prepared) candidate.complete?.();
         return this.view();
       } catch (error) {
@@ -320,21 +398,32 @@ export class ConfigService {
   }
   private async commit(parsed: ReturnType<ConfigService['parse']>, observedText: string | null): Promise<ConfigServiceView> {
     const previous = this.state(), next = parsed.raw;
-    const changes = [...this.domains.values()].filter(domain => !isDeepStrictEqual(this.saved(domain.id), parsed.values.get(domain.id)) || !isDeepStrictEqual(this.effectiveCandidate(domain, parsed.values.get(domain.id), this.effective.get(domain.id)), this.effective.get(domain.id)));
+    const nextEffective=new Map<string,unknown>(),nextInputs=new Map<string,unknown>();
+    for(const domain of this.domains.values()){
+      const input=this.effectiveCandidate(domain,parsed.inputs.get(domain.id),this.effectiveInputs.get(domain.id));
+      nextInputs.set(domain.id,input);
+      const value=isDeepStrictEqual(input,this.effectiveInputs.get(domain.id))?this.effective.get(domain.id)
+        :isDeepStrictEqual(input,parsed.inputs.get(domain.id))?parsed.values.get(domain.id):this.parseDomainInput(domain,input);
+      nextEffective.set(domain.id,value);
+    }
+    if(nextEffective.has('plugins'))nextEffective.set('plugins',this.pluginValues(nextEffective.get('plugins'),domain=>clone(nextEffective.get(domain.id))));
+    if(this.validateDocument){
+      const resolved=clone(next);for(const domain of this.domains.values())this.assignRaw(resolved,domain,nextEffective.get(domain.id));
+      try{this.validateDocument(resolved);}catch{throw new ConfigServiceError('config_invalid');}
+    }
+    const changes = [...this.domains.values()].filter(domain => !isDeepStrictEqual(this.saved(domain.id), parsed.values.get(domain.id)) || !isDeepStrictEqual(nextEffective.get(domain.id), this.effective.get(domain.id)));
     if (!changes.length) {
       const revisionChanged = next.revision !== previous.revision; next.revision = previous.revision;
       if (revisionChanged) await this.persist(next, observedText); else this.diskText = observedText;
-      this.raw = next; this.lastError = null; this.notify(); return this.view();
+      this.raw = next; this.effectiveInputs=nextInputs; this.lastError = null; this.notify(); return this.view();
     }
     if (previous.revision === Number.MAX_SAFE_INTEGER) throw new ConfigServiceError('config_unavailable');
     next.revision = previous.revision + 1;
     const candidates: Array<{ id: string; value: unknown; candidate: PreparedConfigChange; applied: boolean; published: boolean }> = [];
-    const nextEffective = new Map(this.effective);
     let committed = false;
     try {
       for (const domain of changes) {
-        const value = this.effectiveCandidate(domain, parsed.values.get(domain.id), this.effective.get(domain.id));
-        nextEffective.set(domain.id, value);
+        const value = nextEffective.get(domain.id);
         if (!isDeepStrictEqual(value, this.effective.get(domain.id)) && domain.prepare) {
           let candidate: PreparedConfigChange;
           try { candidate = await domain.prepare(clone(value), clone(this.effective.get(domain.id))); }
@@ -369,7 +458,7 @@ export class ConfigService {
         this.raw = next; this.failedDomains = new Set(candidates.map(item => item.id)); this.lastError = { code: 'config_apply_failed' }; this.notify();
         throw new ConfigServiceError('config_apply_failed');
       }
-      this.raw = next; this.effective = nextEffective; this.failedDomains.clear(); this.lastError = null;
+      this.raw = next; this.effective = nextEffective; this.effectiveInputs=nextInputs; this.failedDomains.clear(); this.lastError = null;
       committed = true;
       for (const item of candidates) item.candidate.complete?.();
       this.notify();
@@ -407,6 +496,10 @@ export class ConfigService {
         for (const [id, patch] of Object.entries(patches)) {
           const domain = this.domains.get(id)!, saved = this.saved(id), value = replace ? clone(patch) : merge(this.domainRaw(state, domain) ?? domain.defaultValue, patch);
           if (id === 'plugins' && object(patch) && Object.hasOwn(patch, 'configuration')) throw new ConfigServiceError('config_invalid');
+          if(domain.rejectUnknownUpdates){
+            this.parseDomain(domain,value,state);
+            if(!knownPatchPaths(patch,domain.rawInputSchema??domain.schema,value))throw new ConfigServiceError('config_invalid',id);
+          }
           this.assignRaw(next, domain, preserveReferences(this.domainRaw(state, domain), saved, value));
         }
         return await this.commit(this.parse(next), disk?.text ?? null);
@@ -429,14 +522,32 @@ export class ConfigService {
     this.notify();
   }
   async startWatching(): Promise<void> {
-    this.state(); if (this.closing) throw new ConfigServiceError('config_unavailable');
+    const generation=this.watcherGeneration;
+    // Acquire ownership without yielding when no teardown is pending. A stop during a wait fences this start.
+    if(this.watcherStopping)await this.watcherStopping;
+    this.state(); if (this.closing||generation!==this.watcherGeneration) throw new ConfigServiceError('config_unavailable');
     if (this.watcher || this.options.watch === false) return;
-    this.watcher = watch(dirname(this.path), { depth: 0, ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } });
-    this.watcher.on('all', (_event, file) => { if (basename(file) === basename(this.path) && !this.closing) void this.reload().catch(() => {}); });
-    this.watcher.on('error', () => { this.lastError = { code: 'config_unavailable' }; this.notify(); });
-    await new Promise<void>((resolveReady, reject) => { this.watcher!.once('ready', resolveReady); this.watcher!.once('error', () => reject(new ConfigServiceError('config_unavailable'))); });
+    this.watcherStopping=undefined;
+    const watcher=this.watcher=watch(dirname(this.path), { depth: 0, ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } });
+    watcher.on('all', (_event, file) => { if (this.watcher===watcher && basename(file) === basename(this.path) && !this.closing) void this.reload().catch(() => {}); });
+    watcher.on('error', () => { if(this.watcher===watcher&&!this.closing){this.lastError = { code: 'config_unavailable' }; this.notify();} });
+    try {
+      await new Promise<void>((resolveReady, reject) => {
+        this.cancelWatcherReady=()=>reject(new ConfigServiceError('config_unavailable'));
+        watcher.once('ready', resolveReady); watcher.once('error', () => reject(new ConfigServiceError('config_unavailable')));
+      });
+    } finally { if(this.watcher===watcher)this.cancelWatcherReady=undefined; }
+    if(this.closing||this.watcher!==watcher)throw new ConfigServiceError('config_unavailable');
     // Changes between the initial read and watcher readiness cannot be represented by ignoreInitial events.
     await this.reload().catch(() => {});
+  }
+  /** Stop file admissions during plugin quiescence without retiring accepted transactions. */
+  stopWatching(): Promise<void> {
+    this.watcherGeneration++;
+    if(this.watcherStopping)return this.watcherStopping;
+    const watcher=this.watcher;this.watcher=undefined;
+    this.cancelWatcherReady?.();this.cancelWatcherReady=undefined;
+    return this.watcherStopping=Promise.resolve().then(()=>watcher?.close());
   }
   view(): ConfigServiceView {
     const state = this.state();
@@ -448,6 +559,9 @@ export class ConfigService {
     return { version: 1, revision: state.revision, configFile: this.path, domains, lastError: clone(this.lastError) };
   }
   close(): Promise<void> {
-    return this.closePromise ??= (async () => { this.closing = true; await this.watcher?.close(); await this.tail; this.listeners.clear(); })();
+    return this.closePromise ??= (async () => {
+      this.closing = true;
+      try{await this.stopWatching();}finally{await this.tail;this.listeners.clear();}
+    })();
   }
 }
