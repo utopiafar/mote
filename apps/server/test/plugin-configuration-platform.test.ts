@@ -97,6 +97,25 @@ test('declared plugin domains validate values, reject unknown schemas and publis
   await assert.rejects(domain.update({enabled:false},1),{code:'config_unavailable'});
 });
 
+test('hot plugin edits preserve saved restart-only fields and restart applies the pending value',async t=>{
+  const {platform,path}=await fixture(t),events:unknown[]=[];
+  const registration={id:'restartable',schema:z.object({cold:z.number().int(),hot:z.number().int()}).strict(),defaultValue:{cold:0,hot:0},
+    fields:[{path:'cold',effect:'restart' as const},{path:'hot',effect:'immediate' as const}]};
+  const domain=await platform.registerDomain(registration);domain.subscribe(value=>events.push(value));
+  await domain.update({cold:1},0);
+  assert.deepEqual(domain.snapshot(),{revision:1,value:{cold:0,hot:0}});
+  assert.deepEqual(platform.configService.saved('plugin.restartable'),{cold:1,hot:0});
+  await domain.update({hot:1},1);
+  assert.deepEqual(domain.snapshot(),{revision:2,value:{cold:0,hot:1}});
+  assert.deepEqual(platform.configService.saved('plugin.restartable'),{cold:1,hot:1});
+  assert.deepEqual(parse(await readFile(path,'utf8')).plugins.configuration.restartable,{cold:1,hot:1});
+  assert.deepEqual(events,[{revision:2,value:{cold:0,hot:1}}]);
+  await platform.close();
+  const restarted=createConfigurationPlatform({path,watch:false});t.after(()=>restarted.close());await restarted.prepare();
+  const reloaded=await restarted.registerDomain(registration);
+  assert.deepEqual(reloaded.snapshot(),{revision:2,value:{cold:1,hot:1}});
+});
+
 test('model selection fails closed until AGENT binding and returns no credentials or endpoint',async t=>{
   const {platform}=await fixture(t);
   assert.throws(()=>platform.selection.select('chat'),{code:'model_settings_unavailable'});

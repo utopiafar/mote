@@ -101,7 +101,9 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
       const unregister=await service.registerPlugin(registration),id=`plugin.${registration.id}`;
       if(closing){await unregister();throw new ConfigServiceError('config_unavailable');}
       registrations.set(id,unregister);
-      return domain(id,input=>registration.schema.parse(input),input=>registration.schema.parse({...service.current<Record<string,unknown>>(id),...input as object}));
+      // ConfigService merges partial patches into the saved document and validates the full candidate.
+      // Filling omitted keys from effective state here would overwrite pending restart-only values.
+      return domain(id,input=>registration.schema.parse(input));
     },
   };
 }
