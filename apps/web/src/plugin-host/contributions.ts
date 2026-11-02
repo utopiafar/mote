@@ -65,8 +65,13 @@ export class PluginContributionScope {
         // actually withdraws the scope's contributions from the registry.
         // Registry ownership keys on the instance so two instances of one
         // package coexist; the package ID stays on the snapshot for reporting
-        // and dependency semantics.
-        const fiber = await this.#host.install({ id: inst.instanceId, version: '1', components: [] }, [...inst.contributions]);
+        // and dependency semantics. Non-builtin contribution IDs are
+        // namespaced by instance so identical component IDs cannot collide
+        // in the global registry; builtin IDs stay bare by contract.
+        const qualified = inst.installationId.startsWith('builtin:')
+          ? inst.contributions
+          : inst.contributions.map(c => ({ ...c, entry: { ...c.entry, id: `${inst.instanceId}/${c.entry.id}` } }) as WebContribution);
+        const fiber = await this.#host.install({ id: inst.instanceId, version: '1', components: [] }, [...qualified]);
         this.defer(() => fiber.dispose());
       } else await isolated!.mount(this);
       this.#mounted = true;
@@ -80,12 +85,15 @@ export class PluginContributionScope {
 
   /** Revoke this scope's resources; sibling scopes are untouched. Async
    * cleanup is fully awaited — rollback completes only when resources,
-   * including the install fiber, have finished releasing. */
-  async rollback(): Promise<void> {
+   * including the install fiber, have finished releasing — and cleanup
+   * failures are returned, not swallowed. */
+  async rollback(): Promise<{ errors: unknown[] }> {
+    const errors: unknown[] = [];
     for (const dispose of this.#disposers.splice(0)) {
-      try { await dispose(); } catch { /* cleanup continues */ }
+      try { await dispose(); } catch (error) { errors.push(error); }
     }
     this.#mounted = false;
     if (this.lifetime.state !== 'disposed') this.lifetime.dispose();
+    return { errors };
   }
 }

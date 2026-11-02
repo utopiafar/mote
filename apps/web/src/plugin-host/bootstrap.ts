@@ -36,6 +36,18 @@ export async function bootstrapPlugins(
   return { reports, scopes };
 }
 
+/** Application teardown: roll back every owned scope so contributions,
+ * deferred resources and view lifetimes release through the same contract a
+ * failed mount uses. */
+export async function teardownPlugins(scopes: ReadonlyMap<string, PluginContributionScope>): Promise<{ errors: unknown[] }> {
+  const errors: unknown[] = [];
+  for (const scope of scopes.values()) {
+    const result = await scope.rollback();
+    errors.push(...result.errors);
+  }
+  return { errors };
+}
+
 /** A builtin instance declares its own snapshot: it is installed with this
  * build, desired-active, and trusted to run in the same React bundle. */
 export function builtinInstance(packageId: string, contributions: InstanceSnapshot['contributions']): InstanceSnapshot {
