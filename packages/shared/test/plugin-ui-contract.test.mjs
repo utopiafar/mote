@@ -39,7 +39,7 @@ test('duplicate contribution is rejected whole and keeps the existing entry', ()
   const existing = [parseUiContribution(JSON.parse(sample))];
   const duplicate = parseUiContribution(JSON.parse(sample));
   const result = acceptUiContribution(existing, duplicate);
-  assert.deepEqual(result, {accepted: false, reason: 'duplicate'});
+  assert.deepEqual(result, {accepted: false, reason: 'conflict'});
   assert.equal(existing.length, 1);
 });
 
@@ -48,7 +48,7 @@ test('unsupported data schema version is rejected without touching accepted set'
   const newer = parseUiContribution({...JSON.parse(sample), id: 'notes.reader.v2', data: {schemaRef: 'mote.note', schemaVersion: 9}});
   assert.deepEqual(
     acceptUiContribution(existing, newer, {'mote.note': [1]}),
-    {accepted: false, reason: 'schema_incompatible'});
+    {accepted: false, reason: 'api_incompatible'});
   assert.deepEqual(acceptUiContribution(existing, newer, {'mote.note': [1, 9]}), {accepted: true});
 });
 

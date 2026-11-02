@@ -1,12 +1,14 @@
 /** UI contribution descriptors are wire metadata projected from the single
  * canonical package Manifest (H03); they are not a second package schema and
  * carry no executable code, callbacks, SQL, URLs or reflected class names.
- * Availability literals mirror the frozen @mote/plugin-api contract values so
- * TS and Kotlin decoders share the same identity, revision and failure codes. */
+ * Availability types come from the frozen @mote/plugin-api contract so TS and
+ * Kotlin decoders share the same identity, revision and failure codes. */
+import type {Availability, HostKind, PluginErrorCode} from '@mote/plugin-api/contracts';
 import type {FeatureRequirement} from './feature-packs.js';
 
-export const pluginPlatforms = ['web', 'mac', 'android'] as const;
-export type PluginPlatform = typeof pluginPlatforms[number];
+/** Client platforms are the non-central host kinds of the frozen contract. */
+export type PluginPlatform = Exclude<HostKind, 'central'>;
+export const pluginPlatforms: readonly PluginPlatform[] = ['web', 'mac', 'android'];
 
 export const uiContributionKinds = [
   'page', 'collection', 'reader', 'home', 'settings', 'command', 'quick-entry',
@@ -14,19 +16,11 @@ export const uiContributionKinds = [
 ] as const;
 export type UiContributionKind = typeof uiContributionKinds[number];
 
-/** Mirrors the frozen contract: independent of installed/desired/verified and
- * of whether an upgrade requires a restart. OS grants are a separate fact and
- * never appear here. */
-export const uiAvailabilityStates = ['active', 'unavailable', 'requires-build', 'unsupported', 'revoked', 'waiting-device'] as const;
-export type UiAvailabilityState = typeof uiAvailabilityStates[number];
-export const uiUnavailableReasons = [
-  'dependency_unavailable', 'not_verified', 'requires_build', 'platform_unsupported',
-  'waiting_device', 'revoked', 'permission_denied', 'conflict', 'stale_scope', 'internal',
-] as const;
-export type UiUnavailableReason = typeof uiUnavailableReasons[number];
-export type UiAvailability =
-  | {readonly state: 'active'}
-  | {readonly state: Exclude<UiAvailabilityState, 'active'>; readonly reason: UiUnavailableReason};
+/** The frozen plugin-api Availability is the single contract: independent of
+ * installed/desired/verified and of whether an upgrade requires a restart.
+ * OS grants are a separate fact and never appear here. */
+export type UiAvailability = Availability;
+export type UiUnavailableReason = PluginErrorCode;
 
 /** What a contribution needs when its required native provider is absent.
  * A generic reader/essential-action fallback preserves readable material. */
@@ -77,7 +71,8 @@ export interface UiContributionDescriptor {
 
 export interface UiContributionRejection {
   readonly id: string;
-  readonly reason: 'duplicate' | 'schema_incompatible' | 'untrusted_content';
+  /** Frozen failure codes: duplicate → conflict, incompatible → api_incompatible. */
+  readonly reason: PluginErrorCode;
 }
 
 /** Deterministic admission of one candidate against already-accepted
@@ -90,10 +85,10 @@ export function acceptUiContribution(
   candidate: UiContributionDescriptor,
   supportedDataVersions: Readonly<Record<string, readonly number[]>> = {},
 ): {readonly accepted: true} | {readonly accepted: false; readonly reason: UiContributionRejection['reason']} {
-  for (const existing of accepted) if (existing.id === candidate.id) return {accepted: false, reason: 'duplicate'};
+  for (const existing of accepted) if (existing.id === candidate.id) return {accepted: false, reason: 'conflict'};
   if (candidate.data) {
     const versions = supportedDataVersions[candidate.data.schemaRef];
-    if (versions && !versions.includes(candidate.data.schemaVersion)) return {accepted: false, reason: 'schema_incompatible'};
+    if (versions && !versions.includes(candidate.data.schemaVersion)) return {accepted: false, reason: 'api_incompatible'};
   }
   return {accepted: true};
 }
