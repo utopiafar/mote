@@ -10,6 +10,7 @@ import {defaultDistribution,configurationProvider,storageProvider} from '../src/
 import {Store} from '../src/store.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import type {Config} from '../src/config.js';
+import {executionSettingsSchema} from '../src/execution-settings.js';
 
 function fixture(t:{after(fn:()=>void):void}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-bootstrap-fixture-'));
@@ -63,19 +64,22 @@ test('shutdown drains a held execution configuration transaction before stopping
   t.after(()=>node.app.close());
   const initial=(await node.app.inject({url:'/api/execution-settings',headers})).json();
   let entered!:()=>void,release!:()=>void;const running=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
-  node.configService.setHandler('execution',async()=>{entered();await gate;node.executionPlatform.refreshSettings({...node.featureServices.runtimeSettings.execution()});return {apply(){}};});
+  node.configService.setHandler('execution',async(next)=>{entered();await gate;return {apply(){},publish:()=>node.executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(next))};});
   const request=node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:initial.revision,interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2,memoryConcurrency:1}});
   await running;
   const closing=node.app.close();
   await new Promise(resolve=>setImmediate(resolve));
+  const quiescing=node.configurationPlatform.quiesce('shutdown');
+  await assert.rejects(node.configService.update('execution',{interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2,memoryConcurrency:1},initial.revision),{code:'config_unavailable'});
   release();
   const response=await request;assert.equal(response.statusCode,200,response.body);
-  await closing;
+  assert.equal(node.featureServices.agentGate.snapshot().limit,2,'the held execution refresh ran against a live platform');
+  await closing;await quiescing;
 });
 
 test('configuration drain failure does not abort shutdown cleanup',async t=>{
   const {config}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
-  node.configService.initialize=async()=>{throw new Error('generated configuration unavailable');};
+  (node.configurationPlatform as any).quiesce=async()=>{throw new Error('generated configuration unavailable');};
   await node.app.close();
   assert.equal(node.executor.closed,true);
   assert.throws(()=>node.store.stats());
@@ -83,7 +87,7 @@ test('configuration drain failure does not abort shutdown cleanup',async t=>{
 
 test('configuration drain failure is retained by enabled diagnostics',async t=>{
   const {config}=fixture(t),node=await buildApp({...config,logLevel:'error',diagnosticsEnabled:true},{agent,backgroundWorker:false});
-  node.configService.initialize=async()=>{throw new Error('generated configuration unavailable');};
+  (node.configurationPlatform as any).quiesce=async()=>{throw new Error('generated configuration unavailable');};
   await node.app.close();
   const events=node.diagnostics.events(0,100).items;
   assert.ok(events.some(event=>event.event==='config.shutdown_drain_failed'),'the shutdown drain failure must survive the diagnostics allowlist');

@@ -905,8 +905,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     // while execution/model consumers are still alive; a config-service failure
     // must not abort the remaining cleanup. Bootstrap retains final close.
     let configDrainFailure:unknown;
-    configurationPlatform.quiesce('shutdown');
-    try{await configurationPlatform.configService.initialize();}catch(error){configDrainFailure=error;}
+    try{await configurationPlatform.quiesce('shutdown');}catch(error){configDrainFailure=error;}
     try{featureHost.stop();
     // Polling/admission stops without retiring the runtime's Memory authority;
     // the runtime closes only after accepted engine work is interrupted/drained.
