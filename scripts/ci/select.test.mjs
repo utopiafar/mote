@@ -23,14 +23,14 @@ test('unknown inputs and locks conservatively select all light scopes and explai
 });
 test('new plugin API/host paths select their real consumers without all-light fallback', () => {
   const api = changed('packages/plugin-api/src/index.ts');
-  assert.deepEqual(api, { scopes: ['web', 'server', 'agent', 'shared', 'desktop', 'tooling'], fallback: [], serverGroups: ['all'] });
+  assert.deepEqual(api, { scopes: ['web', 'server', 'agent', 'shared', 'plugin-sdk', 'desktop', 'tooling'], fallback: [], serverGroups: ['all'] });
   const apiTasks = automaticTasks(api).tasks;
-  assert.deepEqual(apiTasks, ['architecture', 'tooling', 'shared', 'web', 'agent', 'desktop', 'server-build', 'server-1', 'server-2', 'server-3', 'server-4']);
+  assert.deepEqual(apiTasks, ['architecture', 'tooling', 'plugin-sdk', 'shared', 'web', 'agent', 'desktop', 'server-build', 'server-1', 'server-2', 'server-3', 'server-4']);
   assert.ok(!apiTasks.some(task => /benchmark|scale|recovery/.test(task)));
   const host = changed('packages/plugin-host/src/host.ts');
-  assert.deepEqual(host, { scopes: ['server', 'tooling'], fallback: [], serverGroups: ['all'] });
+  assert.deepEqual(host, { scopes: ['server', 'plugin-sdk', 'tooling'], fallback: [], serverGroups: ['all'] });
   const hostTasks = automaticTasks(host).tasks;
-  assert.deepEqual(hostTasks, ['architecture', 'tooling', 'server-build', 'server-1', 'server-2', 'server-3', 'server-4']);
+  assert.deepEqual(hostTasks, ['architecture', 'tooling', 'plugin-sdk', 'server-build', 'server-1', 'server-2', 'server-3', 'server-4']);
   assert.ok(!hostTasks.some(task => /benchmark|scale|recovery/.test(task)));
   const sdk = changed('packages/plugin-sdk/src/browser.ts');
   assert.deepEqual(sdk, { scopes: ['plugin-sdk'], fallback: [] });

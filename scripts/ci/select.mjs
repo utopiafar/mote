@@ -48,8 +48,8 @@ export function selectScopes(paths) {
     // Public plugin API/host changes follow their real workspace consumers:
     // Shared/Agent/Web/Desktop import or depend on the API; the host is consumed
     // by Central. Keep server shards and tooling without Android/heavy fallback.
-    if (path.startsWith('packages/plugin-api/')) { add('shared', 'agent', 'server', 'web', 'desktop', 'tooling'); broadServer = true; continue; }
-    if (path.startsWith('packages/plugin-host/')) { add('server', 'tooling'); broadServer = true; continue; }
+    if (path.startsWith('packages/plugin-api/')) { add('shared', 'agent', 'server', 'web', 'desktop', 'plugin-sdk', 'tooling'); broadServer = true; continue; }
+    if (path.startsWith('packages/plugin-host/')) { add('server', 'plugin-sdk', 'tooling'); broadServer = true; continue; }
     // The SDK has its own light build/package-boundary task; it is not a current
     // desktop/Android runtime consumer and must not fall back to tooling-only.
     if (path.startsWith('packages/plugin-sdk/')) { add('plugin-sdk'); continue; }
