@@ -11,6 +11,8 @@ import org.json.JSONObject
 /** Localizes authored UI messages only. Arguments and captured content remain verbatim. */
 object MoteI18n {
     val supported = listOf("zh-CN", "en", "ja", "fr", "de", "es", "ru")
+    /** Namespaced plugin-authored catalogs, resolved at the current runtime locale. */
+    internal val pluginCatalogs = PluginI18nRegistry()
     @Volatile private var application: Context? = null
     private val catalogs = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
     private val statusTranslations = java.util.concurrent.ConcurrentHashMap<Set<String>, Map<String, Set<String>>>()
