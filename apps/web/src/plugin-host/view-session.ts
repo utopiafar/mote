@@ -5,7 +5,7 @@
 import {
   ViewLifetime, draftSurvivesTransition, resolveWriteAck,
   type DraftScope, type SaveOutcome, type WriteAck,
-} from '../../../../packages/shared/src/plugin-view-lifetime.js';
+} from '@mote/shared/plugin-view-lifetime';
 
 export interface ViewSnapshot {readonly scroll?: number; readonly filter?: unknown; readonly more?: unknown; readonly focus?: string}
 export interface DraftWriter {
@@ -56,8 +56,14 @@ export class PluginViewSession {
   }
 
   /** Poll while visible; suspend clears the interval so no new read fires. */
-  poll(execute: (signal: AbortSignal) => Promise<unknown>, apply: (value: unknown) => void, intervalMs: number): () => void {
-    const entry = {handle: null as unknown, intervalMs, tick: () => { void this.requestRead(execute, apply); }};
+  poll(execute: (signal: AbortSignal) => Promise<unknown>, apply: (value: unknown) => void, intervalMs: number, onError?: (error: unknown) => void): () => void {
+    const entry = {handle: null as unknown, intervalMs, tick: () => {
+      void this.requestRead(execute, apply).catch(error => {
+        // Lifecycle cancellation is expected and quiet; other failures go to
+        // the explicit error path instead of floating as unhandled rejections.
+        if (!this.lifetime.viewSignal.aborted) onError?.(error);
+      });
+    }};
     const start = () => { if (this.lifetime.state === 'visible' && entry.handle === null) entry.handle = this.#scheduler.schedule(entry.tick, intervalMs); };
     this.#polls.add(entry);
     start();
@@ -91,17 +97,37 @@ export class PluginViewSession {
   }
   draft(key: string): unknown | null { return this.#draftMap().get(key)?.value ?? null; }
 
-  /** Flush dirty drafts through the host writer. Any failure is an explicit
-   * outcome: the caller must show the failure or block the lossy transition. */
+  /** Persisted draft addresses are qualified by scope and owner so two
+   * owners never overwrite the same storage slot. */
+  #storageKey(key: string): string { return `${this.#scope}:${this.#ownerKey}:${key}`; }
+
+  /** Flush dirty drafts through the host writer, repeating until the current
+   * owner's entries are clean: an edit racing a pending save is never marked
+   * persisted. Any failure is an explicit outcome: the caller must show the
+   * failure or block the lossy transition. */
   async #flushDrafts(): Promise<SaveOutcome> {
-    for (const [key, draft] of this.#draftMap()) {
-      if (!draft.dirty) continue;
-      const outcome = await this.#writer.save(key, draft.value);
-      if (!outcome.ok) { this.#saveFailure = true; return outcome; }
-      draft.dirty = false;
+    for (;;) {
+      const dirty = [...this.#draftMap()].filter(([, draft]) => draft.dirty);
+      if (dirty.length === 0) { this.#saveFailure = false; return {ok: true}; }
+      for (const [key, draft] of dirty) {
+        const outcome = await this.#writer.save(this.#storageKey(key), draft.value);
+        if (!outcome.ok) { this.#saveFailure = true; return outcome; }
+        draft.dirty = false;
+      }
     }
-    this.#saveFailure = false;
-    return {ok: true};
+  }
+
+  /** Hydrate a draft persisted under this owner's partition. A staged unsaved
+   * value always wins over the in-flight load. */
+  async loadDraft(key: string): Promise<unknown | null> {
+    const staged = this.#draftMap().get(key);
+    if (staged?.dirty) return staged.value;
+    const persisted = await this.#writer.load(this.#storageKey(key));
+    if (persisted !== null && persisted !== undefined) {
+      if (!staged) this.#draftMap().set(key, {scope: this.#scope, value: persisted, dirty: false});
+      return persisted;
+    }
+    return staged?.value ?? null;
   }
 
   /** Suspend ordering: save drafts, release reads, then hide. A failed save
@@ -121,16 +147,20 @@ export class PluginViewSession {
   }
 
   /** Owner switch: save this owner's drafts first (failure blocks), then clear
-   * display state and grants; drafts stay partitioned under their own owner. */
+   * display state, grants and every registered poll (owner-captured callbacks
+   * must be re-registered by the new owner). Drafts stay partitioned under
+   * their own owner. A suspended view stays suspended; only resume() shows. */
   async switchOwner(nextOwnerKey: string): Promise<SaveOutcome> {
     const outcome = await this.#flushDrafts();
     if (!outcome.ok) return outcome;
     for (const map of this.#drafts.values())
       for (const [key, draft] of map) if (!draftSurvivesTransition(draft.scope, 'owner-switch')) map.delete(key);
+    for (const poll of [...this.#polls]) { this.#stopPoll(poll); this.#polls.delete(poll); }
     this.#snapshots.clear();
     this.#ownerKey = nextOwnerKey;
+    const wasVisible = this.lifetime.state === 'visible';
     this.lifetime.suspend();
-    this.lifetime.show();
+    if (wasVisible) this.lifetime.show();
     return {ok: true};
   }
 

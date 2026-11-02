@@ -116,3 +116,76 @@ test('unknown write ack holds request identity without replay', () => {
   assert.equal(session.pendingWrites.size, 0);
   assert.equal(session.resolveWrite('req-2', 'nack'), 'fail');
 });
+
+test('persisted drafts are owner-qualified and hydrate across sessions', async () => {
+  const writer = memoryWriter();
+  const a1 = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer});
+  a1.lifetime.show();
+  a1.saveDraft('note-draft', {text: 'A'});
+  assert.deepEqual(await a1.suspend(), {ok: true});
+  const a2 = new PluginViewSession({ownerKey: 'owner-a', scope: 'owner', writer});
+  a2.lifetime.show();
+  assert.deepEqual(await a2.loadDraft('note-draft'), {text: 'A'}, 'recreated session hydrates persisted draft');
+  const b = new PluginViewSession({ownerKey: 'owner-b', scope: 'owner', writer});
+  b.lifetime.show();
+  assert.equal(await b.loadDraft('note-draft'), null, 'other owner cannot read the partition');
+  b.saveDraft('note-draft', {text: 'B'});
+  assert.deepEqual(await b.suspend(), {ok: true});
+  assert.deepEqual(await a2.loadDraft('note-draft'), {text: 'A'}, 'B never overwrote A');
+});
+
+test('suspended view stays suspended across owner switch and polls are revoked', async () => {
+  const {scheduler, fire, pending} = manualScheduler();
+  const session = new PluginViewSession({ownerKey: 'owner-a', writer: memoryWriter(), scheduler});
+  session.lifetime.show();
+  let applied = 0;
+  session.poll(() => Promise.resolve('old-owner-data'), () => { applied++; }, 50);
+  assert.equal(pending(), 1);
+  assert.deepEqual(await session.suspend(), {ok: true});
+  assert.deepEqual(await session.switchOwner('owner-b'), {ok: true});
+  assert.equal(session.lifetime.state, 'suspended', 'hidden view never reactivates on switch');
+  assert.equal(pending(), 0, 'old-owner polls are revoked, not just paused');
+  fire();
+  await Promise.resolve();
+  assert.equal(applied, 0);
+  assert.equal(await session.requestRead(() => Promise.resolve('x'), () => { applied++; }), 'skipped');
+});
+
+test('edits racing a pending draft save are flushed before suspend resolves', async () => {
+  const gate = deferred<void>();
+  const saved: Array<unknown> = [];
+  const writer: DraftWriter = {
+    save: async (_key, value) => { await gate.promise; saved.push(value); return {ok: true as const}; },
+    load: async () => null, clear: async () => {},
+  };
+  const session = new PluginViewSession({ownerKey: 'owner-a', writer});
+  session.lifetime.show();
+  session.saveDraft('note', {text: 'first'});
+  const suspending = session.suspend();
+  await Promise.resolve();
+  session.saveDraft('note', {text: 'latest'});
+  gate.resolve();
+  assert.deepEqual(await suspending, {ok: true});
+  assert.deepEqual(saved.at(-1), {text: 'latest'}, 'the replacement is persisted, not the stale value');
+});
+
+test('poll cancellations are quiet while other failures reach the error path', async () => {
+  const {scheduler, fire} = manualScheduler();
+  const errors: unknown[] = [];
+  const session = new PluginViewSession({ownerKey: 'owner-a', writer: memoryWriter(), scheduler});
+  session.lifetime.show();
+  const failing = deferred<unknown>();
+  session.poll(() => failing.promise, () => {}, 10, error => errors.push(error));
+  fire();
+  failing.reject(new Error('network down'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(errors.length, 1);
+  // Abort-driven rejection on suspend does not reach the error path.
+  const aborted = deferred<unknown>();
+  session.poll(() => aborted.promise, () => {}, 10, error => errors.push(error));
+  fire();
+  await session.suspend();
+  aborted.reject(new DOMException('cancelled', 'AbortError'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(errors.length, 1);
+});
