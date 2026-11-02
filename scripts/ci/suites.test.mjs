@@ -207,3 +207,16 @@ test('Server contracts build the runnable Central release before update and roll
     assert.ok(run > build('@mote/server'), `${consumer} must run after the selected Server release is built`);
   }
 });
+
+
+test('SDK package validation has a dedicated light task with real build and external-package checks', () => {
+  assert.deepEqual(taskPlan('plugin-sdk'), [
+    {command:'npm',args:['run','build','-w','@mote/plugin-sdk']},
+    {command:process.execPath,args:['--test','packages/plugin-sdk/test/package-boundary.test.mjs']},
+  ]);
+  const sdk=JSON.parse(readFileSync('packages/plugin-sdk/package.json','utf8'));
+  const host=JSON.parse(readFileSync('packages/plugin-host/package.json','utf8'));
+  assert.equal(sdk.scripts.prebuild,'npm run build -w @mote/plugin-host');
+  assert.equal(host.scripts.prebuild,'npm run build -w @mote/plugin-api');
+  assert.ok(!taskPlan('tooling').some(step=>step.args.some(arg=>arg.includes('packages/plugin-sdk/')||arg==='@mote/plugin-sdk')));
+});

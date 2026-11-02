@@ -42,6 +42,17 @@ export function affectedComponents(paths, graph = workspaceGraph()) {
       mark(groups); result.tooling = true; continue;
     }
     if (path.startsWith('apps/android/')) { mark(['android']); continue; }
+    // The public API/host packages still follow their real workspace dependency
+    // edges (Shared/Agent consume the API and Desktop consumes Shared). Only the
+    // author-facing SDK has no current app consumer and remains tooling-only.
+    if (path.startsWith('packages/plugin-api/') || path.startsWith('packages/plugin-host/')) {
+      const pluginWorkspace = graph.find(entry => path.startsWith(entry.path + '/'));
+      if (pluginWorkspace) mark(groups.filter(group => roots[group].some(root => uses(root, pluginWorkspace.name))));
+      else mark(path.startsWith('packages/plugin-api/') ? ['central', 'desktop'] : ['central']);
+      result.tooling = true;
+      continue;
+    }
+    if (path.startsWith('packages/plugin-sdk/')) { result.tooling = true; continue; }
     const workspace = graph.find(entry => path.startsWith(entry.path + '/'));
     if (workspace) {
       mark(groups.filter(group => roots[group].some(root => uses(root, workspace.name))));
