@@ -1,6 +1,6 @@
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -15,6 +15,12 @@ import {MaterialStore} from '../src/materials.js';
 import {SourceStore} from '../src/sources.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {codingSourcePlugin} from '../src/coding-source-plugin.js';
+import {ImportStore} from '../src/imports.js';
+import {ArchivedFileStore} from '../src/archived-files.js';
+import {FileStore} from '../src/files.js';
+import {FileProcessing} from '../src/file-processing.js';
+import {sha256} from '../src/store.js';
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import {centralServices} from '../src/plugins/central-contracts.js';
@@ -126,4 +132,88 @@ test('a failed H04 handler prepare releases earlier registrations without deleti
   assert.throws(()=>f.platform.submission.enqueue('generated:orphan',base.kind,{}),{statusCode:503});
   assert.equal(f.platform.assembly.executor.list().items.length,0);
   await f.install([base]);const id=f.platform.submission.enqueue('generated:reinstalled',base.kind,{revision:1});await f.platform.submission.drain([id]);assert.equal(f.platform.receipt(id).step?.state,'succeeded');assert.equal(f.store.db.isOpen,true);
+});
+
+
+test('accepted real import preparation keeps its preview and blocked confirmation child during quiesce',async t=>{
+  const f=await fixture(t),started=deferred(),release=deferred(),engine=f.platform.assembly.executor;
+  const imports=new ImportStore(f.store,new ArchivedFileStore(f.store),new SourceStore(f.store),{executor:engine,prepare:async({workspace,inputPaths})=>{
+    started.resolve();await release.promise;
+    writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:{externalId:'generated-quiesce-import',revision:'1',observedAt:'2026-11-03T01:00:00Z',kind:'file',layer:'original',text:'Generated accepted import'},evidencePaths:[inputPaths[0]],attachments:[]})+'\n');return {summary:'Generated accepted preview'};
+  }});
+  f.beforeClose(()=>imports.stop());t.after(()=>release.resolve());
+  const job=await imports.create({processing:'preview',files:[{name:'generated.unknown',dataBase64:Buffer.from('Generated original bytes').toString('base64')}]});
+  const preparing=imports.prepare(job.id);await started.promise;f.platform.quiesce();release.resolve();const preview=await preparing;
+  assert.equal(preview.status,'awaiting_confirmation');assert.equal(preview.preview?.count,1);
+  const phases=engine.list({operationId:'import:'+job.id}).items;assert.equal(phases.find(step=>step.kind==='imports.prepare')?.state,'succeeded');
+  const confirmation=phases.find(step=>step.kind==='imports.commit');assert.ok(confirmation);assert.equal(confirmation.state,'blocked');assert.equal(confirmation.error,'awaiting_confirmation');assert.equal(confirmation.attempts,0);assert.equal(f.store.stats().captures,0);
+});
+
+
+test('an accepted terminal projection persists its child during quiesce without lending admission to late callbacks',async t=>{
+  const f=await fixture(t),engine=f.platform.assembly.executor,started=deferred(),release=deferred(),late=deferred();let child='',lateAttempt:Promise<boolean>|undefined,calls=0;
+  t.after(()=>{release.resolve();late.resolve();});f.store.db.exec('CREATE TABLE generated_projection_outputs(id TEXT PRIMARY KEY)');
+  const next={...base,kind:'generated.projected-child',pool:'generated.projected-child',execute:async()=>{calls++;return null;}};
+  const parent:ExecutionHandler={...base,execute:async step=>{lateAttempt=late.promise.then(()=>{try{engine.enqueue('generated:detached',next.kind,{});return false;}catch{return true;}});started.resolve();await release.promise;return step.id;},
+    commit:step=>{f.store.db.prepare('INSERT INTO generated_projection_outputs VALUES(?)').run(step.id);},
+    project:step=>{if(step.state==='succeeded')child=engine.enqueue(step.operationId,next.kind,{parent:step.id},{dependencies:[step.id]});}};
+  await f.install([parent,next]);const id=f.platform.submission.enqueue('generated:projection',parent.kind,{}),run=f.platform.submission.drain([id]);await started.promise;
+  const backlog=f.platform.submission.enqueue('generated:backlog',next.kind,{backlog:true});
+  f.platform.quiesce();assert.throws(()=>engine.enqueue('generated:new-external',next.kind,{}),{statusCode:503});assert.throws(()=>engine.register({...next,kind:'generated.new-external'}),{statusCode:503});release.resolve();await run;
+  assert.equal(engine.get(id)?.state,'succeeded');assert.ok(child);assert.equal(engine.get(child)?.state,'waiting');assert.equal(engine.get(backlog)?.state,'waiting');assert.equal(calls,0);
+  late.resolve();assert.equal(await lateAttempt,true);assert.equal(engine.list({operationId:'generated:detached'}).items.length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM generated_projection_outputs').get()!.n,1);
+  await f.restart();await f.install([next]);await f.platform.submission.drain([child,backlog]);assert.equal(calls,2);assert.equal(f.platform.receipt(child).step?.state,'succeeded');
+});
+
+
+test('an accepted replay program durably yields its child during quiesce and resumes the same artifact once',async t=>{
+  const f=await fixture(t),started=deferred(),release=deferred();let calls=0;const child='generated-replay-child';t.after(()=>release.resolve());
+  f.store.db.exec('CREATE TABLE generated_replay_outputs(id TEXT PRIMARY KEY,value TEXT)');
+  const parent:ExecutionHandler={...base,execute:async(step,signal)=>{
+    started.resolve();await release.promise;
+    return f.platform.assembly.executor.runStep({id:child,operationId:step.operationId,kind:'generated.replay',pool:'generated.replay',input:{parent:step.id},signal,validate:()=>true,
+      execute:async()=>{calls++;return 'Generated replay artifact';},commit:value=>{f.store.db.prepare('INSERT INTO generated_replay_outputs VALUES(?,?)').run(child,String(value));},
+      read:()=>{const row=f.store.db.prepare('SELECT value FROM generated_replay_outputs WHERE id=?').get(child);return row?String(row.value):undefined;},project:()=>{}});
+  },commit:(step,value)=>{f.store.db.prepare('INSERT INTO generated_replay_outputs VALUES(?,?)').run(step.id,String(value));}};
+  await f.install([parent]);const id=f.platform.submission.enqueue('generated:replay',parent.kind,{}),run=f.platform.submission.drain([id]);await started.promise;f.platform.quiesce();release.resolve();await run;
+  assert.equal(f.platform.receipt(id).step?.state,'waiting');assert.equal(f.platform.receipt(id).step?.error,'step_pending');assert.equal(f.platform.receipt(id).step?.attempts,0);assert.equal(f.platform.receipt(child).step?.state,'waiting');assert.equal(calls,0);
+  await f.restart();await f.install([parent]);f.advance(2);await f.platform.submission.drain([id]);await f.platform.assembly.executor.drain([child]);f.advance(2);await f.platform.submission.drain([id]);
+  assert.equal(f.platform.receipt(id).step?.state,'succeeded');assert.equal(f.platform.receipt(child).step?.state,'succeeded');assert.equal(calls,1);assert.equal(f.store.db.prepare('SELECT count(*) n FROM generated_replay_outputs').get()!.n,2);
+});
+
+
+for(const mode of ['queued','after-preparation','stop'] as const)test(`accepted handler ${mode} gate work survives quiesce or remains recoverable on stop`,async t=>{
+  const f=await fixture(t),occupied=deferred(),release=deferred(),started=deferred(),prepared=deferred();let commits=0,calls=0;t.after(()=>{release.resolve();prepared.resolve();});
+  f.platform.refreshSettings({...f.settings.execution(),agentConcurrency:1});const gate=f.platform.assembly.agentGate;
+  const holding=gate.run(async()=>{occupied.resolve();await release.promise;});await occupied.promise;
+  await f.install([{...base,execute:async(_step,signal,grant)=>{started.resolve();if(mode==='after-preparation')await prepared.promise;return gate.run(async()=>{signal.throwIfAborted();grant.assert();calls++;return 'Generated admitted gate result';},signal);},commit:()=>{commits++;}}]);
+  const id=f.platform.submission.enqueue('generated:gate-quiesce',base.kind,{}),run=f.platform.submission.drain([id]);await started.promise;
+  if(mode!=='after-preparation')assert.equal(gate.snapshot().waiting,1);
+  f.platform.quiesce();
+  if(mode==='stop'){
+    await f.platform.stop('restart');await run;assert.equal(f.store.db.isOpen,true);assert.throws(()=>f.platform.assembly,{statusCode:503});
+  }else{
+    prepared.resolve();release.resolve();await holding;await run;assert.equal(f.platform.receipt(id).step?.state,'succeeded');assert.equal(f.platform.receipt(id).step?.attempts,1);assert.equal(commits,1);assert.equal(calls,1);
+  }
+  if(mode==='stop'){
+    release.resolve();await holding;await f.restart();assert.equal(f.platform.receipt(id).step?.state,'waiting');assert.equal(f.platform.receipt(id).step?.attempts,0);
+    await f.install([{...base,execute:async()=>{calls++;return null;},commit:()=>{commits++;}}]);await f.platform.submission.drain([id]);assert.equal(f.platform.receipt(id).step?.state,'succeeded');assert.equal(commits,1);assert.equal(calls,1);
+  }
+});
+
+
+test('actual text FileProcessing preserves its successful artifact and summary projection across quiesce',async t=>{
+  const f=await fixture(t),engine=f.platform.assembly.executor,started=deferred(),release=deferred(),sources=new SourceStore(f.store),files=new FileStore(f.store,sources);
+  const register=engine.register.bind(engine);let processing:FileProcessing;
+  engine.register=handler=>register({...handler,execute:async(step,signal,grant)=>{const result=await handler.execute(step,signal,grant);if(handler.kind==='files.pipeline'){started.resolve();await release.promise;}return result;}});
+  try{processing=new FileProcessing(files,undefined,undefined,{executor:engine});}finally{engine.register=register;}
+  f.beforeClose(async()=>{release.resolve();await processing.close();await files.close();});
+  await processing.runtime.ready;const settings={...processing.view().settings,enabled:true,summarize:false};processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});
+  sources.register({id:'generated-processing',name:'Generated processing',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'archive'});
+  const bytes=Buffer.from('Generated actual text processing artifact.'),upload=files.begin({sourceId:'generated-processing',item:{externalId:'generated.txt',revision:'1',observedAt:'2026-11-03T01:00:00Z',title:'Generated text',kind:'file',layer:'original',text:'',mimeType:'text/plain',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});files.part(upload.uploadId,0,bytes,()=>{});const ack=await files.commit(upload.uploadId,()=>{});
+  // tick's next prepare pass is external admission and remains fenced. The
+  // already-accepted pipeline transaction and its projection must still finish.
+  const stoppedPump=assert.rejects(processing.tick(),{statusCode:503});await started.promise;f.platform.quiesce();release.resolve();await stoppedPump;
+  const steps=engine.list({operationId:'file:'+ack.id}).items;assert.equal(steps.find(step=>step.kind==='files.pipeline')?.state,'succeeded');const summary=steps.find(step=>step.kind==='files.summary');assert.ok(summary);assert.equal(summary.attempts,0);assert.equal(summary.state,'waiting');assert.equal(summary.error,undefined);
+  assert.equal(files.detail(ack.id).job.state,'succeeded');assert.match(JSON.stringify(files.chunks(ack.id)),/Generated actual text processing artifact/);assert.equal(f.store.db.isTransaction,false);
 });

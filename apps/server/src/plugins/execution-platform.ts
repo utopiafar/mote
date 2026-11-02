@@ -94,7 +94,8 @@ export function createExecutionPlatform(dependencies:ExecutionPlatformDependenci
   }
   function quiesce(_reason?:StopReason){
     if(phase!=='active')return;phase='quiescing';executor!.quiesce();for(const binding of bindings)binding.quiesce();
-    for(const gate of Object.values(gates!))gate.close();
+    // Gates are private to trusted assembly. Accepted leases may still be queued
+    // here or request a later stage; actual stop revokes leases before closing gates.
   }
   function close(){
     if(closing)return closing;quiesce();phase='stopped';
