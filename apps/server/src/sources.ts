@@ -10,43 +10,65 @@ import {SourceContextStore} from './source-context.js';
 const uuid=(text:string)=>{const h=createHash('sha256').update(text).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;};
 type Head={capture_id:string;observed_at:string;deleted:number};
 type Version={capture_id:string;hash:string};
+export type SourceRegistration=z.infer<typeof sourceConnectionSchema>;
 export class SourceStore {
   private pending=new Map<string,Promise<unknown>>();
+  private accepting=true;
+  private stopped=false;
+  private closing?:Promise<void>;
   readonly capabilities=sourceCapabilities.clone();
   readonly contexts:SourceContextStore;
   constructor(public store:Store,public pipelines?:SourcePipelineRuntime,private readonly memoryInputs:MemoryInputAuthorization|undefined=pipelines?.memoryWork.inputs){this.contexts=new SourceContextStore(store);}
+  usesMemoryInputs(inputs:MemoryInputAuthorization){return this.memoryInputs===inputs;}
+  private assertLive(){if(this.stopped)throw new StoreError('Source repository is unavailable',503);}
+  private assertAccepting(){this.assertLive();if(!this.accepting)throw new StoreError('Source repository is quiescing',503);}
+  start(){this.assertLive();this.accepting=true;}
+  quiesce(){this.accepting=false;return this.drain();}
+  private async drain(){await Promise.allSettled([...this.pending.values()]);}
+  /** Fences this repository, never closes its borrowed database or runtime. */
+  close(){this.stopped=true;this.accepting=false;return this.closing??=this.drain();}
+  private control<T>(write:()=>T,authorize?:()=>void):T{
+    this.assertAccepting();const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{this.assertLive();authorize?.();const result=write();this.assertLive();authorize?.();if(own)db.exec('COMMIT');return result;}
+    catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+  }
   listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>this.present(JSON.parse(r.json)));}
   getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return this.present(JSON.parse(row.json));}
-  register(raw:unknown):SourceConnection {
+  register(raw:unknown,authorize?:(source:SourceRegistration)=>void):SourceConnection {
+    this.assertAccepting();
     const input=sourceConnectionSchema.parse(raw),row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.id) as {json:string}|undefined,existing=row?this.present(JSON.parse(row.json)):undefined;
+    return this.control(()=>{
     if(input.sourceContext)throw new StoreError('Source context is owner control plane metadata; use the source context API',403);
     if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
     const now=new Date().toISOString(),value={...input,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
+    },()=>authorize?.(input));
   }
-  updateContext(id:string,patch:{expectedVersion:number;description:string}){
+  updateContext(id:string,patch:{expectedVersion:number;description:string},authorize?:()=>void){
+    this.assertAccepting();
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{
-      const result=this.contexts.set(id,patch);
+      this.assertLive();authorize?.();const result=this.contexts.set(id,patch);
       if(result.changed)(this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);
-      if(own)db.exec('COMMIT');return result.snapshot;
+      this.assertLive();authorize?.();if(own)db.exec('COMMIT');return result.snapshot;
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null}):SourceConnection {
+  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null},authorize?:(source:SourceConnection)=>void):SourceConnection {
+    this.assertAccepting();
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch,...('ownerRelation' in patch?{ownerRelation:patch.ownerRelation??undefined,ownerRelationVersion:(existing.ownerRelationVersion??0)+(patch.ownerRelation!==(existing.ownerRelation??null)?1:0)||undefined}:{})});
     if(input.enabled&&!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
     if(growth>0)this.store.reserveMetadata(growth);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-    try{this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
+    try{this.assertLive();authorize?.(existing);this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
       (this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);
-      if(own)db.exec('COMMIT');return this.present(value);
+      this.assertLive();authorize?.(value);if(own)db.exec('COMMIT');return this.present(value);
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:{...this.capabilities.describe(value),...(value.kind==='coding-agent'?{codingEvidenceFieldsVersion:1 as const}:{})}}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
   private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
-  reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
+  reportStatus(id:string,status:NonNullable<SourceConnection['status']>){return this.control(()=>{const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});});}
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
     const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,metadata:p.metadata,document:p.document,captureId:c.id,receivedAt:c.receivedAt,current};
   }
@@ -65,9 +87,11 @@ export class SourceStore {
     try{return await task;}finally{if(this.pending.get(sourceId)===task)this.pending.delete(sourceId);}
   }
   async upsert(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
+    this.assertAccepting();
     return (await this.serialized(sourceId,()=>this.commitBatch(sourceId,[sourceItemSchema.parse(raw)],authorize,transaction))).receipts[0];
   }
   async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
+    this.assertAccepting();
     const items=z.array(sourceItemSchema).min(1).max(500).parse(raw);
     const identities=new Set<string>();
     for(const item of items){const key=JSON.stringify([item.externalId,item.revision]);if(identities.has(key))throw new StoreError('Batch contains duplicate source revisions',409);identities.add(key);}
@@ -75,7 +99,7 @@ export class SourceStore {
   }
   private async commitBatch(sourceId:string,items:SourceItem[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
     const source=this.getSource(sourceId);
-    const validate=()=>{authorize?.();const current=this.getSource(sourceId);if(!current.enabled)throw new StoreError('Source is paused',409);for(const item of items){
+    const validate=()=>{this.assertLive();authorize?.();const current=this.getSource(sourceId);if(!current.enabled)throw new StoreError('Source is paused',409);for(const item of items){
       if(Date.parse(item.observedAt)>Date.now()+86400000)throw new StoreError('Observation cannot be in the future');
       if(current.retention==='reference'&&item.layer!=='reference')throw new StoreError('This source accepts references only',409);
     }};validate();

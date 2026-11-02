@@ -63,8 +63,8 @@ export function readCaptureContext(store:Store,sources:SourceStore,deviceId:stri
   if(!matchingSource(store,source.id,source.deviceId,source.platform))throw new StoreError('Capture context source identity changed',409);
   return sources.contexts.current(source.id);
 }
-export function updateCaptureContext(store:Store,sources:SourceStore,deviceId:string,channel:Channel,patch:{expectedVersion:number;description:string}):SourceContextSnapshot {
+export function updateCaptureContext(store:Store,sources:SourceStore,deviceId:string,channel:Channel,patch:{expectedVersion:number;description:string},authorize?:()=>void):SourceContextSnapshot {
   const source=sourceIdentity(store,deviceId,channel),db=store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-  try{sources.register(source);const result=sources.updateContext(source.id,patch);if(own)db.exec('COMMIT');return result;}
+  try{authorize?.();sources.register(source,()=>authorize?.());const result=sources.updateContext(source.id,patch,authorize);authorize?.();if(own)db.exec('COMMIT');return result;}
   catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
 }
