@@ -40,7 +40,7 @@ test('a private app import is rejected by the SDK architecture boundary', () => 
 test('an external project consumes the packed SDK tarball and browser bundle without private paths', async t => {
   const temporary = mkdtempSync(join(tmpdir(), 'mote-plugin-sdk-external-'));
   t.after(() => execFileSync('rm', ['-rf', temporary]));
-  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temporary], packageRoot));
+  const packed = JSON.parse(run(process.execPath, [join(packageRoot, 'scripts/pack.mjs'), '--json', '--pack-destination', temporary], packageRoot));
   const tarball = join(temporary, String(packed[0].filename));
   const external = join(temporary, 'external');
   mkdirSync(external);
