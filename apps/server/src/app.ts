@@ -248,10 +248,16 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const unsubscribeMedia=configService.onChange(()=>{try{if(mediaConfigurationIdentity()!==initialMediaConfiguration)mediaPreparation.invalidate();}catch{mediaPreparation.invalidate();}});
   resources.beforeClose(()=>mediaPreparation.close());resources.defer(unsubscribeMedia);
   if(dependencies?.backgroundWorker)mediaPreparation.resume();
-  const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
+  const admittedUsageFactory=(route?:{mode:()=>AgentRunFinalizer|undefined;host?:()=>ReturnType<typeof observabilityAssembly.admittedUsage>|undefined})=>(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
-    const accounting={agentStarted:()=>{agentStarted=true;},modelQueued:()=>{modelQueued=true;},modelStarted:()=>{agentStarted=true;start().modelStarted();}};
+    const accounting={agentStarted:()=>{agentStarted=true;},modelQueued:()=>{modelQueued=true;},modelStarted:()=>{
+      agentStarted=true;
+      // Admission for a declared Host run belongs to the Host meter. Starting
+      // the legacy receipt here would leave a second, permanently running row.
+      if(route?.mode()==='host'){route.host?.()?.modelStarted();return;}
+      start().modelStarted();
+    }};
     return {
       run:<T>(task:()=>Promise<T>)=>queryAccounting.run(accounting,task),
       update:(tokens:import('@mote/shared').TokenUsage)=>{const current=start();current.modelStarted();current.update(tokens);},
@@ -266,6 +272,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       },
     };
   };
+  const admittedUsage=admittedUsageFactory();
   const indexer=new Indexer(store,config,diagnostics,files,input=>{
     const operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=config.embeddingModel;
     const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
@@ -656,16 +663,16 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,evidenceReadRanges:input.evidenceReadRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
     const usageAttribution={agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()};
-    const meter=usageOwner==='query'?admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
+    // Trusted per-query run accounting. Only app callbacks mutate this state and
+    // none of them throw: observation isolation must not govern execution.
+    const runState:{mode?:AgentRunFinalizer;runId?:string;hostEvents:boolean;hostTerminal:boolean;violation?:string}={hostEvents:false,hostTerminal:false};
     // The Host path owns usage through one C06 receipt; capture its terminal
     // receipt so the response reports the finalized sample without a second
     // finalize. Constructing this meter writes nothing until a model starts.
     const hostMeterBase=usageOwner==='query'?observabilityAssembly.admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
     let hostReceipt:import('@mote/shared').UsageReceipt|undefined;
     const hostMeter=hostMeterBase&&{...hostMeterBase,complete:()=>hostReceipt=hostMeterBase.complete(),fail:()=>hostReceipt=hostMeterBase.fail()};
-    // Trusted per-query run accounting. Only app callbacks mutate this state and
-    // none of them throw: observation isolation must not govern execution.
-    const runState:{mode?:AgentRunFinalizer;runId?:string;hostEvents:boolean;hostTerminal:boolean;violation?:string}={hostEvents:false,hostTerminal:false};
+    const meter=usageOwner==='query'?admittedUsageFactory({mode:()=>runState.mode,host:()=>hostMeterBase})(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
     let hostObserver:ReturnType<typeof createHostRunUsageObserver>|undefined;
     // Latch violations always reject. A missing Host terminal is only a success
     // gap: the leaf reports host before any Host session exists, so an early

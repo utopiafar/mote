@@ -80,8 +80,6 @@ export class AgentRuntimeHost {
     const wrapped:QueryAgent={
       get configured(){return !closing&&!thisHost.closed&&inner.configured;},
       ...(inner.configuredFor?{configuredFor:(id:string)=>!closing&&!this.closed&&inner.configuredFor!(id)}:{}),
-      // Forwarded, never reported here: only the executing leaf owns the declaration.
-      ...(inner.runFinalizer?{runFinalizer:inner.runFinalizer}:{}),
       close:()=>{
         if(!closing){
           stop.abort(new StoreError('Agent runtime adapter is closed',503));

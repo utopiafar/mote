@@ -6,7 +6,9 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import {ReloadableAgent,type ModelAgentFactory} from '../src/model-agent.js';
+import {ReloadableAgent,createModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
+import type {ContextReader} from '@mote/agent';
+import type {ModelSettings} from '@mote/shared/models';
 import type {QueryAgent} from '../src/query-agent.js';
 import type {Config} from '../src/config.js';
 
@@ -22,7 +24,7 @@ const terminalEvent=(runId:string):HostEvent=>({identity:identity(runId),attempt
  * reports its own finalizer once, before any await, and never lets the
  * composites decide the mode. */
 function leaf(behaviour:{mode:'host'|'legacy';hostEvents?:boolean;runIds?:string[];terminal?:boolean;legacyUsage?:boolean}):QueryAgent{
-  return {configured:true,runFinalizer:behaviour.mode,close:async()=>{},query:async(input,lease)=>{
+  return {configured:true,close:async()=>{},query:async(input,lease)=>{
     lease?.onFinalizer?.(behaviour.mode);
     if(behaviour.hostEvents){
       const ids=behaviour.runIds??['generated-run'];
@@ -93,8 +95,8 @@ test('a configuration switch mid-query keeps the pinned generation lease and rep
   let entered!:()=>void,release!:()=>void;
   const started=new Promise<void>(resolve=>{entered=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
   const reports:string[]=[];let usedSecond=false;
-  const first:QueryAgent={configured:true,runFinalizer:'host',close:async()=>{},query:async(_input,lease)=>{lease?.onFinalizer?.('host');entered();await held;return answer();}};
-  const second:QueryAgent={configured:true,runFinalizer:'legacy',close:async()=>{},query:async()=>{usedSecond=true;return answer();}};
+  const first:QueryAgent={configured:true,close:async()=>{},query:async(_input,lease)=>{lease?.onFinalizer?.('host');entered();await held;return answer();}};
+  const second:QueryAgent={configured:true,close:async()=>{},query:async()=>{usedSecond=true;return answer();}};
   const reloading=new ReloadableAgent();
   const prepared=await reloading.prepare(first,()=>{});prepared.activate();prepared.complete();
   const pending=reloading.query({question:'Generated pinned question'},{onFinalizer:mode=>reports.push(mode)});await started;
@@ -105,7 +107,7 @@ test('a configuration switch mid-query keeps the pinned generation lease and rep
 });
 
 test('an early Host failure before any envelope keeps its original error and creates no receipt',async t=>{
-  const early:QueryAgent={configured:true,runFinalizer:'host',close:async()=>{},query:async(_input,lease)=>{
+  const early:QueryAgent={configured:true,close:async()=>{},query:async(_input,lease)=>{
     lease?.onFinalizer?.('host');
     throw Object.assign(new Error('Generated early host failure'),{name:'AgentNotConfiguredError'});
   }};
@@ -117,7 +119,7 @@ test('an early Host failure before any envelope keeps its original error and cre
 });
 
 test('a Host failure after Host events keeps the primary error when its terminal is missing',async t=>{
-  const failing:QueryAgent={configured:true,runFinalizer:'host',close:async()=>{},query:async(input,lease)=>{
+  const failing:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{
     lease?.onFinalizer?.('host');
     input.onHostRunEvent?.(usageEvent('generated-run-failure'));
     throw Object.assign(new Error('Generated host failure after usage'),{name:'AgentResponseError',reason:'invalid_response'});
@@ -129,4 +131,54 @@ test('a Host failure after Host events keeps the primary error when its terminal
   const rows=receipts(node);
   assert.equal(rows.length,1);
   assert.equal(rows[0].status,'running','app must not finalize the Host receipt in the failure gap');
+});
+
+/** Production evidence, separated from the injected-double cases above: the
+ * real public createAgent leaf must report host before any Host session exists,
+ * so the app consumes the published contract instead of a synthetic one. */
+test('the public leaf reports host before any Host session and preserves its original error',async()=>{
+  const reader:ContextReader={
+    search:async()=>[],timeline:async()=>({items:[],nextCursor:null,totalCount:0}),evidence:async()=>[],activity:async()=>({captures:0}),
+    devices:async()=>[],sources:async()=>[],sourceItems:async()=>({items:[],nextCursor:null,totalCount:0}),sourceHistory:async()=>[],memories:async()=>({items:[]}),
+  };
+  const settings:ModelSettings={provider:'custom',protocol:'deepseek',baseUrl:'',model:'',apiKey:'',headers:{},extraBody:{},allowUnauthenticatedLocal:false,reasoningEffort:'auto',maxTokens:1024};
+  const agent=await createModelAgent(settings,reader);
+  assert.equal(agent.configured,false);
+  const reports:string[]=[];
+  let failure:unknown;
+  try{await agent.query({question:'Generated unconfigured question'},{onFinalizer:mode=>reports.push(mode)});}catch(error){failure=error;}
+  assert.ok(failure,'an unconfigured public leaf must reject');
+  assert.equal((failure as {name?:string}).name,'AgentNotConfiguredError');
+  assert.deepEqual(reports,['host'],'the published leaf reports exactly once before the failed session');
+  await agent.close();
+});
+
+test('the production factory path fails as model_not_configured, never as an accounting rejection',async t=>{
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-run-accounting-public-'));
+  const node=await buildApp(config(dataDir),{backgroundWorker:false});
+  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated production question'}});
+  assert.equal(response.statusCode,503,response.body);
+  assert.equal(response.json().error,'model_not_configured');
+  assert.equal(receipts(node).length,0);
+});
+
+test('a Host leaf that uses the supplied runModel hook starts only the Host receipt',async t=>{
+  const factory:ModelAgentFactory=async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
+    // Production admission path: runModelFor marks the model start through the
+    // per-query accounting context before the model task runs.
+    await host!.runModel!(async()=>{});
+    input.onHostRunEvent?.(usageEvent('generated-run-admission'));
+    input.onHostRunEvent?.(terminalEvent('generated-run-admission'));
+    return answer();
+  }});
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-run-accounting-admission-'));
+  const node=await buildApp(config(dataDir),{backgroundWorker:false,createModelAgent:factory});
+  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated admission question'}});
+  assert.equal(response.statusCode,200,response.body);
+  const rows=receipts(node);
+  assert.equal(rows.length,1,'admission must not start a second legacy receipt');
+  assert.equal(rows[0].status,'completed');
 });

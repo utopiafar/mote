@@ -12,8 +12,6 @@ export type AgentRunFinalizer='host'|'legacy';
 export interface QueryAgent {
   configured:boolean;
   configuredFor?(id:string):boolean;
-  /** Declared by the leaf that owns accounting; composites never report. */
-  runFinalizer?:AgentRunFinalizer;
   query(args:QueryInput,lease?:QueryRunLease):Promise<QueryResult>;
   close():Promise<void>;
 }
