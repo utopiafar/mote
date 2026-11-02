@@ -21,7 +21,7 @@ interface CustomPageMoteApi {
   /** Main-owned revocation notification — required for guarded
    * activation: a cancelled navigation revokes the epoch without
    * producing another load, and the bridge must die with it. */
-  onCustomPageRevoked?: (listener: (event: {instanceId: string; nonce: string; documentKey: string; frameTreeNodeId: number}) => void) => () => void;
+  onCustomPageRevoked?: (listener: (event: {instanceId: string; nonce: string; documentKey: string; frameTreeNodeId: number; epoch: number}) => void) => () => void;
 }
 
 export interface CustomPageProps {
@@ -66,8 +66,9 @@ export function CustomPluginPage(props: CustomPageProps) {
     // Subscribe to the main-owned revocation BEFORE the claim: a
     // cancelled navigation revokes the epoch with no further load, so
     // the issued bridge must be fenced by this signal, not by loads.
+    let grantedEpoch = 0;
     const offRevoked = mote!.onCustomPageRevoked!(event => {
-      if (event.instanceId === props.instanceId && event.nonce === props.nonce && event.documentKey === props.documentKey)
+      if (event.instanceId === props.instanceId && event.nonce === props.nonce && event.documentKey === props.documentKey && event.epoch === grantedEpoch)
         endChannel();
     });
     const endChannel = () => {
@@ -88,6 +89,7 @@ export function CustomPluginPage(props: CustomPageProps) {
       let grant: {frameTreeNodeId: number; epoch: number};
       try { grant = await mote!.customPageClaim!({instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!}); }
       catch { return; }
+      grantedEpoch = grant.epoch;
       // The port is delivered ONLY if this is still the latest load and
       // the effect is still live — a replaced document can never get it.
       if (loadSeq !== claimingSeq || navigatedRef.current || !alive || frameRef.current !== frame) return;
