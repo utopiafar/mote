@@ -76,8 +76,13 @@ export class PluginContributionScope {
           return [d.id, `${d.id.split(':')[0]}:${inst.instanceId}/${c.entry.id}`] as const;
         }));
         const qualified = builtin ? inst.contributions : inst.contributions.map(c => {
-          const requires = c.entry.requires?.map(r => typeof r === 'string' ? r : idMap.has(r.id) ? { ...r, id: idMap.get(r.id)! } : r);
-          return { ...c, entry: { ...c.entry, ...(requires ? { requires } : {}) } } as WebContribution;
+          // Page entries ARE the route: their public id becomes the qualified
+          // key so navigation lists and page() resolves the same address.
+          // View surfaces keep the declared id for catalog matching. Local
+          // requirements rewrite to qualified ids; server deps never change.
+          const requires = c.entry.requires?.map(r => typeof r === 'string' ? r : r.host !== 'server' && idMap.has(r.id) ? { ...r, id: idMap.get(r.id)! } : r);
+          const id = c.surface === 'page' ? `${inst.instanceId}/${c.entry.id}` : c.entry.id;
+          return { ...c, entry: { ...c.entry, id, ...(requires ? { requires } : {}) } } as WebContribution;
         });
         const qualifyId = builtin ? undefined : (id: string) => idMap.get(id) ?? id;
         const fiber = await this.#host.install({ id: builtin ? inst.packageId : inst.instanceId, version: '1', components: [] }, [...qualified], qualifyId);

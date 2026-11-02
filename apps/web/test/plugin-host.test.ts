@@ -68,12 +68,12 @@ test('two instances of one package coexist and repeated mount is idempotent', as
   const inst = (id: string, pageId: string): InstanceSnapshot => ({ ...builtinInstance('pkg.shared', [page(pageId)]), instanceId: id, installationId: id });
   const { reports, scopes } = await bootstrapPlugins(host, [inst('inst.work', 'work-page'), inst('inst.personal', 'personal-page')]);
   assert.deepEqual(reports.map(r => r.outcome.observed), ['mounted', 'mounted']);
-  assert.deepEqual(host.pages().map(p => p.id).sort(), ['personal-page', 'work-page']);
+  assert.deepEqual(host.pages().map(p => p.id).sort(), ['inst.personal/personal-page', 'inst.work/work-page']);
   const work = scopes.get('inst.work')!;
   assert.deepEqual(await work.mount(), { observed: 'mounted' }, 're-mount is idempotent, prior install kept');
-  assert.equal(host.page('inst.work/work-page')?.id, 'work-page');
+  assert.equal(host.page('inst.work/work-page')?.id, 'inst.work/work-page');
   await work.rollback();
-  assert.deepEqual(host.pages().map(p => p.id), ['personal-page'], 'sibling instance untouched');
+  assert.deepEqual(host.pages().map(p => p.id), ['inst.personal/personal-page'], 'sibling instance untouched');
 });
 
 test('rollback awaits asynchronous cleanup including fiber disposal before remount', async () => {
@@ -94,13 +94,13 @@ test('identical component IDs across instances are namespaced and sibling surviv
   const host = new WebFeatureHost();
   const inst = (id: string): InstanceSnapshot => ({ ...builtinInstance('pkg.dup', [page('notes')]), instanceId: id, installationId: `ext:${id}` });
   const { scopes } = await bootstrapPlugins(host, [inst('inst.one'), inst('inst.two')]);
-  // Public entry.id stays declared for catalog matching; the qualified
-  // descriptor key owns the route.
-  assert.equal(host.page('inst.one/notes')?.id, 'notes');
-  assert.equal(host.page('inst.two/notes')?.id, 'notes');
+  // Page routes are the qualified public id; navigation lists and
+  // page() resolves the same address.
+  assert.equal(host.page('inst.one/notes')?.id, 'inst.one/notes');
+  assert.equal(host.page('inst.two/notes')?.id, 'inst.two/notes');
   await scopes.get('inst.one')!.rollback();
   assert.equal(host.page('inst.one/notes'), undefined);
-  assert.equal(host.page('inst.two/notes')?.id, 'notes');
+  assert.equal(host.page('inst.two/notes')?.id, 'inst.two/notes');
 });
 
 test('rollback reports cleanup failures and the teardown entrypoint releases scopes', async () => {
@@ -131,7 +131,7 @@ test('local dependency references are rewritten to qualified descriptor IDs', as
   assert.equal(reports[0]!.outcome.observed, 'mounted');
   const registered = (host as any).registry.list('panel').map((r: any) => r.value.entry);
   assert.equal(registered[0]?.requires?.[0]?.id, 'page:inst.dep/reader', 'local dep rewritten to qualified id');
-  assert.equal(host.page('inst.dep/reader')?.id, 'reader');
+  assert.equal(host.page('inst.dep/reader')?.id, 'inst.dep/reader');
 });
 
 test('catalog-facing view ids stay declared for external instances', async () => {
@@ -187,4 +187,19 @@ test('bootstrap lifetime: close during pending startup blocks late mount and rel
   assert.equal(result.errors.length, 0);
   assert.equal(host.pages().length, 0, 'scope registrations released through the shared seam');
   await closing; // shared promise: second caller observes same completion
+});
+
+
+test('server requirements are never rewritten even when a local id matches', async () => {
+  const host = new WebFeatureHost();
+  const inst: InstanceSnapshot = {
+    ...builtinInstance('pkg.srv', [
+      page('reader'),
+      { surface: 'panel', entry: { id: 'srv-panel', featureId: 'srv', kind: 'mote.journal', schemaVersion: 1, representation: 'panel', requires: [{ id: 'page:reader', version: '1', host: 'server' }], render: () => null } },
+    ]),
+    instanceId: 'inst.srv', installationId: 'ext:inst.srv',
+  };
+  await bootstrapPlugins(host, [inst]);
+  const registered = (host as any).registry.list('panel').map((r: any) => r.value.entry);
+  assert.equal(registered[0]?.requires?.[0]?.id, 'page:reader', 'server dep keeps the advertised id');
 });
