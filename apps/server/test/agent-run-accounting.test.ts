@@ -103,3 +103,30 @@ test('a configuration switch mid-query keeps the pinned generation lease and rep
   assert.deepEqual(reports,['host'],'the pinned generation reports exactly once');
   assert.equal(usedSecond,false,'the new generation must not serve the in-flight query');
 });
+
+test('an early Host failure before any envelope keeps its original error and creates no receipt',async t=>{
+  const early:QueryAgent={configured:true,runFinalizer:'host',close:async()=>{},query:async(_input,lease)=>{
+    lease?.onFinalizer?.('host');
+    throw Object.assign(new Error('Generated early host failure'),{name:'AgentNotConfiguredError'});
+  }};
+  const node=await app(t,early);
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated early failure question'}});
+  assert.notEqual(response.statusCode,200,response.body);
+  assert.equal(response.json().error,'model_not_configured','the leaf error must not be replaced by a terminal gap');
+  assert.equal(receipts(node).length,0,'no Host session means no receipt');
+});
+
+test('a Host failure after Host events keeps the primary error when its terminal is missing',async t=>{
+  const failing:QueryAgent={configured:true,runFinalizer:'host',close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
+    input.onHostRunEvent?.(usageEvent('generated-run-failure'));
+    throw Object.assign(new Error('Generated host failure after usage'),{name:'AgentResponseError',reason:'invalid_response'});
+  }};
+  const node=await app(t,failing);
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated host failure question'}});
+  assert.notEqual(response.statusCode,200,response.body);
+  assert.notEqual(response.statusCode,409,'a missing terminal must not replace the primary failure');
+  const rows=receipts(node);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].status,'running','app must not finalize the Host receipt in the failure gap');
+});

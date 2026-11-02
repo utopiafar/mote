@@ -667,8 +667,12 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     // none of them throw: observation isolation must not govern execution.
     const runState:{mode?:AgentRunFinalizer;runId?:string;hostEvents:boolean;hostTerminal:boolean;violation?:string}={hostEvents:false,hostTerminal:false};
     let hostObserver:ReturnType<typeof createHostRunUsageObserver>|undefined;
-    const runAccountingError=()=>runState.violation?new StoreError('Agent run accounting contradiction',409)
-      :runState.mode==='host'&&!runState.hostTerminal?new StoreError('Agent run terminal is missing',409):undefined;
+    // Latch violations always reject. A missing Host terminal is only a success
+    // gap: the leaf reports host before any Host session exists, so an early
+    // failure or pre-cancel must keep its original error instead of being
+    // rewritten into a terminal gap.
+    const runViolation=()=>runState.violation?new StoreError('Agent run accounting contradiction',409):undefined;
+    const runSuccessGap=()=>runState.mode==='host'&&!runState.hostTerminal?new StoreError('Agent run terminal is missing',409):undefined;
     const runLease:QueryRunLease={onFinalizer:mode=>{
       if(runState.mode!==undefined&&runState.mode!==mode){runState.violation??='finalizer_mode_contradiction';return;}
       runState.mode=mode;
@@ -728,8 +732,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
           if(!evidenceDependencies?.complete||used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
         }
       }
-      // A contradiction latches before any success finalize or product commit.
-      const accounting=runAccountingError();
+      // A contradiction or a Host success without its terminal latches before
+      // any success finalize or product commit.
+      const accounting=runViolation()??runSuccessGap();
       if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       const completedUsage=runState.mode==='host'?hostReceipt:meter?.completed();
@@ -740,13 +745,14 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       // replaces the outcome after the legacy finalizer has settled its row.
       if(error instanceof AgentYieldError){
         if(runState.mode!=='host')meter?.completed();
-        const accounting=runAccountingError();
+        const accounting=runViolation()??runSuccessGap();
         if(accounting)throw accounting;
         trace({type:'query.yielded',status:'waiting'});throw error;
       }
       const wait=error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited')?{code:error.details.code,retryAfterMs:error.details.retryAfterMs}:error instanceof ExecutionFailure&&error.category==='waiting'?{code:error.code,retryAfterMs:error.retryAfterMs}:undefined;
       if(runState.mode!=='host')meter?.failed(error);
-      const accounting=runAccountingError();
+      // A missing Host terminal never replaces the primary failure.
+      const accounting=runViolation();
       if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId});
       trace(wait?{type:'query.waiting',status:'waiting',payload:wait}:{type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;
