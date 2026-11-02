@@ -50,6 +50,44 @@ export async function teardownPlugins(scopes: ReadonlyMap<string, PluginContribu
   return { errors };
 }
 
+/** The real application root lifetime: the shell (main.tsx) creates exactly
+ * one and calls close() from its actual teardown path. The seam is shared
+ * with tests so the contract covers the same code the root runs — a late
+ * mount is impossible once close() begins, and pending startup is awaited
+ * before scopes, deferred resources and the host are released. */
+export interface BootstrapLifetime {
+  /** True once teardown has begun; renderers must not produce a late mount. */
+  mounted(): boolean;
+  /** Await pending startup, then roll back every scope and close the host.
+   * Returns collected cleanup errors; safe to call more than once. */
+  close(): Promise<{ errors: unknown[] }>;
+}
+
+export function attachBootstrapLifetime(options: {
+  readonly ready: Promise<unknown>;
+  readonly scopes: ReadonlyMap<string, PluginContributionScope>;
+  readonly host: { close(): unknown };
+  /** Optional real teardown step run after startup settles (e.g. React root unmount). */
+  readonly unmount?: () => unknown;
+}): BootstrapLifetime {
+  let closing = false;
+  let closingPromise: Promise<{ errors: unknown[] }> | null = null;
+  const close = () => closingPromise ??= (async () => {
+    try { await options.ready; } catch { /* startup failure still tears down */ }
+    try { await options.unmount?.(); } catch { /* unmount errors are reported below via scopes */ }
+    const result = await teardownPlugins(options.scopes);
+    await options.host.close();
+    return result;
+  })();
+  return {
+    mounted() { return !closing; },
+    close() {
+      closing = true;
+      return close();
+    },
+  };
+}
+
 /** A builtin instance declares its own snapshot: it is installed with this
  * build, desired-active, and trusted to run in the same React bundle. */
 export function builtinInstance(packageId: string, contributions: InstanceSnapshot['contributions']): InstanceSnapshot {

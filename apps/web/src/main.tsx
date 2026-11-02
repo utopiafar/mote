@@ -44,7 +44,8 @@ type Api
 } from "./api";
 import { changeEvidenceRoute,readEvidenceRoute } from './evidence-route';
 import { FeaturePage } from './features/runtime';
-import { featuresReady } from './features/bootstrap';
+import { featuresReady, featureScopes } from './features/bootstrap';
+import { attachBootstrapLifetime } from './plugin-host/bootstrap';
 import { webFeatures } from './features/registry';
 import { PresentationSurface } from './presentation';
 import { GlobalRetrieval } from './GlobalRetrieval';
@@ -541,8 +542,13 @@ function App() {
 
 document.documentElement.lang = getLocale();
 document.documentElement.dir = 'ltr';
-void Promise.all([featuresReady,consumeLoginTicket().catch(()=>{})]).then(()=>createRoot(document.getElementById("root")!).render(
+const bootstrapLifetime=attachBootstrapLifetime({ready:featuresReady,scopes:featureScopes,host:webFeatures,unmount:()=>root?.unmount()});
+// Best-effort: async teardown cannot be guaranteed before unload; the real
+// owner release path is close(), also used by controlled shutdown.
+window.addEventListener('pagehide',()=>{void bootstrapLifetime.close();});
+let root: ReturnType<typeof createRoot> | undefined;
+void Promise.all([featuresReady,consumeLoginTicket().catch(()=>{})]).then(()=>{if(!bootstrapLifetime.mounted())return;root=createRoot(document.getElementById("root")!);root.render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,
-));
+);});

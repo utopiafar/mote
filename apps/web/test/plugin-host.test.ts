@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WebFeatureHost } from '../src/features/host';
-import { bootstrapPlugins, builtinInstance, teardownPlugins } from '../src/plugin-host/bootstrap';
+import { attachBootstrapLifetime, bootstrapPlugins, builtinInstance, teardownPlugins } from '../src/plugin-host/bootstrap';
 import type { InstanceSnapshot } from '../src/plugin-host/contributions';
 
 const page = (id: string) => ({ surface: 'page' as const, entry: { id, featureId: id, title: id, order: 0, render: () => null } });
@@ -169,4 +169,22 @@ test('production bootstrap/teardown entrypoint owns and releases real scopes', a
   assert.equal(result.errors.length, 0);
   assert.equal(featureScopes.size, 0);
   assert.equal(webFeatures.pages().length, 0, 'teardown released every builtin registration');
+});
+
+test('bootstrap lifetime: close during pending startup blocks late mount and releases real scopes', async () => {
+  const host = new WebFeatureHost();
+  let resolveReady!: () => void;
+  const ready = new Promise<void>(r => { resolveReady = r; });
+  const { scopes } = await bootstrapPlugins(host, [builtinInstance('pkg.life', [page('life-page')])]);
+  let unmounted = 0;
+  const lifetime = attachBootstrapLifetime({ ready, scopes, host, unmount: () => { unmounted++; } });
+  assert.equal(lifetime.mounted(), true);
+  const closing = lifetime.close();
+  resolveReady();
+  const result = await closing;
+  assert.equal(lifetime.mounted(), false, 'a later mount() guard sees closing');
+  assert.equal(unmounted, 1, 'real unmount step ran inside close');
+  assert.equal(result.errors.length, 0);
+  assert.equal(host.pages().length, 0, 'scope registrations released through the shared seam');
+  await closing; // shared promise: second caller observes same completion
 });
