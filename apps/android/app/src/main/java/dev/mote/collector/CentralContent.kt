@@ -50,7 +50,7 @@ internal class CentralContent(
         // removes everything it added, so the fallback never shares the body
         // with partial plugin UI.
         val parent = container as? android.view.ViewGroup
-        val slot: Any = parent?.let { android.widget.LinearLayout(activity).also(it::addView) } ?: container
+        val slot: Any = parent?.let { android.widget.LinearLayout(activity).apply { orientation = android.widget.LinearLayout.VERTICAL }.also(it::addView) } ?: container
         return try {
             session.registerView(factory(session, slot))
             pluginView = session
