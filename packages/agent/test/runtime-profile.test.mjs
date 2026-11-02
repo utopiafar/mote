@@ -52,6 +52,7 @@ test('explicit runtime/model choices accept supported HTTP and App Server pairs 
   const f = fixture(), http = select(f);
   assert.equal(http.runtime.runtimeId, 'generated.dsh');
   assert.equal(http.receipt.modelProfileId, 'generated-http');
+  assert.equal(http.modelSelection.profileRevision, 7);
   const codex = provider('generated.codex', 'codex-app-server');
   f.context.providers.push(codex); f.configuration.profiles.push(profile(codex)); f.context.models.push(model('generated-login', 'codex-app-server'));
   f.configuration.assignments.chat = `profile-${codex.id}`;
@@ -201,12 +202,14 @@ test('actual A02 declarations feed the A01 RuntimeProvider consumer without publ
     const fixture = join(directory, 'consumer.mts');
     await writeFile(fixture, `
 import type {RuntimeProvider, ModelLease, HostRunPort, RuntimeCapabilities as ProviderCapabilities} from '${join(root, 'packages/agent/dist/runtime/contracts.js')}';
+import type {ServiceLease} from '@mote/plugin-api/contracts';
 import type {RuntimeProfile, RuntimeCapabilities} from '@mote/shared/agent-runtimes';
 import {publicRunSelection, type RuntimeProfileConfiguration} from '@mote/agent/runtime/profile';
 import {resolveFeatureRunSelection} from '${join(root, 'apps/server/src/agent-runtime-settings.js')}';
 declare const selected: ReturnType<typeof resolveFeatureRunSelection>;
 declare const provider: RuntimeProvider<RuntimeProfileConfiguration>;
-declare const model: ModelLease;
+declare const modelLease: ServiceLease<unknown>;
+const model: ModelLease = {...modelLease, selection: selected.modelSelection};
 declare const port: HostRunPort;
 provider.prepare(selected.runtime, model, port);
 declare const capabilities: ProviderCapabilities;

@@ -5,7 +5,7 @@ import {
   type RuntimeSelectionErrorCode, type RuntimeTaskRequirements, type RunSelectionReceipt,
 } from '@mote/shared/agent-runtimes';
 import type {ModelProfile} from '@mote/shared/models';
-import {runtimeService, type ResolvedRuntimeProfile} from './contracts.js';
+import {runtimeService, type ModelSelection, type ResolvedRuntimeProfile} from './contracts.js';
 
 /** Host-only launch values. Never accepted in RuntimeProfile, a public command or a receipt. */
 export interface TrustedRuntimeLaunch {readonly executable?: string; readonly home?: string}
@@ -27,6 +27,8 @@ export interface ResolvedRunSelection {
   readonly receipt: RunSelectionReceipt;
   readonly runtime: ResolvedRuntimeProfile<RuntimeProfileConfiguration>;
   readonly model: ModelProfileInput;
+  /** Exact A01 identity projection; obtaining a real model lease remains A09's responsibility. */
+  readonly modelSelection: ModelSelection;
   /** Internal-only. Credentials/launch changes alter identity without serializing them publicly. */
   readonly runtimeFingerprint: string;
   readonly modelFingerprint: string;
@@ -135,7 +137,8 @@ export function resolveRunSelection(input: RuntimeSelectionInput): ResolvedRunSe
   return detached({
     receipt, runtime: {binding: provider.binding, runtimeId: provider.id, profileId: profile.id, profileRevision: profile.revision,
       assemblyFingerprint, taskKind: requirements.taskKind, configuration: {assembly: profile.assembly, allowedHostCapabilities: profile.allowedHostCapabilities, launch}},
-    model, runtimeFingerprint, modelFingerprint,
+    model, modelSelection: {modelId: settings.model, modelRevision: model.modelRevision, profileId: model.profile.id,
+      profileRevision: model.profileRevision, transport}, runtimeFingerprint, modelFingerprint,
     fingerprint: hash({runtimeFingerprint, modelFingerprint, taskKind: requirements.taskKind, capabilities: requirements.capabilities}),
   });
 }
