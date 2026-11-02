@@ -93,7 +93,7 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
   return {
     prepare,
     start(){assertAdmission();return starting??=service.startWatching();},
-    quiesce(_reason:StopReason){quiescing=true;for(const unsubscribe of [...subscriptions])unsubscribe();return service.stopWatching();},
+    quiesce(_reason:StopReason){quiescing=true;for(const unsubscribe of [...subscriptions])unsubscribe();return service.quiesce();},
     stop(_reason:StopReason){return close();},dispose:close,close,
     execution,diagnostics,selection,
     /** Trusted phased assembly: wire real AGENT prepare/probe before publishing model selection. */

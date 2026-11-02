@@ -21,7 +21,8 @@ export interface ConnectorContext {
   diagnostics?:import('../diagnostics.js').ServerDiagnostics;
   memoryStrategies?: import('../memory-strategies.js').MemoryStrategies;
   sourcePipelines?: import('../source-pipelines.js').SourcePipelineRuntime;
-  evidenceReader?: import('../evidence-reader.js').EvidenceReader;
+  /** The one EvidenceReader owned by roots; connectors never construct their own. */
+  evidenceReader: import('../evidence-reader.js').EvidenceReader;
   contextQuery?: import('../context-query.js').ContextQuery;
   materials?: import('../materials.js').MaterialStore;
   materialOrganizers?: import('../material-organizers.js').MaterialOrganizerRuntime;

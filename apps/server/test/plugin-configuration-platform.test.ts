@@ -11,10 +11,13 @@ import {PluginHost} from '@mote/plugin-host';
 import type {ScopeIdentity} from '@mote/plugin-api/contracts';
 import {createConfigurationPlatform,createConfigurationPlatformFactory,configurationPlatformDeclaration,configurationServices} from '../src/plugins/configuration-platform.js';
 import {defaultModelSettings} from '../src/model-settings.js';
-import {ExecutionSettings} from '../src/execution-settings.js';
+import {ExecutionSettings,executionSettingsSchema} from '../src/execution-settings.js';
 import {ConfigService} from '../src/config-service.js';
 import {registerBuiltinDomains} from '../src/config.js';
 import {ReloadableAgent} from '../src/model-agent.js';
+import {Store} from '../src/store.js';
+import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
+import {createExecutionPlatform} from '../src/plugins/execution-platform.js';
 
 const owner='generated-configuration-owner-token';
 const seed=()=>({version:1 as const,revision:0,server:{token:owner},models:{deployment:{...defaultModelSettings(),model:'generated-model',apiKey:'generated-private-key',headers:{'X-Generated':'generated-private-header'},extraBody:{credential:'generated-private-body'}}}});
@@ -379,4 +382,46 @@ for(const failure of ['initialize','models'] as const)test(`adopted service clos
   }});
   await assert.rejects(installing);assert.equal(closes,1,'the adopted instance is reclaimed even before startup completes');
   assert.equal(host.snapshot().contributions.length,0);await assert.rejects(service.reload(),{code:'config_unavailable'});
+});
+
+test('platform quiesce fences raw and model writes and publishes accepted settings before C05 closes',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-config-drain-')),path=join(directory,'mote.yaml');
+  const platform=createConfigurationPlatform({path,initialDocument:seed(),watch:false});await platform.prepare();
+  const store=new Store(join(directory,'vault')),authority=new BackgroundModelAuthorization(store,()=>[]),execution=createExecutionPlatform({store,modelAuthorization:authority,settings:platform.runtimeSettings});
+  t.after(async()=>{await platform.close();await execution.close();authority.close();store.close();await rm(directory,{recursive:true,force:true});});
+  await execution.prepare();execution.start();await platform.bindModels(modelDependencies());
+  const service=platform.configService,models=platform.modelSettings,oldModels=models.current(),entered=barrier(),finish=barrier(),events:string[]=[];
+  const gate=execution.assembly.agentGate;
+  service.setHandler<ReturnType<ExecutionSettings['execution']>>('execution',async(next,previous)=>{
+    entered.release();await finish.promise;
+    return {apply(){},publish(){execution.refreshSettings(executionSettingsSchema.strip().parse(next));assert.equal(gate.snapshot().limit,6);events.push('published');},rollback(){execution.refreshSettings(executionSettingsSchema.strip().parse(previous));}};
+  });
+  const first=platform.execution.update({agentConcurrency:6},service.revision),observed=first.then(value=>({value}),error=>({error}));
+  let stopping:Promise<void>|undefined,second:Promise<{error?:unknown;value?:unknown}>|undefined,closed=false;
+  try{
+    await entered.promise;
+    stopping=Promise.resolve(platform.quiesce('shutdown')).then(async()=>{events.push('configuration_quiesced');await execution.close();events.push('execution_closed');closed=true;});
+    const raw=service.update('execution',{agentConcurrency:7},service.revision);let rawSettled:unknown;
+    second=raw.then(value=>{rawSettled={value};return {value};},error=>{rawSettled=error;return {error};});
+    await setImmediate();assert.equal((rawSettled as {code?:string}|undefined)?.code,'config_unavailable','second raw write must reject without waiting behind the held transaction');
+    assert.equal(closed,false);assert.deepEqual(events,[]);assert.equal(platform.runtimeSettings.execution().agentConcurrency,gate.snapshot().limit);
+    await assert.rejects(models.update({revision:service.revision,settings:{...oldModels,model:'must-not-publish'}}),{code:'model_settings_unavailable'});
+    assert.equal(platform.selection.select('chat').settings.model,'generated-model','reads survive quiescence');
+    finish.release();await first;await stopping;
+    assert.deepEqual(events,['published','configuration_quiesced','execution_closed']);assert.equal(platform.execution.snapshot().value.agentConcurrency,6);
+    assert.equal(parse(await readFile(path,'utf8')).execution.agentConcurrency,6);
+  }finally{finish.release();await observed;if(second)await second;if(stopping)await stopping;}
+});
+
+test('raw quiesce rejects watcher admission before an existing watcher finishes teardown',async t=>{
+  const {platform}=await fixture(t,true);await platform.start();const service=platform.configService;
+  const original=FSWatcher.prototype.close,entered=barrier(),finish=barrier();
+  FSWatcher.prototype.close=function(){entered.release();return finish.promise.then(()=>original.call(this));};
+  let draining:Promise<void>|undefined,starting:Promise<void>|undefined,outcome:{code?:string}|undefined;
+  try{
+    draining=service.quiesce();await entered.promise;
+    starting=service.startWatching().then(()=>{outcome={};},error=>{outcome=error;});
+    await setImmediate();assert.equal(outcome?.code,'config_unavailable','new watcher admission must not wait for the old teardown');
+    finish.release();await draining;await starting;assert.ok(service.current('execution'));
+  }finally{finish.release();FSWatcher.prototype.close=original;await Promise.allSettled([draining,starting]);}
 });

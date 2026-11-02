@@ -10,6 +10,7 @@ import {defaultDistribution,configurationProvider,storageProvider} from '../src/
 import {Store} from '../src/store.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import type {Config} from '../src/config.js';
+import {executionSettingsSchema} from '../src/execution-settings.js';
 
 function fixture(t:{after(fn:()=>void):void}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-bootstrap-fixture-'));
@@ -36,6 +37,9 @@ test('default loader preserves the complete product, owner checks and original n
   ]);
   assert.equal(node.bootstrap.snapshot().contributions.length,4);
   assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'}]);
+  assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
+  assert.equal(node.configurationPlatform.configService,node.configService);
+  assert.equal(node.configurationPlatform.modelSettings,node.modelSettings);
   const input=note();
   assert.equal((await node.app.inject({method:'POST',url:'/api/notes',payload:input})).statusCode,401);
   const created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:input});
@@ -48,10 +52,45 @@ test('default loader preserves the complete product, owner checks and original n
   assert.equal(usage.statusCode,200,usage.body);
   await node.app.close();await node.app.close();
   assert.equal(node.executor.closed,true);
+  assert.throws(()=>node.configurationPlatform.configService);
   assert.throws(()=>node.executionPlatform.assembly);
   assert.throws(()=>node.observabilityPlatform.forAssembly(node.observabilityScope));
   assert.equal(node.bootstrap.snapshot().contributions.length,0);
   assert.throws(()=>node.store.stats());
+});
+
+test('shutdown drains a held execution configuration transaction before stopping execution',async t=>{
+  const {config,headers}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
+  t.after(()=>node.app.close());
+  const initial=(await node.app.inject({url:'/api/execution-settings',headers})).json();
+  let entered!:()=>void,release!:()=>void;const running=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+  node.configService.setHandler('execution',async(next)=>{entered();await gate;return {apply(){},publish:()=>node.executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(next))};});
+  const request=node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:initial.revision,interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2,memoryConcurrency:1}});
+  await running;
+  const closing=node.app.close();
+  await new Promise(resolve=>setImmediate(resolve));
+  const quiescing=node.configurationPlatform.quiesce('shutdown');
+  await assert.rejects(node.configService.update('execution',{interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2,memoryConcurrency:1},initial.revision),{code:'config_unavailable'});
+  release();
+  const response=await request;assert.equal(response.statusCode,200,response.body);
+  assert.equal(node.featureServices.agentGate.snapshot().limit,2,'the held execution refresh ran against a live platform');
+  await closing;await quiescing;
+});
+
+test('configuration drain failure does not abort shutdown cleanup',async t=>{
+  const {config}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
+  (node.configurationPlatform as any).quiesce=async()=>{throw new Error('generated configuration unavailable');};
+  await node.app.close();
+  assert.equal(node.executor.closed,true);
+  assert.throws(()=>node.store.stats());
+});
+
+test('configuration drain failure is retained by enabled diagnostics',async t=>{
+  const {config}=fixture(t),node=await buildApp({...config,logLevel:'error',diagnosticsEnabled:true},{agent,backgroundWorker:false});
+  (node.configurationPlatform as any).quiesce=async()=>{throw new Error('generated configuration unavailable');};
+  await node.app.close();
+  const events=node.diagnostics.events(0,100).items;
+  assert.ok(events.some(event=>event.event==='config.shutdown_drain_failed'),'the shutdown drain failure must survive the diagnostics allowlist');
 });
 
 test('observability startup failure rolls back the bootstrap vault for a clean reopen',async t=>{

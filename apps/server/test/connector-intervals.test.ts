@@ -18,11 +18,12 @@ import {LarkConnector,LARK_SCOPES} from '../src/connectors/lark.js';
 import {RecordingConnector,type RecordingProvider} from '../src/connectors/recordings.js';
 import type {LarkRunner} from '../src/connectors/lark-cli.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
+import {connectorReader} from './fixtures/connector-reader.js';
 
 async function fixture(t:TestContext){
   const directory=await mkdtemp(join(tmpdir(),'mote-connector-interval-')),store=new Store(join(directory,'vault'));
   const privateDirectory=join(directory,'credentials');await mkdir(privateDirectory,{mode:0o700});
-  const ctx:ConnectorContext={store,sources:new SourceStore(store),config:{dataDir:directory,token:'generated-interval-owner-token',allowedOrigins:[],connectors:{directory:privateDirectory,syncIntervalMs:120000,googleClientId:'generated-client',googleClientSecret:'generated-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
+  const sources=new SourceStore(store),ctx:ConnectorContext={store,sources,evidenceReader:connectorReader(store,sources),config:{dataDir:directory,token:'generated-interval-owner-token',allowedOrigins:[],connectors:{directory:privateDirectory,syncIntervalMs:120000,googleClientId:'generated-client',googleClientSecret:'generated-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
   t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
   const save=(name:string,value:unknown)=>writeFile(join(privateDirectory,name),JSON.stringify(value),{mode:0o600});
   return {ctx,save};
