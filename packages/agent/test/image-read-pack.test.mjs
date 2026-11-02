@@ -141,3 +141,19 @@ test('pure runtime adapters prepare payloads without sending, confirming or copy
   assert.equal(steer[1].type, 'image');
   assert.equal(steer[1].url, `data:image/png;base64,${encoded}`);
 });
+
+test('DSH prepared value matches the render contract consumed by context-plugin', () => {
+  // This mirrors runtime/dsh/context-plugin.ts output.render exactly: it reads
+  // {text, attachments?} and maps each attachment to an image content item.
+  const render = value => {
+    const result = value;
+    return [{type: 'text', text: result.text}, ...(result.attachments ?? []).map(attachment => ({type: 'image', attachment}))];
+  };
+  const attachment = {id: 'generated-attachment'};
+  const rendered = render(dshPreparedValue({text: 'untrusted image payload text', images: [{mimeType: 'image/png', data: encoded}]}, [attachment]));
+  assert.deepEqual(rendered, [
+    {type: 'text', text: 'untrusted image payload text'},
+    {type: 'image', attachment},
+  ]);
+  assert.deepEqual(render(dshPreparedValue({text: 'metadata only'}, [])), [{type: 'text', text: 'metadata only'}]);
+});
