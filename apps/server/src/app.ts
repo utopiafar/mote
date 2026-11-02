@@ -63,7 +63,7 @@ import { safeError,type AgentTraceContext } from './diagnostics.js';
 import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import { ExecutionFailure } from './execution-engine.js';
-import type {ExecutionSettingsValue,DiagnosticsSettingsValue} from './execution-settings.js';
+import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
 import { installServerFeatures } from './features/index.js';
 import { FileEvidence } from './file-evidence.js';
@@ -881,9 +881,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
   const activity=new ActivityProjection(store,executionPlatform.assembly.operations,{delegation});
-  const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings({interactiveConcurrency:value.interactiveConcurrency,agentConcurrency:value.agentConcurrency,llmConcurrency:value.llmConcurrency,memoryConcurrency:value.memoryConcurrency});
+  const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(value));
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
-  configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration({enabled:next.enabled,debug:next.debug,traceEnabled:next.traceEnabled,level:next.level}));
+  configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const automaticActivity=new AutomaticActivity(store,materials,executor,configService,{query:input=>queryAgent(input,'query','activity'),selection:profileId=>{const selected=modelSettings.select('chat',profileId);return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},lane:()=>workflows.settings().semantic});
   resources.defer(()=>automaticActivity.close());
