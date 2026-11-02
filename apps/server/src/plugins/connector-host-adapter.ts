@@ -109,7 +109,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       // but new route/OAuth admission is rejected while close is in progress.
       for(const value of scopes.values()){
         if(value.fence)await clean(()=>value.fence!());
-        else started.set(value,value.close());
+        else {const task=value.close();started.set(value,task);void task.catch(()=>{});}
       }
       await clean(()=>registry.close());
       for(const value of [...scopes.values()].reverse())await clean(()=>started.get(value)??value.close());
@@ -130,7 +130,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       if(closed)throw Error('Connector host adapter is closed');
       const errors:unknown[]=[],value=scopes.get(id);let started:Promise<void>|undefined;
       if(value?.fence)try{await value.fence();}catch(error){errors.push(error);}
-      else if(value)started=value.close();
+      else if(value){started=value.close();void started.catch(()=>{});}
       try{await registry.stop(id);}catch(error){errors.push(error);}
       if(value)try{await (started??value.close());scopes.delete(id);}catch(error){errors.push(error);}
       if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');

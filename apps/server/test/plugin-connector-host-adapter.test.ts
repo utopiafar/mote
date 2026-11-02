@@ -133,7 +133,10 @@ test('stop rejects new admission while connector shutdown is pending and keeps s
   t.after(async()=>{releaseClose();for(const scope of scopes)await scope.close().catch(()=>{});});
   await adapter.start();
   const stopping=adapter.stop('generated-pending-a');await started;
-  assert.ok([404,503].includes((await f.app.inject({url:'/api/connectors/generated-pending-a',headers})).statusCode),'new requests are fenced while connector close is pending');
+  const aScope=scopes.find(scope=>scope.scope.identity.instanceId==='generated-pending-a')!;
+  assert.equal(aScope.scope.signal.aborted,true,'scope cancellation starts before connector teardown');
+  assert.ok([404,503].includes((await f.app.inject({url:'/api/connectors/generated-pending-a',headers})).statusCode),'owner route admission is fenced while connector close is pending');
+  assert.ok([400,404].includes((await f.app.inject(`/oauth/shared/callback?state=${'a'.repeat(24)}&code=generated-code`)).statusCode),'OAuth admission is fenced while connector close is pending');
   assert.equal((await f.app.inject({url:'/api/connectors/generated-pending-b',headers})).body,'generated-pending-b');
   releaseClose();await stopping;
   assert.equal((await f.app.inject({url:'/api/connectors/generated-pending-a',headers})).statusCode,404);
@@ -143,18 +146,37 @@ test('stop rejects new admission while connector shutdown is pending and keeps s
 
 test('close during a pending connector create disposes the late instance without init',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
-  let resolveCreate!:()=>void,enteredCreate!:()=>void;
-  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  let resolveCreate!:()=>void,enteredCreate!:()=>void,releaseLate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;}),lateClose=new Promise<void>(resolve=>{releaseLate=resolve;});
   let initialized=0,closed=0;
-  const late:ConnectorManifest={apiVersion:1,id:'generated-late',sourceKinds:[{kind:'generated.late',capabilities}],create:async()=>{enteredCreate();await held;return {init:()=>{initialized++;},close:()=>{closed++;}};}};
+  const late:ConnectorManifest={apiVersion:1,id:'generated-late',sourceKinds:[{kind:'generated.late',capabilities}],create:async()=>{enteredCreate();await held;return {init:()=>{initialized++;},close:()=>{closed++;return lateClose;}};}};
   const adapter=createConnectorHostAdapter({manifests:[late],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
     scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
-  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  t.after(async()=>{releaseLate();resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
   const starting=adapter.start();await entered;
   await adapter.close();resolveCreate();
+  let settled=false;void starting.then(()=>{settled=true;},()=>{settled=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'start waits for the late instance cleanup');
+  releaseLate();
   await assert.rejects(starting,/Connector registry is closed/);
   assert.equal(initialized,0,'a late instance must not initialize after close');
-  assert.equal(closed,1,'the late instance is disposed');
+  assert.equal(closed,1,'the late instance is disposed and awaited');
+});
+
+test('an early close-only scope rejection is handled and aggregated',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseClose!:()=>void,enteredClose!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseClose=resolve;}),started=new Promise<void>(resolve=>{enteredClose=resolve;});
+  const noFence=instanceScope('generated-unhandled');delete (noFence as {fence?:unknown}).fence;scopes.push(noFence);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-unhandled',{onClose:async()=>{enteredClose();await held;}})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:()=>noFence});
+  t.after(async()=>{releaseClose();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  noFence.resources.defer(()=>{throw new Error('generated cleanup failure');});
+  const closing=adapter.close();await started;
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  releaseClose();
+  await assert.rejects(closing,/Connector host adapter disposal failed/);
 });
 
 test('adapter close fences every instance before connector shutdown',async t=>{
