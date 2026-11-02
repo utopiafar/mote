@@ -11,6 +11,9 @@ import {storedCaptureLibraryVersion} from '../src/capture-library-version.js';
 async function fixture(t:import('node:test').TestContext){
  const dir=mkdtempSync(join(tmpdir(),'mote-owner-browse-')),token='generated-owner-browse-token-123456789';
  const node=await buildApp({dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
+ // This fixture publishes its own replacement materials. Disable the unselected
+ // periodic organizer before any intake, independent of machine/test speed.
+ await node.materialOrganizer.close();
  t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
  const note=async(index:number,at='2026-10-21T01:00:00.000Z')=>{const id=randomUUID(),text='Generated note '+index+' literal searchable body';const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-note-device',deviceName:'Generated note device',platform:'import',capturedAt:at,text,metadata:{version:1,observedAt:at,ownerDescription:'PRIVATE DESCRIPTION must never become a browse preview'}}});assert.equal(response.statusCode,201,response.body);return {id,text,at};};
@@ -74,6 +77,7 @@ test('400 unrepresented notes use batch-bounded preflight without per-note repla
 test('400 notes with390 exact replacements retain every entry, order, revision, cursor and facet while preparing exact lookup once',async t=>{
  const f=await fixture(t),expected:{ref:string;contentAt:string}[]=[];
  for(let i=0;i<400;i++){const at=new Date(Date.parse('2026-10-21T01:00:00Z')+Math.floor(i/3)*60000).toISOString(),original=await f.note(i,at);expected.push({ref:i<390?f.material('exact-'+i,original).ref:'capture:'+original.id,contentAt:at});}
+ await f.node.materialOrganizer.tick(200); // Exercise a delayed background pump before the first read.
  expected.sort((a,b)=>b.contentAt.localeCompare(a.contentAt)||b.ref.localeCompare(a.ref));const reads=observeBrowse(f),first=await f.read({limit:'100'});
  assert.deepEqual(await f.read({limit:'100'}),first,'A cache hit preserves the complete first page including its signed cursor');
  const seen:any[]=[];let page=first;do{seen.push(...page.items.map(({ref,contentAt}:any)=>({ref,contentAt})));assert.equal(page.revision,first.revision);assert.deepEqual(page.types,first.types);assert.deepEqual(page.sources,first.sources);assert.equal(page.sourcesTruncated,first.sourcesTruncated);if(!page.nextCursor)break;page=await f.read({limit:'100',cursor:page.nextCursor});}while(true);
