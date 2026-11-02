@@ -105,10 +105,14 @@ class InstanceState implements StateStore {
       const usage = db.prepare(`SELECT COALESCE(SUM(bytes + length(CAST(key AS BLOB))),0) AS bytes, COUNT(*) AS records
         FROM plugin_instance_state WHERE package_id=? AND installation_id=? AND instance_id=?`).get(...this.values()) as {bytes: number; records: number};
       const prior = existing ? Number(existing.bytes) + Buffer.byteLength(String(existing.key)) : 0;
-      const delta = keyBytes + bytes - prior;
-      if (Number(usage.bytes) + delta > this.limits.namespaceBytes || (!existing && Number(usage.records) >= this.limits.namespaceRecords)) {
+      const namespaceDelta = keyBytes + bytes - prior;
+      if (Number(usage.bytes) + namespaceDelta > this.limits.namespaceBytes || (!existing && Number(usage.records) >= this.limits.namespaceRecords)) {
         throw new StateError('namespace_limit');
       }
+      // Match StorageLedger's plugin_instance_state expression exactly: value,
+      // key, namespace IDs, timestamp and the fixed row overhead. Reserving only
+      // key/value would let a new row commit past the vault budget.
+      const delta = this.rowCost(bytes, key, now) - (existing ? this.rowCost(Number(existing.bytes), String(existing.key), String(existing.updated_at)) : 0);
       try { this.store.reserveMetadata(delta); }
       catch (error) { throw new StateError('limit_exceeded', error instanceof Error ? error.message : 'Vault storage limit reached'); }
 
@@ -134,6 +138,12 @@ class InstanceState implements StateStore {
       if (db.isTransaction) db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  private rowCost(valueBytes: number, key: string, updatedAt: string) {
+    return valueBytes + Buffer.byteLength(key) + Buffer.byteLength(this.namespace.packageId) +
+      Buffer.byteLength(this.namespace.installationId) + Buffer.byteLength(this.namespace.instanceId) +
+      Buffer.byteLength(updatedAt) + 32;
   }
 
   private row(key: string): Row | undefined {

@@ -111,6 +111,22 @@ test('the existing metadata budget rejects an oversized state write and rolls it
   assert.equal((await a.state.get('small'))?.value, 'ok');
 });
 
+test('the global reservation includes the full ledger row cost at the boundary', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'mote-instance-state-boundary-'));
+  const probe = new Store(directory), base = probe.logicalBytes();
+  probe.close();
+  const key = 'boundary', value = 'x'.repeat(4000), scope = identity('instance-a');
+  const fixed = Buffer.byteLength(scope.packageId) + Buffer.byteLength(scope.installationId) +
+    Buffer.byteLength(scope.instanceId) + 24 + 32;
+  const max = base + Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(value)) + fixed - 1;
+  const store = new Store(directory, {maxStorageBytes: max}), host = new PluginHost(hostIdentity);
+  t.after(async () => { await host.close().catch(() => {}); store.close(); rmSync(directory, {recursive: true, force: true}); });
+  const a = await install(host, store, 'instance-a');
+  await assert.rejects(a.state.compareAndSet(key, null, value), (error: StateError) => error.code === 'limit_exceeded');
+  assert.equal(await a.state.get(key), undefined);
+  assert.equal((await a.state.checkpoint()).records, 0);
+});
+
 test('restart and the existing whole-database backup retain current-format state', async t => {
   const {directory, host, store} = fixture(t);
   const a = await install(host, store, 'instance-a');
