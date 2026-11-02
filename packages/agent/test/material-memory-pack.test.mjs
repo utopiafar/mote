@@ -67,15 +67,15 @@ test('material catalog uses the untrusted body and material_read verifies origin
   const {snapshot} = assembly();
   const material = {id: 'mat_' + 'a'.repeat(64), ref: materialRef, revision: 'b'.repeat(64), title: 'Generated material', kind: 'generated.material',
     origin: {sourceId: 'generated-source', deviceId: 'generated-device', firstAt: '2024-01-01T00:00:00.000Z', lastAt: '2024-01-01T00:00:00.000Z'},
-    textLength: 4, memberCount: 1, coverage: {state: 'complete'}, fidelity: {state: 'lossless'}, retention: {original: 'retained'},
+    textLength: 31, memberCount: 1, coverage: {state: 'complete'}, fidelity: {state: 'lossless'}, retention: {original: 'retained'},
     attributionContext: {version: 1, ownerRelation: 'owner', basis: 'owner_source', ownerStatements: [{id: originalId, question: 'generated question', answer: 'private answer'}]}};
   const catalog = {items: [material], nextCursor: null};
   const original = {id: originalId, capturedAt: '2024-01-01T00:00:00.000Z', appName: 'A', deviceId: 'generated-device', ocrText: 'body', contentLayer: 'L1_machine_extraction'};
   const readPage = {
     material, text: 'body',
-    textRange: {offset: 0, total: 4, nextOffset: null},
+    textRange: {offset: 0, total: 31, nextOffset: 4},
     spans: [{blockId: 'block-1', kind: 'text', memberIds: [originalId], pageRange: {start: 0, end: 4}, materialRange: {start: 0, end: 4}}],
-    originalRefs: [formatEvidenceRef('capture', originalId)], originalRefsTotal: 1, sourceSpans: [{record: original, offset: 0, length: 4}],
+    originalRefs: [formatEvidenceRef('capture', originalId)], originalRefsTotal: 2, sourceSpans: [{record: original, offset: 0, length: 4}],
   };
   const session = port({materialCatalog: catalog, materialRead: readPage, evidence: [original]});
   const catalogResult = await execute(snapshot, 'material_catalog', {query: 'coding', limit: 2}, session.port);
@@ -96,8 +96,8 @@ test('material catalog uses the untrusted body and material_read verifies origin
   const value = await execute(snapshot, 'material_read', {ref: materialRef, offset: 0, length: 4}, session.port);
   assert.equal(value.source, 'untrusted_personal_context');
   assert.equal(value.data.text, 'body');
-  assert.equal(value.data.textRange.total, 4);
-  assert.equal(value.data.originalRefsTotal, 1);
+  assert.equal(value.data.textRange.total, 31);
+  assert.equal(value.data.originalRefsTotal, 2);
   assert.equal(value.data.material.attributionContext.ownerStatements, undefined);
   assert.equal(JSON.stringify(value).includes('private answer'), false);
   assert.equal(value.data.sourceEvidence.length, 1);
