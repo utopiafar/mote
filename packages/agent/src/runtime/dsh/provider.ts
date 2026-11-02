@@ -8,7 +8,7 @@ import type {PluginDefinition} from '@mote/plugin-host';
 import type {Cancellation, ScopeIdentity, ServiceBinding} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {ProviderFailure} from '@mote/shared';
-import {AgentProviderError, AgentResponseError, AgentTimeoutError, type AgentOptions} from '../../types.js';
+import {AgentNotConfiguredError, AgentProviderError, AgentResponseError, AgentTimeoutError, type AgentOptions} from '../../types.js';
 import {observeModelTransport} from '../../model-transport-observer.js';
 import {observeHarness} from '../../usage.js';
 import {modelConnection, validateModelOptions} from '../../model-runtime.js';
@@ -24,6 +24,10 @@ export type {InstalledDshModule} from './profile-compiler.js';
 
 /** Private model transport value, separate from the runtime profile and public receipt. */
 export type DshModelAdapter = Omit<AgentOptions, 'reader' | 'codex' | 'runModel' | 'contextToolMode'>;
+export function dshModelConfigured(options: DshModelAdapter): boolean {
+  const local = options.allowUnauthenticatedLocal && options.baseUrl && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(options.baseUrl).hostname);
+  return Boolean(options.model?.trim() && (options.apiKey?.trim() || local));
+}
 export interface DshProviderOptions {
   readonly installedModules?: readonly InstalledDshModule[];
   /** Safe lifecycle observation for selected local integration checks. */
@@ -55,6 +59,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
         const adapter = structuredClone({...model.value, authorizeModelRequest: undefined});
         const authorize = model.value.authorizeModelRequest;
         validateModelOptions(adapter);
+        if (!dshModelConfigured(adapter)) throw new AgentNotConfiguredError();
         if (adapter.model !== model.selection.modelId || (adapter.protocol ?? 'deepseek') !== model.selection.transport || !isDeepStrictEqual(model.selection, host.identity.model) ||
             host.identity.runtime.id !== profile.runtimeId || host.identity.runtime.profileId !== profile.profileId || host.identity.runtime.profileRevision !== profile.profileRevision || host.identity.runtime.assemblyFingerprint !== profile.assemblyFingerprint || !provider.capabilities.taskKinds.includes(profile.taskKind)) throw new DshProfileError('dsh_profile_invalid');
         const native = await compileNativeDshProfile(profile, options.installedModules ?? []);
@@ -152,6 +157,6 @@ export function dshRuntimePlugin(identity: ScopeIdentity, options: DshProviderOp
   return {identity, contributions: [runtimeService], restartRequired: true, factory(context) {
     const provider = createDshRuntimeProvider(options);
     context.scope.defer(() => provider.close());
-    return {prepare() {}, start() { published?.(context.provide(DSH_RUNTIME_ID, runtimeService, provider)); }, quiesce() { provider.quiesce(); }, stop() { return provider.close(); }, dispose() { return provider.close(); }};
+    return {prepare() {}, start() { const binding = context.provide(runtimeService.id, runtimeService, provider); published?.(binding); }, quiesce() { provider.quiesce(); }, stop() { return provider.close(); }, dispose() { return provider.close(); }};
   }};
 }

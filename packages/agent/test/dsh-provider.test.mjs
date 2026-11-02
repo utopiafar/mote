@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {compileNativeDshProfile, createRuntimePatch, DSH_RUNTIME_ID} from '../dist/runtime/dsh/profile-compiler.js';
 import {createDshHostChannel} from '../dist/runtime/dsh/context-plugin.js';
+import {createDshRuntimeProvider, dshRuntimePlugin} from '@mote/agent/runtime/dsh';
+import {PluginHost} from '@mote/plugin-host';
+import {runtimeService} from '../dist/runtime/contracts.js';
 
 const scope = {packageId: 'generated.runtime', installationId: 'generated-install', instanceId: 'generated-instance', activationId: 'generated-active', host: {kind: 'central', id: 'generated-host'}};
 const reference = exportName => ({contribution: {instance: {packageId: scope.packageId, installationId: scope.installationId, instanceId: scope.instanceId}, contributionId: 'native'}, revision: 1, artifactDigest: 'a'.repeat(64), exportName});
@@ -99,4 +102,22 @@ test('runtime delivery receipt is bound to the run, fixed attempt, native call a
   }
   assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 200);
   assert.equal((await f.send('/ack', {id: frame.id, ...frame.receipt, delivered: true})).status, 400); assert.equal(f.calls.length, 1);
+});
+
+test('official DSH plugin publishes through the real Host without an observer and quiesces admissions', async t => {
+  const host = new PluginHost(scope.host); t.after(() => host.close());
+  const installed = await host.install(dshRuntimePlugin(scope));
+  const binding = {service: runtimeService, provider: {scope, contributionId: runtimeService.id}, revision: 0};
+  const lease = await host.acquire(runtimeService, binding);
+  assert.ok(lease.value.capabilities.modelTransports.includes('deepseek')); assert.equal(lease.value.capabilities.replacement, 'restart');
+  await installed.quiesce(); lease.assertCurrent();
+  await assert.rejects(lease.value.prepare({}, {}, {}), error => error.details?.code === 'runtime_unavailable');
+  await installed.close(); assert.equal(lease.signal.aborted, true); await lease.release();
+});
+
+test('an unconfigured DSH model fails before private resources or a subprocess are created', async t => {
+  let resources = 0; const provider = createDshRuntimeProvider({resourceObserver() { resources++; }}); t.after(() => provider.close());
+  const model = {value: {model: 'generated-model', apiKey: ''}, assertCurrent() {}};
+  await assert.rejects(provider.prepare(profile(), model, {assertCurrent() {}, systemPrompt: 'Generated Host policy'}), {name: 'AgentNotConfiguredError'});
+  assert.equal(resources, 0);
 });
