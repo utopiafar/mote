@@ -5,8 +5,10 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
+import {once,getEventListeners} from 'node:events';
+import {createConnection} from 'node:net';
 import Fastify,{type FastifyRequest} from 'fastify';
-import {PluginHost} from '@mote/plugin-host';
+import {PluginHost,type HostScope} from '@mote/plugin-host';
 import {captureSchema} from '@mote/shared';
 import {ConfigService} from '../src/config-service.js';
 import {ExecutionSettings,executionSettingsSchema} from '../src/execution-settings.js';
@@ -55,9 +57,13 @@ async function fixture(t:TestContext){
   integration.bindRoutes({authorization,capture,files,evidenceReader:reader,layers:new LayersReadModel(sources,reader.memories)});
   const pinCredentials=new WeakMap<RequestAuthority,ConnectionCredential|undefined>();
   const devices=createDevicesSource({}, {devices:{heartbeat:beat=>store.heartbeat(beat),devices:()=>store.devices()},firstData:()=>firstDeviceData(store,files,reader),authority:authorization,identity:{assertOwnDevice:(pin,beat)=>authorization.requests.assertOwnDevice(pin,beat),assertOwnPlatform:(pin,value)=>{authorization.requests.assertCurrent(pin);if(!pinCredentials.has(pin))throw new ConnectionError('connection_scope_denied',403,'Unknown host request');const c=pinCredentials.get(pin);if(c)connections.assertPlatform(c,value);}}});devices.start();
-  const app=Fastify();app.addContentTypeParser(['application/gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
+  const abortedBody=deferred(),abortDone=deferred();let sourceScope:HostScope|undefined;
+  const app=Fastify();
+  app.addHook('preParsing',async(request,_reply,payload)=>{if(request.headers['x-generated-abort']==='yes')abortedBody.resolve();return payload;});
+  app.addHook('onRequestAbort',async(_request)=>{setImmediate(abortDone.resolve);});app.addContentTypeParser(['application/gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
   app.setErrorHandler((error,_req,reply)=>{const e=error as Error&{statusCode?:number;code?:string};reply.code(e.statusCode??500).send({error:e.code??e.message});});
-  const owner=await host.install({identity:identity(),contributions:[c10IntegrationDeclaration],factory:createC10IntegrationFactory(integration,platform=>platform.routes(app))});
+  const factory=createC10IntegrationFactory(integration,platform=>platform.routes(app));
+  const owner=await host.install({identity:identity(),contributions:[c10IntegrationDeclaration],factory:context=>{sourceScope=context.scope;return factory(context);}});assert.ok(sourceScope);
   app.register(async child=>{
     const pins=new WeakMap<FastifyRequest,RequestAuthority>();
     child.addHook('onRequest',async req=>{const pin=authorization.bindRequest({authorization:req.headers.authorization,method:req.method,route:req.routeOptions.url!,params:req.params as {id?:string}});pins.set(req,pin);const c=connections.authenticate(req.headers.authorization);pinCredentials.set(pin,c&&!connections.isOwner(c)?c:undefined);});
@@ -73,7 +79,7 @@ async function fixture(t:TestContext){
   t.after(async()=>{await app.close();await devices.close();await notes.close();await host.close();await capture.close();await authorization.close();await execution.close();await files.close();await materials.index?.close();await diagnostics.close();await config.close();await vault.close();rmSync(directory,{recursive:true,force:true});});
   const pair=async(deviceId='generated-phone-a')=>{const invitation=connections.invite({serverUrl:'https://generated.invalid',label:'Generated collector',deviceId},'collector');return connections.redeem({code:invitation.invitation.code,deviceId,deviceName:'Generated phone',platform:'android'});};
   const register=async(id:string,deviceId='generated-phone-a',token=ownerToken)=>{const response=await http('/api/sources','POST',{id,name:'Generated source',kind:'custom',deviceId,platform:'android'},token);assert.equal(response.status,200,await response.clone().text());};
-  return {store,materials,memoryWork,runtime,host,owner,integration,sources,files,capture,devices,reader,authorization,connections,http,pair,register};
+  return {store,materials,memoryWork,runtime,host,owner,integration,sources,files,capture,devices,reader,authorization,connections,http,pair,register,sourceScope,abortedBody,abortDone,port:address.port};
 }
 
 test('source control binds real owner/collector request and actual device/platform without publishing an unguarded repository',async t=>{
@@ -112,7 +118,7 @@ for(const revoke of ['source','credential','stop','quiesce'] as const)test(`actu
   if(revoke==='source')assert.equal((await f.http('/api/sources/own','PATCH',{enabled:false})).status,200);
   if(revoke==='credential')await f.connections.revoke(paired.credentialId);
   if(revoke==='stop')closing=f.owner.close('disabled');
-  if(revoke==='quiesce'){closing=f.owner.quiesce('upgrade');assert.equal((await f.http('/api/sources/other/items','PUT',item('fresh'))).status,503);}
+  if(revoke==='quiesce'){closing=Promise.all([f.owner.quiesce('upgrade'),f.integration.quiesce('upgrade')]).then(()=>{});assert.equal((await f.http('/api/sources/other/items','PUT',item('fresh'))).status,503);}
   if(revoke==='source'||revoke==='credential')assert.equal((await f.http('/api/sources/other/items','PUT',item('independent'))).status,200);
   if(closing){closing=closing.then(()=>{drained=true;});await new Promise<void>(done=>setImmediate(done));assert.equal(drained,false,'owner must drain the accepted write before resolving shutdown');}
   release.resolve();const response=await pending;await closing;
@@ -137,10 +143,10 @@ test('trusted archive ingestion keeps callback rejection and the original checkp
 });
 
 
-test('failed source owner startup retires only its own repository and preserves the borrowed vault and active owner',async t=>{
+test('failed source owner startup retires its own facade and preserves the shared repository and active owner',async t=>{
   const f=await fixture(t);await f.register('retained');const pending=new SourceStore(f.store,f.runtime,f.memoryWork.inputs),candidate=createC10Integration({store:f.store,runtime:f.runtime,memoryWork:f.memoryWork,sources:pending});
   await assert.rejects(f.host.install({identity:identity(),contributions:[c10IntegrationDeclaration],factory:createC10IntegrationFactory(candidate)}),{statusCode:503});
-  await assert.rejects(pending.upsert('retained',item('late')),{statusCode:503});assert.equal(f.store.db.isOpen,true);assert.equal(f.sources.getSource('retained').enabled,true);
+  assert.throws(()=>candidate.sourcesForAssembly,{statusCode:503});assert.equal(pending.getSource('retained').enabled,true);assert.equal(f.store.db.isOpen,true);assert.equal(f.sources.getSource('retained').enabled,true);
   assert.equal((await f.http('/api/sources/retained/items','PUT',item('active-owner'))).status,200);
   const otherMemory=new MaterialMemoryWork(f.store,f.materials);assert.throws(()=>createC10Integration({store:f.store,runtime:f.runtime,memoryWork:otherMemory,sources:f.sources}),{statusCode:503});
 });
@@ -165,4 +171,37 @@ test('formal Devices shares the actual C04 pin and device rows while source owne
   await f.owner.close('disabled');assert.equal((await f.http('/api/devices/heartbeat','POST',beat,paired.token)).status,200);
   f.devices.quiesce('upgrade');assert.equal((await f.http('/api/devices/heartbeat','POST',beat,paired.token)).status,503);assert.equal((await f.http('/api/devices')).status,200);
   await f.devices.close();assert.equal((await f.http('/api/devices')).status,503);assert.equal(f.store.devices().length,1);
+});
+
+
+for(const mode of ['quiesce','close'] as const)test(`independent FileStore receipts survive C10 ${mode} before source metadata commit`,async t=>{
+  const f=await fixture(t);await f.register('file-owner');assert.equal((await f.http('/api/sources/file-owner','PATCH',{retention:'archive'})).status,200);
+  const pin=f.authorization.bindRequest({authorization:'Bearer '+ownerToken,method:'POST',route:'/api/file-sync/v1/begin'}),check=(id:string)=>f.authorization.requests.assertOwnSource(pin,id),bytes=Buffer.from('Generated independent file original'),entered=deferred(),release=deferred();
+  const prepare=f.store.assets.putUpload.bind(f.store.assets);let first=true;t.after(()=>release.resolve());
+  t.mock.method(f.store.assets,'putUpload',async(...args:Parameters<typeof prepare>)=>{const prepared=await prepare(...args);if(first){first=false;entered.resolve();await release.promise;}return prepared;});
+  const begin=(externalId:string)=>{const upload=f.files.begin({sourceId:'file-owner',item:{...item(externalId),kind:'file',text:'',mimeType:'text/plain'},sizeBytes:bytes.length,sha256:sha256(bytes)},check);f.files.part(upload.uploadId,0,bytes,check);return upload.uploadId;};
+  try{
+    const upload=begin('accepted-file.txt'),committed=f.files.commit(upload,check);await entered.promise;
+    if(mode==='close')await f.owner.close('disabled');else await f.owner.quiesce('upgrade');
+    release.resolve();const receipt=await committed;assert.equal(receipt.duplicate,false);assert.deepEqual(Buffer.concat([...f.files.bytes(receipt.id)]),bytes);assert.equal(f.files.version(receipt.id).source_id,'file-owner');
+    const next=await f.files.commit(begin('independent-next.txt'),check);assert.equal(next.duplicate,false);assert.deepEqual(Buffer.concat([...f.files.bytes(next.id)]),bytes);
+    assert.equal((await f.http('/api/sources/own/items','PUT',item('late'))).status,503);assert.equal(f.store.db.isOpen,true);
+  }finally{f.authorization.releaseRequest(pin);release.resolve();}
+});
+
+test('quiescing source routes keep authorized GET and HEAD browsing while every write stays fenced',async t=>{
+  const f=await fixture(t),paired=await f.pair();await f.register('own','generated-phone-a',paired.token);await f.register('foreign','generated-phone-b');await f.owner.quiesce('upgrade');
+  const before=f.sources.listSources();assert.equal((await f.http('/api/sources')).status,200);assert.equal((await f.http('/api/sources','HEAD')).status,200);
+  const own=await (await f.http('/api/sources','GET',undefined,paired.token)).json();assert.deepEqual(own.items.map((source:{id:string})=>source.id),['own']);assert.equal((await f.http('/api/sources/foreign/items','GET',undefined,paired.token)).status,403);
+  for(const [path,method,body] of [['/api/sources','POST',{id:'late'}],['/api/sources/own','PATCH',{enabled:false}],['/api/sources/own/items','PUT',item('late')],['/api/sources/own/items/batch','POST',{items:[item('late')]}]] as const)assert.equal((await f.http(path,method,body)).status,503);
+  assert.deepEqual(f.sources.listSources(),before);assert.equal(f.sources.getItem('own','late'),undefined);
+});
+
+test('an interrupted source upload body releases its real C04 pin and scope listener before shutdown',async t=>{
+  const f=await fixture(t);await f.register('own');const baseline=getEventListeners(f.sourceScope.signal,'abort').length;
+  const socket=createConnection({host:'127.0.0.1',port:f.port});t.after(()=>socket.destroy());await once(socket,'connect');
+  socket.write(`PUT /api/sources/own/items HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${ownerToken}\r\nContent-Type: application/json\r\nContent-Length: 1024\r\nX-Generated-Abort: yes\r\n\r\n{"externalId":"aborted"`);
+  await f.abortedBody.promise;assert.ok(getEventListeners(f.sourceScope.signal,'abort').length>baseline,'the request really acquired a C04 pin');const closed=once(socket,'close');socket.destroy();await closed;await f.abortDone.promise;
+  assert.equal(getEventListeners(f.sourceScope.signal,'abort').length,baseline,'the aborted body must release its C04 scope-abort listener');assert.equal(f.sources.getItem('own','aborted'),undefined);
+  assert.equal((await f.http('/api/sources/own/items','PUT',item('after-abort'))).status,200);assert.equal(getEventListeners(f.sourceScope.signal,'abort').length,baseline);
 });

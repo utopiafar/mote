@@ -11,6 +11,7 @@ import {captureContextChannelSchema,readCaptureContext,updateCaptureContext} fro
 /** Fixed trusted C10 request binding; never an ordinary plugin service. */
 export interface SourceRouteAdmission {
   assertCurrent(request:FastifyRequest):void;
+  assertWritable(request:FastifyRequest):void;
   sourceItem(request:FastifyRequest,sourceId:string,input:unknown):ReturnType<IngressService['sourceItem']>;
   sourceBatch(request:FastifyRequest,sourceId:string,inputs:unknown):ReturnType<IngressService['sourceBatch']>;
 }
@@ -24,7 +25,7 @@ export function registerSourceRoutes(app:FastifyInstance,{layers,sources,evidenc
   };
   app.get('/api/sources',async req=>{const c=credential(req);if(c)connections.assertActive(c);return {items:sources.listSources().filter(s=>!c||s.deviceId===c.deviceId).map(s=>present(req,s))};});
   app.post('/api/sources',async req=>{
-    const check=(input:SourceRegistration)=>{admission?.assertCurrent(req);const c=credential(req);
+    const check=(input:SourceRegistration)=>{admission?.assertWritable(req);const c=credential(req);
       if(c&&('ownerRelation' in input||'ownerRelationVersion' in input))throw new ConnectionError('connection_scope_denied',403,'Only the owner may declare material attribution.');
       if(c){connections.assertOwnDevice(c,input);connections.assertPlatform(c,input.platform);if(sources.listSources().some(source=>source.id===input.id))connections.assertOwnSource(c,input.id);}};
     return present(req,sources.register(req.body,check));
@@ -33,14 +34,14 @@ export function registerSourceRoutes(app:FastifyInstance,{layers,sources,evidenc
     const id=(req.params as {id:string}).id;sourceOwner(req,id);
     if(credential(req)&&req.body&&typeof req.body==='object'&&'ownerRelation' in req.body)throw new ConnectionError('connection_scope_denied',403,'Only the owner may declare material attribution.');
     const patch=z.object({ownerRelation:ownerRelationSchema.nullable().optional(),name:z.string().min(1).max(200).optional(),enabled:z.boolean().optional(),initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).optional()}).strict().parse(req.body);
-    return present(req,sources.update(id,patch,source=>{admission?.assertCurrent(req);sourceOwner(req,source.id);}));
+    return present(req,sources.update(id,patch,source=>{admission?.assertWritable(req);sourceOwner(req,source.id);}));
   });
   const contextOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c){connections.assertActive(c);throw new ConnectionError('connection_scope_denied',403,'Only the owner may read or declare source context.');}sourceOwner(req,id);};
   const captureContextPath=z.object({deviceId:z.string().min(1).max(128),channel:captureContextChannelSchema}).strict();
   app.get('/api/devices/:deviceId/capture-context/:channel',async req=>{contextOwner(req,'');const {deviceId,channel}=captureContextPath.parse(req.params);return readCaptureContext(sources.store,sources,deviceId,channel);});
-  app.patch('/api/devices/:deviceId/capture-context/:channel',async req=>{contextOwner(req,'');const {deviceId,channel}=captureContextPath.parse(req.params);return updateCaptureContext(sources.store,sources,deviceId,channel,sourceContextUpdateSchema.parse(req.body),()=>contextOwner(req,''));});
+  app.patch('/api/devices/:deviceId/capture-context/:channel',async req=>{contextOwner(req,'');const {deviceId,channel}=captureContextPath.parse(req.params);return updateCaptureContext(sources.store,sources,deviceId,channel,sourceContextUpdateSchema.parse(req.body),()=>{admission?.assertWritable(req);contextOwner(req,'');});});
   app.get('/api/sources/:id/context',async req=>{const id=(req.params as {id:string}).id;contextOwner(req,id);return sources.contexts.current(id);});
-  app.patch('/api/sources/:id/context',async req=>{const id=(req.params as {id:string}).id;contextOwner(req,id);return sources.updateContext(id,sourceContextUpdateSchema.parse(req.body),()=>contextOwner(req,id));});
+  app.patch('/api/sources/:id/context',async req=>{const id=(req.params as {id:string}).id;contextOwner(req,id);return sources.updateContext(id,sourceContextUpdateSchema.parse(req.body),()=>{admission?.assertWritable(req);contextOwner(req,id);});});
   const sourceRange=z.object({sourceId:z.string().max(128).optional(),deviceId:z.string().max(128).optional(),kind:z.string().max(40).optional(),after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),limit:z.coerce.number().int().min(1).max(200).default(50),cursor:z.string().max(4096).optional(),includeDeleted:z.enum(['true','false']).optional()}).strict();
   function scopedSourceRange(req:FastifyRequest){const q=sourceRange.parse(req.query),c=credential(req);if(c){connections.assertActive(c);if(q.deviceId&&q.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,moteText("只能读取本设备来源。"));if(q.sourceId)sourceOwner(req,q.sourceId);q.deviceId=c.deviceId;}return {...q,includeDeleted:q.includeDeleted==='true'};}
   app.get('/api/source-items',async req=>sources.listItems(scopedSourceRange(req)));

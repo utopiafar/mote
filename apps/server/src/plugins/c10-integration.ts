@@ -19,7 +19,7 @@ export interface C10IntegrationDependencies {
   readonly store:Store;
   readonly runtime:SourcePipelineRuntime;
   readonly memoryWork:MaterialMemoryWork;
-  /** Trusted ownership transfer of source admission only; database is borrowed. */
+  /** Actual shared repository; independent owners keep their own write authority. */
   readonly sources?:SourceStore;
 }
 export interface C10SourceRouteBindings {
@@ -39,15 +39,20 @@ export const c10IntegrationDeclaration={id:c10IntegrationContribution.id,apiVers
 export const c10IntegrationReplacement='restart' as const;
 const unavailable=()=>new StoreError('Source integration is unavailable',503);
 
-/** Owns one source repository and source routes. Capture, Notes, Devices,
+/** Owns source routes over one shared repository. Capture, Notes, Devices,
  * runtime, MemoryWork, C04 and the vault retain their independent owners. */
 export function createC10Integration(dependencies:C10IntegrationDependencies){
   const {store,runtime,memoryWork}=dependencies;
   if(runtime.store!==store||runtime.memoryWork!==memoryWork)throw new StoreError('Source integration repository mismatch',503);
   const sources=dependencies.sources??new SourceStore(store,runtime,memoryWork.inputs);
   if(sources.store!==store||sources.pipelines!==runtime||!sources.usesMemoryInputs(memoryWork.inputs))throw new StoreError('Source integration repository mismatch',503);
-  const initialDrain=sources.quiesce();
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created',scope:PluginScope|undefined,bindings:C10SourceRouteBindings|undefined,closing:Promise<void>|undefined,mounted=false;
+  const pending=new Set<Promise<unknown>>();
+  const track=<T>(task:Promise<T>):Promise<T>=>{
+    const owned=task.catch(error=>{if(phase==='stopped'||phase==='disposed')throw Object.assign(unavailable(),{cause:error});throw error;});
+    pending.add(owned);void owned.then(()=>pending.delete(owned),()=>pending.delete(owned));return owned;
+  };
+  const drain=async()=>{await Promise.allSettled([...pending]);};
   const requests=new Map<FastifyRequest,{pin:RequestAuthority;credential?:ConnectionCredential}>();
   const release=(request:FastifyRequest)=>{const entry=requests.get(request);if(entry){requests.delete(request);bindings!.authorization.releaseRequest(entry.pin);}};
   const assertRequest=(request:FastifyRequest)=>{
@@ -55,9 +60,10 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
     const entry=requests.get(request);if(!entry)throw new StoreError('Owner authorization is required',401);
     bindings!.authorization.requests.assertCurrent(entry.pin);return entry;
   };
+  const writable=(request:FastifyRequest)=>{if(phase!=='active')throw unavailable();return assertRequest(request);};
   const close=()=>{
     if(closing)return closing;phase='stopped';for(const request of requests.keys())release(request);
-    return closing=sources.close().finally(()=>{phase='disposed';});
+    return closing=drain().finally(()=>{phase='disposed';});
   };
   return Object.freeze({
     /** The sole private root bridge for C10A/C04/C11/C12. Not a service value. */
@@ -69,11 +75,11 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
     },
     async prepare(value:PluginScope){
       if(phase!=='created')throw unavailable();phase='preparing';scope=value;
-      try{value.assertCurrent();await initialDrain;value.assertCurrent();if(phase!=='preparing')throw unavailable();phase='prepared';}
+      try{value.assertCurrent();if(phase!=='preparing')throw unavailable();phase='prepared';}
       catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Source integration preparation and cleanup failed',{cause:error});}throw error;}
     },
-    start(){if(phase!=='prepared'||!bindings)throw unavailable();scope!.assertCurrent();sources.start();phase='active';},
-    async quiesce(_reason?:StopReason){if(phase==='active'){phase='quiescing';await sources.quiesce();}},
+    start(){if(phase!=='prepared'||!bindings)throw unavailable();scope!.assertCurrent();phase='active';},
+    async quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';if(phase==='quiescing')await drain();},
     stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
     routes(app:FastifyInstance){
       if(mounted||!bindings||phase==='stopped'||phase==='disposed')throw unavailable();mounted=true;
@@ -81,19 +87,20 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
       // Scoped Fastify hooks cannot capture unrelated feature routes.
       app.register(async child=>{
         child.addHook('onRequest',async request=>{
-          if(phase!=='active')throw unavailable();scope!.assertCurrent();
+          if(phase!=='active'&&!(phase==='quiescing'&&['GET','HEAD'].includes(request.method)))throw unavailable();scope!.assertCurrent();
           const pin=fixed.authorization.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin,signal:scope!.signal});
           const credential=connections.authenticate(request.headers.authorization);
           requests.set(request,{pin,...(credential&&!connections.isOwner(credential)?{credential:Object.freeze({...credential})}:{})});
         });
         child.addHook('onSend',async(request,reply,payload)=>{if(reply.statusCode<400)assertRequest(request);return payload;});
         child.addHook('onResponse',async request=>{release(request);});
+        child.addHook('onRequestAbort',async request=>{release(request);});
         const sourceOwner=(request:FastifyRequest,id:string)=>{const entry=assertRequest(request);if(entry.credential)fixed.authorization.requests.assertOwnSource(entry.pin,id);};
         registerSourceRoutes(child,{sources,connections,credential:request=>assertRequest(request).credential,sourceOwner,
           evidenceReader:fixed.evidenceReader,layers:fixed.layers,ingress:fixed.capture.ingress,
-          admission:{assertCurrent:request=>{assertRequest(request);},
-            sourceItem:(request,id,input)=>{const {pin}=assertRequest(request);return fixed.authorization.withSource(pin,id,input,()=>fixed.capture.ports.sourceIntake.sourceItem(id,input,fixed.authorization.commits.capture()));},
-            sourceBatch:(request,id,inputs)=>{const {pin}=assertRequest(request);return fixed.authorization.withSource(pin,id,inputs,()=>fixed.capture.ports.sourceIntake.sourceBatch(id,inputs,fixed.authorization.commits.capture()));},
+          admission:{assertCurrent:request=>{assertRequest(request);},assertWritable:request=>{writable(request);},
+            sourceItem:(request,id,input)=>{const {pin}=writable(request);return track(fixed.authorization.withSource(pin,id,input,()=>fixed.capture.ports.sourceIntake.sourceItem(id,input,fixed.authorization.commits.capture())));},
+            sourceBatch:(request,id,inputs)=>{const {pin}=writable(request);return track(fixed.authorization.withSource(pin,id,inputs,()=>fixed.capture.ports.sourceIntake.sourceBatch(id,inputs,fixed.authorization.commits.capture())));},
           },
         });
       });
@@ -101,7 +108,7 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
   });
 }
 export type C10Integration=ReturnType<typeof createC10Integration>;
-/** Lifecycle only; no child owner, raw repository or commit issuer is published. */
+/** Lifecycle fences only owned requests, not the shared repository or other writers. */
 export function createC10IntegrationFactory(platform:C10Integration,registerRoutes?:(platform:C10Integration)=>void){
   return (context:HostPluginContext):PluginLifecycle=>{
     const abort=()=>{void platform.close().catch(()=>{});};context.scope.signal.addEventListener('abort',abort,{once:true});
