@@ -11,8 +11,6 @@ import {
   codexImageSteerInputs,
   dshImageAttachmentInput,
   dshPreparedValue,
-  failedImageView,
-  isImageDeliveryAcknowledgement,
 } from '../dist/tools/image-result.js';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
@@ -117,26 +115,26 @@ test('a reader without view support cannot be asked for regions or metadata', as
 
 test('pure runtime adapters prepare payloads without sending, confirming or copying pixels into metadata', () => {
   const view = {...viewFor(), id: 'generated-image', delivery: 'pending'};
-  const payload = {source: 'untrusted_personal_context', id: 'generated-image', imageView: view, image, imageBudget: {remainingPayloads: 3}, toolUsage: {}};
-  const attachment = dshImageAttachmentInput(payload);
+  const payload = {source: 'untrusted_personal_context', id: 'generated-image', imageView: view, image, imageBudget: {remainingPayloads: 3}, toolUsage: {}, imageDelivery: 'generated-token'};
+  const attachment = dshImageAttachmentInput(image);
   assert.equal(attachment.mediaType, 'image/png');
   assert.equal(attachment.name, 'capture');
   assert.deepEqual(attachment.data, bytes);
-  const prepared = dshPreparedValue(payload, {id: 'generated-attachment'});
-  assert.equal(prepared.imageView.delivery, 'prepared');
-  assert.equal('imageDelivery' in prepared, false);
-  assert.equal('delivered' in prepared, false);
-  assert.deepEqual(prepared.imageAttachment, {id: 'generated-attachment'});
 
-  const steer = codexImageSteerInputs(payload);
-  assert.equal(steer[1].type, 'image');
-  assert.equal(steer[1].url, `data:image/png;base64,${encoded}`);
+  const rendered = dshPreparedValue({text: 'untrusted image payload text', images: [image]}, [{id: 'generated-attachment'}]);
+  assert.deepEqual(rendered, {text: 'untrusted image payload text', attachments: [{id: 'generated-attachment'}]});
+  assert.deepEqual(dshPreparedValue({text: 'metadata only'}, []), {text: 'metadata only'});
+
   const metadata = codexImageMetadata(payload);
   assert.equal(JSON.stringify(metadata).includes(encoded), false, 'metadata never duplicates base64');
-  assert.equal(steer[0].text.includes(encoded), false);
+  assert.equal('imageDelivery' in metadata, false, 'metadata never carries a delivery token');
+  assert.equal(metadata.id, 'generated-image');
+  assert.deepEqual(metadata.imageView, view);
 
-  assert.equal(isImageDeliveryAcknowledgement({token: 'generated-token', delivered: true}), true);
-  assert.equal(isImageDeliveryAcknowledgement({token: '', delivered: true}), false);
-  assert.equal(isImageDeliveryAcknowledgement({token: 'generated-token', delivered: 'yes'}), false);
-  assert.equal(failedImageView(view).delivery, 'failed');
+  const steer = codexImageSteerInputs(metadata, image);
+  assert.equal(steer[0].type, 'text');
+  assert.equal(steer[0].text_elements.length, 0);
+  assert.equal(steer[0].text.includes(encoded), false);
+  assert.equal(steer[1].type, 'image');
+  assert.equal(steer[1].url, `data:image/png;base64,${encoded}`);
 });
