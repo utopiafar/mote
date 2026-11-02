@@ -26,8 +26,8 @@ async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-media-authority-')),store=new Store(directory,quota),sources=new SourceStore(store),files=new FileStore(store,sources);
  new ArchivedFileStore(store);
  const requests:{path:string;bytes:Buffer}[]=[],seen:ModelProcessingRequest[]=[];
- let hold:Promise<void>|undefined,summaryCalls=0,ownerIntentCalls=0,release:()=>void=()=>{},arrived:()=>void=()=>{};
- const service=createServer(async(req,res)=>{const chunks:Buffer[]=[];for await(const part of req)chunks.push(Buffer.from(part));requests.push({path:req.url!,bytes:Buffer.concat(chunks)});arrived();await hold;res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');res.end(JSON.stringify(req.url==='/ocr'?{durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated yellow orchard.'}]}:req.url==='/diarize'?{durationMs:3000,engine:'generated',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:3000,speaker:'SPEAKER_0'}],samples:[]}:transcript));});
+ let hold:Promise<void>|undefined,summaryCalls=0,ownerIntentCalls=0,transcriptionFails=false,release:()=>void=()=>{},arrived:()=>void=()=>{};
+ const service=createServer(async(req,res)=>{const chunks:Buffer[]=[];for await(const part of req)chunks.push(Buffer.from(part));requests.push({path:req.url!,bytes:Buffer.concat(chunks)});arrived();await hold;res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');res.end(JSON.stringify(req.url==='/ocr'?{durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated yellow orchard.'}]}:req.url==='/diarize'?{durationMs:3000,engine:'generated',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:3000,speaker:'SPEAKER_0'}],samples:[]}:transcriptionFails?{durationMs:-1,segments:[]}:transcript));});
  await new Promise<void>(resolve=>service.listen(0,'127.0.0.1',resolve));const address=service.address();assert.ok(address&&typeof address!=='string');const url='http://127.0.0.1:'+address.port;
  sources.register({id:'phone',name:'Generated phone',kind:'local-files',deviceId:'generated-phone',platform:'android',retention:'archive'});
  let processing:FileProcessing,engine:ExecutionEngine,control:BackgroundModelAuthorization,images:ImageProcessing|undefined;
@@ -44,7 +44,7 @@ async function fixture(t:import('node:test').TestContext){
  t.after(async()=>{release();service.closeAllConnections();await new Promise<void>(resolve=>service.close(()=>resolve()));await images?.close();await processing.close();await engine.close();control.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
  const upload=async(bytes=audio,mimeType='audio/wav')=>{const begun=files.begin({sourceId:'phone',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),title:'Generated original',kind:'file',layer:'original',text:'',mimeType,deleted:false},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});files.part(begun.uploadId,0,bytes,()=>{});return (await files.commit(begun.uploadId,()=>{})).id;};
  const command=(action:'authorize'|'pause'|'stop',dataKinds=['text','image','audio'])=>control.command({action,revision:control.view().revision,operationId:randomUUID(),...(action==='authorize'?{connections:processing.modelConnections(),scope:{sourceIds:['phone'],dataKinds}}:{})});
- return {store,files,sources,requests,seen,url,setQuota:(bytes?:number)=>{quota.maxStorageBytes=bytes;},get processing(){return processing;},get engine(){return engine;},get control(){return control;},upload,command,get summaryCalls(){return summaryCalls;},get ownerIntentCalls(){return ownerIntentCalls;},
+ return {store,files,sources,requests,seen,url,setQuota:(bytes?:number)=>{quota.maxStorageBytes=bytes;},failTranscription:(fail:boolean)=>{transcriptionFails=fail;},get processing(){return processing;},get engine(){return engine;},get control(){return control;},upload,command,get summaryCalls(){return summaryCalls;},get ownerIntentCalls(){return ownerIntentCalls;},
   async manual(id:string|string[],run:()=>unknown){const work='generated-manual:'+randomUUID();control.manual(work,'manual',typeof id==='string'?[id]:id);await control.run(work,async()=>{run();});return work;},
   hold(){let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);arrived=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release:()=>release()};},
   async restart(){configuration=processing.configurationSnapshot();await images?.close();images=undefined;await processing.close();await engine.close();control.close();await create();},
@@ -62,6 +62,22 @@ test('explicit same-target retry gets new durable steps without resetting previo
  const f=await fixture(t),id=await f.upload();await f.processing.tick();const previous=f.engine.list({operationId:'file:'+id}).items.map(row=>({id:row.id,state:row.state}));
  const work=await f.manual(id,()=>f.processing.retry(id));assert.ok(f.engine.list({operationId:'file:'+id}).items.find(row=>row.input.ownerIntentId===work));await f.restart();await f.processing.tick();
  assert.equal(f.requests.length,1);assert.equal(f.files.detail(id).job?.state,'succeeded');for(const old of previous)assert.equal(f.engine.get(old.id)?.state,old.state);assert.ok(f.seen.some(row=>row.ownerIntentId===work));
+});
+
+test('file detail follows the current owner retry receipt through work, success, restart and another failure',async t=>{
+ const f=await fixture(t);f.command('authorize');f.failTranscription(true);const id=await f.upload();await f.processing.tick();
+ const extract=()=>f.files.detail(id).steps.find(step=>step.step==='extract')!;
+ assert.equal(f.files.detail(id).job?.state,'failed');assert.equal(extract().state,'failed');
+ const oldFailure=f.engine.list({operationId:'file:'+id}).items.find(row=>row.kind.startsWith('file-step.')&&row.state==='failed')!;assert.ok(oldFailure);
+ f.failTranscription(false);await f.manual(id,()=>f.processing.retry(id));const barrier=f.hold(),tick=f.processing.tick();await barrier.started;
+ try{assert.equal(extract().state,'running');assert.equal(extract().error,null);}finally{barrier.release();await tick;}
+ assert.equal(f.files.detail(id).job?.state,'succeeded');assert.equal(extract().state,'succeeded');assert.equal(extract().error,null);assert.equal(f.files.chunks(id)[0].ocrText,transcript.segments[0].text);
+ assert.equal(f.engine.get(oldFailure.id)?.state,'failed','historical failure remains intact');
+ const success=f.engine.list({operationId:'file:'+id}).items.find(row=>row.kind.startsWith('file-step.')&&row.state==='succeeded')!;assert.ok(success);
+ await f.restart();await f.processing.tick();assert.equal(extract().state,'succeeded');assert.equal(f.requests.length,2,'restart does not repeat completed processing');
+ f.failTranscription(true);await f.manual(id,()=>f.processing.retry(id));await f.processing.tick();
+ assert.equal(f.files.detail(id).job?.state,'failed');assert.equal(extract().state,'failed');assert.equal(f.requests.length,3);
+ assert.equal(f.engine.get(success.id)?.state,'succeeded','a prior success cannot hide the current failure');
 });
 
 test('stop fences late ASR and only an explicit same-original owner confirmation can retry unknown work',async t=>{

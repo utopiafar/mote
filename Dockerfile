@@ -26,11 +26,13 @@ COPY scripts/requirements-audio.txt scripts/requirements-ocr.txt ./scripts/
 RUN python3 -m venv /opt/mote-media-venv && /opt/mote-media-venv/bin/pip install --no-cache-dir -r scripts/requirements-audio.txt -r scripts/requirements-ocr.txt
 COPY package.json package-lock.json ./
 COPY packages/plugin-api/package.json ./packages/plugin-api/package.json
+COPY packages/plugin-host/package.json ./packages/plugin-host/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/agent/package.json ./packages/agent/package.json
 COPY apps/server/package.json ./apps/server/package.json
 RUN npm ci --omit=dev --workspace=@mote/server --workspace=@mote/shared --workspace=@mote/agent --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/packages/plugin-api/dist ./packages/plugin-api/dist
+COPY --from=build /app/packages/plugin-host/dist ./packages/plugin-host/dist
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/agent/dist ./packages/agent/dist
 COPY --from=build /app/packages/agent/skills ./packages/agent/skills

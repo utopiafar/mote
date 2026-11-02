@@ -260,7 +260,13 @@ export class FileStore {
       }
     }
     if(hasExecution)for(const step of rawSteps){
-      const receipt=db.prepare('SELECT state,attempts,error,updated_at FROM execution_steps WHERE id=?').get(sha256(JSON.stringify(['file-step',id,step.step,step.fingerprint])));
+      // Owner retries retain prior receipts under different identities. Read the
+      // current operation membership rather than reconstructing a child's ID.
+      const receipt=db.prepare(`SELECT e.state,e.attempts,e.error,e.updated_at FROM execution_steps e
+        JOIN execution_operation_steps o ON o.step_id=e.id
+        WHERE o.operation_id=? AND o.slot='file-pipeline' AND o.active=1 AND e.kind LIKE 'file-step.%'
+          AND json_extract(e.input,'$.name')=? AND json_extract(e.input,'$.fingerprint')=?
+        ORDER BY e.updated_at DESC LIMIT 1`).get('file:'+id,step.step,step.fingerprint);
       if(receipt){step.state=String(receipt.state);step.attempts=Number(receipt.attempts);step.error=receipt.error===null?null:String(receipt.error);step.updatedAt=new Date(Number(receipt.updated_at)).toISOString();}
     }
     const job=rawJob?({...rawJob,execution:executionEnvelope({state:rawJob.state==='waiting'&&rawJob.error&&rawJob.availableAt>Date.now()?'retry_wait':rawJob.state,attempts:rawJob.attempts,errorCode:rawJob.error??undefined,availableAt:rawJob.availableAt,inputVersion:rawJob.inputVersion??undefined}),...(summaryExecution?{summaryExecution,summaryAvailableAt}:{})} satisfies FileProcessingJobView):null;
