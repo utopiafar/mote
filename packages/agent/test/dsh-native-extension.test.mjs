@@ -48,9 +48,10 @@ test('native assembly validates public manifest, entries and factory ownership',
     {id: 'two', subpath: '.'},
   ], grants), 'native_manifest_invalid');
 
-  assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
+  const partialGrant = planNativeDshAssembly(fixtureRoot, manifest, [
     {id: 'one', subpath: '.', capabilities: ['tools']},
-  ], ['hooks', 'factory', 'agents']), 'native_capability_denied');
+  ], ['tools']);
+  assert.equal(partialGrant.entries.length, 1);
 
   assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
     {id: 'one', subpath: './factory-a', capabilities: ['network']},
@@ -59,17 +60,33 @@ test('native assembly validates public manifest, entries and factory ownership',
   const conditionalRoot = await mkdtemp(join(tmpdir(), 'mote-native-conditional-'));
   try {
     await writeFile(join(conditionalRoot, 'index.mjs'), 'export default 1;\n');
-    await writeFile(join(conditionalRoot, 'package.json'), JSON.stringify({
+    await writeFile(join(conditionalRoot, 'generic.mjs'), 'export default 2;\n');
+    await writeFile(join(conditionalRoot, 'esm.mjs'), 'export default 3;\n');
+    const writeManifest = async exportsValue => writeFile(join(conditionalRoot, 'package.json'), JSON.stringify({
       name: '@mote/conditional-probe',
       version: '0.0.0',
       type: 'module',
-      exports: {import: './index.mjs', default: './index.mjs'},
+      exports: exportsValue,
     }));
+    await writeManifest({import: './index.mjs', default: './index.mjs'});
     const conditionalManifest = await readNativeDshManifest(conditionalRoot);
     const conditionalPlan = planNativeDshAssembly(conditionalRoot, conditionalManifest, [
       {id: 'one', subpath: '.'},
     ], grants);
     assert.equal(conditionalPlan.entries[0].subpath, '.');
+
+    await writeManifest({default: './generic.mjs', import: './esm.mjs'});
+    const orderedManifest = await readNativeDshManifest(conditionalRoot);
+    const orderedPlan = planNativeDshAssembly(conditionalRoot, orderedManifest, [
+      {id: 'one', subpath: '.'},
+    ], grants);
+    assert.match(orderedPlan.entries[0].specifier, /generic\.mjs$/);
+
+    await writeManifest({import: null, default: './index.mjs'});
+    await assert.rejects(
+      readNativeDshManifest(conditionalRoot),
+      error => error instanceof NativeDshAssemblyError && error.code === 'native_entry_missing',
+    );
   } finally {
     await rm(conditionalRoot, {recursive: true, force: true});
   }

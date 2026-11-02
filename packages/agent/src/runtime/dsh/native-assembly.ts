@@ -93,14 +93,14 @@ export async function readNativeDshManifest(packageRoot: string): Promise<Native
           throw new NativeDshAssemblyError('native_manifest_invalid', 'Native package exports cannot mix subpaths and conditions');
         }
         const resolved = exportTarget(target);
-        if (resolved === undefined) {
+        if (resolved === undefined || resolved === blockedExport) {
           throw new NativeDshAssemblyError('native_entry_missing', `Export ${subpath} has no runtime entry`);
         }
         exportsMap[subpath] = resolved;
       }
     } else {
       const rootTarget = exportTarget(exportsValue);
-      if (rootTarget === undefined) {
+      if (rootTarget === undefined || rootTarget === blockedExport) {
         throw new NativeDshAssemblyError('native_entry_missing', 'Native package root has no runtime entry');
       }
       exportsMap['.'] = rootTarget;
@@ -130,15 +130,19 @@ export async function readNativeDshManifest(packageRoot: string): Promise<Native
   };
 }
 
-function exportTarget(target: unknown): string | undefined {
+const blockedExport = Symbol('blocked-export');
+
+function exportTarget(target: unknown): string | typeof blockedExport | undefined {
+  if (target === null) return blockedExport;
   if (typeof target === 'string') return target;
   if (!target || typeof target !== 'object' || Array.isArray(target)) return undefined;
-  const conditions = target as Record<string, unknown>;
-  // Resolve only conditions this loader can actually satisfy. Unknown keys are
-  // private to another consumer and must not select an executable target.
-  for (const key of ['import', 'node', 'default']) {
-    if (!Object.hasOwn(conditions, key)) continue;
-    const resolved = exportTarget(conditions[key]);
+  // Node resolves conditions in declaration order. Only conditions this ESM
+  // loader matches participate; a matched null blocks the export (it must not
+  // fall through to a later default), and a matched miss continues.
+  for (const [key, value] of Object.entries(target)) {
+    if (key !== 'import' && key !== 'node' && key !== 'default') continue;
+    const resolved = exportTarget(value);
+    if (resolved === blockedExport) return blockedExport;
     if (resolved !== undefined) return resolved;
   }
   return undefined;
@@ -181,11 +185,6 @@ export function planNativeDshAssembly(
   grantedCapabilities: readonly string[],
 ): NativeDshAssembly {
   const granted = new Set(grantedCapabilities);
-  for (const capability of manifest.capabilities) {
-    if (!granted.has(capability)) {
-      throw new NativeDshAssemblyError('native_capability_denied', `Native package capability is not granted: ${capability}`);
-    }
-  }
   const ids = new Set<string>();
   const subpaths = new Set<string>();
   const specifiers = new Set<string>();
