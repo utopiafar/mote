@@ -124,7 +124,7 @@ export class PluginHost implements ServiceResolver {
     const resources = runtime.resources;
     const assertCurrent = () => {
       resources.assertCurrent();
-      if (runtime.context?.fiber.uid === null) return reject('stale_scope');
+      if (runtime.phase === 'stopping' || runtime.context?.fiber.uid === null) return reject('stale_scope');
     };
     const scope: HostScope = Object.freeze({identity: runtime.identity, signal: resources.signal, assertCurrent,
       defer: resources.defer.bind(resources), retire: resources.retire.bind(resources), run: resources.run.bind(resources), every: resources.every.bind(resources)});
@@ -137,8 +137,10 @@ export class PluginHost implements ServiceResolver {
     runtime.lifecycle = await factory(Object.freeze({scope, services,
       provide: <T>(id: string, contract: ServiceContract<T>, value: T, revision = 0) => {
         assertCurrent();
-        if (!resources.active || !runtime.declarations.some(declaration => declaration.id === id)) return reject('invalid_contract');
-        const binding = pinBinding(serviceBindingSchema.parse({service: serviceRefSchema.parse(contract), provider: {scope: runtime.identity, contributionId: id}, revision}));
+        const declaration = runtime.declarations.find(declaration => declaration.id === id), service = serviceRefSchema.parse(contract);
+        if (!resources.active || !declaration) return reject('invalid_contract');
+        if (declaration.apiVersion !== service.apiVersion) return reject('api_incompatible');
+        const binding = pinBinding(serviceBindingSchema.parse({service, provider: {scope: runtime.identity, contributionId: id}, revision}));
         const name = portKey(binding);
         if (this.ports.has(name)) return reject('conflict');
         const key = 'motePluginPort:' + name;
@@ -218,23 +220,45 @@ export class PluginHost implements ServiceResolver {
   }
   private quiesce(runtime: Runtime, reason: StopReason) {
     if (runtime.phase === 'stopping') return Promise.reject(new PluginHostError('stale_scope'));
-    runtime.resources.quiesce();
-    runtime.phase = 'quiescing';
+    for (const target of this.requiredGraph(runtime)) {
+      if (target.phase === 'stopping') return Promise.reject(new PluginHostError('stale_scope'));
+      target.resources.quiesce(); target.phase = 'quiescing';
+    }
     this.revision++;
-    return runtime.quiescing ??= runtime.initialized.then(() => runtime.lifecycle?.quiesce(reason)).then(() => {});
+    return this.quiesceHooks(runtime, reason);
+  }
+  private dependents(runtime: Runtime) {
+    return [...this.runtimes.values()].filter(candidate => candidate !== runtime && candidate.requires.some(binding => scopeKey(binding.provider.scope) === scopeKey(runtime.identity)));
+  }
+  private requiredGraph(runtime: Runtime) {
+    const affected = new Set<Runtime>([runtime]);
+    for (const provider of affected) for (const candidate of this.dependents(provider)) affected.add(candidate);
+    return affected;
+  }
+  private quiesceHooks(runtime: Runtime, reason: StopReason): Promise<void> {
+    if (runtime.quiescing) return runtime.quiescing;
+    return closingTask(task => { runtime.quiescing = task; }, async () => {
+      const results = await Promise.allSettled(this.dependents(runtime).map(dependent => this.quiesceHooks(dependent, reason)));
+      const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+      try { await runtime.initialized; await runtime.lifecycle?.quiesce(reason); } catch (error) { errors.push(error); }
+      if (errors.length) throw new AggregateError(errors, 'Plugin quiesce failed');
+    });
   }
   private teardown(runtime: Runtime, reason: StopReason) {
     if (runtime.teardown) return runtime.teardown;
     return closingTask(task => { runtime.teardown = task; }, async () => {
-      runtime.phase = 'stopping'; runtime.resources.stop(new PluginHostError(reason === 'revoked' ? 'revoked' : 'stale_scope')); this.revision++;
+      this.revokeGraph(runtime, reason);
       const errors: unknown[] = [];
       const attempt = async (work: () => unknown | Promise<unknown>) => { try { await work(); } catch (error) { errors.push(error); } };
       // Required consumers stop while their provider's resources and registrations still exist.
-      for (const dependent of [...this.runtimes.values()]) if (dependent !== runtime && dependent.requires.some(binding => scopeKey(binding.provider.scope) === scopeKey(runtime.identity))) await attempt(() => this.stop(dependent, 'dependency_unavailable'));
+      const dependents = this.dependents(runtime);
+      const results = await Promise.allSettled(dependents.map(dependent => this.stop(dependent, 'dependency_unavailable')));
+      errors.push(...results.flatMap(result => result.status === 'rejected' ? [result.reason] : []));
       await runtime.initialized.catch(() => {}); // Startup failure is retained by install(), not duplicated as cleanup.
       if (runtime.lifecycle) {
         await attempt(() => runtime.quiescing ?? runtime.lifecycle!.quiesce(reason));
         await attempt(() => runtime.lifecycle!.stop(reason));
+        await attempt(() => runtime.resources.drain());
         await attempt(() => runtime.lifecycle!.dispose());
       }
       await attempt(() => runtime.resources.close());
@@ -242,10 +266,25 @@ export class PluginHost implements ServiceResolver {
       if (errors.length) throw new AggregateError(errors, 'Plugin disposal failed');
     });
   }
+  /** Fence the complete required graph synchronously, before any slow hook can block a sibling. */
+  private revokeGraph(runtime: Runtime, reason: StopReason) {
+    const affected = this.requiredGraph(runtime);
+    for (const target of affected) { target.phase = 'stopping'; target.resources.quiesce(); }
+    for (const target of affected) target.resources.stop(new PluginHostError(reason === 'revoked' ? 'revoked' : 'stale_scope'));
+    this.revision++;
+  }
   private stop(runtime: Runtime, reason: StopReason) {
-    if (runtime.closing) return runtime.closing;
+    const graceful = reason === 'upgrade' || reason === 'restart';
+    if (runtime.closing) {
+      if (!graceful) this.revokeGraph(runtime, reason);
+      return runtime.closing;
+    }
     return closingTask(task => { runtime.closing = task; }, async () => {
       const errors: unknown[] = [];
+      if (graceful) {
+        try { await this.quiesce(runtime, reason); } catch (error) { errors.push(error); }
+        await Promise.all([...this.requiredGraph(runtime)].map(target => target.resources.drain()));
+      }
       try { await this.teardown(runtime, reason); } catch (error) { errors.push(error); }
       try { await runtime.fiber?.dispose(); } catch (error) { errors.push(error); }
       if (errors.length) throw new AggregateError(errors, 'Plugin disposal failed');
@@ -264,7 +303,8 @@ export class PluginHost implements ServiceResolver {
     const runtimes = [...this.runtimes.values()];
     return closingTask(task => { this.closing = task; }, async () => {
       // Revoke immediately before yielding, including scopes whose startup is still in flight.
-      for (const runtime of runtimes) { runtime.phase = 'stopping'; runtime.resources.stop(); }
+      for (const runtime of runtimes) { runtime.phase = 'stopping'; runtime.resources.quiesce(); }
+      for (const runtime of runtimes) runtime.resources.stop();
       const results = await Promise.allSettled(runtimes.map(runtime => this.stop(runtime, 'shutdown')));
       const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
       if (this.ownsRoot) try { await this.context.fiber.dispose(); } catch (error) { errors.push(error); }

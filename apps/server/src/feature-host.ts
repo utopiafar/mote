@@ -5,7 +5,7 @@ import {collectorIngressWrite} from './ingress.js';
 import {PluginResourceScope} from '@mote/plugin-host';
 
 export class ServerFeatureScope extends PluginResourceScope {
-  constructor(onError:(error:unknown)=>void=()=>{}){super(onError,'Feature disposal failed');}
+  constructor(onError:(error:unknown)=>void=()=>{}){super(onError,'Feature disposal failed',true);}
 }
 
 /** Trusted, build-time server entries. HTTP topology changes require restart.

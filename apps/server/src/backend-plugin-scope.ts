@@ -8,7 +8,7 @@ import {PluginResourceScope} from '@mote/plugin-host';
  */
 export class BackendPluginScope {
   readonly context:Context;
-  private readonly resources=new PluginResourceScope(undefined,'Plugin scope disposal failed');
+  private readonly resources=new PluginResourceScope(undefined,'Plugin scope disposal failed',true);
   private closed=false;
 
   constructor(root?:Context){

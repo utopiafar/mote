@@ -19,7 +19,7 @@ export class PluginResourceScope {
   private closing?: Promise<void>;
   readonly signal = this.controller.signal;
 
-  constructor(private readonly onError: (error: unknown) => void = () => {}, private readonly errorMessage = 'Plugin resource disposal failed') {}
+  constructor(private readonly onError: (error: unknown) => void = () => {}, private readonly errorMessage = 'Plugin resource disposal failed', private readonly releaseBeforeDrain = false) {}
   get active() { return this.accepting; }
   assertCurrent() { if (this.signal.aborted || this.disposed) throw new PluginHostError('stale_scope'); }
 
@@ -77,14 +77,19 @@ export class PluginResourceScope {
     void this.dispose().then(resolve, reject);
     return this.closing;
   }
+  async drain() {
+    while (this.pending.size) await Promise.allSettled([...this.pending]);
+  }
   private async dispose() {
     this.stop();
     const errors: unknown[] = [];
     const drain = async (list: Cleanup[]) => {
       while (list.length) try { await list.pop()!(); } catch (error) { errors.push(error); }
     };
-    await drain(this.disposers);
-    while (this.pending.size) await Promise.allSettled([...this.pending]);
+    // Legacy adapters use resource disposal to cancel their executors. New
+    // factory-owned resources remain alive until tracked calls have settled.
+    if (this.releaseBeforeDrain) await drain(this.disposers);
+    await this.drain();
     // An accepted prepare/read can acquire a resource after cancellation; reclaim that resource too.
     while (this.disposers.length || this.retiring.length) { await drain(this.disposers); await drain(this.retiring); }
     errors.push(...this.observerErrors);

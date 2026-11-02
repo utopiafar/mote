@@ -47,14 +47,14 @@ export function taskPlan(task, root = '.', selectedServer = ['all']) {
   if (task === 'tooling') return [node('--test', ...listTests('scripts/ci', '.test.mjs', root), ...listTests('scripts/release', '.test.mjs', root))];
   if (task === 'i18n') return [sharedBuild(), npm('check:i18n'), node('--test', 'packages/shared/test/i18n.test.mjs')];
   if (task === 'shared') return [sharedBuild(), npm('test', '-w', '@mote/shared')];
-  if (task === 'web') return [...libs(), npm('build', '-w', '@mote/web'), npm('test', '-w', '@mote/web')];
+  if (task === 'web') return [npm('build', '-w', '@mote/plugin-host'), ...libs(), npm('build', '-w', '@mote/web'), npm('test', '-w', '@mote/web')];
   if (task === 'web-contract') return [sharedBuild(), node('--import', 'tsx', '--test', 'apps/web/test/api.test.ts')];
   if (task === 'agent' || task === 'agent-contract') return [...libs(), node('--test', ...(task === 'agent' ? listTests('packages/agent/test', '.test.mjs', root) : ['packages/agent/test/task-context.test.mjs', 'packages/agent/test/tool-contributions.test.mjs']))];
-  if (task === 'server-build') return [...serverLibs(), npm('build', '-w', '@mote/server')];
+  if (task === 'server-build') return [...serverLibs(), node('--test', 'packages/plugin-host/test/import-boundary.test.mjs', 'packages/plugin-host/test/lifecycle.test.mjs'), npm('build', '-w', '@mote/server')];
   if (/^server-[1-4]$/.test(task)) return [...serverLibs(), server(serverFiles(Number(task.at(-1)), root, selectedServer), '--test-skip-pattern', automaticSkipPattern)];
   if (task === 'server-contract') return [...serverLibs(), npm('build', '-w', '@mote/server'), server(['apps/server/test/connections.test.ts', 'apps/server/test/runtime-listener.test.ts']), node('--test', 'scripts/update-tests.mjs', 'scripts/update-deployment-tests.mjs'), node('scripts/test-central-runner.mjs')];
   if (task === 'desktop' || task === 'desktop-contract') {
-    const plan = [...libs(), npm('build', '-w', '@mote/diagnostics')];
+    const plan = [npm('build', '-w', '@mote/plugin-host'), ...libs(), npm('build', '-w', '@mote/diagnostics')];
     if (task === 'desktop') plan.push(npm('typecheck', '-w', '@mote/desktop'), npm('test', '-w', '@mote/diagnostics'), npm('test', '-w', '@mote/desktop'));
     else plan.push(npm('test', '-w', '@mote/desktop', '--', 'test/connection-binding.test.ts', 'test/coding-transport-compatibility.test.ts', 'test/central-navigation.test.ts'));
     return plan;

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer, connect} from 'node:net';
+import {DatabaseSync} from 'node:sqlite';
 import {Context} from '@deepseek-ai/cordis';
 import {serviceContract, pluginSnapshotSchema} from '@mote/plugin-api/contracts';
 import {PluginHost, PluginResourceScope} from '@mote/plugin-host';
@@ -164,8 +165,107 @@ test('resource close is reentrant/idempotent, preserves cleanup errors, and reti
   scope.defer(() => { events.push('first'); throw first; }); scope.defer(() => { events.push('second'); throw second; });
   scope.retire(() => { events.push('retired'); });
   const closing = scope.close(); assert.equal(reentrant, closing); assert.equal(scope.close(), closing);
-  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(events, ['running', 'second', 'first']);
+  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(events, ['running']);
   held.resolve(); await work;
   await assert.rejects(closing, error => error instanceof AggregateError && error.errors.length === 2 && hasFailure(error, first) && hasFailure(error, second));
-  assert.deepEqual(events, ['running', 'second', 'first', 'settled', 'late-resource', 'retired']);
+  assert.deepEqual(events, ['running', 'settled', 'late-resource', 'second', 'first', 'retired']);
+});
+
+test('provider API mismatch rolls back without advertising an unusable active version', async t => {
+  const host = new PluginHost(hostId); let binding;
+  t.after(() => host.close());
+  await assert.rejects(host.install({identity: identity('versioned'), contributions: [reader], factory: context => {
+    context.provide(reader.id, serviceContract(reader.id, '2'), {read() { return 'wrong'; }}); return lifecycle();
+  }}), {code: 'api_incompatible'});
+  assert.deepEqual(host.snapshot().contributions, []);
+  await host.install({identity: identity('versioned'), contributions: [reader], factory: context => {
+    binding = context.provide(reader.id, reader, {read() { return 'exact'; }}); return lifecycle();
+  }});
+  const lease = await host.acquire(reader, binding);
+  assert.equal(lease.value.read(), 'exact'); assert.equal(host.snapshot().contributions[0].apiVersion, binding.service.apiVersion);
+});
+
+test('a forged contribution identity cannot acquire another contribution in the same provider scope', async t => {
+  const host = new PluginHost(hostId); let binding, factoryRan = false;
+  t.after(() => host.close());
+  await host.install({identity: identity('identity-boundary'), contributions: [reader, {id: 'fixture.other', apiVersion: '1'}], factory: context => {
+    binding = context.provide(reader.id, reader, {read() { return 'exact-provider'; }}); return lifecycle();
+  }});
+  const forged = {...binding, provider: {...binding.provider, contributionId: 'fixture.other'}};
+  await assert.rejects(host.acquire(reader, forged), {code: 'dependency_unavailable'});
+  await assert.rejects(host.install({identity: identity('forged-consumer'), contributions: [], requires: [forged], factory() {
+    factoryRan = true; return lifecycle();
+  }}), {code: 'dependency_unavailable'});
+  assert.equal(factoryRan, false);
+  const exact = await host.acquire(reader, binding); assert.equal(exact.value.read(), 'exact-provider');
+});
+
+test('all required consumers are fenced before any slow teardown and release before the provider', {timeout: 5000}, async t => {
+  const host = new PluginHost(hostId), held = gate(), entered = gate(), events = []; let binding;
+  const scopes = [];
+  t.after(async () => { held.resolve(); await host.close(); });
+  const provider = await host.install({identity: identity('graph-provider'), contributions: [reader], factory: context => {
+    binding = context.provide(reader.id, reader, {read() {}}); return lifecycle({dispose() { events.push('provider'); }});
+  }});
+  for (const name of ['slow', 'sibling']) await host.install({identity: identity(name), contributions: [], requires: [binding], factory: context => {
+    scopes.push(context.scope);
+    return lifecycle({async stop() { if (name === 'slow') { entered.resolve(); await held.promise; } }, dispose() { events.push(name); }});
+  }});
+  const closing = provider.close('revoked');
+  for (const scope of scopes) { assert.equal(scope.signal.aborted, true); assert.throws(() => scope.assertCurrent(), {code: 'stale_scope'}); }
+  await entered.promise; await new Promise(resolve => setImmediate(resolve));
+  assert.ok(events.includes('sibling')); assert.ok(!events.includes('provider'));
+  held.resolve(); await closing; assert.equal(events.at(-1), 'provider');
+});
+
+test('stop keeps the actual database alive for a held read and disposes only after its late result is fenced', {timeout: 5000}, async t => {
+  const host = new PluginHost(hostId), entered = gate(), held = gate(), events = []; let binding;
+  t.after(async () => { held.resolve(); await host.close(); });
+  const provider = await host.install({identity: identity('database'), contributions: [reader], factory: context => {
+    const db = new DatabaseSync(':memory:'); db.exec('CREATE TABLE fixture(value TEXT); INSERT INTO fixture VALUES (\'generated\')');
+    context.scope.defer(() => { db.close(); events.push('db-close'); });
+    binding = context.provide(reader.id, reader, {async read() {
+      entered.resolve(); await held.promise;
+      assert.equal(db.prepare('SELECT value FROM fixture').get().value, 'generated'); events.push('read'); context.scope.assertCurrent();
+    }});
+    return lifecycle({dispose() { events.push('lifecycle-dispose'); }});
+  }});
+  const lease = await host.acquire(reader, binding), reading = lease.value.read();
+  const rejected = assert.rejects(reading, {code: 'stale_scope'});
+  await entered.promise; const closing = provider.close();
+  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(events, []);
+  held.resolve(); await rejected; await closing;
+  assert.deepEqual(events, ['read', 'lifecycle-dispose', 'db-close']);
+});
+
+for (const reason of ['upgrade', 'restart']) test(`${reason} lets accepted work and dependent quiesce use their fixed pin before revoking`, {timeout: 5000}, async t => {
+  const host = new PluginHost(hostId), entered = gate(), held = gate(), quiesced = gate(), events = []; let binding, consumerLease, consumerScope;
+  t.after(async () => { held.resolve(); await host.close(); });
+  const provider = await host.install({identity: identity('graceful-' + reason), contributions: [reader], factory: context => {
+    binding = context.provide(reader.id, reader, {async read() { entered.resolve(); await held.promise; context.scope.assertCurrent(); events.push('accepted'); return 'generated'; }, flush() { context.scope.assertCurrent(); events.push('flush'); }});
+    return lifecycle({dispose() { events.push('provider-dispose'); }});
+  }});
+  await host.install({identity: identity('graceful-consumer-' + reason), contributions: [], requires: [binding], factory: async context => {
+    consumerScope = context.scope; consumerLease = await context.services.acquire(reader, binding);
+    return lifecycle({quiesce() { consumerLease.value.flush(); quiesced.resolve(); }, stop() { assert.throws(() => consumerLease.assertCurrent(), {code: 'stale_scope'}); }, dispose() { events.push('consumer-dispose'); }});
+  }});
+  const reading = consumerLease.value.read(); await entered.promise;
+  const closing = provider.close(reason); await quiesced.promise;
+  assert.equal(provider.signal.aborted, false); assert.equal(consumerScope.signal.aborted, false);
+  await assert.rejects(host.acquire(reader, binding), {code: 'dependency_unavailable'});
+  assert.deepEqual(events, ['flush']); held.resolve(); assert.equal(await reading, 'generated'); await closing;
+  assert.deepEqual(events, ['flush', 'accepted', 'consumer-dispose', 'provider-dispose']);
+});
+
+test('host shutdown fences every scope before synchronous abort observers can commit through a sibling', async () => {
+  const host = new PluginHost(hostId), scopes = [], observed = [];
+  for (const name of ['shutdown-one', 'shutdown-two']) await host.install({identity: identity(name), contributions: [], factory: context => {
+    scopes.push(context.scope); return lifecycle();
+  }});
+  scopes[0].signal.addEventListener('abort', () => {
+    for (const scope of scopes) {
+      try { scope.assertCurrent(); observed.push(false); } catch (error) { observed.push(error.code === 'stale_scope'); }
+    }
+  });
+  await host.close(); assert.deepEqual(observed, [true, true]);
 });
