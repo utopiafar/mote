@@ -526,7 +526,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     let source;
     try{source=this.sources.getSource(sourceId);}catch{return runtime?.registry.declared(sourceKind)?[]:undefined;}
     try{
-      const pipeline=runtime?.select(source);
+      const pipeline=runtime?.selectionForRead(source);
       if(pipeline?.recipe){
         const recipe=runtime!.recipes.resolve(pipeline.recipe.id,pipeline.recipe.version);
         return recipe.definition.accepts.sourceKind===source.kind?recipe.definition.exposure.routes:[];
@@ -751,7 +751,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         if(!this.captureExposure(original,'memory',policy,'capture',false,metadataOnly))return false;
       }else{
         try{
-          const source=this.sources.getSource(material.origin.sourceId),pipeline=this.sourcePipelines?.select(source);
+          const source=this.sources.getSource(material.origin.sourceId),pipeline=this.sourcePipelines?.selectionForRead(source);
           if(!planning&&!required){
             if(pipeline&&!materialDependencyStatus(material,this.sourcePipelines!.options(source.id).memoryDependencies??pipeline.memoryDependencies??['material']).ready)return false;
             if(!pipeline?.recipe&&pipeline?.storage!=='archive'&&!this.materialMemoryReady?.(material.ref))return false;
