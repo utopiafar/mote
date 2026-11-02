@@ -438,7 +438,10 @@ export async function createContextToolSession(
     for(const event of deferred.events){
       const callback=deferred.originals.get(event.name);
       if(typeof callback!=='function')continue;
-      try{(callback as (...args:unknown[])=>void)(...event.args);}catch{/* Observation callbacks cannot change the receipt. */}
+      try{(callback as (...args:unknown[])=>void)(...event.args);}catch(error){
+        if(event.name==='onMemoryBodies')rejectFailure(error instanceof Error?error:new Error('Memory delivery receipt could not be recorded'));
+        /* Other observation callbacks cannot change the receipt. */
+      }
     }
   };
   let prepareLock=Promise.resolve();
@@ -1085,7 +1088,8 @@ export async function createContextToolSession(
         let issue:Record<string,unknown>|undefined;
         try{issue=(JSON.parse(body??'{}') as {toolError?:Record<string,unknown>}).toolError;}catch{/* Non-JSON failure remains a tool failure. */}
         release();
-        throw new ContextToolError(typeof issue?.code==='string'?issue.code:'context_tool_failed',typeof issue?.message==='string'?issue.message:'The tool could not complete.','stop',issue?.details&&typeof issue.details==='object'?issue.details as Record<string,unknown>:{});
+        const recovery=issue?.recovery==='correct_arguments'||issue?.recovery==='use_existing_evidence'||issue?.recovery==='stop'?issue.recovery:'stop';
+        throw new ContextToolError(typeof issue?.code==='string'?issue.code:'context_tool_failed',typeof issue?.message==='string'?issue.message:'The tool could not complete.',recovery,issue?.details&&typeof issue.details==='object'?issue.details as Record<string,unknown>:{});
       }
       release();
       if(closing)throw new ContextToolError('bridge_closing','The tool session closed before delivery','stop');
