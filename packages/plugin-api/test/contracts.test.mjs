@@ -82,6 +82,17 @@ test('DTO accessors and executable fields are rejected without evaluating them',
   invalid(() => pluginSnapshotSchema.parse({...snapshot(), callback() {}}));
 });
 
+test('snapshot arrays cannot execute custom iterators or index accessors during validation', () => {
+  let evaluated = false;
+  const iterable = [contribution];
+  iterable[Symbol.iterator] = function* () { evaluated = true; yield contribution; };
+  invalid(() => pluginSnapshotSchema.parse(snapshot(iterable)));
+  const accessor = [contribution];
+  Object.defineProperty(accessor, '0', {get() { evaluated = true; return contribution; }});
+  invalid(() => pluginSnapshotSchema.parse(snapshot(accessor)));
+  assert.equal(evaluated, false);
+});
+
 test('local typed service token is an immutable exact API reference, not a wire implementation', () => {
   const token = serviceContract('fixture.original-reader', '1');
   assert.deepEqual(token, {id: 'fixture.original-reader', apiVersion: '1'});

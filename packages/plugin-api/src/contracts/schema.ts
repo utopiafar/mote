@@ -33,7 +33,15 @@ export const version: Parser<1> = (input, field) => {
 };
 export function array<T>(parse: Parser<T>, maximum: number): Parser<T[]> {
   return (input, field) => {
-    if (!Array.isArray(input) || input.length > maximum) return invalid(field);
-    return Array.from(input, (item, index) => parse(item, `${field}[${index}]`));
+    if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype || input.length > maximum) return invalid(field);
+    const properties = Object.getOwnPropertyDescriptors(input);
+    if (Reflect.ownKeys(properties).length !== input.length + 1) return invalid(field);
+    const result: T[] = [];
+    for (let index = 0; index < input.length; index++) {
+      const descriptor = properties[String(index)];
+      if (!descriptor || !('value' in descriptor)) return invalid(`${field}[${index}]`);
+      result.push(parse(descriptor.value, `${field}[${index}]`));
+    }
+    return result;
   };
 }
