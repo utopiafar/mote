@@ -98,31 +98,52 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     ...(options.transport?{transport:options.transport}:{}),
   });
   for(const manifest of options.manifests)registry.register(manifest);
-  let started=false,closed=false,closing:Promise<void>|undefined;
-  const close=()=>{
-    if(closing)return closing;
+  let started=false,closed=false,startTask:Promise<void>|undefined,teardown:Promise<void>|undefined,closing:Promise<void>|undefined;
+  const teardownInternal=()=>{
+    if(teardown)return teardown;
     closed=true;
-    closing=(async()=>{
-      const errors:unknown[]=[],started=new Map<ConnectorInstanceScope,Promise<void>>();
+    teardown=(async()=>{
+      const errors:unknown[]=[],startedScopes=new Map<ConnectorInstanceScope,Promise<void>>();
       const clean=async(work:()=>unknown|Promise<unknown>)=>{try{await work();}catch(error){errors.push(error);}};
       // Fence every instance before connector shutdown; accepted work may drain,
       // but new route/OAuth admission is rejected while close is in progress.
       for(const value of scopes.values()){
         if(value.fence)await clean(()=>value.fence!());
-        else {const task=value.close();started.set(value,task);void task.catch(()=>{});}
+        else {const task=value.close();startedScopes.set(value,task);void task.catch(()=>{});}
       }
       await clean(()=>registry.close());
-      for(const value of [...scopes.values()].reverse())await clean(()=>started.get(value)??value.close());
+      for(const value of [...scopes.values()].reverse())await clean(()=>startedScopes.get(value)??value.close());
       if(errors.length)throw new AggregateError(errors,'Connector host adapter disposal failed');
+    })();
+    return teardown;
+  };
+  const close=()=>{
+    if(closing)return closing;
+    const internal=teardownInternal();
+    closing=(async()=>{
+      // Join late factory/init cleanup; start's own rejection is observed by
+      // its caller, while teardown cleanup errors remain aggregated here.
+      await (startTask?.catch(()=>{})??Promise.resolve());
+      try{await internal;}catch(error){throw error instanceof AggregateError?error:new AggregateError([error],'Connector host adapter disposal failed');}
     })();
     return closing;
   };
   return Object.freeze({
     async start(){
+      if(startTask)throw Error('Connector host adapter is already started');
       if(started)throw Error('Connector host adapter is already started');
       if(closed)throw Error('Connector host adapter is closed');
-      try{installCapabilities();await registry.start();started=true;}
-      catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host adapter startup and disposal failed',{cause:error});}throw error;}
+      startTask=(async()=>{
+        try{
+          installCapabilities();await registry.start();
+          if(closed)throw Error('Connector host adapter is closed');
+          started=true;
+        }catch(error){
+          try{await teardownInternal();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host adapter startup and disposal failed',{cause:error});}
+          throw error;
+        }
+      })();
+      return startTask;
     },
     inventory:()=>registry.inventory(),
     configureSyncInterval:(intervalMs:number)=>registry.configureSyncInterval(intervalMs),

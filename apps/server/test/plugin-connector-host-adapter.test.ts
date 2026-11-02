@@ -154,13 +154,16 @@ test('close during a pending connector create disposes the late instance without
     scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
   t.after(async()=>{releaseLate();resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
   const starting=adapter.start();await entered;
-  await adapter.close();resolveCreate();
-  let settled=false;void starting.then(()=>{settled=true;},()=>{settled=true;});
-  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'start waits for the late instance cleanup');
+  const startResult=starting.then(()=>({error:undefined}),error=>({error}));
+  const closing=adapter.close();let closeSettled=false;void closing.then(()=>{closeSettled=true;},()=>{closeSettled=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(closeSettled,false,'close joins the pending factory');
+  resolveCreate();
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(closeSettled,false,'close joins the held late instance cleanup');
   releaseLate();
-  await assert.rejects(starting,/Connector registry is closed/);
+  await closing;
+  assert.ok((await startResult).error,'start rejects after the closed registry');
   assert.equal(initialized,0,'a late instance must not initialize after close');
-  assert.equal(closed,1,'the late instance is disposed and awaited');
+  assert.equal(closed,1,'the late instance is disposed and awaited by close');
 });
 
 test('an early close-only scope rejection is handled and aggregated',async t=>{
@@ -189,8 +192,11 @@ test('close during connector init closes the instance only once',async t=>{
     scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
   t.after(async()=>{resolveInit();for(const scope of scopes)await scope.close().catch(()=>{});});
   const starting=adapter.start();await entered;
-  await adapter.close();resolveInit();
-  await assert.rejects(starting,/Connector registry is closed/);
+  const startResult=starting.then(()=>({error:undefined}),error=>({error}));
+  const closing=adapter.close();let closeSettled=false;void closing.then(()=>{closeSettled=true;},()=>{closeSettled=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(closeSettled,false,'close joins the pending init');
+  resolveInit();await closing;
+  assert.ok((await startResult).error,'start rejects after the closed registry');
   assert.equal(initCalls,1);assert.equal(closeCalls,1,'registry owns the single shutdown');
 });
 
