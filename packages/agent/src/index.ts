@@ -76,6 +76,8 @@ export function createAgent(original: AgentOptions) {
     const assertCurrent = () => { signal.throwIfAborted(); if (closed) throw new AgentClosedError(); input.assertContextAuthority?.(); };
     const trace = (event: Parameters<typeof reportTrace>[1]) => reportTrace(input, {...event, runId});
     let session: HostRunSession | undefined, bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
+    let bridgeClosing: Promise<void> | undefined;
+    const closeBridge = () => bridge ? bridgeClosing ??= bridge.close() : Promise.resolve();
     let primary = false;
     try {
       reportProgress(input, {stage: 'starting'});
@@ -109,15 +111,16 @@ export function createAgent(original: AgentOptions) {
         // The stable A08 staged read is connected here before this facade is published.
         readTool: async () => { throw new AgentProviderError(); },
         admit: (task, admissionSignal) => runModel ? runModel(task, admissionSignal) : task(),
-        close: () => bridge!.close(),
+        close: closeBridge,
         observe: ({event}) => { if (event.type === 'usage') input.onUsage?.(event.usage); else if (event.type === 'progress') reportProgress(input, event.progress); },
         cleanupFailed: errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}),
       });
       return await session.execute();
     } catch (error) { primary = true; throw error; }
     finally {
-      await settleHostCleanup([() => session?.close(), () => bridge?.close(), () => scope.close()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
-      scopes.delete(resources);
+      try {
+        await settleHostCleanup([() => session?.close(), closeBridge, () => scope.close()], primary, errors => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}));
+      } finally { scopes.delete(resources); }
     }
   }
   return {configured,

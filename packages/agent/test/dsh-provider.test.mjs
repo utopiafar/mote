@@ -174,7 +174,8 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
   const runtime = await host.acquire(runtimeService, runtimeBinding), modelLease = await host.acquire(modelContract, modelBinding), output = await host.acquire(hostOutputService, outputBinding);
   const selection = resolveRunSelection({revision: 1, profile: {id: 'generated-dsh', name: 'Generated DSH', revision: 1, runtimeProviderId: DSH_RUNTIME_ID, providerRef: {service: runtimeService, revision: runtimeBinding.revision, provider: {instance: {packageId: runtimeIdentity.packageId, installationId: runtimeIdentity.installationId, instanceId: runtimeIdentity.instanceId}, contributionId: runtimeBinding.provider.contributionId}}, assembly: {packages: [nativeRef], hooks: []}, allowedHostCapabilities: ['tools', 'images', 'hostDelegation']}, providers: [{id: DSH_RUNTIME_ID, binding: runtimeBinding, capabilities: runtime.value.capabilities, availability: {state: 'active'}}], installedModules: [nativeRef], model: {profile: {id: 'generated-model', name: 'Generated model', settings: {...model, provider: 'custom', reasoningEffort: 'off', headers: {}, extraBody: {}, allowUnauthenticatedLocal: true, agentTimeoutMs: null, modelRequestTimeoutMs: 10000}}, profileRevision: 1, modelRevision: 1, connectionFingerprint: 'd'.repeat(64), capabilities: {tools: true, images: false}}, requirements: {taskKind: 'query', capabilities: ['tools']}});
   const input = pinContextTools({question: 'Summarize the generated observatory review', skill: 'memory-extraction', validateOutput(answer) { validations++; assert.equal(answer.citations[0].id, record.id); }}, reader);
-  const bridge = await startBridge(reader, input); t.after(() => bridge.close());
+  const bridge = await startBridge(reader, input); let bridgeClosing;
+  const closeBridge = () => bridgeClosing ??= bridge.close(); t.after(closeBridge);
   const definitions = contextToolDefinitions(input).filter(([name]) => taskTools(input).includes(name)).map(([name, description, fields]) => ({name, description, inputSchema: {...parameterSchemaSpecToJsonSchema(fields), additionalProperties: false}, version: '1', fingerprint: input.contextCapabilitySnapshot.find(tool => tool.name === name)?.fingerprint ?? 'e'.repeat(64)}));
   const context = assembleHostContext(input, bridge.seedEvidence, 1024);
   const runScope = Object.assign(new PluginResourceScope(), {identity: {...foundationIdentity, activationId: randomUUID()}}); t.after(() => runScope.close());
@@ -182,7 +183,7 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
     async readTool(call, signal) {
       const staged = await bridge.prepareDelivery(call.name, call.arguments, signal);
       return {payload: {text: JSON.stringify(staged.value)}, confirm: staged.confirm, discard: staged.discard};
-    }, close: () => bridge.close(), observe: event => events.push(event)};
+    }, close: closeBridge, observe: event => events.push(event)};
   return {root, tracePath, resources, requests, record, context, bridge, input, events, model, nativeRoot, nativeRef, module, selection, runtime, modelLease, output, runScope, assembly, get reads() { return reads; }, get validations() { return validations; },
     prepare: () => prepareDshRun(selection, {runId: randomUUID(), scope: runScope, input, runtime, model: {...modelLease, selection: selection.modelSelection}, output, tools: {definitions, bindings: [], assertCurrent() {}}, commitFence: {assertCurrent() {}}, budget: {activeTimeoutMs: 15000}, activeBudget: new ActiveExecutionBudget(15000)}, assembly),
   };
