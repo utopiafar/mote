@@ -25,30 +25,46 @@ import { register as sourcesEntry } from './sources.js';
 import { register as storageEntry } from './storage.js';
 import { register as systemEntry } from './system.js';
 import { register as usageEntry } from './usage.js';
-export async function installServerFeatures(host:ServerFeatureHost,services:FeatureServices){
-  await host.install({id:'mote.activity',version:'1',components:[]},app=>activityEntry(app,services));
-  await host.install({id:'mote.files',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.files'));filesEntry(app,services,scope);});
-  await host.install({id:'mote.actions',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.actions'));actionsEntry(app,services,scope);});
-  await host.install({id:'mote.connections',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.connections'));connectionsEntry(app,services);});
-  await host.install({id:'mote.system',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.system'));systemEntry(app,services);});
-  await host.install({id:'mote.storage',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.storage'));storageEntry(app,services,scope);});
-  await host.install({id:'mote.capture',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.capture'));captureEntry(app,services,scope);});
-  await host.install({id:'mote.context',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.context'));contextEntry(app,services);});
-  await host.install({id:'mote.materials',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.materials'));materialsEntry(app,services,scope);});
-  await host.install({id:'mote.coding',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.coding'));codingEntry(app,services);});
-  await host.install({id:'mote.sources',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.sources'));sourcesEntry(app,services,scope);});
-  await host.install({id:'mote.models',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.models'));modelsEntry(app,services);});
-  await host.install({id:'mote.processing',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.processing'));processingEntry(app,services,scope);});
-  await host.install({id:'mote.notes',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.notes'));notesEntry(app,services);});
-  await host.install({id:'mote.devices',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.devices'));devicesEntry(app,services);});
-  await host.install({id:'mote.media',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.media'));mediaEntry(app,services);});
-  await host.install({id:'mote.owner-questions',version:'1',components:[]},app=>ownerQuestionsEntry(app,services));
-  await host.install({id:'mote.memory',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.memory'));memoryEntry(app,services,scope);});
-  await host.install({id:'mote.imports',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.imports'));importsEntry(app,services,scope);});
-  await host.install({id:'mote.ask',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.ask'));askEntry(app,services,scope);});
-  await host.install({id:'mote.usage',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.usage'));usageEntry(app,services);});
-  await host.install({id:'mote.insights',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.insights'));insightsEntry(app,services,scope);});
-  await host.install({id:'mote.diagnostics',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.diagnostics'));diagnosticsEntry(app,services);});
-  await host.install({id:'mote.agent-view',version:'1',components:[]},(app,scope)=>{scope.retire(()=>services.agentFeatures.dispose('mote.agent-view'));agentView(app,services);});
-  await host.install({id:'mote.features',version:'1',components:[]},app=>{app.get('/api/features',async()=>featureInventory(host,services));});
+import type {ManifestContribution} from '@mote/plugin-api';
+import type {FastifyInstance} from 'fastify';
+import type {ServerFeatureScope} from '../feature-host.js';
+
+/** Development-time adapters over the existing real feature factories. H14 removes
+ * this assembly bridge as domain-owned native factories replace it. No package
+ * installation or alternate Manifest is created here. */
+export interface ServerFeatureAdapter {
+  readonly descriptor: ManifestContribution;
+  readonly factory: (app:FastifyInstance,scope:ServerFeatureScope,services:FeatureServices,host:ServerFeatureHost)=>void;
+}
+export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze([
+  {descriptor:{id:'mote.activity',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services,host)=>activityEntry(app,services)},
+  {descriptor:{id:'mote.files',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.files'));filesEntry(app,services,scope);}},
+  {descriptor:{id:'mote.actions',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.actions'));actionsEntry(app,services,scope);}},
+  {descriptor:{id:'mote.connections',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.connections'));connectionsEntry(app,services);}},
+  {descriptor:{id:'mote.system',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.system'));systemEntry(app,services);}},
+  {descriptor:{id:'mote.storage',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.storage'));storageEntry(app,services,scope);}},
+  {descriptor:{id:'mote.capture',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.capture'));captureEntry(app,services,scope);}},
+  {descriptor:{id:'mote.context',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.context'));contextEntry(app,services);}},
+  {descriptor:{id:'mote.materials',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.materials'));materialsEntry(app,services,scope);}},
+  {descriptor:{id:'mote.coding',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.coding'));codingEntry(app,services);}},
+  {descriptor:{id:'mote.sources',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.sources'));sourcesEntry(app,services,scope);}},
+  {descriptor:{id:'mote.models',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.models'));modelsEntry(app,services);}},
+  {descriptor:{id:'mote.processing',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.processing'));processingEntry(app,services,scope);}},
+  {descriptor:{id:'mote.notes',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.notes'));notesEntry(app,services);}},
+  {descriptor:{id:'mote.devices',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.devices'));devicesEntry(app,services);}},
+  {descriptor:{id:'mote.media',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.media'));mediaEntry(app,services);}},
+  {descriptor:{id:'mote.owner-questions',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services,host)=>ownerQuestionsEntry(app,services)},
+  {descriptor:{id:'mote.memory',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.memory'));memoryEntry(app,services,scope);}},
+  {descriptor:{id:'mote.imports',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.imports'));importsEntry(app,services,scope);}},
+  {descriptor:{id:'mote.ask',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.ask'));askEntry(app,services,scope);}},
+  {descriptor:{id:'mote.usage',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.usage'));usageEntry(app,services);}},
+  {descriptor:{id:'mote.insights',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.insights'));insightsEntry(app,services,scope);}},
+  {descriptor:{id:'mote.diagnostics',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.diagnostics'));diagnosticsEntry(app,services);}},
+  {descriptor:{id:'mote.agent-view',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services)=>{scope.retire(()=>services.agentFeatures.dispose('mote.agent-view'));agentView(app,services);}},
+  {descriptor:{id:'mote.features',version:'1',surface:'data',runtime:'host'},factory:(app,scope,services,host)=>{app.get('/api/features',async()=>featureInventory(host,services));}},
+]);
+export async function installServerFeatures(host:ServerFeatureHost,services:FeatureServices,entries:readonly ServerFeatureAdapter[]=serverFeatureAdapters){
+  for(const {descriptor,factory} of entries){
+    await host.install({id:descriptor.id,version:descriptor.version,components:[]},(app,scope)=>factory(app,scope,services,host));
+  }
 }

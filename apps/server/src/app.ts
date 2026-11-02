@@ -7,6 +7,7 @@ import type {QueryAgent} from './query-agent.js';
 import type {FeatureServices} from './feature-services.js';
 import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
 import {ServerResources} from './server-resources.js';
+import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {MemoryTopicsHost} from './memory-topics-host.js';
 import {createContextTrees} from './context-trees.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
@@ -35,7 +36,7 @@ import { ProviderFailure,captureSchema,type CaptureInput,type CaptureRecord,type
 import { negotiateLocale } from '@mote/shared/i18n';
 import Fastify,{ type FastifyInstance,type FastifyReply,type FastifyRequest } from 'fastify';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID,timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import {setImmediate as yieldEventLoop} from 'node:timers/promises';
 import { existsSync,readFileSync } from 'node:fs';
 import { dirname,join,relative,sep } from 'node:path';
@@ -54,7 +55,7 @@ import { installAgentFeatures } from './agent-feature-host.js';
 import { ArchivedFileStore } from './archived-files.js';
 import { codingSourcePlugin } from './coding-source-plugin.js';
 import { ConcurrencyGate } from './concurrency.js';
-import { repositoryRoot,registerBuiltinDomains,configDocumentDomains,configFromDocument,documentFromConfig,validateResolvedConfigDocument,type Config,type ConfigDocument } from './config.js';
+import { repositoryRoot,type Config } from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
 import { registerConnectors } from './connectors/index.js';
@@ -138,28 +139,16 @@ function parseCaptureBundle(body:unknown):CaptureInput[] {
 }
 export type {QueryAgent} from './query-agent.js';
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export async function buildApp(config:Config,dependencies?:{configService?:ConfigService;queryQualityExperiment?:QueryQualityStrategy;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
+export async function buildApp(config:Config,dependencies?:{distribution?:CentralDistribution;configService?:ConfigService;queryQualityExperiment?:QueryQualityStrategy;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   const resources=new ServerResources();
   let startupApp:FastifyInstance|undefined;
   try{
-  config={...config};
-  const suppliedConfigService=dependencies?.configService??config.configService;
-  const configService=suppliedConfigService??new ConfigService({path:config.configuration?.configFile??join(config.dataDir,'mote.yaml'),initialDocument:documentFromConfig(config)});
+  const bootstrap=await bootstrapCentral({config:{...config},...(dependencies?.configService?{configService:dependencies.configService}:{}),...(dependencies?.store?{store:dependencies.store}:{}),...(dependencies?.backgroundWorker!==undefined?{backgroundWorker:dependencies.backgroundWorker}:{})},dependencies?.distribution);
+  resources.defer(()=>bootstrap.close());
+  config=bootstrap.config;
+  const configService=bootstrap.configService,store=bootstrap.store;
   resources.beforeClose(()=>configService.close());
-  if(!suppliedConfigService)registerBuiltinDomains(configService,config);
-  await configService.initialize();
-  {
-    const bootDocument={version:1,revision:configService.revision,...Object.fromEntries(configDocumentDomains().map(domain=>[domain.id,configService.current(domain.id)]))} as ConfigDocument;
-    config=configFromDocument(bootDocument,configService.path,{token:config.token,tokenPath:config.tokenPath},{resolvedDocument:true});
-  }
-  const actualOwnerToken=config.token;
-  configService.setValidator(document=>validateResolvedConfigDocument(document,actualOwnerToken));
   const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();resources.defer(()=>eventLoop.disable());
-  // A foreground node must not block listen() on a full orphan-blob sweep. When
-  // the background worker is enabled, let that worker perform maintenance after
-  // the HTTP service is available instead of making startup scan the whole vault.
-  const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(dependencies?.backgroundWorker)});
-  if(!dependencies?.store)resources.defer(()=>store.close());
   assertCurrentDelegationSchema(store);
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   let availableModelConnections=():ModelConnection[]=>[];
@@ -553,8 +542,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);diagnostics.record('request.started',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url)},'debug');done();}));
   app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
-  const expectedBearer=Buffer.from(`Bearer ${config.token}`);
-  const validBearer=(req:{headers:{authorization?:string}})=>{if(typeof req.headers.authorization!=='string')return false;const supplied=Buffer.from(req.headers.authorization);return supplied.length===expectedBearer.length&&timingSafeEqual(supplied,expectedBearer);};
+  const validBearer=(req:{headers:{authorization?:string}})=>bootstrap.authorization.validOwnerBearer(req.headers.authorization);
   let playbackAuthorization:(req:FastifyRequest)=>boolean=()=>false;
   app.addHook('onRequest',async(req,reply)=>{
     const isApi=req.routeOptions.url?.startsWith('/api/')||req.url.startsWith('/api/');
@@ -936,7 +924,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   resources.defer(()=>featureHost.close());
   registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
-  await installServerFeatures(featureHost,featureServices);
+  await installServerFeatures(featureHost,featureServices,bootstrap.features);
   memoryTopics=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader,()=>catalogChangesEnabled&&!closing),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query:input=>queryAgent(input,'query','memories')});
   resources.defer(()=>memoryTopics?.close());
   await configService.startWatching();
@@ -955,7 +943,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,bootstrap,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();
