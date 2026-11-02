@@ -65,7 +65,7 @@ test('restart contribution publishes only the frozen usage port and releases its
   const reopened=new ServerDiagnostics({directory:logs});try{await reopened.init();assert.equal(reopened.snapshot().enabled,true);assert.equal(reopened.snapshot().writeFailures,0,'the closed writer released its log lock');}finally{await reopened.close();}
 });
 
-test('real SQLite execution writes one admitted receipt and HTTP readers see the same job/attempt identity',async t=>{
+test('real SQLite execution writes one admitted receipt and keeps diagnostic, domain-job and ledger identities distinct',async t=>{
   const f=await fixture(t);
   await f.platform.prepare();await f.platform.start();
   const assembly=f.platform.forAssembly(f.owner.scope),diagnostics=assembly.diagnostics;
@@ -74,7 +74,9 @@ test('real SQLite execution writes one admitted receipt and HTTP readers see the
   engine.bindObserver(value=>assembly.observer.lease(value),()=>assembly.observer.enabled());
   engine.register({kind:'generated.observation',pool:'generated.observation',policy:EXECUTION_POLICIES.deterministic,concurrency:()=>1,validate:()=>true,
     execute:async step=>{
-      const operationId='generated-operation:'+step.id,meter=assembly.admittedUsage('fixture','fixture-model',operationId,{operationId,jobId:step.id,agentId:'generated-agent',moduleId:'generated-module',skillId:null});
+      // Handoff (31): step.id/attempts identify the diagnostic execution; the domain
+      // job id and the ledger receipt identity stay independent namespaces.
+      const domainJobId=String(step.input.domainJobId),meter=assembly.admittedUsage('fixture','fixture-model','generated-operation',{operationId:step.operationId,jobId:domainJobId,agentId:'generated-agent',moduleId:'generated-module',skillId:null});
       meters.set(step.id,meter);meter.modelStarted();meter.modelStarted();
       // Real observer producer: the 110ms archive read crosses the observed latency floor.
       assembly.observer.sync('reader_evidence',{taskId:step.id,attempt:step.attempts,phase:'extract',...{prompt:secret,token:secret}} as never,()=>{Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,110);return step.id;});
@@ -84,10 +86,13 @@ test('real SQLite execution writes one admitted receipt and HTTP readers see the
     admit:()=>new ExecutionFailure('waiting','generated_hold',60000),execute:async()=>{throw Error('queued work must not execute');},commit:()=>{}});
   engine.register({kind:'generated.lease',pool:'generated.lease',policy:EXECUTION_POLICIES.deterministic,concurrency:()=>1,validate:()=>true,
     admit:()=>new ExecutionFailure('waiting','generated_lease_hold',60000),execute:async()=>null,commit:()=>{}});
-  const operationId='generated-operation:'+randomUUID(),id=engine.enqueue(operationId,'generated.observation',{}),operation='generated-operation:'+id;
+  const domainJobId=randomUUID(),operationId='generated-operation:'+randomUUID(),id=engine.enqueue(operationId,'generated.observation',{domainJobId});
   await engine.drain([id]);meters.get(id)!.complete();
   assert.equal(engine.get(id)!.state,'succeeded');
-  assert.equal(assembly.usage.operation(operation).items.length,1,'two modelStarted calls still produce one admitted receipt');
+  const admitted=assembly.usage.operation(operationId).items;
+  assert.equal(admitted.length,1,'two modelStarted calls still produce one admitted receipt');
+  assert.equal(admitted[0].attribution?.operationId,operationId);assert.equal(admitted[0].attribution?.jobId,domainJobId);
+  assert.notEqual(admitted[0].id,id,'the ledger owns its receipt identity, not step.id');assert.notEqual(admitted[0].attribution?.jobId,id,'step.id is not relabelled as the domain job id');
 
   // A queued-admission step and a cancelled-before-start step never create a receipt.
   const queued=engine.enqueue('generated-queued-operation','generated.queued',{}),cancelled=engine.enqueue('generated-cancelled-operation','generated.queued',{});
@@ -106,16 +111,16 @@ test('real SQLite execution writes one admitted receipt and HTTP readers see the
   registerDiagnostics(app,{diagnostics,diagnosticSnapshot:()=>({version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot()})});
   const day=today(),usage=await app.inject(`/api/usage?from=${day}&to=${day}&timeZone=UTC&agentId=generated-agent&moduleId=generated-module`);
   assert.equal(usage.statusCode,200,usage.body);const summary=usage.json();
-  assert.equal(summary.itemsTotal,1);assert.equal(summary.items[0].attribution.jobId,id);assert.equal(summary.items[0].status,'completed');
+  assert.equal(summary.itemsTotal,1);assert.equal(summary.items[0].attribution.jobId,domainJobId);assert.equal(summary.items[0].attribution.operationId,operationId);assert.equal(summary.items[0].status,'completed');
   const eventPage=await app.inject('/api/diagnostics/events?afterSeq=0&limit=200');assert.equal(eventPage.statusCode,200,eventPage.body);
   const observed=eventPage.json().items.find((event:{name?:string;taskKey?:string})=>event.name==='reader_evidence');
-  assert.ok(observed,'the real execution observer output is consumed by diagnostics');assert.equal(observed.taskKey,id);assert.equal(observed.attempt,1);
+  assert.ok(observed,'the real execution observer output is consumed by diagnostics');assert.equal(observed.taskKey,id);assert.equal(observed.attempt,1);assert.notEqual(observed.taskKey,domainJobId,'diagnostic execution identity and domain job id stay distinct');
   const recovered=eventPage.json().items.find((event:{event?:string;taskKey?:string})=>event.event==='task.lease_recovered');
   assert.ok(recovered,'the real engine recovery is consumed by diagnostics');assert.equal(recovered.taskKey,leaseId);assert.equal(recovered.attempt,1);
   assert.equal((await app.inject('/api/diagnostics/logs?file=99')).statusCode,400,'diagnostic HTTP errors keep their validation mapping');
   await diagnostics.flush();const persisted=readdirSync(f.logs).filter(name=>name.endsWith('.ndjson')).map(name=>readFileSync(join(f.logs,name),'utf8')).join('');
   assert.ok(persisted.includes('reader_evidence'));assert.ok(!persisted.includes(secret));
-  await app.close();
+  engine.bindObserver(undefined);await app.close();
 });
 
 test('sanitized reads stay flat, a write failure is visible, and disposal still stops timers and the updater',async t=>{

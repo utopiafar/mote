@@ -48,6 +48,10 @@ export interface ObservabilityRead {
 /** Trusted H05/29 assembly only. Raw writer/handles never become an ordinary plugin port. */
 export interface ObservabilityAssembly {
   readonly diagnostics:ServerDiagnostics;
+  /** H05 binds value=>observer.lease(value), ()=>observer.enabled() on the real engine
+   * and must call bindObserver(undefined) before execution/vault disposal. step.id and
+   * claimed attempts are the diagnostic identity; the domain job id and the ledger's
+   * receipt UUID remain independent namespaces. */
   readonly observer:ExecutionObservability;
   readonly usage:UsageLedger;
   readonly admittedUsage:AdmittedUsageFactory;
