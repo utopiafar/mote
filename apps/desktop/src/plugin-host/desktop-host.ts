@@ -3,7 +3,7 @@
  * background; an explicit quit drains it and disposes every scope. A failed
  * startup rolls back everything that scope registered without touching
  * other plugins or the durable queue. */
-import {ChannelOwnership, IpcScope, type IpcRouter, type IpcServiceSpec, type IpcListener, type ScopeAccess, type WindowFacts, type WindowRole} from './ipc-registry.js';
+import {ChannelOwnership, IpcScope, type IpcRouter, type IpcServiceSpec, type IpcListener, type IpcCallerView, type IpcInvokeResult, type ScopeAccess, type WindowFacts, type WindowRole} from './ipc-registry.js';
 import type {NativeProviderRegistry} from './native-registry.js';
 
 export interface PluginJob {
@@ -56,6 +56,8 @@ export class DesktopPluginHost {
   }
 
   get native(): NativeProviderRegistry { return this.#native; }
+  /** Read-only live view of the host's window table for the IPC adapter. */
+  get windowFacts(): ReadonlyMap<number, WindowFacts> { return this.#windows; }
   get mainWindowOpen(): boolean { return this.#mainWindowOpen; }
 
   /** The host knows which senders belong to real windows, their roles and the
@@ -144,6 +146,40 @@ export class DesktopPluginHost {
     for (const dispose of scope.disposers) dispose();
     scope.disposers.clear();
   }
+}
+
+/** Structural Electron surface so the adapter stays testable without
+ * Electron: the real ipcMain satisfies it. */
+export interface IpcMainEventLike {
+  readonly sender: {readonly id: number; readonly mainFrame: unknown};
+  readonly senderFrame: {readonly url: string} | null;
+}
+export interface IpcMainLike {
+  handle(channel: string, listener: (event: IpcMainEventLike, ...args: unknown[]) => unknown): void;
+  removeHandler(channel: string): void;
+}
+
+/** Real ipcMain adapter: sender/frame identity comes from the event and the
+ * role is mapped by the host's own window table — a renderer never reports
+ * its role or capabilities. Invoke envelopes are unwrapped so renderer-facing
+ * behavior (raw value or thrown denial) matches the existing handlers. */
+export function electronIpcRouter(ipcMain: IpcMainLike, windows: () => ReadonlyMap<number, WindowFacts>): IpcRouter {
+  return {
+    handle(channel, listener) {
+      ipcMain.handle(channel, async (event, ...args) => {
+        const view: IpcCallerView = {
+          senderId: event.sender.id,
+          frameIsMain: event.senderFrame === event.sender.mainFrame,
+          frameUrl: event.senderFrame?.url,
+          windowRole: windows().get(event.sender.id)?.role ?? 'main',
+        };
+        const result = await listener(view, args) as IpcInvokeResult;
+        if (!result.ok) throw new Error(`IPC denied: ${result.denial}`);
+        return result.value;
+      });
+    },
+    removeHandler(channel) { ipcMain.removeHandler(channel); },
+  };
 }
 
 /** What a plugin factory sees: its own scope, never the host or other scopes. */

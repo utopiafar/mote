@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
-import {DesktopPluginHost} from '../src/plugin-host/desktop-host.js';
+import {DesktopPluginHost, electronIpcRouter} from '../src/plugin-host/desktop-host.js';
+import {ChannelOwnership, IpcScope as IpcScopeAdapter, type ScopeAccess} from '../src/plugin-host/ipc-registry.js';
 import {NativeProviderRegistry} from '../src/plugin-host/native-registry.js';
 import type {IpcCallerView, IpcInvokeResult, IpcRouter} from '../src/plugin-host/ipc-registry.js';
 
@@ -172,5 +173,30 @@ describe('startup rollback and lifecycle', () => {
     expect(mutable.internal).toBeUndefined();
     // Nothing reachable from the handle can add 'cap.b'.
     expect(JSON.stringify(Object.getOwnPropertyNames(scope))).not.toContain('capabilities');
+  });
+});
+
+describe('real ipcMain adapter seam', () => {
+  it('maps sender/frame/role from real event facts and unwraps envelopes', async () => {
+    const {host} = hostWith();
+    host.registerWindow(7, 'main');
+    const registered = new Map<string, (event: {sender: {id: number; mainFrame: unknown}; senderFrame: {url: string} | null}, ...args: unknown[]) => unknown>();
+    const removed: string[] = [];
+    const ipcMain = {
+      handle: (channel: string, listener: never) => { registered.set(channel, listener); },
+      removeHandler: (channel: string) => { registered.delete(channel); removed.push(channel); },
+    };
+    const router = electronIpcRouter(ipcMain, () => host.windowFacts);
+    const access: ScopeAccess = {instanceId: 'inst-real', capabilities: new Set(['cap']), isRevoked: () => false};
+    const ipc = new IpcScopeAdapter(access, router, host.windowFacts, new ChannelOwnership());
+    ipc.register({channel: 'real.call', capability: 'cap', roleFrameUrls: {main: ['file:///index.html']}}, () => 'real-value');
+    const mainFrame = {url: 'file:///index.html'};
+    const event = {sender: {id: 7, mainFrame}, senderFrame: mainFrame};
+    // The renderer receives the raw value, not an envelope.
+    await expect(registered.get('real.call')!(event)).resolves.toBe('real-value');
+    // A forged sender or wrong URL is denied before the handler runs.
+    const forged = {sender: {id: 99, mainFrame}, senderFrame: mainFrame};
+    await expect(registered.get('real.call')!(forged)).rejects.toThrow('IPC denied');
+    await expect(registered.get('real.call')!({sender: {id: 7, mainFrame}, senderFrame: {url: 'file:///evil.html'}})).rejects.toThrow('IPC denied');
   });
 });

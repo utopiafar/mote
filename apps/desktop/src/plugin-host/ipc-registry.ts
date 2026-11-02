@@ -10,7 +10,11 @@ export type WindowRole = 'main' | 'quick-note' | 'settings';
 export interface IpcCallerView {
   readonly senderId: number;
   readonly frameIsMain: boolean;
+  /** Role assigned by the host for this sender; never self-reported. */
   readonly windowRole: WindowRole;
+  /** The frame's actual URL, checked exactly like the existing trusted()
+   * senderFrame.url comparison. */
+  readonly frameUrl?: string;
 }
 
 export type IpcListener = (view: IpcCallerView, args: readonly unknown[]) => unknown;
@@ -30,6 +34,9 @@ export interface IpcServiceSpec {
   /** Capability the CALLING window/scope must hold; omitted = any registered
    * window of an allowed role may call. */
   readonly callerCapability?: string;
+  /** Exact frame URLs allowed per window role; preserves the trusted()
+   * senderFrame.url binding. A role absent here may never call. */
+  readonly roleFrameUrls?: Partial<Record<WindowRole, readonly string[]>>;
   /** Default true: only the main frame may invoke plugin IPC. */
   readonly mainFrameOnly?: boolean;
 }
@@ -107,6 +114,8 @@ export class IpcScope {
     if (spec.mainFrameOnly !== false && !view.frameIsMain) return 'subframe';
     const allowedRoles = spec.windowRoles ?? ['main'];
     if (!allowedRoles.includes(caller.role) || caller.role !== view.windowRole) return 'wrong-window';
+    const urls = spec.roleFrameUrls?.[caller.role];
+    if (urls !== undefined && (view.frameUrl === undefined || !urls.includes(view.frameUrl))) return 'wrong-window';
     if (!this.access.capabilities.has(spec.capability)) return 'no-capability';
     if (spec.callerCapability !== undefined && !caller.capabilities.has(spec.callerCapability)) return 'no-capability';
     return null;
