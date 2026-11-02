@@ -72,7 +72,9 @@ export function createCodexAgent(options:AgentOptions){
           assertToolPins();
           // Keep the opaque Host token in the private tool result. The session
           // acknowledges it only after the same-active-turn steer succeeds.
-          if(name==='read_image'&&result.imageView)result.imageView.delivery='prepared';
+          // Metadata-only and duplicate (already_disclosed) responses have no
+          // token and must retain their original delivery status.
+          if(name==='read_image'&&result.imageDelivery&&result.imageView)result.imageView.delivery='prepared';
           // The model receives the image, but diagnostics only need its identity
           // and size. Copying base64 into traces duplicates private originals and
           // can overwhelm the log viewer even when the read itself is bounded.
