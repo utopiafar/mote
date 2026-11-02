@@ -28,6 +28,8 @@ export interface ConfigDomainRegistration<T = unknown> {
   defaultValue: unknown;
   fields?: ConfigFieldMetadata[];
   restartRequired?: boolean;
+  /** Public domain editors must not persist submitted paths stripped by their input schema. */
+  rejectUnknownUpdates?: boolean;
   /** Resolve declared credentials and contextual defaults without materializing them in the raw file. */
   resolve?(raw: unknown, document?: Readonly<ConfigDocument>): unknown;
   prepare?(next: T, previous: T): Promise<PreparedConfigChange> | PreparedConfigChange;
@@ -59,6 +61,11 @@ function merge(base: unknown, patch: unknown): unknown {
     result[key] = merge(result[key], value);
   }
   return result;
+}
+function knownPatchPaths(patch:unknown,parsed:unknown):boolean {
+  if(Array.isArray(patch))return Array.isArray(parsed)&&patch.every((value,index)=>Object.hasOwn(parsed,index)&&knownPatchPaths(value,parsed[index]));
+  if(!object(patch))return true;
+  return object(parsed)&&Object.entries(patch).every(([key,value])=>Object.hasOwn(parsed,key)&&knownPatchPaths(value,parsed[key]));
 }
 function editPath(value: unknown, path: string[], fn: (value: unknown, previous: unknown) => unknown, previous?: unknown): unknown {
   if (!path.length) return fn(value, previous);
@@ -409,6 +416,7 @@ export class ConfigService {
         for (const [id, patch] of Object.entries(patches)) {
           const domain = this.domains.get(id)!, saved = this.saved(id), value = replace ? clone(patch) : merge(this.domainRaw(state, domain) ?? domain.defaultValue, patch);
           if (id === 'plugins' && object(patch) && Object.hasOwn(patch, 'configuration')) throw new ConfigServiceError('config_invalid');
+          if(domain.rejectUnknownUpdates&&!knownPatchPaths(patch,this.parseDomain(domain,value,state)))throw new ConfigServiceError('config_invalid',id);
           this.assignRaw(next, domain, preserveReferences(this.domainRaw(state, domain), saved, value));
         }
         return await this.commit(this.parse(next), disk?.text ?? null);

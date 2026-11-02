@@ -98,7 +98,7 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
      * Sensitive domains remain private. This public-domain helper cannot export their raw values. */
     async registerDomain<T>(registration:ConfigDomainRegistration<T>):Promise<ConfigurationDomain<T>>{
       assertAdmission();if(registration.fields?.some(field=>field.sensitive))throw new ConfigServiceError('config_invalid');
-      const unregister=await service.registerPlugin(registration),id=`plugin.${registration.id}`;
+      const unregister=await service.registerPlugin({...registration,rejectUnknownUpdates:true}),id=`plugin.${registration.id}`;
       if(closing){await unregister();throw new ConfigServiceError('config_unavailable');}
       registrations.set(id,unregister);
       // ConfigService merges partial patches into the saved document and validates the full candidate.

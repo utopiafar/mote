@@ -130,6 +130,18 @@ test('registered transforming schemas publish their validated output without par
   assert.deepEqual(domain.snapshot(),{revision:1,value:{limit:3}});assert.equal(transforms,afterReload);
 });
 
+test('public plugin patches reject paths stripped by non-strict schemas without persisting hidden settings',async t=>{
+  const {platform,path}=await fixture(t);
+  const domain=await platform.registerDomain({id:'nonStrict',schema:z.object({enabled:z.boolean(),nested:z.object({limit:z.number()})}),defaultValue:{enabled:false,nested:{limit:0}}});
+  for(const patch of [{enabled:true,typo:7},{enabled:true,nested:{limit:1,typo:7}}]){
+    await assert.rejects(domain.update(patch,0),{code:'config_invalid'});
+    assert.deepEqual(domain.snapshot(),{revision:0,value:{enabled:false,nested:{limit:0}}});
+    assert.equal((await readFile(path,'utf8')).includes('typo'),false);
+  }
+  await domain.update({enabled:true},0);
+  assert.deepEqual(parse(await readFile(path,'utf8')).plugins.configuration.nonStrict,{enabled:true,nested:{limit:0}});
+});
+
 test('concurrent platform close waits for the actual watcher teardown started by quiescence',async t=>{
   const {platform}=await fixture(t,true);await platform.start();
   const entered=barrier(),finish=barrier(),original=FSWatcher.prototype.close;
