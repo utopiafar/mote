@@ -45,10 +45,11 @@ export function selectScopes(paths) {
     if (path.startsWith('apps/desktop/')) { add('desktop', 'i18n'); continue; }
     if (path.startsWith('apps/android/')) { add('android', 'i18n'); continue; }
     if (path.startsWith('packages/diagnostics/')) { add('desktop', 'i18n'); continue; }
-    // Public plugin API/host changes are consumed by Central. Keep the real
-    // server surface (including its existing shards) and tooling checks, without
-    // falling through to the all-light unknown-path fallback or Android contract.
-    if (path.startsWith('packages/plugin-api/') || path.startsWith('packages/plugin-host/')) { add('server', 'tooling'); broadServer = true; continue; }
+    // Public plugin API/host changes follow their real workspace consumers:
+    // Shared/Agent/Web/Desktop import or depend on the API; the host is consumed
+    // by Central. Keep server shards and tooling without Android/heavy fallback.
+    if (path.startsWith('packages/plugin-api/')) { add('shared', 'agent', 'server', 'web', 'desktop', 'tooling'); broadServer = true; continue; }
+    if (path.startsWith('packages/plugin-host/')) { add('server', 'tooling'); broadServer = true; continue; }
     // The SDK is an author-facing build surface, not a current app consumer.
     if (path.startsWith('packages/plugin-sdk/')) { add('tooling'); continue; }
     if (path.startsWith('packages/shared/') || path.startsWith('protocol/')) {

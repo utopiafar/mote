@@ -56,18 +56,22 @@ test('public SDK browser entry rejects Node runtime edges while keeping erased t
 
 test('affected selection routes new plugin paths to their real consumers, never heavy suites',()=>{
   const api=affectedComponents(['packages/plugin-api/src/index.ts']);
-  assert.deepEqual(api,{central:true,desktop:false,android:false,protocol:false,tooling:true});
+  assert.deepEqual(api,{central:true,desktop:true,android:false,protocol:false,tooling:true});
   const host=affectedComponents(['packages/plugin-host/src/host.ts']);
   assert.deepEqual(host,{central:true,desktop:false,android:false,protocol:false,tooling:true});
   const sdk=affectedComponents(['packages/plugin-sdk/src/browser.ts']);
   assert.deepEqual(sdk,{central:false,desktop:false,android:false,protocol:false,tooling:true});
-  for(const path of ['packages/plugin-api/src/index.ts','packages/plugin-host/src/host.ts']){
-    const selection=selectScopes([path]);
-    assert.deepEqual(selection,{scopes:['server','tooling'],fallback:[],serverGroups:['all']},path);
-    const tasks=automaticTasks(selection).tasks;
-    assert.ok(tasks.includes('server-build')&&tasks.includes('server-4'),path);
-    assert.ok(!tasks.some(task=>/benchmark|scale|recovery/.test(task)),path);
-  }
+  const apiSelection=selectScopes(['packages/plugin-api/src/index.ts']);
+  assert.deepEqual(apiSelection,{scopes:['web','server','agent','shared','desktop','tooling'],fallback:[],serverGroups:['all']});
+  const apiTasks=automaticTasks(apiSelection).tasks;
+  assert.ok(apiTasks.includes('server-build')&&apiTasks.includes('server-4'));
+  assert.ok(apiTasks.includes('shared')&&apiTasks.includes('web')&&apiTasks.includes('agent')&&apiTasks.includes('desktop'));
+  assert.ok(!apiTasks.some(task=>/benchmark|scale|recovery/.test(task)));
+  const hostSelection=selectScopes(['packages/plugin-host/src/host.ts']);
+  assert.deepEqual(hostSelection,{scopes:['server','tooling'],fallback:[],serverGroups:['all']});
+  const hostTasks=automaticTasks(hostSelection).tasks;
+  assert.ok(hostTasks.includes('server-build')&&hostTasks.includes('server-4'));
+  assert.ok(!hostTasks.some(task=>/benchmark|scale|recovery/.test(task)));
   assert.deepEqual(selectScopes(['packages/plugin-sdk/src/browser.ts']),{scopes:['tooling'],fallback:[]});
   assert.deepEqual(automaticTasks(selectScopes(['packages/plugin-sdk/src/browser.ts'])).tasks,['architecture','tooling']);
 });
