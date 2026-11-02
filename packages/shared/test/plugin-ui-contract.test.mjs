@@ -153,3 +153,19 @@ test('malformed descriptors and native providers are rejected', () => {
   assert.throws(() => parseNativeProvider({capability: 'c', apiVersion: '1', platform: 'ios', buildId: 'b'}), TypeError);
   assert.throws(() => parseNativeProvider({capability: 'c', apiVersion: '1', platform: 'mac', buildId: 'b', osGrants: [{}]}), TypeError);
 });
+
+test('accessor array elements and overridden array methods never execute', () => {
+  let calls = 0;
+  const base = () => JSON.parse(sample);
+  // A plain array whose element is an accessor: rejected before the getter runs.
+  const accessorElements = base();
+  Object.defineProperty(accessorElements.platforms, '0', {get() { calls++; return 'web'; }, enumerable: true});
+  assert.throws(() => parseUiContribution(accessorElements), TypeError);
+  // An Array.prototype array with own every/map overrides: rejected before any call.
+  const overridden = base();
+  overridden.platforms.every = () => { calls++; return true; };
+  overridden.requires = ['evidence.read@1'];
+  overridden.requires.map = () => { calls++; return []; };
+  assert.throws(() => parseUiContribution(overridden), TypeError);
+  assert.equal(calls, 0);
+});
