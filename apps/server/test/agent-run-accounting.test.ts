@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {QueryInput} from '@mote/agent';
+import {AgentYieldError,type QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import {ReloadableAgent,createModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
 import type {ContextReader} from '@mote/agent';
@@ -181,4 +181,35 @@ test('a Host leaf that uses the supplied runModel hook starts only the Host rece
   const rows=receipts(node);
   assert.equal(rows.length,1,'admission must not start a second legacy receipt');
   assert.equal(rows[0].status,'completed');
+});
+
+test('a Host model start that fails before the first usage sample leaves one failed receipt',async t=>{
+  const factory:ModelAgentFactory=async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:async(_input,lease)=>{
+    lease?.onFinalizer?.('host');
+    await host!.runModel!(async()=>{});
+    throw Object.assign(new Error('Generated model failure before usage'),{name:'AgentResponseError',reason:'invalid_response'});
+  }});
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-run-accounting-preusage-'));
+  const node=await buildApp(config(dataDir),{backgroundWorker:false,createModelAgent:factory});
+  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated pre-usage failure question'}});
+  assert.notEqual(response.statusCode,200,response.body);
+  const rows=receipts(node);
+  assert.equal(rows.length,1,'admission must not create a second receipt');
+  assert.equal(rows[0].status,'failed','the selected owner meter is failed once, not left running');
+});
+
+test('a legacy yield carrying an unexpected Host event rejects and fails its started receipt',async t=>{
+  const yielding:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('legacy');
+    input.onUsage?.({requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0});
+    input.onHostRunEvent?.(usageEvent('generated-yield-run'));
+    throw new AgentYieldError();
+  }};
+  const node=await app(t,yielding);
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated yield contradiction question'}});
+  assert.notEqual(response.statusCode,200,response.body);
+  const rows=receipts(node);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].status,'failed','the legacy receipt must be failed, never completed, on a contradiction');
 });

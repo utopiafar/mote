@@ -751,14 +751,22 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       // legacy path keeps its existing finalizers. A latched contradiction
       // replaces the outcome after the legacy finalizer has settled its row.
       if(error instanceof AgentYieldError){
+        // Accounting is decided before the yield finalizer: a contradiction
+        // must fail the started legacy receipt rather than complete it.
+        const accounting=runViolation();
+        if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
+        const gap=runSuccessGap();
+        if(gap){if(runState.mode!=='host')meter?.failed(gap);throw gap;}
         if(runState.mode!=='host')meter?.completed();
-        const accounting=runViolation()??runSuccessGap();
-        if(accounting)throw accounting;
         trace({type:'query.yielded',status:'waiting'});throw error;
       }
       const wait=error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited')?{code:error.details.code,retryAfterMs:error.details.retryAfterMs}:error instanceof ExecutionFailure&&error.category==='waiting'?{code:error.code,retryAfterMs:error.retryAfterMs}:undefined;
       if(runState.mode!=='host')meter?.failed(error);
-      // A missing Host terminal never replaces the primary failure.
+      // A model start without any Host event must not leave an orphan running
+      // receipt: the selected Host meter is failed exactly once here. Once Host
+      // events were observed, a missing terminal is a protocol gap and the
+      // primary error stands without app-side finalization.
+      else if(!runState.hostEvents)hostMeter?.fail();
       const accounting=runViolation();
       if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId});
