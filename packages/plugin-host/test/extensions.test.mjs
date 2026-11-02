@@ -12,9 +12,9 @@ import {PluginHost,ExtensionHost} from '@mote/plugin-host';
 
 const lifecycle=()=>({prepare(){},start(){},quiesce(){},stop(){},dispose(){}});
 const gate=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
-function fixture(t,beforeClose=()=>{}){
+function fixture(t,beforeClose=()=>{},closeError){
   const host=new PluginHost({kind:'central',id:randomUUID()}),extensions=new ExtensionHost(host);
-  t.after(async()=>{await beforeClose();await host.close();});
+  t.after(async()=>{await beforeClose();try{await host.close();}catch(error){if(closeError)closeError(error);else throw error;}});
   const identity=(name,instance='one')=>({host:host.identity,packageId:'fixture.'+name,installationId:'build-'+name,instanceId:instance,activationId:randomUUID()});
   return {host,extensions,identity};
 }
@@ -49,6 +49,51 @@ async function client(f,point,binding,name,instance='one'){
   }});
   return {handle,state};
 }
+const contains=(error,predicate)=>predicate(error)||(error instanceof AggregateError&&error.errors.some(item=>contains(item,predicate)));
+async function cancelledSetup(t,mode,cleanupFailure){
+  const entered=gate(),release=gate(),state={prepare:0,start:0,quiesce:0,stop:0,dispose:0};
+  const f=fixture(t,()=>release.resolve(),error=>{assert.ok(cleanupFailure&&contains(error,item=>item===cleanupFailure));});
+  const a=await owner(f,singleExtension('fixture.pending-reader','1'));
+  let db;
+  const installing=f.extensions.provide(a.point,{identity:f.identity('pending-provider'),contributionId:'implementation',publication:{},async factory(){
+    db=new DatabaseSync(':memory:');db.exec('CREATE TABLE originals(text TEXT)');
+    entered.resolve();await release.promise;
+    // Deliberately lifecycle-owned, not scope.defer-owned: adoption must retain
+    // these hooks even when the factory returns after cancellation.
+    const owned={database:db,
+      prepare(){state.prepare++;},start(){state.start++;},quiesce(){state.quiesce++;},stop(){state.stop++;},
+      dispose(){this.database.close();state.dispose++;if(cleanupFailure)throw cleanupFailure;},
+    };
+    return {value:{read(){return db.prepare('SELECT text FROM originals').all();}},lifecycle:owned};
+  }});
+  const startup=installing.then(()=>({ok:true}),error=>({ok:false,error}));
+  await entered.promise;
+  const shutdown=(mode==='owner'?a.handle.close('uninstalled'):f.host.close()).then(()=>({ok:true}),error=>({ok:false,error}));
+  release.resolve();
+  const [started,closed]=await Promise.all([startup,shutdown]);
+  t.after(()=>{if(db&&state.dispose===0)db.close();}); // Reclaim the generated fixture on an expected pre-fix red.
+  return {f,state,db,started,closed};
+}
+
+test('cancelled provider setup retains lifecycle cleanup on interface unload and host shutdown',{timeout:5000},async t=>{
+  for(const mode of ['owner','host']){
+    const {f,state,db,started,closed}=await cancelledSetup(t,mode);
+    assert.equal(started.ok,false);assert.ok(contains(started.error,error=>error?.code==='stale_scope'));
+    assert.equal(closed.ok,true);
+    assert.deepEqual(state,{prepare:0,start:0,quiesce:1,stop:1,dispose:1});
+    assert.throws(()=>db.prepare('SELECT 1'));assert.equal(f.host.snapshot().contributions.length,0);
+  }
+});
+
+test('cancelled provider setup preserves the startup fence and observable lifecycle cleanup failures',{timeout:5000},async t=>{
+  const failure=Error('generated lifecycle cleanup failure');
+  const {state,db,started,closed}=await cancelledSetup(t,'owner',failure);
+  assert.equal(started.ok,false);assert.ok(contains(started.error,error=>error?.code==='stale_scope'));
+  assert.equal(closed.ok,false);assert.ok(contains(closed.error,error=>error===failure));
+  assert.ok(contains(started.error,error=>error===failure),'startup must retain cleanup failure with its primary fence error');
+  assert.deepEqual(state,{prepare:0,start:0,quiesce:1,stop:1,dispose:1});
+  assert.throws(()=>db.prepare('SELECT 1'));
+});
 
 test('explicit selection is unchanged by reverse installation; A defines a domain interface and two real consumers use B/C SQLite results',{timeout:5000},async t=>{
   for(const order of [['B','C'],['C','B']]){

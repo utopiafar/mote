@@ -112,12 +112,22 @@ export class ExtensionHost {
       await this.definition(context,point);
       const namespace=Object.freeze({scope:context.scope.identity,contributionId}),identity=memberKey({namespace,name:details.name});
       if(record.members.has(identity))fail('duplicate_member');
-      const result=await factory(context);context.scope.assertCurrent();record.scope.assertCurrent();
-      const binding=context.provide(contributionId,point.contract.service,result.value);
-      member={info:Object.freeze({namespace,name:details.name,binding,...('order' in details?{order:details.order}:{})}),scope:context.scope,active:false};
-      record.members.set(identity,member);
-      context.scope.retire(()=>{if(record.members.get(identity)===member)record.members.delete(identity);});
-      return result.lifecycle;
+      const result=await factory(context),owned=result.lifecycle;
+      // H04 must adopt cleanup before checking cancellation. Publication can
+      // fail, so do it in the adopted prepare phase, never after a factory has
+      // returned a lifecycle but before that lifecycle reaches the host.
+      const adopted:PluginLifecycle={
+        async prepare(){
+          context.scope.assertCurrent();record.scope.assertCurrent();
+          const binding=context.provide(contributionId,point.contract.service,result.value);
+          member={info:Object.freeze({namespace,name:details.name,binding,...('order' in details?{order:details.order}:{})}),scope:context.scope,active:false};
+          record.members.set(identity,member);
+          context.scope.retire(()=>{if(record.members.get(identity)===member)record.members.delete(identity);});
+          await owned.prepare();
+        },
+        start:()=>owned.start(),quiesce:reason=>owned.quiesce(reason),stop:reason=>owned.stop(reason),dispose:()=>owned.dispose(),
+      };
+      return adopted;
     }));
     member.scope.assertCurrent();member.active=true;
     return Object.freeze({member:member.info,handle});
