@@ -193,7 +193,7 @@ test('a Host leaf that uses the supplied runModel hook starts only the Host rece
 /** Real HostRunSession leaf: no SDK and no network. The provider's model run
  * throws inside the supplied host.runModel task, so the Host itself stamps the
  * identity/attempt and emits one failed run.terminal after cleanup. */
-const realHostLeaf=(failure:Error):ModelAgentFactory=>async(_settings,_reader,hooks)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+const realHostLeaf=(failure:Error,seen:HostEvent[]=[]):ModelAgentFactory=>async(_settings,_reader,hooks)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
   lease?.onFinalizer?.('host');
   const hostIdentity={kind:'central' as const,id:randomUUID()},host=new PluginHost(hostIdentity),resources=new PluginResourceScope();
   const identity=(id:string):ScopeIdentity=>({packageId:'generated',installationId:'generated-install',instanceId:id,activationId:randomUUID(),host:hostIdentity});
@@ -213,7 +213,7 @@ const realHostLeaf=(failure:Error):ModelAgentFactory=>async(_settings,_reader,ho
     const model=await host.acquire(modelContract,bindings.model as never,scope.signal);
     const output=await host.acquire(hostOutputService,bindings.output as never,scope.signal);
     const selection={modelId:'generated-model',modelRevision:1,profileId:'generated-profile',profileRevision:1,transport:'fixture'};
-    const session=await createHostRunSession({scope:scope as never,input,identity:{runId:randomUUID(),runtime:{id:'fixture',revision:1,profileId:'fixture-runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64)},model:selection},profile:{binding:runtime.binding,runtimeId:'fixture',profileId:'fixture-runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64),taskKind:'query',configuration:{}},runtime,model:{...model,selection},output,tools:{definitions:[],bindings:[],assertCurrent:()=>scope.assertCurrent()},budget:{activeTimeoutMs:null},activeBudget:new ActiveExecutionBudget(null),commitFence:{assertCurrent:()=>scope.assertCurrent()}},{systemPrompt:'Generated Host policy',prompt:'Generated prompt',contextUsage:{unit:'utf16_characters',system:0,tools:0,question:0,conversation:0,task:0,evidence:0,prompt:0,outputTokenReserve:100,toolResults:0},evidence:()=>({records:new Map(),deliveredRanges:[],imageReadReceipts:[],sourceContextDependencies:[],evidenceDependencies:{version:1,complete:true,ids:[]},trace:[],deliveredCharacters:0}),async readTool(){throw Error('This fixture has no tools');},admit:(task,signal)=>hooks!.runModel!(task,signal),async close(){},observe:event=>input.onHostRunEvent?.(event)});
+    const session=await createHostRunSession({scope:scope as never,input,identity:{runId:randomUUID(),runtime:{id:'fixture',revision:1,profileId:'fixture-runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64)},model:selection},profile:{binding:runtime.binding,runtimeId:'fixture',profileId:'fixture-runtime',profileRevision:1,assemblyFingerprint:'a'.repeat(64),taskKind:'query',configuration:{}},runtime,model:{...model,selection},output,tools:{definitions:[],bindings:[],assertCurrent:()=>scope.assertCurrent()},budget:{activeTimeoutMs:null},activeBudget:new ActiveExecutionBudget(null),commitFence:{assertCurrent:()=>scope.assertCurrent()}},{systemPrompt:'Generated Host policy',prompt:'Generated prompt',contextUsage:{unit:'utf16_characters',system:0,tools:0,question:0,conversation:0,task:0,evidence:0,prompt:0,outputTokenReserve:100,toolResults:0},evidence:()=>({records:new Map(),deliveredRanges:[],imageReadReceipts:[],sourceContextDependencies:[],evidenceDependencies:{version:1,complete:true,ids:[]},trace:[],deliveredCharacters:0}),async readTool(){throw Error('This fixture has no tools');},admit:(task,signal)=>hooks!.runModel!(task,signal),async close(){},observe:event=>{seen.push(structuredClone(event));input.onHostRunEvent?.(event);}});
     try{return await session.execute();}finally{await session.close();}
   }finally{await resources.close();await host.close();}
 }});
@@ -221,7 +221,8 @@ const realHostLeaf=(failure:Error):ModelAgentFactory=>async(_settings,_reader,ho
 test('a real Host session finalizes one failed receipt through its own terminal, with no app fallback',async t=>{
   const failure=Object.assign(new Error('Generated model failure before usage'),{name:'AgentResponseError',reason:'invalid_response'});
   const dataDir=mkdtempSync(join(tmpdir(),'mote-run-accounting-real-host-'));
-  const node=await buildApp(config(dataDir),{backgroundWorker:false,createModelAgent:realHostLeaf(failure)});
+  const seen:HostEvent[]=[];
+  const node=await buildApp(config(dataDir),{backgroundWorker:false,createModelAgent:realHostLeaf(failure,seen)});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated real Host failure question'}});
   assert.equal(response.statusCode,502,response.body);
@@ -230,6 +231,12 @@ test('a real Host session finalizes one failed receipt through its own terminal,
   assert.equal(rows.length,1,'exactly the selected Host meter row exists');
   assert.equal(rows[0].status,'failed','the Host run terminal failed the selected receipt');
   assert.equal(rows[0].tokens,undefined,'no usage sample was fabricated');
+  const terminals=seen.filter(event=>event.event.type==='run.terminal');
+  assert.equal(terminals.length,1,'the Host emits exactly one run terminal');
+  const terminal=terminals[0].event as {type:'run.terminal';terminal:{kind:string}};
+  assert.equal(terminal.terminal.kind,'failed');
+  assert.notEqual(terminals[0].attemptId,null,'the failed terminal carries the last attempt id');
+  assert.equal(seen.filter(event=>event.event.type==='usage').length,0,'no usage event was emitted');
 });
 
 test('a legacy yield carrying an unexpected Host event rejects and fails its started receipt',async t=>{
