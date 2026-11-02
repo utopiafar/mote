@@ -12,6 +12,7 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {createPluginControlPlatform, pluginControlDeclaration, type TrustedPluginBuild} from '../src/plugin-center.js';
 import {registerPluginControlHttp} from '../src/plugins/plugin-control-http.js';
+import {projectFeatureInventory, type HostContributionDescriptor} from '../src/feature-inventory.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {packageStateLabel} from '../../../apps/web/src/plugin-center-presentation.js';
@@ -147,4 +148,34 @@ test('feature inventory keeps the Web contract and content-hash revision', async
   assert.equal(inventory.revision, expected, 'inventory revision is the content digest, not a command CAS revision');
   assert.notEqual(inventory.revision, node.pluginCenter.revision());
   assert.ok(inventory.capabilities.some((capability: {surface: string}) => capability.surface === 'data'));
+});
+
+test('common host snapshot drives inventory availability and digest', async t => {
+  const host = new PluginHost({kind: 'central', id: randomUUID()});
+  const identity: ScopeIdentity = {
+    host: host.identity, packageId: 'fixture.package', installationId: 'fixture-install', instanceId: 'fixture-instance', activationId: randomUUID(),
+  };
+  const handle = await host.install({
+    identity, contributions: [{id: 'fixture.contribution', apiVersion: '1'}],
+    factory: () => ({prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}}),
+  });
+  t.after(async () => { await handle.close('shutdown'); await host.close(); });
+  const descriptor: HostContributionDescriptor = {
+    packageId: 'fixture.package', instanceId: 'fixture-instance', contributionId: 'fixture.contribution',
+    featureId: 'fixture.feature', version: '1', surface: 'data',
+  };
+  const base = {
+    server: {schemaVersion: 1 as const, revision: 0, features: [], capabilities: []},
+    agent: {schemaVersion: 1 as const, revision: 0, features: [], capabilities: []},
+    connectors: [], pipelines: [], processing: [], workflows: [],
+  };
+  const active = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: [descriptor]}});
+  assert.equal(active.capabilities.find(c => c.id === 'fixture.contribution')?.state, 'active');
+  await handle.quiesce('upgrade');
+  const unavailable = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: [descriptor]}});
+  assert.equal(unavailable.capabilities.find(c => c.id === 'fixture.contribution')?.state, 'unavailable');
+  assert.notEqual(unavailable.revision, active.revision, 'availability changes the content digest');
+  await handle.close('revoked');
+  const revoked = projectFeatureInventory({...base, host: {snapshot: host.snapshot(), descriptors: [descriptor]}});
+  assert.equal(revoked.capabilities.find(c => c.id === 'fixture.contribution')?.state, 'unavailable');
 });
