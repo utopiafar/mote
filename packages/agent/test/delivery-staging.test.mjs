@@ -122,3 +122,19 @@ test('discarded capability discovery cannot authorize a later execute',async()=>
     );
   }finally{await bridge.close();}
 });
+
+test('discarding a staged image releases its reservation for a fresh staged read',async()=>{
+  const imageId='55555555-5555-4555-8555-555555555555';
+  const imageReader={...reader,readImage:async()=>({mimeType:'image/png',data:'Zml4dHVyZQ=='})};
+  const bridge=await startBridge(imageReader,{
+    question:'Generated staged image',
+    directImages:[{id:imageId,name:'Generated image',mimeType:'image/png',hash:'a'.repeat(64),sizeBytes:7}],
+  },8);
+  try{
+    const first=await bridge.prepareDelivery('read_image',{id:imageId},signal());
+    first.discard();
+    const second=await bridge.prepareDelivery('read_image',{id:imageId},signal());
+    assert.equal(second.value.image.data,'Zml4dHVyZQ==');
+    second.discard();
+  }finally{await bridge.close();}
+});
