@@ -19,11 +19,6 @@ function dateValue(value: unknown, field: string): string | undefined {
   return new Date(value as string).toISOString();
 }
 
-function contextId(value: unknown, message: string): string {
-  if (typeof value !== 'string' || !value || value.length > 1600 || /[\/\\]|:\/\/|\s/.test(value)) invalid(message);
-  return value as string;
-}
-
 /** Intersect the authorized scope with an optional caller range. This narrows
  * only; the parent HostSessionPort still performs fresh authorization and the
  * discovery/version check before any bytes or text are disclosed. */
@@ -68,7 +63,10 @@ export function createFileReadPack(options: FileReadPackOptions = {}): readonly 
         length: {type: 'number'},
       },
       parse(args) {
-        return Object.freeze({id: contextId(args.id, 'Discover the file before requesting evidence'), ...textRange(args)});
+        // Identity syntax is not a pack policy: the parent HostSessionPort owns
+        // discovery/revision checks and rejects unknown ids before any read.
+        if (typeof args.id !== 'string') invalid('Discover the file before requesting evidence');
+        return Object.freeze({id: args.id, ...textRange(args)});
       },
       execute(args, port: HostSessionPort) {
         return port.read('readFileEvidence', {
@@ -92,9 +90,10 @@ export function createFileReadPack(options: FileReadPackOptions = {}): readonly 
         offset: {type: 'number'},
       },
       parse(args) {
+        if (typeof args.id !== 'string') invalid('Discover the file before reading its chunks');
         const offset = args.offset ?? 0;
         if (!Number.isSafeInteger(offset) || Number(offset) < 0) invalid('Invalid chunk offset');
-        return Object.freeze({id: contextId(args.id, 'Discover the file before reading its chunks'), offset: Number(offset)});
+        return Object.freeze({id: args.id, offset: Number(offset)});
       },
       async execute(args, port: HostSessionPort) {
         const chunks = await port.read('fileChunks', {...scopedFileRange({}, port.scope), id: args.id as string, offset: args.offset as number});

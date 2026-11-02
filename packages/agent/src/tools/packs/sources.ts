@@ -20,11 +20,6 @@ function dateValue(value: unknown, field: string): string | undefined {
   return new Date(value as string).toISOString();
 }
 
-function contextId(value: unknown, message: string): string {
-  if (typeof value !== 'string' || !value || value.length > 1600 || /[\/\\]|:\/\/|\s/.test(value)) invalid(message);
-  return value as string;
-}
-
 /** Intersect model arguments with the authorized scope. This narrows a request
  * and preserves the existing range/device errors; it never grants access. The
  * parent HostSessionPort still performs the fresh grant and discovery check. */
@@ -139,7 +134,10 @@ export function createSourceReadPack(options: SourceReadPackOptions = {}): reado
         id: {type: 'string', required: true, description: 'Discovered context id for a versioned source item'},
       },
       parse(args) {
-        return Object.freeze({id: contextId(args.id, 'Discover a source record before requesting history')});
+        // Identity syntax is not a pack policy: the parent HostSessionPort owns
+        // discovery/revision checks and rejects unknown ids before any read.
+        if (typeof args.id !== 'string') invalid('Discover a source record before requesting history');
+        return Object.freeze({id: args.id});
       },
       async execute(args, port: HostSessionPort) {
         const records = await port.read('sourceHistory', {...scopedRange({}, port.scope), id: args.id as string});

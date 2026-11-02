@@ -110,13 +110,13 @@ test('source_history returns only the requested exact discovered id and historic
   const tool = resolve(registryWithPacks(), 'source_history');
   assert.deepEqual(await tool.execute({id: CURRENT}, port), [{id: CURRENT, revision: 1, ocrText: 'Historical generated revision'}]);
   assert.deepEqual(reader.calls.sourceHistory, [{after: '2026-01-01T00:00:00.000Z', before: '2026-02-01T00:00:00.000Z', deviceId: 'generated-device', limit: 6, id: CURRENT}]);
-  for (const id of ['/etc/passwd', 'https://example.invalid/file', 'has space']) {
+  for (const id of [42, null, {}]) {
     await assert.rejects(tool.execute({id}, port), invalid);
   }
   assert.equal(reader.calls.sourceHistory.length, 1);
 });
 
-test('read_file_evidence preserves UTF-16 offsets and rejects paths, URLs and out-of-range requests', async () => {
+test('read_file_evidence preserves UTF-16 offsets and rejects invalid ids and out-of-range requests', async () => {
   const reader = makeReader(), port = makePort(reader, {deviceId: 'generated-device', limit: 7});
   const tool = resolve(registryWithPacks(), 'read_file_evidence');
   const defaults = await tool.execute({id: CURRENT}, port);
@@ -127,7 +127,7 @@ test('read_file_evidence preserves UTF-16 offsets and rejects paths, URLs and ou
   assert.equal(paged.record.textRange.start, 5);
   assert.equal(paged.record.textRange.end, 17);
   assert.equal(paged.record.ocrText, '56789abcdefg');
-  for (const bad of [{offset: -1}, {offset: 10000001}, {offset: 1.5}, {length: 0}, {length: 16001}, {id: '/etc/passwd'}, {id: 'https://example.invalid/file'}, {id: 'has space'}]) {
+  for (const bad of [{offset: -1}, {offset: 10000001}, {offset: 1.5}, {length: 0}, {length: 16001}, {id: 42}, {id: null}]) {
     await assert.rejects(tool.execute({id: CURRENT, ...bad}, port), invalid);
   }
   assert.equal(reader.calls.readFileEvidence.length, 2);
@@ -143,7 +143,7 @@ test('file_chunks keeps chunk offsets across pages and rejects invalid requests'
   const next = await tool.execute({id: CURRENT, offset: 30}, port);
   assert.deepEqual(reader.calls.fileChunks[1], {deviceId: 'generated-device', id: CURRENT, offset: 30});
   assert.equal(next[0].fileEvidence.chunkOffset, 30);
-  for (const bad of [{offset: -1}, {offset: 1.5}, {id: '/etc/passwd'}, {id: 'https://example.invalid/file'}, {id: 'has space'}]) {
+  for (const bad of [{offset: -1}, {offset: 1.5}, {id: 42}, {id: null}]) {
     await assert.rejects(tool.execute({id: CURRENT, ...bad}, port), invalid);
   }
   assert.equal(reader.calls.fileChunks.length, 2);
