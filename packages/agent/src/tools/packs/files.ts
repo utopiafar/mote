@@ -1,6 +1,7 @@
 import {originalEvidenceReceipt} from '../../bridge.js';
 import {ContextToolError} from '../../tool-errors.js';
 import {defineToolDescriptor, type ToolDescriptor} from '../descriptor.js';
+import type {ContextRange} from '../../context-contracts.js';
 import type {HostSessionPort} from '../host-session.js';
 
 /** Options are frozen by the parent factory signature. The Host session owns
@@ -13,6 +14,24 @@ export interface FileReadPackOptions {
 const invalid = (message: string): never => {
   throw new ContextToolError('invalid_tool_arguments', message, 'correct_arguments');
 };
+
+function dateValue(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) invalid(`${field} must be an ISO timestamp`);
+  return new Date(value as string).toISOString();
+}
+
+/** port.scope is the parent-normalized effective scope for this call. Time and
+ * device are narrowed by it; the pack never changes a Host page limit. */
+function scopedFileRange(scope: Readonly<ContextRange>): ContextRange {
+  const lower = dateValue(scope.after, 'after'), upper = dateValue(scope.before, 'before');
+  return {
+    ...(lower ? {after: lower} : {}),
+    ...(upper ? {before: upper} : {}),
+    ...(scope.deviceId ? {deviceId: scope.deviceId} : {}),
+    ...(scope.limit === undefined ? {} : {limit: scope.limit}),
+  };
+}
 
 function textRange(args: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
   const offset = args.offset ?? 0, length = args.length ?? 8000;
@@ -55,7 +74,7 @@ export function createFileReadPack(options: FileReadPackOptions = {}): readonly 
       },
       async execute(args, port: HostSessionPort) {
         const length = args.length as number;
-        const result = await port.read('readFileEvidence', {id: args.id as string, offset: args.offset as number, length});
+        const result = await port.read('readFileEvidence', {...scopedFileRange(port.scope), id: args.id as string, offset: args.offset as number, length});
         const record = result.record ? originalEvidenceReceipt(result.record, 0, length, timeZone) : undefined;
         return body({...result, ...(record ? {record} : {})});
       },
@@ -80,7 +99,7 @@ export function createFileReadPack(options: FileReadPackOptions = {}): readonly 
       },
       async execute(args, port: HostSessionPort) {
         const offset = args.offset as number;
-        const chunks = await port.read('fileChunks', {id: args.id as string, offset});
+        const chunks = await port.read('fileChunks', {...scopedFileRange(port.scope), id: args.id as string, offset});
         if (!Array.isArray(chunks)) invalid('Context reader returned invalid records');
         const data = chunks.map(record => originalEvidenceReceipt(record, 0, 600, timeZone));
         return body(data, {nextCursor: chunks.length === 30 ? String(offset + 30) : null});

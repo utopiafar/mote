@@ -89,24 +89,24 @@ test('source/file packs publish the frozen declarations and the current public s
 });
 
 test('sources normalizes shape arguments and returns the untrusted body; the parent keeps scope and page limits', async () => {
-  const reader = makeReader(), port = makePort(reader, {after: '2026-01-01T00:00:00.000Z', deviceId: 'scope-device', limit: 3});
+  const reader = makeReader(), port = makePort(reader, {after: '2026-01-01T00:00:00.000Z', deviceId: 'scope-device', limit: 6});
   const tool = resolve(registryWithPacks(), 'sources');
-  const args = {query: 'generated source', after: '2026-01-10T00:00:00.000Z', before: '2026-03-01T00:00:00.000Z', deviceId: 'caller-device', limit: 100, cursor: 'source-cursor'};
+  const args = {query: 'generated source', after: '2026-01-10T00:00:00.000Z', before: '2026-03-01T00:00:00.000Z', deviceId: 'scope-device', limit: 100, cursor: 'source-cursor'};
   assert.deepEqual(await tool.execute(args, port), {source: 'untrusted_personal_context', data: {items: [{sourceId: 'source-generated', name: 'Generated source'}], nextCursor: 'source-next'}});
-  assert.deepEqual(reader.calls.sources, [{after: '2026-01-10T00:00:00.000Z', before: '2026-03-01T00:00:00.000Z', deviceId: 'caller-device', limit: 100, cursor: 'source-cursor', query: 'generated source'}]);
-  for (const bad of [{after: 'not-a-time'}, {query: 'x'.repeat(501)}, {limit: 0}, {cursor: 'c'.repeat(4097)}, {deviceId: 3}]) {
+  assert.deepEqual(reader.calls.sources, [{after: '2026-01-10T00:00:00.000Z', before: '2026-03-01T00:00:00.000Z', deviceId: 'scope-device', limit: 6, cursor: 'source-cursor', query: 'generated source'}]);
+  for (const bad of [{after: 'not-a-time'}, {query: 'x'.repeat(501)}, {limit: 0}, {cursor: 'c'.repeat(4097)}, {deviceId: 3}, {deviceId: 'other-device'}]) {
     await assert.rejects(tool.execute({...args, ...bad}, port), invalid);
   }
   assert.equal(reader.calls.sources.length, 1);
 });
 
 test('source_items preserves tombstones, references, pagination and display projection without promoting them', async () => {
-  const reader = makeReader(), port = makePort(reader, {deviceId: 'scope-device'});
+  const reader = makeReader(), port = makePort(reader, {deviceId: 'scope-device', limit: 6});
   const tool = resolve(registryWithPacks(), 'source_items');
   const args = {sourceId: 'source-generated', kind: 'event', includeDeleted: true, cursor: 'items-cursor', after: '2026-01-05T00:00:00.000Z', limit: 10};
   const {source, data, pagination} = await tool.execute(args, port);
   assert.equal(source, 'untrusted_personal_context');
-  assert.deepEqual(reader.calls.sourceItems, [{after: '2026-01-05T00:00:00.000Z', limit: 10, cursor: 'items-cursor', sourceId: 'source-generated', kind: 'event', includeDeleted: true}]);
+  assert.deepEqual(reader.calls.sourceItems, [{after: '2026-01-05T00:00:00.000Z', deviceId: 'scope-device', limit: 6, cursor: 'items-cursor', sourceId: 'source-generated', kind: 'event', includeDeleted: true}]);
   assert.deepEqual(pagination, {nextCursor: 'items-next', totalCount: 3});
   assert.deepEqual(data.map(item => item.id), [CURRENT, TOMBSTONE, REFERENCE]);
   assert.equal(data[0].displayCapturedAt, '2026-01-05T08:00:00+08:00');
@@ -115,18 +115,18 @@ test('source_items preserves tombstones, references, pagination and display proj
   assert.equal(data.find(item => item.id === TOMBSTONE).provenance.deleted, true);
   assert.equal(data.find(item => item.id === REFERENCE).provenance.layer, 'reference');
   assert.equal(data.find(item => item.id === CURRENT).provenance.revision, 2);
-  for (const bad of [{includeDeleted: 'yes'}, {sourceId: 's'.repeat(129)}, {limit: 0}, {after: 'not-a-time'}]) {
+  for (const bad of [{includeDeleted: 'yes'}, {sourceId: 's'.repeat(129)}, {limit: 0}, {after: 'not-a-time'}, {deviceId: 'other-device'}]) {
     await assert.rejects(tool.execute({...args, ...bad}, port), invalid);
   }
   assert.equal(reader.calls.sourceItems.length, 1);
 });
 
 test('source_history projects historical revisions and leaves discovery to the parent port', async () => {
-  const reader = makeReader(), port = makePort(reader, {deviceId: 'scope-device'});
+  const reader = makeReader(), port = makePort(reader, {after: '2026-01-01T00:00:00.000Z', before: '2026-02-01T00:00:00.000Z', deviceId: 'scope-device', limit: 6});
   const tool = resolve(registryWithPacks(), 'source_history');
   const result = await tool.execute({id: CURRENT}, port);
   assert.equal(result.source, 'untrusted_personal_context');
-  assert.deepEqual(reader.calls.sourceHistory, [{id: CURRENT}]);
+  assert.deepEqual(reader.calls.sourceHistory, [{after: '2026-01-01T00:00:00.000Z', before: '2026-02-01T00:00:00.000Z', deviceId: 'scope-device', limit: 6, id: CURRENT}]);
   assert.equal(result.data[0].id, CURRENT);
   assert.equal(result.data[0].provenance.revision, 1);
   assert.equal(result.data[0].displayCapturedAt, '2026-01-05T08:00:00+08:00');
@@ -138,13 +138,13 @@ test('read_file_evidence keeps UTF-16 offsets, result status and local record pr
   const reader = makeReader(), port = makePort(reader, {deviceId: 'scope-device'});
   const tool = resolve(registryWithPacks(), 'read_file_evidence');
   const defaults = await tool.execute({id: CURRENT}, port);
-  assert.deepEqual(reader.calls.readFileEvidence[0], {id: CURRENT, offset: 0, length: 8000});
+  assert.deepEqual(reader.calls.readFileEvidence[0], {deviceId: 'scope-device', id: CURRENT, offset: 0, length: 8000});
   assert.equal(defaults.source, 'untrusted_personal_context');
   assert.equal(defaults.data.status, 'available');
   assert.equal(defaults.data.reason, 'generated');
   assert.equal(defaults.data.record.textRange.start, 0);
   const paged = await tool.execute({id: CURRENT, offset: 5, length: 12}, port);
-  assert.deepEqual(reader.calls.readFileEvidence[1], {id: CURRENT, offset: 5, length: 12});
+  assert.deepEqual(reader.calls.readFileEvidence[1], {deviceId: 'scope-device', id: CURRENT, offset: 5, length: 12});
   assert.equal(paged.data.record.ocrText, '56789abcdefg');
   assert.equal(paged.data.record.textRange.end, 12);
   assert.equal(paged.data.record.fileEvidence.revision, '2');
@@ -158,14 +158,14 @@ test('file_chunks keeps chunk offsets, page cursor and display projection', asyn
   const reader = makeReader(), port = makePort(reader, {deviceId: 'scope-device'});
   const tool = resolve(registryWithPacks(), 'file_chunks');
   const first = await tool.execute({id: CURRENT}, port);
-  assert.deepEqual(reader.calls.fileChunks[0], {id: CURRENT, offset: 0});
+  assert.deepEqual(reader.calls.fileChunks[0], {deviceId: 'scope-device', id: CURRENT, offset: 0});
   assert.equal(first.source, 'untrusted_personal_context');
   assert.equal(first.data.length, 30);
   assert.deepEqual(first.pagination, {nextCursor: '30'});
   assert.equal(first.data[0].fileEvidence.startMs, 0);
   assert.equal(first.data[0].displayCapturedAt, '2026-01-05T08:00:00+08:00');
   const next = await tool.execute({id: CURRENT, offset: 30}, port);
-  assert.deepEqual(reader.calls.fileChunks[1], {id: CURRENT, offset: 30});
+  assert.deepEqual(reader.calls.fileChunks[1], {deviceId: 'scope-device', id: CURRENT, offset: 30});
   assert.deepEqual(next.pagination, {nextCursor: '60'});
   assert.equal(next.data[0].fileEvidence.startMs, 30000);
   const short = makeReader({fileChunks: () => [record('chunk-short')]});

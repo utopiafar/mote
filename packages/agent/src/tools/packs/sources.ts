@@ -34,12 +34,24 @@ function parseRange(args: Readonly<Record<string, unknown>>): Readonly<Record<st
   });
 }
 
-function rangeArguments(args: Readonly<Record<string, unknown>>): ContextRange {
+/** port.scope is the parent-normalized effective scope for this call, including
+ * its current page limit. Narrow time/device with it and never raise the limit:
+ * a caller limit is clamped to scope.limit when the Host supplied one. */
+function scopedRange(args: Readonly<Record<string, unknown>>, scope: Readonly<ContextRange>): ContextRange {
+  const after = dateValue(args.after, 'after'), before = dateValue(args.before, 'before');
+  const lower = dateValue(scope.after, 'after'), upper = dateValue(scope.before, 'before');
+  const effectiveAfter = after && lower ? (after > lower ? after : lower) : (after ?? lower);
+  const effectiveBefore = before && upper ? (before < upper ? before : upper) : (before ?? upper);
+  if (effectiveAfter && effectiveBefore && effectiveAfter > effectiveBefore) invalid('Time range is outside the requested scope');
+  if (args.deviceId !== undefined && typeof args.deviceId !== 'string') invalid('deviceId must be a string');
+  if (scope.deviceId && args.deviceId !== undefined && args.deviceId !== scope.deviceId) invalid('Device is outside the requested scope');
+  const requested = args.limit === undefined ? undefined : Number(args.limit);
+  const limit = requested === undefined ? scope.limit : scope.limit === undefined ? requested : Math.min(requested, scope.limit);
   return {
-    ...(args.after === undefined ? {} : {after: args.after as string}),
-    ...(args.before === undefined ? {} : {before: args.before as string}),
-    ...(args.deviceId === undefined ? {} : {deviceId: args.deviceId as string}),
-    ...(args.limit === undefined ? {} : {limit: args.limit as number}),
+    ...(effectiveAfter ? {after: effectiveAfter} : {}),
+    ...(effectiveBefore ? {before: effectiveBefore} : {}),
+    ...(scope.deviceId ?? (args.deviceId as string | undefined) ? {deviceId: scope.deviceId ?? args.deviceId as string} : {}),
+    ...(limit === undefined ? {} : {limit}),
     ...(args.cursor === undefined ? {} : {cursor: args.cursor as string}),
   };
 }
@@ -84,7 +96,7 @@ export function createSourceReadPack(options: SourceReadPackOptions = {}): reado
         return parseRange(args);
       },
       async execute(args, port: HostSessionPort) {
-        const data = await port.read('sources', {...rangeArguments(args), ...(args.query === undefined ? {} : {query: args.query as string})});
+        const data = await port.read('sources', {...scopedRange(args, port.scope), ...(args.query === undefined ? {} : {query: args.query as string})});
         return body(data);
       },
     }),
@@ -112,7 +124,7 @@ export function createSourceReadPack(options: SourceReadPackOptions = {}): reado
       },
       async execute(args, port: HostSessionPort) {
         const page = await port.read('sourceItems', {
-          ...rangeArguments(args),
+          ...scopedRange(args, port.scope),
           ...(args.sourceId === undefined ? {} : {sourceId: args.sourceId as string}),
           ...(args.kind === undefined ? {} : {kind: args.kind as string}),
           ...(args.includeDeleted === undefined ? {} : {includeDeleted: args.includeDeleted as boolean}),
@@ -141,7 +153,7 @@ export function createSourceReadPack(options: SourceReadPackOptions = {}): reado
         return Object.freeze({id: args.id});
       },
       async execute(args, port: HostSessionPort) {
-        const records = await port.read('sourceHistory', {id: args.id as string});
+        const records = await port.read('sourceHistory', {...scopedRange({}, port.scope), id: args.id as string});
         if (!Array.isArray(records)) invalid('Context reader returned invalid records');
         return body(records.map(record => originalEvidenceReceipt(record, 0, 600, timeZone)));
       },
