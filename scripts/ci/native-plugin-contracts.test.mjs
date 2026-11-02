@@ -27,7 +27,7 @@ const rules=result=>result.violations.map(issue=>issue.rule);
 
 test('public SDK runtime cannot reverse-import app assembly; exact baseline exception is removable',t=>{
   const f=fixture(t);
-  f.write('packages/plugin-sdk/src/browser.ts',"export {buildApp} from '../../apps/server/src/app.js';\n");
+  f.write('packages/plugin-sdk/src/browser.ts',"export {buildApp} from '../../../apps/server/src/app.js';\n");
   const result=f.check(),issue=result.violations[0];
   assert.deepEqual(rules(result),['sdk-public-boundary']);
   assert.equal(issue.from,'packages/plugin-sdk/src/browser.ts');
