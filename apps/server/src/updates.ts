@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { checkRelease, ReleaseError, type ReleaseChannel } from '@mote/shared/release';
 
-type ReleaseCheck = typeof checkRelease;
+export type ReleaseCheck = typeof checkRelease;
 export interface UpdateContext { currentVersion: string; profile?: string; runtime?: 'native' | 'docker' | 'unknown'; profileHome?: string; repository?: string; channel?: ReleaseChannel }
 export interface UpdateStatus {
   repository: string; channel: ReleaseChannel; currentVersion: string; latestVersion: string | null;
