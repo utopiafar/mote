@@ -1,5 +1,6 @@
 import { configFromFile,configFromDocument,registerBuiltinDomains,ConfigError } from './config.js';
 import { buildApp } from './app.js';
+import {defaultDistribution} from './distribution/default.js';
 import { readFileSync,writeFileSync,unlinkSync,existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +27,7 @@ if(existsSync(pidPath)) {
 }
 writeFileSync(pidPath,String(process.pid),{mode:0o600,flag:'wx'});
 process.on('exit',()=>{try{if(existsSync(pidPath)&&readFileSync(pidPath,'utf8').trim()===String(process.pid))unlinkSync(pidPath);}catch{/* Never print a filesystem exception containing private paths. */}});
-const {app}=await buildApp(config,{backgroundWorker:true,configService});
+const {app}=await buildApp(config,{backgroundWorker:true,configService,distribution:defaultDistribution});
 app.addHook('onSend',async(req,reply,payload)=>{if(req.routeOptions.url==='/api/health')reply.header('X-Mote-Runtime-Instance',instanceId);return payload;});
 try{
   await app.listen({host:config.host,port:config.port});
