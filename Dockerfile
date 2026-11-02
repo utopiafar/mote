@@ -3,6 +3,7 @@ WORKDIR /app
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 COPY package.json package-lock.json ./
 COPY packages/plugin-api/package.json ./packages/plugin-api/package.json
+COPY packages/plugin-host/package.json ./packages/plugin-host/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/agent/package.json ./packages/agent/package.json
 COPY packages/diagnostics/package.json ./packages/diagnostics/package.json

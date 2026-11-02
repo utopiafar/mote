@@ -5,19 +5,35 @@ import {readFileSync,readdirSync,lstatSync} from 'node:fs';
 import {unzipSync} from 'fflate';
 import {z} from 'zod';
 import {calendarPluginCapabilitySchema} from '@mote/shared';
-import type {PluginConfigurationField,PluginReleasePreview} from '@mote/shared';
+import type {CalendarPluginCapability,PluginConfigurationField,PluginReleasePreview} from '@mote/shared';
+import {
+  packageManifestSchema, PluginContractError,
+  type ManifestDependency, type PackageManifest,
+} from '@mote/plugin-api';
 import {StoreError} from './store.js';
 
-const relativePath=z.string().min(1).refine(value=>!value.startsWith('/')&&!value.includes('\\')&&!value.split('/').some(part=>part==='..'||part==='.'||part===''),'Invalid package path');
-const fieldSchema=z.object({id:z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/),label:z.string().min(1),type:z.enum(['text','number','boolean','select','model-profile','secret-reference']),required:z.boolean().optional(),options:z.array(z.object({value:z.string(),label:z.string()}).strict()).optional(),description:z.string().optional()}).strict();
-/** The release is an executable Mote adapter, not an arbitrary GitHub project.
- * All dependencies must be bundled; the host never runs package install scripts. */
-export const pluginManifestSchema=z.object({
-  schemaVersion:z.literal(1),id:z.string().regex(/^[a-z][a-z0-9.-]{2,127}$/),name:z.string().min(1),version:z.string().min(1),
-  runtime:z.literal('worker'),entry:relativePath,archive:z.object({asset:z.string().regex(/^[^/\\]+\.zip$/),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
-  capabilities:z.array(z.enum(['repository','retrieval','engine','calendar.manage'])).nonempty(),actionCapabilities:z.array(calendarPluginCapabilitySchema).max(1).optional(),configuration:z.array(fieldSchema),dependencies:z.array(z.string()),access:z.array(z.string()),
-}).strict().superRefine((value,context)=>{if(value.capabilities.includes('calendar.manage')!==Boolean(value.actionCapabilities?.length))context.addIssue({code:'custom',message:'Calendar capability requires its complete host execution declaration'});});
-export type PluginManifest=z.infer<typeof pluginManifestSchema>;
+/** The one current package Manifest is owned by @mote/plugin-api. This wrapper
+ * adds the existing calendar host declaration only; the archive/source
+ * identity remains in the resolver below. */
+export type PluginManifest = Omit<PackageManifest,'actionCapabilities'> & {actionCapabilities?:readonly CalendarPluginCapability[]};
+const parsePluginManifest=(input:unknown):PluginManifest=>{
+  const base=packageManifestSchema.parse(input),actions=base.actionCapabilities?.map(value=>calendarPluginCapabilitySchema.parse(value));
+  if(actions&&actions.length>1)throw new PluginContractError('invalid_contract','$.actionCapabilities');
+  if(base.capabilities.includes('calendar.manage')!==Boolean(actions?.length))throw new PluginContractError('invalid_contract','$.actionCapabilities');
+  return (actions?{...base,actionCapabilities:actions}:base) as PluginManifest;
+};
+export const pluginManifestSchema={
+  parse:parsePluginManifest,
+  safeParse(input:unknown):{success:true;data:PluginManifest}|{success:false;error:unknown}{
+    try{return {success:true,data:parsePluginManifest(input)};}catch(error){return {success:false,error};}
+  },
+};
+const dependencyLabel=(dependency:ManifestDependency)=>dependency.id+'@'+dependency.version;
+const validPackagePath=(value:string)=>Boolean(value)&&!value.startsWith('/')&&!value.includes('\\')&&!value.split('/').some(part=>!part||part==='.'||part==='..');
+const relativePath={
+  safeParse:(value:string)=>validPackagePath(value)?{success:true as const}:{success:false as const},
+  parse:(value:string)=>{if(!validPackagePath(value))throw new StoreError('Invalid package path',422);return value;},
+};
 export type ResolvedPluginRelease={preview:PluginReleasePreview;manifest:PluginManifest;archiveUrl:string;hostAdapter?:'mote.mem0@1'|'mote.hindsight@1'};
 export type PluginReleaseTransport=(url:string)=>Promise<{bytes:Uint8Array}>;
 const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
@@ -68,17 +84,20 @@ export class GitHubPluginReleases {
         {id:'embeddingDimension',label:'Embedding dimension',type:'number',required:true},
         {id:'embeddingSecretReference',label:'Embedding secret reference',type:'secret-reference'},
       ]:[{id:'modelProfileId',label:'Model profile',type:'model-profile',required:true}];
-      const manifest:PluginManifest={schemaVersion:1,id:mem0?'mote.mem0':'mote.hindsight',name:mem0?'Mem0 (Mote adapter)':'Hindsight (Mote adapter)',version:mem0?'3.3.1':'0.10.2',runtime:'worker',entry:'host-adapter.mjs',archive:{asset:mem0?'upstream-source.zip':'upstream-api-source.zip',sha256:digest},capabilities:mem0?['repository','retrieval']:['engine'],configuration,dependencies:mem0?['Bundled Mote adapter@1','mem0ai@3.3.1','better-sqlite3@12.10.0']:['Bundled Mote adapter@1','Docker with the pinned Hindsight service@0.10.2 image and an owned scoped worker'],access:['Central private plugin storage','Configured provider endpoints']};
+      const manifest:PluginManifest={schemaVersion:1,id:mem0?'mote.mem0':'mote.hindsight',name:mem0?'Mem0 (Mote adapter)':'Hindsight (Mote adapter)',version:mem0?'3.3.1':'0.10.2',trust:'official',runtime:'service',entry:'host-adapter.mjs',archive:{asset:mem0?'upstream-source.zip':'upstream-api-source.zip',sha256:digest},contributions:mem0?[{id:'mote.mem0.provider',version:'1',surface:'data',runtime:'worker',capabilities:['repository','retrieval']}]:[{id:'mote.hindsight.engine',version:'1',surface:'data',runtime:'service',capabilities:['engine']}],capabilities:mem0?['repository','retrieval']:['engine'],configuration,dependencies:mem0?[{kind:'host',id:'mote.adapter',version:'1'},{kind:'host',id:'mem0ai',version:'3.3.1'},{kind:'host',id:'better-sqlite3',version:'12.10.0'}]:[{kind:'host',id:'mote.adapter',version:'1'},{kind:'host',id:'mote.hindsight-runtime',version:'0.10.2'},{kind:'host',id:'docker',version:'0.10.2'}],access:['Central private plugin storage','Configured provider endpoints']};
       this.validateArchive(bytes,manifest,true);
-      return {manifest,archiveUrl,hostAdapter:mem0?'mote.mem0@1':'mote.hindsight@1',preview:{id:randomUUID(),name:manifest.name,version:manifest.version,source:{repository:repo,tag:release.tag_name,commit,digest},runtime:'service',restartRequired:false,capabilities:manifest.capabilities.map(id=>({id,state:'unknown',reason:'Requires an actual instance capability check'})),dependencies:manifest.dependencies,access:manifest.access,issues:[mem0?'The upstream source is pinned. This Mote build supplies the executable compatibility adapter.':'The pinned upstream API source is hindsight_api_slim-0.10.2-py3-none-any.whl. This Mote build supplies the executable compatibility adapter and pinned Docker runtime.'],installable:true}};
+      return {manifest,archiveUrl,hostAdapter:mem0?'mote.mem0@1':'mote.hindsight@1',preview:{id:randomUUID(),name:manifest.name,version:manifest.version,source:{repository:repo,tag:release.tag_name,commit,digest},runtime:'service',restartRequired:false,capabilities:manifest.capabilities.map(id=>({id,state:'unknown',reason:'Requires an actual instance capability check'})),dependencies:manifest.dependencies.map(dependencyLabel),access:[...manifest.access],issues:[mem0?'The upstream source is pinned. This Mote build supplies the executable compatibility adapter.':'The pinned upstream API source is hindsight_api_slim-0.10.2-py3-none-any.whl. This Mote build supplies the executable compatibility adapter and pinned Docker runtime.'],installable:true}};
     }
     if(!manifestAsset)throw new StoreError('This release has no Mote adapter manifest (mote-plugin.json). Install a compatible adapter release.',422);
-    const manifest=pluginManifestSchema.parse(parseJson((await this.transport(trustedAsset(manifestAsset.browser_download_url))).bytes));
+    let manifest:PluginManifest;
+    try{manifest=pluginManifestSchema.parse(parseJson((await this.transport(trustedAsset(manifestAsset.browser_download_url))).bytes));}
+    catch(error){if(error instanceof PluginContractError)throw new StoreError('The plugin manifest is invalid or uses an unsupported contract version',400);throw error;}
+    if(manifest.runtime==='service')throw new StoreError('This release requires a service runtime that this host does not provide',422);
     const asset=release.assets.find(asset=>asset.name===manifest.archive.asset);if(!asset)throw new StoreError('The adapter archive is absent from the release',422);
     const archiveUrl=trustedAsset(asset.browser_download_url),bytes=(await this.transport(archiveUrl)).bytes,digest=hash(bytes);
     if(digest!==manifest.archive.sha256)throw new StoreError('The adapter archive failed integrity verification',422);
     this.validateArchive(bytes,manifest);
-    return {manifest,archiveUrl,preview:{id:randomUUID(),name:manifest.name,version:manifest.version,source:{repository:repo,tag:release.tag_name,commit,digest},runtime:'worker',restartRequired:false,capabilities:manifest.capabilities.map(id=>({id,state:'unknown',reason:'Requires an instance capability check'})),dependencies:manifest.dependencies,access:manifest.access,issues:[],installable:true}};
+    return {manifest,archiveUrl,preview:{id:randomUUID(),name:manifest.name,version:manifest.version,source:{repository:repo,tag:release.tag_name,commit,digest},runtime:manifest.runtime,restartRequired:false,capabilities:manifest.capabilities.map(id=>({id,state:'unknown',reason:'Requires an instance capability check'})),dependencies:manifest.dependencies.map(dependencyLabel),access:[...manifest.access],issues:[],installable:true}};
   }
   private validateArchive(bytes:Uint8Array,manifest:PluginManifest,hostAdapter=false){
     if(bytes.length>archiveBytes)throw new StoreError('Plugin archive exceeds the host resource budget',413);
@@ -88,6 +107,7 @@ export class GitHubPluginReleases {
     }});}catch(error){if(error instanceof StoreError)throw error;throw new StoreError('The adapter archive is invalid',422);}
     for(const path of Object.keys(entries))if(!path.endsWith('/'))relativePath.parse(path);
     if(!hostAdapter&&!entries[manifest.entry])throw new StoreError('The adapter entry is missing from its archive',422);
+    if(!hostAdapter)for(const contribution of manifest.contributions??[])if(contribution.entry&&!entries[contribution.entry])throw new StoreError('A contribution entry is missing from its archive',422);
     return entries;
   }
   async install(release:ResolvedPluginRelease){
@@ -114,5 +134,5 @@ export class GitHubPluginReleases {
       if(JSON.parse(readFileSync(join(directory,'mote-install-lock.json'),'utf8')).digest!==digest)throw Error('lock_hash');
     }catch{throw new StoreError('Installed adapter integrity mismatch; remove the cached artifact and resolve it again',409);}
   }
-  schema(manifest:PluginManifest):PluginConfigurationField[]{return manifest.configuration;}
+  schema(manifest:PluginManifest):PluginConfigurationField[]{return manifest.configuration as PluginConfigurationField[];}
 }
