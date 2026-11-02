@@ -4,6 +4,7 @@ import {createMemoryModelAuthorityJobReader} from './memory-model-authority.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
 import {createModelEvidenceAuthority,contextFailure} from './model-evidence-authority.js';
 import type {QueryAgent} from './query-agent.js';
+import {AgentRuntimeHost} from './agent-runtime-host.js';
 import type {FeatureServices} from './feature-services.js';
 import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
 import {ServerResources} from './server-resources.js';
@@ -37,7 +38,6 @@ import { negotiateLocale } from '@mote/shared/i18n';
 import Fastify,{ type FastifyInstance,type FastifyReply,type FastifyRequest } from 'fastify';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import {setImmediate as yieldEventLoop} from 'node:timers/promises';
 import { existsSync,readFileSync } from 'node:fs';
 import { dirname,join,relative,sep } from 'node:path';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -102,7 +102,7 @@ import {MemoryAdapters} from './memory-adapters.js';
 import {registerPluginRoutes} from './plugin-routes.js';
 import { MemoryReviewCache } from './memory-review-cache.js';
 import { reviewMemory } from './memory-review.js';
-import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity } from './model-agent.js';
+import { ReloadableAgent,applyModelSettings,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
 import { ModelSettingsError,ModelSettingsStore } from './model-settings.js';
@@ -339,36 +339,17 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   resources.defer(()=>agent.close());
   const codex={executable:config.codexBin,home:config.codexHome};
-  // Order admitted preparation starts across event-loop turns, without waiting
-  // for a query to finish or changing either lane's in-flight concurrency.
-  let preparationTurn=Promise.resolve();
-  const yieldPreparationTurn=()=>{const turn=preparationTurn.then(()=>yieldEventLoop());preparationTurn=turn.catch(()=>{});return turn;};
-  const wrapAgent=(inner:QueryAgent,settings:import('@mote/shared/models').ModelSettings,identity:ModelAgentIdentity):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:async input=>{
-    const connection=agentModelConnection(identity,settings);modelAuthorization.assertCurrent(connection);
-    assertModelPurpose(input);
-    await assertModelEvidenceAsync(input);
-    input=pinProcessingEvidence(input);
-    input.signal?.throwIfAborted();providerAdmission.check(settings);
-    input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
-    const queuedAt=performance.now(),lane=input.executionLane==='interactive'?'interactive':'background';
-    return (lane==='interactive'?interactiveGate:agentGate).run(async()=>{
-      await yieldPreparationTurn();input.signal?.throwIfAborted();
-      // Keep the live request identity: disclosure callbacks update its source pins.
-      input.archiveImagesEnabled=perception.settings().allowQueryImages;
-      const operationId=input.traceContext?.operationId??(input.traceContext?.jobId?'job:'+input.traceContext.jobId:'query:'+randomUUID());
-      const admittedAt=performance.now(),queueWaitMs=admittedAt-queuedAt;let status:'completed'|'failed'|'yielded'='failed';
-      try{observeMemory(input,'catalog_snapshot',()=>evidenceReader.retainMemorySnapshot(input));const result=await modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>{modelAuthorization.assertCurrent(connection);assertModelEvidence(input);queryAccounting.getStore()?.agentStarted();return modelContext.run(input,()=>inner.query(input));}));modelAuthorization.assertCurrent(connection);status='completed';return result;}
-      catch(error){if(error instanceof AgentYieldError)status='yielded';throw error;}
-      finally{evidenceReader.releaseMemorySnapshot(input);diagnostics.record('agent.fragment_timing',{jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,lane,unit:'agent_fragment',queueWaitMs,durationMs:performance.now()-admittedAt,status},'info');}
-    },input.signal,input.traceContext?.operationId);
-  }});
-  const factory:ModelAgentFactory=async(settings,reader,_hooks,identity)=>{
-    if(!identity)throw new StoreError('Model host identity is missing',409);
-    const connection=agentModelConnection(identity,settings);
-    const host={runModel:runModelFor(settings,connection),authorizeModelRequest:()=>{modelAuthorization.assertCurrent(connection);authorizeModelRequest();}};
-    return wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader,host,identity):createModelAgent(settings,reader,codex,host.runModel,host.authorizeModelRequest)),settings,identity);
-  };
-  let initialAgent=dependencies?.agent?wrapAgent(dependencies.agent,modelSettingsFromConfig(config),{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
+  const runtimeHost=new AgentRuntimeHost({
+    codex,createModelAgent:dependencies?.createModelAgent,authorization:modelAuthorization,admission:providerAdmission,
+    runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
+    agentGate,interactiveGate,modelContext,modelOperation,archiveImagesEnabled:()=>perception.settings().allowQueryImages,
+    retainSnapshot:input=>observeMemory(input,'catalog_snapshot',()=>evidenceReader.retainMemorySnapshot(input)),
+    releaseSnapshot:input=>evidenceReader.releaseMemorySnapshot(input),agentStarted:()=>queryAccounting.getStore()?.agentStarted(),
+    recordTiming:(input,timing)=>diagnostics.record('agent.fragment_timing',{jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,unit:'agent_fragment',...timing},'info'),
+  });
+  resources.defer(()=>runtimeHost.close());
+  const factory=runtimeHost.factory;
+  let initialAgent=dependencies?.agent?runtimeHost.wrap(dependencies.agent,modelSettingsFromConfig(config),{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
   const modelSettings=new ModelSettingsStore({
     configService,codex,
     prepare:async (settings,profiles,defaultProfileId,previousSettings)=>{
