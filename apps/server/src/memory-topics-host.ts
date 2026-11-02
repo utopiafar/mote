@@ -27,7 +27,12 @@ export class MemoryTopicsHost {
   this.disposers.push(topics.register({id:classifierId,version:'1',classify:async({memories,signal})=>{
    const context=this.context.getStore();if(!context)throw new ExecutionFailure('blocked','topic_admission_missing');
    context.assert();host.assertEvidence(memories.flatMap(memory=>memory.evidenceIds));
-   const input:QueryInput={question:TOPIC_CLASSIFICATION_INSTRUCTION+'\n'+JSON.stringify(memories.map(memory=>({id:memory.id,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,attribution:memory.admission?.attribution}))),modelProfileId:context.input.selection.profileId,modelOverride:context.input.selection.model,signal,assertContextAuthority:context.assert};
+   const input:QueryInput={question:TOPIC_CLASSIFICATION_INSTRUCTION+'\n'+JSON.stringify(memories.map(memory=>({id:memory.id,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,attribution:memory.admission?.attribution}))),modelProfileId:context.input.selection.profileId,modelOverride:context.input.selection.model,signal,assertContextAuthority:context.assert,
+    validateOutput:result=>{
+     context.assert();
+     try{topicClassificationSchema.parse(JSON.parse(result.answer));}
+     catch{return {code:'topic_classification_invalid',feedback:'Return only the requested topic JSON. Use zero to twenty trees, each with one to one hundred nodes. Every node must reference one to one hundred supplied Memory UUIDs. Tree and node IDs must match [a-z][a-z0-9.-]{0,99}; labels must contain one to one hundred characters. Omit parentId for root nodes. Return {"trees":[]} when no supported grouping is useful.'};}
+    }};
    const result=await options.query(input);context.assert();return topicClassificationSchema.parse(JSON.parse(result.answer));
   }}));
   this.disposers.push(executor.register({kind:'memory.topics',pool:'memory.topics',concurrency:()=>1,policy:EXECUTION_POLICIES.modelCall,

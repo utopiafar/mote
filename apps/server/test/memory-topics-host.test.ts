@@ -4,6 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {AgentResponseError,validateHostOutput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {TOPIC_CLASSIFICATION_INSTRUCTION} from '../src/automatic-topics.js';
@@ -11,13 +12,19 @@ import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-plann
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-topics-host-')),token='generated-topic-owner',headers={authorization:'Bearer '+token};
  const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
- let holdMemoryReview=false,interruptible=false,calls=0,hold:Promise<void>|undefined,entered:()=>void=()=>{},release:()=>void=()=>{};
+ let holdMemoryReview=false,interruptible=false,calls=0,checkTopicValidation=false,validatedTopics=0,hold:Promise<void>|undefined,entered:()=>void=()=>{},release:()=>void=()=>{};
  const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   if(input.question.startsWith(TOPIC_CLASSIFICATION_INSTRUCTION)){
    calls++;const records=JSON.parse(input.question.slice(TOPIC_CLASSIFICATION_INSTRUCTION.length+1));entered();
    if(hold&&interruptible)await Promise.race([hold,new Promise<void>((_resolve,reject)=>{if(input.signal?.aborted)reject(input.signal.reason);else input.signal?.addEventListener('abort',()=>reject(input.signal!.reason),{once:true});})]);else await hold;
    input.assertContextAuthority?.();
-   return {answer:JSON.stringify({trees:[{id:'generated',label:'Generated quiet work',nodes:[{id:'focus',label:'Focused mornings',memoryIds:records.map((record:any)=>record.id)}]}]}),citations:[],trace:[],runId:randomUUID()};
+   const answer={answer:JSON.stringify({trees:[{id:'generated',label:'Generated quiet work',nodes:[{id:'focus',label:'Focused mornings',memoryIds:records.map((record:any)=>record.id)}]}]}),citations:[],trace:[],runId:randomUUID()};
+   if(checkTopicValidation){
+    const invalid={...answer,answer:JSON.stringify({trees:[{id:'generated',label:'Generated navigation',nodes:[{id:'empty',label:'Empty generated node',memoryIds:[]}]}]})};
+    await assert.rejects(validateHostOutput(input,invalid),error=>error instanceof AgentResponseError&&error.reason==='host_validation');
+    await validateHostOutput(input,answer);validatedTopics++;
+   }
+   return answer;
   }
   if(await planGeneratedMemory(input))return {answer:'Generated plan submitted.',citations:[],trace:[],runId:randomUUID()};
   if(holdMemoryReview&&input.traceContext?.phase==='review'){entered();await hold;}
@@ -30,7 +37,7 @@ async function fixture(t:TestContext){
  const command=async(action:'authorize'|'stop'|'pause')=>{const view=(await node.app.inject({url:'/api/model-authorization',headers})).json();const result=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action,...(action==='authorize'?{connections:view.connections,scope:{sourceIds:['generated-topics'],dataKinds:['text']}}:{})}});assert.equal(result.statusCode,200,result.body);};
  node.sources.register({id:'generated-topics',name:'Generated topics',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});
  node.memoryRecipeSettings.configure({sourceId:'generated-topics',recipes:[{id:'mote.personal-memory',version:'5'}]});
- return {get node(){return node;},headers,command,get calls(){return calls;},hold(canInterrupt=false,memoryReview=false){interruptible=canInterrupt;holdMemoryReview=memoryReview;let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);entered=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release};},
+ return {get node(){return node;},headers,command,get calls(){return calls;},get validatedTopics(){return validatedTopics;},checkTopicValidation(){checkTopicValidation=true;},hold(canInterrupt=false,memoryReview=false){interruptible=canInterrupt;holdMemoryReview=memoryReview;let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);entered=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release};},
  async intake(){await node.sources.upsert('generated-topics',{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),kind:'message',layer:'original',text:'I prefer quiet mornings.'});await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);const job=node.memoryPipeline.list()[0];assert.ok(job);return node.memoryPipeline.run(job.id);},
  async settle(){for(let i=0;i<10;i++){await node.executor.tick();const ids=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind='memory.topics'").all().map(row=>String(row.id));await node.executor.drain(ids);if(ids.every(id=>!['running','waiting'].includes(node.executor.get(id)!.state)))break;}},
  async restart(){await node.app.close();node=await buildApp(config,dependencies);},
@@ -47,6 +54,16 @@ test('actual fresh Memory publication schedules durable topics under its origina
  const before=f.node.memories.list().length;
  const catalog=await f.node.app.inject({url:'/api/context-trees',headers:f.headers});assert.equal(catalog.statusCode,200,catalog.body);assert.match(catalog.body,/Generated quiet work/);
  await f.restart();await f.settle();assert.equal(f.calls,1);assert.equal(f.node.memories.list().length,before);
+ assert.match((await f.node.app.inject({url:'/api/context-trees',headers:f.headers})).body,/Generated quiet work/);
+});
+
+test('topic output reaches the Agent repair validator before a corrected classification publishes',async t=>{
+ const f=await fixture(t);f.checkTopicValidation();await f.command('authorize');
+ const done=await f.intake();assert.equal(done.status,'completed');await f.settle();
+ assert.equal(f.validatedTopics,1,'an empty topic node must be rejected within the model conversation');
+ assert.equal(f.calls,1,'output repair must not require a new topic operation');
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
+ assert.ok(f.node.memories.list().length>0,'topic validation preserves published Memory');
  assert.match((await f.node.app.inject({url:'/api/context-trees',headers:f.headers})).body,/Generated quiet work/);
 });
 
