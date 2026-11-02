@@ -339,7 +339,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   resources.defer(()=>agent.close());
   const codex={executable:config.codexBin,home:config.codexHome};
-  const runtimeHost=new AgentRuntimeHost({
+  const runtimeHost:AgentRuntimeHost=new AgentRuntimeHost({
     codex,createModelAgent:dependencies?.createModelAgent,authorization:modelAuthorization,admission:providerAdmission,
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
     agentGate,interactiveGate,modelContext,modelOperation,archiveImagesEnabled:()=>perception.settings().allowQueryImages,
@@ -348,7 +348,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     recordTiming:(input,timing)=>diagnostics.record('agent.fragment_timing',{jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,unit:'agent_fragment',...timing},'info'),
   });
   resources.defer(()=>runtimeHost.close());
-  const factory=runtimeHost.factory;
+  const factory:ModelAgentFactory=runtimeHost.factory;
   let initialAgent=dependencies?.agent?runtimeHost.wrap(dependencies.agent,modelSettingsFromConfig(config),{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
   const modelSettings=new ModelSettingsStore({
     configService,codex,
