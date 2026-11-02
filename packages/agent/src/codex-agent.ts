@@ -1,4 +1,3 @@
-import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {ProviderFailure} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {AgentYieldError} from './host-controls.js';
@@ -8,15 +7,21 @@ import {evaluateHostCandidate,hostOutputPolicy} from './host/output.js';
 import type {RuntimeOutcome} from './runtime/contracts.js';
 import {randomUUID} from 'node:crypto';
 import {startBridge} from './bridge.js';
-import {contextToolDefinitions,pinContextTools} from './tool-contributions.js';
+import {contextToolDefinitions,contextToolSnapshot,pinContextTools} from './tool-contributions.js';
+import {toolInputSchema,toCodexTool} from './tools/runtime-schema.js';
+import {codexImageMetadata,type ImagePayload} from './tools/image-result.js';
 import {CodexSession,type CodexTool} from './codex-session.js';
 import {bundledSkills} from './skills.js';
 import {displayTime} from './time.js';
 import {AgentInputError,AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
 
-const toolsFor=(input:QueryInput):CodexTool[]=>[...contextToolDefinitions(input).map(([name,description,fields]):CodexTool=>({
-  type:'function',name,description,inputSchema:{...parameterSchemaSpecToJsonSchema(fields as unknown as Parameters<typeof parameterSchemaSpecToJsonSchema>[0]),additionalProperties:false},
-})),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.id!=='document-import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
+const toolsFor=(input:QueryInput,snapshot=contextToolSnapshot(input)):CodexTool[]=>{
+  const pins=new Map(snapshot.entries.map(entry=>[entry.name,entry]));
+  return [...contextToolDefinitions(input).map(([name,description,fields]):CodexTool=>{
+    const pin=pins.get(name);
+    return pin?toCodexTool(pin):{type:'function',name,description,inputSchema:toolInputSchema(fields)};
+  }),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.id!=='document-import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
+};
 export const codexContextTools=toolsFor({question:''});
 const answerSchema={type:'object',properties:{answer:{type:'string'},citationIds:{type:'array',items:{type:'string'}}},required:['answer','citationIds'],additionalProperties:false};
 
@@ -24,7 +29,14 @@ export function createCodexAgent(options:AgentOptions){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<AgentAnswer>>();
   async function execute(input:QueryInput):Promise<AgentAnswer>{
     input=pinContextTools({...input,...(input.evidenceReadRanges?{evidenceReadRanges:Object.freeze(input.evidenceReadRanges.map(range=>Object.freeze({...range})))}:{}),...(options.contextToolMode?{hostContextToolMode:options.contextToolMode}:{})},options.reader);
-    const runTools=toolsFor(input).filter(t=>taskTools(input).includes(t.name)||t.name==='skill');
+    // One pinned snapshot for this run: tool schemas and the later per-call pin
+    // checks must read the same registration identities, never a rebuilt one.
+    const toolSnapshot=contextToolSnapshot(input);
+    const assertToolPins=()=>{
+      for(const pin of toolSnapshot.entries)try{toolSnapshot.assertActive(pin);}
+      catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}
+    };
+    const runTools=toolsFor(input,toolSnapshot).filter(t=>taskTools(input).includes(t.name)||t.name==='skill');
     input.signal?.throwIfAborted();
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
     // Native capacity failures classify the complete request as processing_limit.
@@ -43,6 +55,7 @@ export function createCodexAgent(options:AgentOptions){
     input.signal?.addEventListener('abort',abort,{once:true});
     try{
       const call=async(name:string,args:unknown)=>{
+        assertToolPins();
         trace({type:'tool.started',stage:'tool',phase:'started',tool:name,payload:{arguments:args}});
         if(name==='skill'){
           const skill=bundledSkills.find(s=>s.id!=='document-import'&&s.id===(args as {name?:unknown})?.name);
@@ -54,11 +67,12 @@ export function createCodexAgent(options:AgentOptions){
           const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(requestTimeoutMs??120000)});
           if(!response.ok){const body=await response.json() as {toolError?:{code:string;message:string;recovery:'correct_arguments'|'use_existing_evidence'|'stop';details:Record<string,unknown>}};const error=body.toolError;if(error)throw new ContextToolError(error.code,error.message,error.recovery,error.details);throw new Error('Context tool rejected');}
           const result=await response.json();
+          assertToolPins();
           if(name==='read_image'&&result.imageDelivery){bridge.imageDelivery(result.imageDelivery,true);delete result.imageDelivery;if(result.imageView)result.imageView.delivery='prepared';}
           // The model receives the image, but diagnostics only need its identity
           // and size. Copying base64 into traces duplicates private originals and
           // can overwhelm the log viewer even when the read itself is bounded.
-          const traced=name==='read_image'&&result.image?{source:result.source,id:result.id,...(result.attachmentId?{attachmentId:result.attachmentId}:{}),...(result.imageView?{imageView:result.imageView}:{}),imageBudget:result.imageBudget,image:{mimeType:result.image.mimeType,encodedCharacters:result.image.data.length},toolUsage:result.toolUsage}:result;
+          const traced=name==='read_image'&&result.image?{...codexImageMetadata(result as ImagePayload),image:{mimeType:result.image.mimeType,encodedCharacters:result.image.data.length}}:result;
           trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result:traced}});return result;
         } catch(error) {
           trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError'}});throw error;
@@ -71,13 +85,14 @@ export function createCodexAgent(options:AgentOptions){
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       session=new CodexSession(options,call,trace,input.onUsage);sessions.add(session);
       await session.start(system,runTools);
-      const assertCurrent=()=>{input.signal?.throwIfAborted();if(closed)throw new AgentProviderError();input.assertContextAuthority?.();};
+      const assertCurrent=()=>{input.signal?.throwIfAborted();if(closed)throw new AgentProviderError();input.assertContextAuthority?.();assertToolPins();};
       const drive=async(prompt:string,repairAttempt=0):Promise<RuntimeOutcome>=>{
         assertCurrent();reportProgress(input,{stage:'model'});
         const repair=repairAttempt?{repair:true,repairAttempt}:{};
         trace({type:'model.started',stage:'model',phase:'started',payload:{prompt,...repair}});
         const started=performance.now();
         const text=await Promise.race([session!.run(prompt,answerSchema),bridge.failure]);
+        assertCurrent();
         trace({type:'model.completed',stage:'model',phase:'completed',durationMs:performance.now()-started,payload:{response:text,...repair}});
         return {terminal:{kind:'completed'},candidate:{text}};
       };
