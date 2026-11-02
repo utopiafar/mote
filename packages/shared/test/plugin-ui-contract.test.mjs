@@ -36,20 +36,31 @@ test('real manifest contribution round-trips with stable identity', () => {
 });
 
 test('duplicate contribution is rejected whole and keeps the existing entry', () => {
-  const existing = [parseUiContribution(JSON.parse(sample))];
-  const duplicate = parseUiContribution(JSON.parse(sample));
+  const existing = [{packageId: 'pkg.notes', descriptor: parseUiContribution(JSON.parse(sample))}];
+  const duplicate = {packageId: 'pkg.notes', descriptor: parseUiContribution(JSON.parse(sample))};
   const result = acceptUiContribution(existing, duplicate);
-  assert.deepEqual(result, {accepted: false, reason: 'conflict'});
+  assert.equal(result.accepted, false);
+  if (!result.accepted) assert.equal(result.rejection.reason, 'conflict');
   assert.equal(existing.length, 1);
+  // The same contribution id in a different package is a distinct identity.
+  const other = {packageId: 'pkg.photos', descriptor: parseUiContribution(JSON.parse(sample))};
+  assert.deepEqual(acceptUiContribution(existing, other, {'mote.note': [1]}), {accepted: true});
 });
 
 test('unsupported data schema version is rejected without touching accepted set', () => {
-  const existing = [parseUiContribution(JSON.parse(sample))];
-  const newer = parseUiContribution({...JSON.parse(sample), id: 'notes.reader.v2', data: {schemaRef: 'mote.note', schemaVersion: 9}});
-  assert.deepEqual(
-    acceptUiContribution(existing, newer, {'mote.note': [1]}),
-    {accepted: false, reason: 'api_incompatible'});
-  assert.deepEqual(acceptUiContribution(existing, newer, {'mote.note': [1, 9]}), {accepted: true});
+  const existing = [{packageId: 'pkg.notes', descriptor: parseUiContribution(JSON.parse(sample))}];
+  const candidate = (data, id = 'notes.reader.v2') => ({packageId: 'pkg.notes', descriptor: parseUiContribution({...JSON.parse(sample), id, data})});
+  const rejected = acceptUiContribution(existing, candidate({schemaRef: 'mote.note', schemaVersion: 9}), {'mote.note': [1]});
+  assert.equal(rejected.accepted, false);
+  if (!rejected.accepted) assert.equal(rejected.rejection.reason, 'api_incompatible');
+  assert.deepEqual(acceptUiContribution(existing, candidate({schemaRef: 'mote.note', schemaVersion: 9}), {'mote.note': [1, 9]}), {accepted: true});
+  // An absent schemaRef, an empty support map and a prototype-named schema
+  // all reject deterministically instead of being admitted or crashing.
+  for (const map of [{}, {'mote.note': [1]}])
+    assert.equal(acceptUiContribution(existing, candidate({schemaRef: 'mote.unknown', schemaVersion: 9}), map).accepted, false);
+  const proto = acceptUiContribution(existing, candidate({schemaRef: 'toString', schemaVersion: 1}), {'mote.note': [1]});
+  assert.equal(proto.accepted, false);
+  if (!proto.accepted) assert.equal(proto.rejection.reason, 'api_incompatible');
 });
 
 test('captured content resembling a plugin definition never becomes a descriptor', () => {
@@ -65,9 +76,21 @@ test('captured content resembling a plugin definition never becomes a descriptor
     presentation: {labelKey: 'x', i18nNamespace: 'y'},
     handler: () => {},
   }), TypeError);
-  const accessor = {};
-  Object.defineProperty(accessor, 'id', {get: () => 'side-effect'});
-  assert.throws(() => parseUiContribution(accessor), TypeError);
+  // Accessors on otherwise valid top-level, nested and provider descriptors
+  // are rejected before any getter executes.
+  let calls = 0;
+  const validTop = JSON.parse(sample);
+  Object.defineProperty(validTop, 'id', {get() { calls++; return 'notes.reader'; }, enumerable: true});
+  assert.throws(() => parseUiContribution(validTop), TypeError);
+  const nested = JSON.parse(sample);
+  Object.defineProperty(nested.presentation, 'labelKey', {get() { calls++; return 'x'; }, enumerable: true});
+  assert.throws(() => parseUiContribution(nested), TypeError);
+  const provider = {capability: 'c', apiVersion: '1', platform: 'mac', buildId: 'b'};
+  Object.defineProperty(provider, 'buildId', {get() { calls++; return 'b'; }, enumerable: true});
+  assert.throws(() => parseNativeProvider(provider), TypeError);
+  assert.equal(calls, 0);
+  // Empty-string string-form dependencies are rejected like malformed object ids.
+  assert.throws(() => parseUiContribution({...JSON.parse(sample), requires: ['']}), TypeError);
 });
 
 test('missing required native provider is requires-build, not a fake enabled state', () => {

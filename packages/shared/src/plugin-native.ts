@@ -2,7 +2,7 @@
  * client build. A provider never arrives over the network; its descriptor only
  * reports what a build can satisfy. OS grants are runtime authorization facts
  * published separately, never folded into capability or availability data. */
-import {pluginPlatforms, type NativeRequirement, type PluginPlatform} from './plugin-ui.js';
+import {isApiVersion, isToken, pluginPlatforms, strictDataArray, strictDataObject, type NativeRequirement, type PluginPlatform} from './plugin-ui.js';
 
 export interface NativeProviderDescriptor {
   /** Capability identity satisfying NativeRequirement.capability. */
@@ -34,29 +34,21 @@ export function nativeProviderSatisfies(requirement: NativeRequirement, provider
     && requirement.platforms.includes(provider.platform);
 }
 
-const isToken = (value: unknown): value is string => typeof value === 'string' && /^[\x21-\x7e]{1,256}$/.test(value);
-const isApiVersion = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(value);
-const isPlain = (value: unknown): value is Record<string, unknown> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-};
-
-/** Strict wire parser for a build-registered provider descriptor. */
+/** Strict wire parser for a build-registered provider descriptor. Accessors
+ * and non-plain arrays are rejected before any field value is read. */
 export function parseNativeProvider(input: unknown): NativeProviderDescriptor {
-  if (!isPlain(input) || !Reflect.ownKeys(input).every(key => typeof key === 'string'
-    && ['capability', 'apiVersion', 'platform', 'buildId', 'osGrants'].includes(key)))
-    throw new TypeError('Invalid native provider descriptor');
-  if (!isToken(input.capability) || !isApiVersion(input.apiVersion) || !isToken(input.buildId))
+  const value = strictDataObject(input, ['capability', 'apiVersion', 'platform', 'buildId', 'osGrants']);
+  if (!isToken(value.capability) || !isApiVersion(value.apiVersion) || !isToken(value.buildId))
     throw new TypeError('Invalid native provider identity');
-  if (!(pluginPlatforms as readonly string[]).includes(input.platform as string))
+  if (!(pluginPlatforms as readonly string[]).includes(value.platform as string))
     throw new TypeError('Invalid native provider platform');
-  if (input.osGrants !== undefined
-    && (!Array.isArray(input.osGrants) || !input.osGrants.every(isToken)))
-    throw new TypeError('Invalid native provider grants');
+  if (value.osGrants !== undefined) {
+    const grants = strictDataArray(value.osGrants, 64);
+    if (!grants.every(isToken)) throw new TypeError('Invalid native provider grants');
+  }
   return {
-    capability: input.capability, apiVersion: input.apiVersion,
-    platform: input.platform as PluginPlatform, buildId: input.buildId,
-    ...(input.osGrants !== undefined ? {osGrants: [...(input.osGrants as string[])]} : {}),
+    capability: value.capability, apiVersion: value.apiVersion,
+    platform: value.platform as PluginPlatform, buildId: value.buildId,
+    ...(value.osGrants !== undefined ? {osGrants: strictDataArray(value.osGrants, 64) as string[]} : {}),
   };
 }

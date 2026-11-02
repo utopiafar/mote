@@ -69,26 +69,40 @@ export interface UiContributionDescriptor {
   readonly draftScope?: UiDraftScope;
 }
 
+/** A contribution together with its declaring package identity. Contribution
+ * ids are opaque within their package; identical ids in different packages
+ * never conflict. */
+export interface ScopedContribution {
+  readonly packageId: string;
+  readonly descriptor: UiContributionDescriptor;
+}
+
 export interface UiContributionRejection {
+  readonly packageId: string;
   readonly id: string;
   /** Frozen failure codes: duplicate → conflict, incompatible → api_incompatible. */
   readonly reason: PluginErrorCode;
 }
 
 /** Deterministic admission of one candidate against already-accepted
- * contributions. A duplicate or schema-incompatible candidate is rejected
- * whole; the existing shell and plugins are kept, registration order never
- * wins. `supportedDataVersions` maps a data schemaRef to the schemaVersions
- * this host build understands. */
+ * contributions. A duplicate (same packageId + contribution id) or
+ * schema-incompatible candidate is rejected whole; the existing shell and
+ * plugins are kept, registration order never wins. `supportedDataVersions`
+ * is the host's declared data-schema compatibility map: an absent schemaRef
+ * or version is rejected, never defaulted to supported. */
 export function acceptUiContribution(
-  accepted: readonly UiContributionDescriptor[],
-  candidate: UiContributionDescriptor,
+  accepted: readonly ScopedContribution[],
+  candidate: ScopedContribution,
   supportedDataVersions: Readonly<Record<string, readonly number[]>> = {},
-): {readonly accepted: true} | {readonly accepted: false; readonly reason: UiContributionRejection['reason']} {
-  for (const existing of accepted) if (existing.id === candidate.id) return {accepted: false, reason: 'conflict'};
-  if (candidate.data) {
-    const versions = supportedDataVersions[candidate.data.schemaRef];
-    if (versions && !versions.includes(candidate.data.schemaVersion)) return {accepted: false, reason: 'api_incompatible'};
+): {readonly accepted: true} | {readonly accepted: false; readonly rejection: UiContributionRejection} {
+  for (const existing of accepted)
+    if (existing.packageId === candidate.packageId && existing.descriptor.id === candidate.descriptor.id)
+      return {accepted: false, rejection: {packageId: candidate.packageId, id: candidate.descriptor.id, reason: 'conflict'}};
+  const data = candidate.descriptor.data;
+  if (data) {
+    const versions = Object.hasOwn(supportedDataVersions, data.schemaRef) ? supportedDataVersions[data.schemaRef] : undefined;
+    if (!versions?.includes(data.schemaVersion))
+      return {accepted: false, rejection: {packageId: candidate.packageId, id: candidate.descriptor.id, reason: 'api_incompatible'}};
   }
   return {accepted: true};
 }
@@ -126,77 +140,117 @@ export function uiContributionAvailability(
 
 const MAX_CONTRIBUTION_FIELDS = 64;
 const MAX_CONTRIBUTION_REQUIREMENTS = 64;
-const isToken = (value: unknown): value is string => typeof value === 'string' && /^[\x21-\x7e]{1,256}$/.test(value);
-const isApiVersion = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(value);
+export const isToken = (value: unknown): value is string => typeof value === 'string' && /^[\x21-\x7e]{1,256}$/.test(value);
+export const isApiVersion = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(value);
 const isPlain = (value: unknown): value is Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 };
-const allowed = (value: Record<string, unknown>, keys: readonly string[]) =>
-  Reflect.ownKeys(value).every(key => typeof key === 'string' && keys.includes(key));
+
+/** Own-property descriptors only: accessors are rejected before any value is
+ * read, so validation never executes getter code. Mirrors the frozen
+ * plugin-api contract parser's strict plain-data boundary. */
+export function strictDataObject(input: unknown, keys: readonly string[]): Record<string, unknown> {
+  if (!isPlain(input)) throw new TypeError('Invalid object');
+  const properties = Object.getOwnPropertyDescriptors(input);
+  const result: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(properties)) {
+    const descriptor = properties[key as string];
+    if (typeof key !== 'string' || !keys.includes(key) || !descriptor || !('value' in descriptor))
+      throw new TypeError('Invalid object fields');
+    result[key] = descriptor.value;
+  }
+  return result;
+}
+
+/** Plain arrays only: no subclass prototype, no accessor or sparse elements,
+ * no user-overridden iteration members. */
+export function strictDataArray(input: unknown, maximum: number): unknown[] {
+  if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype || input.length > maximum)
+    throw new TypeError('Invalid array');
+  const properties = Object.getOwnPropertyDescriptors(input);
+  if (Reflect.ownKeys(properties).length !== input.length + 1) throw new TypeError('Invalid array fields');
+  const result: unknown[] = [];
+  for (let index = 0; index < input.length; index++) {
+    const descriptor = properties[String(index)];
+    if (!descriptor || !('value' in descriptor)) throw new TypeError('Invalid array element');
+    result.push(descriptor.value);
+  }
+  return result;
+}
 
 function parseRequirement(input: unknown): NativeRequirement {
-  if (!isPlain(input) || !allowed(input, ['capability', 'apiVersion', 'platforms', 'optional', 'fallback']))
-    throw new TypeError('Invalid native requirement');
-  if (!isToken(input.capability) || !isApiVersion(input.apiVersion)) throw new TypeError('Invalid native requirement identity');
-  if (!Array.isArray(input.platforms) || input.platforms.length === 0 || !input.platforms.every(p => (pluginPlatforms as readonly string[]).includes(p)))
+  const value = strictDataObject(input, ['capability', 'apiVersion', 'platforms', 'optional', 'fallback']);
+  if (!isToken(value.capability) || !isApiVersion(value.apiVersion)) throw new TypeError('Invalid native requirement identity');
+  const platforms = strictDataArray(value.platforms, 8);
+  if (platforms.length === 0 || !platforms.every(p => (pluginPlatforms as readonly string[]).includes(p as string)))
     throw new TypeError('Invalid native requirement platforms');
-  if (!(nativeFallbacks as readonly string[]).includes(input.fallback as string)) throw new TypeError('Invalid native fallback');
-  if (input.optional !== undefined && typeof input.optional !== 'boolean') throw new TypeError('Invalid native requirement flag');
-  return input as unknown as NativeRequirement;
+  if (!(nativeFallbacks as readonly string[]).includes(value.fallback as string)) throw new TypeError('Invalid native fallback');
+  if (value.optional !== undefined && typeof value.optional !== 'boolean') throw new TypeError('Invalid native requirement flag');
+  return {
+    capability: value.capability, apiVersion: value.apiVersion,
+    platforms: platforms as PluginPlatform[], fallback: value.fallback as NativeRequirement['fallback'],
+    ...(value.optional !== undefined ? {optional: value.optional as boolean} : {}),
+  };
 }
 
 function parseDepends(input: unknown): FeatureRequirement {
-  if (typeof input === 'string') return input;
-  if (!isPlain(input) || !allowed(input, ['id', 'version', 'host'])) throw new TypeError('Invalid contribution requirement');
-  if (!isToken(input.id) || !isToken(input.version)) throw new TypeError('Invalid contribution requirement identity');
-  if (input.host !== undefined && input.host !== 'local' && input.host !== 'server') throw new TypeError('Invalid requirement host');
-  return input as unknown as FeatureRequirement;
+  if (typeof input === 'string') {
+    if (!isToken(input)) throw new TypeError('Invalid contribution requirement identity');
+    return input;
+  }
+  const value = strictDataObject(input, ['id', 'version', 'host']);
+  if (!isToken(value.id) || !isToken(value.version)) throw new TypeError('Invalid contribution requirement identity');
+  if (value.host !== undefined && value.host !== 'local' && value.host !== 'server') throw new TypeError('Invalid requirement host');
+  return value as unknown as FeatureRequirement;
 }
 
 /** Strict wire parser for one contribution descriptor. Malformed or
- * executable-looking content (functions, accessors, extra keys) is rejected;
- * captured material resembling a descriptor is evidence, never code. */
+ * executable-looking content (functions, accessors, extra keys, non-plain
+ * arrays) is rejected before any field value is read; captured material
+ * resembling a descriptor is evidence, never code. */
 export function parseUiContribution(input: unknown): UiContributionDescriptor {
-  if (!isPlain(input) || Object.keys(input).length > MAX_CONTRIBUTION_FIELDS) throw new TypeError('Invalid contribution descriptor');
-  const keys = ['id', 'kind', 'apiVersion', 'platforms', 'requires', 'nativeRequires', 'presentation', 'data', 'commands', 'draftScope'];
-  if (!allowed(input, keys)) throw new TypeError('Contribution descriptor contains undeclared fields');
-  if (!isToken(input.id) || !isApiVersion(input.apiVersion)) throw new TypeError('Invalid contribution identity');
-  if (!(uiContributionKinds as readonly string[]).includes(input.kind as string)) throw new TypeError('Invalid contribution kind');
-  if (!Array.isArray(input.platforms) || input.platforms.length === 0 || !input.platforms.every(p => (pluginPlatforms as readonly string[]).includes(p)))
+  const value = strictDataObject(input, ['id', 'kind', 'apiVersion', 'platforms', 'requires', 'nativeRequires', 'presentation', 'data', 'commands', 'draftScope']);
+  if (Object.keys(value).length > MAX_CONTRIBUTION_FIELDS) throw new TypeError('Invalid contribution descriptor');
+  if (!isToken(value.id) || !isApiVersion(value.apiVersion)) throw new TypeError('Invalid contribution identity');
+  if (!(uiContributionKinds as readonly string[]).includes(value.kind as string)) throw new TypeError('Invalid contribution kind');
+  const platforms = strictDataArray(value.platforms, 8);
+  if (platforms.length === 0 || !platforms.every(p => (pluginPlatforms as readonly string[]).includes(p as string)))
     throw new TypeError('Invalid contribution platforms');
-  const presentation = input.presentation;
-  if (!isPlain(presentation) || !allowed(presentation, ['labelKey', 'glyphKey', 'a11yKey', 'i18nNamespace'])
-    || !isToken(presentation.labelKey) || !isToken(presentation.i18nNamespace)
+  const presentation = strictDataObject(value.presentation, ['labelKey', 'glyphKey', 'a11yKey', 'i18nNamespace']);
+  if (!isToken(presentation.labelKey) || !isToken(presentation.i18nNamespace)
     || (presentation.glyphKey !== undefined && !isToken(presentation.glyphKey))
     || (presentation.a11yKey !== undefined && !isToken(presentation.a11yKey)))
     throw new TypeError('Invalid contribution presentation');
-  if (input.requires !== undefined && (!Array.isArray(input.requires) || input.requires.length > MAX_CONTRIBUTION_REQUIREMENTS))
-    throw new TypeError('Invalid contribution requirements');
-  if (input.nativeRequires !== undefined && (!Array.isArray(input.nativeRequires) || input.nativeRequires.length > MAX_CONTRIBUTION_REQUIREMENTS))
-    throw new TypeError('Invalid native requirements');
-  if (input.commands !== undefined && (!Array.isArray(input.commands) || input.commands.length > MAX_CONTRIBUTION_REQUIREMENTS))
-    throw new TypeError('Invalid contribution commands');
-  if (input.data !== undefined) {
-    if (!isPlain(input.data) || !allowed(input.data, ['schemaRef', 'schemaVersion'])
-      || !isToken(input.data.schemaRef) || typeof input.data.schemaVersion !== 'number' || !Number.isSafeInteger(input.data.schemaVersion) || input.data.schemaVersion < 0)
-      throw new TypeError('Invalid contribution data schema reference');
-  }
-  if (input.draftScope !== undefined && !(uiDraftScopes as readonly string[]).includes(input.draftScope as string))
-    throw new TypeError('Invalid contribution draft scope');
-  return {
-    id: input.id, kind: input.kind as UiContributionKind, apiVersion: input.apiVersion,
-    platforms: [...input.platforms] as PluginPlatform[],
-    ...(input.requires !== undefined ? {requires: (input.requires as unknown[]).map(parseDepends)} : {}),
-    ...(input.nativeRequires !== undefined ? {nativeRequires: (input.nativeRequires as unknown[]).map(parseRequirement)} : {}),
-    presentation: {...(presentation as Record<string, unknown>)} as unknown as UiContributionPresentation,
-    ...(input.data !== undefined ? {data: input.data as UiContributionDescriptor['data']} : {}),
-    ...(input.commands !== undefined ? {commands: (input.commands as unknown[]).map(command => {
-      if (!isPlain(command) || !allowed(command, ['id', 'apiVersion']) || !isToken(command.id) || !isApiVersion(command.apiVersion))
-        throw new TypeError('Invalid contribution command');
-      return command as unknown as UiContributionCommand;
-    })} : {}),
-    ...(input.draftScope !== undefined ? {draftScope: input.draftScope as UiDraftScope} : {}),
+  const result: UiContributionDescriptor = {
+    id: value.id, kind: value.kind as UiContributionKind, apiVersion: value.apiVersion,
+    platforms: platforms as PluginPlatform[],
+    presentation: {
+      labelKey: presentation.labelKey, i18nNamespace: presentation.i18nNamespace,
+      ...(presentation.glyphKey !== undefined ? {glyphKey: presentation.glyphKey} : {}),
+      ...(presentation.a11yKey !== undefined ? {a11yKey: presentation.a11yKey} : {}),
+    },
   };
+  if (value.requires !== undefined)
+    (result as {requires?: FeatureRequirement[]}).requires = strictDataArray(value.requires, MAX_CONTRIBUTION_REQUIREMENTS).map(parseDepends);
+  if (value.nativeRequires !== undefined)
+    (result as {nativeRequires?: NativeRequirement[]}).nativeRequires = strictDataArray(value.nativeRequires, MAX_CONTRIBUTION_REQUIREMENTS).map(parseRequirement);
+  if (value.commands !== undefined)
+    (result as {commands?: UiContributionCommand[]}).commands = strictDataArray(value.commands, MAX_CONTRIBUTION_REQUIREMENTS).map(command => {
+      const parsed = strictDataObject(command, ['id', 'apiVersion']);
+      if (!isToken(parsed.id) || !isApiVersion(parsed.apiVersion)) throw new TypeError('Invalid contribution command');
+      return parsed as unknown as UiContributionCommand;
+    });
+  if (value.data !== undefined) {
+    const data = strictDataObject(value.data, ['schemaRef', 'schemaVersion']);
+    if (!isToken(data.schemaRef) || typeof data.schemaVersion !== 'number' || !Number.isSafeInteger(data.schemaVersion) || data.schemaVersion < 0)
+      throw new TypeError('Invalid contribution data schema reference');
+    (result as {data?: UiContributionDescriptor['data']}).data = {schemaRef: data.schemaRef, schemaVersion: data.schemaVersion};
+  }
+  if (value.draftScope !== undefined) {
+    if (!(uiDraftScopes as readonly string[]).includes(value.draftScope as string)) throw new TypeError('Invalid contribution draft scope');
+    (result as {draftScope?: UiContributionDescriptor['draftScope']}).draftScope = value.draftScope as UiContributionDescriptor['draftScope'];
+  }
+  return result;
 }
