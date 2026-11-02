@@ -104,7 +104,7 @@ export interface HostSessionAssembly {
   readonly outputSchema?: Readonly<Record<string, unknown>>;
   readonly contextUsage: NonNullable<AgentAnswer['contextUsage']>;
   evidence(): HostEvidenceSnapshot;
-  readTool(call: RuntimeToolCall, signal: AbortSignal): Promise<{payload: RuntimeToolPayload; confirm(): void}>;
+  readTool(call: RuntimeToolCall, signal: AbortSignal): Promise<{payload: RuntimeToolPayload; confirm(): void; discard(): void}>;
   admit?<T>(task: () => Promise<T>, signal: AbortSignal): Promise<T>;
   close(): Promise<void>;
   observe?(event: HostRunEvent): void;
@@ -127,6 +127,7 @@ class ManagedHostRunSession implements HostRunSession {
   private attempt?: RuntimeAttempt;
   private lastAttempt?: RuntimeAttempt;
   private pending = new Set<Promise<unknown>>();
+  private deliveryCleanupErrors: unknown[] = [];
   private execution?: Promise<AgentAnswer>;
   private preparing?: Promise<void>;
   private runtimeWork?: Promise<RuntimeOutcome>;
@@ -160,11 +161,22 @@ class ManagedHostRunSession implements HostRunSession {
         this.assertAttempt(attempt);
         if (typeof call.callId !== 'string' || !call.callId || !dependencies.tools.definitions.some(tool => tool.name === call.name)) throw new RuntimeContractError();
         const delivery = await assembly.readTool(call, signal);
-        this.assertAttempt(attempt);
-        const result = await sender(delivery.payload);
-        this.assertAttempt(attempt);
-        delivery.confirm();
-        return result;
+        let primary = false;
+        try {
+          this.assertAttempt(attempt);
+          const result = await sender(delivery.payload);
+          this.assertAttempt(attempt);
+          delivery.confirm();
+          return result;
+        } catch (error) { primary = true; throw error; }
+        finally {
+          try { delivery.discard(); }
+          catch (error) {
+            this.deliveryCleanupErrors.push(error);
+            reportTrace(dependencies.input, {type: 'run.cleanup_failed', runId: dependencies.identity.runId, status: 'failed', payload: {count: 1, resource: 'tool_delivery'}});
+            if (!primary) throw error;
+          }
+        }
       })},
       assertCurrent: () => this.assertCurrent(),
       runModel: (attempt, task) => this.track(async () => {
@@ -222,6 +234,7 @@ class ManagedHostRunSession implements HostRunSession {
   }
   private assertCurrent() {
     this.assertLifetime();
+    if (this.deliveryCleanupErrors.length) throw new AgentProviderError();
     if (this.phase === 'closed' || this.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
     const deps = this.dependencies;
     deps.runtime.assertCurrent(); deps.model.assertCurrent(); deps.output.assertCurrent();
@@ -312,6 +325,7 @@ class ManagedHostRunSession implements HostRunSession {
           },
           async () => { await Promise.allSettled([...this.pending, ...(this.runtimeWork ? [this.runtimeWork] : [])]); },
         ], true, failures => errors.push(...failures));
+        errors.push(...this.deliveryCleanupErrors.splice(0));
         if (!primary) await settleHostCleanup([() => this.cancellationTask], true, failures => errors.push(...failures));
         await settleHostCleanup([() => this.assembly.close()], true, failures => errors.push(...failures));
         if (checkFinal && !errors.length) {

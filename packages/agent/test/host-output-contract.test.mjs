@@ -52,7 +52,7 @@ function fixture(overrides = {}) {
   };
   const assembly = {
     systemPrompt: 'Generated Host system policy', prompt: 'Generated assembled prompt', contextUsage: metrics, evidence: overrides.evidence ?? empty,
-    async readTool(call, signal) { return overrides.readTool ? overrides.readTool(call, signal) : {payload: {text: 'Generated payload'}, confirm() { calls.push('confirm'); }}; },
+    async readTool(call, signal) { return overrides.readTool ? overrides.readTool(call, signal) : {payload: {text: 'Generated payload'}, confirm() { calls.push('confirm'); }, discard() { calls.push('discard'); }}; },
     async close() { calls.push('bridge.close'); await overrides.close?.(); },
     observe(event) { events.push(event); }, cleanupFailed(errors) { cleanupErrors.push(...errors); },
     ...(overrides.admit ? {admit: overrides.admit} : {}),
@@ -213,7 +213,7 @@ test('Host terminal preserves provider failure, processing limit and typed cance
 
 test('an initial-attempt callback arriving during repair is rejected before read and disclosure', async () => {
   let initial, reads = 0, sends = 0;
-  const f = fixture({readTool: async () => { reads++; return {payload: {text: 'secret'}, confirm() {}}; },
+  const f = fixture({readTool: async () => { reads++; return {payload: {text: 'secret'}, confirm() {}, discard() {}}; },
     run: async request => { initial = request.attempt; return outcome('{'); },
     repair: async (request, port) => {
       await assert.rejects(port.tools.deliver(initial, {callId: 'old', name: tools[0].name, arguments: {}}, async () => { sends++; }), RuntimeContractError);
@@ -223,13 +223,13 @@ test('an initial-attempt callback arriving during repair is rejected before read
 });
 
 for (const stage of ['read', 'sender']) test(`late initial ${stage} completion cannot disclose or confirm into a repair attempt`, async () => {
-  const entered = deferred(), release = deferred(); let late, sends = 0, confirms = 0;
-  const f = fixture({readTool: async () => { if (stage === 'read') { entered.resolve(); await release.promise; } return {payload: {text: 'secret'}, confirm() { confirms++; }}; },
+  const entered = deferred(), release = deferred(); let late, sends = 0, confirms = 0, discards = 0;
+  const f = fixture({readTool: async () => { if (stage === 'read') { entered.resolve(); await release.promise; } return {payload: {text: 'secret'}, confirm() { confirms++; }, discard() { discards++; }}; },
     run: async (request, port) => {
       late = port.tools.deliver(request.attempt, {callId: 'old', name: tools[0].name, arguments: {}}, async () => { sends++; entered.resolve(); if (stage === 'sender') await release.promise; });
       void late.catch(() => {}); await entered.promise; return outcome('{');
     }, repair: async () => { release.resolve(); await assert.rejects(late, RuntimeContractError); return outcome(); },
-  }); await (await f.create()).execute(); assert.equal(confirms, 0); assert.equal(sends, stage === 'read' ? 0 : 1);
+  }); await (await f.create()).execute(); assert.equal(confirms, 0); assert.equal(discards, 1); assert.equal(sends, stage === 'read' ? 0 : 1);
 });
 
 test('revocation while the domain validator awaits fences a valid candidate and awaits cleanup', async () => {
@@ -315,6 +315,24 @@ test('Host system instructions are fixed on the formal port before runtime prepa
   f.assembly.systemPrompt = expected;
   const s = await f.create(); f.assembly.systemPrompt = 'Changed after prepare';
   assert.equal(received, expected); assert.equal(s.port.systemPrompt, expected); await s.execute();
+});
+
+test('staged delivery is discarded immediately after confirmation or sender failure and preserves the primary error', async () => {
+  for (const fail of [false, true]) {
+    const primary = Error('Generated sender failure'), secondary = Error('Generated discard cleanup failure'); let confirmed = 0, discarded = 0;
+    const f = fixture({readTool: async () => ({payload: {text: 'Generated stage'}, confirm() { confirmed++; }, discard() { discarded++; if (fail) throw secondary; }}),
+      run: async (request, host) => {
+        const result = host.tools.deliver(request.attempt, {callId: 'generated', name: tools[0].name, arguments: {}}, async () => { if (fail) throw primary; return 42; });
+        if (fail) await assert.rejects(result, error => error === primary); else assert.equal(await result, 42);
+        assert.equal(discarded, 1, 'release occurs before runtime run settles');
+        return outcome();
+      },
+    });
+    const session = await f.create();
+    if (fail) await assert.rejects(session.execute(), {name: 'AgentProviderError'}); else await session.execute();
+    assert.equal(confirmed, fail ? 0 : 1); assert.equal(discarded, 1);
+    if (fail) assert.deepEqual(f.cleanupErrors, [secondary]);
+  }
 });
 
 for (const service of ['mote.agent.runtime', 'generated.model', 'mote.agent.host-output']) {
