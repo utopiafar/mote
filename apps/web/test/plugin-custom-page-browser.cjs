@@ -21,8 +21,7 @@ const hits={};const files={
 // and reports every channel envelope or port it was actually handed.
 let channels=0,ports=0;
 addEventListener('message',e=>{if(e.data&&e.data.kind==='channel')channels++;ports+=e.ports.length;});
-setTimeout(()=>{window.location.href='/entry2.html';},120);
-parent.postMessage({kind:'entry1-report',channels,ports},'*');
+setTimeout(()=>{parent.postMessage({kind:'entry1-report',channels,ports},'*');window.location.href='/entry2.html';},120);
 parent.postMessage(${requestEnvelope(documentKey)},'*');
 </script>`},
  // The replacement reuses the leaked nonce but never learns the rotated
