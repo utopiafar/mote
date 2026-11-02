@@ -86,17 +86,21 @@ test('revoked source and closed plugin reject a late final without publishing, a
   const recovered=await files.commit(upload.uploadId,()=>{});
   assert.deepEqual(Buffer.concat([...files.bytes(recovered.id)]),bytes);
 
-  const playback=f.source.assemblyForRoutes().playback,grant=playback.issue(recovered.id,sourceId,()=>{});
+  const playback=f.source.assemblyForRoutes().playback,authorized=()=>{if(!f.allowed.value)throw new StoreError('Source is not authorized',403);};
+  const grant=playback.issue(recovered.id,sourceId,authorized),wrongFile=playback.issue(recovered.id,sourceId,authorized);
   assert.equal(playback.verify(recovered.id,grant.token),true);
-  assert.equal(playback.verify('00000000-0000-4000-8000-000000000000',grant.token),false);
+  assert.equal(playback.verify('00000000-0000-4000-8000-000000000000',wrongFile.token),false);
+  assert.equal(playback.verify(recovered.id,wrongFile.token),true,'a wrong-file probe must not revoke another file grant');
   f.allowed.value=false;assert.equal(playback.verify(recovered.id,grant.token),false,'a revoked source check invalidates the token');
   f.allowed.value=true;
+  const fresh=playback.issue(recovered.id,sourceId,authorized);
+  assert.equal(playback.verify(recovered.id,fresh.token),true,'a fresh grant verifies before retirement');
 
   const late=files.begin(manifest(Buffer.from('Generated late final'),'v2'),()=>{});
   files.part(late.uploadId,0,Buffer.from('Generated late final'),()=>{});
   await f.source.stop('disabled');
   assert.equal(f.store.db.isOpen,true,'the borrowed C02 Store must stay open');
-  assert.equal(playback.verify(recovered.id,grant.token),false,'scope retirement invalidates live playback tokens');
+  assert.equal(playback.verify(recovered.id,fresh.token),false,'scope retirement invalidates live playback tokens');
   assert.throws(()=>playback.issue(recovered.id,sourceId,()=>{}),{statusCode:503});
   assert.throws(()=>files.part(late.uploadId,0,Buffer.from('Generated late final'),()=>{}),{statusCode:503});
   await assert.rejects(files.commit(late.uploadId,()=>{}),{statusCode:503});
@@ -181,9 +185,11 @@ test('mote.files feature registration never closes the plugin-owned FileStore an
 
 test('playback registry purges expired tokens and fails closed for forged checks',()=>{
   let now=1000;const grants=new PlaybackGrants({ttlMs:100,clock:()=>now,token:()=> 'a'.repeat(64)});
-  const grant=grants.issue('00000000-0000-4000-8000-000000000001',sourceId,()=>{throw new StoreError('revoked',401);});
-  assert.equal(grants.verify('00000000-0000-4000-8000-000000000001',grant.token),false);
-  now+=101;assert.equal(grants.verify('00000000-0000-4000-8000-000000000001',grant.token),false);
+  const revoked=grants.issue('00000000-0000-4000-8000-000000000001',sourceId,()=>{throw new StoreError('revoked',401);});
+  assert.equal(grants.verify('00000000-0000-4000-8000-000000000001',revoked.token),false);
+  const expiring=grants.issue('00000000-0000-4000-8000-000000000001',sourceId,()=>{});
+  assert.equal(grants.verify('00000000-0000-4000-8000-000000000001',expiring.token),true);
+  now+=101;assert.equal(grants.verify('00000000-0000-4000-8000-000000000001',expiring.token),false);
   grants.retire();assert.equal(grants.active,false);
   assert.throws(()=>grants.issue('00000000-0000-4000-8000-000000000001',sourceId,()=>{}),{statusCode:503});
 });

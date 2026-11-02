@@ -61,11 +61,14 @@ export class PlaybackGrants implements FilePlaybackGrants {
     this.grants.set(token,{fileId,sourceId,until,check});
     return {token,until};
   }
-  /** Missing, expired, retired, mismatched or no-longer-authorized grants fail closed. */
+  /** Missing, expired, retired, mismatched or no-longer-authorized grants fail closed.
+   * A token presented for another file is rejected without revoking its real grant. */
   verify(fileId:string,token:string|undefined):boolean {
     if(this.retired||!token)return false;
     const grant=this.grants.get(token);
-    if(!grant||grant.fileId!==fileId||grant.until<=this.clock()){if(grant)this.grants.delete(token);return false;}
+    if(!grant)return false;
+    if(grant.until<=this.clock()){this.grants.delete(token);return false;}
+    if(grant.fileId!==fileId)return false;
     try{grant.check();}catch{this.grants.delete(token);return false;}
     return true;
   }
