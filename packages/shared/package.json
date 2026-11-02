@@ -101,6 +101,12 @@
       "require": "./dist/plugin-native.js",
       "default": "./dist/plugin-native.js"
     },
+    "./plugin-view-lifetime": {
+      "types": "./dist/plugin-view-lifetime.d.ts",
+      "import": "./dist/plugin-view-lifetime.js",
+      "require": "./dist/plugin-view-lifetime.js",
+      "default": "./dist/plugin-view-lifetime.js"
+    },
     "./document-decoder": {
       "types": "./dist/document-decoder.d.ts",
       "import": "./dist/document-decoder.js",
@@ -176,6 +182,9 @@
       ],
       "plugin-native": [
         "dist/plugin-native.d.ts"
+      ],
+      "plugin-view-lifetime": [
+        "dist/plugin-view-lifetime.d.ts"
       ],
       "document-decoder": [
         "dist/document-decoder.d.ts"
