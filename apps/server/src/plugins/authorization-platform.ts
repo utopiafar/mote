@@ -218,7 +218,8 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     const controller=new AbortController();
     const assert=()=>{running();controller.signal.throwIfAborted();inputs.assertClaimed(pin,jobId);if(!memoryWork.authorized({id:jobId,automaticGrant:pin}))throw denied('memory_authorization_revoked',409);};assert();
     const run={controller,assert};memoryRuns.add(run);
-    return track(host.automatic(jobId,'memory',[sourceModelIdentity(pin.sourceId,pin.inputKey)],async modelSignal=>{
+    // Each owner-selected recipe owns its trigger; retries retain that exact scope.
+    return track(host.automatic(jobId,`memory:${pin.scope}`,[sourceModelIdentity(pin.sourceId,pin.inputKey)],async modelSignal=>{
       const signal=AbortSignal.any([controller.signal,modelSignal]);assert();control!.assertDisclosure([{sourceId:pin.sourceId,dataKind:'text'}]);
       const result=await work(signal,assert);signal.throwIfAborted();assert();return result;
     },controller.signal).finally(()=>{memoryRuns.delete(run);}));

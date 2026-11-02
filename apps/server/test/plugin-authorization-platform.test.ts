@@ -14,7 +14,9 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
 import {installCaptureMemoryIntake} from '../src/capture-memory-intake.js';
 import {modelConnection} from '../src/background-model-authorization.js';
-import {DEFAULT_MEMORY_INPUT_SCOPE} from '../src/memory-input-authorization.js';
+import {DEFAULT_MEMORY_INPUT_SCOPE,automaticMemoryGrantSchema} from '../src/memory-input-authorization.js';
+import {MemoryStrategies} from '../src/memory-strategies.js';
+import {MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
 import type {ConnectorConfig} from '../src/connectors/types.js';
 import {PluginHost} from '@mote/plugin-host';
 import {Connections} from '../src/connections.js';
@@ -25,9 +27,10 @@ import type {CommitAuthority,RequestAuthority} from '../src/plugins/central-cont
 const ownerToken='generated-owner-authorization-token';
 const capture=(deviceId='generated-phone-a'):CaptureInput=>captureSchema.parse({id:randomUUID(),deviceId,deviceName:'Generated phone',platform:'android',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:'Generated evidence only'});
 const item=(externalId=randomUUID())=>({externalId,revision:'1',observedAt:new Date().toISOString(),title:'Generated source input',text:'Generated source body',kind:'file',layer:'snapshot',deleted:false});
-async function fixture(t:import('node:test').TestContext){
+async function fixture(t:import('node:test').TestContext,withRecipes=false){
   const directory=mkdtempSync(join(tmpdir(),'mote-authorization-platform-')),store=new Store(directory),materials=new MaterialStore(store);
-  let now=Date.now();const memory=new MaterialMemoryWork(store,materials,()=>now,()=>true),sources=new SourceStore(store,undefined,memory.inputs),files=new FileStore(store,sources);
+  let now=Date.now();const recipes=withRecipes?new MemoryRecipeSettings(store,new MemoryStrategies()):undefined;
+  const memory=new MaterialMemoryWork(store,materials,()=>now,()=>true,recipes),sources=new SourceStore(store,undefined,memory.inputs),files=new FileStore(store,sources);
   let models=[modelConnection('generated-model',{model:'generated-original',apiKey:'fixture-only'})];
   const connectorConfig:ConnectorConfig={directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'generated-static-read-token',mcpWriteEnabled:true,mcpWriteToken:'generated-static-write-token',mcpWriteSourceIds:['generated-source-a']};
   const options={ownerToken,connectorConfiguration:()=>connectorConfig,allowedOrigins:['https://generated.invalid'],clock:()=>now};
@@ -51,7 +54,7 @@ async function fixture(t:import('node:test').TestContext){
   const http=async(path:string,token:string,body:unknown,method='POST')=>{const response=await fetch(url+path,{method,headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body)});return {status:response.status,value:await response.json() as {error?:string;id?:string;receipt?:{version:number;state:string}}};};
   const collector=async()=>{const invitation=connections().invite({serverUrl:'https://generated.invalid',label:'Generated collector',deviceId:'generated-phone-a'},'collector');return connections().redeem({code:invitation.invitation.code,deviceId:'generated-phone-a',deviceName:'Generated phone',platform:'android'});};
   t.after(async()=>{await app.close();disposeCapture();await platform.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
-  return {store,sources,files,memory,materials,http,collector,connections,connectorConfig,
+  return {store,sources,files,memory,materials,recipes,http,collector,connections,connectorConfig,
     get platform(){return platform;},get model(){return models[0];},advance(ms:number){now+=ms;},
     addModel(){models=[...models,modelConnection('generated-replacement',{model:'generated-new',apiKey:'fixture-only'})];},
     withdrawOriginalModel(){models=models.slice(1);},
@@ -222,4 +225,45 @@ test('partial binding rejects a foreign-vault Connections without taking ownersh
   try{await platform.prepare();assert.throws(()=>platform.bindRepositories({sources:f.sources,files:f.files,materials:f.materials,memoryInputs:f.memory.inputs,memoryWork:f.memory}),{code:'authorization_repository_mismatch'});}
   finally{await platform.close();}
   assert.equal(connections.authenticate('Bearer '+session.token)?.id,session.credentialId,'rejected foreign dependencies remain with their original owner');
+});
+
+
+test('two selected recipe scopes independently consume the same original through real Memory jobs',async t=>{
+  const f=await fixture(t,true),p=f.platform,control=p.assembly.modelAuthorization;
+  f.recipes!.configure({sourceId:'generated-source-a',recipes:[{id:'mote.personal-memory',version:'2'},{id:'mote.coding-memory',version:'2'}]});
+  control.command({action:'authorize',revision:0,operationId:randomUUID(),connections:[f.model],scope:{sourceIds:['generated-source-a'],dataKinds:['text']}});
+  const request=p.bindRequest({authorization:'Bearer '+ownerToken,method:'PUT',route:'/api/sources/:id/items',params:{id:'generated-source-a'}}),raw=item();
+  const receipt=await p.withSource(request,'generated-source-a',raw,()=>p.sourceIntake.sourceItem('generated-source-a',raw,p.commits.capture()));p.releaseRequest(request);
+  const material=f.materials.publish({id:materialId('generated-source-a','generated-sibling-recipes'),kind:'mote.file',schemaVersion:1,title:'Generated sibling recipe input',origin:{sourceId:'generated-source-a',externalId:'generated-sibling-recipes'},members:[{id:'original',kind:'capture',ref:'capture:'+receipt.id}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated shared original',memberIds:['original']}],coverage:{state:'complete'},artifacts:[{key:'source-body',state:'ready'}],fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+  f.memory.observe(material.id,['source-body'],{inputKey:receipt.id,change:'source'});
+  const engine=new ExecutionEngine(f.store),jobs:string[]=[],executed:string[]=[];engine.bindModelAuthority(control);t.after(()=>engine.close());
+  engine.register({kind:'generated.c04-sibling-memory',pool:'generated-c04-siblings',concurrency:()=>2,
+    validate:step=>f.memory.authorized({id:step.id,automaticGrant:automaticMemoryGrantSchema.parse(step.input.pin)}),
+    execute:async step=>p.withMemoryGrant(step.input.pin,step.id,async(_signal,assertCurrent)=>{assertCurrent();control.assertCurrent(f.model);executed.push(automaticMemoryGrantSchema.parse(step.input.pin).scope);return 'generated recipe result';}),
+    commit:step=>{assert.equal(f.memory.authorized({id:step.id,automaticGrant:automaticMemoryGrantSchema.parse(step.input.pin)}),true);}});
+  assert.equal(f.memory.drain({create:input=>{const id=engine.enqueue('generated-sibling-memory-job','generated.c04-sibling-memory',{pin:input.automaticGrant,evidenceIds:input.evidenceIds});jobs.push(id);return {id};},get:id=>({status:engine.get(id)?.state==='succeeded'?'completed':'queued'}),run:id=>engine.drain([id]),cancel:id=>{engine.cancel(id);}},true),2);
+  await engine.drain(jobs);
+  assert.deepEqual(jobs.map(id=>engine.get(id)?.state),['succeeded','succeeded']);
+  assert.equal(new Set(executed).size,2,'both independently selected scopes execute once');
+  assert.deepEqual(executed.sort(),f.memory.inputs.list('generated-source-a',receipt.id).map(grant=>grant.scope).sort());
+  for(const id of jobs)await p.withMemoryGrant(engine.get(id)!.input.pin,id,async(_signal,assertCurrent)=>{assertCurrent();control.assertCurrent(f.model);});
+});
+
+
+test('a pruned expired login approval still drains and revokes before Connections closes',async t=>{
+  const f=await fixture(t),platform=f.platform,connections=f.connections(),handoffs=platform.assembly.handoffs!,session=connections.session.bind(connections);
+  const verifier=randomBytes(32).toString('base64url'),input={serverUrl:'https://generated.invalid',deviceId:'generated-expiring-login',deviceName:'Generated expired login',platform:'android',challenge:createHash('sha256').update(verifier).digest('hex')},request=handoffs.create(input);
+  let release!:()=>void,entered!:()=>void,issued:Awaited<ReturnType<Connections['session']>>|undefined;
+  const held=new Promise<void>(resolve=>{release=resolve;}),persisted=new Promise<void>(resolve=>{entered=resolve;});
+  connections.session=async(...args)=>{const grant=await session(...args);issued=grant;entered();await held;return grant;};
+  const approval=handoffs.approve(request.id,()=>{}),rejected=assert.rejects(approval);
+  try{
+    await persisted;f.advance(10*60000+1);handoffs.create({...input,deviceId:'generated-next-login'});
+    assert.throws(()=>handoffs.detail(request.id),{code:'login_expired'});
+    const closing=platform.close();
+    try{await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(connections.authenticate('Bearer '+issued!.token)?.id,issued!.credentialId,'Connections stays open until the detached approval can revoke');}
+    finally{release();await rejected;await closing;}
+  }finally{release();connections.session=session;}
+  const reloaded=new Connections(f.store,f.sources);
+  try{await reloaded.init();const records=reloaded.inventory().items;assert.equal(records.length,1);assert.ok(records[0].revokedAt);assert.equal(reloaded.authenticate('Bearer '+issued!.token),undefined,'expired pending approval must not leave an active credential after restart');}finally{await reloaded.close();}
 });
