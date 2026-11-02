@@ -38,7 +38,6 @@ const events = [];
 const hits = {};
 const revocations = [];
 const guard = new CustomPageFrameGuard();
-guard.setRevocationListener((webContentsId, revocation) => revocations.push({webContentsId, revocation}));
 let window;
 let webContentsId;
 let hostUrl;
@@ -48,6 +47,8 @@ const pages = {
 const nonce = '${nonce}';
 window.messages = [];
 window.claimResults = [];
+window.revocations = [];
+window.onCustomPageRevoked(value => window.revocations.push(value));
 addEventListener('message', event => { window.messages.push(event.data); });
 (async () => {
   const srcdoc = document.createElement('iframe');
@@ -127,6 +128,10 @@ app.whenReady().then(async () => {
   });
   const contents = window.webContents;
   webContentsId = contents.id;
+  guard.setRevocationListener((id, revocation) => {
+    revocations.push({webContentsId: id, revocation});
+    if (id === webContentsId) contents.send('mote:custom-page-revoked', revocation);
+  });
 
   contents.on('frame-created', (_event, details) => {
     if (details.frame) events.push({type: 'frame-created', frameTreeNodeId: details.frame.frameTreeNodeId, url: details.frame.url});
@@ -161,6 +166,7 @@ app.whenReady().then(async () => {
 
   const claimResults = await contents.executeJavaScript('window.claimResults');
   const messages = await contents.executeJavaScript('window.messages');
+  const rendererRevocations = await contents.executeJavaScript('window.revocations');
   const finalFrames = contents.mainFrame.framesInSubtree.map(frame => ({
     frameTreeNodeId: frame.frameTreeNodeId,
     url: frame.url,
@@ -204,6 +210,11 @@ app.whenReady().then(async () => {
       && revocations[0].revocation.documentKey === documentKey
       && revocations[0].revocation.frameTreeNodeId === claim?.frameTreeNodeId
       && revocations[0].revocation.epoch === claim?.epoch,
+    rendererRevocationPushed: rendererRevocations.length === 1
+      && rendererRevocations[0].instanceId === instanceId && rendererRevocations[0].nonce === nonce
+      && rendererRevocations[0].documentKey === documentKey
+      && rendererRevocations[0].frameTreeNodeId === claim?.frameTreeNodeId
+      && rendererRevocations[0].epoch === claim?.epoch,
     portLeakedBeforeBlock: messages.some(message => message?.kind === 'port'),
     noPrecommitEventForBlankOrSrcdoc: !events.some(event => event.type === 'will-frame-navigate' && (event.url === 'about:blank' || event.url === 'about:srcdoc')),
     lateClaimDenied,
@@ -211,7 +222,7 @@ app.whenReady().then(async () => {
     mainFrameAllowed,
     revokedPendingDenied,
   };
-  const result = {checks, claimResults, claim, messages, finalFrames, childClaims, entry1, entry2Events, entry3, revocations, events, hits};
+  const result = {checks, claimResults, claim, messages, finalFrames, childClaims, entry1, entry2Events, entry3, revocations, rendererRevocations, events, hits};
   console.log('CUSTOM_PAGE_GUARD_FIXTURE ' + JSON.stringify(result));
   app.exit(Object.values(checks).every(Boolean) ? 0 : 1);
 }).catch(error => {
