@@ -22,6 +22,8 @@ class DeclarativePluginViewTest {
         assertTrue("extra keys rejected like the TS decoder", reject("""{"components":[{"type":"status","state":"pending","onClick":"x"}]}""").contains("unknown field"))
         assertTrue("string required is not coerced", reject("""{"components":[{"type":"form","fields":[{"key":"a","input":"text","required":"true"}]}]}""").contains("boolean required"))
         assertTrue(reject("""{"components":[{"type":"action","command":"save","labelKey":{}}]}""").contains("string required"))
+        assertTrue("missing input is rejected, not defaulted", reject("""{"components":[{"type":"form","fields":[{"key":"a"}]}]}""").contains("token required"))
+        assertTrue("uppercase wire state is rejected", reject("""{"components":[{"type":"status","state":"PENDING"}]}""").contains("unknown state"))
     }
 
     @Test fun `a valid spec mirrors the declared node model`() {

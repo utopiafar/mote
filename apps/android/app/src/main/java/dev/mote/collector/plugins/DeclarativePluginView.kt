@@ -48,10 +48,14 @@ object DeclarativePluginView {
             val path = "components[$i]"
             keys(c, setOf("type", "state", "textKey", "itemKey", "fields", "submitCommand", "command", "labelKey"), path)
             when (val type = token(c, "type", path)) {
-                "status" -> DeclarativeNode.Status(
-                    runCatching { DeclarativeState.valueOf(token(c, "state", path).uppercase()) }
-                        .getOrElse { throw IllegalArgumentException("$path.state: unknown state") },
-                    optToken(c, "textKey", path))
+                "status" -> when (val wire = token(c, "state", path)) {
+                    // Exact wire casing only: 'PENDING' is not a valid state.
+                    "pending" -> DeclarativeNode.Status(DeclarativeState.PENDING, optToken(c, "textKey", path))
+                    "error" -> DeclarativeNode.Status(DeclarativeState.ERROR, optToken(c, "textKey", path))
+                    "empty" -> DeclarativeNode.Status(DeclarativeState.EMPTY, optToken(c, "textKey", path))
+                    "unavailable" -> DeclarativeNode.Status(DeclarativeState.UNAVAILABLE, optToken(c, "textKey", path))
+                    else -> throw IllegalArgumentException("$path.state: unknown state '$wire'")
+                }
                 "list" -> DeclarativeNode.Listing(token(c, "itemKey", path), fields(array(c, "fields", path), "$path.fields"))
                 "detail" -> DeclarativeNode.Detail(fields(array(c, "fields", path), "$path.fields"))
                 "form" -> DeclarativeNode.Form(
@@ -82,7 +86,9 @@ object DeclarativePluginView {
         return List(array.length()) { j ->
             val f = array.opt(j) as? JSONObject ?: throw IllegalArgumentException("$path[$j]: object required")
             keys(f, setOf("key", "labelKey", "input", "required"), "$path[$j]")
-            val input = string(f, "input", "$path[$j]") ?: "text"
+            // input is required by the wire contract — a missing input is
+            // rejected, never silently defaulted like the TS decoders.
+            val input = token(f, "input", "$path[$j]")
             require(input in setOf("text", "number", "boolean")) { "$path[$j].input: invalid" }
             FormFieldSpec(token(f, "key", "$path[$j]"), optToken(f, "labelKey", "$path[$j]"), input, boolean(f, "required", "$path[$j]") ?: false)
         }

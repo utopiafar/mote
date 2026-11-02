@@ -49,6 +49,8 @@ test('scalar metadata is strictly typed: wrong types and accessor-free function 
   assert.throws(() => parseDeclarativeView({ components: [{ type: 'action', command: 'save', labelKey: {} }] }, descriptor()), /labelKey must be a token string/);
   assert.throws(() => parseDeclarativeView({ components: [{ type: 'status', state: 'pending', textKey: () => 'x' }] }, descriptor()), /textKey must be a token string/);
   assert.throws(() => parseDeclarativeView({ components: [{ type: 'status', state: 'pending', onClick: 'x' }] }, descriptor()), /Invalid object fields/);
+  assert.throws(() => parseDeclarativeView({ components: [{ type: 'form', fields: [{ key: 'a' }] }] }, descriptor()), /invalid form field/, 'missing input is rejected, not defaulted');
+  assert.throws(() => parseDeclarativeView({ components: [{ type: 'status', state: 'PENDING' }] }, descriptor()), /unknown state/, 'uppercase wire state is rejected');
 });
 
 test('serializeFormInput produces typed payloads for checked, unchecked, numeric and empty fields', () => {
