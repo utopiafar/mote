@@ -4,7 +4,10 @@ import {mkdtempSync,rmSync,mkdirSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import http from 'node:http';
+import type {AddressInfo} from 'node:net';
 import {buildApp} from '../src/app.js';
+import {closeSourcePlatforms} from '../src/platform-close-order.js';
 import type {Config} from '../src/config.js';
 
 const note=(deviceId='generated-notes-device')=>({id:randomUUID(),deviceId,deviceName:'Generated notes device',platform:'android',capturedAt:'2026-11-03T00:00:00.000Z',text:'Generated ROOTS-2 note body'});
@@ -45,3 +48,50 @@ test('authorization startup failure clears the started FilesSource sweep timer',
   assert.equal(active.size,0,'startup failure must clear the C11 sweep timer');
 });
 
+test('an authenticated request aborted over a real socket releases its C04 pin',async t=>{
+  const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-notes-abort-'));
+  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots abort fixture');},close:async()=>{}}});
+  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
+  await node.app.listen({host:'127.0.0.1',port:0});
+  const {port}=node.app.server.address() as AddressInfo;
+  let observed=false;
+  const client=http.request({host:'127.0.0.1',port,path:'/api/notes',method:'POST',headers:{authorization:`Bearer ${config.token}`,'content-type':'application/json','content-length':'512'}});
+  client.on('error',()=>{});
+  client.write('{"id":"partial');
+  for(let i=0;i<200&&!observed;i++){observed=node.liveRequestPins()>0;if(!observed)await new Promise(resolve=>setTimeout(resolve,10));}
+  assert.ok(observed,'the interrupted request must have bound a C04 pin before aborting');
+  client.destroy();
+  for(let i=0;i<200&&node.liveRequestPins()>0;i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(node.liveRequestPins(),0,'an aborted request must release its C04 pin');
+});
+
+
+test('source shutdown quiesces C09 before C05 interruption and keeps accepted Memory authorized',async()=>{
+  const events:string[]=[];
+  let memoryAllowed=true,duringStop:boolean|undefined,decisionTakenDuringSourceDrain:boolean|undefined,sourceDrainStarted=false;
+  let releaseMemory!:()=>void;const memoryWork=new Promise<void>(resolve=>{releaseMemory=resolve;});
+  const chain={
+    authorization:{quiesce:()=>{events.push('authorization.quiesce');}},
+    capture:{quiesce:()=>{events.push('capture.quiesce');},close:async()=>{events.push('capture.close');}},
+    files:{close:async()=>{events.push('files.close');}},
+    source:{
+      quiesce:()=>{events.push('source.quiesce');releaseMemory();},
+      close:async()=>{
+        // Retiring authority happens here, and only after C05 has stopped.
+        sourceDrainStarted=true;memoryAllowed=false;events.push('source.close');
+      },
+    },
+    execution:{stop:async()=>{
+      events.push('execution.stop');
+      // A Memory batch accepted before shutdown completes while C05 drains.
+      await memoryWork;duringStop=memoryAllowed;
+      decisionTakenDuringSourceDrain=sourceDrainStarted;
+    }},
+  };
+  await closeSourcePlatforms(chain);
+  assert.deepEqual(events,['authorization.quiesce','capture.quiesce','capture.close','files.close','source.quiesce','execution.stop','source.close']);
+  assert.equal(duringStop,true,'accepted Memory work must keep source authority through the C05 interruption');
+  assert.equal(decisionTakenDuringSourceDrain,false,'the runtime must not be retiring authority while C05 drains accepted work');
+  assert.equal(memoryAllowed,false,'the runtime retires its authority only after C05 stops');
+});

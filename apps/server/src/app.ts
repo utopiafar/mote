@@ -108,6 +108,7 @@ import {ImageProcessing} from './image-processing.js';
 import {imageUnderstanding} from './image-understanding.js';
 import { ProcessingRuntime } from './processing-runtime.js';
 import { createExecutionPlatform } from './plugins/execution-platform.js';
+import { closeSourcePlatforms } from './platform-close-order.js';
 import { createAuthorizationPlatform,type AuthorizationPlatform } from './plugins/authorization-platform.js';
 import { createSourceRuntime,type SourceRuntime } from './plugins/source-runtime.js';
 import { createFilesSource,type FilesSource } from './plugins/files-source.js';
@@ -236,17 +237,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   await authorizationPlatform.start();
   captureIntake.bindAuthorization(authorizationPlatform);captureIntake.start();
   const ingress=captureIntake.ingress,modelAuthorizationHost=authorizationPlatform.assembly.modelAuthorizationHost!;
-  resources.beforeClose(async()=>{
-    authorizationPlatform.quiesce('shutdown');
-    captureIntake.quiesce('shutdown');
-    await captureIntake.close();
-    await filesPlatform.close();
-    // Keep the SourceRuntime authority alive through accepted Memory work;
-    // C05 stop interrupts/drains it before the runtime is retired.
-    sourceRuntime.quiesce('shutdown');
-    await executionPlatform.stop('shutdown');
-    await sourceRuntime.close();
-  });
+  resources.beforeClose(()=>closeSourcePlatforms({authorization:authorizationPlatform,capture:captureIntake,files:filesPlatform,source:sourceRuntime,execution:executionPlatform}));
   const notesSource=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
   await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
@@ -313,7 +304,13 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const contentStorage=bootstrap.vault.attachContent(files,configService,enabled=>{config.contentEncryptionEnabled=enabled;});
   const connections=authorizationPlatform.assembly.connections!;
   const pins=new WeakMap<FastifyRequest,RequestAuthority>();
+  let liveRequestPins=0;
   const bindRequestPin=(req:FastifyRequest)=>authorizationPlatform.bindRequest({authorization:req.headers.authorization,method:req.method,route:req.routeOptions.url??'unknown',params:req.params as {id?:string},origin:req.headers.origin});
+  // A client that disconnects before the response finishes never reaches
+  // onResponse, and its C04 pin is a strong entry. Release idempotently from
+  // response completion and from a premature socket close.
+  const releaseRequestPin=(req:FastifyRequest)=>{const pin=pins.get(req);if(!pin)return;pins.delete(req);liveRequestPins--;authorizationPlatform.releaseRequest(pin);};
+  const assignRequestPin=(req:FastifyRequest,reply:FastifyReply)=>{pins.set(req,bindRequestPin(req));liveRequestPins++;reply.raw.once('close',()=>releaseRequestPin(req));};
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const connectionIdentity=(req:FastifyRequest)=>identities.get(req);
   // Device metadata does not narrow a human client's owner permissions.
@@ -565,16 +562,19 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     if(req.method==='OPTIONS'||req.routeOptions.url==='/api/health'||!isApi||(req.method==='POST'&&['/api/connections/redeem','/api/login/exchange','/api/login/requests','/api/login/poll','/api/login/ack'].includes(req.routeOptions.url??'')))return;
     const playback=playbackAuthorization(req);
     if(validBearer(req)||playback){
-      if(!playback)pins.set(req,bindRequestPin(req));
+      if(!playback)assignRequestPin(req,reply);
       return;
     }
     const c=connections.authenticate(req.headers.authorization);
     if(!c)return reply.code(401).send({error:'unauthorized',message:moteText("请提供有效访问令牌；管理网页请重新登录"),requestId:req.id});
-    identities.set(req,c);connections.assertCollectorRoute(c,req.method,req.routeOptions.url??'');pins.set(req,bindRequestPin(req));
+    identities.set(req,c);connections.assertCollectorRoute(c,req.method,req.routeOptions.url??'');assignRequestPin(req,reply);
     if(!connections.isOwner(c)&&collectorIngressWrite(req.method,req.routeOptions.url??'')&&req.headers['x-mote-ingress-version']!==INGRESS_PROTOCOL_VERSION)
       return reply.code(426).send({error:'ingress_protocol_upgrade_required',requiredVersion:INGRESS_PROTOCOL_VERSION,requestId:req.id});
   });
-  app.addHook('onResponse',async req=>{const pin=pins.get(req);if(pin){pins.delete(req);authorizationPlatform.releaseRequest(pin);}});
+  app.addHook('onResponse',async req=>{releaseRequestPin(req);});
+  // The client can close the connection before the response is finished; that
+  // path emits onRequestAbort instead of onResponse.
+  app.addHook('onRequestAbort',async req=>{releaseRequestPin(req);});
   app.setErrorHandler((error,req,reply)=>{
     const failure=safeError(error);
     diagnostics.record('request.failed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),category:failure.category,reason:failure.reason,statusCode:failure.status},failure.status>=500?'error':'warn');
@@ -969,7 +969,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,filesPlatform,sourceRuntime,notesSource,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,bootstrap,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();
