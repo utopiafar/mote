@@ -106,7 +106,7 @@ function restrictPort(port: HostSessionPort, registration: Registration): HostSe
   };
 }
 
-const entryChange = (entry: ToolSnapshotEntry) => canonicalJson({version: entry.version, fingerprint: entry.fingerprint, kind: entry.kind, exposure: entry.exposure, requires: entry.requires});
+const entryChange = (entry: ToolSnapshotEntry) => canonicalJson({version: entry.version, fingerprint: entry.fingerprint, kind: entry.kind, exposure: entry.exposure, requires: [...entry.requires].sort()});
 
 /** Compare two wire snapshots by name. Schema identity is covered by fingerprint;
  * kind/exposure/requires are compared explicitly because they change the
@@ -188,7 +188,7 @@ export class ToolRegistry {
     const entries = Object.freeze(registrations.map(registration => this.entryFor(registration)));
     const fingerprint = createHash('sha256').update(canonicalJson({
       schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION,
-      entries: entries.map(({name, version, fingerprint, kind, exposure, requires}) => ({name, version, fingerprint, kind, exposure, requires})),
+      entries: entries.map(({name, version, fingerprint, kind, exposure, requires}) => ({name, version, fingerprint, kind, exposure, requires: [...requires].sort()})),
     })).digest('hex');
     const captured = new Map(registrations.map(registration => [registration.descriptor.name, registration]));
     const assertActive = (pin: RuntimeToolIdentity): void => {
