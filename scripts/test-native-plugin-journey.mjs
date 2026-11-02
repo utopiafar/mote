@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /** Manual generated native-plugin journey: real buildApp/loopback, no fake host. */
 import assert from 'node:assert/strict';
+import {existsSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {request as httpRequest} from 'node:http';
 import {createTwoRuns,generatedNote} from '../test-fixtures/native-plugins/runs.mjs';
 import {createAckLossProxy,createControlledHttpBoundary,createRequestGateProxy} from '../test-fixtures/native-plugins/faults.mjs';
@@ -93,6 +96,17 @@ async function inProcess(){
 }
 
 async function subprocessRestart(){
+  const parent=mkdtempSync(join(tmpdir(),'mote-h15-caller-parent-'));
+  const sentinel=join(parent,'sentinel.txt'),existing=join(parent,'mote.yaml'),existingBody='caller-owned configuration\n';
+  writeFileSync(sentinel,'keep\n');writeFileSync(existing,existingBody);
+  try{
+    const owned=await createPrivateProcess({directory:parent,version:'ownership-check'});
+    await owned.close();
+    assert.ok(existsSync(sentinel),'caller sentinel survives');
+    assert.equal(readFileSync(existing,'utf8'),existingBody,'caller mote.yaml is not overwritten');
+    report.checks.push('caller directory and existing configuration survive process fixture cleanup');
+  }finally{rmSync(parent,{recursive:true,force:true});}
+
   const run=await createPrivateProcess({version:'process-restart'});
   const gate=await createRequestGateProxy(run.url,{path:'/api/notes'});
   try{

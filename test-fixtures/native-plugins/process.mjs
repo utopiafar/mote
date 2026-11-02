@@ -21,7 +21,10 @@ async function freePort(){
 
 /** Actual source entrypoint in a private YAML profile, with explicit stop/start. */
 export async function createPrivateProcess({version='1',directory}={}){
-  const root=directory??mkdtempSync(join(tmpdir(),'mote-native-plugin-process-'));
+  const parent=directory??mkdtempSync(join(tmpdir(),'mote-native-plugin-process-'));
+  if(directory)mkdirSync(parent,{recursive:true,mode:0o700});
+  const root=directory?join(parent,`process-${randomUUID()}`):parent;
+  if(directory)mkdirSync(root,{recursive:true,mode:0o700});
   const dataDir=join(root,'data'),configFile=join(root,'mote.yaml'),token=randomBytes(32).toString('hex'),runId=randomUUID();
   mkdirSync(dataDir,{recursive:true,mode:0o700});
   let port=await freePort(),child,output='',baseUrl=`http://127.0.0.1:${port}`;
