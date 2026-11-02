@@ -1,4 +1,4 @@
-import {serviceContract,type PluginLifecycle,type PluginScope} from '@mote/plugin-api/contracts';
+import type {PluginLifecycle,PluginScope} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {Store,StoreError} from '../store.js';
@@ -26,6 +26,7 @@ export interface VaultFileRepository {
   commit(id:string,authority:CommitAuthority):ReturnType<FileStore['commit']>;
   bytes(id:string):Iterable<Buffer>;
 }
+/** Trusted factory assembly only; never returned by an ordinary published port. */
 export interface VaultRepositoryAccess {
   readonly transactions:VaultTransactions;
   readonly sources:{register(input:Parameters<SourceStore['register']>[0],authority:CommitAuthority):ReturnType<SourceStore['register']>};
@@ -39,17 +40,19 @@ export interface VaultRepositoryAccess {
   /** Invalidates this access only. It neither closes sibling accesses nor deletes data. */
   release():void;
 }
-export interface VaultRepositoryProvider {acquire(scope:PluginScope):VaultRepositoryAccess}
-export const vaultRepositoryService=serviceContract<VaultRepositoryProvider>('mote.central.vault-repositories','1');
 /** H03 owns the package Manifest. This is its actual data-contribution fragment only. */
 export const vaultPlatformContribution={
   id:'vault-platform',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'service',id:centralServices.commitAuthorization.id,version:centralServices.commitAuthorization.apiVersion}],
-  provides:[centralServices.vault,centralServices.contentRead,vaultRepositoryService].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
+  provides:[centralServices.contentRead].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
 } as const satisfies ManifestContribution;
 export const vaultPlatformDeclaration={id:vaultPlatformContribution.id,apiVersion:'1'} as const;
 export const vaultPlatformReplacement='restart' as const;
-export interface VaultPlatform extends PluginLifecycle,VaultRepositoryProvider {close():Promise<void>}
+export interface VaultPlatform extends PluginLifecycle {
+  /** Trusted domain-factory wiring only. Caller-supplied scopes are not a public capability. */
+  repositoriesForAssembly(scope:PluginScope):VaultRepositoryAccess;
+  close():Promise<void>;
+}
 
 /** Trusted H05 bootstrap bridge only. Not a published service, SDK, ordinary plugin
  * capability or replacement for domain authorization. It preserves the current legacy
@@ -94,7 +97,7 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
   });
 }
 
-/** Warehouse assembly only: domain SQL remains in its existing repositories. The trusted
+/** Trusted warehouse assembly only, not a public service: domain SQL remains in its existing repositories. The trusted
  * caller supplies the fixed C04 verifier; no consumer can pass an issuer or callback.
  * This adapter checks its opaque reference at the synchronous transaction boundary.
  * Actual request/job resource/action/owner admission still belongs to C04/domain writers;
@@ -104,7 +107,7 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
   const config={...options};
   if(!authorization||typeof authorization.assertCurrent!=='function')throw new StoreError('C04 commit verifier is unavailable',503);
   const verify=authorization.assertCurrent.bind(authorization);
-  let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
+  let phase:'created'|'prepared'|'active'|'quiescing'|'draining'|'stopped'|'disposed'='created';
   let store:Store|undefined,sources:SourceStore|undefined,files:FileStore|undefined,materials:MaterialStore|undefined;
   let originals:ArchivedFileStore|undefined,content:ContentStorageService|undefined;
   const assembly=createVaultPlatformAssembly(config);
@@ -128,8 +131,8 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
       ownedReaders.clear();if(errors.length)throw new AggregateError(errors,'Vault reader disposal failed');
     };
     scope.defer(release);
-    const current=()=>{
-      if(released||phase!=='active'&&phase!=='quiescing')throw unavailable();
+    const current=(accepted=false)=>{
+      if(released||phase!=='active'&&phase!=='quiescing'&&!(accepted&&phase==='draining'))throw unavailable();
       scope.assertCurrent();scope.signal.throwIfAborted();
     };
     const assertAuthority=(authority:CommitAuthority)=>{current();verify(authority);};
@@ -155,7 +158,8 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
         begin:(input:unknown,authority:CommitAuthority)=>transaction(authority,()=>files!.begin(input,()=>assertAuthority(authority))),
         part:(id:string,part:number,bytes:Buffer,authority:CommitAuthority)=>transaction(authority,()=>files!.part(id,part,bytes,()=>assertAuthority(authority))),
         commit:(id:string,authority:CommitAuthority)=>{
-          assertAuthority(authority);return track(files!.commit(id,()=>assertAuthority(authority)));
+          assertAuthority(authority);
+          return track(files!.commit(id,()=>{current(true);verify(authority);}));
         },
         *bytes(id:string){
           current();const iterator=files!.bytes(id)[Symbol.iterator]();readers.add(iterator);ownedReaders.add(iterator);
@@ -183,14 +187,14 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
   }
   async function dispose(){
     if(closing)return closing;
-    phase='stopped';
+    if(phase!=='stopped')phase='draining';
     closing=(async()=>{
       const errors:unknown[]=[];
       const clean=async(work:()=>unknown|Promise<unknown>)=>{try{await work();}catch(error){errors.push(error);}};
       await clean(()=>assembly.stopAccessors());
       for(const reader of readers)await clean(()=>closeReader(reader));
-      await clean(()=>files?.close());
       await Promise.allSettled([...pending]);
+      await clean(()=>files?.close());
       await clean(()=>assembly.close());phase='disposed';
       if(errors.length)throw new AggregateError(errors,'Vault disposal failed');
     })();
@@ -201,6 +205,7 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
       if(phase!=='created')throw unavailable();
       try{
         await assembly.prepare();
+        if(phase!=='created')throw unavailable();
         store=assembly.store;originals=assembly.archivedFiles;
         sources=new SourceStore(store);files=new FileStore(store,sources);
         materials=new MaterialStore(store);content=assembly.attachContent(files);
@@ -216,19 +221,19 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
       phase='active';
     },
     quiesce(){if(phase==='active')phase='quiescing';},
-    async stop(){await dispose();},dispose,close:dispose,acquire,
+    async stop(){if(phase!=='disposed')phase='stopped';await dispose();},dispose,close:dispose,repositoriesForAssembly:acquire,
   });
 }
 
-/** H05 supplies the exact C04 service selected by trusted assembly, not a consumer issuer. */
+/** Public contribution exposes only flat read methods guarded by the H04 caller lease.
+ * No consumer scope, nested repository, iterator, transaction or writer leaves this boundary.
+ * Actual domain writers stay in trusted factory assembly until C04/owner checks are wired. */
 export function createVaultPlatformFactory(options:VaultPlatformOptions,authorization:CommitAuthorization){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createVaultPlatform(options,authorization);context.scope.defer(()=>platform.close());
     return {...platform,start:async()=>{
-      await platform.start();const access=platform.acquire(context.scope);
-      context.provide(vaultPlatformContribution.id,centralServices.vault,access.transactions);
+      await platform.start();const access=platform.repositoriesForAssembly(context.scope);
       context.provide(vaultPlatformContribution.id,centralServices.contentRead,Object.freeze({get:access.originals.get,read:access.originals.read,listForCapture:access.originals.listForCapture}));
-      context.provide(vaultPlatformContribution.id,vaultRepositoryService,Object.freeze({acquire:platform.acquire}));
     }};
   };
 }
