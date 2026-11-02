@@ -22,7 +22,7 @@ function escapeJsonStringControls(raw: string): string {
   return normalized;
 }
 
-export function parseAnswer(raw: string, records: Map<string, ContextRecord>) {
+export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRecord>) {
   if (typeof raw !== 'string' || raw.length > 1_000_000)
     throw new AgentResponseError('The model response exceeds the answer size limit.', 'response_too_large');
   const clean = raw
