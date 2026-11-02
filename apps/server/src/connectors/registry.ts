@@ -191,9 +191,11 @@ export class ConnectorRegistry {
     const http=this.options.http;if(!http)throw Error('Connector HTTP host is unavailable');
     if(this.closed)throw Error('Connector registry is closed');
     if(this.instances.some(entry=>entry.manifest.id===manifest.id))throw Error(`Connector ${manifest.id} is already started`);
+    scope.assertCurrent();
     let instance:ConnectorInstance|undefined;
     try{instance=await manifest.create(this.context);}catch(error){this.recordFailure(manifest,error);throw error;}
     if(!instance||typeof instance!=='object'){this.recordFailure(manifest,Error('Invalid connector instance'),'failed');throw Error(`Connector ${manifest.id} did not create an instance`);}
+    try{scope.assertCurrent();}catch(error){try{await instance.close?.();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector late initialization and disposal failed',{cause:error});}throw error;}
     if(this.closed){
       try{await instance.close?.();}catch(cleanup){throw new AggregateError([Error('Connector registry is closed'),cleanup],'Connector late initialization and disposal failed');}
       throw Error('Connector registry is closed');
@@ -202,6 +204,7 @@ export class ConnectorRegistry {
     try{
       if(this.closed){const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);entry.disposed=true;await instance.close?.();throw Error('Connector registry is closed');}
       await instance.init?.();
+      scope.assertCurrent();
       if(this.closed)throw Error('Connector registry is closed');
       instance.configure?.({
         ownerRoute:route=>http.ownerRoute(route,scope),

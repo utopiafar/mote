@@ -150,6 +150,80 @@ test('hot stop close failure removes only that instance and siblings serve',asyn
   await adapter.close();
 });
 
+test('hot install partial descriptor conflict rolls back earlier new kind',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-partial-owner',{statusKey:'owner'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const bad:ConnectorManifest={apiVersion:1,id:'generated-partial',sourceKinds:[
+    {kind:'generated.partial-new',capabilities},
+    {kind:'generated.connector',capabilities:{...capabilities,synchronization:'revisions'}},
+  ],create:()=>({status:()=>({id:'generated-partial'}),configure:()=>{},close:()=>{}})};
+  await assert.rejects(adapter.install(bad),/Connector source capability conflict/);
+  assert.equal(f.sources.capabilities.has('generated.partial-new'),false,'the partially registered descriptor is rolled back');
+  assert.equal(f.sources.capabilities.has('generated.connector'),true,'the owner capability remains');
+  const failed=adapter.inventory().find(item=>item.id==='generated-partial');assert.equal(failed?.state,'failed');
+  await adapter.close();
+});
+
+test('adapter close joins a pending hot install and its late cleanup',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void,releaseLate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;}),lateClose=new Promise<void>(resolve=>{releaseLate=resolve;});
+  let initialized=0,closed=0;
+  const late:ConnectorManifest={apiVersion:1,id:'generated-hot-late',sourceKinds:[{kind:'generated.hot-late',capabilities}],create:async()=>{enteredCreate();await held;return {init:()=>{initialized++;},close:()=>{closed++;return lateClose;}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-late-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseLate();resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const closing=adapter.close();let settled=false;void closing.then(()=>{settled=true;},()=>{settled=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'close joins the pending hot factory');
+  resolveCreate();await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'close joins the held late cleanup');
+  releaseLate();await closing;
+  await assert.rejects(installing);
+  assert.equal(initialized,0);assert.equal(closed,1);
+});
+
+test('stop during a pending hot install prevents late activation',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  let initialized=0;
+  const late:ConnectorManifest={apiVersion:1,id:'generated-hot-stop',sourceKinds:[{kind:'generated.hot-stop',capabilities}],create:async()=>{enteredCreate();await held;return {init:()=>{initialized++;},close:()=>{}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-stop-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const stopping=adapter.stop('generated-hot-stop');resolveCreate();
+  await assert.rejects(installing);await stopping;
+  assert.equal(initialized,0);
+  assert.equal(adapter.inventory().some(item=>item.id==='generated-hot-stop'&&item.state==='active'),false);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-stop-ok',headers})).body,'generated-hot-stop-ok');
+  await adapter.close();
+});
+
+test('stop without fence starts scope close before shutdown and close joins it',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseClose!:()=>void,enteredClose!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseClose=resolve;}),started=new Promise<void>(resolve=>{enteredClose=resolve;});
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-no-fence',{statusKey:'nf',onClose:async()=>{enteredClose();await held;}}),
+    manifest('generated-no-fence-sibling',{statusKey:'sib',prefix:'sib.'}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);if(m.id==='generated-no-fence')delete (scope as {fence?:unknown}).fence;scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseClose();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const stopping=adapter.stop('generated-no-fence');await started;
+  assert.ok([404,503].includes((await f.app.inject({url:'/api/connectors/generated-no-fence',headers})).statusCode));
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-no-fence-sibling',headers})).body,'generated-no-fence-sibling');
+  const closing=adapter.close();let settled=false;void closing.then(()=>{settled=true;},()=>{settled=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'close joins the in-progress stop');
+  releaseClose();await stopping;await closing;assert.equal(settled,true);
+});
+
 test('hot restart while old scope close is held keeps the replacement route and OAuth',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   let releaseOld!:()=>void,enteredOld!:()=>void,firstClose=true;

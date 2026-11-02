@@ -61,20 +61,22 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
   };
   const registerDescriptors=(manifest:ConnectorManifest)=>{
     const added:string[]=[];
-    for(const entry of manifest.sourceKinds){
-      if(typeof entry==='string')continue;
-      const owned=ownedDescriptors.get(entry.kind);
-      if(owned){
-        if(descriptorKey(owned)!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
-        continue;
+    try{
+      for(const entry of manifest.sourceKinds){
+        if(typeof entry==='string')continue;
+        const owned=ownedDescriptors.get(entry.kind);
+        if(owned){
+          if(descriptorKey(owned)!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
+          continue;
+        }
+        if(options.context.sources.capabilities.has(entry.kind)){
+          if(descriptorKey(installedDescriptor(entry.kind))!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
+          continue;
+        }
+        options.context.sources.capabilities.register(entry.kind,entry.capabilities);
+        ownedKinds.add(entry.kind);ownedDescriptors.set(entry.kind,entry.capabilities);added.push(entry.kind);
       }
-      if(options.context.sources.capabilities.has(entry.kind)){
-        if(descriptorKey(installedDescriptor(entry.kind))!==descriptorKey(entry.capabilities))throw Error(`Connector source capability conflict: ${entry.kind}`);
-        continue;
-      }
-      options.context.sources.capabilities.register(entry.kind,entry.capabilities);
-      ownedKinds.add(entry.kind);ownedDescriptors.set(entry.kind,entry.capabilities);added.push(entry.kind);
-    }
+    }catch(error){rollbackDescriptors(added);throw error;}
     return added;
   };
   const rollbackDescriptors=(added:readonly string[])=>{
@@ -116,7 +118,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     http,scopeFor,statusScope:options.statusScope,manageCapabilities:false,
     ...(options.transport?{transport:options.transport}:{}),
   });
-  const manifests=new Map(options.manifests.map(manifest=>[manifest.id,manifest])),retiring=new Set<Promise<void>>();
+  const manifests=new Map(options.manifests.map(manifest=>[manifest.id,manifest])),retiring=new Set<Promise<void>>(),pendingHot=new Set<Promise<void>>(),hotById=new Map<string,Promise<void>>();
   for(const manifest of options.manifests)registry.register(manifest);
   let started=false,closed=false,startTask:Promise<void>|undefined,teardown:Promise<void>|undefined,closing:Promise<void>|undefined;
   const startHot=async(manifest:ConnectorManifest)=>{
@@ -127,13 +129,20 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       added=registerDescriptors(manifest);installRefs(manifest);
       await registry.startInstance(manifest,scope.scope);
     }catch(error){
-      rollbackDescriptors(added);scopes.delete(manifest.id);
+      const current=scopes.get(manifest.id)===scope;
+      if(current)scopes.delete(manifest.id);
+      rollbackDescriptors(added);
       let cleanupError:unknown;
       try{await scope.close();}catch(cleanup){cleanupError=cleanup;}
-      registry.recordFailure(manifest,cleanupError??error);
+      if(current)registry.recordFailure(manifest,cleanupError??error);else registry.clearFailure(manifest.id);
       if(cleanupError!==undefined)throw new AggregateError([error,cleanupError],'Connector instance startup and disposal failed',{cause:error});
       throw error;
     }
+  };
+  const runHot=(manifest:ConnectorManifest)=>{
+    const task=startHot(manifest);pendingHot.add(task);hotById.set(manifest.id,task);
+    void task.finally(()=>{pendingHot.delete(task);if(hotById.get(manifest.id)===task)hotById.delete(manifest.id);}).catch(()=>{});
+    return task;
   };
   const teardownInternal=()=>{
     if(teardown)return teardown;
@@ -163,6 +172,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       // Join late factory/init cleanup; start's own rejection is observed by
       // its caller, while teardown cleanup errors remain aggregated here.
       await (startTask?.catch(()=>{})??Promise.resolve());
+      while(pendingHot.size)await Promise.allSettled([...pendingHot]);
       const {error}=await settledInternal;
       if(error!==undefined)throw error instanceof AggregateError?error:new AggregateError([error],'Connector host adapter disposal failed');
     })();
@@ -198,22 +208,33 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     configureSyncInterval:(intervalMs:number)=>registry.configureSyncInterval(intervalMs),
     async install(manifest:ConnectorManifest){
       if(!started||closed)throw Error('Connector host adapter is not active');
-      if(manifests.has(manifest.id)||scopes.has(manifest.id))throw Error(`Connector ${manifest.id} is already known`);
+      if(manifests.has(manifest.id)||scopes.has(manifest.id)||hotById.has(manifest.id))throw Error(`Connector ${manifest.id} is already known`);
       registry.addManifest(manifest);manifests.set(manifest.id,manifest);
-      await startHot(manifest);
+      return runHot(manifest);
     },
     async restart(id:string){
       if(!started||closed)throw Error('Connector host adapter is not active');
       const manifest=manifests.get(id);if(!manifest)throw Error(`Connector ${id} is not known`);
-      if(scopes.has(id)||registry.inventory().some(item=>item.id===id))throw Error(`Connector ${id} is already started`);
-      await startHot(manifest);
+      if(scopes.has(id)||hotById.has(id)||registry.inventory().some(item=>item.id===id))throw Error(`Connector ${id} is already started`);
+      return runHot(manifest);
     },
     async stop(id:string){
       if(closed)throw Error('Connector host adapter is closed');
-      const errors:unknown[]=[],value=scopes.get(id);if(value)scopes.delete(id);
-      try{await registry.stop(id,value?.fence?()=>value.fence!():undefined);}catch(error){errors.push(error);}
-      if(value){const task=value.close();retiring.add(task);void task.catch(()=>{});try{await task;}catch(error){errors.push(error);}finally{retiring.delete(task);}}
-      if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
+      const task=(async()=>{
+        const errors:unknown[]=[],value=scopes.get(id),attempt=hotById.get(id);if(value)scopes.delete(id);
+        let scopeClosing:Promise<void>|undefined;
+        // A close-only scope must stop admission before connector shutdown; a
+        // fence scope is invoked by registry.stop before it closes the instance.
+        if(value&&!value.fence){scopeClosing=value.close();void scopeClosing.catch(()=>{});}
+        try{await registry.stop(id,value?.fence?()=>value.fence!():undefined);}catch(error){errors.push(error);}
+        if(value&&!scopeClosing){scopeClosing=value.close();void scopeClosing.catch(()=>{});}
+        if(scopeClosing)try{await scopeClosing;}catch(error){errors.push(error);}
+        if(attempt)try{await attempt;}catch{/* install/restart caller owns that error */}
+        if(value)try{await value.close();}catch(error){errors.push(error);}
+        if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
+      })();
+      retiring.add(task);void task.catch(()=>{});
+      try{return await task;}finally{retiring.delete(task);}
     },
     close,
   });
