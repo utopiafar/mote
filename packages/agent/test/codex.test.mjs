@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:http';
 import {zstdDecompressSync} from 'node:zlib';
-import {createAgent,AgentProviderError,AgentTimeoutError} from '../dist/index.js';
+import {createAgent,AgentProviderError,AgentTimeoutError,defineToolDescriptor} from '../dist/index.js';
 import {CodexSession} from '../dist/codex-session.js';
 import {codexContextTools} from '../dist/codex-agent.js';
 import {createImportAgent} from '../dist/import-agent.js';
@@ -163,6 +163,7 @@ test('Codex App Server exchanges scoped tools, validates citations and leaves no
 test('Codex native attribution tool transports a bounded current context page without citing its hidden originals',async t=>{
   const root=await fake(t,'attribution-context'),fixture=generatedMaterialPages();
   const ctx={version:1,ownerRelation:'unknown',basis:'default',importDeclarations:[{id:record.id,version:1,fingerprint:'a'.repeat(64),captureIds:[fixture.originals[0].id]}],importStatements:[{id:record.id,version:1,captureIds:[fixture.originals[0].id],instruction:'Generated original narrator scope. '.repeat(500).slice(0,12000)}]};fixture.material.attributionContext=ctx;
+  fixture.reader.sourceContext=async()=>{throw Error('Unexpected source-context read in material locator fixture');};
   const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
   const answer=await agent.query({question:'Read generated host attribution'}),rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
   assert.ok(rpc.find(m=>m.method==='thread/start').params.dynamicTools.some(tool=>tool.name==='attribution_context'));
@@ -453,9 +454,10 @@ test('Codex structured quota errors retain safe typed state without exposing pro
 
 
 test('Codex discovers a pinned capability, rejects malformed arguments and dispatches valid registered metadata',async t=>{
- const root=await fake(t,'contribution');const {ContextToolRegistry}=await import('../dist/tool-contributions.js');const tools=new ContextToolRegistry();let calls=0;
- tools.register({name:'fixture_context',version:'generated-1',description:'Generated read-only metadata',fields:{count:{type:'integer',required:true}},maxCharacters:1000,parse:args=>args,authorize:()=>true,read:()=>{calls++;return {fixture:'generated'};}});
- const agent=createAgent({reader:{...reader,contextTools:()=>tools.snapshot()},protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+ await fake(t,'contribution');let calls=0;
+ const descriptor=defineToolDescriptor({apiVersion:'1',kind:'metadata',exposure:'catalog',requires:[],name:'fixture_context',version:'generated-1',description:'Generated read-only metadata',fields:{count:{type:'integer',required:true}},parse:args=>args,execute:()=>{calls++;return {source:'untrusted_personal_context',data:{fixture:'generated'}};}});
+ const lifecycle={signal:new AbortController().signal,assertCurrent(){}};
+ const agent=createAgent({reader:{...reader,contextTools:()=>[{descriptors:[descriptor],lifecycle}]},protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
  const answer=await agent.query({question:'Read generated metadata'});assert.equal(calls,1);assert.deepEqual(answer.trace.map(row=>row.tool),['capability_discover','fixture_context']);assert.deepEqual(answer.citations,[]);
 });
 
