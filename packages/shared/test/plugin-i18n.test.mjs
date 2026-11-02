@@ -73,6 +73,29 @@ test('the accessible name falls back to the visible label and glyph stays option
   assert.deepEqual(resolved.fallbackReasons, []);
 });
 
+test('a declared but missing accessibility key uses the visible label and keeps the diagnostic', () => {
+  const registry = new PluginI18nRegistry();
+  registry.register('fixture.plugin', 'en', {'nav.library': 'Library'});
+  const declared = parseUiContribution({
+    id: 'fixture.library', kind: 'page', apiVersion: '1', platforms: ['web'],
+    presentation: {labelKey: 'nav.library', a11yKey: 'nav.library.a11y', i18nNamespace: 'fixture.plugin'},
+  });
+  const resolved = resolveContributionPresentation(declared, registry, 'en');
+  assert.equal(resolved.label.text, 'Library');
+  assert.equal(resolved.a11y.text, 'Library');
+  assert.equal(resolved.a11y.fallback, 'key_missing');
+  assert.deepEqual(resolved.fallbackReasons, ['key_missing']);
+});
+
+test('a locale-missing accessibility translation keeps the readable English message', () => {
+  const registry = registryWith(['en', english]);
+  const resolved = resolveContributionPresentation(descriptor, registry, 'ja');
+  assert.equal(resolved.label.text, 'Library');
+  assert.equal(resolved.a11y.text, 'Library navigation');
+  assert.equal(resolved.a11y.fallback, 'locale_missing');
+  assert.deepEqual(resolved.fallbackReasons, ['locale_missing']);
+});
+
 test('missing target locale uses English with an explicit reason', () => {
   const registry = registryWith(['en', english]);
   const resolved = resolveContributionPresentation(descriptor, registry, 'ja');

@@ -142,13 +142,22 @@ internal class PluginI18nRegistry {
         return PluginUiText(key, "key_missing")
     }
 
-    /** Resolves a contribution's declared roles. The accessible name falls back
-     * to the visible label; nothing here reads data, commands or drafts. */
+    /** Resolves a contribution's declared roles. A declared accessibility key
+     * with no readable message falls back to the visible label while keeping
+     * the diagnostic; nothing here reads data, commands or drafts. */
     @Synchronized
     fun resolve(routeId: String, presentation: PluginUiPresentation, locale: String = MoteI18n.language()): ResolvedPluginUiPresentation {
         val label = resolve(presentation.i18nNamespace, presentation.labelKey, locale)
         val glyph = presentation.glyphKey?.let { resolve(presentation.i18nNamespace, it, locale) }
-        val a11y = presentation.a11yKey?.let { resolve(presentation.i18nNamespace, it, locale) } ?: label
+        val declaredA11y = presentation.a11yKey?.let { resolve(presentation.i18nNamespace, it, locale) }
+        // A declared key that resolves to itself carries no readable message.
+        // An English translation for a missing target locale stays readable.
+        val a11y = when {
+            declaredA11y == null -> label
+            declaredA11y.fallbackReason == "key_missing" || declaredA11y.fallbackReason == "namespace_missing" ->
+                PluginUiText(label.text, declaredA11y.fallbackReason)
+            else -> declaredA11y
+        }
         val reasons = listOfNotNull(label.fallbackReason, glyph?.fallbackReason, a11y.fallbackReason).distinct()
         return ResolvedPluginUiPresentation(routeId, label, glyph, a11y, reasons)
     }

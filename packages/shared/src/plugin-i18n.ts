@@ -24,7 +24,8 @@ export interface ResolvedUiPresentation {
   readonly routeId: string;
   readonly label: PluginText;
   readonly glyph?: PluginText;
-  /** Falls back to the visible label, so the accessible name is never empty. */
+  /** Falls back to the visible label when the declared key has no readable
+   * message, so the accessible name is never an internal identifier. */
   readonly a11y: PluginText;
   readonly fallbackReasons: readonly PluginTextFallback[];
 }
@@ -104,9 +105,16 @@ export function resolveContributionPresentation(
   const glyph = presentation.glyphKey
     ? registry.resolve(presentation.i18nNamespace, presentation.glyphKey, locale)
     : undefined;
-  const a11y = presentation.a11yKey
+  const declaredA11y = presentation.a11yKey
     ? registry.resolve(presentation.i18nNamespace, presentation.a11yKey, locale)
-    : label;
+    : undefined;
+  // A declared key that resolves to itself carries no readable message (the
+  // namespace or key is missing). Use the visible label and keep the reason;
+  // an English translation for a missing target locale stays readable.
+  const a11y = !declaredA11y ? label
+    : declaredA11y.fallback === 'key_missing' || declaredA11y.fallback === 'namespace_missing'
+      ? {text: label.text, fallback: declaredA11y.fallback}
+      : declaredA11y;
   const fallbackReasons = [...new Set(
     [label, glyph, a11y].flatMap(item => (item?.fallback ? [item.fallback] : [])),
   )];

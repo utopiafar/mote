@@ -64,6 +64,30 @@ class PluginNavigationContractTest {
         assertTrue(resolved.fallbackReasons.isEmpty())
     }
 
+    @Test fun declaredButMissingAccessibilityKeyUsesVisibleLabelAndKeepsDiagnostic() {
+        val registry = PluginI18nRegistry()
+        registry.register(namespace, "en", mapOf("nav.library" to "Library"))
+        val resolved = registry.resolve(
+            route,
+            PluginUiPresentation("nav.library", a11yKey = "nav.library.a11y", i18nNamespace = namespace),
+            "en",
+        )
+        assertEquals("Library", resolved.label.text)
+        assertEquals("Library", resolved.a11y.text)
+        assertEquals("key_missing", resolved.a11y.fallbackReason)
+        assertEquals(listOf("key_missing"), resolved.fallbackReasons)
+    }
+
+    @Test fun localeMissingAccessibilityTranslationKeepsReadableEnglishMessage() {
+        val registry = PluginI18nRegistry()
+        registry.register(namespace, "en", english)
+        val resolved = registry.resolve(route, presentation, "ja")
+        assertEquals("Library", resolved.label.text)
+        assertEquals("Library navigation", resolved.a11y.text)
+        assertEquals("locale_missing", resolved.a11y.fallbackReason)
+        assertEquals(listOf("locale_missing"), resolved.fallbackReasons)
+    }
+
     @Test fun missingTranslationUsesEnglishWithAnExplicitReason() {
         val registry = PluginI18nRegistry()
         registry.register(namespace, "en", english)
