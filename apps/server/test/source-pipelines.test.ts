@@ -292,3 +292,12 @@ test('a missing pipeline can be replaced from its persisted storage contract',as
  runtime.registry.register({...original,id:'fixture.new',priority:2});
  assert.doesNotThrow(()=>runtime.configure('coding',{pipelineId:'fixture.new',settleSeconds:0}));await runtime.tick();assert.equal(materials.list().items.length,1);
 });
+
+test('quiesce keeps accepted-source memory authority while close retires it',async t=>{
+  const {runtime}=await fixture(t);
+  assert.equal(runtime.memoryAllowed('coding'),true);
+  runtime.quiesce();
+  assert.equal(runtime.memoryAllowed('coding'),true,'quiesce stops fresh polling without revoking accepted Memory grants');
+  await runtime.close();
+  assert.equal(runtime.memoryAllowed('coding'),false,'close retires the runtime authority');
+});

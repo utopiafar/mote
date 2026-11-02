@@ -20,6 +20,48 @@ data class FieldRef(val key: String, val labelKey: String? = null, val format: S
 data class FormFieldSpec(val key: String, val labelKey: String? = null, val input: String = "text", val required: Boolean = false)
 data class DeclarativeSpec(val components: List<DeclarativeNode>)
 
+/** The real submission path used by declarativePluginView's onClick: the
+ * declared controls are read through `read` (CheckBox->Boolean,
+ * EditText->raw String), serialized per input type, gated on busy and
+ * required — android-free so the production dispatch is JVM-verified.
+ * Numbers must be finite: NaN/Infinity are rejected before JSONObject.put
+ * could throw. */
+sealed interface FormSubmit {
+    data class Ready(val input: JSONObject) : FormSubmit
+    data class Rejected(val index: Int, val field: String, val reason: String) : FormSubmit
+    data object Busy : FormSubmit
+}
+
+object DeclarativeSubmit {
+    fun dispatch(fields: List<FormFieldSpec>, read: (FormFieldSpec) -> Any?, busy: () -> Boolean): FormSubmit {
+        if (busy()) return FormSubmit.Busy
+        val input = JSONObject()
+        for ((index, f) in fields.withIndex()) when (f.input) {
+            "boolean" -> {
+                val checked = read(f) as? Boolean ?: return FormSubmit.Rejected(index, f.key, "boolean required")
+                if (f.required && !checked) return FormSubmit.Rejected(index, f.key, "required")
+                input.put(f.key, checked)
+            }
+            "number" -> {
+                val raw = (read(f) as? String) ?: return FormSubmit.Rejected(index, f.key, "text required")
+                if (raw.isBlank()) {
+                    if (f.required) return FormSubmit.Rejected(index, f.key, "required")
+                } else {
+                    val number = raw.toDoubleOrNull()?.takeIf { it.isFinite() }
+                        ?: return FormSubmit.Rejected(index, f.key, "number required")
+                    input.put(f.key, number)
+                }
+            }
+            else -> {
+                val raw = (read(f) as? String) ?: return FormSubmit.Rejected(index, f.key, "text required")
+                if (f.required && raw.isBlank()) return FormSubmit.Rejected(index, f.key, "required")
+                input.put(f.key, raw)
+            }
+        }
+        return FormSubmit.Ready(input)
+    }
+}
+
 object DeclarativePluginView {
     private const val MAX_COMPONENTS = 64
     private const val MAX_FIELDS = 32

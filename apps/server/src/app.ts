@@ -16,7 +16,7 @@ import type {ModelProcessingAuthority} from './model-processing-authority.js';
 import {BackgroundModelAuthorization,modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
 import {ModelAuthorizationHost,agentModelConnection,captureModelIdentity,sourceModelIdentity} from './model-authorization-host.js';
 import {MODEL_FEATURES,DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
-import {executionObservability,type ObservationIdentity,type ObservationName} from './execution-observability.js';
+import type {ObservationIdentity,ObservationName} from './execution-observability.js';
 import {memoryIntegrationImageInputs} from './memory-image-grants.js';
 import {assertMemoryImageGrants} from './memory-image-grants.js';
 import {memoryReadRanges} from './memory-read-context.js';
@@ -40,12 +40,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { existsSync,readFileSync } from 'node:fs';
 import { dirname,join,relative,sep } from 'node:path';
-import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
 import { Actions } from './actions.js';
 import { ActivityProjection } from './activity.js';
-import { Operations } from './operations.js';
 import { assertCurrentDelegationSchema,DelegationRuntime } from './delegation-runtime.js';
 import { DelegatedQueryRuns } from './delegated-query-runs.js';
 import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityCheckpoint} from './query-quality-experiment.js';
@@ -53,7 +51,6 @@ import { registerMemoryDelegation } from './memory-delegation.js';
 import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { codingSourcePlugin } from './coding-source-plugin.js';
-import { ConcurrencyGate } from './concurrency.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
@@ -62,10 +59,10 @@ import { Conversations } from './conversations.js';
 import { combineDependencies,resolveDependencies } from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
-import { ServerDiagnostics,safeError,type AgentTraceContext } from './diagnostics.js';
+import { safeError,type AgentTraceContext } from './diagnostics.js';
 import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
-import { ExecutionEngine,ExecutionFailure } from './execution-engine.js';
+import { ExecutionFailure } from './execution-engine.js';
 import { ExecutionSettings,type ExecutionSettingsValue,type DiagnosticsSettingsValue } from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
 import { installServerFeatures } from './features/index.js';
@@ -110,7 +107,7 @@ import { linkOperationParent } from './operation-projection.js';
 import {ImageProcessing} from './image-processing.js';
 import {imageUnderstanding} from './image-understanding.js';
 import { ProcessingRuntime } from './processing-runtime.js';
-import { ProviderAdmission } from './provider-admission.js';
+import { createExecutionPlatform } from './plugins/execution-platform.js';
 import { PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput } from './python-source-pack-executor.js';
 import type {QueryScope} from './query-scope.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
@@ -119,7 +116,6 @@ import { conversationUnderstandingProcessor } from './conversation-understanding
 import { SourcePipelineRuntime } from './source-pipelines.js';
 import { SourceStore } from './sources.js';
 import { Store,StoreError,sha256 } from './store.js';
-import { createUpdateService } from './updates.js';
 import { UsageLedger } from './usage.js';
 import { WorkingMemory } from './working-memory.js';
 
@@ -145,7 +141,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   config=bootstrap.config;
   const configService=bootstrap.configService,store=bootstrap.store;
   resources.beforeClose(()=>configService.close());
-  const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();resources.defer(()=>eventLoop.disable());
   assertCurrentDelegationSchema(store);
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   let availableModelConnections=():ModelConnection[]=>[];
@@ -162,10 +157,20 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>backendContext.fiber.dispose());
   backendContext.provide('moteMaterials',materials);
   backendContext.provide('moteConfig',configService);
-  const runtimeSettings=new ExecutionSettings(configService),execution=runtimeSettings.execution(),providerAdmission=new ProviderAdmission(store);
-  const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
-  const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
-  resources.defer(()=>{agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();});
+  const runtimeSettings=new ExecutionSettings(configService);
+  const observability=await bootstrap.installObservabilityPlatform({
+    logDirectory:config.logDirectory??join(config.dataDir,'logs'),
+    diagnostics:{...runtimeSettings.diagnostics(),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries},
+    update:{currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel},
+    eventLoopResolutionMs:20,
+  });
+  const observabilityPlatform=observability.platform,observabilityScope=observability.scope,observabilityAssembly=observabilityPlatform.forAssembly(observability.scope);
+  const diagnostics=observabilityAssembly.diagnostics,executionObserver=observabilityAssembly.observer,eventLoop=observabilityAssembly.eventLoop,usageLedger=observabilityAssembly.usage,softwareUpdate=observabilityAssembly.softwareUpdate;
+  resources.defer(()=>observabilityPlatform.close());
+  const executionPlatform=createExecutionPlatform({store,modelAuthorization,settings:runtimeSettings});
+  resources.beforeClose(()=>executionPlatform.stop('shutdown'));
+  await executionPlatform.prepare();executionPlatform.start();
+  const {executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate}=executionPlatform.assembly;
   const modelContext=new AsyncLocalStorage<QueryInput>();
   const modelOperation=new AsyncLocalStorage<string>();
   // Accounting observes trusted admission boundaries, independently of model
@@ -185,18 +190,10 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       finally{diagnostics.record('agent.harness_timing',{jobId:input?.traceContext?.jobId,batchId:input?.traceContext?.batchId,lane,unit:'harness_session',queueWaitMs,durationMs:performance.now()-admittedAt,status},'info');}
     },signal??input?.signal,input?.traceContext?.operationId??modelOperation.getStore());
   };
-  const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
-  resources.defer(async()=>{diagnostics.record('server.stopping');await diagnostics.close();});
-  await diagnostics.init();
-  const executionObserver=executionObservability(diagnostics)!;
-  resources.defer(()=>executionObserver.close());
   const observationIdentity=(input:QueryInput):ObservationIdentity=>({jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,attempt:input.traceContext?.attempt,
     phase:input.traceContext?.phase==='coding-understanding'?'coding_understanding':input.traceContext?.phase==='review'?'review':'extract'});
   const observeMemory=<T>(input:QueryInput|undefined,name:ObservationName,work:()=>T):T=>input?.responseMode==='memory-extraction'?executionObserver.sync(name,observationIdentity(input),work):work();
   const observeMemoryAsync=<T>(input:QueryInput|undefined,name:ObservationName,work:()=>Promise<T>):Promise<T>=>input?.responseMode==='memory-extraction'?executionObserver.async(name,observationIdentity(input),work):work();
-  const executor=new ExecutionEngine(store);
-  resources.beforeClose(()=>executor.close());
-  executor.bindModelAuthority(modelAuthorization);
   executor.bindObserver(value=>executionObserver.lease(value),()=>executionObserver.enabled());
   backendContext.provide('moteExecution',executor);
   const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
@@ -218,22 +215,21 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const unsubscribeMedia=configService.onChange(()=>{try{if(mediaConfigurationIdentity()!==initialMediaConfiguration)mediaPreparation.invalidate();}catch{mediaPreparation.invalidate();}});
   resources.beforeClose(()=>mediaPreparation.close());resources.defer(unsubscribeMedia);
   if(dependencies?.backgroundWorker)mediaPreparation.resume();
-  const usageLedger=new UsageLedger(store);
   const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
-    let agentStarted=false,modelQueued=false,meter:ReturnType<UsageLedger['start']>|undefined;
-    const start=()=>meter??=usageLedger.start(...args);
-    const accounting={agentStarted:()=>{agentStarted=true;},modelQueued:()=>{modelQueued=true;},modelStarted:()=>{agentStarted=true;start();}};
+    let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
+    const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
+    const accounting={agentStarted:()=>{agentStarted=true;},modelQueued:()=>{modelQueued=true;},modelStarted:()=>{agentStarted=true;start().modelStarted();}};
     return {
       run:<T>(task:()=>Promise<T>)=>queryAccounting.run(accounting,task),
-      update:(tokens:import('@mote/shared').TokenUsage)=>start().update(tokens),
-      completed:()=>start().finish('completed'),
+      update:(tokens:import('@mote/shared').TokenUsage)=>{const current=start();current.modelStarted();current.update(tokens);},
+      completed:()=>{const current=start();current.modelStarted();return current.complete();},
       failed:(error:unknown)=>{
         const admissionWait=error instanceof ProviderFailure&&error.details.admissionWaiting===true;
-        if(agentStarted&&!modelQueued&&!admissionWait)start();
+        if(agentStarted&&!modelQueued&&!admissionWait){const current=start();current.modelStarted();}
         // Preserve issued calls and partial samples, but create no receipt for
         // a host refusal or queue cancellation before the first actual model
         // operation. Agents without a host model gate retain fallback accounting.
-        return meter?.finish('failed');
+        return meter?.fail();
       },
     };
   };
@@ -549,9 +545,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const connectors=await registerConnectors(app,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,ownerAuthorization:header=>{if(validBearer({headers:{authorization:header}}))return true;const c=connections.authenticate(header);return !!c&&connections.isOwner(c);},mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)},dependencies?.connectorTesting);
 
   resources.defer(()=>connectors.close());
-  const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
-
-  resources.defer(()=>softwareUpdate.close());
   // Bounded transport batch with independent durable acknowledgements. Validate the
   // entire envelope and credential scope before writing any member of the batch.
 
@@ -889,11 +882,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // C02 stops the worker before content accessors; DB remains alive until every
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
-  const activity=new ActivityProjection(store,new Operations(store),{delegation});
-  const applyExecution=(value:ExecutionSettingsValue)=>{
-    interactiveGate.configure(value.interactiveConcurrency);interactiveModelGate.configure(value.interactiveConcurrency);
-    agentGate.configure(value.agentConcurrency);llmGate.configure(value.llmConcurrency);
-  };
+  const activity=new ActivityProjection(store,executionPlatform.assembly.operations,{delegation});
+  const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(value);
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(next));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
@@ -912,17 +902,21 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('preClose',async()=>{
-    closing=true;executionObserver.close();executor.bindObserver(undefined);eventLoop.disable();queryRuns.interrupt();
-    featureHost.stop();automaticActivity.stop();memoryPublication.stop();
+    closing=true;featureHost.stop();
+    // Polling/admission stops without retiring the runtime's Memory authority;
+    // the runtime closes only after accepted engine work is interrupted/drained.
+    sourcePipelines.quiesce();
+    executionPlatform.quiesce('shutdown');
+    executor.bindObserver(undefined);eventLoop.disable();queryRuns.interrupt();
+    automaticActivity.stop();memoryPublication.stop();
     // Interrupt transports while handlers, checkpoints and storage remain live.
     await resources.stop();
-    agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();
   });
   app.addHook('onClose',async()=>resources.close());
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,bootstrap,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

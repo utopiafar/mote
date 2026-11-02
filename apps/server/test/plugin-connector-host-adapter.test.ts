@@ -29,10 +29,11 @@ function instanceScope(name:string):TestScope {
   });
   return {resources,scope,fence:()=>resources.stop(),close:()=>resources.close()};
 }
-function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void|Promise<void>;kind?:string;stringKind?:boolean;capabilities?:SourceCapabilityDescriptor}={}):ConnectorManifest {
+function manifest(id:string,options:{prefix?:string;statusKey?:string;onClose?:()=>void|Promise<void>;onInit?:()=>void|Promise<void>;kind?:string;stringKind?:boolean;capabilities?:SourceCapabilityDescriptor}={}):ConnectorManifest {
   const kind=options.kind??'generated.connector';
   return {apiVersion:1,id,sourceKinds:[options.stringKind?kind:{kind,capabilities:options.capabilities??capabilities}],...(options.statusKey?{statusKey:options.statusKey}:{}),
     create:()=>({
+      ...(options.onInit?{init:options.onInit}:{}),
       status:()=>({id}),
       configure:host=>{
         host.ownerRoute({method:'GET',path:`/api/connectors/${id}`,handler:()=>id});
@@ -76,6 +77,316 @@ test('adapter registers routes/OAuth/status through the dispatcher and releases 
   assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{});
   await adapter.close();
   assert.deepEqual(closed.sort(),['a','b']);
+});
+
+test('hot install/restart adds and removes one connector with shared OAuth',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-a',{statusKey:'a'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  await adapter.install(manifest('generated-hot-b',{statusKey:'b',prefix:'hot-b.'}));
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-b',headers})).body,'generated-hot-b');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=hot-b.${'a'.repeat(24)}&code=generated-code`)).body,'generated-hot-b');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{a:{id:'generated-hot-a'},b:{id:'generated-hot-b'}});
+  await adapter.stop('generated-hot-b');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-b',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-a',headers})).body,'generated-hot-a');
+  await adapter.restart('generated-hot-b');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-b',headers})).body,'generated-hot-b');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=hot-b.${'a'.repeat(24)}&code=generated-code`)).body,'generated-hot-b');
+  await adapter.close();
+});
+
+test('concurrent install/restart of the same id rejects instead of double activation',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-concurrent-a',{statusKey:'a'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const duplicate=manifest('generated-concurrent-b',{statusKey:'b',prefix:'concurrent-b.'});
+  const first=adapter.install(duplicate);const second=adapter.install(duplicate);
+  await assert.rejects(second,/already known/);await first;
+  assert.equal(adapter.inventory().filter(item=>item.id==='generated-concurrent-b'&&item.state==='active').length,1);
+  await adapter.stop('generated-concurrent-b');
+  const restartFirst=adapter.restart('generated-concurrent-b');const restartSecond=adapter.restart('generated-concurrent-b');
+  await assert.rejects(restartSecond,/already started/);await restartFirst;
+  assert.equal(adapter.inventory().filter(item=>item.id==='generated-concurrent-b'&&item.state==='active').length,1);
+  await adapter.close();
+});
+
+test('hot install init failure rolls back only its instance and siblings serve',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseInit!:()=>void,enteredInit!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseInit=resolve;}),entered=new Promise<void>(resolve=>{enteredInit=resolve;});
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseInit();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(manifest('generated-hot-init-fail',{statusKey:'fail',prefix:'init.' ,onInit:async()=>{enteredInit();await held;throw new Error('generated init failure');}}));
+  await entered;
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-ok',headers})).body,'generated-hot-ok');
+  releaseInit();
+  await assert.rejects(installing,/generated init failure/);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-init-fail',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-ok',headers})).body,'generated-hot-ok');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-hot-ok'}});
+  const failed=adapter.inventory().find(item=>item.id==='generated-hot-init-fail');assert.equal(failed?.state,'failed');assert.equal(failed?.active,false);assert.equal(failed?.error,'connector_failed');
+  await adapter.close();
+});
+
+test('hot stop close failure removes only that instance and siblings serve',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-close-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  await adapter.install(manifest('generated-close-fail',{statusKey:'fail',prefix:'close-fail.',onClose:()=>{throw new Error('generated close failure');}}));
+  await assert.rejects(adapter.stop('generated-close-fail'),/Connector instance stop failed/);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-close-fail',headers})).statusCode,404);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-close-ok',headers})).body,'generated-close-ok');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-close-ok'}});
+  const failed=adapter.inventory().find(item=>item.id==='generated-close-fail');assert.equal(failed?.state,'failed');assert.equal(failed?.active,false);assert.equal(failed?.error,'connector_failed');
+  await adapter.close();
+});
+
+test('hot install partial descriptor conflict rolls back earlier new kind',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-partial-owner',{statusKey:'owner'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const bad:ConnectorManifest={apiVersion:1,id:'generated-partial',sourceKinds:[
+    {kind:'generated.partial-new',capabilities},
+    {kind:'generated.connector',capabilities:{...capabilities,synchronization:'revisions'}},
+  ],create:()=>({status:()=>({id:'generated-partial'}),configure:()=>{},close:()=>{}})};
+  await assert.rejects(adapter.install(bad),/Connector source capability conflict/);
+  assert.equal(f.sources.capabilities.has('generated.partial-new'),false,'the partially registered descriptor is rolled back');
+  assert.equal(f.sources.capabilities.has('generated.connector'),true,'the owner capability remains');
+  const failed=adapter.inventory().find(item=>item.id==='generated-partial');assert.equal(failed?.state,'failed');
+  await adapter.close();
+});
+
+test('adapter close joins a pending hot install and its late cleanup',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void,releaseLate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;}),lateClose=new Promise<void>(resolve=>{releaseLate=resolve;});
+  let initialized=0,closed=0;
+  const late:ConnectorManifest={apiVersion:1,id:'generated-hot-late',sourceKinds:[{kind:'generated.hot-late',capabilities}],create:async()=>{enteredCreate();await held;return {init:()=>{initialized++;},close:()=>{closed++;return lateClose;}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-late-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseLate();resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const closing=adapter.close();let settled=false;void closing.then(()=>{settled=true;},()=>{settled=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'close joins the pending hot factory');
+  resolveCreate();await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'close joins the held late cleanup');
+  releaseLate();await closing;
+  await assert.rejects(installing);
+  assert.equal(initialized,0);assert.equal(closed,1);
+});
+
+test('stop during a pending hot install prevents late activation',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  let initialized=0;
+  const late:ConnectorManifest={apiVersion:1,id:'generated-hot-stop',sourceKinds:[{kind:'generated.hot-stop',capabilities}],create:async()=>{enteredCreate();await held;return {init:()=>{initialized++;},close:()=>{}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-hot-stop-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const stopping=adapter.stop('generated-hot-stop');resolveCreate();
+  await assert.rejects(installing);await stopping;
+  assert.equal(initialized,0);
+  assert.equal(adapter.inventory().some(item=>item.id==='generated-hot-stop'&&item.state==='active'),false);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-stop-ok',headers})).body,'generated-hot-stop-ok');
+  await adapter.close();
+});
+
+test('stop without fence starts scope close before shutdown and close joins it',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseClose!:()=>void,enteredClose!:()=>void;
+  const held=new Promise<void>(resolve=>{releaseClose=resolve;}),started=new Promise<void>(resolve=>{enteredClose=resolve;});
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-no-fence',{statusKey:'nf',onClose:async()=>{enteredClose();await held;}}),
+    manifest('generated-no-fence-sibling',{statusKey:'sib',prefix:'sib.'}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);if(m.id==='generated-no-fence')delete (scope as {fence?:unknown}).fence;scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseClose();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const stopping=adapter.stop('generated-no-fence');await started;
+  assert.ok([404,503].includes((await f.app.inject({url:'/api/connectors/generated-no-fence',headers})).statusCode));
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-no-fence-sibling',headers})).body,'generated-no-fence-sibling');
+  const closing=adapter.close();let settled=false;void closing.then(()=>{settled=true;},()=>{settled=true;});
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false,'close joins the in-progress stop');
+  releaseClose();await stopping;await closing;assert.equal(settled,true);
+});
+
+test('late disposal failure during close is aggregated',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  const late:ConnectorManifest={apiVersion:1,id:'generated-close-cleanup-fail',sourceKinds:[{kind:'generated.close-cleanup',capabilities}],create:async()=>{enteredCreate();await held;return {close:()=>{throw new Error('generated late cleanup failure');}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-close-cleanup-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const closing=adapter.close();resolveCreate();
+  await assert.rejects(closing,/Connector host adapter disposal failed/);
+  await assert.rejects(installing);
+});
+
+test('late disposal failure during stop is aggregated',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  const late:ConnectorManifest={apiVersion:1,id:'generated-stop-cleanup-fail',sourceKinds:[{kind:'generated.stop-cleanup',capabilities}],create:async()=>{enteredCreate();await held;return {close:()=>{throw new Error('generated late stop cleanup failure');}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-stop-cleanup-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const stopping=adapter.stop('generated-stop-cleanup-fail');resolveCreate();
+  await assert.rejects(stopping,/Connector instance stop failed/);
+  await assert.rejects(installing);
+});
+
+test('stop closes a non-idempotent scope exactly once',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let closes=0;
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-single-close',{statusKey:'s'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const base=instanceScope(m.id);const scope:TestScope={...base,close:()=>{closes++;return closes>1?Promise.reject(new Error('generated double close')):base.close();}};scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();await adapter.stop('generated-single-close');
+  assert.equal(closes,1);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-single-close',headers})).statusCode,404);
+  await adapter.close();
+});
+
+test('stop during held create closes a non-idempotent scope once',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void,closes=0;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  const late:ConnectorManifest={apiVersion:1,id:'generated-held-stop-ni',sourceKinds:[{kind:'generated.held-stop',capabilities}],create:async()=>{enteredCreate();await held;return {close:()=>{}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-held-stop-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const base=instanceScope(m.id);const scope:TestScope=m.id==='generated-held-stop-ni'?{...base,close:()=>{closes++;return closes>1?Promise.reject(new Error('generated double close')):base.close();}}:base;scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const stopping=adapter.stop('generated-held-stop-ni');resolveCreate();
+  await assert.rejects(installing);await stopping;
+  assert.equal(closes,1);
+  await adapter.close();
+});
+
+test('close during held create closes a non-idempotent scope once',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void,closes=0;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  const late:ConnectorManifest={apiVersion:1,id:'generated-held-close-ni',sourceKinds:[{kind:'generated.held-close',capabilities}],create:async()=>{enteredCreate();await held;return {close:()=>{}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-held-close-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const base=instanceScope(m.id);const scope:TestScope=m.id==='generated-held-close-ni'?{...base,close:()=>{closes++;return closes>1?Promise.reject(new Error('generated double close')):base.close();}}:base;scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const closing=adapter.close();resolveCreate();
+  await closing;await assert.rejects(installing);
+  assert.equal(closes,1);
+});
+
+test('late cleanup failure settled before close is retained for shutdown',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveCreate!:()=>void,enteredCreate!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveCreate=resolve;}),entered=new Promise<void>(resolve=>{enteredCreate=resolve;});
+  const late:ConnectorManifest={apiVersion:1,id:'generated-retained-cleanup',sourceKinds:[{kind:'generated.retained',capabilities}],create:async()=>{enteredCreate();await held;return {close:()=>{throw new Error('generated retained cleanup failure');}};}};
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-retained-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveCreate();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const installing=adapter.install(late);await entered;
+  const stopping=adapter.stop('generated-retained-cleanup');resolveCreate();
+  await assert.rejects(stopping,/Connector instance stop failed/);
+  await assert.rejects(installing);
+  await assert.rejects(adapter.close(),/Connector host adapter disposal failed/);
+});
+
+test('hot restart while old scope close is held keeps the replacement route and OAuth',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let releaseOld!:()=>void,enteredOld!:()=>void,firstClose=true;
+  const held=new Promise<void>(resolve=>{releaseOld=resolve;}),started=new Promise<void>(resolve=>{enteredOld=resolve;});
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-replace',{statusKey:'r',onClose:()=>{if(firstClose){firstClose=false;enteredOld();return held;}}})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{releaseOld();for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const stopping=adapter.stop('generated-replace');await started;
+  await adapter.restart('generated-replace');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-replace',headers})).body,'generated-replace');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=${'a'.repeat(24)}&code=generated-code`)).body,'generated-replace');
+  releaseOld();await stopping;
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-replace',headers})).body,'generated-replace','old scope cleanup must not delete the replacement route');
+  assert.equal((await f.app.inject(`/oauth/shared/callback?state=${'a'.repeat(24)}&code=generated-code`)).body,'generated-replace','old cleanup must not delete the replacement callback');
+  await adapter.close();
+});
+
+test('initial start init failure leaves siblings serving',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-start-ok',{statusKey:'ok'}),
+    manifest('generated-start-fail',{statusKey:'fail',prefix:'start-fail.',onInit:async()=>{throw new Error('generated initial init failure');}}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-start-ok',headers})).body,'generated-start-ok');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-start-fail',headers})).statusCode,404);
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-start-ok'}});
+  const inventory=adapter.inventory(),ok=inventory.find(item=>item.id==='generated-start-ok'),failed=inventory.find(item=>item.id==='generated-start-fail');
+  assert.equal(ok?.state,'active');assert.equal(failed?.state,'failed');assert.equal(failed?.active,false);assert.equal(failed?.error,'connector_failed');
+  await adapter.close();
+});
+
+test('initial start with all failures keeps diagnostic inventory and a restartable container',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let attempts=0;
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-all-fail-a',{statusKey:'a',onInit:()=>{attempts++;if(attempts===1)throw new Error('generated fail a');}}),
+    manifest('generated-all-fail-b',{statusKey:'b',prefix:'all-fail-b.',onInit:async()=>{throw new Error('generated fail b');}}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  assert.deepEqual(adapter.inventory().map(item=>[item.id,item.state]),[['generated-all-fail-a','failed'],['generated-all-fail-b','failed']]);
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{});
+  await adapter.stop('generated-all-fail-a');
+  await adapter.restart('generated-all-fail-a');
+  assert.equal(attempts,2);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-all-fail-a',headers})).body,'generated-all-fail-a');
+  assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{a:{id:'generated-all-fail-a'}});
+  assert.equal(adapter.inventory().find(item=>item.id==='generated-all-fail-b')?.state,'failed');
+  await adapter.close();
+});
+
+test('restart retries a failed inventory entry with a fresh scope',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-retry-ok',{statusKey:'ok'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  let attempts=0;
+  const retry=manifest('generated-retry',{statusKey:'retry',prefix:'retry.',onInit:()=>{attempts++;if(attempts===1)throw new Error('generated transient init');}});
+  await assert.rejects(adapter.install(retry),/generated transient init/);
+  assert.equal(adapter.inventory().find(item=>item.id==='generated-retry')?.state,'failed');
+  await adapter.stop('generated-retry');
+  assert.equal(adapter.inventory().some(item=>item.id==='generated-retry'),false,'stop clears the failed fact');
+  await adapter.restart('generated-retry');
+  assert.equal(attempts,2);
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-retry',headers})).body,'generated-retry');
+  assert.equal(adapter.inventory().find(item=>item.id==='generated-retry')?.state,'active');
+  assert.equal(scopes.filter(scope=>scope.scope.identity.instanceId==='generated-retry').length,2,'restart uses a fresh scope');
+  await adapter.close();
 });
 
 test('adapter rejects conflicting source capability descriptors before instances start',async t=>{
