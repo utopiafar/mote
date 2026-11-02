@@ -129,6 +129,9 @@ test('quiesce fences new upload and metadata admissions while admitted work drai
   await assert.rejects(files.revision(reference,()=>{}),{statusCode:503});
   await assert.rejects(files.manifestBatch({items:[{sourceId,previousRevision:null,item:reference.item}]},()=>{}),{statusCode:503});
   assert.throws(()=>f.source.assemblyForRoutes(),{statusCode:503});
+  assert.throws(()=>(files.begin as any)(manifest(bytes,'public-bypass'),()=>{},true),{statusCode:503},'extra public arguments cannot bypass quiesce');
+  await assert.rejects((files.revision as any)(reference,()=>{},undefined,true),{statusCode:503},'extra public arguments cannot bypass quiesce');
+  await assert.rejects((files.commit as any)(late.uploadId,()=>{},undefined,true),{statusCode:503},'extra public arguments cannot bypass quiesce');
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,2);
 });
 

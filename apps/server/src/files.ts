@@ -77,7 +77,7 @@ export class FileStore {
     }
     const results=[];
     for(const input of normalized){
-      try{const ack=input.sha256&&!input.item.deleted?this.begin(input,authorize,true):await this.revision(input,authorize,undefined,true);results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});}
+      try{const ack=input.sha256&&!input.item.deleted?this.beginAdmitted(input,authorize):await this.revisionAdmitted(input,authorize);results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});}
       catch(error){if(!(error instanceof StoreError))throw error;results.push({externalId:input.item.externalId,revision:input.item.revision,state:'rejected',status:error.statusCode});}
     }
     return {results};
@@ -88,8 +88,13 @@ export class FileStore {
   private assertAdmitting(){if(this.closed)throw new StoreError('File uploads are closed',503);if(!this.admitting)throw new StoreError('File writes are quiescing',503);}
   /** Owner-scope quiesce boundary; close() also stops admissions. */
   fenceAdmissions(){this.admitting=false;}
-  begin(raw:unknown,authorize:(sourceId:string)=>void,admitted=false){
-    if(admitted)this.assertOpen();else this.assertAdmitting();
+  begin(raw:unknown,authorize:(sourceId:string)=>void){
+    this.assertAdmitting();
+    return this.beginAdmitted(raw,authorize);
+  }
+  /** Continue an already admitted batch/recovery under its original grant. */
+  private beginAdmitted(raw:unknown,authorize:(sourceId:string)=>void){
+    this.assertOpen();
     const input=fileRevisionSchema.parse(raw);authorize(input.sourceId);this.allowed(input);
     if(!input.sha256||!['original','snapshot'].includes(input.item.layer)||input.item.deleted)throw new StoreError('Upload sessions require an original file');
     const manifest=JSON.stringify(input),fingerprint=sha256(manifest);
@@ -141,7 +146,7 @@ export class FileStore {
     if(head&&!head.deleted&&this.store.isCurrentEvidence(head.captureId)&&prior?.object_hash===hash&&head.title===item.title&&head.uri===item.uri&&head.document?.recordedAt===item.document?.recordedAt&&head.document?.timeBasis===item.document?.timeBasis&&head.document?.contentRole===item.document?.contentRole){authorize();return {id:head.captureId,duplicate:true};}
     const revision=sha256(JSON.stringify([hash,item.title,item.uri,item.document,head?.revision??null]));
     const asset=this.store.assets.put(bytes);
-    try{return await this.revision({sourceId,relativePath:`recordings/${sha256(item.externalId)}.json`,previousRevision:head?.revision??null,
+    try{return await this.revisionAdmitted({sourceId,relativePath:`recordings/${sha256(item.externalId)}.json`,previousRevision:head?.revision??null,
       item:{...item,revision,text:'',layer:'original',mimeType:'application/json'},sha256:hash,sizeBytes:bytes.length},()=>authorize(),captureId=>{
       const artifactId=randomUUID();
       this.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)')
@@ -149,7 +154,7 @@ export class FileStore {
       writeFileTranscriptChunks(this.store,captureId,artifactId,transcript,{kind:'transcript'});
       this.store.db.prepare("UPDATE file_jobs SET state='succeeded',stage='complete' WHERE capture_id=?").run(captureId);
       return {id:captureId,duplicate:false};
-    },true);}finally{asset.release();}
+    });}finally{asset.release();}
   });}
   async commit(id:string,authorize:(sourceId:string)=>void,signal?:AbortSignal){
     // A final already in flight drains or aborts through the signal; a new
@@ -164,15 +169,20 @@ export class FileStore {
     const {release}=await this.store.assets.putUpload(join(this.uploads,id),parts,input.sizeBytes,hash,cancellation);
     try{
     this.session(id,authorize);cancellation.throwIfAborted();
-    const ack=await this.revision(input,sourceId=>{cancellation.throwIfAborted();authorize(sourceId);},(captureId)=>{
+    const ack=await this.revisionAdmitted(input,sourceId=>{cancellation.throwIfAborted();authorize(sourceId);},(captureId)=>{
       const value={id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:hash,sha256:hash,sizeBytes:input.sizeBytes,duplicate:false};
       this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(value),id);return value;
-    },true);
+    });
     this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(ack),id);await rm(join(this.uploads,id),{recursive:true,force:true});return ack;
     }finally{release();}
   });}
-  async revision(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown,admitted=false):Promise<any>{
-    if(admitted)this.assertOpen();else this.assertAdmitting();
+  async revision(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown):Promise<any>{
+    this.assertAdmitting();
+    return this.revisionAdmitted(raw,authorize,onCommit);
+  }
+  /** Continue an already admitted upload/batch/revision under its original grant. */
+  private async revisionAdmitted(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown):Promise<any>{
+    this.assertOpen();
     const input=fileRevisionSchema.parse(raw);return this.serialize('item:'+input.sourceId+':'+input.item.externalId,async()=>{
       authorize(input.sourceId);this.allowed(input);
       const prior=this.store.db.prepare('SELECT * FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as Version|undefined;
@@ -215,7 +225,7 @@ export class FileStore {
     const release=this.store.assets.hold(file.hash);
     try{
       if(this.store.assets.get(file.hash).bytes!==file.sizeBytes)throw new StoreError('Archived media byte size changed',409);
-      return await this.revision(input,authorize,id=>{onCommit?.(id);return {id,captureId:id,sourceId,externalId,revision,duplicate:false};},true);
+      return await this.revisionAdmitted(input,authorize,id=>{onCommit?.(id);return {id,captureId:id,sourceId,externalId,revision,duplicate:false};});
     }finally{release();}
   }
   private commitMetadata(input:FileRevision,captureId:string){
@@ -253,7 +263,7 @@ export class FileStore {
     const v=this.version(id);authorize(v.source_id);const manifest=JSON.parse(v.manifest) as FileRevision;this.allowed(manifest);
     const source=this.sources.getSource(v.source_id);
     if(source.retention!=='snapshot'||manifest.item.layer!=='snapshot'||!manifest.sha256||this.sources.getItem(v.source_id,v.external_id)?.revision!==v.revision)throw new StoreError('Snapshot input recovery is not current or authorized',409);
-    return this.begin(manifest,authorize,true);
+    return this.beginAdmitted(manifest,authorize);
   }
   version(id:string){const v=this.store.db.prepare('SELECT * FROM file_versions WHERE capture_id=?').get(id) as Version|undefined;if(!v)throw new StoreError('File not found',404);return v;}
   detail(id:string,includeArtifacts=true){
