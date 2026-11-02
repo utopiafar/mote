@@ -1,8 +1,8 @@
 /** Restricted IPC registration owned by plugin scopes. Every invoke is checked
- * against the actual sender, main-frame identity, window role, declaring
- * instance and capability before a handler may run; failure denies the call
- * with no local write or native effect, and disposal revokes every handler,
- * subscription and timer the scope registered. */
+ * against the actual sender, main-frame identity, window role, calling
+ * instance/capability and the provider's declared capability before a handler
+ * may run; failure denies the call with no local write or native effect, and
+ * disposal revokes only the channels that scope actually owns. */
 export type WindowRole = 'main' | 'quick-note' | 'settings';
 
 /** The verified facts about one invoke, produced by the real Electron adapter
@@ -23,10 +23,13 @@ export interface IpcRouter {
 
 export interface IpcServiceSpec {
   readonly channel: string;
-  /** Capability the caller's scope must actually hold. */
+  /** Capability the PROVIDING scope must hold to offer this service. */
   readonly capability: string;
-  /** Allowed window roles; a call from any other role is denied. */
+  /** Allowed window roles; omitted means the main window only. */
   readonly windowRoles?: readonly WindowRole[];
+  /** Capability the CALLING window/scope must hold; omitted = any registered
+   * window of an allowed role may call. */
+  readonly callerCapability?: string;
   /** Default true: only the main frame may invoke plugin IPC. */
   readonly mainFrameOnly?: boolean;
 }
@@ -40,48 +43,81 @@ export interface ScopeAccess {
   isRevoked(): boolean;
 }
 
-/** A registered plugin scope's IPC surface. The host owns the windows table;
- * unregistered senders are never trusted. */
+export interface WindowFacts {readonly role: WindowRole; readonly capabilities: ReadonlySet<string>}
+
+/** Host-wide channel ownership: a conflicting scope never records or removes
+ * another scope's handler. */
+export class ChannelOwnership {
+  #owners = new Map<string, string>();
+  claim(channel: string, ownerId: string): boolean {
+    const existing = this.#owners.get(channel);
+    if (existing !== undefined && existing !== ownerId) return false;
+    this.#owners.set(channel, ownerId);
+    return true;
+  }
+  release(channel: string, ownerId: string): void {
+    if (this.#owners.get(channel) === ownerId) this.#owners.delete(channel);
+  }
+}
+
 export class IpcScope {
   readonly access: ScopeAccess;
   #router: IpcRouter;
-  #windows: ReadonlyMap<number, WindowRole>;
+  #windows: ReadonlyMap<number, WindowFacts>;
+  #ownership: ChannelOwnership;
   #registrations = new Map<string, IpcServiceSpec>();
 
-  constructor(access: ScopeAccess, router: IpcRouter, windows: ReadonlyMap<number, WindowRole>) {
+  constructor(access: ScopeAccess, router: IpcRouter, windows: ReadonlyMap<number, WindowFacts>, ownership: ChannelOwnership) {
     this.access = access;
     this.#router = router;
     this.#windows = windows;
+    this.#ownership = ownership;
   }
 
   get channels(): readonly string[] { return [...this.#registrations.keys()]; }
 
+  /** Claim channel ownership first so a conflicting scope never reaches the
+   * router, and record the registration only after the handler is actually
+   * installed — rollback can then never remove another plugin's handler. */
   register(spec: IpcServiceSpec, handler: IpcListener): void {
-    if (this.#registrations.has(spec.channel)) throw new TypeError(`IPC channel already registered: ${spec.channel}`);
+    if (this.#registrations.has(spec.channel) || !this.#ownership.claim(spec.channel, this.access.instanceId))
+      throw new TypeError(`IPC channel already registered: ${spec.channel}`);
+    try {
+      this.#router.handle(spec.channel, (view, args) => this.#invoke(spec, view, handler, args));
+    } catch (error) {
+      this.#ownership.release(spec.channel, this.access.instanceId);
+      throw error;
+    }
     this.#registrations.set(spec.channel, spec);
-    this.#router.handle(spec.channel, (view, args) => this.#invoke(spec, view, handler, args));
   }
 
-  #invoke(spec: IpcServiceSpec, view: IpcCallerView, handler: IpcListener, args: readonly unknown[]): IpcInvokeResult {
+  /** The envelope awaits the handler so a nested promise never crosses the
+   * structured-clone boundary; a rejected handler propagates through the
+   * listener instead of masquerading as success. */
+  async #invoke(spec: IpcServiceSpec, view: IpcCallerView, handler: IpcListener, args: readonly unknown[]): Promise<IpcInvokeResult> {
     const denial = this.#check(spec, view);
     if (denial) return {ok: false, denial};
-    return {ok: true, value: handler(view, args)};
+    return {ok: true, value: await handler(view, args)};
   }
 
   #check(spec: IpcServiceSpec, view: IpcCallerView): IpcDenial | null {
     if (this.access.isRevoked()) return 'scope-revoked';
-    const role = this.#windows.get(view.senderId);
-    if (role === undefined) return 'unknown-sender';
+    const caller = this.#windows.get(view.senderId);
+    if (caller === undefined) return 'unknown-sender';
     if (spec.mainFrameOnly !== false && !view.frameIsMain) return 'subframe';
-    if (spec.windowRoles && !spec.windowRoles.includes(role)) return 'wrong-window';
-    if (role !== view.windowRole) return 'wrong-window';
+    const allowedRoles = spec.windowRoles ?? ['main'];
+    if (!allowedRoles.includes(caller.role) || caller.role !== view.windowRole) return 'wrong-window';
     if (!this.access.capabilities.has(spec.capability)) return 'no-capability';
+    if (spec.callerCapability !== undefined && !caller.capabilities.has(spec.callerCapability)) return 'no-capability';
     return null;
   }
 
-  /** Revoke every handler this scope registered; other scopes keep theirs. */
+  /** Revoke only the channels this scope actually owns. */
   dispose(): void {
-    for (const channel of this.#registrations.keys()) this.#router.removeHandler(channel);
+    for (const channel of this.#registrations.keys()) {
+      this.#router.removeHandler(channel);
+      this.#ownership.release(channel, this.access.instanceId);
+    }
     this.#registrations.clear();
   }
 }
