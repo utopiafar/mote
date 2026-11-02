@@ -7,7 +7,7 @@ import {evaluateHostCandidate,hostOutputPolicy} from './host/output.js';
 import type {RuntimeOutcome} from './runtime/contracts.js';
 import {randomUUID} from 'node:crypto';
 import {startBridge} from './bridge.js';
-import {contextToolDefinitions,contextToolSnapshot,pinContextTools} from './tool-contributions.js';
+import {contextToolDefinitions,contextToolSnapshot,pinContextTools,releaseContextTools} from './tool-contributions.js';
 import {toolInputSchema,toCodexTool} from './tools/runtime-schema.js';
 import {codexImageMetadata,type ImagePayload} from './tools/image-result.js';
 import {CodexSession,type CodexTool} from './codex-session.js';
@@ -29,6 +29,9 @@ export function createCodexAgent(options:AgentOptions){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<AgentAnswer>>();
   async function execute(input:QueryInput):Promise<AgentAnswer>{
     input=pinContextTools({...input,...(input.evidenceReadRanges?{evidenceReadRanges:Object.freeze(input.evidenceReadRanges.map(range=>Object.freeze({...range})))}:{}),...(options.contextToolMode?{hostContextToolMode:options.contextToolMode}:{})},options.reader);
+    let primaryFailure=false,released=false;
+    const releasePinnedTools=()=>{if(released)return;released=true;releaseContextTools(input);};
+    try{
     // One pinned snapshot for this run: tool schemas and the later per-call pin
     // checks must read the same registration identities, never a rebuilt one.
     const toolSnapshot=contextToolSnapshot(input);
@@ -48,7 +51,6 @@ export function createCodexAgent(options:AgentOptions){
     let bridge:Awaited<ReturnType<typeof startBridge>>;
     try{bridge=await startBridge(options.reader,{...input,onTrace:trace},options.maxToolCalls);}catch(error){trace({type:'run.failed',stage:'starting',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError'}});throw error;}
     let session:CodexSession|undefined;
-    let primaryFailure=false;
     let reading:Promise<AgentAnswer>|undefined;
     let accepted:AgentAnswer|undefined;
     const abort=()=>{session?.cancel(input.signal?.reason);void session?.close();};
@@ -115,9 +117,16 @@ export function createCodexAgent(options:AgentOptions){
       if(cleanupErrors.length)trace({type:'run.cleanup_failed',status:'failed',payload:{count:cleanupErrors.length}});
       if(!primaryFailure){
         if(cleanupErrors.length)throw new AgentProviderError();
-        input.signal?.throwIfAborted();if(closed)throw new AgentProviderError();input.assertContextAuthority?.();
+        input.signal?.throwIfAborted();if(closed)throw new AgentProviderError();input.assertContextAuthority?.();assertToolPins();
         if(accepted)trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:accepted.citations.map(citation=>citation.id),toolCalls:accepted.trace}});
       }
+    }
+    }catch(error){primaryFailure=true;throw error;}
+    finally{
+      // The Host run owns the pinned registry. Release only after the final
+      // scope/pin check above, and never let a release failure replace the
+      // primary error.
+      try{releasePinnedTools();}catch(error){if(!primaryFailure)throw error;}
     }
   }
   return {configured:Boolean(options.model?.trim()),query(input:QueryInput){const task=execute(input);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};
