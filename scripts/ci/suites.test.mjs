@@ -5,6 +5,15 @@ import { scopes, automaticTasks } from './select.mjs';
 import { taskPlan, manualPlan, serverFiles, listTests, scaleFiles, largeMemoryCase, manualScopes, verifyInventory, automaticSkipPattern, manualCases } from './suites.mjs';
 import { verifyGate } from './gate.mjs';
 
+test('only server consumers build the Cordis host before application libraries', () => {
+  for (const task of ['server-build', 'server-contract', 'server-1', 'server-2', 'server-3', 'server-4']) {
+    assert.deepEqual(taskPlan(task).slice(0, 3).map(step => step.args.at(-1)), ['@mote/plugin-host', '@mote/shared', '@mote/agent']);
+  }
+  for (const task of ['shared', 'web', 'web-contract', 'agent', 'agent-contract', 'desktop', 'desktop-contract']) {
+    assert.ok(!taskPlan(task).some(step => step.args.includes('@mote/plugin-host')), task);
+  }
+});
+
 test('Server shards plus explicit scale cases cover the original glob once, with all short Memory guards automatic', () => {
   const inventory = verifyInventory();
   assert.equal(inventory.serverFiles, listTests('apps/server/test', '.test.ts').length);

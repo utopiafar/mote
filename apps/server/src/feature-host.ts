@@ -2,37 +2,10 @@ import {Context} from '@deepseek-ai/cordis';
 import {FeatureRegistry,type FeatureManifest,type FeatureSurface} from '@mote/shared';
 import type {FastifyInstance} from 'fastify';
 import {collectorIngressWrite} from './ingress.js';
+import {PluginResourceScope} from '@mote/plugin-host';
 
-export class ServerFeatureScope {
-  private disposers:Array<()=>unknown|Promise<unknown>>=[];
-  private retiring:Array<()=>unknown|Promise<unknown>>=[];
-  private timers=new Set<ReturnType<typeof setInterval>>();
-  private pending=new Set<Promise<unknown>>();
-  private closing?:Promise<void>;
-  active=true;
-  constructor(private onError:(error:unknown)=>void=()=>{}){}
-  run(work:()=>unknown|Promise<unknown>){
-    if(!this.active)return Promise.resolve();
-    const task=Promise.resolve().then(()=>this.active?work():undefined);this.pending.add(task);
-    void task.catch(error=>this.onError(error)).finally(()=>this.pending.delete(task));return task;
-  }
-  defer(dispose:()=>unknown|Promise<unknown>){if(!this.active)throw Error('Feature is closed');this.disposers.push(dispose);}
-  /** Retire capabilities only after runtime disposal and scheduled work settle. */
-  retire(dispose:()=>unknown|Promise<unknown>){if(!this.active)throw Error('Feature is closed');this.retiring.push(dispose);}
-  every(ms:number,work:()=>unknown|Promise<unknown>){
-    let running=false;
-    const timer=setInterval(()=>{if(!this.active||running)return;running=true;void this.run(work).catch(()=>{}).finally(()=>{running=false;});},ms);
-    timer.unref();this.timers.add(timer);
-  }
-  /** Stop admission and timers before the executor drains; keep resources alive. */
-  stop(){this.active=false;for(const timer of this.timers)clearInterval(timer);this.timers.clear();}
-  close(){return this.closing??=(async()=>{this.stop();
-    const errors:unknown[]=[];
-    for(const dispose of this.disposers.reverse())try{await dispose();}catch(error){errors.push(error);}
-    await Promise.allSettled([...this.pending]);
-    for(const dispose of this.retiring.reverse())try{await dispose();}catch(error){errors.push(error);}
-    if(errors.length)throw new AggregateError(errors,'Feature disposal failed');
-  })();}
+export class ServerFeatureScope extends PluginResourceScope {
+  constructor(onError:(error:unknown)=>void=()=>{}){super(onError,'Feature disposal failed');}
 }
 
 /** Trusted, build-time server entries. HTTP topology changes require restart.

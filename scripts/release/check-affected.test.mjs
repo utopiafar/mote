@@ -32,6 +32,8 @@ test('local intake checks run the real Kotlin consumer once, focused for produce
       assert.equal(contracts[0].args.includes('--all-unit-tests'), event !== 'push' && path.startsWith('apps/android/'));
       assert.equal(plan.filter(step => step.command === 'apps/android/gradlew').length, 0, 'the runner owns the sole Gradle invocation');
       for (const workspace of ['@mote/shared', '@mote/agent']) assert.ok(plan.some(step => step.command === 'npm' && step.args.includes('build') && step.args.includes(workspace)));
+      const consumer = plan.indexOf(contracts[0]);
+      assert.deepEqual(plan.slice(consumer - 3, consumer).map(step => step.args.at(-1)), ['@mote/plugin-host', '@mote/shared', '@mote/agent']);
     }
   }
   const unrelated = checkPlan(selectScopes(['apps/server/src/memory-review.ts']));

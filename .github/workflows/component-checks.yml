@@ -84,7 +84,7 @@ jobs:
         if: needs.affected.outputs.android_contract == 'true'
       - run: npm rebuild better-sqlite3
         if: needs.affected.outputs.android_contract == 'true'
-      - run: npm run build -w @mote/shared && npm run build -w @mote/agent
+      - run: npm run build -w @mote/plugin-host && npm run build -w @mote/shared && npm run build -w @mote/agent
         if: needs.affected.outputs.android_contract == 'true'
       - name: Kotlin units and real Central consumption
         if: needs.affected.outputs.android == 'true' && needs.affected.outputs.android_contract == 'true'

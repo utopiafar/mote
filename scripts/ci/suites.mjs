@@ -29,6 +29,8 @@ const server = (files, ...options) => {
 const sharedBuild = () => npm('build', '-w', '@mote/shared');
 const agentBuild = () => npm('build', '-w', '@mote/agent');
 const libs = () => [sharedBuild(), agentBuild()];
+// Server runtime adapters consume plugin-host. Its prebuild builds plugin-api.
+const serverLibs = () => [npm('build', '-w', '@mote/plugin-host'), ...libs()];
 export function taskPlan(task, root = '.', selectedServer = ['all']) {
   if (task === 'architecture') return [node('scripts/ci/architecture.mjs')];
   if (task === 'central-units') return [
@@ -48,9 +50,9 @@ export function taskPlan(task, root = '.', selectedServer = ['all']) {
   if (task === 'web') return [...libs(), npm('build', '-w', '@mote/web'), npm('test', '-w', '@mote/web')];
   if (task === 'web-contract') return [sharedBuild(), node('--import', 'tsx', '--test', 'apps/web/test/api.test.ts')];
   if (task === 'agent' || task === 'agent-contract') return [...libs(), node('--test', ...(task === 'agent' ? listTests('packages/agent/test', '.test.mjs', root) : ['packages/agent/test/task-context.test.mjs', 'packages/agent/test/tool-contributions.test.mjs']))];
-  if (task === 'server-build') return [...libs(), npm('build', '-w', '@mote/server')];
-  if (/^server-[1-4]$/.test(task)) return [...libs(), server(serverFiles(Number(task.at(-1)), root, selectedServer), '--test-skip-pattern', automaticSkipPattern)];
-  if (task === 'server-contract') return [...libs(), npm('build', '-w', '@mote/server'), server(['apps/server/test/connections.test.ts', 'apps/server/test/runtime-listener.test.ts']), node('--test', 'scripts/update-tests.mjs', 'scripts/update-deployment-tests.mjs'), node('scripts/test-central-runner.mjs')];
+  if (task === 'server-build') return [...serverLibs(), npm('build', '-w', '@mote/server')];
+  if (/^server-[1-4]$/.test(task)) return [...serverLibs(), server(serverFiles(Number(task.at(-1)), root, selectedServer), '--test-skip-pattern', automaticSkipPattern)];
+  if (task === 'server-contract') return [...serverLibs(), npm('build', '-w', '@mote/server'), server(['apps/server/test/connections.test.ts', 'apps/server/test/runtime-listener.test.ts']), node('--test', 'scripts/update-tests.mjs', 'scripts/update-deployment-tests.mjs'), node('scripts/test-central-runner.mjs')];
   if (task === 'desktop' || task === 'desktop-contract') {
     const plan = [...libs(), npm('build', '-w', '@mote/diagnostics')];
     if (task === 'desktop') plan.push(npm('typecheck', '-w', '@mote/desktop'), npm('test', '-w', '@mote/diagnostics'), npm('test', '-w', '@mote/desktop'));

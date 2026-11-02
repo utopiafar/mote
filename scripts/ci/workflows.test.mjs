@@ -35,6 +35,7 @@ test('Android workflow keeps focused producer contracts and combines consumer un
   assert.ok(setup.some(step => step.run === 'npm ci --ignore-scripts'));
   assert.ok(setup.some(step => step.run === 'npm rebuild better-sqlite3'));
   assert.ok(setup.some(step => step.run?.includes('@mote/shared') && step.run.includes('@mote/agent')));
+  assert.ok(setup.some(step => step.run === 'npm run build -w @mote/plugin-host && npm run build -w @mote/shared && npm run build -w @mote/agent'));
   const execution = android.steps.filter(step => /central-kotlin-contract|gradlew/.test(step.run ?? ''));
   const enabled = (condition, units, contract) => Function('return ' + condition.replaceAll('needs.affected.outputs.android_contract', JSON.stringify(String(contract))).replaceAll('needs.affected.outputs.android', JSON.stringify(String(units))))();
   for (const [units, contract, expected] of [
