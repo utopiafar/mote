@@ -29,12 +29,20 @@ const help = `Mote central profiles (Node 24+, default: dev; prod requires --pro
   update [--profile NAME] [--home PATH] [--version VERSION]
   rollback --restore-data [--profile NAME] [--home PATH]
   plugin-dev create|dev|stop ... (external source template; private generated profile/dynamic port)
+  plugin-pack --manifest FILE --payload DIR --out DIR
+  plugin-validate --manifest FILE --zip FILE [--host central] [--host-dependencies JSON]
 Prefix commands with: node scripts/mote.mjs
 No command installs launchd, publishes images, deletes old volumes or changes a legacy configuration or archive automatically.
 Tunnel tokens are accepted only through private files, never argument values or environment.
 Native tunnel-run is foreground; generated launchd services are never installed automatically.
 Only token intentionally prints a central credential. Backups exclude credentials and encryption keys.
 When encryption has been used, preserve storage.dataKey or the vault content-key file separately for restore.`;
+if (['plugin-pack','plugin-validate'].includes(process.argv[2])) {
+  const script = fileURLToPath(new URL(`./${process.argv[2]}.mjs`, import.meta.url));
+  try { await execute(process.execPath,[script,...process.argv.slice(3)],{cwd:process.cwd()}); }
+  catch (error) { console.error(`Mote: ${error.message}`); process.exitCode = 1; }
+  process.exit(process.exitCode ?? 0);
+}
 if (process.argv[2] === 'plugin-dev') {
   const {runPluginDev} = await import('./plugin-dev.mjs');
   try { await runPluginDev(process.argv.slice(3)); }
