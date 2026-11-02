@@ -8,6 +8,7 @@ import {buildApp} from '../src/app.js';
 import {bootstrapCentral,type CentralDistribution,type FoundationProvider} from '../src/bootstrap.js';
 import {defaultDistribution,configurationProvider,storageProvider} from '../src/distribution/default.js';
 import {Store} from '../src/store.js';
+import {ServerDiagnostics} from '../src/diagnostics.js';
 import type {Config} from '../src/config.js';
 
 function fixture(t:{after(fn:()=>void):void}){
@@ -29,17 +30,30 @@ test('default loader preserves the complete product, owner checks and original n
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
     'mote.imports','mote.ask','mote.usage','mote.insights','mote.diagnostics','mote.agent-view','mote.features',
   ]);
-  assert.equal(node.bootstrap.snapshot().contributions.length,3);
-  assert.deepEqual(node.bootstrap.hostDependencies,defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})));
+  assert.equal(node.bootstrap.snapshot().contributions.length,4);
+  assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'}]);
   const input=note();
   assert.equal((await node.app.inject({method:'POST',url:'/api/notes',payload:input})).statusCode,401);
   const created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:input});
   assert.equal(created.statusCode,201,created.body);assert.equal(created.json().receipt.state,'received');
   const read=await node.app.inject({url:`/api/notes/${input.id}`,headers});
   assert.equal(read.statusCode,200,read.body);assert.equal(read.json().ocrText,input.text);
+  assert.equal(node.diagnostics,node.observabilityAssembly.diagnostics);
+  assert.equal((await node.app.inject({url:'/api/diagnostics',headers})).statusCode,200);
+  const usage=await node.app.inject({url:'/api/usage?from=2026-11-01&to=2026-11-03',headers});
+  assert.equal(usage.statusCode,200,usage.body);
   await node.app.close();await node.app.close();
+  assert.throws(()=>node.observabilityPlatform.forAssembly(node.observabilityScope));
   assert.equal(node.bootstrap.snapshot().contributions.length,0);
   assert.throws(()=>node.store.stats());
+});
+
+test('observability startup failure rolls back the bootstrap vault for a clean reopen',async t=>{
+  const {config}=fixture(t),failure=new Error('generated observability init failure'),init=ServerDiagnostics.prototype.init;
+  ServerDiagnostics.prototype.init=async function(){throw failure;};
+  try{await assert.rejects(buildApp(config,{agent,backgroundWorker:false}),error=>error===failure||(error as AggregateError).errors?.includes?.(failure)||(error as {cause?:unknown}).cause===failure);}
+  finally{ServerDiagnostics.prototype.init=init;}
+  const reopened=new Store(config.dataDir);try{assert.equal(reopened.stats().captures,0);}finally{reopened.close();}
 });
 
 test('missing or duplicate foundation providers reject before any factory or HTTP app is created',async t=>{

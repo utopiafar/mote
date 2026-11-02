@@ -1,7 +1,7 @@
 import {monitorEventLoopDelay,type IntervalHistogram} from 'node:perf_hooks';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
-import type {HostPluginContext} from '@mote/plugin-host';
+import type {HostPluginContext,HostScope} from '@mote/plugin-host';
 import type {TokenUsage,UsageAttribution,UsageReceipt} from '@mote/shared';
 import type {Store} from '../store.js';
 import {ServerDiagnostics,type ServerDiagnosticsOptions} from '../diagnostics.js';
@@ -222,14 +222,16 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
 
 /** Compiled trusted H04 owner. The published contribution is only the frozen
  * usage-recording port; writer, event loop, update service and raw reads stay
- * behind the trusted assembly. */
-export function createObservabilityPlatformFactory(options:ObservabilityPlatformOptions,dependencies:ObservabilityPlatformDependencies){
+ * behind the trusted assembly. onStarted is a trusted build handoff only and is
+ * not published as a service or manifest capability. */
+export function createObservabilityPlatformFactory(options:ObservabilityPlatformOptions,dependencies:ObservabilityPlatformDependencies,onStarted?:(platform:ObservabilityPlatform,scope:HostScope)=>void){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createObservabilityPlatform(options,dependencies);
     context.scope.defer(()=>platform.close());
     return {...platform,start:async()=>{
       platform.start();
       context.provide(observabilityPlatformContribution.id,centralServices.usage,platform.usagePort());
+      onStarted?.(platform,context.scope);
     }};
   };
 }
