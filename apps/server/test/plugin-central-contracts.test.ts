@@ -25,19 +25,26 @@ import * as contractExports from '../src/plugins/central-contracts.js';
 const source = (path: string) => ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url),'utf8'), ts.ScriptTarget.Latest, true);
 
 test('every actually installed server feature has replaceable factory owners and explicit service requirements', () => {
+  // H05 installs the actual default adapter table instead of spelling out one
+  // host.install call per feature. Follow that source, retaining full coverage.
+  const file = source('../src/features/index.ts');
+  const declaration = file.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : [])
+    .find(node => ts.isIdentifier(node.name) && node.name.text === 'serverFeatureAdapters');
+  const initializer = declaration?.initializer;
+  assert.ok(initializer && ts.isCallExpression(initializer) && initializer.expression.getText(file) === 'Object.freeze', 'unexpected default feature registry');
+  const entries = initializer.arguments[0];
+  assert.ok(entries && ts.isArrayLiteralExpression(entries), 'default feature registry must expose its complete entries');
   const installed: string[] = [];
-  const visit = (node: ts.Node) => {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.expression.getText() === 'host' && node.expression.name.text === 'install') {
-      const descriptor = node.arguments[0];
-      assert.ok(descriptor && ts.isObjectLiteralExpression(descriptor), 'unexpected feature install entry');
-      const id = descriptor.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText() === 'id');
-      assert.ok(id && ts.isPropertyAssignment(id) && ts.isStringLiteral(id.initializer));
-      installed.push(id.initializer.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source('../src/features/index.ts'));
+  for (const entry of entries.elements) {
+    assert.ok(ts.isObjectLiteralExpression(entry), 'unexpected feature adapter');
+    const descriptor = entry.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(file) === 'descriptor');
+    const factory = entry.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(file) === 'factory');
+    assert.ok(factory && ts.isPropertyAssignment(factory) && (ts.isArrowFunction(factory.initializer) || ts.isFunctionExpression(factory.initializer)), 'feature must have an executable adapter');
+    assert.ok(descriptor && ts.isPropertyAssignment(descriptor) && ts.isObjectLiteralExpression(descriptor.initializer), 'unexpected feature descriptor');
+    const id = descriptor.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(file) === 'id');
+    assert.ok(id && ts.isPropertyAssignment(id) && ts.isStringLiteral(id.initializer));
+    installed.push(id.initializer.text);
+  }
   assert.equal(installed.length, 25);
   assert.equal(new Set(installed).size, installed.length);
   assert.deepEqual(Object.keys(centralFeatureMigrations).sort(), installed.sort());
