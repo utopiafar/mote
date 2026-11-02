@@ -96,4 +96,16 @@ class DeclarativePluginViewTest {
         }
         assertEquals("busy dispatch reads no control and invokes nothing", 0, reads)
     }
+
+    @Test fun `duplicate field keys reject the later control by index`() {
+        val fields = listOf(
+            FormFieldSpec("code", input = "text"),
+            FormFieldSpec("code", input = "text", required = true),
+        )
+        val values = mapOf<FormFieldSpec, Any?>(fields[0] to "abc", fields[1] to "")
+        val outcome = DeclarativeSubmit.dispatch(fields, { values[it] }, { false })
+        assertTrue(outcome is FormSubmit.Rejected)
+        assertEquals("the failing control is identified, not the first key match", 1, (outcome as FormSubmit.Rejected).index)
+        assertEquals("code", outcome.field)
+    }
 }
