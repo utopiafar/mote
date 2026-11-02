@@ -2,6 +2,7 @@ import {observationClock,observationGap,type ExecutionLeaseObservation} from './
 import {ProviderFailure} from '@mote/shared';
 import {installOperationProjection,linkOperation,type OperationMembership} from './operation-projection.js';
 import {randomUUID,createHash} from 'node:crypto';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {StoreError,type Store} from './store.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
@@ -59,6 +60,13 @@ export class ExecutionEngine {
  private admissions=new Map<string,ExecutionPoolAdmission>();
  private active=new Map<string,{controller:AbortController;task:Promise<void>;pool:string;kind:string;lane:ExecutionLane}>();
  private stopping=false;
+ private quiescing=false;
+ /** Private accepted-lease provenance. Context carries a verifier, never authority by itself. */
+ private readonly continuation=new AsyncLocalStorage<()=>void>();
+ private assertAdmission(){
+  if(this.stopping)throw new StoreError('Execution engine is closed',503);
+  if(this.quiescing){const assert=this.continuation.getStore();if(!assert)throw new StoreError('Execution engine is quiescing',503);assert();}
+ }
  private pumping=false;
  private pumpAgain=false;
  private scheduled:ReturnType<typeof setImmediate>|undefined;
@@ -103,9 +111,9 @@ export class ExecutionEngine {
   const waiting=this.store.db.prepare("SELECT * FROM execution_steps WHERE pool=? AND state='waiting'").all(pool) as Row[];
   return Object.fromEntries(lanes.map(lane=>[lane,{limit:this.limit(pool,lane),running:this.running(pool,lane),waiting:waiting.filter(row=>this.lane(view(row))===lane).length}]));
  }
- register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)!==handler)return;this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort(interrupted);await Promise.allSettled(running.map(value=>value.task));};}
+ register(handler:ExecutionHandler){this.assertAdmission();if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)!==handler)return;this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort(interrupted);await Promise.allSettled(running.map(value=>value.task));};}
  enqueue(operationId:string,kind:string,input:Record<string,unknown>,options:OperationMembership&{id?:string;dependencies?:string[];initial?:{state:ExecutionState;attempts:number;availableAt:number;error?:string}}={}){
-  if(this.stopping)throw new StoreError('Execution engine is closed',503);
+  this.assertAdmission();
   const handler=this.handlers.get(kind);if(!handler)throw new StoreError('Execution handler unavailable',409);
   input=canonical(input) as Record<string,unknown>;
   const json=JSON.stringify(input);
@@ -204,7 +212,7 @@ export class ExecutionEngine {
  isActiveStep(id:string){return this.active.has(id);}
  /** Several completions in one turn need only one admission pass. */
  private scheduleTick(){
-  if(this.stopping||this.scheduled)return;
+  if(this.stopping||this.quiescing||this.scheduled)return;
   this.scheduled=setImmediate(()=>{this.scheduled=undefined;if(!this.stopping)void this.tick().catch(()=>{});});
  }
  async drain(ids:string[]){
@@ -232,7 +240,7 @@ export class ExecutionEngine {
  }
  /** Start available slots. Return only work admitted by this call; slow older work is independent. */
  tick(){
-  if(this.stopping)return Promise.resolve();
+  if(this.stopping||this.quiescing)return Promise.resolve();
   if(this.pumping){this.pumpAgain=true;return Promise.resolve();}
   this.pumping=true;const started:Promise<void>[]=[];
   try{
@@ -300,10 +308,21 @@ export class ExecutionEngine {
     previousRenewal=started;
    }catch{/* Logging failure cannot replace the original CAS outcome. */}
   },10000);renewal.unref();
+  let accepted=true,terminalProjection=false;
   try{
    const assertGrant=()=>{
     if(signal.aborted)throw new ExecutionFailure('stale','grant_revoked');
     if(!this.isCurrentGrant(row.id,fence))throw new ExecutionFailure('stale','grant_revoked');
+    if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
+    this.modelAuthority?.assertStep(step);
+   };
+   const assertContinuation=()=>{
+    if(!accepted)throw new ExecutionFailure('stale','grant_revoked');
+    if(!terminalProjection){assertGrant();return;}
+    // The engine clears the fence before its synchronous terminal projection.
+    // Only that private commit phase may persist children after success; detached
+    // callbacks cannot retain this permission past the original transaction.
+    if(signal.aborted||!db.isTransaction||this.get(row.id)?.state!=='succeeded')throw new ExecutionFailure('stale','grant_revoked');
     if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
     this.modelAuthority?.assertStep(step);
    };
@@ -313,21 +332,21 @@ export class ExecutionEngine {
     try{assertGrant();const result=write();assertGrant();db.exec('COMMIT');return result;}
     catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
    }});
-   const result=await withExecutionCancellation(signal,()=>this.modelAuthority?this.modelAuthority.runStep(step,authorizedSignal=>handler.execute(step,authorizedSignal,grant),signal):handler.execute(step,signal,grant));
+   const result=await withExecutionCancellation(signal,()=>this.continuation.run(assertContinuation,()=>this.modelAuthority?this.modelAuthority.runStep(step,authorizedSignal=>handler.execute(step,authorizedSignal,grant),signal):handler.execute(step,signal,grant)));
    signal.throwIfAborted();
    db.exec('BEGIN IMMEDIATE');
    try{
     if(!this.isCurrentGrant(row.id,fence)){db.exec('ROLLBACK');return;}
     if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
     this.modelAuthority?.assertStep(step);
-    const commit=()=>{
+    const commit=()=>this.continuation.run(assertContinuation,()=>{
      handler.commit(step,result);
      const at=this.now();
      if(!db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(at,row.id,fence,at).changes)return false;
      // Terminal projection may enqueue a dependent continuation. It must retain
      // this step's admission, independent of whichever caller woke the executor.
-     this.project(row.id);return true;
-    };
+     terminalProjection=true;try{this.project(row.id);}finally{terminalProjection=false;}return true;
+    });
     if(!(this.modelAuthority?this.modelAuthority.commitStep(step,commit):commit())){db.exec('ROLLBACK');return;}
     db.exec('COMMIT');
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
@@ -348,7 +367,7 @@ export class ExecutionEngine {
    const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');let changed=false;
    try{changed=Boolean(db.prepare("UPDATE execution_steps SET state=?,attempts=?,error=?,available_at=?,recovery_deadline=?,fence=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(state,attempts,code,availableAt,recoveryDeadline,at,row.id,fence,at).changes);if(changed)this.retainFailure(this.get(row.id)!,state,new ExecutionFailure(failure.category,code),error);if(own)db.exec('COMMIT');}catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
    if(changed)handler.project?.(this.get(row.id)!);
-  }finally{clearTimeout(deadline);clearInterval(renewal);}
+  }finally{accepted=false;clearTimeout(deadline);clearInterval(renewal);}
   await yieldTurn();
  }
  /** Replayable host programs define a substep when reached. State and its artifact
@@ -392,5 +411,7 @@ export class ExecutionEngine {
    throw new ExecutionFailure('waiting','step_pending',Math.max(1000,step.availableAt-this.now()));
   }finally{options.signal.removeEventListener('abort',abort);await unregister();}
  }
- async close(){this.stopping=true;if(this.scheduled){clearImmediate(this.scheduled);this.scheduled=undefined;}for(const active of this.active.values())active.controller.abort(interrupted);await Promise.allSettled([...this.active.values()].map(a=>a.task));await Promise.allSettled([...this.programs.values()]);}
+ /** Fence new admission while already accepted leases may finish. */
+ quiesce(){this.quiescing=true;if(this.scheduled){clearImmediate(this.scheduled);this.scheduled=undefined;}}
+ async close(){this.stopping=true;this.quiesce();for(const active of this.active.values())active.controller.abort(interrupted);await Promise.allSettled([...this.active.values()].map(a=>a.task));await Promise.allSettled([...this.programs.values()]);}
 }
