@@ -217,6 +217,12 @@ export class ModelSettingsStore {
     return model ? {...profile, settings:{...profile.settings,model}} : profile;
   }
 
+  /** Ordinary plugin selection is descriptive. Credentials and endpoints stay with trusted AGENT assembly. */
+  selectPublic(feature:ModelFeature,override?:string) {
+    const profile=this.select(feature,override),{baseUrl:_endpoint,...settings}=publicSettings(profile.settings);
+    return {revision:this.options.configService.revision,profileId:profile.id,settings};
+  }
+
   private expectedRevision(revision: number): void {
     if (revision !== this.options.configService.revision) throw new ModelSettingsError('model_settings_conflict');
   }

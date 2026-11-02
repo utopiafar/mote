@@ -123,6 +123,7 @@ export class ConfigService {
   private diskText: string | null = null;
   private tail: Promise<void> = Promise.resolve();
   private watcher?: FSWatcher;
+  private cancelWatcherReady?: () => void;
   private closing = false;
   private closePromise?: Promise<void>;
   private unavailable = false;
@@ -431,12 +432,24 @@ export class ConfigService {
   async startWatching(): Promise<void> {
     this.state(); if (this.closing) throw new ConfigServiceError('config_unavailable');
     if (this.watcher || this.options.watch === false) return;
-    this.watcher = watch(dirname(this.path), { depth: 0, ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } });
-    this.watcher.on('all', (_event, file) => { if (basename(file) === basename(this.path) && !this.closing) void this.reload().catch(() => {}); });
-    this.watcher.on('error', () => { this.lastError = { code: 'config_unavailable' }; this.notify(); });
-    await new Promise<void>((resolveReady, reject) => { this.watcher!.once('ready', resolveReady); this.watcher!.once('error', () => reject(new ConfigServiceError('config_unavailable'))); });
+    const watcher=this.watcher=watch(dirname(this.path), { depth: 0, ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } });
+    watcher.on('all', (_event, file) => { if (this.watcher===watcher && basename(file) === basename(this.path) && !this.closing) void this.reload().catch(() => {}); });
+    watcher.on('error', () => { if(this.watcher===watcher&&!this.closing){this.lastError = { code: 'config_unavailable' }; this.notify();} });
+    try {
+      await new Promise<void>((resolveReady, reject) => {
+        this.cancelWatcherReady=()=>reject(new ConfigServiceError('config_unavailable'));
+        watcher.once('ready', resolveReady); watcher.once('error', () => reject(new ConfigServiceError('config_unavailable')));
+      });
+    } finally { if(this.watcher===watcher)this.cancelWatcherReady=undefined; }
+    if(this.closing||this.watcher!==watcher)throw new ConfigServiceError('config_unavailable');
     // Changes between the initial read and watcher readiness cannot be represented by ignoreInitial events.
     await this.reload().catch(() => {});
+  }
+  /** Stop file admissions during plugin quiescence without retiring accepted transactions. */
+  async stopWatching(): Promise<void> {
+    const watcher=this.watcher;this.watcher=undefined;
+    this.cancelWatcherReady?.();this.cancelWatcherReady=undefined;
+    await watcher?.close();
   }
   view(): ConfigServiceView {
     const state = this.state();
@@ -448,6 +461,6 @@ export class ConfigService {
     return { version: 1, revision: state.revision, configFile: this.path, domains, lastError: clone(this.lastError) };
   }
   close(): Promise<void> {
-    return this.closePromise ??= (async () => { this.closing = true; await this.watcher?.close(); await this.tail; this.listeners.clear(); })();
+    return this.closePromise ??= (async () => { this.closing = true; await this.stopWatching(); await this.tail; this.listeners.clear(); })();
   }
 }
