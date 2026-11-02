@@ -22,6 +22,9 @@ import {EvidenceDeletion} from '../src/evidence-deletion.js';
 import {registerCaptureBrowser} from '../src/capture-browser.js';
 import {register as registerNotes} from '../src/features/notes.js';
 import {createNotesSource} from '../src/plugins/notes-source.js';
+import {createDevicesSource} from '../src/plugins/devices-source.js';
+import {firstDeviceData} from '../src/first-device-data.js';
+import {ConnectionError,type ConnectionCredential} from '../src/connections.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {sha256} from '../src/store.js';
@@ -50,25 +53,27 @@ async function fixture(t:TestContext){
   const reader=new EvidenceReader(store,sources,files,undefined,undefined,materials,runtime),diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
   const noteDeletion=new MaterialNoteDeletion(store,materials),notes=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion});await notes.prepare();notes.start();
   integration.bindRoutes({authorization,capture,files,evidenceReader:reader,layers:new LayersReadModel(sources,reader.memories)});
+  const pinCredentials=new WeakMap<RequestAuthority,ConnectionCredential|undefined>();
+  const devices=createDevicesSource({}, {devices:{heartbeat:beat=>store.heartbeat(beat),devices:()=>store.devices()},firstData:()=>firstDeviceData(store,files,reader),authority:authorization,identity:{assertOwnDevice:(pin,beat)=>authorization.requests.assertOwnDevice(pin,beat),assertOwnPlatform:(pin,value)=>{authorization.requests.assertCurrent(pin);if(!pinCredentials.has(pin))throw new ConnectionError('connection_scope_denied',403,'Unknown host request');const c=pinCredentials.get(pin);if(c)connections.assertPlatform(c,value);}}});devices.start();
   const app=Fastify();app.addContentTypeParser(['application/gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
   app.setErrorHandler((error,_req,reply)=>{const e=error as Error&{statusCode?:number;code?:string};reply.code(e.statusCode??500).send({error:e.code??e.message});});
   const owner=await host.install({identity:identity(),contributions:[c10IntegrationDeclaration],factory:createC10IntegrationFactory(integration,platform=>platform.routes(app))});
   app.register(async child=>{
     const pins=new WeakMap<FastifyRequest,RequestAuthority>();
-    child.addHook('onRequest',async req=>{pins.set(req,authorization.bindRequest({authorization:req.headers.authorization,method:req.method,route:req.routeOptions.url!,params:req.params as {id?:string}}));});
+    child.addHook('onRequest',async req=>{const pin=authorization.bindRequest({authorization:req.headers.authorization,method:req.method,route:req.routeOptions.url!,params:req.params as {id?:string}});pins.set(req,pin);const c=connections.authenticate(req.headers.authorization);pinCredentials.set(pin,c&&!connections.isOwner(c)?c:undefined);});
     child.addHook('onResponse',async req=>{const pin=pins.get(req);if(pin)authorization.releaseRequest(pin);});
     const credential=(req:FastifyRequest)=>{authorization.requests.assertCurrent(pins.get(req)!);const c=connections.authenticate(req.headers.authorization);return c&&!connections.isOwner(c)?c:undefined;};
     const route={request:(req:FastifyRequest)=>pins.get(req)};
-    capture.routes(child,route);
+    capture.routes(child,route);devices.routes(child,route);
     registerNotes(child,{store,sources,files,materials,diagnostics,connections,credential,assertRequestActive:req=>authorization.requests.assertCurrent(pins.get(req)!),ingress:capture.ingress,notesSource:notes.assemblyForRoutes(),notesCapture:{authority:authorization,route,intake:capture.ports.captureIntake}});
     registerCaptureBrowser(child,{store,evidenceReader:reader,connections,credential,deletion:new EvidenceDeletion(store,files,noteDeletion)});
   });
   await app.listen({host:'127.0.0.1',port:0});const address=app.server.address();assert.ok(address&&typeof address==='object');const url='http://127.0.0.1:'+address.port;
   const http=(path:string,method='GET',body?:unknown,token=ownerToken)=>fetch(url+path,{method,headers:{authorization:'Bearer '+token,...(body===undefined?{}:{'content-type':Buffer.isBuffer(body)?'application/gzip':'application/json'})},...(body===undefined?{}:{body:Buffer.isBuffer(body)?new Uint8Array(body):JSON.stringify(body)})});
-  t.after(async()=>{await app.close();await notes.close();await host.close();await capture.close();await authorization.close();await execution.close();await files.close();await materials.index?.close();await diagnostics.close();await config.close();await vault.close();rmSync(directory,{recursive:true,force:true});});
+  t.after(async()=>{await app.close();await devices.close();await notes.close();await host.close();await capture.close();await authorization.close();await execution.close();await files.close();await materials.index?.close();await diagnostics.close();await config.close();await vault.close();rmSync(directory,{recursive:true,force:true});});
   const pair=async(deviceId='generated-phone-a')=>{const invitation=connections.invite({serverUrl:'https://generated.invalid',label:'Generated collector',deviceId},'collector');return connections.redeem({code:invitation.invitation.code,deviceId,deviceName:'Generated phone',platform:'android'});};
   const register=async(id:string,deviceId='generated-phone-a',token=ownerToken)=>{const response=await http('/api/sources','POST',{id,name:'Generated source',kind:'custom',deviceId,platform:'android'},token);assert.equal(response.status,200,await response.clone().text());};
-  return {store,materials,memoryWork,runtime,host,owner,integration,sources,files,capture,authorization,connections,http,pair,register};
+  return {store,materials,memoryWork,runtime,host,owner,integration,sources,files,capture,devices,reader,authorization,connections,http,pair,register};
 }
 
 test('source control binds real owner/collector request and actual device/platform without publishing an unguarded repository',async t=>{
@@ -96,7 +101,7 @@ test('formal Notes POST and gzip capture receipts share actual C10A intake and l
   const first=await f.http('/api/captures/bundle','POST',body);assert.equal(first.status,200);assert.equal((await first.json()).results[0].receipt.id,capture.id);
   const duplicate=await (await f.http('/api/captures/bundle','POST',body)).json();assert.equal(duplicate.results[0].duplicate,true);
   const browser=await f.http('/api/capture-browser/'+capture.id);assert.equal(browser.status,200);assert.equal((await browser.json()).ocrText,capture.ocrText);assert.equal(f.store.evidence([fileId])[0].deviceId,input.deviceId);
-  assert.deepEqual(Buffer.concat([...f.files.bytes(fileId)]),bytes);
+  assert.deepEqual(Buffer.concat([...f.files.bytes(fileId)]),bytes);assert.equal(f.store.list({source:'note',deviceId:input.deviceId}).totalCount,2);assert.equal(f.store.list({source:'note',deviceId:'generated-foreign'}).totalCount,0);
 });
 
 for(const revoke of ['source','credential','stop','quiesce'] as const)test(`actual source commit ${revoke} keeps authority and persistence boundaries`,async t=>{
@@ -138,4 +143,26 @@ test('failed source owner startup retires only its own repository and preserves 
   await assert.rejects(pending.upsert('retained',item('late')),{statusCode:503});assert.equal(f.store.db.isOpen,true);assert.equal(f.sources.getSource('retained').enabled,true);
   assert.equal((await f.http('/api/sources/retained/items','PUT',item('active-owner'))).status,200);
   const otherMemory=new MaterialMemoryWork(f.store,f.materials);assert.throws(()=>createC10Integration({store:f.store,runtime:f.runtime,memoryWork:otherMemory,sources:f.sources}),{statusCode:503});
+});
+
+
+test('route binding rejects a different actual Ingress repository even within the same vault',async t=>{
+  const f=await fixture(t),sources=new SourceStore(f.store,f.runtime,f.memoryWork.inputs),candidate=createC10Integration({store:f.store,runtime:f.runtime,memoryWork:f.memoryWork,sources});
+  assert.equal(f.capture.ingress.usesRepositories(f.store,sources,f.files),false);
+  assert.throws(()=>candidate.bindRoutes({authorization:f.authorization,capture:f.capture,files:f.files,evidenceReader:f.reader,layers:new LayersReadModel(sources,f.reader.memories)}),{statusCode:503});
+  await candidate.close();assert.equal(f.capture.ingress.usesRepositories(f.store,f.sources,f.files),true);await f.register('still-active');assert.equal(f.store.db.isOpen,true);
+});
+
+test('formal Devices shares the actual C04 pin and device rows while source ownership remains independent',async t=>{
+  const f=await fixture(t),paired=await f.pair(),beat={deviceId:'generated-phone-a',deviceName:'Generated phone',platform:'android',status:'capturing',queueDepth:2};
+  assert.equal((await f.http('/api/devices/heartbeat','POST',beat,paired.token)).status,200);
+  const before=f.store.devices();assert.equal(before.length,1);
+  assert.equal((await f.http('/api/devices/heartbeat','POST',{...beat,deviceId:'generated-phone-b'},paired.token)).status,403);
+  assert.equal((await f.http('/api/devices/heartbeat','POST',{...beat,platform:'macos'},paired.token)).status,403);
+  assert.deepEqual(f.store.devices(),before);
+  assert.equal((await f.http('/api/devices/first-data','GET',undefined,paired.token)).status,403);
+  assert.equal((await f.http('/api/devices/first-data')).status,200);
+  await f.owner.close('disabled');assert.equal((await f.http('/api/devices/heartbeat','POST',beat,paired.token)).status,200);
+  f.devices.quiesce('upgrade');assert.equal((await f.http('/api/devices/heartbeat','POST',beat,paired.token)).status,503);assert.equal((await f.http('/api/devices')).status,200);
+  await f.devices.close();assert.equal((await f.http('/api/devices')).status,503);assert.equal(f.store.devices().length,1);
 });

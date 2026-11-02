@@ -64,7 +64,7 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
     get sourcesForAssembly(){if(phase==='stopped'||phase==='disposed')throw unavailable();return sources;},
     bindRoutes(value:C10SourceRouteBindings){
       if(bindings||phase!=='created'&&phase!=='prepared')throw unavailable();
-      if(value.files.store!==store||!value.authorization.assembly.connections?.usesStore(store))throw new StoreError('Source authorization repository mismatch',503);
+      if(value.files.store!==store||!value.capture.ingress.usesRepositories(store,sources,value.files)||!value.authorization.assembly.connections?.usesStore(store))throw new StoreError('Source authorization repository mismatch',503);
       bindings=value;
     },
     async prepare(value:PluginScope){
