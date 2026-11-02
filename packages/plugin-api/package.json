@@ -1,0 +1,18 @@
+{
+  "name": "@mote/plugin-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist"],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {"types": "./dist/index.d.ts", "import": "./dist/index.js", "default": "./dist/index.js"},
+    "./contracts": {"types": "./dist/contracts/index.d.ts", "import": "./dist/contracts/index.js", "default": "./dist/contracts/index.js"}
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.mjs"
+  }
+}
