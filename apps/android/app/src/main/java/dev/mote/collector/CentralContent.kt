@@ -46,11 +46,17 @@ internal class CentralContent(
         val owner = host.routeOwner(page) ?: return false
         disposePluginView()
         val session = host.onViewRecreated(owner)
+        // The factory mounts into a disposable child slot: a thrown mount
+        // removes everything it added, so the fallback never shares the body
+        // with partial plugin UI.
+        val parent = container as? android.view.ViewGroup
+        val slot: Any = parent?.let { android.widget.LinearLayout(activity).also(it::addView) } ?: container
         return try {
-            session.registerView(factory(session, container))
+            session.registerView(factory(session, slot))
             pluginView = session
             true
         } catch (error: Throwable) {
+            if (slot !== container) parent?.removeView(slot as android.view.View)
             session.dispose()
             false
         }
