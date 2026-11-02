@@ -24,7 +24,7 @@ import { permissionKind, type SettingsWindow } from './permission-types';
 import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences, Tray } from 'electron';
-import { DesktopPluginHost, electronIpcRouter, type PluginScopeHandle } from './plugin-host/desktop-host';
+import { DesktopPluginHost, electronIpcRouter, type PluginScopeHandle, type CustomPageFrameTarget, type CustomPageFrameClaim } from './plugin-host/desktop-host';
 import { NativeProviderRegistry } from './plugin-host/native-registry';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
@@ -264,10 +264,37 @@ else {
     const mainSenderId = window.webContents.id;
     host.registerWindow(mainSenderId, 'main');
     window.once('closed', () => host.unregisterWindow(mainSenderId));
+    // Custom page frames are bound by the main-owned registry; any navigation
+    // of a bound frame is cancelled before the replacement document can run.
+    window.webContents.on('will-frame-navigate', details => { if (host.customPageWillNavigate(mainSenderId, details)) details.preventDefault(); });
+    window.webContents.on('will-redirect', details => { if (host.customPageWillNavigate(mainSenderId, details)) details.preventDefault(); });
+    window.webContents.on('did-start-navigation', details => { if (details.isMainFrame && !details.isSameDocument) host.revokeCustomPages(mainSenderId); });
+    window.webContents.on('did-frame-navigate', () => { const current = window; if (current && !current.isDestroyed()) host.pruneCustomPages(mainSenderId, current.webContents.mainFrame); });
+    window.webContents.on('destroyed', () => host.forgetCustomPages(mainSenderId));
+    // Push the exact granted epoch to the trusted host so its channel can end
+    // instead of relying on the guard's private counter.
+    host.onCustomPageRevoked((webContentsId, revocation) => {
+      if (webContentsId !== mainSenderId) return;
+      const current = window;
+      if (current && !current.isDestroyed()) current.webContents.send('mote:custom-page-revoked', revocation);
+    });
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
       if (!([window,quickNoteWindow].some(owned=>owned && !owned.isDestroyed() && event.sender===owned.webContents && event.senderFrame===owned.webContents.mainFrame && event.senderFrame?.url===(owned===quickNoteWindow?pageUrl+'#quick-note':pageUrl)))) throw new Error(moteText("请求来源不受信任"));
     };
+    const trustedMain = (event: IpcMainInvokeEvent) => {
+      if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
+    };
+    ipcMain.handle('mote:custom-page-prepare', (event, target: CustomPageFrameTarget) => {
+      trustedMain(event);
+      if (!target || typeof target !== 'object') throw new TypeError('Invalid custom page target');
+      return host.prepareCustomPageFrame(mainSenderId, target);
+    });
+    ipcMain.handle('mote:custom-page-claim', (event, claim: CustomPageFrameClaim) => {
+      trustedMain(event);
+      if (!claim || typeof claim !== 'object') throw new TypeError('Invalid custom page claim');
+      return host.claimCustomPageFrame(mainSenderId, claim, event.sender.mainFrame);
+    });
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
