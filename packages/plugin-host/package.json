@@ -16,12 +16,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prebuild": "npm run build -w @mote/plugin-api",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
-    "test": "node --test test/*.test.mjs",
-    "prebuild": "npm run build -w @mote/plugin-api"
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@mote/plugin-api": "0.1.0"
+    "@mote/plugin-api": "0.1.0",
+    "@deepseek-ai/cordis": "4.0.4"
   }
 }

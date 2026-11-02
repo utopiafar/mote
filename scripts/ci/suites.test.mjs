@@ -1,9 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { scopes, automaticTasks } from './select.mjs';
+import { scopes, automaticTasks, selectScopes } from './select.mjs';
 import { taskPlan, manualPlan, serverFiles, listTests, scaleFiles, largeMemoryCase, manualScopes, verifyInventory, automaticSkipPattern, manualCases } from './suites.mjs';
 import { verifyGate } from './gate.mjs';
+
+test('actual Central consumers build the Cordis host before application libraries', () => {
+  for (const task of ['web', 'desktop', 'desktop-contract', 'server-build', 'server-contract', 'server-1', 'server-2', 'server-3', 'server-4']) {
+    assert.deepEqual(taskPlan(task).slice(0, 3).map(step => step.args.at(-1)), ['@mote/plugin-host', '@mote/shared', '@mote/agent']);
+  }
+  for (const task of ['shared', 'web-contract', 'agent', 'agent-contract']) {
+    assert.ok(!taskPlan(task).some(step => step.args.includes('@mote/plugin-host')), task);
+  }
+});
+
+test('host changes select the light task that runs host lifecycle contracts once', () => {
+  const selected = automaticTasks(selectScopes(['packages/plugin-host/src/host.ts']), 'pull_request').tasks;
+  assert.ok(selected.includes('server-build'));
+  const plan = selected.flatMap(task => taskPlan(task));
+  const tests = plan.filter(step => step.command === process.execPath && step.args.includes('--test') && step.args.some(arg => arg.startsWith('packages/plugin-host/test/')));
+  assert.equal(tests.length, 1);
+  assert.deepEqual(tests[0].args.slice(1), ['packages/plugin-host/test/import-boundary.test.mjs', 'packages/plugin-host/test/lifecycle.test.mjs']);
+});
 
 test('Server shards plus explicit scale cases cover the original glob once, with all short Memory guards automatic', () => {
   const inventory = verifyInventory();

@@ -6,6 +6,25 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { releaseFixture } from './fixtures.mjs';
 import { centralBuildInputs } from './source-validation.mjs';
 
+test('Central container includes every production workspace dependency before install and in runtime', () => {
+  const lock = JSON.parse(readFileSync('package-lock.json', 'utf8')).packages;
+  const manifests = new Map(Object.entries(lock).filter(([path, value]) => !path.includes('node_modules') && value.name).map(([path, value]) => [value.name, {path, ...value}]));
+  const required = new Map();
+  const visit = name => {
+    const manifest = manifests.get(name);
+    if (!manifest || required.has(name)) return;
+    required.set(name, manifest);
+    for (const dependency of Object.keys(manifest.dependencies ?? {})) visit(dependency);
+  };
+  visit('@mote/server');
+  const docker = readFileSync('Dockerfile', 'utf8'), [build, runtime] = docker.split(/^FROM .* AS runtime$/m);
+  for (const {path} of required.values()) {
+    const copy = `COPY ${path}/package.json ./${path}/package.json`;
+    for (const stage of [build, runtime]) assert.ok(stage.indexOf(copy) >= 0 && stage.indexOf(copy) < stage.indexOf('RUN npm ci'), path);
+    assert.ok(runtime.includes(`COPY --from=build /app/${path}/dist ./${path}/dist`), path);
+  }
+});
+
 test('central packaging archives the committed monorepo with the central version and grouped URL', t => {
   const fixture = releaseFixture(t);
   for (const path of centralBuildInputs) fixture.write(path, path.endsWith('package.json') ? { name: `@mote/${path.split('/')[1]}`, version: '0.1.0', private: true } : 'Generated build input fixture');
