@@ -3,6 +3,7 @@ import {
   CustomPageFrameGuard,
   DesktopPluginHost,
   type CustomPageFrameLike,
+  type CustomPageFrameRevocation,
   type CustomPageNavigationDetails,
 } from '../src/plugin-host/desktop-host.js';
 import {NativeProviderRegistry} from '../src/plugin-host/native-registry.js';
@@ -128,6 +129,34 @@ describe('custom page frame guard', () => {
     expect(() => guard.claim(7, claimOf('n1'), mainFrame([bound]))).toThrow(/not prepared/);
   });
 
+  it('pushes the granted identity and epoch when a bound frame is revoked', () => {
+    const guard = new CustomPageFrameGuard();
+    const seen: {webContentsId: number; revocation: CustomPageFrameRevocation}[] = [];
+    guard.setRevocationListener((webContentsId, revocation) => seen.push({webContentsId, revocation}));
+    guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
+    guard.claim(7, claimOf('n1'), mainFrame([frame(4, withNonce(entry, 'n1'), mainFrame([]))]));
+
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/entry2.html'))).toBe(true);
+    expect(seen).toEqual([{webContentsId: 7, revocation: {
+      instanceId: 'inst-a', nonce: 'n1', documentKey: 'key-a', frameTreeNodeId: 4, epoch: 1,
+    }}]);
+    // A repeated attempt is still denied but does not emit a second revocation.
+    expect(guard.willNavigate(7, navigation(4, 'http://127.0.0.1/entry2.html'))).toBe(true);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('pushes a revocation for every bound frame when the window is revoked', () => {
+    const guard = new CustomPageFrameGuard();
+    const seen: string[] = [];
+    guard.setRevocationListener((_webContentsId, revocation) => seen.push(revocation.nonce));
+    guard.prepare(7, target('n1'));
+    pin(guard, 4, 'n1');
+    guard.claim(7, claimOf('n1'), mainFrame([frame(4, withNonce(entry, 'n1'), mainFrame([]))]));
+    guard.revokeWindow(7);
+    expect(seen).toEqual(['n1']);
+  });
+
   it('denies and revokes any navigation of a bound frame, regardless of process/routing change', () => {
     const guard = new CustomPageFrameGuard();
     guard.prepare(7, target('n1'));
@@ -247,6 +276,20 @@ describe('custom page frame guard', () => {
     expect(() => guard.prepare(7, {...target('n1'), nonce: 'bad\nnonce'})).toThrow(/target/);
     expect(() => guard.claim(7, {instanceId: 'inst-a', nonce: '', documentKey: 'key-a'}, mainFrame([])))
       .toThrow(/claim/);
+  });
+
+  it('forwards revocations through the desktop host listener', () => {
+    const host = makeHost();
+    const seen: {webContentsId: number; revocation: CustomPageFrameRevocation}[] = [];
+    host.onCustomPageRevoked((webContentsId, revocation) => seen.push({webContentsId, revocation}));
+    host.registerWindow(7, 'main');
+    host.prepareCustomPageFrame(7, target('n1'));
+    host.customPageWillNavigate(7, navigation(4, withNonce(entry, 'n1')));
+    host.claimCustomPageFrame(7, claimOf('n1'), mainFrame([frame(4, withNonce(entry, 'n1'), mainFrame([]))]));
+    expect(host.customPageWillNavigate(7, navigation(4, 'http://127.0.0.1/entry2.html'))).toBe(true);
+    expect(seen).toEqual([{webContentsId: 7, revocation: {
+      instanceId: 'inst-a', nonce: 'n1', documentKey: 'key-a', frameTreeNodeId: 4, epoch: 1,
+    }}]);
   });
 
   it('wires prepare/claim/revoke through the desktop host and unregisterWindow', () => {

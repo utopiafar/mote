@@ -59,6 +59,16 @@ export interface CustomPageFrameGrant {
   readonly epoch: number;
 }
 
+/** Pushed to the trusted host when a bound custom page frame is revoked, so
+ * the consumer can end its channel instead of relying on a private counter. */
+export interface CustomPageFrameRevocation {
+  readonly instanceId: string;
+  readonly nonce: string;
+  readonly documentKey: string;
+  readonly frameTreeNodeId: number;
+  readonly epoch: number;
+}
+
 export interface CustomPageFrameLike {
   readonly frameTreeNodeId: number;
   readonly processId: number;
@@ -123,7 +133,14 @@ export class CustomPageFrameGuard {
    * navigation leaves the live document running, so every later navigation of
    * the same frame must stay blocked until the frame is destroyed. */
   #revoked = new Map<string, {webContentsId: number; frameTreeNodeId: number}>();
+  #onRevoke?: (webContentsId: number, revocation: CustomPageFrameRevocation) => void;
   #epoch = 0;
+
+  /** The trusted host subscribes here; revocations are pushed to the main
+   * frame so the consumer can end the channel for the exact granted epoch. */
+  setRevocationListener(listener: (webContentsId: number, revocation: CustomPageFrameRevocation) => void): void {
+    this.#onRevoke = listener;
+  }
 
   prepare(webContentsId: number, target: CustomPageFrameTarget): {epoch: number} {
     if (!validToken(target.instanceId) || !validToken(target.nonce) || !validToken(target.documentKey))
@@ -173,7 +190,7 @@ export class CustomPageFrameGuard {
     const active = this.#active.get(frameKey);
     if (active) {
       this.#active.delete(frameKey);
-      this.#revoke(webContentsId, frameTreeNodeId);
+      this.#revoke(webContentsId, frameTreeNodeId, active);
       return true;
     }
     // A pending entry already pinned to this frame may keep only its first
@@ -182,7 +199,7 @@ export class CustomPageFrameGuard {
       && value.frameTreeNodeId === frameTreeNodeId);
     if (bound) {
       this.#pending.delete(webContentsId + ':' + bound.nonce);
-      this.#revoke(webContentsId, frameTreeNodeId);
+      this.#revoke(webContentsId, frameTreeNodeId, bound);
       return true;
     }
     const pending = [...this.#pending.values()].find(value => value.webContentsId === webContentsId
@@ -194,13 +211,17 @@ export class CustomPageFrameGuard {
     }
     // A different frame reusing the prepared nonce is never allowed.
     this.#pending.delete(webContentsId + ':' + pending.nonce);
-    this.#revoke(webContentsId, frameTreeNodeId);
+    this.#revoke(webContentsId, frameTreeNodeId, pending);
     return true;
   }
 
-  #revoke(webContentsId: number, frameTreeNodeId: number): void {
+  #revoke(webContentsId: number, frameTreeNodeId: number,
+    entry: {instanceId: string; nonce: string; documentKey: string; epoch: number}): void {
     this.#revoked.set(webContentsId + ':' + frameTreeNodeId, {webContentsId, frameTreeNodeId});
     this.#epoch++;
+    this.#onRevoke?.(webContentsId, {
+      instanceId: entry.instanceId, nonce: entry.nonce, documentKey: entry.documentKey, frameTreeNodeId, epoch: entry.epoch,
+    });
   }
 
   /** Drop entries whose frame is gone. frameTreeNodeId is never reused, so a
@@ -223,7 +244,7 @@ export class CustomPageFrameGuard {
     for (const [key, value] of this.#active) {
       if (value.webContentsId !== webContentsId) continue;
       this.#active.delete(key);
-      this.#revoked.set(key, {webContentsId, frameTreeNodeId: value.frameTreeNodeId});
+      this.#revoke(webContentsId, value.frameTreeNodeId, value);
     }
     this.#epoch++;
   }
@@ -292,6 +313,10 @@ export class DesktopPluginHost {
   revokeCustomPages(webContentsId: number): void { this.#customPages.revokeWindow(webContentsId); }
   /** Window teardown drops every frame record for this webContents. */
   forgetCustomPages(webContentsId: number): void { this.#customPages.forgetWindow(webContentsId); }
+  /** The trusted host ends the exact granted channel when a frame is revoked. */
+  onCustomPageRevoked(listener: (webContentsId: number, revocation: CustomPageFrameRevocation) => void): void {
+    this.#customPages.setRevocationListener(listener);
+  }
   /** Frame destruction is observed lazily: a vanished frame is pruned so its
    * epoch can never be claimed again. */
   pruneCustomPages(webContentsId: number, mainFrame: CustomPageFrameLike): void { this.#customPages.prune(webContentsId, mainFrame); }

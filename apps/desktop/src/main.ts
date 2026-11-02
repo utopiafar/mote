@@ -271,6 +271,13 @@ else {
     window.webContents.on('did-start-navigation', details => { if (details.isMainFrame && !details.isSameDocument) host.revokeCustomPages(mainSenderId); });
     window.webContents.on('did-frame-navigate', () => { const current = window; if (current && !current.isDestroyed()) host.pruneCustomPages(mainSenderId, current.webContents.mainFrame); });
     window.webContents.on('destroyed', () => host.forgetCustomPages(mainSenderId));
+    // Push the exact granted epoch to the trusted host so its channel can end
+    // instead of relying on the guard's private counter.
+    host.onCustomPageRevoked((webContentsId, revocation) => {
+      if (webContentsId !== mainSenderId) return;
+      const current = window;
+      if (current && !current.isDestroyed()) current.webContents.send('mote:custom-page-revoked', revocation);
+    });
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
       if (!([window,quickNoteWindow].some(owned=>owned && !owned.isDestroyed() && event.sender===owned.webContents && event.senderFrame===owned.webContents.mainFrame && event.senderFrame?.url===(owned===quickNoteWindow?pageUrl+'#quick-note':pageUrl)))) throw new Error(moteText("请求来源不受信任"));

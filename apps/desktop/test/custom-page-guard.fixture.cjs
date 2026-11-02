@@ -36,7 +36,9 @@ const instanceId = 'fixture-instance';
 const documentKey = 'fixture-key';
 const events = [];
 const hits = {};
+const revocations = [];
 const guard = new CustomPageFrameGuard();
+guard.setRevocationListener((webContentsId, revocation) => revocations.push({webContentsId, revocation}));
 let window;
 let webContentsId;
 let hostUrl;
@@ -197,6 +199,11 @@ app.whenReady().then(async () => {
       && entry1 && event.frameTreeNodeId === entry1.frameTreeNodeId) && !hits['/entry2.html'],
     entry3Blocked: Boolean(entry3 && entry3.deny && entry1 && entry3.frameTreeNodeId === entry1.frameTreeNodeId)
       && !hits['/entry3.html'] && !messages.some(message => message?.kind === 'entry3-ran'),
+    revocationPushed: revocations.length === 1 && revocations[0].webContentsId === webContentsId
+      && revocations[0].revocation.instanceId === instanceId && revocations[0].revocation.nonce === nonce
+      && revocations[0].revocation.documentKey === documentKey
+      && revocations[0].revocation.frameTreeNodeId === claim?.frameTreeNodeId
+      && revocations[0].revocation.epoch === claim?.epoch,
     portLeakedBeforeBlock: messages.some(message => message?.kind === 'port'),
     noPrecommitEventForBlankOrSrcdoc: !events.some(event => event.type === 'will-frame-navigate' && (event.url === 'about:blank' || event.url === 'about:srcdoc')),
     lateClaimDenied,
@@ -204,7 +211,7 @@ app.whenReady().then(async () => {
     mainFrameAllowed,
     revokedPendingDenied,
   };
-  const result = {checks, claimResults, claim, messages, finalFrames, childClaims, entry1, entry2Events, entry3, events, hits};
+  const result = {checks, claimResults, claim, messages, finalFrames, childClaims, entry1, entry2Events, entry3, revocations, events, hits};
   console.log('CUSTOM_PAGE_GUARD_FIXTURE ' + JSON.stringify(result));
   app.exit(Object.values(checks).every(Boolean) ? 0 : 1);
 }).catch(error => {
