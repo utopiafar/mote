@@ -70,7 +70,9 @@ export function createCodexAgent(options:AgentOptions){
           if(!response.ok){const body=await response.json() as {toolError?:{code:string;message:string;recovery:'correct_arguments'|'use_existing_evidence'|'stop';details:Record<string,unknown>}};const error=body.toolError;if(error)throw new ContextToolError(error.code,error.message,error.recovery,error.details);throw new Error('Context tool rejected');}
           const result=await response.json();
           assertToolPins();
-          if(name==='read_image'&&result.imageDelivery){bridge.imageDelivery(result.imageDelivery,true);delete result.imageDelivery;if(result.imageView)result.imageView.delivery='prepared';}
+          // Keep the opaque Host token in the private tool result. The session
+          // acknowledges it only after the same-active-turn steer succeeds.
+          if(name==='read_image'&&result.imageView)result.imageView.delivery='prepared';
           // The model receives the image, but diagnostics only need its identity
           // and size. Copying base64 into traces duplicates private originals and
           // can overwhelm the log viewer even when the read itself is bounded.
@@ -85,7 +87,10 @@ export function createCodexAgent(options:AgentOptions){
       const {system,prompt,metrics}=assembleHostContext(input,bridge.seedEvidence,options.maxTokens??65536,options.maxToolCalls,runTools);
       trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:runTools}});
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
-      session=new CodexSession(options,call,trace,input.onUsage);sessions.add(session);
+      session=new CodexSession(options,call,trace,input.onUsage,async(token,delivered)=>{
+        const response=await fetch(bridge.url+'/_image_delivery',{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify({token,delivered})});
+        if(!response.ok)throw new AgentProviderError();
+      });sessions.add(session);
       await session.start(system,runTools);
       const assertCurrent=()=>{input.signal?.throwIfAborted();if(closed)throw new AgentProviderError();input.assertContextAuthority?.();assertToolPins();};
       const drive=async(prompt:string,repairAttempt=0):Promise<RuntimeOutcome>=>{

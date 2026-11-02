@@ -58,7 +58,19 @@ export class CodexSession {
   private usage?:TokenUsage;
   private turnError?:unknown;
   private usageInterrupted=false;
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
+  private imageSettlements=new Set<string>();
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
+
+  /** One settlement per opaque Host token. A failed confirmation cannot be
+   * retried as delivered, and a false settlement never turns into a true one. */
+  private async settleImageDelivery(token:string,delivered:boolean){
+    if(this.imageSettlements.has(token))return;
+    this.imageSettlements.add(token);
+    try{await this.confirmImageDeliveryPort?.(token,delivered);}
+    catch(error){
+      if(delivered){this.fail(error instanceof AgentProviderError?error:new AgentProviderError());throw this.failure;}
+    }
+  }
 
   async start(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
     if(this.initializing)throw new AgentProviderError();
@@ -213,7 +225,18 @@ export class CodexSession {
           if(args.tool==='read_image'&&result&&typeof result==='object'&&'image' in result){
             const value=result as any;
             content=codexImageMetadata({source:'untrusted_personal_context',...value} as ImagePayload);
-            await this.deliverToolImage(args.turnId,content,value.image);
+            const token=typeof value.imageDelivery==='string'?value.imageDelivery:undefined;
+            if(token){
+              try{
+                await this.deliverToolImage(args.turnId,content,value.image);
+                await this.settleImageDelivery(token,true);
+              }catch(error){
+                await this.settleImageDelivery(token,false);
+                throw error;
+              }
+            }else{
+              await this.deliverToolImage(args.turnId,content,value.image);
+            }
           }
           this.send({id:message.id,result:{contentItems:[{type:'inputText',text:JSON.stringify(content)}],success:true}});
         }
