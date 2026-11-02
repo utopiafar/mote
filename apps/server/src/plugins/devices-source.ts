@@ -68,6 +68,9 @@ export function createDevicesSource(options:DeviceSourceOptions,dependencies:Dev
     const pin=(request:FastifyRequest)=>{
       const value=context.request(request);
       if(!value)throw new StoreError('Owner authorization is required',401);
+      // The host map can still hold a pin whose C04 authority was released or
+      // revoked after admission; every route revalidates the current authority.
+      authority.requests.assertCurrent(value);
       return value;
     };
     app.post('/api/devices/heartbeat',async request=>{
