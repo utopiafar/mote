@@ -107,6 +107,21 @@ test('quiesce rejects new owner requests, scope abort removes routes, and attach
   assert.equal(response.statusCode,400);assert.equal(response.body,'fail');assert.equal(completed,0);
 });
 
+for(const [label,path,prefix] of [['default','/oauth/replace-default/callback',undefined],['prefixed','/oauth/replace-prefix/callback','replace.']] as const){
+  test(`a stopped scope cleanup cannot remove a replacement ${label} callback`,async t=>{
+    const first=fixtureScope('first-'+label),second=fixtureScope('second-'+label);
+    const {app,dispatcher}=fixture(t);const calls:string[]=[];
+    t.after(async()=>{await first.resources.close();await second.resources.close();});
+    dispatcher.registerOAuthCallback(first.scope,{path:path as `/oauth/${string}/callback`,...(prefix?{statePrefix:prefix}:{}),complete:async()=>{calls.push('first');},successMessage:'first-ok',failureMessage:'first-fail'});
+    first.resources.stop();
+    const replacement=dispatcher.registerOAuthCallback(second.scope,{path:path as `/oauth/${string}/callback`,...(prefix?{statePrefix:prefix}:{}),complete:async()=>{calls.push('second');},successMessage:'second-ok',failureMessage:'second-fail'});
+    await first.resources.close();
+    const response=await app.inject(`${path}?state=${(prefix??'')+'a'.repeat(24)}&code=generated-code`);
+    assert.equal(response.statusCode,200);assert.equal(response.body,'second-ok');assert.deepEqual(calls,['second']);
+    await replacement.release();
+  });
+}
+
 test('a failing scope cleanup still removes its route and leaves a sibling dispatchable',async t=>{
   const bad=fixtureScope('bad'),good=fixtureScope('good');
   const {app,dispatcher}=fixture(t);

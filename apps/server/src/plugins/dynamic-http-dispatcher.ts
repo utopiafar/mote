@@ -112,7 +112,9 @@ class DynamicHttpDispatcherImpl {
     const entry:OAuthEntry={kind:'oauth',callback,scope,active:true,inflight:new Set(),remove:()=>{}};
     entry.remove=()=>{
       const current=this.oauth.get(callback.path);if(!current)return;
-      current.callbacks.delete(prefix);
+      // A stopped scope may be replaced before its deferred release runs; only
+      // remove this exact registration, never the replacement at the same prefix.
+      if(current.callbacks.get(prefix)===entry)current.callbacks.delete(prefix);
       if(current.default===entry)delete current.default;
       if(current.first===entry)current.first=current.callbacks.values().next().value;
       if(!current.callbacks.size)this.oauth.delete(callback.path);
