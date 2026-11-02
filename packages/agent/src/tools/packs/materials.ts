@@ -216,7 +216,7 @@ export function createMaterialReadPack(input: ReadPackInputs = {}): readonly Too
         return {
           source: 'untrusted_personal_context',
           data: {
-            material, text: textValue, textRange: {offset, total, nextOffset: range.nextOffset}, spans,
+            material, text: textValue, textRange: {offset, total: range.total, nextOffset: range.nextOffset}, spans,
             originalRefs: ids.map(id => formatEvidenceRef('capture', id)), originalRefsTotal: total,
             originalRefsTruncated, sourceEvidence,
             sourceCoverage: {references: total, delivered: sourceEvidence.length, partial: total > delivered.size || Boolean((page as {originalRefsTruncated?: unknown}).originalRefsTruncated)},
