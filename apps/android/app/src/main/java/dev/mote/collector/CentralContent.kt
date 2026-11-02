@@ -32,10 +32,17 @@ internal class CentralContent(
         }
         catch (error: Exception) { pendingReaderReturn = null; throw error }
     }
-    /** The plugin view bound to this content; disposed when its route or
-     * Activity ends while the durable owner persists. */
+    /** The plugin view bound to this content; disposed when its route,
+     * pause or Activity ends while the durable owner persists. Removing the
+     * mounted slot lets the existing body.childCount == 0 resume path
+     * remount the route instead of leaving dead UI. */
     private var pluginView: dev.mote.collector.plugins.PluginViewSession? = null
-    fun disposePluginView() { pluginView?.dispose(); pluginView = null }
+    private var pluginViewSlot: android.view.View? = null
+    fun disposePluginView() {
+        pluginView?.dispose(); pluginView = null
+        pluginViewSlot?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        pluginViewSlot = null
+    }
 
     /** Plugin-owned route binding: a registered factory must mount its
      * contribution into the shell before the route is reported handled; a
@@ -54,9 +61,11 @@ internal class CentralContent(
         return try {
             session.registerView(factory(session, slot))
             pluginView = session
+            if (slot !== container) pluginViewSlot = slot as android.view.View
             true
         } catch (error: Throwable) {
-            if (slot !== container) parent?.removeView(slot as android.view.View)
+            // Cleanup must never mask the mount error or block the fallback.
+            runCatching { if (slot !== container) parent?.removeView(slot as android.view.View) }
             session.dispose()
             false
         }
@@ -311,7 +320,7 @@ internal class CentralContent(
         accessReady = true
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
-    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.pauseInsights(); screens?.close() }
+    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.pauseInsights(); screens?.close() }
     fun close() { disposePluginView(); pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)

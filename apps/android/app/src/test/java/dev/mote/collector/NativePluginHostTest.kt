@@ -140,4 +140,23 @@ class NativePluginHostTest {
         assertEquals(1, mounted)
         assertEquals("route.page", contribution.routeId)
     }
+
+    @Test fun `pause disposes the view while resume remounts through the same durable owner`() {
+        val host = NativePluginHost(NativePluginRegistry())
+        val owner = (host.createScope(descriptor("live")) as PluginResult.Ok).value
+        owner.routeState["draft"] = "kept"
+        var mounts = 0
+        owner.registerRoute("live.page") { _, _ -> mounts++; stubView("live.page") }
+        val view = owner.createView()
+        // pause(): view callbacks revoked, owner/drafts/routes persist
+        view.dispose()
+        assertTrue(view.disposed && !owner.revoked && owner.routes.containsKey("live.page"))
+        assertEquals("kept", owner.routeState["draft"])
+        // resume(): same owner remounts a fresh view through the factory
+        val next = host.onViewRecreated(owner)
+        assertSame(owner, next.owner)
+        assertFalse(next.disposed)
+        val contribution = host.route("live.page")!!.invoke(next, Any())
+        assertEquals("live.page", contribution.routeId)
+    }
 }
