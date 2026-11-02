@@ -49,13 +49,30 @@ export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
   return !scope.ocrStatus||record.ocr?.status===scope.ocrStatus;
 }
 
+/** Trusted hosting callbacks for one agent view. The view still rechecks
+ * exposure, currentness and source authority on every read. */
+export interface EvidenceReaderAgentOptions {
+  assertSources?:(ids:readonly string[],kind?:'text'|'image')=>void;
+  assertEvidence?:(ids:readonly string[],kind?:'text'|'image')=>void;
+  diagnostics:ServerDiagnostics;
+  allowQueryImages?:()=>boolean;
+  exposurePolicy?:EvidenceExposurePolicy;
+  currentOperation?:()=> 'query'|'memory';
+  currentContextTime?:()=>string|undefined;
+  currentGrantContext?:()=>object|undefined;
+  currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined;
+  currentMaterialInputs?:()=>readonly MaterialInputPin[]|undefined;
+}
+
 /** Long-lived read-only service. Never stores credentials or a previous request's scope. */
 export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFileCatalogRead,MaterialRead,MemoryRead,MemoryReadSnapshots,MemoryInputSelection {
   readonly memories:MemoryStore;
   memoryBindings?:MemoryBindings;
   private readonly memorySnapshots=new WeakMap<object,MemoryReadSnapshot>();
+  private readonly retainedSnapshots=new Set<MemoryReadSnapshot>();
   private readonly archivedFiles:ArchivedFileStore;
-  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean){
+  private lifecycleDisposed=false;
+  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean,private readonly sourceContexts:SourceContextStore=new SourceContextStore(store)){
     this.archivedFiles=new ArchivedFileStore(store);
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must
@@ -129,9 +146,27 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       return records.length>0&&records.length===ids.length;
     }):page.items};
   }
-  retainMemorySnapshot(context:object){let value=this.memorySnapshots.get(context);if(!value&&this.memoryBindings){value=this.memoryBindings.retainSnapshot();this.memorySnapshots.set(context,value);}return value;}
-  memorySnapshot(context?:object){return context?this.memorySnapshots.get(context):undefined;}
-  releaseMemorySnapshot(context:object){const value=this.memorySnapshots.get(context);if(value){this.memorySnapshots.delete(context);value.release();}}
+  get disposed(){return this.lifecycleDisposed;}
+  /** Release only this reader's retained snapshots. Borrowed Store/source/file/
+   * Material/indexer handles keep their own lifetime and are never closed here. */
+  dispose(){
+    if(this.lifecycleDisposed)return;
+    this.lifecycleDisposed=true;
+    for(const snapshot of this.retainedSnapshots){try{snapshot.release();}catch{}}
+    this.retainedSnapshots.clear();
+  }
+  retainMemorySnapshot(context:object){
+    if(this.lifecycleDisposed)throw new StoreError('Evidence context reader is unavailable',503);
+    let value=this.memorySnapshots.get(context);
+    if(!value&&this.memoryBindings){value=this.memoryBindings.retainSnapshot();this.memorySnapshots.set(context,value);this.retainedSnapshots.add(value);}
+    return value;
+  }
+  memorySnapshot(context?:object){return this.lifecycleDisposed?undefined:(context?this.memorySnapshots.get(context):undefined);}
+  releaseMemorySnapshot(context:object){
+    if(this.lifecycleDisposed)return;
+    const value=this.memorySnapshots.get(context);
+    if(value){this.memorySnapshots.delete(context);this.retainedSnapshots.delete(value);value.release();}
+  }
   private memoryToolSnapshot(context?:object){const retained=context&&this.memorySnapshots.get(context),owned=retained?undefined:this.memoryBindings?.retainSnapshot();return {snapshot:retained??owned,release:()=>owned?.release()};}
   /** One visibility rule for live cards, frozen snapshots and integration admission.
    * An ancestor is a revocation dependency, not a grant to read its raw body.
@@ -1030,7 +1065,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     }
     return {items,nextCursor:cursor??null};
   }
-  agent(options:{assertSources?:(ids:readonly string[],kind?:'text'|'image')=>void;assertEvidence?:(ids:readonly string[],kind?:'text'|'image')=>void;diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean;exposurePolicy?:EvidenceExposurePolicy;currentOperation?:()=> 'query'|'memory';currentContextTime?:()=>string|undefined;currentGrantContext?:()=>object|undefined;currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined;currentMaterialInputs?:()=>readonly MaterialInputPin[]|undefined}):ContextReader {
+  agent(options:EvidenceReaderAgentOptions):ContextReader {
     const {store,sources}=this,{diagnostics}=options;
     const policy=options.exposurePolicy??defaultEvidenceExposurePolicy;
     const operation=(normal:'discover'|'expand'):EvidenceOperation=>options.currentOperation?.()==='memory'?'memory':normal;
@@ -1161,7 +1196,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         const pin=parseSourceContextRef(args.sourceContextRef);if(!pin)throw new StoreError('Invalid source context reference');
         options.assertSources?.([pin.sourceId]);
         const source=sources.getSource(pin.sourceId);if(args.deviceId&&source.deviceId!==args.deviceId)throw new StoreError('Source context is outside the selected scope',404);
-        const contexts=new SourceContextStore(store),current=contexts.identity(pin.sourceId);
+        const contexts=this.sourceContexts,current=contexts.identity(pin.sourceId);
         if(!current||current.version!==pin.version||current.fingerprint!==pin.fingerprint)throw new ContextToolError('attribution_context_changed','The source description changed. Discover its current sourceContextRef and restart; do not combine versions.','correct_arguments');
         return {attributionContext:{version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[pin],sourceContextStatements:contexts.open([pin])}};
       },

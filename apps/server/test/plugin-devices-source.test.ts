@@ -15,7 +15,6 @@ import {firstDeviceData} from '../src/first-device-data.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import type {RequestAuthority} from '../src/plugins/central-contracts.js';
 import {createDevicesSource,createDevicesSourceFactory,devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacement} from '../src/plugins/devices-source.js';
-import type {ConnectionCredential} from '../src/connections.js';
 
 const ownerToken='generated-devices-owner-token';
 const beat=(deviceId='generated-phone',platform:'android'|'macos'='android'):Heartbeat=>heartbeatSchema.parse({deviceId,deviceName:'Generated device',platform,status:'capturing',queueDepth:3,lastCaptureAt:'2026-09-14T12:00:00.000Z'});
@@ -27,7 +26,7 @@ async function fixture(t:TestContext,options:{releaseOnRequest?:boolean}={}){
   const reader=new EvidenceReader(store,sources,files);
   const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
   await platform.prepare();platform.bindRepositories({sources,files,materials});await platform.start();
-  const pins=new WeakMap<FastifyRequest,RequestAuthority>(),credentials=new WeakMap<RequestAuthority,ConnectionCredential|undefined>();
+  const pins=new WeakMap<FastifyRequest,RequestAuthority>();
   const calls={heartbeat:0,devices:0,firstData:0};
   const intake=createDevicesSource({recordQueueSnapshot:()=>{}}, {
     devices:{heartbeat:value=>{calls.heartbeat++;return store.heartbeat(value);},devices:()=>{calls.devices++;return store.devices();}},
@@ -35,15 +34,17 @@ async function fixture(t:TestContext,options:{releaseOnRequest?:boolean}={}){
     authority:platform,
     identity:{
       assertOwnDevice:(request,value)=>platform.requests.assertOwnDevice(request,value),
-      assertOwnPlatform:(request,value)=>{const credential=credentials.get(request);if(credential)platform.assembly.connections!.assertPlatform(credential,value);},
+      // C04 owns the released-pin/MCP/foreign-platform rules; the handler keeps
+      // no credential map or second identity registry.
+      assertOwnPlatform:(request,value)=>platform.requests.assertOwnPlatform(request,value),
     },
   });
   intake.start();
   const app=Fastify();
   app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'devices_failed'});});
   app.addHook('onRequest',async request=>{
-    const credential=platform.assembly.connections!.authenticate(request.headers.authorization),pin=platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin});
-    pins.set(request,pin);credentials.set(pin,credential);
+    const pin=platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin});
+    pins.set(request,pin);
     // Simulates revocation/expiry after admission but before the handler runs.
     if(options.releaseOnRequest)platform.releaseRequest(pin);
   });
