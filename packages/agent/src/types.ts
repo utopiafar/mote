@@ -5,6 +5,12 @@ import type {QueryInput,AgentProgress,AgentTraceEvent} from './query-contracts.j
 export type * from './context-contracts.js';
 export type * from './query-contracts.js';
 import type {ModelProtocol,ModelReasoningEffort,CodexServiceTier} from '@mote/shared/models';
+/** Local trusted control handoff for one query. Composites forward the same lease;
+ * only the chosen leaf reports its finalizer, synchronously before execution. */
+export interface QueryRunLease {
+  onFinalizer?(mode: 'host' | 'legacy'): void;
+}
+
 export interface AgentOptions {
   /** Trusted benchmark arm only; no profile, HTTP or product setting. */
   contextToolMode?:'all-native'|'catalog';
