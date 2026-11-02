@@ -131,6 +131,7 @@ export class ConfigService {
   private tail: Promise<void> = Promise.resolve();
   private watcher?: FSWatcher;
   private watcherStopping?: Promise<void>;
+  private watcherGeneration=0;
   private cancelWatcherReady?: () => void;
   private closing = false;
   private closePromise?: Promise<void>;
@@ -439,8 +440,10 @@ export class ConfigService {
     this.notify();
   }
   async startWatching(): Promise<void> {
-    await this.watcherStopping;
-    this.state(); if (this.closing) throw new ConfigServiceError('config_unavailable');
+    const generation=this.watcherGeneration;
+    // Acquire ownership without yielding when no teardown is pending. A stop during a wait fences this start.
+    if(this.watcherStopping)await this.watcherStopping;
+    this.state(); if (this.closing||generation!==this.watcherGeneration) throw new ConfigServiceError('config_unavailable');
     if (this.watcher || this.options.watch === false) return;
     this.watcherStopping=undefined;
     const watcher=this.watcher=watch(dirname(this.path), { depth: 0, ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } });
@@ -458,6 +461,7 @@ export class ConfigService {
   }
   /** Stop file admissions during plugin quiescence without retiring accepted transactions. */
   stopWatching(): Promise<void> {
+    this.watcherGeneration++;
     if(this.watcherStopping)return this.watcherStopping;
     const watcher=this.watcher;this.watcher=undefined;
     this.cancelWatcherReady?.();this.cancelWatcherReady=undefined;

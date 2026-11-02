@@ -158,6 +158,35 @@ test('concurrent platform close waits for the actual watcher teardown started by
   }
 });
 
+test('quiescence cancels startup before watcher readiness and releases the acquired watcher',async t=>{
+  const {platform}=await fixture(t,true),original=FSWatcher.prototype.close,retired:FSWatcher[]=[];
+  FSWatcher.prototype.close=function(){retired.push(this);return original.call(this);};
+  try{
+    const starting=platform.start().then(()=>({ok:true,error:undefined}),error=>({ok:false,error}));
+    await platform.quiesce('restart');
+    const result=await starting;assert.equal(result.ok,false,'startup cannot publish a watcher after quiescence');
+    assert.equal(result.error.code,'config_unavailable');
+    assert.equal(retired.length,1);assert.deepEqual(retired[0].getWatched(),{});
+    assert.throws(()=>platform.start(),{code:'config_unavailable'});
+  }finally{FSWatcher.prototype.close=original;}
+});
+
+test('stop during a pending watcher restart cancels that startup instead of admitting a new watcher',async t=>{
+  const {platform}=await fixture(t,true);await platform.start();const service=platform.configService;
+  const original=FSWatcher.prototype.close,entered=barrier(),finish=barrier();
+  FSWatcher.prototype.close=function(){entered.release();return finish.promise.then(()=>original.call(this));};
+  let stopping:Promise<void>|undefined,quiescing:Promise<void>|undefined,starting:Promise<{ok:boolean;error:any}>|undefined;
+  try{
+    stopping=service.stopWatching();await entered.promise;
+    starting=service.startWatching().then(()=>({ok:true,error:undefined}),error=>({ok:false,error}));
+    quiescing=platform.quiesce('restart');finish.release();await quiescing;
+    const result=await starting;assert.equal(result.ok,false,'a stop requested during teardown fences the waiting startup');
+    assert.equal(result.error.code,'config_unavailable');
+  }finally{
+    finish.release();FSWatcher.prototype.close=original;await Promise.allSettled([stopping,quiescing,starting]);
+  }
+});
+
 test('model selection fails closed until AGENT binding and returns no credentials or endpoint',async t=>{
   const {platform}=await fixture(t);
   assert.throws(()=>platform.selection.select('chat'),{code:'model_settings_unavailable'});
