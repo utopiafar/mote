@@ -26,6 +26,11 @@ import {taskTools} from '../dist/task-context.js';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {AgentYieldError} from '../dist/host-controls.js';
 import {SYSTEM_PROMPT} from '../dist/instructions.js';
+import {createAgent, AgentResponseError} from '@mote/agent';
+import {ProviderFailure} from '@mote/shared';
+import {ContextToolError} from '../dist/tool-errors.js';
+
+const manualJourneys = process.env.MOTE_TEST_DSH_JOURNEYS === '1';
 
 const scope = {packageId: 'generated.runtime', installationId: 'generated-install', instanceId: 'generated-instance', activationId: 'generated-active', host: {kind: 'central', id: 'generated-host'}};
 const reference = exportName => ({contribution: {instance: {packageId: scope.packageId, installationId: scope.installationId, instanceId: scope.instanceId}, contributionId: 'native'}, revision: 1, artifactDigest: 'a'.repeat(64), exportName});
@@ -151,6 +156,43 @@ test('an unconfigured DSH model fails before private resources or a subprocess a
   assert.equal(resources, 0);
 });
 
+test('the transport helper module remains relocatable for the actual import runtime consumer', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'mote-relocated-transport-')); t.after(() => rm(root, {recursive: true, force: true}));
+  const target = join(root, 'transport.mjs');
+  await writeFile(target, await readFile(new URL('../dist/plugin.mjs', import.meta.url), 'utf8'), {mode: 0o600});
+  const transport = await import(pathToFileURL(target).href);
+  const bounded = transport.boundedModelFetch(async () => new Response('Generated import transport'), 'mote-no-context-bridge', 64);
+  assert.equal(await (await bounded('http://127.0.0.1/generated', {method: 'POST'})).text(), 'Generated import transport');
+  assert.equal(typeof transport.modelFailureReporter, 'function'); assert.equal(typeof transport.modelRequestAuthorization, 'function');
+});
+
+test('public initialization keeps caller cancellation when close also stops its internal scope', async () => {
+  const reader = {search: async () => [], timeline: async () => ({items: [], nextCursor: null}), evidence: async () => [], activity: async () => ({}), devices: async () => []};
+  const agent = createAgent({reader, protocol: 'deepseek', model: 'generated', apiKey: 'generated-key', baseUrl: 'http://127.0.0.1:9'});
+  const controller = new AbortController(), reason = new DOMException('Generated caller cancellation', 'AbortError');
+  const query = agent.query({question: 'Generated cancelled setup', signal: controller.signal}); controller.abort(reason);
+  const closing = agent.close();
+  await assert.rejects(query, error => error === reason); await closing;
+});
+
+test('public close at the Host assembly boundary does not expose an internal lease error', async () => {
+  const reader = {search: async () => [], timeline: async () => ({items: [], nextCursor: null}), evidence: async () => [], activity: async () => ({}), devices: async () => []};
+  const agent = createAgent({reader, protocol: 'deepseek', model: 'generated', apiKey: 'generated-key', baseUrl: 'http://127.0.0.1:9'});
+  let closing;
+  const query = agent.query({question: 'Generated shutdown at Host assembly', onTrace(event) { if (event.type === 'instructions.assembled') closing = agent.close(); }});
+  await assert.rejects(query, /Agent is closed/); assert.ok(closing); await closing;
+});
+
+test('mandatory Host tool stops reject the actual channel failure path', {timeout: 1500}, async t => {
+  for (const denied of [new AgentResponseError('Generated image policy denial', 'image_disclosure_disabled'), new ContextToolError('evidence_changed', 'Generated revoked source', 'stop')]) {
+    const f = await channelFixture(t); void f.channel.failure.catch(() => {});
+    f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0}, {});
+    f.host.tools.deliver = async () => { throw denied; };
+    assert.equal((await f.send('/call', {sessionId: 'generated-run', turn: 1, callId: 'native-call', name: definition.name, arguments: {}})).status, 400);
+    await assert.rejects(f.channel.failure, error => error === denied); assert.equal(f.delivered, false);
+  }
+});
+
 test('a Host delegation yield crosses the real parent channel as a typed stopping cause', async t => {
   const f = await channelFixture(t), yielded = new AgentYieldError(); void f.channel.failure.catch(() => {});
   f.channel.bindCall(1, 'native-call', definition.name, {id: 'host-initial', index: 0}, {});
@@ -217,7 +259,7 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
   };
 }
 
-test('selected A05 journey: generated original reaches the real DSH child and only Host validates the cited candidate', {timeout: 30000}, async t => {
+test('selected A05 journey: generated original reaches the real DSH child and only Host validates the cited candidate', {skip: !manualJourneys, timeout: 30000}, async t => {
   const f = await selectedJourney(t), session = await f.prepare();
   const patch = JSON.parse(await readFile(join(f.resources[0].root, 'runtime.patch.json'), 'utf8'));
   assert.notEqual(f.context.system, SYSTEM_PROMPT);
@@ -239,7 +281,7 @@ test('selected A05 journey: generated original reaches the real DSH child and on
   await assert.rejects(access(f.resources[0].root), {code: 'ENOENT'});
 });
 
-test('selected A05 journey: an actual native write schema blocks Provider prepare before model traffic', {timeout: 15000}, async t => {
+test('selected A05 journey: an actual native write schema blocks Provider prepare before model traffic', {skip: !manualJourneys, timeout: 15000}, async t => {
   const f = await selectedJourney(t, 'extra_write');
   await assert.rejects(f.prepare(), {reason: 'tools_unverified'});
   assert.equal(f.requests.length, 0); assert.equal(f.reads, 0); assert.equal(f.validations, 0);
@@ -251,7 +293,7 @@ test('selected A05 journey: an actual native write schema blocks Provider prepar
   assert.throws(() => process.kill(child.pid, 0), {code: 'ESRCH'});
 });
 
-test('selected A05 journey: a missing context plugin prevents child readiness and leaves no process or private profile', {timeout: 15000}, async t => {
+test('selected A05 journey: a missing context plugin prevents child readiness and leaves no process or private profile', {skip: !manualJourneys, timeout: 15000}, async t => {
   const root = await mkdtemp(join(tmpdir(), 'mote-a05-no-host-')); t.after(() => rm(root, {recursive: true, force: true}));
   const patch = join(root, 'runtime.patch.json'), witness = join(root, 'witness.mjs'), tracePath = join(root, 'child.jsonl');
   await writeFile(witness, `import {appendFileSync} from 'node:fs'; export function apply(){appendFileSync(${JSON.stringify(tracePath)},JSON.stringify({pid:process.pid,home:process.env.HOME})+'\\n');}`);
@@ -266,4 +308,35 @@ test('selected A05 journey: a missing context plugin prevents child readiness an
   assert.notEqual(child.pid, process.pid); assert.equal(child.home, join(root, 'home'));
   assert.throws(() => process.kill(child.pid, 0), {code: 'ESRCH'});
   await rm(root, {recursive: true, force: true}); await assert.rejects(access(root), {code: 'ENOENT'});
+});
+
+async function publicFixture(t, options = {}) {
+  const record = {id: '66666666-6666-4666-8666-666666666666', capturedAt: '2026-11-01T00:00:00Z', appName: 'Generated source', ocrText: 'Generated authorized original text.'};
+  const requests = []; let imageReads = 0, validations = 0;
+  const reader = {search: async () => [record], timeline: async () => ({items: [record], nextCursor: null}), evidence: async () => [record], activity: async () => ({}), devices: async () => [], readImage: async () => { imageReads++; throw new ContextToolError('image_disclosure_disabled', 'Generated image policy is off.', 'stop'); }};
+  const server = createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk; requests.push(JSON.parse(body));
+    const step = requests.length - 1, tool = step === 0 ? {name: 'search_context', args: {query: 'generated'}} : step === 1 ? {name: 'evidence', args: {ids: [record.id]}} : step === 2 ? {name: 'read_image', args: {id: record.id}} : undefined;
+    writeMessagesResponse(res, {stage: step, model: 'generated', tool, text: JSON.stringify({answer: `Generated supported text [${record.id}]`, citationIds: [record.id]}), reasoning: true});
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const agent = createAgent({reader, protocol: 'deepseek', model: 'generated', apiKey: 'generated-key', baseUrl: `http://127.0.0.1:${server.address().port}`, agentTimeoutMs: 10000, ...options});
+  t.after(async () => { try { await agent.close(); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } });
+  return {agent, requests, get imageReads() { return imageReads; }, get validations() { return validations; }, input: {question: 'Generated image policy regression', validateOutput() { validations++; }}};
+}
+
+test('selected A05 journey: public createAgent preserves an image policy stop instead of accepting later text', {skip: !manualJourneys, timeout: 15000}, async t => {
+  const f = await publicFixture(t);
+  await assert.rejects(f.agent.query(f.input), error => error instanceof AgentResponseError && error.reason === 'image_disclosure_disabled');
+  assert.equal(f.imageReads, 1); assert.equal(f.validations, 0); assert.equal(f.requests.length, 3, 'the stopped run must not make another outbound model request');
+});
+
+test('selected A05 journey: public admission and outbound authorization retain exact provider recovery facts', {skip: !manualJourneys, timeout: 15000}, async t => {
+  for (const boundary of ['admission', 'authorization']) {
+    const details = boundary === 'admission' ? {category: 'transient', code: 'rate_limited', retryAfterMs: 23000, executionStarted: false, admissionWaiting: true} : {category: 'blocked', code: 'context_evidence_restricted', executionStarted: false};
+    const failure = new ProviderFailure(details);
+    const f = await publicFixture(t, boundary === 'admission' ? {runModel: async () => { throw failure; }} : {authorizeModelRequest: async () => { throw failure; }});
+    await assert.rejects(f.agent.query(f.input), error => { assert.ok(error instanceof ProviderFailure); assert.deepEqual(error.details, details); return true; });
+    assert.equal(f.requests.length, 0); assert.equal(f.validations, 0); await f.agent.close();
+  }
 });

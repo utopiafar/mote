@@ -5,6 +5,7 @@ import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {parseRuntimeOutcome, RuntimeContractError, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
 import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
+import {ContextToolError} from '../tool-errors.js';
 import {systemInstructions} from '../instructions.js';
 import {assembleContext, taskTools} from '../task-context.js';
 import {contextToolDefinitions} from '../tool-contributions.js';
@@ -128,7 +129,7 @@ class ManagedHostRunSession implements HostRunSession {
   private lastAttempt?: RuntimeAttempt;
   private pending = new Set<Promise<unknown>>();
   private deliveryCleanupErrors: unknown[] = [];
-  private confirmationFailure?: {error: unknown};
+  private hostToolFailure?: {error: unknown};
   private execution?: Promise<AgentAnswer>;
   private preparing?: Promise<void>;
   private runtimeWork?: Promise<RuntimeOutcome>;
@@ -161,14 +162,19 @@ class ManagedHostRunSession implements HostRunSession {
       tools: {definitions: dependencies.tools.definitions, deliver: (attempt, call, sender) => this.track(async () => {
         this.assertAttempt(attempt);
         if (typeof call.callId !== 'string' || !call.callId || !dependencies.tools.definitions.some(tool => tool.name === call.name)) throw new RuntimeContractError();
-        const delivery = await assembly.readTool(call, signal);
+        let delivery: Awaited<ReturnType<HostSessionAssembly['readTool']>>;
+        try { delivery = await assembly.readTool(call, signal); }
+        catch (error) {
+          if (error instanceof AgentResponseError || error instanceof AgentYieldError || error instanceof ContextToolError && error.recovery === 'stop') this.hostToolFailure ??= {error};
+          throw error;
+        }
         let primary = false;
         try {
           this.assertAttempt(attempt);
           const result = await sender(delivery.payload);
           this.assertAttempt(attempt);
           try { delivery.confirm(); }
-          catch (error) { this.confirmationFailure ??= {error}; throw error; }
+          catch (error) { this.hostToolFailure ??= {error}; throw error; }
           return result;
         } catch (error) { primary = true; throw error; }
         finally {
@@ -235,9 +241,9 @@ class ManagedHostRunSession implements HostRunSession {
     this.dependencies.scope.assertCurrent();
   }
   private assertCurrent() {
-    // A provider may translate a failed local confirmation into a typed tool
-    // terminal. The Host still owns this mandatory receipt's original failure.
-    if (this.confirmationFailure) throw this.confirmationFailure.error;
+    // A provider may translate a mandatory local read/confirmation failure into
+    // a typed tool terminal. Host policy and its original reason remain here.
+    if (this.hostToolFailure) throw this.hostToolFailure.error;
     this.assertLifetime();
     if (this.deliveryCleanupErrors.length) throw new AgentProviderError();
     if (this.phase === 'closed' || this.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');

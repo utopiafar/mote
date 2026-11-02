@@ -1,5 +1,3 @@
-import {applyContextPlugin} from "./runtime/dsh/context-plugin.js";
-
 export const name = "mote-context";
 export const inject = ["tools", "agents", "attachments"];
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
@@ -131,6 +129,9 @@ export async function imageToolResult(value, attachments, receipt) {
 export async function apply(ctx) {
   const configured=process.env.MOTE_HOST_RUN;
   if(!configured)throw new Error('A Host run session is required');
+  // The import runtime copies this module for its transport helpers. Resolve
+  // the query-only adapter only when the installed query plugin is activated.
+  const {applyContextPlugin}=await import('./runtime/dsh/context-plugin.js');
   const {url:endpoint}=JSON.parse(configured);
   const configuration=process.env.MOTE_MODEL_TRANSPORT?JSON.parse(process.env.MOTE_MODEL_TRANSPORT):undefined;
   const original=globalThis.fetch;

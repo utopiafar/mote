@@ -6,6 +6,7 @@ import {createHostOutputProvider} from '../dist/host/output.js';
 import {ActiveExecutionBudget} from '../dist/active-budget.js';
 import {AgentResponseError, AgentTimeoutError} from '../dist/types.js';
 import {RuntimeContractError} from '../dist/runtime/contracts.js';
+import {ContextToolError} from '../dist/tool-errors.js';
 import {startBridge} from '../dist/bridge.js';
 import {catalogRequest} from './catalog-request.mjs';
 
@@ -365,6 +366,23 @@ test('Host retains a required confirmation failure when the runtime reports a ty
   await assert.rejects((await f.create()).execute(), error => error === primary);
   assert.equal(discarded, 1); assert.deepEqual(f.cleanupErrors, [secondary]);
   assert.equal(f.events.at(-1).event.terminal.kind, 'failed');
+});
+
+test('Host-owned read stops cannot be ignored by a completed runtime but argument corrections remain recoverable', async () => {
+  for (const stopped of [new AgentResponseError('Generated image policy denial', 'image_disclosure_disabled'), new ContextToolError('evidence_changed', 'Generated evidence revoked', 'stop')]) {
+    const f = fixture({readTool: async () => { throw stopped; }, run: async (request, host) => {
+      await assert.rejects(host.tools.deliver(request.attempt, {callId: 'generated-call', name: tools[0].name, arguments: {}}, async () => { throw Error('Must not disclose'); }), error => error === stopped);
+      return outcome();
+    }});
+    await assert.rejects((await f.create()).execute(), error => error === stopped);
+    assert.notEqual(f.events.at(-1).event.terminal.kind, 'completed');
+  }
+  const recoverable = new ContextToolError('invalid_tool_arguments', 'Generated argument correction', 'correct_arguments');
+  const f = fixture({readTool: async () => { throw recoverable; }, run: async (request, host) => {
+    await assert.rejects(host.tools.deliver(request.attempt, {callId: 'generated-call', name: tools[0].name, arguments: {}}, async () => {}), error => error === recoverable);
+    return outcome();
+  }});
+  assert.equal((await (await f.create()).execute()).answer, 'Generated answer');
 });
 
 for (const service of ['mote.agent.runtime', 'generated.model', 'mote.agent.host-output']) {

@@ -18,6 +18,7 @@ import {createHostRunSession, type HostSessionAssembly} from '../../host/run-ses
 import type {HostRunDependencies} from '../../host/run-contracts.js';
 import {createDshHostChannel} from './context-plugin.js';
 import {AgentYieldError} from '../../host-controls.js';
+import {ContextToolError} from '../../tool-errors.js';
 import {DSH_RUNTIME_ID, compileNativeDshProfile, createRuntimePatch, DshProfileError, type InstalledDshModule} from './profile-compiler.js';
 
 export {DSH_RUNTIME_ID, DshProfileError, createRuntimePatch} from './profile-compiler.js';
@@ -133,7 +134,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
                 if (cancellation || host.signal.aborted) return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
                 if (error instanceof AgentYieldError) return {terminal: {kind: 'yielded'}};
                 if (error instanceof AgentTimeoutError || error instanceof RequestTimeoutError) throw new AgentTimeoutError();
-                if (error instanceof AgentResponseError && (error.reason === 'tools_unverified' || error.reason === 'tool_failure')) return {terminal: {kind: 'failed', reason: error.reason}};
+                if (error instanceof AgentResponseError || error instanceof ContextToolError && error.recovery === 'stop') return {terminal: {kind: 'failed', reason: error instanceof AgentResponseError && error.reason === 'tools_unverified' ? 'tools_unverified' : 'tool_failure'}};
                 return {terminal: {kind: 'failed', reason: 'provider_error', ...(error instanceof ProviderFailure ? {providerFailure: error.details} : {})}};
               } finally { active = undefined; }
             })();

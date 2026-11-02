@@ -87,7 +87,7 @@ export async function createDshHostChannel(host: HostRunPort) {
           confirmed();
         } catch (error) { rejected(error); throw error; }
       } catch (error) {
-        if (error instanceof AgentYieldError || error instanceof AgentResponseError && (error.reason === 'tool_failure' || error.reason === 'tools_unverified')) rejectFailure(error);
+        if (error instanceof AgentYieldError || error instanceof AgentResponseError || error instanceof ContextToolError && error.recovery === 'stop') rejectFailure(error);
         if (req.url === '/ready') rejectFailure(failure());
         if (res.headersSent) { rejectFailure(error instanceof AgentResponseError ? error : new AgentResponseError('Native delivery did not complete.', 'tool_failure')); return; }
         const toolError = error instanceof ContextToolError ? error.toJSON() : {code: 'host_tool_rejected', message: 'The Host rejected this tool call.', recovery: 'stop', details: {}};

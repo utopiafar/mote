@@ -82,7 +82,7 @@ export function createAgent(original: AgentOptions) {
     const runId = randomUUID(), resources = new PluginResourceScope(); scopes.add(resources);
     const scope = Object.assign(resources, {identity: identity('mote.agent.query')});
     const signal = AbortSignal.any([scope.signal, ...(input.signal ? [input.signal] : [])]);
-    const assertCurrent = () => { signal.throwIfAborted(); if (closed) throw new AgentClosedError(); input.assertContextAuthority?.(); };
+    const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); input.assertContextAuthority?.(); };
     const trace = (event: Parameters<typeof reportTrace>[1]) => reportTrace(input, {...event, runId});
     let session: HostRunSession | undefined, bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
     let bridgeClosing: Promise<void> | undefined;
@@ -150,6 +150,10 @@ export function createAgent(original: AgentOptions) {
       return answer;
     } catch (error) {
       primary = true;
+      if (!session) {
+        if (input.signal?.aborted) error = input.signal.reason;
+        else if (closed) error = new AgentClosedError();
+      }
       if (error instanceof AgentYieldError) trace({type: 'run.yielded', status: 'waiting'});
       else trace({type: 'run.failed', status: 'failed', payload: {errorName: error instanceof Error ? error.name : 'UnknownError', reason: error instanceof AgentResponseError ? error.reason : undefined}});
       throw error;
