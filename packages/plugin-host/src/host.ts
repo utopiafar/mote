@@ -101,6 +101,11 @@ export class PluginHost implements ServiceResolver {
     try {
       const fiber = this.context.plugin((context: Context) => {
         runtime.context = context;
+        // This child-owned listener survives until its own unload. Cordis emits
+        // uid-cleared before awaiting startup; an unload effect runs too late.
+        context.on('internal/plugin', owner => {
+          if (owner === context.fiber && owner.uid === null) this.revokeGraph(runtime, 'shutdown');
+        });
         // Join our cleanup explicitly; Cordis may otherwise log effect cleanup failures.
         context.effect(() => () => this.teardown(runtime, 'shutdown'));
         runtime.initialized = runtime.resources.run(() => this.initialize(runtime, factory)).then(() => {});
@@ -185,21 +190,21 @@ export class PluginHost implements ServiceResolver {
     assertCurrent();
     const actual = port.owner.context!.get(port.key) as T;
     if (actual === undefined) return reject('dependency_unavailable');
-    const invoke = (callback: Function, receiver: unknown, args: unknown[]) => {
+    const invoke = (callback: Function, receiver: unknown, args: unknown[]): unknown => {
       assertCurrent();
       const value = Reflect.apply(callback, receiver, args);
       if (value && typeof value.then === 'function') {
-        const pending = Promise.resolve(value).then(result => { assertCurrent(); return result; });
+        const pending = Promise.resolve(value).then(result => { assertCurrent(); return result === actual ? guarded : result; });
         port.owner.resources.join(pending); consumer?.resources.join(pending);
         return pending;
       }
-      return value;
+      return value === actual ? guarded : value;
     };
     // A facade also supports frozen port objects; no proxy invariants of the implementation are changed.
     const members = new Map<PropertyKey, {source: Function; guarded: Function}>();
     const read = (property: PropertyKey): unknown => {
       assertCurrent(); const member = Reflect.get(actual as object, property, actual);
-      if (typeof member !== 'function') return member;
+      if (typeof member !== 'function') return member === actual ? guarded : member;
       let cached = members.get(property);
       if (!cached || cached.source !== member) { cached = {source: member, guarded: (...args: unknown[]) => invoke(member, actual, args)}; members.set(property, cached); }
       return cached.guarded;

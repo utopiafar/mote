@@ -292,3 +292,52 @@ test('a stopping dependent rejects provider quiesce without changing the provide
   await assert.rejects(host.acquire(reader, binding), {code: 'dependency_unavailable'});
   assert.equal(lease.value.read(), 'still-active'); await lease.release();
 });
+
+for (const phase of ['factory', 'prepare', 'start']) test(`disposing the actual Cordis owner cancels ${phase} startup before waiting for cleanup`, {timeout: 5000}, async () => {
+  const root = new Context(), host = new PluginHost(hostId, root), entered = gate(); let signal, disposed = 0;
+  const installing = host.install({identity: identity('owner-dispose-' + phase), contributions: [], factory: async context => {
+    signal = context.scope.signal; context.scope.defer(() => { disposed++; });
+    const waitForCancellation = async () => {
+      entered.resolve();
+      await new Promise(resolve => signal.addEventListener('abort', resolve, {once: true}));
+      context.scope.assertCurrent();
+    };
+    if (phase === 'factory') await waitForCancellation();
+    return lifecycle({...(phase === 'prepare' ? {prepare: waitForCancellation} : {}), ...(phase === 'start' ? {start: waitForCancellation} : {})});
+  }});
+  const rejected = assert.rejects(installing, {code: 'stale_scope'});
+  await entered.promise; const closing = root.fiber.dispose();
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(signal.aborted, true);
+    await closing; await rejected;
+    assert.equal(disposed, 1); assert.deepEqual(host.snapshot().contributions, []);
+  } finally {
+    // Also reclaim the intentionally deadlocked old implementation on a red run.
+    await host.close(); await closing; await rejected;
+  }
+});
+
+test('self-returned service references stay guarded after release and keep asynchronous work joined during stop', {timeout: 5000}, async t => {
+  const host = new PluginHost(hostId), entered = gate(), held = gate(); let binding, reads = 0, disposed = 0;
+  t.after(async () => { held.resolve(); await host.close(); });
+  const provider = await host.install({identity: identity('self-return'), contributions: [reader], factory: context => {
+    context.scope.defer(() => { disposed++; });
+    binding = context.provide(reader.id, reader, {
+      read() { return ++reads; }, fluent() { return this; }, async fluentAsync() { return this; }, get self() { return this; },
+      async heldRead() { entered.resolve(); await held.promise; return 'late'; },
+    }); return lifecycle();
+  }});
+  const lease = await host.acquire(reader, binding);
+  const references = [lease.value.valueOf(), lease.value.fluent(), await lease.value.fluentAsync(), lease.value.self];
+  await lease.release();
+  for (const reference of references) assert.throws(() => reference.read(), {code: 'stale_scope'});
+  assert.equal(reads, 0);
+  const active = await host.acquire(reader, binding), self = await active.value.fluentAsync();
+  assert.equal(self, active.value); assert.equal(self.valueOf(), active.value);
+  const reading = self.fluent().heldRead(), rejected = assert.rejects(reading, {code: 'stale_scope'});
+  await entered.promise; const closing = provider.close('revoked');
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(disposed, 0);
+  assert.throws(() => self.read(), {code: 'stale_scope'});
+  held.resolve(); await rejected; await closing; assert.equal(disposed, 1);
+});
