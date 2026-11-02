@@ -283,6 +283,8 @@ test('real DSH loader runs the native package, changes request config, and resta
       })}`);
     assert.ok(events.includes('factory-a-create'), `factory A create missing: ${events.join(',')}`);
 
+    assert.ok(events.includes('native-loaded'), 'native package did not load through the DSH loader');
+    assert.ok(events.includes('native-disposed'), 'native package did not unload with its runtime');
     assert.ok(events.includes('native-tool'), `native tool did not execute: ${events.join(',')}`);
     assert.ok(events.includes('request-hook'), 'native request hook did not run');
     assert.ok(events.includes('turn-stopping-steered'), 'turn-stopping did not steer another step');

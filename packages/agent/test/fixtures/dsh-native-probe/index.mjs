@@ -6,6 +6,8 @@ export const inject = ['tools'];
 
 /** A non-Mote native package: one tool, one request hook, one turn-stopping hook. */
 export function apply(ctx) {
+  trace('native-loaded');
+  ctx.effect(() => () => trace('native-disposed'), 'probe-native.dispose');
   ctx.tools.register(defineTool({
     name: 'probe_echo',
     description: 'Echo one value through the native DSH probe.',
