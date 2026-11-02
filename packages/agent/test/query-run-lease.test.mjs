@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createAgent, AgentNotConfiguredError} from '../dist/index.js';
+import {PluginHost} from '@mote/plugin-host';
+import {runtimeService} from '../dist/runtime/contracts.js';
 
 const reader = {async search() { return []; }, async timeline() { return {items: [], nextCursor: null}; }, async evidence() { return []; }};
 
@@ -34,5 +36,61 @@ test('each Host query reports its own lease while preserving caller cancellation
     await assert.rejects(closed, /Agent is closed/);
     await assert.rejects(agent.query({question: 'Generated empty lease'}, {}), /Agent is closed/);
     assert.deepEqual(modes, ['host', 'host']);
+  } finally { await agent.close(); }
+});
+
+test('a mutating and throwing public Host observer cannot change the run, finalizer or legacy usage', async t => {
+  // Replace only the external runtime boundary: the public facade still owns
+  // the real PluginHost, leases, HostRunSession, output validation and cleanup.
+  const install = PluginHost.prototype.install;
+  let runtimeRuns = 0, handleCloses = 0;
+  t.mock.method(PluginHost.prototype, 'install', function(definition) {
+    return install.call(this, {...definition, factory: context => definition.factory({...context,
+      provide(id, contract, value, revision) {
+        if (contract.id === runtimeService.id) value = {...value, async prepare(_profile, _model, host) {
+          host.emit({type: 'tools.ready', tools: host.tools.definitions}, null);
+          return {
+            run: request => host.runModel(request.attempt, async () => {
+              runtimeRuns++;
+              host.emit({type: 'usage', usage: {inputTokens: 900, outputTokens: 100, totalTokens: 1000, requests: 1, reportedRequests: 1}}, request.attempt);
+              return {terminal: {kind: 'completed'}, candidate: {text: JSON.stringify({answer: 'Generated accepted answer.', citationIds: []})}};
+            }),
+            async repair() { throw new Error('Unexpected repair'); },
+            async cancel() {},
+            async close() { handleCloses++; },
+          };
+        }};
+        return context.provide(id, contract, value, revision);
+      },
+    })});
+  });
+  const modes = [], envelopes = [], usage = [];
+  const agent = createAgent({reader, model: 'generated-model', apiKey: 'generated-key', baseUrl: 'http://127.0.0.1:9/v1'});
+  try {
+    const query = agent.query({question: 'Generated public observer fixture',
+      onUsage: sample => usage.push(structuredClone(sample)),
+      onHostRunEvent(envelope) {
+        assert.deepEqual(modes, ['host']);
+        envelopes.push(structuredClone(envelope));
+        envelope.identity.runId = 'observer-forged-run';
+        if (envelope.event.type === 'usage') envelope.event.usage.totalTokens = 99999;
+        if (envelope.event.type === 'run.terminal') envelope.event.terminal.kind = 'failed';
+        throw new Error('Generated observer failure');
+      },
+    }, {onFinalizer: mode => modes.push(mode)});
+    assert.deepEqual(modes, ['host']);
+    const answer = await query;
+    assert.equal(answer.answer, 'Generated accepted answer.');
+    assert.notEqual(answer.runId, 'observer-forged-run');
+    assert.equal(runtimeRuns, 1);
+    assert.equal(handleCloses, 1);
+    assert.deepEqual(modes, ['host']);
+    assert.equal(usage.length, 1);
+    assert.equal(usage[0].totalTokens, 1000);
+    assert.ok(envelopes.length >= 4);
+    assert.ok(envelopes.every(envelope => envelope.identity.runId === answer.runId));
+    assert.equal(envelopes.filter(envelope => envelope.event.type === 'run.terminal').length, 1);
+    assert.equal(envelopes.at(-1).event.type, 'run.terminal');
+    assert.equal(envelopes.at(-1).event.terminal.kind, 'completed');
   } finally { await agent.close(); }
 });
