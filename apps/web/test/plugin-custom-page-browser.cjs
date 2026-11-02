@@ -5,13 +5,23 @@ const {execFileSync}=require('node:child_process');const {createServer}=require(
 const assert=require('node:assert/strict');
 const repo=resolve(__dirname,'../../..'),temporary=mkdtempSync(join(tmpdir(),'mote-u08-page-'));
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
+// History: an earlier bridge-enabled run proved a deliberately transferred
+// port keeps the document's authority until the next load (calls=2) —
+// the open web has no pre-commit revocation signal for opaque frames, so
+// this component ships render-only and issues no channel until a
+// verified platform-owned navigation guard exists.
 let releaseSlow;const slowGate=new Promise(r=>{releaseSlow=r});
 const nonce='nonce-'+Math.random().toString(36).slice(2),documentKey='key-'+Math.random().toString(36).slice(2);
 const requestEnvelope=(key,id='r-preload',mark)=>JSON.stringify({contractVersion:'1',nonce,documentKey:key,instanceId:'inst:one',generation:1,requestId:id,kind:'request',method:'read',...(mark?{payload:{mark}}:{})});
 execFileSync(join(repo,'node_modules/.bin/esbuild'),['apps/web/test/custom-page-harness.tsx','--bundle','--format=iife','--outfile='+join(temporary,'bundle.js'),'--jsx=automatic'],{cwd:repo});
 const hits={};const files={
  '/harness.html':{type:'text/html'},
- '/entry1.html':{type:'text/html',body:`<script>new Image().src='/ran1';addEventListener('message',e=>{if(e.data&&e.data.kind==='channel'){const port=e.ports[0];setTimeout(()=>{window.location.href='/entry2.html';},120);port.postMessage(${requestEnvelope(documentKey)});parent.postMessage({kind:'fixture-port'},'*',[port]);}});</script>`},
+ '/entry1.html':{type:'text/html',body:`<script>new Image().src='/ran1';
+// The entry still tries its leaked-key request and navigates itself —
+// the fail-closed page never issues a carrier for any of it.
+setTimeout(()=>{window.location.href='/entry2.html';},120);
+parent.postMessage(${requestEnvelope(documentKey)},'*');
+</script>`},
  // The replacement reuses the leaked nonce but never learns the rotated
  // document key — it posts BEFORE its own load event.
  // The replacement holds the leaked nonce+documentKey but never received a
@@ -41,37 +51,23 @@ async function run(){
  window.webContents.on('console-message',e=>console.log('[ui]',e.message.slice(0,300)));const js=code=>window.webContents.executeJavaScript(code);
  const until=async(fn,label)=>{const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await pause(80);}throw Error('timed out: '+label);};
 await until(()=>js(`!!document.querySelector('iframe.plugin-custom-page')`),'component mounted');
- await until(()=>js(`window.calls&&window.calls.length>=1`),'first document invocation');
- // Deterministic pre-load window: entry2 ran (ran2+slow requested), its
- // load is held by the server's unreleased /slow — prove !slow-served
- // before sending.
+ // Fail-closed: the component renders the entry but issues no channel —
+ // entry1 still posts its leaked-key request and navigates itself; the
+ // replacement posts pre-load while its load is held. No carrier exists
+ // for any of them: invokeCalls must stay zero and the replacement
+ // itself must observe zero responses.
  await until(()=>hits['/ran2']&&hits['/slow'],'replacement ran and its load is held');
- await until(()=>js('!!window.leakedPort'),'entry leaked its port to the parent');
  assert.ok(!hits['/slow-served'],'replacement load is still held');
- const tSend=Date.now();
- await js(`window.leakedPort.postMessage(${requestEnvelope(documentKey,'r-leaked')})`);
- await pause(150);
- const callsPreLoad=await js('window.calls');
- // Documented residual: a port deliberately transferred by the issued
- // document retains the document's OWN authority until its load fires —
- // bearer delegation equivalent to what the document could already do;
- // the REPLACEMENT still has no carrier and receives nothing.
- assert.equal(callsPreLoad.length,2,'the leaked port retains only the transferred delegation until load: '+JSON.stringify(callsPreLoad));
- await until(()=>js('Number.isFinite(window.invokeSettledAt)'),'the stale invoke actually settled');
- const tInvoke=await js('window.invokeSettledAt');
- assert.ok(!hits['/slow-served'],'the replacement is still pre-load when the stale invoke settled');
- releaseSlow(); // let the replacement finish loading; its report follows
- await until(()=>hits['/slow-served'],'replacement load released');
- assert.ok(tSend<hits['/slow-served'],'the leaked-port request provably preceded the replacement load: '+JSON.stringify({tSend,slowServed:hits['/slow-served']}));
+ releaseSlow();
  await until(()=>js('window.got&&window.got.some(m=>m&&m.kind==="fixture-report")'),'replacement reports its own observation');
  await pause(150);
- const calls=await js('window.calls'),posted=await js('JSON.stringify(window.got||[])');
- assert.equal(calls.length,2,'the replacement itself never invoked — only the issued request and the delegated-port one: '+JSON.stringify(calls));
- const got=JSON.parse(posted),report=got.find(m=>m&&m.kind==='fixture-report');
+ const invokeCalls=await js('JSON.stringify(window.invokeCalls||[])'),posted=await js('JSON.stringify(window.got||[])');
+ const got=JSON.parse(posted);
+ assert.deepEqual(JSON.parse(invokeCalls),[],'no channel was issued — entry and replacement requests have no carrier: '+invokeCalls);
+ const report=got.find(m=>m&&m.kind==='fixture-report');
  assert.ok(report,'the replacement reported its own observation');
- assert.equal(report.received,0,'the pre-load replacement itself received zero messages: '+JSON.stringify(got));
- assert.ok(hits['/slow-served']>tInvoke,'the stale invoke settled before the held load fired: '+JSON.stringify({tInvoke,slowServed:hits['/slow-served']}));
- console.log('BOUNDARY',JSON.stringify({tSend,tInvoke,slowServed:hits['/slow-served']}));
- console.log('PROBE',await js('JSON.stringify({calls:JSON.stringify(window.calls),rejected:window.rejected})'),'HITS',JSON.stringify(hits));
+ assert.equal(report.received,0,'no channel or response reached the replacement: '+JSON.stringify(got));
+ const channelIssue=got.find(m=>m&&m.kind==='channel');
+ assert.equal(channelIssue,undefined,'no channel was ever issued: '+JSON.stringify(got));
  return window;}
 run().then(async window=>{console.log(JSON.stringify({passed:true}));window.destroy();rmSync(temporary,{recursive:true,force:true});app.exit(0);}).catch(async error=>{console.error(error);rmSync(temporary,{recursive:true,force:true});app.exit(1);});

@@ -1,23 +1,14 @@
 import {createRoot} from 'react-dom/client';
-import {createElement, useRef, useState} from 'react';
+import {createElement} from 'react';
 import {CustomPluginPage} from '../src/plugin-host/custom-page';
-const Harness = (window as any).__HARNESS__ as {entry1: string; entry2: string; nonce: string; documentKey: string};
-let generation = 1, visible = true;
+const Harness = (window as any).__HARNESS__ as {nonce: string; documentKey: string};
 (window as any).got = [];
-(window as any).calls = [];
-(window as any).responseCount = 0;
-window.addEventListener('message', e => {(window as any).got.push(e.data);const f=document.querySelector('iframe');(window as any).srcMatch=e.source===f?.contentWindow;if(e.ports&&e.ports[0])(window as any).leakedPort=e.ports[0];});
-const HarnessApp = () => {
-  const [docKey, setDocKey] = useState(Harness.documentKey);
-  const calls: string[] = (window as any).calls;
-  return createElement(CustomPluginPage, {
-    entryUrl: '/entry1.html',
-    instanceId: 'inst:one', nonce: Harness.nonce, documentKey: docKey,
-    generation: () => generation, visible: () => visible,
-    declared: ['read'], title: 'generated page',
-    invoke: async (method: string, p: unknown) => { calls.push(method + ':' + JSON.stringify(p ?? null)); await new Promise(r => setTimeout(r, 400)); (window as any).invokeSettledAt = Date.now(); return 'ok-' + method; },
-    onNavigated: () => { setDocKey('rotated-' + Math.random().toString(36).slice(2)); },
-    onRejected: (r: string) => { (window as any).rejected = ((window as any).rejected || '') + r + ';'; },
-  });
-};
-createRoot(document.getElementById('root')!).render(createElement(HarnessApp));
+(window as any).invokeCalls = [];
+window.addEventListener('message', e => {(window as any).got.push(e.data);});
+// Fail-closed fixture: the component renders the sandboxed entry but
+// issues no channel — there is no invoker at all; any attempt by a page
+// document (or a leaked holder) can only count against this stub.
+const invokeStub = (method: string, p: unknown) => { (window as any).invokeCalls.push(method + ':' + JSON.stringify(p ?? null)); };
+createRoot(document.getElementById('root')!).render(createElement(CustomPluginPage, {
+  entryUrl: '/entry1.html', title: 'generated page',
+}));
