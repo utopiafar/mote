@@ -28,7 +28,7 @@ data class DeclarativeSpec(val components: List<DeclarativeNode>)
  * could throw. */
 sealed interface FormSubmit {
     data class Ready(val input: JSONObject) : FormSubmit
-    data class Rejected(val field: String, val reason: String) : FormSubmit
+    data class Rejected(val index: Int, val field: String, val reason: String) : FormSubmit
     data object Busy : FormSubmit
 }
 
@@ -36,25 +36,25 @@ object DeclarativeSubmit {
     fun dispatch(fields: List<FormFieldSpec>, read: (FormFieldSpec) -> Any?, busy: () -> Boolean): FormSubmit {
         if (busy()) return FormSubmit.Busy
         val input = JSONObject()
-        for (f in fields) when (f.input) {
+        for ((index, f) in fields.withIndex()) when (f.input) {
             "boolean" -> {
-                val checked = read(f) as? Boolean ?: return FormSubmit.Rejected(f.key, "boolean required")
-                if (f.required && !checked) return FormSubmit.Rejected(f.key, "required")
+                val checked = read(f) as? Boolean ?: return FormSubmit.Rejected(index, f.key, "boolean required")
+                if (f.required && !checked) return FormSubmit.Rejected(index, f.key, "required")
                 input.put(f.key, checked)
             }
             "number" -> {
-                val raw = (read(f) as? String) ?: return FormSubmit.Rejected(f.key, "text required")
+                val raw = (read(f) as? String) ?: return FormSubmit.Rejected(index, f.key, "text required")
                 if (raw.isBlank()) {
-                    if (f.required) return FormSubmit.Rejected(f.key, "required")
+                    if (f.required) return FormSubmit.Rejected(index, f.key, "required")
                 } else {
                     val number = raw.toDoubleOrNull()?.takeIf { it.isFinite() }
-                        ?: return FormSubmit.Rejected(f.key, "number required")
+                        ?: return FormSubmit.Rejected(index, f.key, "number required")
                     input.put(f.key, number)
                 }
             }
             else -> {
-                val raw = (read(f) as? String) ?: return FormSubmit.Rejected(f.key, "text required")
-                if (f.required && raw.isBlank()) return FormSubmit.Rejected(f.key, "required")
+                val raw = (read(f) as? String) ?: return FormSubmit.Rejected(index, f.key, "text required")
+                if (f.required && raw.isBlank()) return FormSubmit.Rejected(index, f.key, "required")
                 input.put(f.key, raw)
             }
         }

@@ -537,7 +537,7 @@ fun Context.declarativePluginView(
                         }
                     }, busy)) {
                         is dev.mote.collector.plugins.FormSubmit.Ready -> onCommand(command, outcome.input)
-                        is dev.mote.collector.plugins.FormSubmit.Rejected -> inputs.firstOrNull { it.second.key == outcome.field }?.first?.let { view ->
+                        is dev.mote.collector.plugins.FormSubmit.Rejected -> inputs.getOrNull(outcome.index)?.first?.let { view ->
                             if (view is EditText) view.error = label(view.hint?.toString() ?: outcome.field)
                             view.requestFocus()
                         }
