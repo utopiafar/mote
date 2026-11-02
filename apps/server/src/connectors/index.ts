@@ -19,7 +19,7 @@ import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 
 export type {ConnectorConfig,ConnectorContext} from './types.js';
-export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthCallback} from './registry.js';
+export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthCallback,ConnectorHttpHost,ConnectorRegistryOptions,ConnectorRouteHandle} from './registry.js';
 export {recordingManifest,RecordingConnector} from './recordings.js';
 export type {RecordingProvider,RecordingAccount,RecordingMetadata} from './recordings.js';
 

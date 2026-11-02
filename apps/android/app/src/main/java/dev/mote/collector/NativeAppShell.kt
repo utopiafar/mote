@@ -56,7 +56,7 @@ internal class NativeAppShell(activity: Activity) : LinearLayout(activity) {
         }
         navigationView?.refreshPresentation()
         tag = "native-shell:${layout.identity.id}@${layout.identity.version}"
-        presentationNotice.text = if (NativeUiPacks.registry.fallbackReason() != null) MoteI18n.text("界面扩展已移除，已恢复内置方案。") else ""
+        presentationNotice.text = if (NativeUiPacks.registry.fallbackReason() != null) MoteI18n.text("界面扩展已移除，已恢复内置方案。") + (NativeUiPacks.registry.fallbackLabel()?.text?.let { " · " + it } ?: "") else ""
         presentationNotice.visibility = if (presentationNotice.text.isEmpty()) GONE else VISIBLE
         requestLayout()
     }
