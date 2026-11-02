@@ -81,6 +81,14 @@ test('configuration drain failure does not abort shutdown cleanup',async t=>{
   assert.throws(()=>node.store.stats());
 });
 
+test('configuration drain failure is retained by enabled diagnostics',async t=>{
+  const {config}=fixture(t),node=await buildApp({...config,logLevel:'error',diagnosticsEnabled:true},{agent,backgroundWorker:false});
+  node.configService.initialize=async()=>{throw new Error('generated configuration unavailable');};
+  await node.app.close();
+  const events=node.diagnostics.events(0,100).items;
+  assert.ok(events.some(event=>event.event==='config.shutdown_drain_failed'),'the shutdown drain failure must survive the diagnostics allowlist');
+});
+
 test('observability startup failure rolls back the bootstrap vault for a clean reopen',async t=>{
   const {config}=fixture(t),failure=new Error('generated observability init failure'),init=ServerDiagnostics.prototype.init;
   ServerDiagnostics.prototype.init=async function(){throw failure;};
