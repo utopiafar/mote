@@ -73,6 +73,14 @@ test('shutdown drains a held execution configuration transaction before stopping
   await closing;
 });
 
+test('configuration drain failure does not abort shutdown cleanup',async t=>{
+  const {config}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});
+  node.configService.initialize=async()=>{throw new Error('generated configuration unavailable');};
+  await node.app.close();
+  assert.equal(node.executor.closed,true);
+  assert.throws(()=>node.store.stats());
+});
+
 test('observability startup failure rolls back the bootstrap vault for a clean reopen',async t=>{
   const {config}=fixture(t),failure=new Error('generated observability init failure'),init=ServerDiagnostics.prototype.init;
   ServerDiagnostics.prototype.init=async function(){throw failure;};

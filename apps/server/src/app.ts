@@ -902,11 +902,12 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   app.addHook('preClose',async()=>{
     closing=true;
     // Stop watcher/subscriptions and join accepted configuration transactions
-    // while execution/model consumers are still alive; bootstrap retains the
-    // final platform/model close.
+    // while execution/model consumers are still alive; a config-service failure
+    // must not abort the remaining cleanup. Bootstrap retains final close.
+    let configDrainFailure:unknown;
     configurationPlatform.quiesce('shutdown');
-    await configurationPlatform.configService.initialize();
-    featureHost.stop();
+    try{await configurationPlatform.configService.initialize();}catch(error){configDrainFailure=error;}
+    try{featureHost.stop();
     // Polling/admission stops without retiring the runtime's Memory authority;
     // the runtime closes only after accepted engine work is interrupted/drained.
     sourcePipelines.quiesce();
@@ -915,6 +916,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     automaticActivity.stop();memoryPublication.stop();
     // Interrupt transports while handlers, checkpoints and storage remain live.
     await resources.stop();
+    }finally{if(configDrainFailure)try{diagnostics.record('config.shutdown_drain_failed',{category:'internal'},'error');}catch{/* cleanup continues */}}
   });
   app.addHook('onClose',async()=>resources.close());
   // Rebuilding built-in registrations before readers exist is not a change.
