@@ -179,6 +179,21 @@ test('an early close-only scope rejection is handled and aggregated',async t=>{
   await assert.rejects(closing,/Connector host adapter disposal failed/);
 });
 
+test('close during connector init closes the instance only once',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  let resolveInit!:()=>void,enteredInit!:()=>void;
+  const held=new Promise<void>(resolve=>{resolveInit=resolve;}),entered=new Promise<void>(resolve=>{enteredInit=resolve;});
+  let initCalls=0,closeCalls=0;
+  const initializing:ConnectorManifest={apiVersion:1,id:'generated-init',sourceKinds:[{kind:'generated.init',capabilities}],create:()=>({init:async()=>{initCalls++;enteredInit();await held;},close:()=>{closeCalls++;}})};
+  const adapter=createConnectorHostAdapter({manifests:[initializing],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{resolveInit();for(const scope of scopes)await scope.close().catch(()=>{});});
+  const starting=adapter.start();await entered;
+  await adapter.close();resolveInit();
+  await assert.rejects(starting,/Connector registry is closed/);
+  assert.equal(initCalls,1);assert.equal(closeCalls,1,'registry owns the single shutdown');
+});
+
 test('adapter close fences every instance before connector shutdown',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   const order:string[]=[];let fenced=false;

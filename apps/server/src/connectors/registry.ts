@@ -78,7 +78,7 @@ const oauthPath=/^\/oauth\/[a-z][a-z0-9-]*\/callback$/;
 /** A deployment scoped registry: plugins are explicit trusted code, archive contents are never loaded as code. */
 export class ConnectorRegistry {
   private manifests:ConnectorManifest[]=[];
-  private instances:{manifest:ConnectorManifest;instance:ConnectorInstance;scope?:HostScope}[]=[];
+  private instances:{manifest:ConnectorManifest;instance:ConnectorInstance;scope?:HostScope;disposed?:boolean}[]=[];
   private routes:OwnerRoute[]=[];
   private callbacks:OAuthCallback[]=[];
   private addedKinds:string[]=[];
@@ -134,11 +134,17 @@ export class ConnectorRegistry {
           throw Error('Connector registry is closed');
         };
         if(this.closed)await disposedLate();
-        const entry={manifest,instance,...(scope?{scope}:{})};this.instances.push(entry);
-        if(this.closed){const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);await disposedLate();}
+        const entry={manifest,instance,...(scope?{scope}:{}),disposed:false};this.instances.push(entry);
+        if(this.closed){this.instances.splice(this.instances.indexOf(entry),1);if(!entry.disposed){entry.disposed=true;await disposedLate();}throw Error('Connector registry is closed');}
         await instance.init?.();
-        if(this.closed)await disposedLate();
+        if(this.closed){
+          // close() may already own this instance while init was pending; never
+          // invoke a non-idempotent connector close a second time.
+          if(!entry.disposed){entry.disposed=true;await disposedLate();}
+          throw Error('Connector registry is closed');
+        }
       }
+      if(this.closed)throw Error('Connector registry is closed');
       if(this.options.http){
         if(!this.options.statusScope)throw Error('Connector status scope is unavailable');
         this.statusHandle=this.options.http.ownerRoute({method:'GET',path:'/api/connectors/status',handler:()=>this.statusView()},this.options.statusScope);
@@ -164,7 +170,7 @@ export class ConnectorRegistry {
   async stop(id:string){
     const index=this.instances.findIndex(item=>item.manifest.id===id);if(index<0)return;
     const [entry]=this.instances.splice(index,1);
-    await entry.instance.close?.();
+    entry.disposed=true;await entry.instance.close?.();
   }
 
   private addOwnerRoute(route:OwnerRoute){
@@ -224,7 +230,7 @@ export class ConnectorRegistry {
     // shared, so release only this registration instead of closing it.
     const status=this.statusHandle;this.statusHandle=undefined;
     if(status)try{await status.release('shutdown');}catch(error){errors.push(error);}
-    for(const {instance} of [...this.instances].reverse())try{await instance.close?.();}catch(error){errors.push(error);}
+    for(const entry of [...this.instances].reverse()){entry.disposed=true;try{await entry.instance.close?.();}catch(error){errors.push(error);}}
     for(const kind of this.addedKinds)try{this.context.sources.capabilities.unregister(kind);}catch(error){errors.push(error);}
     if(errors.length)throw new AggregateError(errors,'Connector disposal failed');
   })();}
