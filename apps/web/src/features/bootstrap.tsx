@@ -30,6 +30,9 @@ export const featuresReady=(async()=>{
   ] as InstanceSnapshotInput[];
   const {reports}=await bootstrapPlugins(webFeatures,instances);
   const failed=reports.find(report=>report.outcome.observed==='failed');
-  if(failed&&failed.outcome.observed==='failed')throw failed.outcome.error instanceof Error?failed.outcome.error:new Error(`Plugin ${failed.packageId} failed to mount`);
+  if(failed&&failed.outcome.observed==='failed'){
+    const original=failed.outcome.error;
+    throw Object.assign(new Error(`Plugin ${original.pluginId} failed to mount`,{cause:original.cause}),{pluginId:original.pluginId,instanceId:original.instanceId});
+  }
 })();
 type InstanceSnapshotInput=import('../plugin-host/contributions').InstanceSnapshot;

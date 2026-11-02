@@ -36,7 +36,7 @@ export class PluginContributionScope {
   readonly instance: InstanceSnapshot;
   readonly lifetime = new ViewLifetime();
   #host: WebFeatureHost;
-  #disposers: (() => void)[] = [];
+  #disposers: (() => unknown)[] = [];
   #mounted = false;
 
   constructor(host: WebFeatureHost, instance: InstanceSnapshot) {
@@ -47,13 +47,15 @@ export class PluginContributionScope {
   get mounted(): boolean { return this.#mounted; }
   get instanceId(): string { return this.instance.instanceId; }
 
-  /** Scope-owned resources; revoked on unmount/rollback. */
-  defer(dispose: () => void): void { this.#disposers.push(dispose); }
+  /** Scope-owned resources; revoked on unmount/rollback. Disposers may be
+   * asynchronous and are always awaited before rollback completes. */
+  defer(dispose: () => unknown): void { this.#disposers.push(dispose); }
 
   /** Mount the instance's contributions. desired+compatible gates admission;
    * observed='mounted' is reported only after a real successful install. */
   async mount(isolated?: IsolatedLoader): Promise<MountOutcome> {
     const inst = this.instance;
+    if (this.#mounted) return { observed: 'mounted' };
     if (inst.desired !== 'active') return { observed: 'skipped', reason: 'not-desired' };
     if (!inst.compatible) return { observed: 'skipped', reason: 'incompatible' };
     if (inst.loader === 'external' && !isolated) return { observed: 'skipped', reason: 'unsupported-loader' };
@@ -61,8 +63,11 @@ export class PluginContributionScope {
       if (inst.loader === 'react') {
         // The install returns its Cordis fiber; disposing it on rollback
         // actually withdraws the scope's contributions from the registry.
-        const fiber = await this.#host.install({ id: inst.packageId, version: '1', components: [] }, [...inst.contributions]);
-        this.defer(() => void fiber.dispose());
+        // Registry ownership keys on the instance so two instances of one
+        // package coexist; the package ID stays on the snapshot for reporting
+        // and dependency semantics.
+        const fiber = await this.#host.install({ id: inst.instanceId, version: '1', components: [] }, [...inst.contributions]);
+        this.defer(() => fiber.dispose());
       } else await isolated!.mount(this);
       this.#mounted = true;
       this.lifetime.show();
@@ -73,10 +78,12 @@ export class PluginContributionScope {
     }
   }
 
-  /** Revoke this scope's resources; sibling scopes are untouched. */
+  /** Revoke this scope's resources; sibling scopes are untouched. Async
+   * cleanup is fully awaited — rollback completes only when resources,
+   * including the install fiber, have finished releasing. */
   async rollback(): Promise<void> {
     for (const dispose of this.#disposers.splice(0)) {
-      try { dispose(); } catch { /* cleanup continues */ }
+      try { await dispose(); } catch { /* cleanup continues */ }
     }
     this.#mounted = false;
     if (this.lifetime.state !== 'disposed') this.lifetime.dispose();
