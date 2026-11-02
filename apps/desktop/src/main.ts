@@ -24,6 +24,8 @@ import { permissionKind, type SettingsWindow } from './permission-types';
 import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences, Tray } from 'electron';
+import { DesktopPluginHost, electronIpcRouter, type PluginScopeHandle } from './plugin-host/desktop-host';
+import { NativeProviderRegistry } from './plugin-host/native-registry';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -186,11 +188,12 @@ let chromeCaptureBridge:ChromeCaptureBridge|undefined;
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', showWindow);
+  let pluginHost: DesktopPluginHost | undefined;
   app.on('before-quit', event => {
     quitting = true; void events.record('APP', 'STOPPED'); collector?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void Promise.allSettled([controlChain, settleNoteWork(), localSources?.close(), updater?.close(), chromeCaptureBridge?.close(), collector?.settleCapture()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
+    void Promise.allSettled([controlChain, settleNoteWork(), localSources?.close(), updater?.close(), chromeCaptureBridge?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
@@ -243,6 +246,9 @@ else {
 
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
+    pluginHost = new DesktopPluginHost({ router: electronIpcRouter(ipcMain, () => pluginHost!.windowFacts), native: new NativeProviderRegistry('mac') });
+    const host: DesktopPluginHost = pluginHost;
+    host.native.register({ capability: 'mote.native-helper', apiVersion: '1', platform: 'mac', buildId: app.getVersion(), osGrants: ['screen', 'accessibility', 'calendar'] });
     window = new BrowserWindow({
       width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: developmentProfile },
@@ -255,7 +261,10 @@ else {
     window.webContents.on('will-navigate', event => event.preventDefault());
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-    window.on('close', event => { if (!quitting) { event.preventDefault(); window?.hide(); } });
+    const mainSenderId = window.webContents.id;
+    host.registerWindow(mainSenderId, 'main');
+    window.once('closed', () => host.unregisterWindow(mainSenderId));
+    window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
       if (!([window,quickNoteWindow].some(owned=>owned && !owned.isDestroyed() && event.sender===owned.webContents && event.senderFrame===owned.webContents.mainFrame && event.senderFrame?.url===(owned===quickNoteWindow?pageUrl+'#quick-note':pageUrl)))) throw new Error(moteText("请求来源不受信任"));
     };
@@ -263,11 +272,13 @@ else {
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
       quickNoteWindow=noteWindow;
+      const noteSenderId = noteWindow.webContents.id;
+      host.registerWindow(noteSenderId, 'quick-note');
       noteWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
       noteWindow.webContents.on('will-navigate',event=>event.preventDefault());
       noteWindow.webContents.on('will-attach-webview',event=>event.preventDefault());
       const appearance=()=>{noteWindow.setBackgroundColor(appearanceBackground());noteWindow.webContents.send('mote:appearance',appearanceState());};nativeTheme.on('updated',appearance);
-      noteWindow.once('closed',()=>{nativeTheme.removeListener('updated',appearance);if(quickNoteWindow===noteWindow)quickNoteWindow=undefined;});
+      noteWindow.once('closed',()=>{host.unregisterWindow(noteSenderId);nativeTheme.removeListener('updated',appearance);if(quickNoteWindow===noteWindow)quickNoteWindow=undefined;});
       await noteWindow.loadURL(pageUrl+'#quick-note');
     };
     ipcMain.on('mote:appearance-initial' ,(event)=>{trusted(event);event.returnValue=appearanceState();});
@@ -279,7 +290,10 @@ else {
       preferredAppearance=raw;nativeTheme.themeSource=raw==='auto'?'system':raw;
       broadcastAppearance();return appearanceState();
     });
-      ipcMain.handle('mote:language', event => { trusted(event); return languageState(); });
+      const shellScope = host.createScope({ instanceId: 'desktop-shell', capabilities: ['shell.language'] });
+      await host.startPlugin(shellScope, (scope: PluginScopeHandle) => {
+        scope.registerIpc({ channel: 'mote:language', capability: 'shell.language', windowRoles: ['main', 'quick-note'], roleFrameUrls: { main: [pageUrl], 'quick-note': [pageUrl + '#quick-note'] } }, () => languageState());
+      });
     ipcMain.handle('mote:set-language', async (event, raw: unknown) => {
       trusted(event);
       if (raw !== 'system' && !(locales as readonly string[]).includes(String(raw))) throw new Error('Invalid language');
