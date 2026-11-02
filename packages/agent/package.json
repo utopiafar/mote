@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && cp src/plugin.mjs dist/plugin.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prebuild": "npm run build -w @mote/plugin-api"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -29,7 +30,8 @@
     "@mote/shared": "0.1.0",
     "remark-parse": "11.0.0",
     "unified": "11.0.5",
-    "@deepseek-ai/dsh-attachment-local": "0.2.0-rc.2"
+    "@deepseek-ai/dsh-attachment-local": "0.2.0-rc.2",
+    "@mote/plugin-api": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
