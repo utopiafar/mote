@@ -21,9 +21,10 @@ async function waitFor(check: () => boolean, what: string) {
   while (!check()) {assert.ok(Date.now() < until, what); await delay(5);}
 }
 
-// T3: a REAL PluginCenter pipeline (generated release transport is the only
-// stub) emits the real PluginCenterView, which the web declarative adapter
-// and command invoker then consume — not a hand-shaped view model.
+// T3: a real PluginCenter pipeline emits the actual PluginCenterView, which
+// the web declarative adapter and invoker consume — not a hand-shaped view
+// model. Only the GitHub release transport and the worker probe are
+// generated stubs; the view, revision and allowedActions are producer code.
 test('a real producer-emitted instance drives the declarative adapter and precise commands', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-declarative-consumer-'));
   t.after(() => rmSync(directory, {recursive: true, force: true}));

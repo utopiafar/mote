@@ -127,3 +127,20 @@ test('plugins-domain adapter emits only allowed actions and the real invoker car
   assert.deepEqual(await session.command('check'), { ok: false, reason: 'undeclared' });
   assert.equal(calls.length, 1, 'undeclared action never fires');
 });
+
+
+test('PluginInstanceSurface renders localized scope/state and never raw keys', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { createElement } = await import('react');
+  const { PluginInstanceSurface } = await import('../src/features/runtime');
+  const instance = { id: 'inst:one', packageId: 'pkg.x', name: 'One', revision: 7, scope: 'owner', desired: true, observed: 'enabled', allowedActions: ['enable', 'disable'], issues: [], capabilities: [] } as any;
+  const markup = renderToStaticMarkup(createElement(PluginInstanceSurface, {
+    instance, busy: false, command: () => {},
+    stateLabel: (o: string) => o === 'enabled' ? '已启用' : '未启用',
+    labels: { scope: '范围', state: '状态', enable: '启用', disable: '停用' },
+  }));
+  assert.match(markup, /范围/, 'localized scope label renders');
+  assert.match(markup, /状态/, 'localized state label renders');
+  assert.match(markup, /已启用/, 'observed renders through the localized state label');
+  assert.doesNotMatch(markup, /scope|enabled/, 'no raw wire keys or raw observed leak into the surface');
+});
