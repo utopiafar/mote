@@ -114,11 +114,8 @@ internal class PluginI18nRegistry {
     fun register(namespace: String, locale: String, catalog: Map<String, String>) {
         require(token.matches(namespace)) { "Invalid plugin i18n namespace" }
         require(locale in MoteI18n.supported) { "Unsupported plugin locale: $locale" }
-        // Copy once so validation and storage see the same values; a caller map
-        // with side-effecting reads cannot pass validation and store something else.
-        val snapshot = LinkedHashMap(catalog)
-        require(snapshot.isNotEmpty()) { "Empty plugin catalog" }
-        snapshot.forEach { (key, value) ->
+        require(catalog.isNotEmpty()) { "Empty plugin catalog" }
+        catalog.forEach { (key, value) ->
             require(token.matches(key)) { "Invalid plugin message key: $key" }
             require(value.isNotBlank() && value.length <= 2000) { "Invalid plugin translation: $key" }
         }
@@ -126,12 +123,12 @@ internal class PluginI18nRegistry {
         require(!byLocale.containsKey(locale)) { "Plugin catalog already registered: $namespace@$locale" }
         if (locale == "en") {
             byLocale.forEach { (other, otherCatalog) ->
-                require(otherCatalog.keys.all(snapshot::containsKey)) { "English catalog is missing plugin keys for $other" }
+                require(otherCatalog.keys.all(catalog::containsKey)) { "English catalog is missing plugin keys for $other" }
             }
         } else byLocale["en"]?.let { english ->
-            require(snapshot.keys.all(english::containsKey)) { "English catalog is missing plugin keys for $locale" }
+            require(catalog.keys.all(english::containsKey)) { "English catalog is missing plugin keys for $locale" }
         }
-        byLocale[locale] = java.util.Collections.unmodifiableMap(snapshot)
+        byLocale[locale] = java.util.Collections.unmodifiableMap(LinkedHashMap(catalog))
     }
 
     /** Resolves one key against the active locale, then English, then the key.
