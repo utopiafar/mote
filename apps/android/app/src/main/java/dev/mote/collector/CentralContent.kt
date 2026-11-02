@@ -32,6 +32,16 @@ internal class CentralContent(
         }
         catch (error: Exception) { pendingReaderReturn = null; throw error }
     }
+    /** Plugin-owned route binding: when a registered plugin owns the page,
+     * its view session swaps in while the durable owner persists. Returns
+     * true only when a scope actually registered the route. */
+    fun pluginRoute(page: String): Boolean {
+        val host = (activity.application as? MoteApplication)?.pluginHost ?: return false
+        val owner = host.routeOwner(page) ?: return false
+        host.onViewRecreated(owner)
+        return true
+    }
+
     fun requestedFileId(): String? = activity.intent.getStringExtra("fileId")
     fun requestedFileOriginMatches(): Boolean = activity.intent.getStringExtra("fileOrigin") == server
     fun recordNew() = activity.openRecordEditor()
