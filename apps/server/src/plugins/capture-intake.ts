@@ -6,6 +6,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {StoreError,type Store} from '../store.js';
+import {IngressService} from '../ingress.js';
 import type {SourceStore} from '../sources.js';
 import type {FileStore} from '../files.js';
 import type {MaterialStore} from '../materials.js';
@@ -37,11 +38,10 @@ export interface CaptureIntakeOptions {
 export interface CaptureIntakeDependencies {
   /** C02-owned SQLite and the current domain stores. All four are borrowed. */
   readonly store:Store;
+  /** One SourceStore built by the trusted root/C10 parent with the C09 runtime. */
   readonly sources:SourceStore;
   readonly files:FileStore;
   readonly materials:MaterialStore;
-  /** Fixed C04 authority. Supplying this object is trusted assembly authority. */
-  readonly authorization:CaptureIntakeAuthority;
 }
 export interface CaptureRouteContext {
   /** Request pin bound by the host's C04 authentication hook; never caller-supplied. */
@@ -73,8 +73,14 @@ const unavailable=()=>new StoreError('Capture intake is unavailable',503);
  * the vault, the source/file/material repositories and the single C04 authority;
  * closing it revokes admission and drains nothing it does not own. */
 export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:CaptureIntakeDependencies){
-  const {store,sources,files,materials,authorization}=dependencies;
-  let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
+  const {store,sources,files,materials}=dependencies;
+  /** The capture owner owns the single IngressService; C04 binds this exact
+   * instance through bindRepositories, so the authoritative write path and the
+   * plugin routes share one acknowledgement boundary. It has no close(). */
+  const ingress=new IngressService(store,sources,files);
+  let authorization:CaptureIntakeAuthority|undefined;
+  const bound=()=>{if(!authorization)throw new StoreError('Capture intake has no authorization binding',503);return authorization;};
+  let phase:'created'|'prepared'|'bound'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let routesInstalled=false,closing:Promise<void>|undefined;
   const current=()=>{if(phase!=='active')throw unavailable();};
   const measure=async <T>(stage:'ingest'|'source',operation:'capture'|'timeline',task:()=>Promise<T>|T,metrics?:(result:T)=>Record<string,unknown>):Promise<T>=>{
@@ -83,12 +89,12 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
     return record(stage,operation,task,metrics);
   };
   const captureIntake:CaptureIntake=Object.freeze({
-    capture:(input:CaptureInput,authority:CommitAuthority)=>{current();return authorization.captureIntake.capture(input,authority);},
-    captureSettled:(inputs:CaptureInput[],authority:CommitAuthority)=>{current();return authorization.captureIntake.captureSettled(inputs,authority);},
+    capture:(input:CaptureInput,authority:CommitAuthority)=>{current();return bound().captureIntake.capture(input,authority);},
+    captureSettled:(inputs:CaptureInput[],authority:CommitAuthority)=>{current();return bound().captureIntake.captureSettled(inputs,authority);},
   });
   const sourceIntake:SourceIntake=Object.freeze({
-    sourceItem:(sourceId:string,input:unknown,authority:CommitAuthority)=>{current();return authorization.sourceIntake.sourceItem(sourceId,input,authority);},
-    sourceBatch:(sourceId:string,inputs:unknown,authority:CommitAuthority)=>{current();return authorization.sourceIntake.sourceBatch(sourceId,inputs,authority);},
+    sourceItem:(sourceId:string,input:unknown,authority:CommitAuthority)=>{current();return bound().sourceIntake.sourceItem(sourceId,input,authority);},
+    sourceBatch:(sourceId:string,inputs:unknown,authority:CommitAuthority)=>{current();return bound().sourceIntake.sourceBatch(sourceId,inputs,authority);},
   });
   const sourceRepository:SourceRepository=Object.freeze({
     register:(raw:unknown)=>{current();return sources.register(raw);},
@@ -111,20 +117,20 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
     };
     app.post('/api/captures',async(req,reply)=>{
       const input=captureSchema.parse(req.body),request=pin(req);
-      const result=await authorization.withCapture(request,input,()=>measure('ingest','capture',()=>
-        captureIntake.capture(input,authorization.commits.capture()),value=>({count:value.duplicate?0:1})));
+      const result=await bound().withCapture(request,input,()=>measure('ingest','capture',()=>
+        captureIntake.capture(input,bound().commits.capture()),value=>({count:value.duplicate?0:1})));
       return reply.code(result.duplicate?200:201).send(result);
     });
     app.post('/api/captures/bundle',{bodyLimit:12*1024*1024},async req=>{
       const captures=parseCaptureBundle(req.body),request=pin(req);
       if(new Set(captures.map(input=>input.id)).size!==captures.length)throw new StoreError('Duplicate IDs in bundle');
-      const committed=await authorization.withCapture(request,captures,()=>captureIntake.captureSettled(captures,authorization.commits.capture()));
+      const committed=await bound().withCapture(request,captures,()=>captureIntake.captureSettled(captures,bound().commits.capture()));
       return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
     });
     app.post('/api/captures/batch',{bodyLimit:12*1024*1024},async req=>{
       const {captures}=z.object({captures:z.array(captureSchema).min(1).max(25)}).strict().parse(req.body),request=pin(req);
       if(new Set(captures.map(input=>input.id)).size!==captures.length)throw new StoreError('Duplicate IDs in batch');
-      const committed=await authorization.withCapture(request,captures,()=>captureIntake.captureSettled(captures,authorization.commits.capture()));
+      const committed=await bound().withCapture(request,captures,()=>captureIntake.captureSettled(captures,bound().commits.capture()));
       return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
     });
     app.get('/api/captures',async req=>{
@@ -138,9 +144,17 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
       if(sources.store!==store||files.store!==store||materials.store!==store)throw new StoreError('Capture intake repository mismatch',503);
       phase='prepared';
     },
-    start(){if(phase!=='prepared')throw unavailable();phase='active';},
+    /** Trusted assembly only: C04 supplies the fixed verifier after it bound the
+     * same Ingress instance. This is not a published service or caller callback. */
+    bindAuthorization(value:CaptureIntakeAuthority){
+      if(phase!=='prepared')throw unavailable();
+      authorization=value;phase='bound';
+    },
+    start(){if(phase!=='bound')throw unavailable();phase='active';},
     quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';},
     stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
+    /** Trusted assembly binds this exact instance into C04 bindRepositories. */
+    get ingress(){return ingress;},
     /** Trusted assembly registers these on the feature child app, never globally. */
     routes,
     /** Frozen ordinary-consumer ports; raw IngressService, Store and commit issuer stay private. */

@@ -23,10 +23,11 @@ const sourceItem=(externalId=randomUUID())=>({externalId,revision:'1',observedAt
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-capture-intake-'));
   const store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
+  const intake=createCaptureIntake({}, {store,sources,files,materials});
+  await intake.prepare();
   const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
-  await platform.prepare();platform.bindRepositories({sources,files,materials});await platform.start();
-  const intake=createCaptureIntake({}, {store,sources,files,materials,authorization:platform});
-  await intake.prepare();intake.start();
+  await platform.prepare();platform.bindRepositories({sources,files,materials,ingress:intake.ingress});await platform.start();
+  intake.bindAuthorization(platform);intake.start();
   const app=Fastify(),pins=new WeakMap<FastifyRequest,RequestAuthority>();
   app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_request,body,done)=>done(null,body));
   app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'capture_intake_failed'});});
@@ -122,6 +123,8 @@ test('quiescing the plugin rejects new intake and keeps the platform authoritati
   assert.equal(captureIntakeReplacement,'restart');
   assert.deepEqual(captureIntakeContribution.provides.map(service=>service.id).sort(),[centralServices.captureIntake.id,centralServices.sources.id,centralServices.sourceIntake.id].sort());
   assert.equal(captureIntakeDeclaration.apiVersion,'1');
+  assert.deepEqual(Object.keys(f.intake.ports).sort(),['captureIntake','sourceIntake','sources']);
+  assert.ok(!Object.keys(f.intake.ports).some(name=>/ocr|reconcile|ingress/i.test(name)),'OCR and browser reconcile stay with their existing owners');
   f.intake.quiesce('shutdown');
   const stopped=await f.post('/api/captures',ownerToken,capture());
   assert.equal(stopped.statusCode,503,stopped.body);
