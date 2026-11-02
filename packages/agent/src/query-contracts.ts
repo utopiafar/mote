@@ -116,6 +116,10 @@ export interface QueryHooks {
   /** Host-only detailed execution trace. The host must explicitly opt in before persisting it. */
   onTrace?: (event: AgentTraceEvent) => void;
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
+  /** Local trusted observation of the authoritative Host identity/attempt envelope.
+   * Never model input or a wire field. Observer errors are isolated: execution
+   * guards and terminal ownership must not depend on throwing from this hook. */
+  onHostRunEvent?: (event: import('./host/run-contracts.js').HostRunEvent) => void;
 }
 
 /** Flat host API retained for existing adapters; its authority is never parsed from model text. */

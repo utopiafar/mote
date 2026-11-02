@@ -144,7 +144,9 @@ export function createAgent(original: AgentOptions) {
         },
         admit: (task, admissionSignal) => runModel ? runModel(task, admissionSignal) : task(),
         close: closeBridge,
-        observe: ({event}) => {
+        observe: envelope => {
+          try { input.onHostRunEvent?.(structuredClone(envelope)); } catch { /* Observation cannot change execution or suppress legacy observers. */ }
+          const {event}=envelope;
           if (event.type === 'usage') input.onUsage?.(event.usage);
           else if (event.type === 'progress') reportProgress(input, event.progress);
           else if (event.type === 'tools.ready') trace({type: 'bridge.ready', stage: 'starting', status: 'succeeded', payload: {tools: event.tools.length}});
