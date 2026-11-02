@@ -11,6 +11,10 @@ export interface ImagePayload {
   readonly source:'untrusted_personal_context';
   readonly id:string;
   readonly attachmentId?:string;
+  /** The original selection the Host admitted, kept beside the resolved view. */
+  readonly view?:'image'|'metadata';
+  readonly region?:{readonly x:number;readonly y:number;readonly width:number;readonly height:number};
+  readonly expectedImageSha256?:string;
   readonly imageView?:ImageViewTrace;
   readonly image?:{readonly mimeType:string;readonly data:string};
   /** Parent-owned opaque fields; the pack never computes or reverses them. */
@@ -51,6 +55,9 @@ export function codexImageMetadata(body:ImagePayload){
     source:body.source,
     id:body.id,
     ...(body.attachmentId===undefined?{}:{attachmentId:body.attachmentId}),
+    ...(body.view===undefined?{}:{view:body.view}),
+    ...(body.region===undefined?{}:{region:body.region}),
+    ...(body.expectedImageSha256===undefined?{}:{expectedImageSha256:body.expectedImageSha256}),
     ...(body.imageView===undefined?{}:{imageView:body.imageView}),
     ...(body.imageBudget===undefined?{}:{imageBudget:body.imageBudget}),
     ...(body.toolUsage===undefined?{}:{toolUsage:body.toolUsage}),

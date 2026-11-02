@@ -130,6 +130,9 @@ test('pure runtime adapters prepare payloads without sending, confirming or copy
   assert.equal('imageDelivery' in metadata, false, 'metadata never carries a delivery token');
   assert.equal(metadata.id, 'generated-image');
   assert.deepEqual(metadata.imageView, view);
+  assert.deepEqual(codexImageMetadata({...payload, view: 'image', region: {x: 1, y: 2, width: 3, height: 4}, expectedImageSha256: 'e'.repeat(64)}),
+    {source: 'untrusted_personal_context', id: 'generated-image', view: 'image', region: {x: 1, y: 2, width: 3, height: 4}, expectedImageSha256: 'e'.repeat(64), imageView: view, imageBudget: {remainingPayloads: 3}, toolUsage: {}},
+    'the Host-admitted selection stays beside the resolved view');
 
   const steer = codexImageSteerInputs(metadata, image);
   assert.equal(steer[0].type, 'text');
