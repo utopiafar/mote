@@ -1,11 +1,13 @@
+import {originalEvidenceReceipt} from '../../bridge.js';
 import {ContextToolError} from '../../tool-errors.js';
 import {defineToolDescriptor, type ToolDescriptor} from '../descriptor.js';
 import type {ContextRange} from '../../context-contracts.js';
 import type {HostSessionPort} from '../host-session.js';
 
-/** Options are frozen by the parent factory signature. Display timestamps are a
- * Host session projection, so the pack keeps the value for parity but never
- * re-projects records or grants citations. */
+/** Options are frozen by the parent factory signature. The Host session owns
+ * scope intersection, cursor binding, discovery and fresh grants; the pack only
+ * normalizes arguments, projects public record fields and wraps the untrusted
+ * body. */
 export interface SourceReadPackOptions {
   readonly timeZone?: string;
 }
@@ -20,28 +22,6 @@ function dateValue(value: unknown, field: string): string | undefined {
   return new Date(value as string).toISOString();
 }
 
-/** Intersect model arguments with the authorized scope. This narrows a request
- * and preserves the existing range/device errors; it never grants access. The
- * parent HostSessionPort still performs the fresh grant and discovery check. */
-function scopedRange(args: Readonly<Record<string, unknown>>, scope: Readonly<ContextRange>): ContextRange {
-  const after = dateValue(args.after, 'after'), before = dateValue(args.before, 'before');
-  const lower = dateValue(scope.after, 'after'), upper = dateValue(scope.before, 'before');
-  const effectiveAfter = after && lower ? (after > lower ? after : lower) : (after ?? lower);
-  const effectiveBefore = before && upper ? (before < upper ? before : upper) : (before ?? upper);
-  if (effectiveAfter && effectiveBefore && effectiveAfter > effectiveBefore) invalid('Time range is outside the requested scope');
-  if (args.deviceId !== undefined && typeof args.deviceId !== 'string') invalid('deviceId must be a string');
-  if (scope.deviceId && args.deviceId !== undefined && args.deviceId !== scope.deviceId) invalid('Device is outside the requested scope');
-  if (args.limit !== undefined && (!Number.isInteger(args.limit) || Number(args.limit) < 1)) invalid('limit must be a positive integer');
-  if (args.cursor !== undefined && (typeof args.cursor !== 'string' || !args.cursor || args.cursor.length > 4096)) invalid('cursor must be a pagination token returned by timeline');
-  return {
-    ...(effectiveAfter ? {after: effectiveAfter} : {}),
-    ...(effectiveBefore ? {before: effectiveBefore} : {}),
-    ...(scope.deviceId ?? (args.deviceId as string | undefined) ? {deviceId: scope.deviceId ?? args.deviceId as string} : {}),
-    ...(args.limit !== undefined ? {limit: args.limit as number} : scope.limit !== undefined ? {limit: scope.limit} : {}),
-    ...(args.cursor !== undefined ? {cursor: args.cursor as string} : {}),
-  };
-}
-
 function parseRange(args: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
   const after = dateValue(args.after, 'after'), before = dateValue(args.before, 'before');
   if (args.deviceId !== undefined && typeof args.deviceId !== 'string') invalid('deviceId must be a string');
@@ -54,6 +34,24 @@ function parseRange(args: Readonly<Record<string, unknown>>): Readonly<Record<st
   });
 }
 
+function rangeArguments(args: Readonly<Record<string, unknown>>): ContextRange {
+  return {
+    ...(args.after === undefined ? {} : {after: args.after as string}),
+    ...(args.before === undefined ? {} : {before: args.before as string}),
+    ...(args.deviceId === undefined ? {} : {deviceId: args.deviceId as string}),
+    ...(args.limit === undefined ? {} : {limit: args.limit as number}),
+    ...(args.cursor === undefined ? {} : {cursor: args.cursor as string}),
+  };
+}
+
+type PackBody = Readonly<{source: 'untrusted_personal_context'; data: unknown; pagination?: Readonly<{nextCursor: string | null; totalCount?: number}>}>;
+
+const body = (data: unknown, pagination?: Readonly<{nextCursor: string | null; totalCount?: number}>): PackBody => Object.freeze({
+  source: 'untrusted_personal_context',
+  data,
+  ...(pagination ? {pagination} : {}),
+});
+
 const rangeFields = {
   after: {type: 'string', description: 'Inclusive ISO timestamp lower bound'},
   before: {type: 'string', description: 'Exclusive ISO timestamp upper bound (records at this instant are excluded)'},
@@ -62,9 +60,11 @@ const rangeFields = {
 } as const;
 
 /** Source discovery, item browsing and immutable revision history. Every source
- * identity comes from the current scope or a previously discovered result. */
+ * identity comes from the current scope or a previously discovered result; the
+ * parent HostSessionPort owns the actual scope, cursor binding, discovery and
+ * fresh-grant checks. */
 export function createSourceReadPack(options: SourceReadPackOptions = {}): readonly ToolDescriptor[] {
-  void options.timeZone; // Host session projects display times; see above.
+  const timeZone = options.timeZone ?? 'UTC';
   return Object.freeze([
     defineToolDescriptor({
       apiVersion: '1',
@@ -83,9 +83,9 @@ export function createSourceReadPack(options: SourceReadPackOptions = {}): reado
         if (args.query !== undefined && (typeof args.query !== 'string' || (args.query as string).length > 500)) invalid('Invalid source query');
         return parseRange(args);
       },
-      execute(args, port: HostSessionPort) {
-        const range = scopedRange(args, port.scope);
-        return port.read('sources', {...range, ...(args.query === undefined ? {} : {query: args.query as string})});
+      async execute(args, port: HostSessionPort) {
+        const data = await port.read('sources', {...rangeArguments(args), ...(args.query === undefined ? {} : {query: args.query as string})});
+        return body(data);
       },
     }),
     defineToolDescriptor({
@@ -112,14 +112,15 @@ export function createSourceReadPack(options: SourceReadPackOptions = {}): reado
       },
       async execute(args, port: HostSessionPort) {
         const page = await port.read('sourceItems', {
-          ...scopedRange(args, port.scope),
+          ...rangeArguments(args),
           ...(args.sourceId === undefined ? {} : {sourceId: args.sourceId as string}),
           ...(args.kind === undefined ? {} : {kind: args.kind as string}),
           ...(args.includeDeleted === undefined ? {} : {includeDeleted: args.includeDeleted as boolean}),
         });
         if (!page || !Array.isArray(page.items) || (page.nextCursor !== null && typeof page.nextCursor !== 'string')) invalid('Context reader returned an invalid page');
         if (page.totalCount !== undefined && (!Number.isSafeInteger(page.totalCount) || page.totalCount < 0 || page.totalCount < page.items.length)) invalid('Context reader returned an invalid total count');
-        return page;
+        const data = page.items.map(record => originalEvidenceReceipt(record, 0, 600, timeZone));
+        return body(data, {nextCursor: page.nextCursor, ...(page.totalCount === undefined ? {} : {totalCount: page.totalCount})});
       },
     }),
     defineToolDescriptor({
@@ -140,9 +141,9 @@ export function createSourceReadPack(options: SourceReadPackOptions = {}): reado
         return Object.freeze({id: args.id});
       },
       async execute(args, port: HostSessionPort) {
-        const records = await port.read('sourceHistory', {...scopedRange({}, port.scope), id: args.id as string});
+        const records = await port.read('sourceHistory', {id: args.id as string});
         if (!Array.isArray(records)) invalid('Context reader returned invalid records');
-        return records;
+        return body(records.map(record => originalEvidenceReceipt(record, 0, 600, timeZone)));
       },
     }),
   ]);
