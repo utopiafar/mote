@@ -27,6 +27,8 @@ export interface ConnectorHost {
   /** The host validates callback inputs and sets restrictive response headers. */
   oauthCallback(callback:OAuthCallback):void;
 }
+export type ConnectorInstanceState='active'|'failed'|'blocked';
+export interface ConnectorInventoryEntry {id:string;version:string;sourceKinds:string[];active:boolean;state:ConnectorInstanceState;error?:string}
 export interface ConnectorRouteHandle {release(reason?:StopReason):Promise<void>}
 /** Trusted H05/29 assembly seam. The dispatcher-backed adapter supplies it; ordinary
  * consumers never receive this registration object. */
@@ -73,12 +75,17 @@ const descriptorSchema=z.object({
   externalWrite:z.literal(false),
 }).strict();
 const connectorId=/^[a-z][a-z0-9-]{0,63}$/;
+const failureCode=(error:unknown,fallback:string)=>{
+  const code=(error as {code?:unknown})?.code;
+  return typeof code==='string'&&/^[a-z][a-z0-9_.:-]{0,99}$/.test(code)?code:fallback;
+};
 const oauthPath=/^\/oauth\/[a-z][a-z0-9-]*\/callback$/;
 
 /** A deployment scoped registry: plugins are explicit trusted code, archive contents are never loaded as code. */
 export class ConnectorRegistry {
   private manifests:ConnectorManifest[]=[];
   private instances:{manifest:ConnectorManifest;instance:ConnectorInstance;scope?:HostScope;disposed?:boolean}[]=[];
+  private failures=new Map<string,{manifest:ConnectorManifest;state:'failed'|'blocked';error:string}>();
   private routes:OwnerRoute[]=[];
   private callbacks:OAuthCallback[]=[];
   private addedKinds:string[]=[];
@@ -174,14 +181,19 @@ export class ConnectorRegistry {
     if(this.statusHandle)throw Error('Connector status is already mounted');
     this.statusHandle=this.options.http.ownerRoute({method:'GET',path:'/api/connectors/status',handler:()=>this.statusView()},scope);
   }
+  recordFailure(manifest:ConnectorManifest,error:unknown,state:'failed'|'blocked'='failed'){
+    this.failures.set(manifest.id,{manifest,state,error:failureCode(error,state==='blocked'?'connector_blocked':'connector_failed')});
+  }
+  clearFailure(id:string){this.failures.delete(id);}
   /** Start one connector instance. Failure rolls back only this entry and its
    * instance; the caller owns the H04 scope and releases routes/capabilities. */
   async startInstance(manifest:ConnectorManifest,scope:HostScope){
     const http=this.options.http;if(!http)throw Error('Connector HTTP host is unavailable');
     if(this.closed)throw Error('Connector registry is closed');
     if(this.instances.some(entry=>entry.manifest.id===manifest.id))throw Error(`Connector ${manifest.id} is already started`);
-    const instance=await manifest.create(this.context);
-    if(!instance||typeof instance!=='object')throw Error(`Connector ${manifest.id} did not create an instance`);
+    let instance:ConnectorInstance|undefined;
+    try{instance=await manifest.create(this.context);}catch(error){this.recordFailure(manifest,error);throw error;}
+    if(!instance||typeof instance!=='object'){this.recordFailure(manifest,Error('Invalid connector instance'),'failed');throw Error(`Connector ${manifest.id} did not create an instance`);}
     if(this.closed){
       try{await instance.close?.();}catch(cleanup){throw new AggregateError([Error('Connector registry is closed'),cleanup],'Connector late initialization and disposal failed');}
       throw Error('Connector registry is closed');
@@ -199,8 +211,10 @@ export class ConnectorRegistry {
         if(!this.options.transport)throw Error('Connector transport is unavailable');
         await this.options.transport(instance);
       }
+      this.clearFailure(manifest.id);
     }catch(error){
       const index=this.instances.indexOf(entry);if(index>=0)this.instances.splice(index,1);
+      this.recordFailure(manifest,error);
       if(!entry.disposed){entry.disposed=true;try{await instance.close?.();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector instance startup and disposal failed',{cause:error});}}
       throw error;
     }
@@ -212,7 +226,8 @@ export class ConnectorRegistry {
     const errors:unknown[]=[];
     if(beforeClose)try{await beforeClose();}catch(error){errors.push(error);}
     try{await entry.instance.close?.();}catch(error){errors.push(error);}
-    if(errors.length)throw new AggregateError(errors,'Connector instance stop failed');
+    if(errors.length){this.recordFailure(entry.manifest,errors[0]);throw new AggregateError(errors,'Connector instance stop failed');}
+    this.clearFailure(id);
   }
 
   private addOwnerRoute(route:OwnerRoute){
@@ -257,7 +272,11 @@ export class ConnectorRegistry {
       });
     }
   }
-  inventory(){return this.instances.map(({manifest})=>({id:manifest.id,version:String(manifest.apiVersion),sourceKinds:manifest.sourceKinds.map(k=>typeof k==='string'?k:k.kind),active:!this.closed}));}
+  inventory():ConnectorInventoryEntry[]{
+    const active:ConnectorInventoryEntry[]=this.instances.map(({manifest})=>({id:manifest.id,version:String(manifest.apiVersion),sourceKinds:manifest.sourceKinds.map(k=>typeof k==='string'?k:k.kind),active:!this.closed,state:'active'}));
+    const failed:ConnectorInventoryEntry[]=[...this.failures.values()].filter(value=>!this.instances.some(entry=>entry.manifest.id===value.manifest.id)).map(({manifest,state,error})=>({id:manifest.id,version:String(manifest.apiVersion),sourceKinds:manifest.sourceKinds.map(k=>typeof k==='string'?k:k.kind),active:false,state,error}));
+    return [...active,...failed].sort((a,b)=>a.id.localeCompare(b.id));
+  }
   configureSyncInterval(intervalMs:number){
     if(this.closed)return;
     z.number().int().positive().max(2_147_483_647).parse(intervalMs);

@@ -98,6 +98,23 @@ test('hot install/restart adds and removes one connector with shared OAuth',asyn
   await adapter.close();
 });
 
+test('concurrent install/restart of the same id rejects instead of double activation',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[manifest('generated-concurrent-a',{statusKey:'a'})],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  const duplicate=manifest('generated-concurrent-b',{statusKey:'b',prefix:'concurrent-b.'});
+  const first=adapter.install(duplicate);const second=adapter.install(duplicate);
+  await assert.rejects(second,/already known/);await first;
+  assert.equal(adapter.inventory().filter(item=>item.id==='generated-concurrent-b'&&item.state==='active').length,1);
+  await adapter.stop('generated-concurrent-b');
+  const restartFirst=adapter.restart('generated-concurrent-b');const restartSecond=adapter.restart('generated-concurrent-b');
+  await assert.rejects(restartSecond,/already started/);await restartFirst;
+  assert.equal(adapter.inventory().filter(item=>item.id==='generated-concurrent-b'&&item.state==='active').length,1);
+  await adapter.close();
+});
+
 test('hot install init failure rolls back only its instance and siblings serve',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   let releaseInit!:()=>void,enteredInit!:()=>void;
@@ -114,6 +131,7 @@ test('hot install init failure rolls back only its instance and siblings serve',
   assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-init-fail',headers})).statusCode,404);
   assert.equal((await f.app.inject({url:'/api/connectors/generated-hot-ok',headers})).body,'generated-hot-ok');
   assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-hot-ok'}});
+  const failed=adapter.inventory().find(item=>item.id==='generated-hot-init-fail');assert.equal(failed?.state,'failed');assert.equal(failed?.active,false);assert.equal(failed?.error,'connector_failed');
   await adapter.close();
 });
 
@@ -128,6 +146,7 @@ test('hot stop close failure removes only that instance and siblings serve',asyn
   assert.equal((await f.app.inject({url:'/api/connectors/generated-close-fail',headers})).statusCode,404);
   assert.equal((await f.app.inject({url:'/api/connectors/generated-close-ok',headers})).body,'generated-close-ok');
   assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-close-ok'}});
+  const failed=adapter.inventory().find(item=>item.id==='generated-close-fail');assert.equal(failed?.state,'failed');assert.equal(failed?.active,false);assert.equal(failed?.error,'connector_failed');
   await adapter.close();
 });
 
@@ -157,10 +176,12 @@ test('initial start init failure leaves siblings serving',async t=>{
   ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
     scopeFor:m=>{const scope=instanceScope(m.id);scopes.push(scope);return scope;}});
   t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
-  await assert.rejects(adapter.start(),/Connector host adapter startup failures/);
+  await adapter.start();
   assert.equal((await f.app.inject({url:'/api/connectors/generated-start-ok',headers})).body,'generated-start-ok');
   assert.equal((await f.app.inject({url:'/api/connectors/generated-start-fail',headers})).statusCode,404);
   assert.deepEqual((await f.app.inject({url:'/api/connectors/status',headers})).json(),{ok:{id:'generated-start-ok'}});
+  const inventory=adapter.inventory(),ok=inventory.find(item=>item.id==='generated-start-ok'),failed=inventory.find(item=>item.id==='generated-start-fail');
+  assert.equal(ok?.state,'active');assert.equal(failed?.state,'failed');assert.equal(failed?.active,false);assert.equal(failed?.error,'connector_failed');
   await adapter.close();
 });
 
