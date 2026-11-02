@@ -6,6 +6,7 @@ import type {Config} from './config.js';
 import type {ConfigService} from './config-service.js';
 import type {Store} from './store.js';
 import type {createVaultPlatformAssembly} from './plugins/vault-platform.js';
+import type {ConfigurationPlatform} from './plugins/configuration-platform.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
 import type {ServerFeatureAdapter} from './features/index.js';
 import {defaultDistribution} from './distribution/default.js';
@@ -13,7 +14,7 @@ import {defaultDistribution} from './distribution/default.js';
 /** Assembly-private bridge for the existing product, not a plugin SDK service
  * bag. C02/C04 replace the storage/authorization adapters with domain ports. */
 export interface FoundationValues {
-  configuration:{readonly config:Config;readonly service:ConfigService};
+  configuration:{readonly config:Config;readonly service:ConfigService;readonly platform:ConfigurationPlatform};
   storage:{readonly store:Store;readonly assembly:ReturnType<typeof createVaultPlatformAssembly>};
   authorization:{validOwnerBearer(authorization:string|undefined):boolean};
 }
@@ -87,7 +88,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     const current={...input,config:configuration.value.config};
     const storage=await install('storage',current),authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
-    return Object.freeze({config:configuration.value.config,configService:configuration.value.service,store:storage.value.store,vault:storage.value.assembly,
+    return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
       authorization:authorization.value,features:Object.freeze(features),get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
       /** Trusted build-only installation in the same host; no public service or second host. */
       async installObservabilityPlatform(options:ObservabilityPlatformOptions){

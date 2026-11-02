@@ -36,6 +36,9 @@ test('default loader preserves the complete product, owner checks and original n
   ]);
   assert.equal(node.bootstrap.snapshot().contributions.length,4);
   assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'}]);
+  assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
+  assert.equal(node.configurationPlatform.configService,node.configService);
+  assert.equal(node.configurationPlatform.modelSettings,node.modelSettings);
   const input=note();
   assert.equal((await node.app.inject({method:'POST',url:'/api/notes',payload:input})).statusCode,401);
   const created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:input});
@@ -48,6 +51,7 @@ test('default loader preserves the complete product, owner checks and original n
   assert.equal(usage.statusCode,200,usage.body);
   await node.app.close();await node.app.close();
   assert.equal(node.executor.closed,true);
+  assert.throws(()=>node.configurationPlatform.configService);
   assert.throws(()=>node.executionPlatform.assembly);
   assert.throws(()=>node.observabilityPlatform.forAssembly(node.observabilityScope));
   assert.equal(node.bootstrap.snapshot().contributions.length,0);

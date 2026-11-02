@@ -63,7 +63,7 @@ import { safeError,type AgentTraceContext } from './diagnostics.js';
 import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import { ExecutionFailure } from './execution-engine.js';
-import { ExecutionSettings,type ExecutionSettingsValue,type DiagnosticsSettingsValue } from './execution-settings.js';
+import type {ExecutionSettingsValue,DiagnosticsSettingsValue} from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
 import { installServerFeatures } from './features/index.js';
 import { FileEvidence } from './file-evidence.js';
@@ -102,7 +102,7 @@ import { reviewMemory } from './memory-review.js';
 import { ReloadableAgent,applyModelSettings,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
-import { ModelSettingsError,ModelSettingsStore } from './model-settings.js';
+import { ModelSettingsError } from './model-settings.js';
 import { linkOperationParent } from './operation-projection.js';
 import {ImageProcessing} from './image-processing.js';
 import {imageUnderstanding} from './image-understanding.js';
@@ -139,8 +139,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const bootstrap=await bootstrapCentral({config:{...config},...(dependencies?.configService?{configService:dependencies.configService}:{}),...(dependencies?.store?{store:dependencies.store}:{}),...(dependencies?.backgroundWorker!==undefined?{backgroundWorker:dependencies.backgroundWorker}:{})},dependencies?.distribution);
   resources.defer(()=>bootstrap.close());
   config=bootstrap.config;
-  const configService=bootstrap.configService,store=bootstrap.store;
-  resources.beforeClose(()=>configService.close());
+  const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store;
   assertCurrentDelegationSchema(store);
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   let availableModelConnections=():ModelConnection[]=>[];
@@ -157,7 +156,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>backendContext.fiber.dispose());
   backendContext.provide('moteMaterials',materials);
   backendContext.provide('moteConfig',configService);
-  const runtimeSettings=new ExecutionSettings(configService);
+  const runtimeSettings=configurationPlatform.runtimeSettings;
   const observability=await bootstrap.installObservabilityPlatform({
     logDirectory:config.logDirectory??join(config.dataDir,'logs'),
     diagnostics:{...runtimeSettings.diagnostics(),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries},
@@ -346,8 +345,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>runtimeHost.close());
   const factory:ModelAgentFactory=runtimeHost.factory;
   let initialAgent=dependencies?.agent?runtimeHost.wrap(dependencies.agent,modelSettingsFromConfig(config),{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
-  const modelSettings=new ModelSettingsStore({
-    configService,codex,
+  await configurationPlatform.bindModels({
+    codex,
     prepare:async (settings,profiles,defaultProfileId,previousSettings)=>{
       const candidate=await createModelRegistry(profiles,reader,factory,initialAgent,defaultProfileId);initialAgent=undefined;
       return agent.prepare(candidate,()=>applyModelSettings(config,settings),()=>applyModelSettings(config,previousSettings??settings));
@@ -357,8 +356,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       return {...candidate,query:input=>modelAuthorizationHost.manual('model-probe:'+id,[connection],signal=>candidate.query({...input,signal}),input.signal,'probe')};
     }),
   });
-  resources.defer(()=>modelSettings.close());
-  await modelSettings.initialize();
+  const modelSettings=configurationPlatform.modelSettings;
   let additionalModelConnections=():ModelConnection[]=>[];
   availableModelConnections=()=>{
     const models=[...modelSettings.profiles(),...MODEL_FEATURES.map(feature=>modelSettings.select(feature))].map(profile=>agentModelConnection({kind:'profile',id:profile.id},profile.settings));
@@ -883,9 +881,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
   const activity=new ActivityProjection(store,executionPlatform.assembly.operations,{delegation});
-  const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(value);
+  const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings({interactiveConcurrency:value.interactiveConcurrency,agentConcurrency:value.agentConcurrency,llmConcurrency:value.llmConcurrency,memoryConcurrency:value.memoryConcurrency});
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
-  configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(next));
+  configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration({enabled:next.enabled,debug:next.debug,traceEnabled:next.traceEnabled,level:next.level}));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const automaticActivity=new AutomaticActivity(store,materials,executor,configService,{query:input=>queryAgent(input,'query','activity'),selection:profileId=>{const selected=modelSettings.select('chat',profileId);return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},lane:()=>workflows.settings().semantic});
   resources.defer(()=>automaticActivity.close());
@@ -896,7 +894,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   await installServerFeatures(featureHost,featureServices,bootstrap.features);
   memoryTopics=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader,()=>catalogChangesEnabled&&!closing),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query:input=>queryAgent(input,'query','memories')});
   resources.defer(()=>memoryTopics?.close());
-  await configService.startWatching();
+  await configurationPlatform.start();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
@@ -916,7 +914,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,bootstrap,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();
