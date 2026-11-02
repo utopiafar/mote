@@ -1,5 +1,6 @@
+import {existsSync, realpathSync, statSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
-import {isAbsolute, resolve, sep} from 'node:path';
+import {isAbsolute, relative, resolve, sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 /** Public assembly contract for native DSH packages. The host resolves the package and
@@ -85,12 +86,24 @@ export async function readNativeDshManifest(packageRoot: string): Promise<Native
   if (typeof exportsValue === 'string') {
     exportsMap['.'] = exportsValue;
   } else if (exportsValue && typeof exportsValue === 'object' && !Array.isArray(exportsValue)) {
-    for (const [subpath, target] of Object.entries(exportsValue as Record<string, unknown>)) {
-      const resolved = exportTarget(target);
-      if (resolved === undefined) {
-        throw new NativeDshAssemblyError('native_entry_missing', `Export ${subpath} has no runtime entry`);
+    const entries = Object.entries(exportsValue as Record<string, unknown>);
+    if (entries.some(([subpath]) => subpath.startsWith('.'))) {
+      for (const [subpath, target] of entries) {
+        if (!subpath.startsWith('.')) {
+          throw new NativeDshAssemblyError('native_manifest_invalid', 'Native package exports cannot mix subpaths and conditions');
+        }
+        const resolved = exportTarget(target);
+        if (resolved === undefined) {
+          throw new NativeDshAssemblyError('native_entry_missing', `Export ${subpath} has no runtime entry`);
+        }
+        exportsMap[subpath] = resolved;
       }
-      exportsMap[subpath] = resolved;
+    } else {
+      const rootTarget = exportTarget(exportsValue);
+      if (rootTarget === undefined) {
+        throw new NativeDshAssemblyError('native_entry_missing', 'Native package root has no runtime entry');
+      }
+      exportsMap['.'] = rootTarget;
     }
   } else {
     throw new NativeDshAssemblyError('native_manifest_invalid', 'Native package exports are required');
@@ -121,11 +134,12 @@ function exportTarget(target: unknown): string | undefined {
   if (typeof target === 'string') return target;
   if (!target || typeof target !== 'object' || Array.isArray(target)) return undefined;
   const conditions = target as Record<string, unknown>;
-  for (const key of ['import', 'default']) {
-    const selected = conditions[key];
-    if (typeof selected === 'string') return selected;
-    const nested = exportTarget(selected);
-    if (nested !== undefined) return nested;
+  // Resolve only conditions this loader can actually satisfy. Unknown keys are
+  // private to another consumer and must not select an executable target.
+  for (const key of ['import', 'node', 'default']) {
+    if (!Object.hasOwn(conditions, key)) continue;
+    const resolved = exportTarget(conditions[key]);
+    if (resolved !== undefined) return resolved;
   }
   return undefined;
 }
@@ -144,7 +158,16 @@ export function nativeDshEntrySpecifier(packageRoot: string, target: string): st
   if (isAbsolute(target)) {
     throw new NativeDshAssemblyError('native_entry_escape', 'Native entry must not be absolute');
   }
-  return pathToFileURL(resolved).href;
+  if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+    throw new NativeDshAssemblyError('native_entry_missing', 'Native entry file does not exist');
+  }
+  const realRoot = realpathSync(root);
+  const realResolved = realpathSync(resolved);
+  const realRelative = relative(realRoot, realResolved);
+  if (realRelative === '..' || realRelative.startsWith(`..${sep}`) || isAbsolute(realRelative)) {
+    throw new NativeDshAssemblyError('native_entry_escape', 'Native entry resolves outside the package root');
+  }
+  return pathToFileURL(realResolved).href;
 }
 
 /**
@@ -158,7 +181,14 @@ export function planNativeDshAssembly(
   grantedCapabilities: readonly string[],
 ): NativeDshAssembly {
   const granted = new Set(grantedCapabilities);
+  for (const capability of manifest.capabilities) {
+    if (!granted.has(capability)) {
+      throw new NativeDshAssemblyError('native_capability_denied', `Native package capability is not granted: ${capability}`);
+    }
+  }
   const ids = new Set<string>();
+  const subpaths = new Set<string>();
+  const specifiers = new Set<string>();
   const entries: NativeDshAssemblyEntry[] = [];
   let factory: NativeDshAssemblyEntry | undefined;
   for (const selection of selections) {
@@ -169,6 +199,10 @@ export function planNativeDshAssembly(
     if (!subpathPattern.test(selection.subpath)) {
       throw new NativeDshAssemblyError('native_entry_missing', `Native subpath is not public: ${selection.subpath}`);
     }
+    if (subpaths.has(selection.subpath)) {
+      throw new NativeDshAssemblyError('native_manifest_invalid', `Native export is selected more than once: ${selection.subpath}`);
+    }
+    subpaths.add(selection.subpath);
     const target = manifest.exports[selection.subpath];
     if (target === undefined) {
       throw new NativeDshAssemblyError('native_entry_missing', `Native package has no export ${selection.subpath}`);
@@ -178,10 +212,15 @@ export function planNativeDshAssembly(
         throw new NativeDshAssemblyError('native_capability_denied', `Native capability is not declared and granted: ${capability}`);
       }
     }
+    const specifier = nativeDshEntrySpecifier(packageRoot, target);
+    if (specifiers.has(specifier)) {
+      throw new NativeDshAssemblyError('native_manifest_invalid', 'Native package entry is selected more than once');
+    }
+    specifiers.add(specifier);
     const entry: NativeDshAssemblyEntry = {
       id: selection.id,
       subpath: selection.subpath,
-      specifier: nativeDshEntrySpecifier(packageRoot, target),
+      specifier,
       factory: selection.factory === true,
     };
     if (entry.factory) {

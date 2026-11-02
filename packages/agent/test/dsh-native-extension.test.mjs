@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import {mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -44,17 +44,63 @@ test('native assembly validates public manifest, entries and factory ownership',
   ], grants), 'native_factory_duplicate');
 
   assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
+    {id: 'one', subpath: '.', capabilities: ['tools']},
+    {id: 'two', subpath: '.'},
+  ], grants), 'native_manifest_invalid');
+
+  assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
+    {id: 'one', subpath: '.', capabilities: ['tools']},
+  ], ['hooks', 'factory', 'agents']), 'native_capability_denied');
+
+  assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
     {id: 'one', subpath: './factory-a', capabilities: ['network']},
   ], grants), 'native_capability_denied');
+
+  const conditionalRoot = await mkdtemp(join(tmpdir(), 'mote-native-conditional-'));
+  try {
+    await writeFile(join(conditionalRoot, 'index.mjs'), 'export default 1;\n');
+    await writeFile(join(conditionalRoot, 'package.json'), JSON.stringify({
+      name: '@mote/conditional-probe',
+      version: '0.0.0',
+      type: 'module',
+      exports: {import: './index.mjs', default: './index.mjs'},
+    }));
+    const conditionalManifest = await readNativeDshManifest(conditionalRoot);
+    const conditionalPlan = planNativeDshAssembly(conditionalRoot, conditionalManifest, [
+      {id: 'one', subpath: '.'},
+    ], grants);
+    assert.equal(conditionalPlan.entries[0].subpath, '.');
+  } finally {
+    await rm(conditionalRoot, {recursive: true, force: true});
+  }
 
   const escaped = {...manifest, exports: {'.': '../escape.mjs'}};
   assertCode(() => planNativeDshAssembly(fixtureRoot, escaped, [
     {id: 'one', subpath: '.'},
   ], grants), 'native_entry_escape');
 
+  const missing = {...manifest, exports: {'.': './missing.mjs'}};
+  assertCode(() => planNativeDshAssembly(fixtureRoot, missing, [
+    {id: 'one', subpath: '.'},
+  ], grants), 'native_entry_missing');
+
   assertCode(() => planNativeDshAssembly(fixtureRoot, manifest, [
     {id: 'one', subpath: '../factory-a'},
   ], grants), 'native_entry_missing');
+
+  const tempRoot = await mkdtemp(join(tmpdir(), 'mote-native-symlink-'));
+  const outside = await mkdtemp(join(tmpdir(), 'mote-native-outside-'));
+  try {
+    await writeFile(join(outside, 'outside.mjs'), 'export default 1;\n');
+    await symlink(join(outside, 'outside.mjs'), join(tempRoot, 'escape.mjs'));
+    const symlinked = {...manifest, exports: {'.': './escape.mjs'}};
+    assertCode(() => planNativeDshAssembly(tempRoot, symlinked, [
+      {id: 'one', subpath: '.'},
+    ], grants), 'native_entry_escape');
+  } finally {
+    await rm(tempRoot, {recursive: true, force: true});
+    await rm(outside, {recursive: true, force: true});
+  }
 });
 
 function sse(res, chunk) {
@@ -262,7 +308,7 @@ test('real DSH loader runs the native package, changes request config, and resta
     assert.match(JSON.stringify(toolResult), /hello-native/);
     assert.match(a.result.finalResponse, /native tool result observed/);
 
-    const failedSessions = (await sessionFiles(a.dshHome)).filter(path =>
+    const failedSessions = (await sessionFiles(root)).filter(path =>
       /probe-setup-fail|probe-commit-fail|probe-owner-unload/.test(path));
     assert.deepEqual(failedSessions, [], 'failed candidates left a published session');
 
