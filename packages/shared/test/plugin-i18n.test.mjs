@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseUiContribution} from '../dist/plugin-ui.js';
-import {PluginI18nRegistry, resolveContributionPresentation} from '../dist/plugin-i18n.js';
+import {PluginI18nRegistry, resolveContributionPresentation} from '@mote/shared/plugin-i18n';
 
 /** A contribution descriptor as a real package manifest projects it; the
  * registry consumes the same frozen wire type the host loads. */
