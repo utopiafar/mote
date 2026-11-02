@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {setImmediate} from 'node:timers/promises';
 import {parse,stringify} from 'yaml';
 import {z} from 'zod';
+import {FSWatcher} from 'chokidar';
 import {PluginHost} from '@mote/plugin-host';
 import type {ScopeIdentity} from '@mote/plugin-api/contracts';
 import {createConfigurationPlatform,createConfigurationPlatformFactory,configurationPlatformDeclaration,configurationServices} from '../src/plugins/configuration-platform.js';
@@ -114,6 +115,35 @@ test('hot plugin edits preserve saved restart-only fields and restart applies th
   const restarted=createConfigurationPlatform({path,watch:false});t.after(()=>restarted.close());await restarted.prepare();
   const reloaded=await restarted.registerDomain(registration);
   assert.deepEqual(reloaded.snapshot(),{revision:2,value:{cold:1,hot:1}});
+});
+
+test('registered transforming schemas publish their validated output without parsing it again',async t=>{
+  const {platform,path}=await fixture(t),events:unknown[]=[];let transforms=0;
+  const domain=await platform.registerDomain({id:'transformed',schema:z.object({limit:z.string().transform(value=>{transforms++;return Number(value);})}).strict(),defaultValue:{limit:'2'}});
+  const afterRegistration=transforms;
+  assert.deepEqual(domain.snapshot(),{revision:0,value:{limit:2}});
+  domain.subscribe(value=>events.push(value));
+  assert.equal(transforms,afterRegistration,'reads and subscriptions do not rerun input parsing');
+  await edit(path,document=>{document.plugins.configuration.transformed={limit:'3'};});await platform.configService.reload();
+  assert.deepEqual(events,[{revision:1,value:{limit:3}}]);
+  const afterReload=transforms,snapshot=domain.snapshot();snapshot.value.limit=99;
+  assert.deepEqual(domain.snapshot(),{revision:1,value:{limit:3}});assert.equal(transforms,afterReload);
+});
+
+test('concurrent platform close waits for the actual watcher teardown started by quiescence',async t=>{
+  const {platform}=await fixture(t,true);await platform.start();
+  const entered=barrier(),finish=barrier(),original=FSWatcher.prototype.close;
+  let quiescing:Promise<void>|undefined,closing:Promise<void>|undefined,closed=false;
+  FSWatcher.prototype.close=function(){entered.release();return finish.promise.then(()=>original.call(this));};
+  try{
+    quiescing=platform.quiesce('restart');await entered.promise;
+    closing=platform.close();void closing.then(()=>{closed=true;});
+    await setImmediate();assert.equal(closed,false,'close must join the earlier in-flight watcher cleanup');
+    finish.release();await quiescing;await closing;assert.equal(closed,true);
+  }finally{
+    finish.release();FSWatcher.prototype.close=original;
+    await Promise.allSettled([quiescing,closing]);
+  }
 });
 
 test('model selection fails closed until AGENT binding and returns no credentials or endpoint',async t=>{

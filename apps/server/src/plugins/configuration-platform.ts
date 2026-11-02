@@ -103,7 +103,8 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
       registrations.set(id,unregister);
       // ConfigService merges partial patches into the saved document and validates the full candidate.
       // Filling omitted keys from effective state here would overwrite pending restart-only values.
-      return domain(id,input=>registration.schema.parse(input));
+      // current() already returns a detached schema output, which need not be valid schema input.
+      return domain<T>(id,input=>input as T);
     },
   };
 }

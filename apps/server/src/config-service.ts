@@ -123,6 +123,7 @@ export class ConfigService {
   private diskText: string | null = null;
   private tail: Promise<void> = Promise.resolve();
   private watcher?: FSWatcher;
+  private watcherStopping?: Promise<void>;
   private cancelWatcherReady?: () => void;
   private closing = false;
   private closePromise?: Promise<void>;
@@ -430,8 +431,10 @@ export class ConfigService {
     this.notify();
   }
   async startWatching(): Promise<void> {
+    await this.watcherStopping;
     this.state(); if (this.closing) throw new ConfigServiceError('config_unavailable');
     if (this.watcher || this.options.watch === false) return;
+    this.watcherStopping=undefined;
     const watcher=this.watcher=watch(dirname(this.path), { depth: 0, ignoreInitial: true, followSymlinks: false, atomic: true, awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 25 } });
     watcher.on('all', (_event, file) => { if (this.watcher===watcher && basename(file) === basename(this.path) && !this.closing) void this.reload().catch(() => {}); });
     watcher.on('error', () => { if(this.watcher===watcher&&!this.closing){this.lastError = { code: 'config_unavailable' }; this.notify();} });
@@ -446,10 +449,11 @@ export class ConfigService {
     await this.reload().catch(() => {});
   }
   /** Stop file admissions during plugin quiescence without retiring accepted transactions. */
-  async stopWatching(): Promise<void> {
+  stopWatching(): Promise<void> {
+    if(this.watcherStopping)return this.watcherStopping;
     const watcher=this.watcher;this.watcher=undefined;
     this.cancelWatcherReady?.();this.cancelWatcherReady=undefined;
-    await watcher?.close();
+    return this.watcherStopping=Promise.resolve().then(()=>watcher?.close());
   }
   view(): ConfigServiceView {
     const state = this.state();
@@ -461,6 +465,9 @@ export class ConfigService {
     return { version: 1, revision: state.revision, configFile: this.path, domains, lastError: clone(this.lastError) };
   }
   close(): Promise<void> {
-    return this.closePromise ??= (async () => { this.closing = true; await this.stopWatching(); await this.tail; this.listeners.clear(); })();
+    return this.closePromise ??= (async () => {
+      this.closing = true;
+      try{await this.stopWatching();}finally{await this.tail;this.listeners.clear();}
+    })();
   }
 }
