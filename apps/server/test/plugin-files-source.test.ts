@@ -11,6 +11,8 @@ import {Store,StoreError,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
+import {ServerFeatureScope} from '../src/feature-host.js';
+import {register as registerFilesFeature} from '../src/features/files.js';
 import {IngressService} from '../src/ingress.js';
 import type {FileProcessing} from '../src/file-processing.js';
 import {registerFileRoutes} from '../src/file-routes.js';
@@ -93,6 +95,7 @@ test('revoked source and closed plugin reject a late final without publishing, a
   const late=files.begin(manifest(Buffer.from('Generated late final'),'v2'),()=>{});
   files.part(late.uploadId,0,Buffer.from('Generated late final'),()=>{});
   await f.source.stop('disabled');
+  assert.equal(f.store.db.isOpen,true,'the borrowed C02 Store must stay open');
   assert.equal(playback.verify(recovered.id,grant.token),false,'scope retirement invalidates live playback tokens');
   assert.throws(()=>playback.issue(recovered.id,sourceId,()=>{}),{statusCode:503});
   assert.throws(()=>files.part(late.uploadId,0,Buffer.from('Generated late final'),()=>{}),{statusCode:503});
@@ -139,6 +142,7 @@ test('files-source factory publishes only the read-only original port and closes
   assert.deepEqual(filesSourceContribution.provides?.map(service=>service.id),[centralServices.fileOriginalRead.id]);
   assert.equal(filesSourceReplacement,'hot');
   await host.close();
+  assert.equal(store.db.isOpen,true,'the plugin borrows C02 storage and must not close it');
   assert.throws(()=>port.read(fileOriginalRawRef(ack.id,ack.sha256),{offset:0,length:1}));
 });
 
@@ -151,6 +155,28 @@ test('import upload transport refuses a late final after its owner closes withou
   assert.throws(()=>uploads.begin({name:'generated.txt',sizeBytes:bytes.length}),{statusCode:503});
   await assert.rejects(uploads.commit(upload.id),{statusCode:503});
   assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,0);
+});
+
+test('mote.files feature registration never closes the plugin-owned FileStore and retires its bypass on scope stop',async t=>{
+  const f=fixture(t);await f.source.prepare();f.source.start();
+  const app=Fastify(),scope=new ServerFeatureScope();t.after(async()=>{await app.close();});
+  let playback:(req:unknown)=>boolean=()=>true;
+  registerFilesFeature(app,{
+    files:f.source.assemblyForRoutes().files,processing:{prepare(){},close(){}} as any,ingress:{} as any,
+    sourceOwner:()=>{},credential:()=>undefined,evidenceReader:{evidence:()=>[{}]} as any,
+    executor:{tick:()=>0} as any,withMediaOwnerIntent:async(_id:string,task:()=>unknown)=>task(),
+    withMediaOwnerBatch:async(_ids:readonly string[],task:()=>unknown)=>task(),
+    setPlaybackAuthorization:(value:(req:unknown)=>boolean)=>{playback=value;},
+    filesSource:{playback:f.source.assemblyForRoutes().playback},
+  } as any,scope);
+  await app.ready();
+  await scope.close();
+  const request={routeOptions:{url:'/api/files/:id/content'},method:'GET',params:{id:'00000000-0000-4000-8000-000000000000'},headers:{}};
+  assert.equal(playback(request),false,'feature retire must revoke its playback bypass');
+  const files=f.source.assemblyForRoutes().files,bytes=Buffer.from('Generated after feature dispose'),upload=files.begin(manifest(bytes),()=>{});
+  assert.ok(upload.uploadId,'a feature scope must not close the plugin-owned FileStore');
+  files.part(upload.uploadId,0,bytes,()=>{});
+  await files.commit(upload.uploadId,()=>{});
 });
 
 test('playback registry purges expired tokens and fails closed for forged checks',()=>{
