@@ -1,4 +1,4 @@
-import type {CustomPageFrameTarget, CustomPageFrameClaim, CustomPageFrameGrant, CustomPageFrameRevocation} from './plugin-host/desktop-host';
+import type {CustomPageFrameTarget, CustomPageFrameClaim, CustomPageFrameGrant, CustomPageFrameRevocation} from './contracts/custom-page';
 export type SyncMode = 'realtime' | 'interval' | 'batch' | 'manual';
 export interface SyncStatus { uploadBytesPerSecond?: number; state: 'unconfigured' | 'idle' | 'waiting' | 'uploading' | 'error' | 'manual'; mode: SyncMode; message: string; nextUploadAt?: string; lastUploadAt?: string; pendingRecords: number; localBacklogUnbound?: boolean }
 export interface CollectionMode { duration: boolean; screenshots: boolean; structured: boolean }

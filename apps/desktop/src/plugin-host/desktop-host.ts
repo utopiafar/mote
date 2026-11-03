@@ -5,6 +5,7 @@
  * other plugins or the durable queue. */
 import {ChannelOwnership, IpcScope, type IpcRouter, type IpcServiceSpec, type IpcListener, type IpcCallerView, type IpcInvokeResult, type ScopeAccess, type WindowFacts, type WindowRole} from './ipc-registry.js';
 import type {NativeProviderRegistry} from './native-registry.js';
+import type {CustomPageFrameTarget, CustomPageFrameClaim, CustomPageFrameGrant, CustomPageFrameRevocation} from '../contracts/custom-page.js';
 
 export interface PluginJob {
   readonly id: string;
@@ -40,34 +41,6 @@ const readonlySet = (values: readonly string[]): ReadonlySet<string> => {
     [Symbol.iterator]: () => backing[Symbol.iterator](),
   } as ReadonlySet<string>;
 };
-
-export interface CustomPageFrameTarget {
-  readonly instanceId: string;
-  readonly nonce: string;
-  readonly documentKey: string;
-  readonly entryUrl: string;
-}
-
-export interface CustomPageFrameClaim {
-  readonly instanceId: string;
-  readonly nonce: string;
-  readonly documentKey: string;
-}
-
-export interface CustomPageFrameGrant {
-  readonly frameTreeNodeId: number;
-  readonly epoch: number;
-}
-
-/** Pushed to the trusted host when a bound custom page frame is revoked, so
- * the consumer can end its channel instead of relying on a private counter. */
-export interface CustomPageFrameRevocation {
-  readonly instanceId: string;
-  readonly nonce: string;
-  readonly documentKey: string;
-  readonly frameTreeNodeId: number;
-  readonly epoch: number;
-}
 
 export interface CustomPageFrameLike {
   readonly frameTreeNodeId: number;
