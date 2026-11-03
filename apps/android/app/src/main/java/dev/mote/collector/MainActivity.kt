@@ -20,6 +20,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.plugins.NativeRecordReceipt
 import java.util.concurrent.Executors
 
 class MainActivity : MoteActivity() {

@@ -42,14 +42,14 @@ type Range,
 type Status,
 type Api
 } from "./api";
-import { changeEvidenceRoute,readEvidenceRoute } from './evidence-route';
+import { changeEvidenceRoute,readEvidenceRoute } from './plugins/reader/evidence-route';
 import { FeaturePage } from './features/runtime';
 import { PluginCenterRescue } from './plugins/plugin-center/rescue';
 import { featuresReady, featureScopes } from './features/bootstrap';
 import { attachBootstrapLifetime } from './plugin-host/bootstrap';
 import { webFeatures } from './features/registry';
 import { PresentationSurface } from './presentation';
-import { GlobalRetrieval } from './GlobalRetrieval';
+import { GlobalRetrieval } from './plugins/search';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { pageLabels,readPage,routes,type Page } from './navigation';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';

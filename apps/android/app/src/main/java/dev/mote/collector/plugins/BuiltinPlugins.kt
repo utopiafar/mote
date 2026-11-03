@@ -7,6 +7,6 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     register(NativePluginProvider("mote.capture.projection", "1", buildId = buildId, osGrants = listOf("projection")))
     register(NativePluginProvider("mote.capture.accessibility", "1", buildId = buildId, osGrants = listOf("accessibility")))
     registerDurableTransport(buildId)
-    register(NativePluginProvider("mote.quick-note", "1", buildId = buildId))
+    NotesPlugin.register(this, buildId)
     registerPluginCenter(buildId)
 }

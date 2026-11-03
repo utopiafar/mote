@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import dev.mote.collector.plugins.NativeRecordReceipt
 import android.app.Activity
 import android.content.Context
 import android.os.Build
