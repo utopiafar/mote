@@ -5,15 +5,15 @@ import { moteText } from '@mote/shared/i18n';
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import type {ActionProposal,ActionSettings,ActionTarget,CalendarDraft} from '@mote/shared';
 import {calendarEventSchema,calendarWallTime,calendarInstant} from '@mote/shared';
-import {createApi,ApiError} from './api';
-import {useResource} from './useResource';
-import {useOperationUpdates} from './useOperationUpdates';
-import {failureMessage} from './failure-message';
-import {invalidateConfiguration} from './configuration-cache';
-import {useUnsavedChanges,confirmNavigation} from './unsaved';
+import {createApi,ApiError} from '../../api';
+import {useResource} from '../../useResource';
+import {useOperationUpdates} from '../../useOperationUpdates';
+import {failureMessage} from '../../failure-message';
+import {invalidateConfiguration} from '../../configuration-cache';
+import {useUnsavedChanges,confirmNavigation} from '../../unsaved';
 import {ActionDialog} from './ActionDialog';
 import {ActionTimeInformation} from './ActionTimeInformation';
-import {calendarNeedsAttention,calendarNeedsTime,calendarStateLabel,actionEventTime,actionFailure} from './action-presentation';
+import {calendarNeedsAttention,calendarNeedsTime,calendarStateLabel,actionEventTime,actionFailure} from '../../action-presentation';
 
 declare global {interface Window {moteCalendar?:{connect:()=>Promise<{deviceId:string}>;execute:(id:string,operationId?:string)=>Promise<void>}}}
 type State={revision:number;authorizationRevision:number;nextCursor:number|null;total:number;items:ActionProposal[];settings:ActionSettings;targets:ActionTarget[];progress:{configured:boolean;running:boolean;jobs:{status:string;count:number}[];error:string|null;errorCode?:string|null}};

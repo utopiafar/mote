@@ -7,7 +7,7 @@ import {FeatureInventory} from '../../FeatureInventory';
 import {PluginInstanceSurface} from '../../features/runtime';
 import {containDialogFocus} from '../../dialog-focus';
 import {resources} from '../../resource-cache';
-import {operationFeed} from '../../operation-feed';
+import {operationFeed} from '../work/operation-feed';
 import {useForegroundResources} from '../../useForegroundResources';
 import {confirmNavigation,useUnsavedChanges} from '../../unsaved';
 import {useResource} from '../../useResource';

@@ -1,5 +1,5 @@
 import {OriginalNoteRow,type OwnerBrowseEntry,type OwnerBrowsePage} from './owner-library-browse';
-import {ActionResults} from '../../ActionResults';
+import {ActionResults} from '../work/ActionResults';
 import {NoteOrigin,NoteAttachments} from '../../NoteOrigin';
 import {StructuredObservation} from '../../StructuredObservation';
 import {libraryMaterialTypes,type LibraryMaterialType,type LibraryTypeDescriptor,type LibrarySourceFacet} from '@mote/shared';

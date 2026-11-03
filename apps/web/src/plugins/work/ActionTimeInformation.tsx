@@ -1,10 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {actionZone,calendarEventSchema,calendarInstant,calendarWallTime,type ActionProposal} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {ApiError,type Api} from './api';
-import {failureMessage} from './failure-message';
-import {actionFailure} from './action-presentation';
-import {useUnsavedChanges} from './unsaved';
+import {ApiError,type Api} from '../../api';
+import {failureMessage} from '../../failure-message';
+import {actionFailure} from '../../action-presentation';
+import {useUnsavedChanges} from '../../unsaved';
 type Body={version:number;start:string;end:string;timeZone:string};
 type Editor={baseline:ActionProposal;start:string;end:string;timeZone:string;open:boolean;pending?:Body;savedBody?:Body;state:'idle'|'unknown'|'conflict'|'saved';error:string};
 const drafts=new WeakMap<Api,Map<string,Editor>>(),scopes=new WeakMap<Api,number>();let nextScope=0;
