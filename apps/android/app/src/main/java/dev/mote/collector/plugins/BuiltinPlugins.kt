@@ -9,5 +9,6 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     registerDurableTransport(buildId)
     SystemEntriesPlugin.register(this, buildId)
     NotesPlugin.register(this, buildId)
+    NativeAskPlugin.register(this, buildId)
     registerPluginCenter(buildId)
 }

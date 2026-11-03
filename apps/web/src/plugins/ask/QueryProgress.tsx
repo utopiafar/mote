@@ -1,7 +1,7 @@
 import {failureMessage} from '../../failure-message';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {queryWorkProgress,type WorkActivity} from '@mote/shared';
-import {WorkProgress,WorkStateBadge} from '../../WorkProgress';
+import {WorkProgress,WorkStateBadge} from '../work/WorkProgress';
 import {useResource} from '../../useResource';
 import type {Api} from '../../api';
 import {useEffect,useState} from 'react';
