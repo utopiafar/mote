@@ -5,7 +5,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {Conversations} from '../src/Conversations.js';
-import {Insights} from '../src/Insights.js';
+import {Insights} from '../src/plugins/discovery/Insights.js';
 import {Connections} from '../src/Connections.js';
 import {RuntimeSettings,ExecutionQueueOverview} from '../src/RuntimeSettings.js';
 import {ImageProgress} from '../src/ImageProgress.js';
@@ -217,7 +217,7 @@ test('terminal legacy extraction offers an explicit retry without claiming autom
  await act(async()=>button(d,'重试').click());assert.equal(requests,1);assert.doesNotMatch(d.body.textContent!,/已停止自动重试/);
 });
 test('Memory progress readers share pending reads and fence another selected job',async t=>{
- const {useMemoryJob}=await import('../src/MemoryProgress.js'),{root,d}=await fixture(t),a=deferred(),b=deferred();let reads=0;
+ const {useMemoryJob}=await import('../src/plugins/memory/index.js'),{root,d}=await fixture(t),a=deferred(),b=deferred();let reads=0;
  const api=apiWith(path=>{reads++;return path.endsWith('/A')?a.promise:b.promise;});
  function View({id}:{id:string}){const state=useMemoryJob(api,id);return React.createElement('p',null,state.job?.id??'loading');}
  const view=(id:string)=>React.createElement(React.Fragment,null,React.createElement(View,{id}),React.createElement(View,{id}));

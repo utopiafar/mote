@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {GlobalRetrieval,SearchWorkspace} from '../src/plugins/search';
-import {MemoryTopics} from '../src/MemoryTopics';
+import {MemoryTopics} from '../src/plugins/memory/index';
 import type {Api} from '../src/api';
 import {modelView} from './fixtures/model-settings';
 configureLocale(()=> 'zh-CN');

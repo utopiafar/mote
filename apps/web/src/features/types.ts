@@ -1,7 +1,7 @@
 import type {FeatureRequirement} from '@mote/shared';
 import type { ReactNode } from 'react';
 import type { Activity,Answer,Api,Device,Range,Status } from '../api';
-import type { ArchiveTab } from '../Archive';
+import type { ArchiveTab } from '../plugins/library/Archive';
 import type { Page } from '../navigation';
 import type { SessionLifetime } from '../session';
 export type PageProps={api:Api;viewScope?:string;status:Status|null;devices:Device[];activity:Activity;insights:Answer[];onPage:(page:Page)=>void;onOpen:(ref:string)=>void;range:Range;rangeSelectionKey?:string;archiveTab:ArchiveTab;setArchiveTab:(tab:ArchiveTab)=>void;timelineRevision:number;refresh:()=>void;disconnect:()=>void;sessionLifetime:SessionLifetime;changeSessionLifetime:(value:SessionLifetime)=>void};

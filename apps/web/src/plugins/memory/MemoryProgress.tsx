@@ -1,0 +1,79 @@
+import {useResource} from '../../useResource';
+import {useOperationUpdates} from '../../useOperationUpdates';
+import {resources} from '../../resource-cache';
+import {failureMessage} from '../../failure-message';
+import { moteText } from '@mote/shared/i18n';
+import React,{useEffect} from 'react';
+import {CheckCircle2,CircleAlert,CirclePause,CircleX,Clock3,LoaderCircle,RefreshCw} from 'lucide-react';
+import {type Api, errorMessage,dateTime,duration} from '../../api';
+import {memoryRecipeKey,memoryRecipeLabel,type MemoryRecipeRef} from '../../memory-recipes';
+
+export type MemoryInputSummary={total:number;waiting:number;blocked:number;stale:number;completed:number};
+export type MemoryRecipeProgress={recipe:MemoryRecipeRef;inputs:MemoryInputSummary;completedBatches:number;failedBatches:number;invalidatedBatches?:number;reasons:{code:string;required?:string[];materialRef?:string}[]};
+
+export interface MemoryJob {
+  id: string;
+  importJobId?: string;
+  status: 'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'waiting_for_input'|'cancelled'|'paused'|'pausing';
+  createdAt: string;
+  updatedAt: string;
+  evidenceIds: string[];
+  totalBatches: number;
+  completedBatches: number;
+  failedBatches: number;
+  invalidatedBatches?: number;
+  outcome?: 'input_invalidated'|'processing_failed';
+  skippedChunks: number;
+  memoryIds: string[];
+  memoryCount: number;
+  errorCode?: string;
+  availableAt?:number;
+  skillVersion: string;
+  queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;
+  inputPlans:MemoryInputSummary;
+  recipeProgress:MemoryRecipeProgress[];
+  batches?: {id:string;index:number;status:string;attempts:number;memoryIds:string[];errorCode?:string;phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;validationFailures?:{at:string;code:string;phase:string;attempt?:number;details?:{candidateIndex?:number;spanIndex?:number}}[]}[];
+  execution?: import('@mote/shared').ExecutionEnvelope;
+}
+export const memoryJobLabels: Record<MemoryJob['status'], string> = {
+  paused:moteText('已暂停'),pausing:moteText('当前批次结束后暂停'),
+  queued:moteText("等待提取记忆"), running:moteText("正在分批提取记忆"), completed:moteText("记忆提取完成"),
+  failed:moteText("部分记忆提取需要重试"), waiting_for_model:moteText("等待配置模型"), waiting_for_input:moteText('等待资料处理'), cancelled:moteText("记忆提取已停止"),
+};
+export function memoryJobLabel(job:Pick<MemoryJob,'status'|'errorCode'|'outcome'>){return job.outcome==='input_invalidated'?moteText('资料已更新，本次结果失效'):job.status==='failed'&&job.errorCode==='memory_feedback_planning_failed'?moteText('内部规划失败，未完成范围已保留'):job.status==='waiting_for_input'&&job.errorCode==='memory_owner_material_required'?moteText('需要正式资料确认归属'):memoryJobLabels[job.status];}
+function inputLabel(required:string){return ({'source-body':moteText('正文'),'source-record':moteText('原始记录'),'extracted-text':moteText('提取文字（OCR / 转写）'),material:moteText('完整资料')} as Record<string,string>)[required]??(/^attachment\/[^/]+\/text$/.test(required)?moteText('附件文字'):required);}
+
+export function useMemoryJob(api:Api, id?:string, revision?:unknown) {
+  const path=id?'/api/memory-jobs/'+encodeURIComponent(id):null,read=useResource<MemoryJob>(api,path,undefined,revision),feedError=useOperationUpdates(api);
+  const polling=read.error?8000:read.data&&(['queued','running','pausing'].includes(read.data.status)||(read.data.runningBatches??0)>0)?2000:read.data?.status==='waiting_for_input'?5000:undefined;
+  useEffect(()=>path&&polling?resources(api).get(path).poll(polling):undefined,[api,path,polling]);
+  return {job:read.data??null,error:read.error||feedError?errorMessage(read.error||feedError):'',reload:read.refresh};
+}
+
+export function MemoryProgress({job,onRetry,onView,onOpen,busy=false,onAction}:{job:MemoryJob;onRetry?:()=>void;onView?:()=>void;onOpen?:(ref:string)=>void;busy?:boolean;onAction?:(action:'pause'|'resume'|'cancel')=>void}) {
+  const running=['queued','running','pausing'].includes(job.status)||(job.runningBatches??0)>0;
+  const waiting=job.status==='waiting_for_input'||job.status==='waiting_for_model';
+  const ownerMaterialRequired=job.errorCode==='memory_owner_material_required';
+  const showJobError=job.outcome!=='input_invalidated'&&Boolean(job.errorCode)&&!(waiting&&ownerMaterialRequired)&&!job.recipeProgress?.some(recipe=>recipe.reasons.some(reason=>reason.code===job.errorCode));
+  const canRetry=job.outcome!=='input_invalidated'&&!['cancelled','paused','pausing','running','queued'].includes(job.status)&&(job.inputPlans.blocked>0||job.failedBatches>0||job.status==='waiting_for_model');
+  return <section className="memory-progress" aria-label={moteText("记忆处理进度")} aria-live="polite">
+    <div className="workflow-line"><span className={'workflow-icon '+(job.status==='completed'?'done':'')}>{running?<LoaderCircle size={18} className="spin"/>:waiting?<Clock3 size={18}/>:job.status==='failed'||job.outcome==='input_invalidated'?<CircleAlert size={18}/>:job.status==='paused'?<CirclePause size={18}/>:job.status==='cancelled'?<CircleX size={18}/>:<CheckCircle2 size={18}/>}</span><div><strong>{memoryJobLabel(job)}</strong><p>{moteText('已生成的批次：{0} / {1} 完成 · 生成 {2} 条记忆',job.completedBatches,job.totalBatches,job.memoryCount)}{job.failedBatches>0?moteText(" · {0} 批失败", job.failedBatches):''}{(job.invalidatedBatches??0)>0?moteText(' · {0} 批输入已失效',job.invalidatedBatches??0):''}</p></div></div>
+    {<div className="memory-input-progress"><p>{moteText('输入方案：{0} / {1} 完成',job.inputPlans.completed,job.inputPlans.total)}{job.inputPlans.waiting>0?moteText(' · {0} 项等待资料',job.inputPlans.waiting):''}{job.inputPlans.blocked>0?job.status==='cancelled'?moteText(' · {0} 项已停止',job.inputPlans.blocked):moteText(' · {0} 项需要处理',job.inputPlans.blocked):''}{job.inputPlans.stale>0?moteText(' · {0} 项输入已失效',job.inputPlans.stale):''}</p>{job.inputPlans.total>0&&<progress aria-label={moteText('记忆输入方案完成进度')} max={job.inputPlans.total} value={job.inputPlans.completed}/>}</div>}
+    {job.status==='waiting_for_input'&&<p className="notice">{ownerMaterialRequired||job.errorCode==='memory_context_required'?failureMessage(job.errorCode):moteText('已就绪的方案已继续处理。其余方案等待所需资料，已保存的记忆可以立即查看。')}</p>}
+    {!!job.recipeProgress?.length&&<div className="memory-recipe-progress" aria-label={moteText('各方案进度')}>{job.recipeProgress.map(recipe=><section key={memoryRecipeKey(recipe.recipe)}><strong>{memoryRecipeLabel(recipe.recipe)}</strong><p>{moteText('输入方案：{0} / {1} 完成',recipe.inputs.completed,recipe.inputs.total)}{recipe.inputs.waiting>0?moteText(' · {0} 项等待资料',recipe.inputs.waiting):''}{recipe.inputs.blocked>0?job.status==='cancelled'?moteText(' · {0} 项已停止',recipe.inputs.blocked):moteText(' · {0} 项需要处理',recipe.inputs.blocked):''}{recipe.inputs.stale>0?moteText(' · {0} 项输入已失效',recipe.inputs.stale):''}</p><small>{moteText('已完成 {0} 批',recipe.completedBatches)}{recipe.failedBatches>0?moteText(' · {0} 批失败',recipe.failedBatches):''}{(recipe.invalidatedBatches??0)>0?moteText(' · {0} 批输入已失效',recipe.invalidatedBatches??0):''}</small>{recipe.reasons.map((reason,index)=><div className="memory-input-reason" key={index}><p>{failureMessage(reason.code)}{reason.required?.length?<> · {moteText('所需资料：{0}',reason.required.map(inputLabel).join(' / '))}</>:null}</p>{reason.materialRef&&onOpen&&<button className="button subtle" onClick={()=>onOpen(reason.materialRef!)}>{moteText('查看来源与处理')}</button>}</div>)}</section>)}</div>}
+    <p className="muted">{moteText('执行中 {0} 批 · 等待 {1} 批',job.runningBatches??0,job.pendingBatches??0)}{job.status==='queued'&&(job.queuePosition?moteText(' · 等待执行名额，轮转位置 {0}',job.queuePosition):moteText(' · 等待调度'))}{job.lastSavedAt&&moteText(' · 最近保存 {0}',dateTime(job.lastSavedAt))}</p>
+    {job.outcome==='input_invalidated'&&<p className="notice">{moteText('历史结果保留；请查看当前资料版本。失效输入不能直接重试。')}</p>}
+    {job.status==='completed'&&!job.memoryIds.length&&<p>{moteText('已完成，本次没有发现需要新增的记忆。')}</p>}
+    {job.status==='cancelled'&&(job.runningBatches??0)>0&&<p>{moteText('已取消剩余批次，当前批次完成后停止。已保存结果保留。')}</p>}
+    {job.batches?.filter(batch=>batch.status==='running').map(batch=><div className="notice memory-batch-status" key={batch.id}><strong>{moteText('第 {0} 批',batch.index+1)} · {batch.phase==='review'?moteText('独立审核'):moteText('提取记忆')}</strong><p>{({starting:moteText('准备中'),model:moteText('等待模型响应'),tool:moteText('读取证据'),validating:moteText('校验结果')} as Record<string,string>)[batch.stage??'']??batch.stage}</p><small>{batch.startedAt&&moteText('本批次已耗时 {0}',duration(Date.now()-Date.parse(batch.startedAt)))}{batch.lastActivityAt&&moteText(' · 最后活动 {0}',dateTime(batch.lastActivityAt))}</small>{batch.lastActivityAt&&Date.now()-Date.parse(batch.lastActivityAt)>120000&&<p>{moteText('较长时间未收到新活动；任务仍在等待，不代表已有新结果。')}</p>}</div>)}
+    {onAction&&<div className="source-toolbar">{['running','queued','waiting_for_input'].includes(job.status)&&<button className="button subtle" disabled={busy} onClick={()=>onAction('pause')}>{job.status==='waiting_for_input'?moteText('暂停等待与后续批次'):moteText('当前批次结束后暂停')}</button>}{['paused','pausing'].includes(job.status)&&<button className="button" disabled={busy} onClick={()=>onAction('resume')}>{moteText('继续整理')}</button>}{job.outcome!=='input_invalidated'&&!['completed','cancelled'].includes(job.status)&&<button className="button subtle" disabled={busy} onClick={()=>onAction('cancel')}>{moteText('取消未完成方案')}</button>}</div>}
+    {job.batches?.some(batch=>batch.validationFailures?.length)&&<details className="run-details"><summary>{moteText('校验与重试记录')}</summary>{job.batches.filter(batch=>batch.validationFailures?.length).map(batch=><div key={batch.id}><strong>{moteText('第 {0} 批',batch.index+1)}</strong>{batch.validationFailures!.map((failure,index)=><p key={index}>{dateTime(failure.at)} · {failure.phase==='review'?moteText('审核'):moteText('提取')} · <code>{failure.code}</code>{failure.attempt&&moteText(' · 第 {0} 次尝试',failure.attempt)}{failure.details?.candidateIndex!==undefined&&moteText(' · 候选 {0}',failure.details.candidateIndex+1)}{failure.details?.spanIndex!==undefined&&moteText(' · 引用 {0}',failure.details.spanIndex+1)}</p>)}</div>)}</details>}
+    {job.skippedChunks>0&&<p className="muted">{moteText("有")}{' '}{job.skippedChunks}{' '}{moteText("个片段已处理过或没有可提取的正文，本次未重复处理。原始资料仍可查看。")}</p>}
+    {job.status==='waiting_for_model'&&<p className="muted">{moteText("在设置中配置模型后，可从这里继续。")}</p>}
+    <div className="source-toolbar">{canRetry&&onRetry&&<button className="button" disabled={busy} onClick={onRetry}><RefreshCw size={14}/>{moteText('重新检查未完成方案')}</button>}{job.memoryIds.length>0&&onView&&<button className="button subtle" onClick={onView}>{moteText("查看记忆")}</button>}</div>
+    {canRetry&&onRetry&&<p className="muted">{moteText('重试会复用仍有效的提取结果；结果不可用或资料、设置变化时，可能重新提取。历史用量会保留。')}</p>}
+    {job.status!=='waiting_for_input'&&job.availableAt&&job.availableAt>Date.now()&&<p>{moteText('下次可运行时间')} · {new Date(job.availableAt).toLocaleString()}</p>}
+    {showJobError&&<p role="status">{failureMessage(job.execution?.failure??job.errorCode)}</p>}
+    {showJobError&&<details className="run-details"><summary>{moteText("处理详情")}</summary><code>{job.errorCode}</code></details>}
+  </section>;
+}

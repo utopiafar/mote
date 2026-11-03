@@ -181,7 +181,7 @@ E–N 已按上面的冻结表收束，不再将首次使用、行动、插件�
 
 ### 功能与旅程覆盖矩阵
 
-以下以基线代码中的 [功能目录](../apps/web/src/feature-guide-catalog.ts) 78 项能力（42 项 C、36 项 A）作互斥索引，并与 [Web 注册入口](../apps/web/src/features/entries.ts)、[资料集合](../apps/web/src/features/collections.tsx)、[Mac 路由](../apps/desktop/src/navigation.ts) 和 [Android 路由](../apps/android/app/src/main/java/dev/mote/collector/PrimaryNavigation.kt) 交叉核查。目录只是索引，真实注册、权限与消费者决定入口是否可用；原生独有能力另外列在同一矩阵，不能由 Web 目录代替。每个 C/A ID 只归一行，跨旅程复用用旅程引用表达。
+以下以基线代码中的 [功能目录](../apps/web/src/feature-guide-catalog.ts) 78 项能力（42 项 C、36 项 A）作互斥索引，并与 [Web 注册入口](../apps/web/src/features/entries.ts)、[资料集合](../apps/web/src/plugins/library/collections.tsx)、[Mac 路由](../apps/desktop/src/navigation.ts) 和 [Android 路由](../apps/android/app/src/main/java/dev/mote/collector/PrimaryNavigation.kt) 交叉核查。目录只是索引，真实注册、权限与消费者决定入口是否可用；原生独有能力另外列在同一矩阵，不能由 Web 目录代替。每个 C/A ID 只归一行，跨旅程复用用旅程引用表达。
 
 **矩阵各行是完整覆盖集合，未整体验收关闭。已合入小片只覆盖其 PR 明确列出的子集，不能把它扩写为整行通过。** 每片 PR 记录本行受影响能力、实际执行结果、未执行原因及证据环境；未改动能力在里程碑核对入口与保留语义。状态统一为：待验、通过、失败、受阻、不适用（附原因），不能留白或把任务完成状态当测试结果。负责人沿用第 6 节，不新增另一个台账。
 

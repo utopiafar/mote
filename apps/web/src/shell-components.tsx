@@ -59,7 +59,7 @@ import { readSessionLifetime,type SessionLifetime } from "./session";
 import { useOperationUpdates } from './useOperationUpdates';
 import { useResource } from './useResource';
 
-import { MediaSnapshot } from './Media';
+import { MediaSnapshot } from './plugins/library/Media';
 import { activityExplanation,Metadata,sourceLabels } from './Metadata';
 import { mediaCardText,mediaExplanation,mediaStatus } from './media-presentation';
 
