@@ -1,9 +1,6 @@
 import '@mote/shared/i18n-all';
 import {canSendFromTray,showTraySendFailure} from './tray-send';
 import {describeBackupFile} from './queue-backup-identity';
-import {ChromeCaptureBridge} from './chrome-bridge';
-import {CHROME_EXTENSION_ID} from './chrome-constants';
-import {registerChromeNativeHost} from './chrome-registration';
 import {appearancePreference,resolveColorScheme,linearUiTheme,type AppearancePreference} from '@mote/shared';
 import { connectionToken, loginRequest, loginVerifier } from './login-session';
 import { SyncHistory, type SyncHistoryQuery, type SyncHistoryContentQuery } from './sync-history';
@@ -24,6 +21,7 @@ import { NativeProviderRegistry } from './plugin-host/native-registry';
 import { registerBuiltinDesktopPlugins } from './plugins';
 import { createNotesPlugin, notesReadCapability, notesWriteCapability } from './plugins/notes';
 import { createLibraryWorkspacePlugin, libraryReadCapability, memoryReadCapability } from './plugins/library-workspace';
+import { createChromePlugin, chromeManageCapability, chromeReadCapability, type ChromePlugin } from './plugins/chrome';
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
 import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
 import type { IpcMainInvokeEvent } from 'electron';
@@ -175,7 +173,7 @@ function updateUi(status: Status): void {
   ]));
 }
 
-let chromeCaptureBridge:ChromeCaptureBridge|undefined;
+let chromePlugin:ChromePlugin|undefined;
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -185,7 +183,7 @@ else {
     quitting = true; void events.record('APP', 'STOPPED'); collector?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void Promise.allSettled([controlChain, localSources?.close(), updater?.close(), chromeCaptureBridge?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
+    void Promise.allSettled([controlChain, localSources?.close(), updater?.close(), chromePlugin?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
@@ -250,8 +248,8 @@ else {
       queueBytes: queue.stats().bytes, modelBytes: 0, ...await readPowerState(helperPath).catch(() => ({})),
     }));
     const syncHistory = new SyncHistory(join(dataDirectory,'sync-history.sqlite')); await syncHistory.initialize();
-    if(process.platform==='darwin'){chromeCaptureBridge=new ChromeCaptureBridge({profileDirectory:dataDirectory,helperPath});await chromeCaptureBridge.start();}
-    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, diagnostics, events, localSources,syncHistory,chromeCaptureBridge);
+    chromePlugin=createChromePlugin({profileDirectory:dataDirectory,helperPath,extensionDirectory:app.isPackaged?join(process.resourcesPath,'chrome-extension'):join(__dirname,'..','chrome-extension'),electronExecutable:process.execPath,platform:process.platform,settings:()=>settings.chromeOrigins,guard:()=>{if(recoveryRequired)throw new Error(recoveryRequired);},openPath:path=>shell.openPath(path),openExtensions:async url=>{await promisify(execFile)('/usr/bin/open',['-a','Google Chrome',url]);}});await chromePlugin.initialize();
+    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, diagnostics, events, localSources,syncHistory,chromePlugin?.provider);
     let calendarDelivery:Promise<void>|undefined;
     const calendarTimer=setInterval(()=>{
       if(calendarDelivery||settings.syncPaused||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
@@ -296,7 +294,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -305,7 +303,7 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!, chromePlugin!]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
@@ -439,21 +437,6 @@ else {
       return [...pending,...(['file','calendar','coding'] as const).map(source=>{const sources=rows.filter(r=>source==='file'?r.source.kind==='local-files':source==='calendar'?r.source.kind==='local-calendar':r.source.kind.startsWith('coding-'));return {source,pending:sources.reduce((sum,r)=>sum+r.pending+(r.blocked??0),0),review:0,blocked:sources.reduce((sum,r)=>sum+(r.blocked??0),0),retrying:sources.reduce((sum,r)=>sum+(r.state==='error'?r.pending:0),0)};})];
     });
     handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
-    let chromePermissionCheck:{id:string;controller:AbortController}|undefined;
-    handle('mote:chrome-permissions',async id=>{
-      if(typeof id!=='string'||!/^([0-9a-f]{8}-)([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id))throw Error('Invalid Chrome check identity');
-      chromePermissionCheck?.controller.abort();const check={id,controller:new AbortController()},origins=[...settings.chromeOrigins];chromePermissionCheck=check;
-      try{const result=await chromeCaptureBridge?.permissionStatus(origins,check.controller.signal)??{state:'disconnected' as const,origins:[]};return JSON.stringify(settings.chromeOrigins)===JSON.stringify(origins)?result:{state:'stale',origins:[]};}
-      finally{if(chromePermissionCheck===check)chromePermissionCheck=undefined;}
-    });
-    handle('mote:chrome-permissions-cancel',id=>{const check=chromePermissionCheck;if(check&&check.id===id)check.controller.abort();});
-    handle('mote:chrome-extensions',async()=>{if(process.platform!=='darwin')throw Error('Chrome capture requires macOS');await promisify(execFile)('open',['-a','Google Chrome',`chrome://extensions/?id=${CHROME_EXTENSION_ID}`]);});
-    handle('mote:chrome-setup',async()=>{
-      if(process.platform!=='darwin')throw Error('Chrome capture requires macOS');
-      const extensionDirectory=app.isPackaged?join(process.resourcesPath,'chrome-extension'):join(__dirname,'..','chrome-extension');
-      const result=await registerChromeNativeHost({profileDirectory:dataDirectory,extensionDirectory,electronExecutable:process.execPath,nativeHostScript:join(__dirname,'chrome-native-host.js')});
-      await shell.openPath(extensionDirectory);return result;
-    });
     handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
     const devUpdateStatus = () => ({...updater!.status(), manualDownload:true, state:'idle' as const, canInstall:false, availableVersion:undefined, notesUrl:desktopDevDownloadsUrl, message:moteText('查看版本说明与安装包'), installReason:''});
     handle('mote:update-status', () => developmentBuild ? devUpdateStatus() : updater!.status());
