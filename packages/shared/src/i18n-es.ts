@@ -10105,5 +10105,15 @@ export const spanish: Readonly<Record<string, string>> = {
   "等你补充": "Pendiente de tus datos",
   "暂停全部采集": "Pausar toda la captura",
   "暂停屏幕采集": "Pausar captura de pantalla",
-  "索引处理完成": "Procesamiento del índice completado"
+  "索引处理完成": "Procesamiento del índice completado",
+  "仍在运行的版本：{0}": "Versión aún en ejecución: {0}",
+  "候选版本": "Versión candidata",
+  "候选版本未生效：{0}": "La versión candidata no se aplicó: {0}",
+  "插件中心暂时不可用；请重新加载或返回设置。": "El centro de plugins no está disponible temporalmente. Recarga la página o vuelve a Ajustes.",
+  "插件构建": "Compilaciones de plugins",
+  "构建版本与配置实例分开；候选失败时仍显示实际运行的版本。": "Las versiones de compilación y las instancias configuradas son distintas; si falla un candidato se sigue mostrando la versión que realmente está en ejecución.",
+  "正在启动": "Iniciando",
+  "没有正在运行的版本": "Ninguna versión está en ejecución",
+  "阻塞原因": "Bloqueos",
+  "需要重新构建（requires-build）": "Se requiere recompilar (requires-build)"
 };

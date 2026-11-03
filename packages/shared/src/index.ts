@@ -196,7 +196,7 @@ export * from './activity.js';
 export * from './library-catalog.js';
 
 export * from './material-context.js';
-export type {PluginAction,CapabilityState,PluginCapability,PluginSource,PluginConfigurationField,PluginPackageView,PluginInstanceView,PluginReleasePreview,PluginCenterView,MemoryControlAction,MemoryModuleBinding,MemoryPlanView,MemoryPreparationView,MemoryBindingView,PluginCommand} from './plugin-center.js';
+export type {PluginAction,CapabilityState,PluginCapability,PluginSource,PluginConfigurationField,PluginPackageView,PluginInstanceView,PluginReleasePreview,PluginCenterView,PluginBuildSelection,PluginBuildObserved,PluginBuildView,MemoryControlAction,MemoryModuleBinding,MemoryPlanView,MemoryPreparationView,MemoryBindingView,PluginCommand} from './plugin-center.js';
 
 export * from './appearance.js';
 
