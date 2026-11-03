@@ -1,9 +1,9 @@
 import {sourceState} from '../src/source-state-store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SourceSync } from '../src/source-sync';
+import { SourceSync, sourceHash } from '../src/source-sync';
 import type { ScannedItem, SourceDefinition, SourceItem, SourceRequest, SourceScan } from '../src/source-types';
 import {sourceAck} from './fixtures';
 let directory: string;
@@ -21,6 +21,45 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
   };
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
+
+/** File-sync transport that records the predecessor sent with each manifest. */
+function fileTransport(sent: { item: SourceItem; previousRevision: string | null }[], fail?: (item: SourceItem) => number, failBeforeCommit = false) {
+  const committed = new Map<string, string>();
+  return async (path: string, body: any) => {
+    if (path === '/api/sources') return { ...source, enabled: true };
+    // Above the default batch size so these cases use the manifest batch path.
+    if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+    if (path.startsWith('/api/file-sync/v1/head')) {
+      const externalId = decodeURIComponent(new URL(path, 'http://x').searchParams.get('externalId') ?? '');
+      return { revision: committed.get(externalId) ?? null };
+    }
+    if (path === '/api/file-sync/v1/manifests') {
+      const results = (body.items as { item: SourceItem; previousRevision?: string | null }[]).map(manifest => {
+        sent.push({ item: manifest.item, previousRevision: manifest.previousRevision ?? null });
+        // Validate the predecessor against the simulated node head: an update
+        // must chain from the committed revision, a duplicate is idempotent.
+        const head = committed.get(manifest.item.externalId) ?? null;
+        if (manifest.item.revision !== head && (manifest.previousRevision ?? null) !== head) throw new Error('predecessor mismatch (409)');
+        const failOn = fail?.(manifest.item);
+        if (failOn && failBeforeCommit) throw new Error('simulated ACK loss');
+        committed.set(manifest.item.externalId, manifest.item.revision);
+        if (failOn) throw new Error('simulated ACK loss');
+        return { externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, manifest.item.document?.fileIndex ? 'file-revision' : 'source-item') };
+      });
+      return { results };
+    }
+    if (path === '/api/file-sync/v1/revisions') {
+      const manifest = body as { item: SourceItem; previousRevision?: string | null };
+      sent.push({ item: manifest.item, previousRevision: manifest.previousRevision ?? null });
+      if (fail?.(manifest.item)) throw new Error('simulated ACK loss');
+      return sourceAck(source.id, manifest.item, manifest.item.document?.fileIndex ? 'file-revision' : 'source-item');
+    }
+    throw new Error('unexpected ' + path);
+  };
+}
+const fileIndex = { version: 1 as const, fileId: 'file:' + 'b'.repeat(64), contentVersion: 'a'.repeat(64), mode: 'index' as const, coverage: 'full' as const, status: 'ready' as const, totalCharacters: 10, offset: 0, length: 10, allowRead: false };
+const fileItem: ScannedItem = { ...item, document: { fileIndex } };
+
 describe('source revisions and durable acknowledgments', () => {
   it('accepts a known 17MiB snapshot recovery and rejects unknown versions or over-limit bytes',async()=>{
     const engine=await create(),sent:SourceItem[]=[],large={...item,metadata:{version:1 as const,file:{sizeBytes:17*1024*1024+19}}};
@@ -78,6 +117,866 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.stage(scan([item, calendar]), true); await engine.flush(source, transport(saved));
     expect(await engine.stage(scan([], false), true)).toBe(0);
     expect(await engine.stage({ ...scan([]), seen: [item.externalId], scope: { start: '2026-09-01T00:00:00Z', end: '2026-12-01T00:00:00Z' } }, true)).toBe(0);
+  });
+  it('withdraws a queued file that left the folder before it was uploaded', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    expect(engine.status().pending).toBe(1);
+    // An incomplete scan cannot prove the file is gone; keep the queue intact.
+    await engine.stage(scan([], false), false);
+    expect(engine.status().pending).toBe(1);
+    await engine.stage(scan([]), false);
+    expect(engine.status().pending).toBe(0);
+    await engine.flush(source, transport(saved));
+    expect(saved).toHaveLength(0);
+    const reopened = await create();
+    expect(reopened.status().pending).toBe(0);
+  });
+  it('reconciles an absent file before the pre-stage flush on reconnect', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    expect(engine.status().pending).toBe(1);
+    // Reconnecting with a complete scan that no longer contains the file must
+    // not upload it; syncScan flushes before staging.
+    expect(await engine.syncScan(scan([]), false, source, transport(saved))).toEqual({ changes: 0, state: 'ready' });
+    expect(saved).toHaveLength(0);
+    expect(engine.status().pending).toBe(0);
+  });
+  it('queues the same file again after it leaves and returns unconfirmed', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    // Withdrawal happens on the real reconnect path, then the same identity returns.
+    expect(await engine.syncScan(scan([]), false, source, transport(saved))).toEqual({ changes: 0, state: 'ready' });
+    expect(engine.status().pending).toBe(0);
+    expect(await engine.stage(scan([item]), false)).toBe(1);
+    await engine.syncScan(scan([item]), false, source, transport(saved));
+    expect(saved).toHaveLength(1);
+    expect(engine.status().pending).toBe(0);
+  });
+  it('releases the spool of a withdrawn queued original', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    const spool = join(directory, 'spool');
+    await mkdir(spool, { recursive: true });
+    await writeFile(join(spool, '0'), 'spooled');
+    const staged: ScannedItem = { ...item, localOriginal: { directory: spool, sha256: 'a'.repeat(64), sizeBytes: 7, partBytes: 4 * 1024 * 1024 } };
+    await engine.stage(scan([staged]), false);
+    expect(engine.status().pending).toBe(1);
+    await engine.syncScan(scan([]), false, source, transport(saved));
+    expect(engine.status().pending).toBe(0);
+    await expect(stat(spool)).rejects.toThrow();
+    expect(saved).toHaveLength(0);
+  });
+  it('tombstones an acknowledged revision when its unconfirmed update is withdrawn', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    await engine.flush(source, transport(saved));
+    const delivered = saved[0];
+    expect(await engine.stage(scan([{ ...item, text: 'edited before removal' }]), false)).toBe(1);
+    expect(await engine.syncScan(scan([]), true, source, transport(saved))).toEqual({ changes: 1, state: 'ready' });
+    expect(saved).toHaveLength(2);
+    expect(saved[1].deleted).toBe(true);
+    expect(saved[1].revision).not.toBe(delivered.revision);
+    expect(engine.status().pending).toBe(0);
+  });
+  it('keeps the tombstone across a paused reconnect and restart', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    await engine.flush(source, transport(saved));
+    await engine.stage(scan([{ ...item, text: 'edited before removal' }]), false);
+    const paused = async (path: string) => path === '/api/sources' ? { ...source, enabled: false } : {};
+    expect(await engine.syncScan(scan([]), true, source, paused as any)).toEqual({ changes: 0, state: 'paused' });
+    expect(engine.status().pending).toBe(0);
+    const reopened = await create();
+    expect(await reopened.syncScan(scan([]), true, source, transport(saved))).toEqual({ changes: 1, state: 'ready' });
+    expect(saved).toHaveLength(2);
+    expect(saved[1].deleted).toBe(true);
+  });
+  it('keeps an attempted update queued when its ACK is lost, then tombstones from the real head', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    // Fail only the queued update's single attempt, after A was accepted.
+    const wire = fileTransport(sent, (item) => (sent.filter(entry => entry.item.revision === item.revision).length === 1 && sent.length === 2 ? 1 : 0));
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, wire);
+    const first = sent[0].item;
+    expect(sent[0].previousRevision).toBe(null);
+    const edited = { ...fileItem, text: 'edited before removal' };
+    await engine.stage(scan([edited]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    const attempted = sent.at(-1)!.item;
+    const durable = sourceState(join(directory, 'state.json')) as any;
+    expect(Object.hasOwn(durable.predecessors ?? {}, attempted.revision)).toBe(true);
+    // Restart keeps the attempted revision and its predecessor, so the retry can
+    // still resolve the real Central head.
+    const reopened = await create();
+    expect(reopened.status().pending).toBe(1);
+    // Removing the file must not drop the attempted revision: its ACK was lost.
+    await reopened.syncScan(scan([]), true, source, wire);
+    expect(reopened.status().pending).toBe(0);
+    const retried = sent.at(-2)!.item;
+    const tombstone = sent.at(-1)!.item;
+    expect(tombstone.deleted).toBe(true);
+    // The tombstone chains from the revision Central actually accepted.
+    expect(sent.at(-1)!.previousRevision).toBe(retried.revision);
+    expect(tombstone.revision).not.toBe(first.revision);
+  });
+  it('tombstones a first upload whose ACK was lost instead of leaving it active', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failedOnce = false;
+    const wire = fileTransport(sent, () => (!failedOnce ? ((failedOnce = true), 1) : 0));
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    await engine.syncScan(scan([]), true, source, wire);
+    expect(engine.status().pending).toBe(0);
+    expect(sent.at(-1)!.item.deleted).toBe(true);
+    expect(sent.at(-1)!.previousRevision).toBe(sent.at(-2)!.item.revision);
+  });
+  it('queues a calendar deletion before its first acknowledgement', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    const calendar = { ...item, externalId: 'calendar:pending', kind: 'calendar', calendar: { start: '2026-09-01T00:00:00Z', end: '2026-09-01T01:00:00Z', allDay: false, status: 'confirmed' } } as ScannedItem;
+    await engine.stage(scan([calendar]), true);
+    expect(engine.status().pending).toBe(1);
+    await engine.stage(scan([]), true);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const queued = [...state.pendingRealtime, ...state.pendingHistory];
+    expect(queued.some((entry: SourceItem) => entry.externalId === 'calendar:pending' && entry.deleted)).toBe(true);
+    await engine.flush(source, transport(saved));
+    expect(saved.some(entry => entry.deleted)).toBe(true);
+  });
+  it('does not publish a removed file after a failed attempt when deletion tracking is off', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, fileTransport(sent, () => 1))).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    expect(Object.hasOwn((sourceState(join(directory, 'state.json')) as any).predecessors ?? {}, sent.at(-1)!.item.revision)).toBe(true);
+    const uploaded = sent.length;
+    // Complete scan after removal, deletion tracking off: the uncertain upload
+    // must be withdrawn rather than retried into an active remote file.
+    expect(await engine.syncScan(scan([]), false, source, fileTransport(sent))).toEqual({ changes: 0, state: 'ready' });
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(uploaded);
+  });
+  it('withdraws an attempted upload that never committed centrally', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failures = 1;
+    const wire = fileTransport(sent, () => (failures-- > 0 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    expect(Object.hasOwn((sourceState(join(directory, 'state.json')) as any).predecessors ?? {}, sent.at(-1)!.item.revision)).toBe(true);
+    const uploaded = sent.length;
+    // The node head does not contain the attempted revision: the removal wins.
+    await engine.syncScan(scan([]), true, source, wire);
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(uploaded);
+  });
+  it('does not publish an absent attempted revision when heads are unknown or advanced but writes recover', async () => {
+    for (const mode of ['error', 'advanced'] as const) {
+      const dir = await mkdtemp(join(tmpdir(), 'mote-ambig-'));
+      const engine = new SourceSync(join(dir, 'state.json')); await engine.initialize();
+      const sent: { item: SourceItem; previousRevision: string | null }[] = [];
+      const wire = async (path: string, body: any) => {
+        if (path === '/api/sources') return { ...source, enabled: true };
+        if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+        if (path.startsWith('/api/file-sync/v1/head')) {
+          if (mode === 'error') throw new Error('head unavailable');
+          return { revision: 'later-revision' };
+        }
+        if (path === '/api/file-sync/v1/manifests') {
+          sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+          if (sent.length === 1) throw new Error('simulated ACK loss');
+          return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
+        }
+        throw new Error('unexpected ' + path);
+      };
+      await engine.stage(scan([fileItem]), false);
+      await expect(engine.flush(source, wire as any)).rejects.toThrow('ACK loss');
+      const spool = join(dir, 'spool-ambig'); await mkdir(spool, { recursive: true }); await writeFile(join(spool, '0'), 'x');
+      // A recovered write path must not publish an absent, unresolved attempt.
+      await expect(engine.syncScan(scan([]), false, source, wire as any)).resolves.toEqual({ changes: 0, state: 'ready' });
+      expect(sent).toHaveLength(1);
+      expect(engine.status().pending).toBe(1);
+      expect((sourceState(join(dir, 'state.json')) as any).known[sourceHash(fileItem.externalId)].absentWhileInflight).toBe(sent[0]!.item.revision);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+  it('withdraws an uncommitted absent attempt on the managed flush path', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let fail = true;
+    const wire = fileTransport(sent, () => (fail ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    // Managed scans stage the absence with deletion tracking on and supply the
+    // head resolver; flushPending then calls flush() directly without syncScan.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    expect(engine.status().pending).toBe(0);
+    fail = false;
+    const uploaded = sent.length;
+    await engine.flush(source, wire);
+    expect(sent).toHaveLength(uploaded);
+  });
+  it('keeps a committed update whose ACK was lost so reappearance chains from it', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failures = 0;
+    const wire = fileTransport(sent, () => (sent.length === 2 && failures++ === 0 ? 1 : 0));
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, wire);
+    await engine.stage(scan([{ ...fileItem, text: 'update B' }]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // Withdrawal is not required: the node holds B, so keep it and let the retry
+    // confirm the duplicate receipt.
+    await engine.syncScan(scan([]), false, source, wire);
+    const update = sent.at(-2)!.item;
+    await engine.stage(scan([{ ...fileItem, text: 'revision C' }]), false);
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.previousRevision).toBe(update.revision);
+  });
+  it('queues the deletion after a managed flush acknowledges an absent first upload', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // Managed stage sees the absence and a head that already holds the revision.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.item.deleted).toBe(true);
+    expect(sent.at(-1)!.previousRevision).toBe(sent.at(-2)!.item.revision);
+  });
+  it('re-uploads an identical file restored after a managed tombstone', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    // A repeated absent scan must not queue another deletion from the same entry.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    await engine.flush(source, wire);
+    const tombstone = sent.at(-1)!.item;
+    expect(tombstone.deleted).toBe(true);
+    // The same bytes return: the identity must queue again instead of staying deleted.
+    expect(await engine.stage(scan([fileItem]), true)).toBe(1);
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.item.deleted).toBe(false);
+    expect(sent.at(-1)!.item.revision).not.toBe(tombstone.revision);
+  });
+  it('cancels the pending deletion when the file returns before the acknowledgement', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    // The same file comes back unchanged before the retry is acknowledged.
+    expect(await engine.stage(scan([fileItem]), true)).toBe(0);
+    // The cancellation is durable: a restart must not resurrect the tombstone.
+    const reopened = await create();
+    await reopened.flush(source, wire);
+    expect(sent.every(entry => !entry.item.deleted)).toBe(true);
+    expect(reopened.status().pending).toBe(0);
+  });
+  it.each([
+    { mode: 'null', complete: true }, { mode: 'committed', complete: true },
+    { mode: 'null', complete: false }, { mode: 'committed', complete: false },
+  ])('honors a durable seen-only reappearance before syncScan flushes a $mode head (complete=$complete)', async ({ mode, complete }) => {
+    const spool = join(directory, 'seen-only-spool'), bytes = Buffer.from('generated reappearing source'); await mkdir(spool); await writeFile(join(spool, '0'), bytes);
+    const original = { directory: spool, sha256: sourceHash(bytes), sizeBytes: bytes.length, partBytes: 4 * 1024 * 1024 };
+    const returned = { ...fileItem, localOriginal: original };
+    const engine = await create(), sent: SourceItem[] = []; let firstWrite = true, head: string | null = null;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: head };
+      if (path === '/api/file-sync/v1/uploads') {
+        sent.push(body.item);
+        if (firstWrite) { firstWrite = false; if (mode === 'committed') head = body.item.revision; throw Error('generated lost response'); }
+        expect(await readFile(join(spool, '0'))).toEqual(bytes);
+        head = body.item.revision;
+        return { ack: { ...sourceAck(source.id, body.item, 'file-revision'), sha256: original.sha256, sizeBytes: original.sizeBytes } };
+      }
+      if (path === '/api/file-sync/v1/manifests') {
+        return { results: body.items.map(({ item }: { item: SourceItem }) => { sent.push(item); head = item.revision; return { externalId: item.externalId, revision: item.revision, state: 'accepted', ack: sourceAck(source.id, item, 'file-revision') }; }) };
+      }
+      throw Error('unexpected generated route ' + path);
+    };
+    await engine.stage(scan([returned]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('generated lost response');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => undefined);
+    const before = sourceState(join(directory, 'state.json')) as any;
+    expect(before.known[sourceHash(fileItem.externalId)]).toMatchObject({ absentWhileInflight: sent[0]!.revision, deletionPending: true });
+    const reopened = await create(), seenOnly = { ...scan([], complete), seen: [fileItem.externalId] };
+    await expect(reopened.syncScan(seenOnly, true, source, wire)).resolves.toEqual({ changes: 0, state: 'ready' });
+    expect(sent).toHaveLength(2); expect(sent.every(item => !item.deleted && item.revision === sent[0]!.revision)).toBe(true);
+    expect(reopened.status().pending).toBe(0);
+    const after = sourceState(join(directory, 'state.json')) as any;
+    expect(after.known[sourceHash(fileItem.externalId)].absentWhileInflight).toBeUndefined(); expect(after.known[sourceHash(fileItem.externalId)].deletionPending).toBeUndefined();
+    const reopenedAgain = await create(); await reopenedAgain.syncScan(seenOnly, true, source, wire);
+    expect(reopenedAgain.status().pending).toBe(0); expect(sent).toHaveLength(2);
+  });
+  it('never marks a deletion from an incomplete scan', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // An incomplete scan cannot prove absence, so no pending deletion is set.
+    await engine.stage(scan([], false), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    await engine.flush(source, wire);
+    expect(sent.every(entry => !entry.item.deleted)).toBe(true);
+  });
+  it('withdraws a precommit update on the managed path when the head is its predecessor', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let attempts = 0;
+    const wire = fileTransport(sent, () => (++attempts === 2 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, wire);
+    const acknowledged = sent.at(-1)!.item;
+    await engine.stage(scan([{ ...fileItem, text: 'update B' }]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    const uploaded = sent.length;
+    // Managed stage: the head still equals the acknowledged predecessor A.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    expect(engine.status().pending).toBe(0);
+    await engine.flush(source, wire);
+    expect(sent).toHaveLength(uploaded);
+  });
+  it('keeps recovery state while an upload is still in flight', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') {
+        entered = true; await gate;
+        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+        throw new Error('ACK loss');
+      }
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), true);
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    // Absence scan while the commit request may still land.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    expect(engine.status().pending).toBe(1);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+  });
+  it('keeps the new revision when a changed file returns and clears the pending deletion', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    // The file returns with changed content: it must queue the new revision
+    // without losing it to the stale known record.
+    expect(await engine.stage(scan([{ ...fileItem, text: 'changed after return' }]), true)).toBe(1);
+    await engine.flush(source, wire);
+    expect(sent.every(entry => !entry.item.deleted)).toBe(true);
+    // The following scan must not queue the same upload again.
+    expect(await engine.stage(scan([{ ...fileItem, text: 'changed after return' }]), true)).toBe(0);
+  });
+  it('keeps a first upload that is in flight before its predecessor is persisted', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let capabilityEntered = false, lostAck = true;
+    const wire = fileTransport(sent, () => (lostAck ? 1 : 0));
+    const gated = async (path: string, body: any) => {
+      if (path === '/api/file-sync/v1/capabilities') { capabilityEntered = true; await gate; }
+      return wire(path, body);
+    };
+    await engine.stage(scan([fileItem]), true);
+    const flushing = engine.flush(source, gated as any).catch(error => error);
+    while (!capabilityEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    // Absence arrives while capabilities (and therefore the predecessor write)
+    // are still pending: the selected upload must stay queued.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    expect(engine.status().pending).toBe(1);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    // The acknowledgement then completes the promised deletion.
+    lostAck = false;
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.item.deleted).toBe(true);
+  });
+  it('defers a deletion until a history-queue update is acknowledged', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failOnce = false;
+    const wire = fileTransport(sent, () => (failOnce ? ((failOnce = false), 1) : 0));
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, wire);
+    failOnce = true;
+    await engine.stage(scan([{ ...fileItem, text: 'history update B' }]), true, undefined, 'all', 'history');
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    const update = sent.at(-1)!.item;
+    // Managed absence: the head already holds B, so no tombstone may chain from A.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => update.revision);
+    const before = sent.length;
+    await engine.flush(source, wire);
+    expect(engine.status().pending).toBe(0);
+    const tombstone = sent.slice(before).find(entry => entry.item.deleted);
+    expect(tombstone).toBeDefined();
+    expect(tombstone!.previousRevision).toBe(update.revision);
+  });
+  it('keeps the staged revision when a changed file returns and cancels deletion', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    const changed = { ...fileItem, text: 'changed content after return' };
+    expect(await engine.stage(scan([changed]), true)).toBe(1);
+    await engine.flush(source, wire);
+    const uploaded = sent.at(-1)!.item;
+    // Restart keeps B as the known revision; another identical scan queues nothing.
+    const reopened = await create();
+    expect(await reopened.stage(scan([changed]), true)).toBe(0);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const knownEntry = Object.values(state.known as Record<string, any>).find(value => value.item.externalId === changed.externalId);
+    expect(knownEntry?.revision).toBe(uploaded.revision);
+  });
+  it('withdraws a removed file whose preflight request failed', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') {
+        entered = true; await gate;
+        if (!preflightFailed) { preflightFailed = true; throw new Error('capabilities failed'); }
+        return { manifestBatch: 200 };
+      }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('ACK loss'); }
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    // Absence is observed while the preflight request is still pending.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    // The preflight never committed: the next flush must withdraw, not publish.
+    await engine.flush(source, wire);
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
+  it('stages the acknowledged deletion in the same scan that withdraws an unattempted update', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    const wire = fileTransport(sent);
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, wire);
+    await engine.stage(scan([{ ...fileItem, text: 'queued but never sent' }]), true);
+    // Complete absence withdraws the unattempted update; the deletion of the
+    // acknowledged revision must be staged in this same pass.
+    await engine.stage(scan([]), true);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const queued = [...state.pendingRealtime, ...state.pendingHistory];
+    expect(queued.some((entry: SourceItem) => entry.deleted)).toBe(true);
+    const before = sent.length;
+    await engine.flush(source, wire);
+    const deletion = sent.slice(before).find(entry => entry.item.deleted);
+    expect(deletion).toBeDefined();
+    expect(engine.status().pending).toBe(0);
+  });
+  it('tombstones the acknowledged base in the same cycle after a precommit update is withdrawn', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let attempts = 0;
+    const wire = fileTransport(sent, () => (++attempts === 2 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, wire);
+    const acknowledged = sent.at(-1)!.item;
+    await engine.stage(scan([{ ...fileItem, text: 'update B fails precommit' }]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // Head still equals A: the managed stage withdraws B and must stage A's
+    // deletion in the same cycle.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    const uploaded = sent.length;
+    await engine.flush(source, wire);
+    const sentNow = sent.slice(uploaded);
+    expect(sentNow.some(entry => entry.item.revision && !entry.item.deleted)).toBe(false);
+    const deletion = sentNow.find(entry => entry.item.deleted);
+    expect(deletion).toBeDefined();
+    expect(deletion!.previousRevision).toBe(acknowledged.revision);
+    expect(engine.status().pending).toBe(0);
+  });
+  it('uploads a returned file after a preflight failure cleared the absence flag', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') {
+        entered = true; await gate;
+        if (!preflightFailed) { preflightFailed = true; throw new Error('capabilities failed'); }
+        return { manifestBatch: 200 };
+      }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) }; }
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    // Absence observed while preflight is pending, then the preflight fails.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    // The unchanged file returns before the retry: the absence flag must clear.
+    expect(await engine.stage(scan([fileItem]), false)).toBe(0);
+    const reopened = await create();
+    await reopened.flush(source, wire as any);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].item.deleted).toBe(false);
+    expect(reopened.status().pending).toBe(0);
+  });
+  it('withdraws an in-flight update when the head still equals its predecessor', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, fileTransport(sent));
+    const acknowledged = sent.at(-1)!.item;
+    // Fresh engine so the manifest capability is resolved inside the gated flush.
+    const reopened = await create();
+    await reopened.stage(scan([{ ...fileItem, text: 'update B' }]), false);
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: acknowledged.revision };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('ACK loss'); }
+      throw new Error('unexpected ' + path);
+    };
+    const flushing = reopened.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    await reopened.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    release();
+    await flushing;
+    expect(reopened.status().pending).toBe(1);
+    const before = sent.length;
+    await reopened.flush(source, wire as any);
+    expect(reopened.status().pending).toBe(0);
+    expect(sent).toHaveLength(before);
+  });
+  it('tombstones the acknowledged base when an in-flight update never committed', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, fileTransport(sent));
+    const acknowledged = sent.at(-1)!.item;
+    const reopened = await create();
+    await reopened.stage(scan([{ ...fileItem, text: 'update B' }]), true);
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: acknowledged.revision };
+      if (path === '/api/file-sync/v1/manifests') {
+        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+        if (body.items.some((manifest: any) => !manifest.item.deleted)) throw new Error('ACK loss');
+        return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
+      }
+      throw new Error('unexpected ' + path);
+    };
+    const flushing = reopened.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    await reopened.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    release();
+    await flushing;
+    const before = sent.length;
+    await reopened.flush(source, wire as any);
+    const now = sent.slice(before);
+    expect(now.some(entry => !entry.item.deleted)).toBe(false);
+    const deletion = now.find(entry => entry.item.deleted);
+    expect(deletion).toBeDefined();
+    expect(deletion!.previousRevision).toBe(acknowledged.revision);
+    expect(reopened.status().pending).toBe(0);
+  });
+  it('keeps the file when it returns while the reconciliation head is pending', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let releaseCaps!: () => void; const capsGate = new Promise<void>(resolve => { releaseCaps = resolve; });
+    let capsEntered = false, preflightFailed = false;
+    const gatedCaps = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; capsEntered = true; await capsGate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const first = engine.flush(source, gatedCaps as any).catch(error => error);
+    while (!capsEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    releaseCaps();
+    await first;
+    expect(engine.status().pending).toBe(1);
+    // The file returns while the reconciliation head request is pending.
+    let releaseHead!: () => void; const headGate = new Promise<void>(resolve => { releaseHead = resolve; });
+    let headEntered = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) { headEntered = true; await headGate; return { revision: null }; }
+      if (path === '/api/file-sync/v1/manifests') {
+        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+        return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
+      }
+      throw new Error('unexpected ' + path);
+    };
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!headEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    expect(await engine.stage(scan([fileItem]), false)).toBe(0);
+    releaseHead();
+    await flushing;
+    expect(sent).toHaveLength(1);
+    expect(sent[0].item.deleted).toBe(false);
+    expect(engine.status().pending).toBe(0);
+  });
+  it('keeps a newer revision when the file returns during an update reconciliation head', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, fileTransport(sent));
+    const acknowledged = sent.at(-1)!.item;
+    const reopened = await create();
+    await reopened.stage(scan([{ ...fileItem, text: 'update B' }]), true);
+    let releaseCaps!: () => void; const capsGate = new Promise<void>(resolve => { releaseCaps = resolve; });
+    let capsEntered = false, preflightFailed = false;
+    const gatedCaps = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; capsEntered = true; await capsGate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: acknowledged.revision };
+      throw new Error('unexpected ' + path);
+    };
+    const first = reopened.flush(source, gatedCaps as any).catch(error => error);
+    while (!capsEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    await reopened.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    releaseCaps();
+    await first;
+    expect(reopened.status().pending).toBe(1);
+    // The file returns with NEW content while the reconciliation head is pending.
+    let releaseHead!: () => void; const headGate = new Promise<void>(resolve => { releaseHead = resolve; });
+    let headEntered = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) { headEntered = true; await headGate; return { revision: acknowledged.revision }; }
+      if (path === '/api/file-sync/v1/manifests') {
+        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+        return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
+      }
+      throw new Error('unexpected ' + path);
+    };
+    const flushing = reopened.flush(source, wire as any).catch(error => error);
+    while (!headEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    const changed = { ...fileItem, text: 'revision C after return' };
+    expect(await reopened.stage(scan([changed]), true)).toBe(1);
+    releaseHead();
+    await flushing;
+    expect(sent.every(entry => !entry.item.deleted)).toBe(true);
+    const uploads = sent.filter(entry => !entry.item.deleted);
+    const latest = uploads.at(-1)!;
+    // Whatever revision is accepted last must chain from the accepted head and
+    // the durable known entry must describe it.
+    expect(latest.previousRevision).toBe(uploads.at(-2)!.item.revision);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const knownEntry = Object.values(state.known as Record<string, any>).find(value => value.item.externalId === changed.externalId);
+    expect(knownEntry?.revision).toBe(latest.item.revision);
+    expect(reopened.status().pending).toBe(0);
+  });
+  it('withdraws an older in-flight revision whose queued successor was withdrawn', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('ACK loss'); }
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    // A changed revision is staged while the first upload is in flight, so the
+    // known entry's revision is no longer the queued revision.
+    await engine.stage(scan([{ ...fileItem, text: 'changed while uploading' }]), false);
+    // Complete absence: the in-flight revision stays, the newer queued one goes.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    await engine.flush(source, wire as any);
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
+  it('ends the attempt instead of yielding with no progress during reconciliation', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    // Produce an absent in-flight candidate through the real path.
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const gated = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const flushing = engine.flush(source, gated as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    // The head read yields the slice; flushSlice must surface that, not drop it.
+    const { UploadSliceYield } = await import('../src/upload-slice');
+    const sliceWire = async (path: string) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) throw new UploadSliceYield();
+      return { manifestBatch: 200 };
+    };
+    const slice = await engine.flushSlice(source, sliceWire as any, undefined);
+    // A slice exhausted before any upload must end this attempt; returning
+    // 'yielded' would make the managed task requeue the same source forever.
+    expect(slice.state).toBe('ready');
+    expect(engine.status().pending).toBe(1);
+    expect(sent).toHaveLength(0);
+  });
+  it('makes bounded progress with 100 absent candidates and unresolved heads', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    const items = Array.from({ length: 100 }, (_, index) => ({ ...fileItem, externalId: `file:generated-${index}`, title: `file-${index}` }));
+    await engine.stage(scan(items), false);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    sourceState(join(directory, 'state.json'), items.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: { ...state.known[sourceHash(item.externalId)], absentWhileInflight: state.known[sourceHash(item.externalId)].revision } })));
+    const reopened = await create();
+    let heads = 0, nullHeads = false; const examined: string[] = [];
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) { heads++; examined.push(decodeURIComponent(new URL(path, 'http://x').searchParams.get('externalId') ?? '')); if (!nullHeads) throw new Error('head unavailable'); return { revision: null }; }
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('must not upload absent files'); }
+      throw new Error('unexpected ' + path);
+    };
+    // Unresolved heads: bounded work and no blind upload.
+    const first = await reopened.flushSlice(source, wire as any, undefined);
+    expect(heads).toBeLessThanOrEqual(8);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(100);
+    expect(['ready', 'yielded']).toContain(first.state);
+    const firstExamined = new Set(examined);
+    // A real exhausted slice budget yields before any head work.
+    const { UploadSlice } = await import('../src/upload-slice');
+    const tight = new UploadSlice(4 * 1024 * 1024, 1);
+    const tightResult = await reopened.flushSlice(source, wire as any, undefined, undefined, tight);
+    expect(tightResult.state).toBe('ready');
+    expect(reopened.status().pending).toBe(100);
+    expect(sent).toHaveLength(0);
+    // A later slice that can resolve null heads withdraws them and still uploads nothing,
+    // examining different candidates than the previous call (rotation).
+    nullHeads = true;
+    heads = 0;
+    examined.length = 0;
+    await reopened.flushSlice(source, wire as any, undefined);
+    expect(heads).toBeLessThanOrEqual(8);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(92);
+    expect(examined.some(id => !firstExamined.has(id))).toBe(true);
+  });
+  it('never uploads the ninth absent candidate before its head is checked', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    const items = Array.from({ length: 9 }, (_, index) => ({ ...fileItem, externalId: `file:nine-${index}`, title: `nine-${index}` }));
+    await engine.stage(scan(items), false);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    sourceState(join(directory, 'state.json'), items.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: { ...state.known[sourceHash(item.externalId)], absentWhileInflight: state.known[sourceHash(item.externalId)].revision } })));
+    const reopened = await create();
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) }; }
+      throw new Error('unexpected ' + path);
+    };
+    await reopened.flushSlice(source, wire as any, undefined);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(1);
+    await reopened.flushSlice(source, wire as any, undefined);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(0);
+  });
+  it('serves the other lane when the preferred lane is all unreconciled absence', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    // Realtime file becomes an absent in-flight candidate with an unresolved head.
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const gated = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), true);
+    const flushing = engine.flush(source, gated as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    // A valid record waits in the history lane.
+    const message: ScannedItem = { externalId: 'message:history-1', title: 'history message', text: 'body', kind: 'message', layer: 'snapshot', deleted: false };
+    await engine.stage(scan([message]), true, undefined, 'all', 'history');
+    const wire = fileTransport(sent);
+    const headFailing = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) throw new Error('head unavailable');
+      if (path === `/api/sources/${source.id}/items`) {
+        const item = body as SourceItem;
+        sent.push({ item, previousRevision: null });
+        return sourceAck(source.id, item);
+      }
+      return wire(path, body);
+    };
+    await engine.flush(source, headFailing as any);
+    // The history record is uploaded even though realtime is blocked.
+    expect(sent.some(entry => entry.item.externalId === 'message:history-1')).toBe(true);
+  });
+  it('holds a failed precommit revision until its absence head resolves', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let attempts = 0;
+    const wire = fileTransport(sent, () => (++attempts === 1 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    // The send has ended; a complete absence scan cannot read the head.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => undefined);
+    expect(engine.status().pending).toBe(1);
+    const uploaded = sent.length;
+    // A direct managed retry with an unavailable head must not publish it.
+    const headFailing = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) throw new Error('head unavailable');
+      return wire(path, body);
+    };
+    await expect(engine.flush(source, headFailing as any)).resolves.toBe('ready');
+    expect(sent).toHaveLength(uploaded);
+    expect(engine.status().pending).toBe(1);
+    // Once the head answers null the uncommitted revision is withdrawn.
+    const resolving = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      return wire(path, body);
+    };
+    await expect(engine.flush(source, resolving as any)).resolves.toBe('ready');
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(uploaded);
   });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);

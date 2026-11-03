@@ -296,6 +296,8 @@ export class LocalSourceManager {
           source.importCompletedAt = new Date().toISOString(); await this.persist(); await this.refreshWatchers();
         }
         if (this.managedUploads) {
+          // Discovery only journals absence. Head reconciliation belongs to the
+          // paused/scheduled, bounded transport path in flushPending.
           await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync);
           Object.assign(status, engine.status(), { state: 'idle', message: !this.connection.serverUrl || !connectionToken(this.connection) ? moteText("已保存在本机；尚未配置中央同步") : moteText("已检查本地变化，按同步设置等待上传") });
         } else {
