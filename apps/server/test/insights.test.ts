@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {skillCatalog} from '@mote/agent';
+import {buildContextEnvelope,prepareTaskContext,skillCatalog} from '@mote/agent';
 import {staticReportHtml,insightResult,validateInsightOutput} from '../src/insights.js';
 
 const id='11111111-1111-4111-8111-111111111111',missing='22222222-2222-4222-8222-222222222222';
@@ -11,6 +11,14 @@ test('plain text and malformed JSON request repair instead of completing without
   assert.equal(validateInsightOutput(value)?.code,'insight_shape');
  }
  assert.equal(validateInsightOutput({answer:JSON.stringify({title:'Generated',markdown:'No evidence in this generated window.',html:'<p>No evidence in this generated window.</p>'}),citations:[],trace:[],runId:'generated-valid-report'}),undefined);
+});
+test('registered insight descriptor assembles a partial snapshot and its report passes host validation',()=>{
+ const sourceStates=Array.from({length:32},(_,i)=>({sourceId:'generated-source-'+i,state:'ready'})),snapshot={version:3,seriesId:'generated-series',asOf:'2026-10-01T00:00:00Z',scope:{after:'2026-09-01T00:00:00Z',before:'2026-10-01T00:00:00Z',timeZone:'UTC'},coverage:{sourceStates,limitations:['generated_partial']}};
+ const input={question:'Generated review',skill:'personal-insight',responseMode:'personal-insight',insightSnapshot:snapshot},prepared=prepareTaskContext(input),envelope=buildContextEnvelope(input,[]);
+ assert.equal(prepared.id,'insight');assert.equal(prepared.version,'1');assert.equal(prepared.responseMode,'personal-insight');assert.equal(prepared.skill?.version,'1.0.5');
+ assert.equal(envelope.taskId,'insight');assert.deepEqual(envelope.taskProfile,{output:'personal-insight',retrieval:'archive'});assert.equal(envelope.hostInsightSnapshot.coverage.sourceStates.length,30);assert.equal(envelope.hostInsightSnapshot.coverage.sourceStatesTotal,32);assert.equal(envelope.hostInsightSnapshot.coverage.sourceStatesTruncated,true);
+ const candidate={answer:JSON.stringify({title:'Generated partial review',markdown:'Only the inspected samples are described.',html:'<p>Only the inspected samples are described.</p>'}),citations:[],trace:[],runId:'generated-insight'};
+ assert.equal(validateInsightOutput(candidate),undefined);assert.equal(snapshot.coverage.sourceStates.length,32,'assembly never mutates the host snapshot');
 });
 test('stored report provenance identifies the selected insight policy version',()=>{
   const result=insightResult({answer:JSON.stringify({title:'Generated recap',markdown:`A bounded observation [${id}]`,html:`<p>A bounded observation [${id}]</p>`}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:'Generated fixture'}],trace:[],runId:'generated-run'});

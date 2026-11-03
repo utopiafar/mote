@@ -241,12 +241,12 @@ class HomeJourneyInstrumentedTest {
         automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         val manager = context.getSystemService(NotificationManager::class.java)
         fun actions(): List<String>? = manager.activeNotifications.firstOrNull { it.id == Notifications.ID }?.notification?.actions?.map { it.title.toString() }
-        Notifications.show(context, "生成的屏幕状态")
+        context.systemEntries().show("生成的屏幕状态")
         until("The capture notification pauses only the screen and records") { actions() == listOf("暂停屏幕采集", "记录") }
         if (Build.VERSION.SDK_INT >= 31) assertTrue("Tapping the notification opens an activity", manager.activeNotifications.first { it.id == Notifications.ID }.notification.contentIntent.isActivity)
-        Notifications.clear(context); Notifications.showEvents(context, "生成的设备事件")
+        context.systemEntries().clear(); context.systemEntries().showEvents("生成的设备事件")
         until("Without screen capture the existing full stop remains") { actions() == listOf("停止采集", "记录") }
-        Notifications.showEvents(context, null)
+        context.systemEntries().showEvents(null)
         until("No capture means no ongoing notification") { actions() == null }
 
         instrumentation.runOnMainSync {

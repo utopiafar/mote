@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type {ImportJob} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
 import {ApiError,type Api} from '../src/api.js';
-import {ImportQueue,type ImportDraft} from '../src/import-queue.js';
+import {ImportQueue,type ImportDraft} from '../src/plugins/intake/import-queue.js';
 configureLocale(()=> 'zh-CN');
 
 function draft(name:string):ImportDraft{return {name,instruction:'',sourcePackId:'',source:{kind:'files',files:[new File(['Generated '+name],name+'.txt')]}};}

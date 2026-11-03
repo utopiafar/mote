@@ -4,7 +4,7 @@ import {useEffect,useRef,useState} from 'react';
 import {containDialogFocus} from './dialog-focus';
 import {AppearanceSelector} from './AppearanceSelector';
 import {LanguageSelector} from './LanguageSelector';
-import {preserveChatForLanguageReload} from './chat-drafts';
+import {preserveChatForLanguageReload} from './plugins/ask/chat-drafts';
 import type {PageProps} from './features/types';
 import type {SessionLifetime} from './session';
 export function WebPreferences({api,status,disconnect,sessionLifetime,changeSessionLifetime,onPage}:Pick<PageProps,'api'|'status'|'disconnect'|'sessionLifetime'|'changeSessionLifetime'|'onPage'>){

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
-import {FileDetail} from '../src/Files.js';
+import {FileDetail} from '../src/plugins/intake/Files.js';
 import type {Api} from '../src/api.js';
 
 test('generated transcript groups retain child correction/seek controls and scope range submission to one raw artifact',async t=>{
