@@ -12,7 +12,7 @@ import {semanticProcessor} from '../src/semantic-extraction.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 
 const connection={id:'generated-connection',fingerprint:'a'.repeat(64)};
-type Outcome='success'|'failure'|'cancel';
+type Outcome='success'|'failure'|'cancel'|'usage-wait';
 
 async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{authorize:boolean;outcome:Outcome}){
   const directory=mkdtempSync(join(tmpdir(),'mote-usage-wait-')),store=new Store(directory),ledger=new UsageLedger(store),memories=new MemoryStore(store);
@@ -29,6 +29,11 @@ async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{au
     request.onUsage?.({requests:1,reportedRequests:1,inputTokens:5,outputTokens:2,totalTokens:7});
     if(outcome==='failure')throw Error('Generated model failure');
     if(outcome==='cancel')throw new ProviderFailure({category:'blocked',code:'cancelled',executionStarted:true},'Generated cancellation');
+    if(outcome==='usage-wait'){
+      // A later call hits a real admission wait after the first call reported usage.
+      authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
+      authorization.automatic('generated-work-2',['generated-original'],'semantic');
+    }
     return {answer:JSON.stringify({summary:'Generated summary',evidence:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[],trace:[],runId:randomUUID()};
   };
   const processor=semanticProcessor({store,memories,query:query as never,records:()=>[{id:'generated-r1',ocrText:'Generated segment text',capturedAt:'2026-11-03T00:00:00.000Z'} as never],selection:()=>({configured:true,fingerprint:'generated-fingerprint',provider:'generated-provider',model:'generated-model',profileId:'generated-profile'} as never),usage:ledger});
@@ -59,4 +64,10 @@ test('after authorization, a started model that is cancelled keeps the existing 
   const f=await fixture(t,{authorize:true,outcome:'cancel'});
   await assert.rejects(f.processor.process(f.input as never));
   const usage=f.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');
+});
+
+test('usage reported before a later admission wait is preserved as one failed receipt',async t=>{
+  const f=await fixture(t,{authorize:true,outcome:'usage-wait'});
+  await assert.rejects(f.processor.process(f.input as never));
+  const usage=f.rows();assert.equal(usage.length,1,'reported tokens must not be discarded');assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens?.totalTokens,7);
 });
