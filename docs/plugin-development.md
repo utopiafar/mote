@@ -105,7 +105,10 @@ Running on a real host:
   `schemaVersion 1`, exact dependency identities (no ranges), declared
   contributions and capabilities. `trust: "external"` plus `runtime` selects
   the execution surface. Capabilities and configuration fields are verified
-  by the host, not trusted.
+  by the host, not trusted. A contribution-provided capability must also be
+  declared in the package `capabilities` list; when `plugin-validate` or the
+  composition planner rejects a package, each failure names the missing or
+  mismatched declaration and the remediation that fixes it.
 - **Worker discipline.** The worker entry must be self-contained (the
   installed payload has no `node_modules`), persist only in
   instance-configured locations — never inside the integrity-checked payload
