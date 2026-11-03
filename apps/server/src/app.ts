@@ -164,6 +164,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   conversations.onTurnReceived=turnId=>modelAuthorizationHost.conversation(turnId);
   const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
   resources.beforeClose(()=>pluginCenter.close());
+  // Bindings are built by memoryRuntime below, but their disposer keeps its
+  // original slot: released after active queries, connectors and the agent.
+  resources.defer(()=>bindings.current?.close());
   const ownerQuestions=new OwnerQuestions(store);
   backendContext.provide('moteOwnerQuestions',ownerQuestions);
   const archivedFiles=bootstrap.vault.archivedFiles;

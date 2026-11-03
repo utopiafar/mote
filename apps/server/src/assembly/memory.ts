@@ -110,7 +110,7 @@ export interface MemoryRuntimeDependencies {
 export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const {store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,bindings,topics,review,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
   const memoryBindings=bindings.current=new MemoryBindings(store,memories,memoryAutomation,pluginCenter,executor);
-  resources.defer(()=>memoryBindings.close());
+  // Its disposer is registered by app.ts at the original shutdown slot.
   evidenceReader.memoryBindings=memoryBindings;
   const hindsightMeters=new Map<string,ReturnType<UsageLedger['start']>>();
   const hindsightAuthorities=new Map<string,(settings:ModelSettings)=>void>();
