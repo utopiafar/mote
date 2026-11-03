@@ -4,7 +4,7 @@ import type {Answer,Capture} from '../../api';
 import type {Api} from '../../api';
 import type {DiscoveryState} from '../../discovery-availability';
 import type {HomeEntry} from '../../features/types';
-import type {OwnerBrowsePage} from '../../owner-library-browse';
+import type {OwnerBrowsePage} from '../library/owner-library-browse';
 import {webFeatures} from '../../features/registry';
 import {operationFeed,type OperationFeed} from '../../operation-feed';
 import {ownerQuestionListPath} from '../../owner-question-route';
