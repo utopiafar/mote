@@ -15,7 +15,7 @@ import {HomeMaterialRow,type RecentMaterial} from './HomeMaterialRow';
 import {ownerQuestionListPath,openOwnerQuestionList} from './owner-question-route';
 import {openQuestionDraft} from './open-question-draft';
 import {useWorkspaceStyle} from './workspace-final-style';
-import type {InsightRun} from './InsightProgress';
+import type {InsightRun} from './plugins/discovery/InsightProgress';
 
 type Conversation={id:string;title:string;updatedAt:string;turnCount:number};
 
