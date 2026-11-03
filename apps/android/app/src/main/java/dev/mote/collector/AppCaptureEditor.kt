@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import dev.mote.collector.plugins.SystemEntriesPlugin
 
 /** One list/detail surface. All edits write into the owning page's existing configuration draft. */
 internal class AppCaptureEditor(
@@ -19,6 +20,7 @@ internal class AppCaptureEditor(
     private val loadRules: (String, String) -> Unit,
     private val importRules: (String, String) -> Unit,
     private val detailChanged: (Boolean) -> Unit,
+    private val availability: () -> SystemEntriesPlugin.Availability,
 ) : LinearLayout(activity) {
     data class State(val selected: String? = null, val query: String = "", val scope: AppCapturePresentation.Scope = AppCapturePresentation.Scope.ALL, val rulesExpanded: Boolean = false)
     private var state = State()
@@ -28,6 +30,7 @@ internal class AppCaptureEditor(
     private var synchronizing = false
     private val listSurface = LinearLayout(activity).apply { orientation = VERTICAL }
     private val detailSurface = LinearLayout(activity).apply { orientation = VERTICAL; visibility = GONE }
+    private val unavailable = label("", NativeFontRole.SUPPORT, NativeColorRole.WARNING).apply { visibility = GONE; tag = "app-capture-unavailable" }
     private val status = label("", NativeFontRole.SUPPORT, NativeColorRole.MUTED)
     private val rows = ListView(activity).apply {
         NativePresentationStyles.bind(this,"app-list-divider") { (it as ListView).divider = android.graphics.drawable.ColorDrawable(MoteUi.divider) }
@@ -56,7 +59,7 @@ internal class AppCaptureEditor(
         }
         listSurface.addView(status, LayoutParams(-1, -2).apply { topMargin = dp(8); bottomMargin = dp(8) })
         listSurface.addView(rows, LayoutParams(-1, dp(360)))
-        addView(listSurface); addView(detailSurface)
+        addView(listSurface); addView(unavailable); addView(detailSurface)
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
@@ -89,6 +92,7 @@ internal class AppCaptureEditor(
     }
 
     private fun loadApps() {
+        if (!availability().active) { renderUnavailable(availability()); return }
         val current = snapshot() ?: return
         val configured = current.collection.apps.keys + current.excluded + runCatching { current.ruleCatalog.keys }.getOrDefault(emptySet())
         loader.start(MoteI18n.text("正在读取已安装应用…"), { if (!ready) status.text = it }, {
@@ -115,6 +119,11 @@ internal class AppCaptureEditor(
 
     fun refresh() {
         if (synchronizing) return
+        val gate = availability()
+        if (!gate.active) { renderUnavailable(gate); return }
+        unavailable.visibility = GONE
+        search.isEnabled = true
+        scopeButtons.values.forEach { it.isEnabled = true }
         val current = snapshot() ?: run { status.text = MoteI18n.text("手工规则格式有误，请展开高级规则修正。"); return }
         runCatching {
             refreshList(current)
@@ -126,8 +135,20 @@ internal class AppCaptureEditor(
         }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("请先修正页面规则 JSON"); listSurface.visibility = VISIBLE; detailSurface.visibility = GONE; detailChanged(false) }
     }
 
+    private fun renderUnavailable(gate: SystemEntriesPlugin.Availability) {
+        listSurface.visibility = GONE
+        detailSurface.visibility = GONE
+        detailSurface.removeAllViews()
+        unavailable.text = gate.reason ?: MoteI18n.text("快捷入口不可用")
+        unavailable.visibility = VISIBLE
+        search.isEnabled = false
+        scopeButtons.values.forEach { it.isEnabled = false }
+        detailChanged(false)
+    }
+
     private fun refreshList(current: AppCapturePresentation.Snapshot? = snapshot()) {
         if (current == null) return
+        if (!availability().active) { renderUnavailable(availability()); return }
         runCatching {
             val all = catalog(current)
             shown = AppCapturePresentation.visible(current, all, state.scope, state.query)

@@ -1,10 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,ApiError,errorMessage} from './api';
-import {useResource} from './useResource';
-import {resources} from './resource-cache';
-import {useUnsavedChanges} from './unsaved';
-import {memoryRecipeLabel} from './memory-recipes';
+import {type Api,ApiError,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {resources} from '../../resource-cache';
+import {useUnsavedChanges} from '../../unsaved';
+import {memoryRecipeLabel} from '../../memory-recipes';
 
 type Ref={id:string;version:string};
 type Choice=Ref&{available:boolean};

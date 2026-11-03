@@ -1,7 +1,7 @@
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from './api';
-import {useResource} from './useResource';
-import {memoryRecipeKey,memoryRecipeLabel,type MemoryRecipeRef} from './memory-recipes';
+import {type Api,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {memoryRecipeKey,memoryRecipeLabel,type MemoryRecipeRef} from '../../memory-recipes';
 
 type Choice=MemoryRecipeRef&{available:boolean;requires?:string[]};
 export function ManualMemoryRecipes({api,value,onChange,disabled=false}:{api:Api;value:MemoryRecipeRef[];onChange:(value:MemoryRecipeRef[])=>void;disabled?:boolean}){
