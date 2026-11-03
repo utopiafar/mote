@@ -1,7 +1,7 @@
 import type {ConversationPreparation} from './memory-pipeline.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {CODING_DIALOGUE_SCHEMA_VERSION,type CaptureRecord,type QueryResult} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,ProviderFailure,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {AgentResponseError,type QueryInput} from '@mote/agent';
 import {ProcessingFailure,type ContextProcessor} from './processing-runtime.js';
 import type {MaterialReadPage} from './materials.js';
@@ -139,6 +139,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
   const host={operationId:input.execution?.operationId??'conversation:'+material.id,jobId:input.execution?.jobId,requestId:randomUUID()};
   const preferredLanguage=languagePreference(input.config.language);
   const meter=options.usage.start(selected.provider,selected.model,'coding-conversation-understanding',{moduleId:'memories',agentId:'coding-conversation-understanding',skillId:null,...host});
+  let sampled=false,started=false;
   try{
    const result=await options.query({executionLane:'background',responseMode:'memory-extraction',processingMaterialInputs:materialInputs,modelProfileId:selected.profileId,modelOverride:selected.model,traceContext:host,
     contextTime:typeof input.config.contextTime==='string'?input.config.contextTime:undefined,
@@ -148,7 +149,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     evidenceIds:scope.records.map(record=>record.id),evidenceRanges:scope.ranges,
     question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+responsePrompt+(work?'\nThe host memoryWork contract supersedes the legacy eight-candidate ceiling. '+conversationMemoryInstruction(memoryWorkInstruction(work.members,work.maxCandidates,work.workContract)):''),
     validateOutput:result=>{try{parse(result);}catch(error){const detail=error instanceof MemoryOutputValidationError?conversationMemoryInstruction(error.repairInstruction):error instanceof z.ZodError?error.issues.slice(0,3).map(issue=>issue.path.join('.')+': '+issue.message).join('; '):error instanceof StoreError?error.message:'Invalid JSON object';return {code:'conversation_products',feedback:detail+' Return the complete unified object: summary, evidence, workRecords, events, memoryCandidates and actionCues.'+coverageInstruction+' Absent products use empty arrays; actionCues must be empty. Every claim must preserve attribution, status, basis, sourceTime and uncertainty, with exact cited original quotes inside the supplied ranges.'};}},
-    signal:input.signal,onUsage:meter.update});
+    signal:input.signal,onUsage:usage=>{sampled=true;meter.update(usage);},onTrace:event=>{if(event.type==='model.admitted')started=true;}});
    input.signal.throwIfAborted();const output=parse(result);
    if(options.selection(input.config).fingerprint!==selected.fingerprint)throw new StoreError('Model settings changed during conversation understanding',409);
    const usage=meter.finish('completed');
@@ -159,7 +160,12 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     evidenceRanges:scope.ranges,supportRanges:output.evidenceRanges,citations:[...new Set(output.evidenceRanges.map(range=>range.id))],
     coverage:{scope:'bounded-conversation',ranges:input.materials.map(page=>({ref:page.material.ref,offset:page.textRange.offset,length:page.text.length,total:page.textRange.total})),source:material.coverage},
     complete:true,usage,runId:result.runId,model:selected.model,originalCharacters:scope.characters,characters:text.length}}];
-  }catch(error){meter.finish('failed');if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
+  }catch(error){
+   // Same admission-wait rule as segment understanding: no receipt while the
+   // owner decision is pending.
+   if(!started&&!sampled&&error instanceof ProviderFailure&&error.details.admissionWaiting===true&&error.details.executionStarted===false)meter.discard();
+   else meter.finish('failed');
+   if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
  }};
 }
 
