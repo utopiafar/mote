@@ -205,6 +205,12 @@ export class SourceSync {
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
+    // A file observed again before its acknowledgement cancels the pending
+    // deletion; otherwise the ACK would tombstone a file that is present.
+    if (scan.complete) {
+      const present = new Set(scan.seen);
+      for (const [key, known] of Object.entries(next.known)) if (known.deletionPending && present.has(known.item.externalId)) knownChanges.set(key, { ...known, deletionPending: undefined });
+    }
     const deferred: SourceItem[] = [];
     this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn, deferred);
     // Managed scans have no syncScan pass; resolve an attempted revision against

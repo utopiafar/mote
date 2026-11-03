@@ -357,6 +357,18 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent.at(-1)!.item.deleted).toBe(false);
     expect(sent.at(-1)!.item.revision).not.toBe(tombstone.revision);
   });
+  it('cancels the pending deletion when the file returns before the acknowledgement', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    // The same file comes back unchanged before the retry is acknowledged.
+    expect(await engine.stage(scan([fileItem]), true)).toBe(0);
+    await engine.flush(source, wire);
+    expect(sent.every(entry => !entry.item.deleted)).toBe(true);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
