@@ -9,6 +9,7 @@ import {plugins as platformPlugins} from '../assembly/platform.js';
 import {plugins as sourcePlugins} from '../assembly/sources.js';
 import {plugins as materialPlugins} from '../assembly/materials.js';
 import {plugins as processingPlugins} from '../assembly/processing.js';
+import {plugins as activityPlugins} from '../assembly/activity.js';
 import type {CentralDistribution,FoundationKind,FoundationProvider} from '../bootstrap.js';
 
 const contribution=(kind:FoundationKind):ManifestContribution=>Object.freeze<ManifestContribution>({id:`mote.platform.${kind}`,version:'1.0.0',surface:'data',runtime:'host',
@@ -49,4 +50,4 @@ export const authorizationProvider:FoundationProvider<'authorization'>=Object.fr
     return {validOwnerBearer(authorization){if(typeof authorization!=='string')return false;const supplied=Buffer.from(authorization);return supplied.length===expected.length&&timingSafeEqual(supplied,expected);}};
   }});
 export const defaultDistribution:CentralDistribution=Object.freeze({foundations:Object.freeze([configurationProvider,storageProvider,authorizationProvider]),features:serverFeatureAdapters,
-  plugins:Object.freeze([...platformPlugins,...sourcePlugins,...materialPlugins,...processingPlugins])});
+  plugins:Object.freeze([...platformPlugins,...sourcePlugins,...materialPlugins,...processingPlugins,...activityPlugins])});

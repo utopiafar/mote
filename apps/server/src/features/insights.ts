@@ -1,35 +1,30 @@
-import { AgentNotConfiguredError } from '@mote/agent';
-import type { FastifyInstance } from 'fastify';
-import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
-import type { FeatureServices } from '../feature-services.js';
-import { modelProfileIdSchema } from '../model-settings.js';
-import { scopeFields,validRange } from '../query-scope.js';
-import { StoreError } from '../store.js';
+import type {FastifyInstance} from 'fastify';
+import type {FeatureServices} from '../feature-services.js';
 import type {ServerFeatureScope} from '../feature-host.js';
+import {createInsightServices} from '../plugins/insight-services.js';
 import type {ServerFeatureAdapter} from './index.js';
 
-/** insights: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,agent,isClosing,diagnostics,insight,insightRequestSchema,insightRuns,modelSettings,store}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|"agent"|"isClosing"|"diagnostics"|"insight"|"insightRequestSchema"|"insightRuns"|"modelSettings"|"store">,scope?:ServerFeatureScope){
-scope?.defer(()=>insightRuns.stop());
-app.post('/api/insight-runs',async(req,reply)=>{
-    const body=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body);
-    const {requestId,...input}=body;
-    if(!agent.configuredFor(modelSettings.select('insight',input.modelProfileId).id))throw new AgentNotConfiguredError();
-    if(isClosing())throw new StoreError('Central node is shutting down',503);
-    return modelAuthorizationHost.manual('owner-insight:'+requestId,availableModelConnections(),async()=>{
-      const run=insightRuns.start(requestId,input,(observe,signal,snapshot)=>diagnostics.run(requestId,()=>insight(input,observe,signal,'insight:'+requestId,snapshot)));
-      return reply.code(202).send(run);
-    });
+type InsightFeatureServices=Pick<FeatureServices,'agent'|'availableModelConnections'|'diagnostics'|'insight'|'insightRuns'|'isClosing'|'modelAuthorizationHost'|'modelSettings'|'store'>;
+
+/** The feature bridge only mounts the plugin-owned route table before listen.
+ * C26B's run manager is still constructed by app.ts until K04 moves that one
+ * ownership site; this bridge must not create a second manager. */
+export function register(app:FastifyInstance,services:InsightFeatureServices,scope?:ServerFeatureScope){
+  const plugin=createInsightServices({
+    runs:services.insightRuns,
+    query:services.insight,
+    modelAuthorization:services.modelAuthorizationHost,
+    availableModelConnections:services.availableModelConnections,
+    agent:services.agent,
+    modelSettings:services.modelSettings,
+    isClosing:services.isClosing,
+    diagnostics:services.diagnostics,
+    readHistory:query=>services.store.insights(query),
+    readReport:id=>services.store.insight(id),
   });
-app.post('/api/insight-runs/:id/cancel',async req=>{const id=z.string().uuid().parse((req.params as {id:string}).id);insightRuns.cancel(id);return insightRuns.detail(id);});
-app.get('/api/insight-runs',async()=>({items:insightRuns.list()}));
-app.get('/api/insight-runs/:id',async req=>insightRuns.detail(z.string().uuid().parse((req.params as {id:string}).id)));
-app.post('/api/insights',async req=>{const id=randomUUID(),input=insightRequestSchema.parse(req.body??{});return modelAuthorizationHost.manual('owner-insight:'+id,availableModelConnections(),()=>insightRuns.perform(id,input,(observe,signal,snapshot)=>insight(input,observe,signal,'insight:'+id,snapshot)));});
-app.get('/api/insights',async req=>store.insights(req.query));
-// A result identity is independent of its background job. Only the current
-// published table is authoritative; job receipts cannot restore deleted results.
-app.get('/api/insights/:runId',async req=>store.insight(z.string().min(1).max(128).refine(id=>!/[\u0000-\u001f\u007f]/.test(id)).parse((req.params as {runId:string}).runId)));
+  plugin.prepare();plugin.start();
+  scope?.defer(()=>plugin.close());
+  plugin.routes(app);
 }
 
 export const adapter:ServerFeatureAdapter={
