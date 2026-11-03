@@ -3,7 +3,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {runtimeAssemblySchema, RUNTIME_HOST_CAPABILITIES, type RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {SYSTEM_PROMPT} from '../../instructions.js';
-import {modelRuntimeEntries, harnessPrivacyEntries, validateModelOptions} from '../../model-runtime.js';
+import {modelRuntimeEntries, harnessPrivacyEntries, validateModelOptions} from '../../models/provider-registry.js';
 import type {AgentOptions} from '../../types.js';
 import type {ResolvedRuntimeProfile} from '../contracts.js';
 import type {RuntimeProfileConfiguration} from '../profile.js';
