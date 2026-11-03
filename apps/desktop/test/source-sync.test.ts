@@ -378,6 +378,41 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent.every(entry => !entry.item.deleted)).toBe(true);
     expect(reopened.status().pending).toBe(0);
   });
+  it.each(['null', 'committed'] as const)('honors a durable seen-only reappearance before syncScan flushes a %s head', async mode => {
+    const spool = join(directory, 'seen-only-spool'), bytes = Buffer.from('generated reappearing source'); await mkdir(spool); await writeFile(join(spool, '0'), bytes);
+    const original = { directory: spool, sha256: sourceHash(bytes), sizeBytes: bytes.length, partBytes: 4 * 1024 * 1024 };
+    const returned = { ...fileItem, localOriginal: original };
+    const engine = await create(), sent: SourceItem[] = []; let firstWrite = true, head: string | null = null;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: head };
+      if (path === '/api/file-sync/v1/uploads') {
+        sent.push(body.item);
+        if (firstWrite) { firstWrite = false; if (mode === 'committed') head = body.item.revision; throw Error('generated lost response'); }
+        expect(await readFile(join(spool, '0'))).toEqual(bytes);
+        head = body.item.revision;
+        return { ack: { ...sourceAck(source.id, body.item, 'file-revision'), sha256: original.sha256, sizeBytes: original.sizeBytes } };
+      }
+      if (path === '/api/file-sync/v1/manifests') {
+        return { results: body.items.map(({ item }: { item: SourceItem }) => { sent.push(item); head = item.revision; return { externalId: item.externalId, revision: item.revision, state: 'accepted', ack: sourceAck(source.id, item, 'file-revision') }; }) };
+      }
+      throw Error('unexpected generated route ' + path);
+    };
+    await engine.stage(scan([returned]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('generated lost response');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => undefined);
+    const before = sourceState(join(directory, 'state.json')) as any;
+    expect(before.known[sourceHash(fileItem.externalId)]).toMatchObject({ absentWhileInflight: sent[0]!.revision, deletionPending: true });
+    const reopened = await create(), seenOnly = { ...scan([]), seen: [fileItem.externalId] };
+    await expect(reopened.syncScan(seenOnly, true, source, wire)).resolves.toEqual({ changes: 0, state: 'ready' });
+    expect(sent).toHaveLength(2); expect(sent.every(item => !item.deleted && item.revision === sent[0]!.revision)).toBe(true);
+    expect(reopened.status().pending).toBe(0);
+    const after = sourceState(join(directory, 'state.json')) as any;
+    expect(after.known[sourceHash(fileItem.externalId)].absentWhileInflight).toBeUndefined(); expect(after.known[sourceHash(fileItem.externalId)].deletionPending).toBeUndefined();
+    const reopenedAgain = await create(); await reopenedAgain.syncScan(seenOnly, true, source, wire);
+    expect(reopenedAgain.status().pending).toBe(0); expect(sent).toHaveLength(2);
+  });
   it('never marks a deletion from an incomplete scan', async () => {
     const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
     let firstFailure = true;

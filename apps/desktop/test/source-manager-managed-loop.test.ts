@@ -15,6 +15,8 @@ const managers: LocalSourceManager[] = [];
 const connection = { serverUrl: 'http://127.0.0.1:9', token: 'generated-managed-token', deviceId: '98ca7a5b-62f4-4273-889c-dfcb9b13d608' };
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
 const response = (status: number, value: unknown) => new Response(JSON.stringify(value), { status });
+const generatedFile = (externalId: string, text: string): ScannedItem => ({ externalId, title: externalId, text, kind: 'file', layer: 'snapshot', deleted: false,
+  document: { fileIndex: { version: 1, fileId: externalId, contentVersion: sourceHash(text), mode: 'index', parser: 'generated-index', coverage: 'full', status: 'ready', totalCharacters: text.length, offset: 0, length: text.length, allowRead: false } } });
 
 type Request = { path: string; method: string; url: URL; body: any };
 function transport(handler: (request: Request) => Promise<Response> | Response) {
@@ -293,5 +295,91 @@ it.each(['history', 'realtime'] as const)('withdraws a never-sent sibling while 
     await expect(reopenedAgain.flushPending(new AbortController().signal)).resolves.toBeUndefined();
     expect(attempts).toHaveLength(3); expect(wire.unmatched).toEqual([]);
     expect(reopenedAgain.status()[0]!.pending).toBe(0); expect(afterAbsence).toBe(1);
+  } finally { release.resolve(); await flushing?.catch(() => {}); await failed; }
+});
+
+it('does not publish an attempted history file newly marked absent during a successful realtime batch', async () => {
+  const a = generatedFile('file:absent-during-flush', 'generated A'), c = generatedFile('file:present-during-flush', 'generated C');
+  let items = [a], sourceId = '', firstWrite = true, nullHead = false;
+  const entered = deferred(), release = deferred(), published: string[] = [];
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false, validateConfiguration() {},
+    async scan() { return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } }; },
+  });
+  const wire = transport(async request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities') return response(200, { manifestBatch: 200 });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId); expect(request.url.searchParams.get('externalId')).toBe(a.externalId);
+      return nullHead ? response(200, { revision: null }) : response(503, { error: 'Generated unavailable head' });
+    }
+    if (request.method === 'POST' && request.path === '/api/file-sync/v1/manifests') {
+      expect(request.body.items).toHaveLength(1); const item = request.body.items[0].item;
+      if (firstWrite) { firstWrite = false; expect(item.externalId).toBe(a.externalId); return response(503, { error: 'Generated precommit failure' }); }
+      if (item.externalId === c.externalId) { entered.resolve(); await release.promise; }
+      published.push(item.externalId);
+      return response(200, { results: [{ externalId: item.externalId, revision: item.revision, state: 'accepted', ack: sourceAck(sourceId, item, 'file-revision') }] });
+    }
+    return wire.reject(request);
+  });
+  let flushing: Promise<void> | undefined;
+  try {
+    const app = await openManaged(adapters);
+    sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated mid-flush absence' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: false, syncContinuously: true });
+    await app.sync(true); await expect(app.flushPending(new AbortController().signal)).rejects.toMatchObject({ httpStatus: 503 });
+    items = [a, c]; await app.sync(true); expect(app.status()[0]).toMatchObject({ historyPending: 1, realtimePending: 1 });
+    flushing = app.flushPending(new AbortController().signal); await entered.promise;
+    items = [c]; await app.sync(true); expect(await markerCount(sourceId)).toBe(1);
+    release.resolve(); await flushing;
+    expect(published).toEqual([c.externalId]); expect(app.status()[0]!.pending).toBe(1);
+    await expect(app.flushPending(new AbortController().signal)).resolves.toBeUndefined();
+    expect(published).toEqual([c.externalId]); expect(app.status()[0]!.pending).toBe(1);
+    nullHead = true; await expect(app.flushPending(new AbortController().signal)).resolves.toBeUndefined();
+    expect(app.status()[0]!.pending).toBe(0); expect(published).toEqual([c.externalId]); expect(wire.unmatched).toEqual([]);
+  } finally { release.resolve(); await flushing?.catch(() => {}); }
+});
+
+it('commits each resolved null head before the real managed slice budget expires on the next admission', async () => {
+  const files = [0, 1, 2].map(index => generatedFile(`file:slow-head-${index}`, `generated ${index}`));
+  let present = true, sourceId = '', firstCaps = true, clock: number | undefined;
+  const entered = deferred(), release = deferred();
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false, validateConfiguration() {},
+    async scan() { const items = present ? files : []; return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } }; },
+  });
+  const wire = transport(request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities' && firstCaps) {
+      firstCaps = false; entered.resolve(); return release.promise.then(() => response(503, { error: 'Generated preflight failure' }));
+    }
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId);
+      expect(files.map(item => item.externalId)).toContain(request.url.searchParams.get('externalId'));
+      if (clock !== undefined) clock += 15001;
+      return response(200, { revision: null });
+    }
+    return wire.reject(request);
+  });
+  let flushing: Promise<void> | undefined, failed: Promise<void> | undefined;
+  try {
+    const app = await openManaged(adapters);
+    sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated slow head resolution' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: false, syncContinuously: true });
+    await app.sync(true);
+    flushing = app.flushPending(new AbortController().signal); failed = expect(flushing).rejects.toMatchObject({ httpStatus: 503 }); await entered.promise;
+    present = false; await app.sync(true); expect(await markerCount(sourceId)).toBe(3); release.resolve(); await failed;
+    clock = Date.now(); const now = vi.spyOn(Date, 'now').mockImplementation(() => clock!);
+    try {
+      for (const pending of [2, 1, 0]) {
+        const start = wire.requests.length; let slices = 0;
+        await expect(app.flushPending(new AbortController().signal, async () => { slices++; })).resolves.toBeUndefined();
+        expect(slices).toBe(1); expect(wire.requests.slice(start).filter(request => request.path === '/api/file-sync/v1/head')).toHaveLength(1);
+        expect(app.status()[0]!.pending).toBe(pending);
+      }
+    } finally { now.mockRestore(); clock = undefined; }
+    expect(wire.writes()).toHaveLength(0); expect(wire.unmatched).toEqual([]);
   } finally { release.resolve(); await flushing?.catch(() => {}); await failed; }
 });

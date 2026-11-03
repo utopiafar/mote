@@ -61,6 +61,7 @@ export class SourceSync {
   private manifestBatch?:boolean;
   private inflight=new Set<string>();
   private unreconciledAbsent=new Set<string>();
+  private confirmedAbsent=new Map<string,string>();
   private headCursor=0;
   private knownItems=0;
   private pendingContentRevision=0;
@@ -192,6 +193,17 @@ export class SourceSync {
     next.pendingHistory = next.pendingHistory.filter(keep);
   }
 
+  private clearObservedAbsence(scan: SourceScan, next: State, knownChanges: Map<string, Known>): void {
+    if (!scan.complete) return;
+    const present = new Set(scan.seen);
+    for (const [key, known] of Object.entries(next.known)) {
+      const staged = knownChanges.get(key) ?? known;
+      if (present.has(staged.item.externalId) && (staged.deletionPending || staged.absentWhileInflight)) {
+        knownChanges.set(key, { ...staged, deletionPending: undefined, absentWhileInflight: undefined });
+      }
+    }
+  }
+
   async discardUnqueuedOriginals(items: ScannedItem[]): Promise<void> {
     const directories = (item: ScannedItem) => [item.localOriginal?.directory].filter((value): value is string=>Boolean(value));
     const retained = new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].flatMap(directories));
@@ -230,17 +242,7 @@ export class SourceSync {
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
     // A file observed again before its acknowledgement cancels the pending
     // deletion; otherwise the ACK would tombstone a file that is present.
-    if (scan.complete) {
-      const present = new Set(scan.seen);
-      for (const [key, known] of Object.entries(next.known)) {
-        const staged = knownChanges.get(key) ?? known;
-        if (!present.has(staged.item.externalId)) continue;
-        if (!staged.deletionPending && !staged.absentWhileInflight) continue;
-        // A positive sighting cancels both absence indicators, including a scan
-        // that produces no changed item for an unchanged file.
-        knownChanges.set(key, { ...staged, deletionPending: undefined, absentWhileInflight: undefined });
-      }
-    }
+    this.clearObservedAbsence(scan, next, knownChanges);
     const deferred: SourceItem[] = [];
     this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn, deferred);
     // Managed scans have no syncScan pass; resolve an attempted revision against
@@ -301,6 +303,9 @@ export class SourceSync {
         await this.mutate(async () => {
           const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
           const deferred: SourceItem[] = [];
+          // Seen-only scans can prove reappearance without restaging bytes.
+          // Persist this before a flush can withdraw or tombstone the file.
+          this.clearObservedAbsence(scan, next, knownChanges);
           this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn, deferred);
           // A persisted predecessor proves only that a send started. Confirm the
           // revision against the node's head before trusting it as committed;
@@ -365,7 +370,7 @@ export class SourceSync {
     const deferred=new Set<string>();let rejectedStatus:number|undefined;
     while (this.status().pending) {
       signal?.throwIfAborted();
-      const eligible=(items:SourceItem[])=>items.filter(item=>!deferred.has(itemKey(item))&&!this.unreconciledAbsent.has(itemKey(item)));
+      const eligible=(items:SourceItem[])=>items.filter(item=>!deferred.has(itemKey(item))&&!this.unreconciledAbsent.has(itemKey(item))&&!this.awaitingAbsentHead(item));
       let queue = scheduler.next(eligible(this.data.pendingRealtime).length, eligible(this.data.pendingHistory).length);
       if(!queue)break;
       let batches = this.takeBatches(queue,deferred);
@@ -408,34 +413,44 @@ export class SourceSync {
    * managed flush can publish an absent file, confirm the node head. */
   private async reconcileAbsentInflight(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<void> {
     this.unreconciledAbsent.clear();
+    this.confirmedAbsent.clear();
     const candidates = this.pendingItems().filter(item => item.kind === 'file' && !item.deleted && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight);
     if (!candidates.length) return;
     const withdrawKeys = new Set<string>();
+    let exhausted: UploadSliceYield | undefined;
     // Bound the reconciliation per call so a slice still reaches its uploads
     // when many candidates stay unresolved; the rest are retried next time.
     // Rotate the starting point so unresolved heads cannot starve later ones.
     const ordered = candidates.length ? [...candidates.slice(this.headCursor % candidates.length), ...candidates.slice(0, this.headCursor % candidates.length)] : [];
     const examined = ordered.slice(0, 8);
     this.headCursor = candidates.length ? (this.headCursor + examined.length) % candidates.length : 0;
-    for (const item of examined) {
+    for (const [index, item] of examined.entries()) {
       if (this.inflight.has(itemKey(item))) continue;
+      const marker = this.data.known[sourceHash(item.externalId)]?.absentWhileInflight;
       let head: { revision?: string | null } | undefined;
       try { head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined; }
-      catch (error) { if (error instanceof UploadSliceYield) throw error; this.unreconciledAbsent.add(itemKey(item)); continue; }
+      catch (error) {
+        if (error instanceof UploadSliceYield) {
+          exhausted = error;
+          for (const remaining of ordered.slice(index)) this.unreconciledAbsent.add(itemKey(remaining));
+          break; // Commit completed withdrawals before ending this slice.
+        }
+        this.unreconciledAbsent.add(itemKey(item)); continue;
+      }
       if (!head || !('revision' in head)) { this.unreconciledAbsent.add(itemKey(item)); continue; }
       const key = sourceHash(item.externalId);
       const delivered = this.data.delivered?.[key] ?? null;
       const predecessor = Object.hasOwn(this.data.predecessors ?? {}, item.revision) ? this.data.predecessors![item.revision] : delivered;
       // A confirmed duplicate may obtain its ACK, but keep the identity's
       // absence evidence until other queued attempts have also been resolved.
-      if (head.revision === item.revision) continue;
+      if (head.revision === item.revision) { if (marker) this.confirmedAbsent.set(itemKey(item), marker); continue; }
       // Only a head equal to the confirmed base proves the send never committed;
       // anything newer is ambiguous and keeps its marker for the next attempt.
       else if (head.revision === predecessor) withdrawKeys.add(itemKey(item));
       else this.unreconciledAbsent.add(itemKey(item));
     }
     for (const item of ordered.slice(8)) this.unreconciledAbsent.add(itemKey(item));
-    if (!withdrawKeys.size) return;
+    if (!withdrawKeys.size) { if (exhausted) throw exhausted; return; }
     const removed: SourceItem[] = [];
     await this.mutate(async () => {
       // A concurrent stage may have seen the file again while the head was in
@@ -464,10 +479,19 @@ export class SourceSync {
       await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...[...identities.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
     });
     await this.discardUnqueuedOriginals(removed);
+    if (exhausted) throw exhausted;
+  }
+
+  private awaitingAbsentHead(item: SourceItem): boolean {
+    if (item.kind !== 'file' || item.deleted) return false;
+    const marker = this.data.known[sourceHash(item.externalId)]?.absentWhileInflight;
+    // Discovery may mark absence while a different batch awaits its ACK. Such
+    // work was not in the initial snapshot and must await its own head check.
+    return Boolean(marker && this.confirmedAbsent.get(itemKey(item)) !== marker);
   }
 
   private takeBatches(queue: QueueName, deferred=new Set<string>()): SourceItem[][] {
-    const items = (queue === 'realtime' ? this.data.pendingRealtime : this.data.pendingHistory).filter(item=>!deferred.has(itemKey(item))&&!this.unreconciledAbsent.has(itemKey(item)));
+    const items = (queue === 'realtime' ? this.data.pendingRealtime : this.data.pendingHistory).filter(item=>!deferred.has(itemKey(item))&&!this.unreconciledAbsent.has(itemKey(item))&&!this.awaitingAbsentHead(item));
     if (!items.length) return [];
     if (items[0]!.kind === 'file' && items[0]!.document?.fileIndex) {
       if(items[0]!.localOriginalBase64||items[0]!.localOriginal)return [[items[0]!]];
