@@ -109,6 +109,9 @@ test('source-item cards surface the processed body block instead of the transpor
   assert.equal(materials.evidence(materials.cardEvidenceIds(material.ref).slice(0,1))[0]!.id,chunk,'card anchor order prefers the body block');
   const expanded=await agent.evidence!({ids:[card.id]}) as {id:string;ocrText:string}[];
   assert.equal(expanded[0]!.id,chunk);assert.match(expanded[0]!.ocrText,/Generated snapshot body/);
+  // The transport metadata stays explicitly addressable; only the automatic card anchor moved.
+  const metadata=await agent.evidence!({ids:[anchors[0]!]}) as {id:string;ocrText:string}[];
+  assert.equal(metadata[0]!.id,anchors[0]);assert.match(metadata[0]!.ocrText,/"captureId"/);
   // A Material without a body block keeps the metadata projection as its card anchor.
   const metadataOnly=materials.publish({id:materialId('fixture','metadata-only'),kind:'mote.file',schemaVersion:1,title:'Metadata only',
    origin:{sourceId:'fixture',externalId:'metadata-only',deviceId:'fixture'},
