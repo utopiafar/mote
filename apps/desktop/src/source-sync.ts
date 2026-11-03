@@ -139,7 +139,7 @@ export class SourceSync {
   /** A complete scan proves which files no longer exist. Their queued revisions
    * must not upload stale bytes, and a revision the node never confirmed must be
    * able to queue again when the same file returns. */
-  private withdrawAbsent(scan: SourceScan, trackDeletions: boolean, next: State, knownChanges: Map<string, Known>, withdrawn: SourceItem[]): void {
+  private withdrawAbsent(scan: SourceScan, trackDeletions: boolean, next: State, knownChanges: Map<string, Known>, withdrawn: SourceItem[], deferred: SourceItem[] = []): void {
     if (!scan.complete) return;
     const present = new Set(scan.seen);
     const keep = (queued: SourceItem) => {
@@ -149,7 +149,7 @@ export class SourceSync {
       // lost. With deletion tracking the retry must resolve that ambiguity so a
       // tombstone can chain from the real head. Without it, retrying would
       // publish a removed file as a lasting active revision, so withdraw.
-      if (trackDeletions && this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) return true;
+      if (trackDeletions && this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) { deferred.push(queued); return true; }
       const delivered = this.data.delivered?.[key];
       if (delivered !== queued.revision) {
         const known = knownChanges.get(key) ?? next.known[key];
@@ -237,7 +237,20 @@ export class SourceSync {
         const knownChanges = new Map<string, Known>();
         await this.mutate(async () => {
           const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
-          this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn);
+          const deferred: SourceItem[] = [];
+          this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn, deferred);
+          // A persisted predecessor proves only that a send started. Confirm the
+          // revision against the node's head before trusting it as committed;
+          // otherwise an absent file would be uploaded after its removal.
+          for (const item of deferred) {
+            const head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined;
+            if (head?.revision === item.revision) continue;
+            next.pendingRealtime = next.pendingRealtime.filter(queued => queued !== item);
+            next.pendingHistory = next.pendingHistory.filter(queued => queued !== item);
+            const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
+            if (known) knownChanges.set(key, { ...known, contentHash: '', discoveryHash: undefined });
+            withdrawn.push(item);
+          }
           if (!withdrawn.length) return;
           await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...Array.from(knownChanges, ([key, value]) => ({ section: 'known' as const, key, value }))]);
           for (const [key, value] of knownChanges) this.data.known[key] = value;

@@ -23,16 +23,22 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
 
 /** File-sync transport that records the predecessor sent with each manifest. */
-function fileTransport(sent: { item: SourceItem; previousRevision: string | null }[], fail?: (item: SourceItem) => number) {
+function fileTransport(sent: { item: SourceItem; previousRevision: string | null }[], fail?: (item: SourceItem) => number, failBeforeCommit = false) {
+  const committed = new Map<string, string>();
   return async (path: string, body: any) => {
     if (path === '/api/sources') return { ...source, enabled: true };
     // Above the default batch size so these cases use the manifest batch path.
     if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
-    if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+    if (path.startsWith('/api/file-sync/v1/head')) {
+      const externalId = decodeURIComponent(new URL(path, 'http://x').searchParams.get('externalId') ?? '');
+      return { revision: committed.get(externalId) ?? null };
+    }
     if (path === '/api/file-sync/v1/manifests') {
       const results = (body.items as { item: SourceItem; previousRevision?: string | null }[]).map(manifest => {
         sent.push({ item: manifest.item, previousRevision: manifest.previousRevision ?? null });
         const failOn = fail?.(manifest.item);
+        if (failOn && failBeforeCommit) throw new Error('simulated ACK loss');
+        committed.set(manifest.item.externalId, manifest.item.revision);
         if (failOn) throw new Error('simulated ACK loss');
         return { externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, manifest.item.document?.fileIndex ? 'file-revision' : 'source-item') };
       });
@@ -183,13 +189,15 @@ describe('source revisions and durable acknowledgments', () => {
   });
   it('keeps an attempted update queued when its ACK is lost, then tombstones from the real head', async () => {
     const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    // Fail only the queued update's single attempt, after A was accepted.
+    const wire = fileTransport(sent, (item) => (sent.filter(entry => entry.item.revision === item.revision).length === 1 && sent.length === 2 ? 1 : 0));
     await engine.stage(scan([fileItem]), false);
-    await engine.flush(source, fileTransport(sent));
+    await engine.flush(source, wire);
     const first = sent[0].item;
     expect(sent[0].previousRevision).toBe(null);
     const edited = { ...fileItem, text: 'edited before removal' };
     await engine.stage(scan([edited]), false);
-    await expect(engine.flush(source, fileTransport(sent, () => 1))).rejects.toThrow('ACK loss');
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
     expect(engine.status().pending).toBe(1);
     const attempted = sent.at(-1)!.item;
     const durable = sourceState(join(directory, 'state.json')) as any;
@@ -199,7 +207,7 @@ describe('source revisions and durable acknowledgments', () => {
     const reopened = await create();
     expect(reopened.status().pending).toBe(1);
     // Removing the file must not drop the attempted revision: its ACK was lost.
-    await reopened.syncScan(scan([]), true, source, fileTransport(sent));
+    await reopened.syncScan(scan([]), true, source, wire);
     expect(reopened.status().pending).toBe(0);
     const retried = sent.at(-2)!.item;
     const tombstone = sent.at(-1)!.item;
@@ -210,10 +218,12 @@ describe('source revisions and durable acknowledgments', () => {
   });
   it('tombstones a first upload whose ACK was lost instead of leaving it active', async () => {
     const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failedOnce = false;
+    const wire = fileTransport(sent, () => (!failedOnce ? ((failedOnce = true), 1) : 0));
     await engine.stage(scan([fileItem]), false);
-    await expect(engine.flush(source, fileTransport(sent, () => 1))).rejects.toThrow('ACK loss');
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
     expect(engine.status().pending).toBe(1);
-    await engine.syncScan(scan([]), true, source, fileTransport(sent));
+    await engine.syncScan(scan([]), true, source, wire);
     expect(engine.status().pending).toBe(0);
     expect(sent.at(-1)!.item.deleted).toBe(true);
     expect(sent.at(-1)!.previousRevision).toBe(sent.at(-2)!.item.revision);
@@ -240,6 +250,20 @@ describe('source revisions and durable acknowledgments', () => {
     // Complete scan after removal, deletion tracking off: the uncertain upload
     // must be withdrawn rather than retried into an active remote file.
     expect(await engine.syncScan(scan([]), false, source, fileTransport(sent))).toEqual({ changes: 0, state: 'ready' });
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(uploaded);
+  });
+  it('withdraws an attempted upload that never committed centrally', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failures = 1;
+    const wire = fileTransport(sent, () => (failures-- > 0 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    expect(Object.hasOwn((sourceState(join(directory, 'state.json')) as any).predecessors ?? {}, sent.at(-1)!.item.revision)).toBe(true);
+    const uploaded = sent.length;
+    // The node head does not contain the attempted revision: the removal wins.
+    await engine.syncScan(scan([]), true, source, wire);
     expect(engine.status().pending).toBe(0);
     expect(sent).toHaveLength(uploaded);
   });
