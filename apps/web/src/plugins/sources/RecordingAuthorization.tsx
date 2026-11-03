@@ -1,9 +1,9 @@
 import React,{useEffect,useRef,useState} from 'react';
 import type {RecordingStatus} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from './api';
-import {useResource} from './useResource';
-import {ProviderAuthorization} from './ProviderAuthorization';
+import {type Api,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {ProviderAuthorization} from '../../ProviderAuthorization';
 
 export function RecordingAuthorization({api,provider}:{api:Api;provider:string}){
  const path='/api/connectors/'+provider+'-recordings',read=useResource<RecordingStatus>(api,path,1000),scope=useRef(new AbortController());

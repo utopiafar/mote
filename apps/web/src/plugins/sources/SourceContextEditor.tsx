@@ -1,8 +1,8 @@
 import {useCallback,useEffect,useId,useMemo,useRef,useState} from 'react';
 import {sourceContextSnapshotSchema,type SourceContextSnapshot} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from './api';
-import {useUnsavedChanges} from './unsaved';
+import {type Api,errorMessage} from '../../api';
+import {useUnsavedChanges} from '../../unsaved';
 
 type DraftState={description:string;baseline?:SourceContextSnapshot;dirty:boolean;loading:boolean;saving:boolean;error:string;conflict:boolean;saved:boolean};
 type Session={api:Api;sourceId?:string;scope:AbortController;read?:AbortController;write?:AbortController;pendingSave?:Promise<SourceContextSnapshot|undefined>;state:DraftState};

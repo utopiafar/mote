@@ -1,11 +1,11 @@
-import {useSourceConnectorStyle,useConnectorDraft,connectorFailure} from './source-connectors-ui';
-import {useResource} from './useResource';
-import {readResource,resources} from './resource-cache';
-import {ApiError} from './api';
+import {useSourceConnectorStyle,useConnectorDraft,connectorFailure} from '../../source-connectors-ui';
+import {useResource} from '../../useResource';
+import {readResource,resources} from '../../resource-cache';
+import {ApiError} from '../../api';
 import React,{useEffect,useRef,useState} from 'react';
 import {CheckCircle2,ExternalLink,Link2,RefreshCw} from 'lucide-react';
 import type {LarkStatus,LarkSelection,LarkCalendar,LarkJob,SourceConnection} from '@mote/shared';
-import {type Api} from './api';
+import {type Api} from '../../api';
 import {moteText} from '@mote/shared/i18n';
 import {SourceContextEditor} from './SourceContextEditor';
 

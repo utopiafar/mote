@@ -15,7 +15,7 @@ export interface NotesCapture {readonly authority:CaptureIntakeAuthority;readonl
 /** notes: owns its transport, data and command contributions. The attached
  * C10A intake is authoritative when wired; the legacy ingress remains only as
  * the current fallback until the production assembly passes NotesCapture. */
-export function register(app:FastifyInstance,{assertRequestActive,connections,credential,diagnostics,files,ingress,materials,sources,store,notesSource,notesCapture}:Pick<FeatureServices,"assertRequestActive"|"connections"|"credential"|"diagnostics"|"files"|"ingress"|"materials"|"sources"|"store">&{notesSource?:NotesSourceAssembly;notesCapture?:NotesCapture}){
+export function register(app:FastifyInstance,{assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource,notesCapture}:Pick<FeatureServices,"assertRequestActive"|"connections"|"credential"|"diagnostics"|"files"|"ingress">&{notesSource:NotesSourceAssembly;notesCapture?:NotesCapture}){
 app.post('/api/notes',async(req,reply)=>{
   const input=noteCapture(noteSchema.parse(req.body));
   if(notesCapture){
@@ -28,9 +28,9 @@ app.post('/api/notes',async(req,reply)=>{
 });
 app.get('/api/notes',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
-    return diagnostics.measure('source','timeline',()=>notesSource?notesSource.list({...args,cursor:raw.cursor}):(()=>{const page=store.list({...args,source:'note',cursor:raw.cursor});return {...page,items:page.items.map(record=>({...record,attributionContext:materials.contextForEvidence(record)}))};})(),page=>({count:page.items.length}));
+    return diagnostics.measure('source','timeline',()=>notesSource.list({...args,cursor:raw.cursor}),page=>({count:page.items.length}));
   });
-app.delete('/api/notes/:id',async req=>{const {id}=req.params as {id:string};if(notesSource)return notesSource.delete(id);const record=store.evidence([id])[0];if(record&&record.source!=='note')throw new StoreError('Note not found',404);return store.delete(id);});
+app.delete('/api/notes/:id',async req=>notesSource.delete((req.params as {id:string}).id));
 }
 
 export const adapter:ServerFeatureAdapter={

@@ -1,30 +1,26 @@
 import { commonFailureMessage,httpStatusMessage,formatEvidenceRef } from '@mote/shared';
-import { useResource } from './useResource';
-import { resources } from './resource-cache';
-import { useOperationUpdates } from './useOperationUpdates';
+import { useResource } from '../../useResource';
+import { resources } from '../../resource-cache';
+import { useOperationUpdates } from '../../useOperationUpdates';
 import { moteText, cjkLocale } from '@mote/shared/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, FolderInput, Layers3, Plus, X,ChevronRight,FileText,Monitor,Mail,CalendarDays,Link2,Code2,Mic } from 'lucide-react';
 import type { SourceConnection, SourceItemRecord,LibrarySourceFacet } from '@mote/shared';
-import { ApiError,type Api, errorMessage, dateTime } from './api';
-import {archivePageWithdrawn,currentArchivePages,mergeArchivePage,reconcileArchivePages,type ArchivePage,type ArchivePages} from './archive-pages';
+import { ApiError,type Api, errorMessage, dateTime } from '../../api';
+import {archivePageWithdrawn,currentArchivePages,mergeArchivePage,reconcileArchivePages,type ArchivePage,type ArchivePages} from '../../archive-pages';
 import { sourceMetadataSchema } from '@mote/shared';
-import { Gmail } from './Gmail';
-import {LarkSettings} from './LarkSettings';
-import {RecordingConnection} from './RecordingsSettings';
-import { AttributionEditor } from './AttributionContext';
+import { AttributionEditor } from '../../AttributionContext';
 import { SourceContextEditor } from './SourceContextEditor';
-import { Metadata } from './Metadata';
-import { useHashChoice } from './useHashChoice';
-import {GoogleCalendarSettings} from './GoogleCalendarSettings';
-import {McpImportSettings} from './McpImportSettings';
-import {useSourceConnectorStyle} from './source-connectors-ui';
-import { recordingSourceStatus, recordingSyncText } from './recording-status';
+import { Metadata } from '../../Metadata';
+import { useHashChoice } from '../../useHashChoice';
+import {useSourceConnectorStyle} from '../../source-connectors-ui';
+import { recordingSourceStatus, recordingSyncText } from '../../recording-status';
+import {sourcePluginBound,sourcePluginFor,sourcePluginStatus,sourcePlugins} from './registry';
 const readSource=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('sourceId');
 const readSetup=(hash:string)=>{const value=new URLSearchParams(hash.slice(hash.indexOf('?')+1)).get('setup');return value&&['gmail','google','mcp','reference'].includes(value)?value:null;};
 const layerNames: Record<string, string> = { reference: moteText("引用 / Shadow"), snapshot: moteText("内容快照"), original: moteText("原始文本"), derived: moteText("派生记录") };
 const kindNames: Record<string, string> = { 'coding-agent': moteText("编码 Agent 对话"), 'local-files': moteText("客户端文件"), 'local-calendar': moteText("本地日历"), 'google-calendar': 'Google Calendar', gmail: 'Gmail', 'lark-docs': moteText('飞书文档'), 'lark-calendar': moteText('飞书日历'), mcp: moteText("MCP 来源"), upload: moteText("文件导入"), custom: moteText("自定义来源") };
-const sourceStyleHref=new URL('./source-final.css',import.meta.url).href;
+const sourceStyleHref=new URL('../../source-final.css',import.meta.url).href;
 function useSourceStyle(){useEffect(()=>{if(document.head.querySelector('link[data-mote-source-final]'))return;const link=document.createElement('link');link.rel='stylesheet';link.href=sourceStyleHref;link.dataset.moteSourceFinal='true';document.head.append(link);},[]);}
 const sourceIcon=(kind:string)=>({'local-files':FileText,'coding-agent':Code2,'local-calendar':CalendarDays,'google-calendar':CalendarDays,gmail:Mail,'lark-calendar':CalendarDays,'lark-docs':FileText,mcp:Link2,upload:FolderInput}[kind]??(kind.endsWith('.recordings')?Mic:Monitor));
 const sourceConnectionLink=(source:SourceConnection,recording:ReturnType<typeof recordingSourceStatus>)=>recording?'#/connections/recordings?provider='+encodeURIComponent(recording.provider):source.kind.startsWith('lark-')?'#/connections/lark':(['google-calendar','gmail','mcp'].includes(source.kind)?'#/connections?setup='+({'google-calendar':'google',gmail:'gmail',mcp:'mcp'}[source.kind]):source.kind==='coding-agent'?'#/library?view=coding-status':null);
@@ -130,23 +126,15 @@ export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse,
  </section>;
 }
 function SourceConnectionConfig({api,source,catalog,onOpen,refresh,onSources}:{api:Api;source:SourceConnection;catalog:Record<string,unknown>|null;onOpen:(ref:string)=>void;refresh:()=>Promise<void>;onSources:()=>void}){
- const recording=recordingSourceStatus(source,catalog);
- if(recording)return <SourceRecordingConnection api={api} sourceId={source.id} provider={recording.provider} onOpen={onOpen}/>;
- const lark=catalog?.lark as {documentSync?:{sourceId?:string}}|undefined,identified=source.kind==='lark-docs'&&lark?.documentSync?.sourceId===source.id;
- if(source.kind==='gmail'||source.kind==='google-calendar'||source.kind.startsWith('lark-'))return <div className="source-connection-embedded"><p className="connector-help source-account-scope">{moteText('此处管理这个账号下所有来源的连接与读取范围。')}</p>{!identified&&<p className="connector-help">{moteText('当前来源的账号绑定尚待核实。')}</p>}{!source.enabled&&<p className="connector-notice">{moteText('来源接入已暂停')}</p>}{source.kind==='gmail'?<Gmail api={api} refresh={refresh} initiallyOpen/>:source.kind==='google-calendar'?<GoogleCalendarSettings api={api} status={catalog?.google as {configured:boolean;connected:boolean;state:string;account?:string}|undefined} refresh={refresh}/>:<LarkSettings api={api} onSources={onSources}/>}</div>;
- return null;
+ const plugin=sourcePluginFor(source,catalog);
+ if(!plugin?.settings)return null;
+ if(plugin.binding?.endsWith('-recordings'))return <>{plugin.settings({api,source,catalog,refresh,onSources,onOpen})}</>;
+ const bound=sourcePluginBound(plugin,source,catalog),status=sourcePluginStatus(plugin,catalog);
+ return <div className="source-connection-embedded"><p className="connector-help source-account-scope">{moteText('此处管理这个账号下所有来源的连接与读取范围。')}</p>{status!==undefined&&!bound&&<p className="connector-help">{moteText('当前来源的账号绑定尚待核实。')}</p>}{!source.enabled&&<p className="connector-notice">{moteText('来源接入已暂停')}</p>}{plugin.settings({api,source,catalog,refresh,onSources,onOpen})}</div>;
 }
-function SourceRecordingConnection({api,sourceId,provider,onOpen}:{api:Api;sourceId:string;provider:string;onOpen:(ref:string)=>void}){
- const page=useResource<import('@mote/shared').RecordingStatus>(api,'/api/connectors/'+encodeURIComponent(provider)+'-recordings',3000);
- if(page.error)return <div><p role="alert">{moteText('状态读取失败，请重试。')}</p><details className="source-final-diagnostics"><summary>{moteText('技术详情')}</summary><pre>{errorMessage(page.error)}</pre></details></div>;
- if(!page.data)return <p role="status">{moteText('正在读取…')}</p>;
- if(page.data.provider!==provider||page.data.sourceId!==sourceId)return <p role="status">{moteText('此来源未绑定当前录音账号')}</p>;
- return <div className="source-connection-embedded final-source-connector"><RecordingConnection api={api} provider={provider} onOpen={onOpen}/></div>;
-}
-
 function ConnectorPanel({api,catalog,refresh,requested}:{api:Api;catalog:Record<string,unknown>|null;refresh:()=>Promise<void>;requested:string}){
- const status=catalog as {google?:{configured:boolean;connected:boolean;state:string;account?:string}}|null;
- return <div className="source-connectors">{!requested&&<div className="connector-provider-choice">{[['gmail','Gmail'],['google','Google Calendar'],['mcp',moteText('MCP 资料服务')]].map(([id,title])=><a key={id} href={'#/connections?setup='+id}>{title} →</a>)}</div>}<Gmail api={api} refresh={refresh} initiallyOpen={requested==='gmail'}/><div hidden={requested!=='google'}><GoogleCalendarSettings api={api} status={status?.google} refresh={refresh}/></div><div hidden={requested!=='mcp'}><McpImportSettings api={api} refresh={refresh}/></div></div>;
+ const setupPlugins=sourcePlugins.filter(plugin=>plugin.setup&&plugin.catalog?.setupChoice);
+ return <div className="source-connectors">{!requested&&<div className="connector-provider-choice">{setupPlugins.map(plugin=><a key={plugin.setup!.id} href={'#/connections?setup='+plugin.setup!.id}>{plugin.catalog!.setupChoice!.title()} →</a>)}</div>}{setupPlugins.map(plugin=><div key={plugin.setup!.id} hidden={requested!==plugin.setup!.id}>{plugin.setup!.render({api,catalog,refresh,requested:requested===plugin.setup!.id})}</div>)}</div>;
 }
 function ReferenceEntry({ api, refresh }: {
     api: Api;

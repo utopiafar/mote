@@ -8,10 +8,9 @@ import type {PluginDefinition} from '@mote/plugin-host';
 import type {Cancellation, ScopeIdentity, ServiceBinding} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {ProviderFailure} from '@mote/shared';
-import {AgentNotConfiguredError, AgentProviderError, AgentResponseError, AgentTimeoutError, type AgentOptions} from '../../types.js';
-import {observeModelTransport} from '../../models/http-transport.js';
+import {AgentProviderError, AgentResponseError, AgentTimeoutError} from '../../types.js';
+import {createDshModelAdapter, type DshModelAdapter} from '../../models/dsh-adapter.js';
 import {observeHarness} from '../../usage.js';
-import {modelConnection, validateModelOptions} from '../../models/provider-registry.js';
 import {runtimeService, type RuntimeProvider, type RuntimeHandle, type RuntimeRunRequest, type RuntimeOutcome, type RuntimeAttempt} from '../contracts.js';
 import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
 import {createHostRunSession, type HostSessionAssembly} from '../../host/run-session.js';
@@ -24,12 +23,7 @@ import {DSH_RUNTIME_ID, compileNativeDshProfile, createRuntimePatch, DshProfileE
 export {DSH_RUNTIME_ID, DshProfileError, createRuntimePatch} from './profile-compiler.js';
 export type {InstalledDshModule} from './profile-compiler.js';
 
-/** Private model transport value, separate from the runtime profile and public receipt. */
-export type DshModelAdapter = Omit<AgentOptions, 'reader' | 'codex' | 'runModel' | 'contextToolMode'>;
-export function dshModelConfigured(options: DshModelAdapter): boolean {
-  const local = options.allowUnauthenticatedLocal && options.baseUrl && ['localhost', '127.0.0.1', '[::1]'].includes(new URL(options.baseUrl).hostname);
-  return Boolean(options.model?.trim() && (options.apiKey?.trim() || local));
-}
+export {dshModelConfigured, type DshModelAdapter} from '../../models/dsh-adapter.js';
 export interface DshProviderOptions {
   readonly installedModules?: readonly InstalledDshModule[];
   /** Safe lifecycle observation for selected local integration checks. */
@@ -56,26 +50,22 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
     prepare(profile, model, host) {
       if (!accepting || stopped) return Promise.reject(new AgentProviderError({category: 'blocked', code: 'runtime_unavailable', executionStarted: false}));
       const preparing = (async (): Promise<RuntimeHandle> => {
-        host.assertCurrent(); model.assertCurrent();
         if (typeof host.systemPrompt !== 'string' || !host.systemPrompt.trim()) throw new DshProfileError('dsh_profile_invalid');
-        const adapter = structuredClone({...model.value, authorizeModelRequest: undefined});
-        const authorize = model.value.authorizeModelRequest;
-        validateModelOptions(adapter);
-        if (!dshModelConfigured(adapter)) throw new AgentNotConfiguredError();
+        const modelAdapter = createDshModelAdapter(model, host), adapter = modelAdapter.value;
         if (adapter.model !== model.selection.modelId || (adapter.protocol ?? 'deepseek') !== model.selection.transport || !isDeepStrictEqual(model.selection, host.identity.model) ||
             host.identity.runtime.id !== profile.runtimeId || host.identity.runtime.profileId !== profile.profileId || host.identity.runtime.profileRevision !== profile.profileRevision || host.identity.runtime.assemblyFingerprint !== profile.assemblyFingerprint || !provider.capabilities.taskKinds.includes(profile.taskKind)) throw new DshProfileError('dsh_profile_invalid');
         const native = await compileNativeDshProfile(profile, options.installedModules ?? []);
         host.assertCurrent();
         const root = await mkdtemp(join(tmpdir(), 'mote-dsh-runtime-'));
         observe({type: 'created', runId: host.identity.runId, root});
-        let channel: Awaited<ReturnType<typeof createDshHostChannel>> | undefined, observer: Awaited<ReturnType<typeof observeModelTransport>> | undefined, harness: DeepSeekHarness | undefined;
+        let channel: Awaited<ReturnType<typeof createDshHostChannel>> | undefined, observer: Awaited<ReturnType<typeof modelAdapter.start>> | undefined, harness: DeepSeekHarness | undefined;
         let active: RuntimeAttempt | undefined, cancellation: Cancellation | undefined, released = false;
         let task: Promise<RuntimeOutcome> | undefined, closed: Promise<void> | undefined;
         const turns = new Map<number, RuntimeAttempt>();
-        const connection = modelConnection(adapter);
+        const connection = modelAdapter.connection;
         const closeResources = () => closed ??= (async () => {
           released = true;
-          const results = await Promise.allSettled([Promise.resolve().then(() => harness?.close()), Promise.resolve().then(() => channel?.close()), Promise.resolve().then(() => observer?.close())]);
+          const results = await Promise.allSettled([Promise.resolve().then(() => harness?.close()), Promise.resolve().then(() => channel?.close()), modelAdapter.dispose()]);
           await Promise.allSettled(task ? [task] : []);
           host.signal.removeEventListener('abort', abort);
           abortPreparations.delete(abort);
@@ -89,7 +79,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
         host.signal.addEventListener('abort', abort, {once: true});
         try {
           channel = await createDshHostChannel(host);
-          observer = await observeModelTransport(async () => { host.assertCurrent(); model.assertCurrent(); await authorize?.(); host.assertCurrent(); });
+          observer = await modelAdapter.start();
           await mkdir(join(root, 'workspace'));
           const patch = join(root, 'runtime.patch.json');
           const entry = fileURLToPath(new URL('../../plugin.mjs', import.meta.url));

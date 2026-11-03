@@ -4,6 +4,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {compileNativeDshProfile, createRuntimePatch, DSH_RUNTIME_ID} from '../dist/runtime/dsh/profile-compiler.js';
 import {createDshHostChannel, contextToolPayload} from '../dist/runtime/dsh/context-plugin.js';
 import {createDshRuntimeProvider, dshRuntimePlugin} from '@mote/agent/runtime/dsh';
+import {createDshModelAdapter} from '../dist/models/dsh-adapter.js';
 import {PluginHost} from '@mote/plugin-host';
 import {runtimeService} from '../dist/runtime/contracts.js';
 import {PluginResourceScope} from '@mote/plugin-host';
@@ -154,6 +155,27 @@ test('an unconfigured DSH model fails before private resources or a subprocess a
   const model = {value: {model: 'generated-model', apiKey: ''}, assertCurrent() {}};
   await assert.rejects(provider.prepare(profile(), model, {assertCurrent() {}, systemPrompt: 'Generated Host policy'}), {name: 'AgentNotConfiguredError'});
   assert.equal(resources, 0);
+});
+
+test('DSH revalidates the exact model lease after every asynchronous send authorization', async t => {
+  let current = true, authorizations = 0, leaseChecks = 0;
+  const revoked = new ProviderFailure({category: 'blocked', code: 'model_lease_revoked', executionStarted: false});
+  const model = {value: {model: 'generated-model', protocol: 'deepseek', apiKey: 'generated-key', baseUrl: 'http://127.0.0.1:9', async authorizeModelRequest() {
+    authorizations++;
+    await new Promise(resolve => setImmediate(resolve));
+    if (authorizations === 2) current = false;
+  }}, assertCurrent() { leaseChecks++; if (!current) throw revoked; }};
+  const adapter = createDshModelAdapter(model, {assertCurrent() {}});
+  t.after(() => adapter.dispose());
+  assert.deepEqual(adapter.descriptor, {id: 'mote.model.dsh', version: '1'});
+  const observer = await adapter.start();
+  const authorize = () => fetch(observer.configuration.authorizationUrl, {method: 'POST', headers: {Authorization: 'Bearer ' + observer.configuration.token, 'Content-Type': 'application/json'}, body: '{}'});
+  assert.equal((await authorize()).status, 200);
+  const failure = assert.rejects(observer.failure, error => error.details?.code === 'model_lease_revoked');
+  assert.equal((await authorize()).status, 409);
+  await failure;
+  assert.equal(authorizations, 2);
+  assert.ok(leaseChecks >= 5, 'the lease is checked before and after each authorization');
 });
 
 test('the transport helper module exposes the actual import runtime consumer boundary', async () => {
