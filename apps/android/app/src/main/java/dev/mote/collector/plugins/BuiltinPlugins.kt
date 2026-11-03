@@ -14,5 +14,6 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     NativeAskPlugin.register(this, buildId)
     DailyHomePlugin.register(this, buildId)
     NativeWorkDiscoveryPlugin.register(this, buildId)
+    ManagedCalendarPlugin.register(this, buildId)
     registerPluginCenter(buildId)
 }
