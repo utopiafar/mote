@@ -245,6 +245,23 @@ test('authenticated support API correlates stages while excluding all fixture bo
   await diagnostics.flush();for(const name of await readdir(join(directory,'logs'))){const text=await readFile(join(directory,'logs',name),'utf8');for(const secret of [marker,cfg.token,cfg.apiKey,directory])assert.ok(!text.includes(secret));}
 });
 
+test('collector credentials cannot read owner-level diagnostics and the safe snapshot omits secrets',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-collector-'));const cfg=config(directory);const {app}=await buildApp(cfg,{agent:inactive});
+  t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
+  const headers={authorization:`Bearer ${cfg.token}`};
+  const invitation=await app.inject({method:'POST',url:'/api/connections/collector-invitations',headers,payload:{serverUrl:'https://synthetic.invalid',label:'Generated collector'}});
+  assert.equal(invitation.statusCode,200,invitation.body);
+  const redeemed=await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.json().invitation.code,deviceId:'generated-collector',deviceName:'Generated collector',platform:'android'}});
+  assert.equal(redeemed.statusCode,200,redeemed.body);const collector=redeemed.json().token as string;
+  for(const url of ['/api/diagnostics','/api/diagnostics/events','/api/support-bundle']){
+    const denied=await app.inject({url,headers:{authorization:`Bearer ${collector}`}});
+    assert.equal(denied.statusCode,403,url);assert.ok(!denied.body.includes(collector));assert.ok(!denied.body.includes(cfg.token));
+  }
+  const owner=await app.inject({url:'/api/diagnostics',headers});
+  assert.equal(owner.statusCode,200,owner.body);
+  for(const secret of [cfg.token,cfg.apiKey,directory,collector])assert.ok(!owner.body.includes(secret),'diagnostic snapshot must not include '+(secret===collector?'collector token':'secret material'));
+});
+
 test('concurrent requests keep independent request IDs, and SDK failures cannot leak into responses or support exports',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-'));const cfg=config(directory);
   const agent:QueryAgent={configured:true,close:async()=>{},query:async args=>{await delay(args.question==='fixture slow'?15:1);if(args.question===marker)throw Object.assign(new Error(marker+' https://provider.invalid/?key='+marker),{name:marker,code:marker,statusCode:502});return {answer:args.question,citations:[],trace:[],runId:randomUUID()};}};

@@ -45,10 +45,8 @@ import type {ExecutionSettings} from './execution-settings.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {SourceStore} from './sources.js';
 import type {Store} from './store.js';
-import type {UsageLedger} from './usage.js';
 import type {ProcessingRuntime} from './processing-runtime.js';
 import type {FastifyRequest} from 'fastify';
-import type {IntervalHistogram} from 'node:perf_hooks';
 import type {AgentOptions,ContextReader,QueryInput} from '@mote/agent';
 import type {CaptureInput,InsightSnapshot,QueryResult} from '@mote/shared';
 import type {ModelConnection} from './background-model-authorization.js';
@@ -64,7 +62,6 @@ import type {FilesFeatureSource} from './features/files.js';
 import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import type {modelConfiguration} from './model-configuration.js';
 import type {insightResult} from './insights.js';
-import type {createUpdateService} from './updates.js';
 import type {QueryScope} from './query-scope.js';
 import type {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
 
@@ -118,7 +115,6 @@ export interface FeatureServices {
   sourcePipelines:SourcePipelineRuntime;
   sources:SourceStore;
   store:Store;
-  usageLedger:UsageLedger;
   workflows:ProcessingRuntime;
   withMediaOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;
   withMediaOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>;
@@ -143,8 +139,6 @@ export interface FeatureServices {
   interactiveModelGate:ConcurrencyGate;
   llmGate:ConcurrencyGate;
   codex:NonNullable<AgentOptions['codex']>;
-  diagnosticSnapshot:()=>unknown;
-  eventLoop:IntervalHistogram;
   importTasks:Map<string,Promise<unknown>>;
   jobId:(params:unknown)=>string;
   launchImport:(id:string,task:()=>Promise<unknown>)=>void;
@@ -157,6 +151,4 @@ export interface FeatureServices {
   reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>ReturnType<typeof reviewMemory>;
   semanticSelection:()=>ReturnType<typeof modelConfiguration>&{configured:boolean};
   serverVersion:string;
-  softwareUpdate:ReturnType<typeof createUpdateService>;
-  webVersion:string|null;
 }
