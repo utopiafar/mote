@@ -18,6 +18,10 @@
 .plugin-footer,.plugin-actions {display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:22px;}
 .plugin-instance {border-top:1px solid var(--mote-border);padding:24px 0;}
 .plugin-instance:last-child {padding-bottom:0;}
+.plugin-build-list {display:grid;gap:16px;}
+.plugin-build {border-top:1px solid var(--mote-border);padding:20px 0;}
+.plugin-build:first-child {border-top:0;padding-top:0;}
+.plugin-build:last-child {padding-bottom:0;}
 .plugin-capabilities {list-style:none;margin:16px 0;padding:0;display:grid;gap:9px;}
 .plugin-capabilities li {display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:var(--mote-font-meta);}
 .plugin-capabilities li>span:first-child {min-width:0;overflow-wrap:anywhere;}
