@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Reading exports</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: Canvas; color: CanvasText; }
+    main { max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { margin-top: 28px; }
+    p { line-height: 1.5; }
+    .muted { opacity: .7; }
+    .notice { border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); border-radius: 14px; padding: 16px; margin: 16px 0; }
+    button { font: inherit; padding: 8px 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); background: Canvas; color: CanvasText; cursor: pointer; }
+    button:hover { border-color: color-mix(in srgb, CanvasText 45%, transparent); }
+    button:disabled { cursor: progress; opacity: .6; }
+    .materials { display: grid; gap: 8px; margin: 12px 0; }
+    .material { text-align: left; }
+    .material[aria-pressed="true"] { background: color-mix(in srgb, Highlight 18%, Canvas); border-color: Highlight; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); border-radius: 14px; padding: 16px; margin: 16px 0; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Reading exports</h1>
+  <p class="muted">Published generic materials are read from this package's instance archive. The page never receives the owner token, the reading review state or a host API object.</p>
+  <div id="notice" class="notice" role="status">Waiting for the Mote custom-page bridge…</div>
+  <section id="content" class="hidden" aria-live="polite">
+    <p><strong>Source:</strong> <span id="source">—</span> · <strong>Materials:</strong> <span id="count">—</span> · <strong>Archive revision:</strong> <span id="revision">—</span></p>
+    <button id="export" type="button">Export now</button>
+    <h2>Published materials</h2>
+    <div id="empty" class="notice hidden">No material has been exported yet. The background task publishes a new material when the reading plan changes.</div>
+    <div id="materials" class="materials"></div>
+    <h2>Selected material</h2>
+    <pre id="material" class="notice">Select a published material.</pre>
+  </section>
+</main>
+<script>
+  'use strict';
+  const elements = Object.fromEntries(['notice', 'content', 'source', 'count', 'revision', 'export', 'empty', 'materials', 'material'].map(id => [id, document.getElementById(id)]));
+  let channel = null;
+  let sequence = 0;
+  const pending = new Map();
+
+  function request(method, payload) {
+    if (!channel) return Promise.reject(new Error('no bridge'));
+    const requestId = 'page-' + (++sequence);
+    return new Promise((resolve, reject) => {
+      pending.set(requestId, {resolve, reject});
+      channel.port.postMessage({...channel.handshake, kind: 'request', requestId, method, payload});
+      setTimeout(() => {
+        if (!pending.delete(requestId)) return;
+        reject(new Error('bridge timeout'));
+      }, 10000);
+    });
+  }
+
+  function showNotice(text) {
+    elements.notice.textContent = text;
+    elements.notice.classList.remove('hidden');
+    elements.content.classList.add('hidden');
+  }
+
+  function showMaterial(material) {
+    elements.material.textContent = material?.content?.text ?? 'Select a published material.';
+  }
+
+  function showList(state) {
+    elements.notice.classList.add('hidden');
+    elements.content.classList.remove('hidden');
+    elements.source.textContent = state.source.state === 'ready'
+      ? 'ready' : state.source.state + (state.source.reason ? ' (' + state.source.reason + ')' : '');
+    elements.count.textContent = String(state.materials.length);
+    elements.revision.textContent = String(state.stateRevision);
+    elements.empty.classList.toggle('hidden', state.materials.length > 0);
+    elements.materials.replaceChildren(...state.materials.slice().reverse().map(summary => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'material';
+      button.textContent = summary.title + ' · ' + new Date(summary.publishedAt).toLocaleString()
+        + ' · ' + summary.cards + ' card(s)';
+      button.addEventListener('click', () => {
+        elements.materials.querySelectorAll('button').forEach(entry => entry.setAttribute('aria-pressed', String(entry === button)));
+        request('read', {id: summary.id}).then(showMaterial).catch(() => showNotice('The exported material is unavailable.'));
+      });
+      return button;
+    }));
+  }
+
+  function load() {
+    return request('materials').then(showList).catch(() => showNotice('The reading export archive is unavailable.'));
+  }
+
+  window.addEventListener('message', event => {
+    const data = event.data;
+    if (!data || data.kind !== 'channel' || !event.ports?.[0]) return;
+    if (!data.contractVersion || !data.nonce || !data.documentKey || !data.instanceId || !Number.isSafeInteger(data.generation)) {
+      showNotice('The host bridge handshake is unavailable.');
+      return;
+    }
+    channel?.port.close();
+    channel = {port: event.ports[0], handshake: {
+      contractVersion: data.contractVersion, nonce: data.nonce, documentKey: data.documentKey,
+      instanceId: data.instanceId, generation: data.generation,
+    }};
+    channel.port.onmessage = reply => {
+      const envelope = reply.data;
+      if (!envelope || envelope.kind !== 'response' || envelope.requestId === undefined) return;
+      const waiting = pending.get(envelope.requestId);
+      if (!waiting) return;
+      pending.delete(envelope.requestId);
+      if (envelope.ok) waiting.resolve(envelope.payload);
+      else waiting.reject(new Error(envelope.error || 'invoke_failed'));
+    };
+    channel.port.start();
+    load();
+  });
+
+  elements.export.addEventListener('click', () => {
+    elements.export.disabled = true;
+    request('export-now').then(showList).catch(() => showNotice('A new export was not published. The existing archive remains readable.')).finally(() => { elements.export.disabled = false; });
+  });
+
+  setTimeout(() => {
+    if (!channel) showNotice('Open this page from the Mote plugin host to connect its custom-page bridge.');
+  }, 2000);
+</script>
+</body>
+</html>

@@ -165,6 +165,7 @@ export type QueryResult = {imageReadReceipts?:{id:string;imageView:import('./ima
 export type ActivityCounts = {activityEvents?:number;contentCaptures?:number};
 export type Activity = ActivityCounts & {apps:(ActivityCounts & {appId?:string;appName:string;durationMs:number;captures:number})[];devices:(ActivityCounts & {deviceId:string;deviceName:string;durationMs:number;captures:number})[];totalDurationMs:number;captures:number};
 export * from './connection.js';
+export * from './deep-link.js';
 export * from './protocol.js';
 
 export * from './files.js';

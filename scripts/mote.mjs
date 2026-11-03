@@ -28,7 +28,7 @@ const help = `Mote central profiles (Node 24+, default: dev; prod requires --pro
   check-update [--profile NAME] [--home PATH] [--version VERSION]
   update [--profile NAME] [--home PATH] [--version VERSION]
   rollback --restore-data [--profile NAME] [--home PATH]
-  plugin-dev create|dev|stop ... (external source template; private generated profile/dynamic port)
+  plugin-dev create|dev|stop ... (external plugin templates; private generated profile/dynamic port)
   plugin-pack --manifest FILE --payload DIR --out DIR
   plugin-validate --manifest FILE --zip FILE [--host central] [--host-dependencies JSON]
 Prefix commands with: node scripts/mote.mjs

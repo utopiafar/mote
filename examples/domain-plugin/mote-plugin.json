@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "template.collection",
+  "name": "Template collection domain",
+  "version": "0.1.0",
+  "trust": "external",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "template-collection-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "template-collection.port",
+      "version": "1",
+      "surface": "data",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "provides": [
+        {
+          "kind": "service",
+          "id": "template.collection.log",
+          "apiVersion": "1",
+          "cardinality": "single"
+        }
+      ],
+      "capabilities": [
+        "collection.state"
+      ]
+    },
+    {
+      "id": "template-collection.page",
+      "version": "1",
+      "surface": "page",
+      "runtime": "host",
+      "entry": "web/index.html",
+      "requires": [
+        {
+          "kind": "contribution",
+          "id": "template-collection.port",
+          "version": "1",
+          "required": true
+        }
+      ],
+      "capabilities": [
+        "collection.page"
+      ]
+    }
+  ],
+  "capabilities": [
+    "collection.state",
+    "collection.page"
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Instance-scoped collection items held in the host-injected state store"
+  ]
+}

@@ -18,10 +18,18 @@ import {
 } from './profile-lib.mjs';
 
 const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
-const template = join(repository, 'examples', 'external-plugin');
+const templates = {
+  connector: join(repository, 'examples', 'external-plugin'),
+  worker: join(repository, 'examples', 'worker-plugin'),
+  domain: join(repository, 'examples', 'domain-plugin'),
+};
+const templateNames = Object.keys(templates);
+/** Generated artifacts never become template input: vendor holds the SDK
+ * tarball, dist/archive hold pack output, node_modules is installed later. */
+const templateSkip = new Set(['node_modules', 'vendor', 'dist', 'archive', '.git', '.DS_Store']);
 const ownershipFile = 'plugin-dev.json';
 const help = `Mote external plugin development (Node 24+)
-  create <directory> [--sdk-tarball PATH]  copy the source template; install a packed SDK when supplied
+  create <directory> [--template ${templateNames.join('|')}] [--sdk-tarball PATH]  copy a plugin template; install a packed SDK when supplied
   dev --plugin DIRECTORY [--home PATH] [--profile NAME] [--port N] [--once] [--seed]
   stop --home PATH [--profile NAME]
   plugin-dev supports only --host central; other client hosts use their native build and UI/provider integration.`;
@@ -68,13 +76,15 @@ async function runSeed(p, plugin) {
     timeoutMs: 30000,
   });
 }
-async function copyTemplate(target, sdkTarball) {
+async function copyTemplate(target, sdkTarball, templateName = 'connector') {
+  const template = templates[templateName];
+  if (!template) throw Error(`Unknown template ${String(templateName)}; choose one of ${templateNames.join(', ')}`);
   if (await exists(target)) {
     const entries = await import('node:fs/promises').then(({readdir}) => readdir(target));
     if (entries.length) throw Error(`Target ${target} is not empty; create only writes a new external plugin directory`);
   }
   await mkdir(target, {recursive: true, mode: 0o700});
-  for (const name of ['source.mjs', 'seed.mjs', 'README.md', 'package.json']) await cp(join(template, name), join(target, name), {force: false});
+  await cp(template, target, {recursive: true, force: false, filter: source => !templateSkip.has(basename(source))});
   if (sdkTarball) {
     const source = resolve(sdkTarball);
     if (!(await exists(source))) throw Error(`SDK tarball does not exist: ${source}`);
@@ -158,7 +168,7 @@ async function main(argv) {
     options: {
       plugin: {type: 'string'}, home: {type: 'string'}, profile: {type: 'string', default: 'plugin-dev'},
       host: {type: 'string', default: 'central'}, port: {type: 'string'}, once: {type: 'boolean'}, seed: {type: 'boolean'},
-      'sdk-tarball': {type: 'string'}, help: {type: 'boolean', short: 'h'},
+      'sdk-tarball': {type: 'string'}, template: {type: 'string', default: 'connector'}, help: {type: 'boolean', short: 'h'},
     },
   });
   if (values.help || positionals.length === 0) { console.info(help); return; }
@@ -166,8 +176,8 @@ async function main(argv) {
   const command = positionals[0];
   if (command === 'create') {
     if (!positionals[1] || positionals.length > 2) throw Error('create requires exactly one target directory');
-    await copyTemplate(resolve(positionals[1]), values['sdk-tarball']);
-    print({created: resolve(positionals[1]), sdkTarball: values['sdk-tarball'] ?? null});
+    await copyTemplate(resolve(positionals[1]), values['sdk-tarball'], values.template);
+    print({created: resolve(positionals[1]), template: values.template, sdkTarball: values['sdk-tarball'] ?? null});
     return;
   }
   if (command === 'dev') return dev(values);
