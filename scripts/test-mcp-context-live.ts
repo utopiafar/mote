@@ -12,6 +12,7 @@ import {Store} from '../apps/server/src/store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
 import {registerMcp} from '../apps/server/src/connectors/mcp.js';
 import {mcpContext} from '../apps/server/src/connectors/mcp-context.js';
+import {EvidenceReader} from '../apps/server/src/evidence-reader.js';
 import type {ConnectorContext} from '../apps/server/src/connectors/types.js';
 
 const model=process.env.MOTE_TEST_CODEX_MODEL??'gpt-6-astra';
@@ -27,7 +28,7 @@ sources.register({id:'generated-coding',name:'Generated coding fixture',kind:'co
 const first=randomUUID(),second=randomUUID();
 await store.ingest(input(first,'2026-09-18T00:00:00.000Z','generated-device-a','session-a','github:utopiafar/mote',generatedText));
 await store.ingest(input(second,'2026-09-18T00:01:00.000Z','generated-device-b','session-b','github:utopiafar/mote','MCP_CONTEXT_ANCHOR follow-up: another generated device confirms the same batch decision.'));
-const ctx:ConnectorContext={store,sources,config:{dataDir:directory,token:'generated-owner',allowedOrigins:[],connectors:{directory:join(directory,'private'),mcpEnabled:true,mcpReadToken:token}}};
+const ctx:ConnectorContext={store,sources,evidenceReader:new EvidenceReader(store,sources),config:{dataDir:directory,token:'generated-owner',allowedOrigins:[],connectors:{directory:join(directory,'private'),mcpEnabled:true,mcpReadToken:token}}};
 const app=Fastify();const connectors=registerMcp(app,mcpContext(ctx));let server:Client|undefined;let listening=false;let agent:ReturnType<typeof createAgent>|undefined;
 try {
   await app.listen({host:'127.0.0.1',port:0});listening=true;const node=app.listeningOrigin;

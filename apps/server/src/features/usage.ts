@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FeatureServices } from '../feature-services.js';
 import { scopeFields } from '../query-scope.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** usage: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{usageLedger}:Pick<FeatureServices,"usageLedger">){
@@ -12,3 +13,8 @@ app.get('/api/usage',async req=>{
   });
 app.put('/api/usage/prices',async req=>usageLedger.setPrice(req.body));
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.usage',version:'1',surface:'data',runtime:'host'},
+  factory:(app,_scope,services)=>register(app,services),
+};

@@ -7,6 +7,7 @@ import { registerContentStorage } from '../content-storage.js';
 import type { FeatureServices } from '../feature-services.js';
 import { StoreError } from '../store.js';
 import {exportBoundMemories} from '../memory-provider-backup.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** storage: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{archivedFiles,config,contentStorage,diagnostics,evidenceReader,files,indexer,store}:Pick<FeatureServices,"archivedFiles"|"config"|"contentStorage"|"diagnostics"|"evidenceReader"|"files"|"indexer"|"store">,scope?:ServerFeatureScope){
@@ -25,3 +26,11 @@ app.get('/api/export',async(_req,reply)=>{
 app.post('/api/import',{bodyLimit:config.maxExportBytes},async req=>diagnostics.measure('ingest','import',()=>store.importArchive(req.body),r=>({count:r.imported})));
 app.get('/api/storage-statistics',async()=>{const types=new Map((store.db.prepare("SELECT object_hash,MIN(json_extract(manifest,'$.item.mimeType')) AS mime FROM file_versions WHERE object_hash IS NOT NULL GROUP BY object_hash").all() as {object_hash:string;mime:string}[]).map(r=>[r.object_hash,r.mime]));return storageStatistics([config.dataDir],path=>path.startsWith(files.objects+'/')?types.get(path.slice(files.objects.length+1).split('/')[0])??'original':undefined);});
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.storage',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.storage'));
+    register(app,services,scope);
+  },
+};

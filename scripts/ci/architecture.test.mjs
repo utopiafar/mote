@@ -62,6 +62,20 @@ test('AST classifies explicit type dependencies separately from runtime aliases,
   assert.equal(moduleReferences('generated.d.ts',"import {Shape} from './one'; export {Shape};")[0].kind,'type');
 });
 
+test('Agent runtime import cycles are rejected while erased type cycles stay valid',t=>{
+  const f=fixture(t);
+  f.write('packages/agent/src/cycle-a.ts',"import './cycle-b.js'; export const a=1;");
+  f.write('packages/agent/src/cycle-b.ts',"import './cycle-a.js'; export const b=1;");
+  const cyclic=f.check();
+  assert.deepEqual(rule(cyclic),['agent-import-cycle']);
+  assert.equal(cyclic.violations[0].kind,'runtime');
+  const chain=cyclic.violations[0].chain;
+  assert.ok(chain.includes('packages/agent/src/cycle-a.ts')&&chain.includes('packages/agent/src/cycle-b.ts'));
+  assert.equal(chain[0],chain.at(-1));
+  f.write('packages/agent/src/cycle-b.ts',"import type {a} from './cycle-a.js'; export const b=1;");
+  assert.deepEqual(f.check().violations,[]);
+});
+
 test('every runtime assembly syntax is rejected, including tsconfig aliases and computed constant paths',async t=>{
   const sources=[
     "import './index.js';",
@@ -211,6 +225,32 @@ test('actual CLI fails a controlled browser leak, then passes the same fixture a
   const failed=f.run();assert.equal(failed.status,1);assert.match(failed.stderr,/browser-no-node.*node:fs/);assert.doesNotMatch(failed.stdout,/passed/);
   f.write('packages/shared/src/browser-helper.ts',"export type {Stats} from 'node:fs';");
   const passed=f.run();assert.equal(passed.status,0,passed.stderr);assert.match(passed.stdout,/Architecture boundaries passed/);
+});
+
+test('Server plugins cannot import Store by value or type, and exceptions go stale when only Store is removed',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/store.ts','export class Store {} export class StoreError {}');
+  f.write('apps/server/src/plugins/example.ts',"import {StoreError} from '../store.js'; export const error=StoreError;");
+  assert.deepEqual(f.check().violations,[]);
+  f.write('apps/server/src/plugins/example.ts',"import {Store} from '../store.js'; export const store=new Store();");
+  let result=f.check();
+  assert.deepEqual(rule(result),['server-plugins-no-store']);
+  assert.equal(result.violations[0].kind,'runtime');
+  f.write('apps/server/src/plugins/example.ts',"import {Store as Borrowed} from '../store.js'; export const store=new Borrowed();");
+  assert.deepEqual(rule(f.check()),['server-plugins-no-store']);
+  f.write('apps/server/src/plugins/example.ts',"import * as store from '../store.js'; export const concrete=store.Store;");
+  assert.deepEqual(rule(f.check()),['server-plugins-no-store']);
+  f.write('apps/server/src/plugins/example.ts',"import type {Store} from '../store.js'; export type Borrowed=Store;");
+  result=f.check();
+  assert.deepEqual(rule(result),['server-plugins-no-store']);
+  assert.equal(result.violations[0].kind,'type');
+  f.write('apps/server/src/plugins/example.ts',"import {StoreError,type Store} from '../store.js'; export type Borrowed=Store; export const error=StoreError;");
+  const exception={...f.check().violations[0],reason:'Existing Vault boundary debt'};
+  f.write('apps/server/src/plugins/example.ts',"import {StoreError} from '../store.js'; export const error=StoreError;");
+  result=f.check([exception]);
+  assert.deepEqual(result.violations,[]);
+  assert.deepEqual(result.stale,[exception]);
+  assert.throws(()=>f.check([exception,exception]),/unique concrete edge/);
 });
 
 test('repository boundaries pass with only exact reviewed existing exceptions',()=>{

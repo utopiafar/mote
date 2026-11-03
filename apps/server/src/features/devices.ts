@@ -2,6 +2,7 @@ import { heartbeatSchema } from '@mote/shared';
 import type { FastifyInstance } from 'fastify';
 import type { FeatureServices } from '../feature-services.js';
 import {firstDeviceData} from '../first-device-data.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** devices: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{connections,credential,diagnostics,store,files,evidenceReader}:Pick<FeatureServices,"connections"|"credential"|"diagnostics"|"store"|"files"|"evidenceReader">){
@@ -11,3 +12,11 @@ app.get('/api/devices',async()=>({items:store.devices()}));
 // to collector or MCP allowlists: it is a cross-device archive view.
 app.get('/api/devices/first-data',async()=>firstDeviceData(store,files,evidenceReader));
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.devices',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.devices'));
+    register(app,services);
+  },
+};

@@ -5,6 +5,7 @@ import type { FeatureServices } from '../feature-services.js';
 import {buildContextEnvelope,taskTools,systemInstructions,contextToolDefinitions} from '@mote/agent';
 import {openingMemories} from '../opening-memory.js';
 import {requestLocale} from '../i18n.js';
+import type {ServerFeatureAdapter} from './index.js';
 const scope={...navigationScopeSchema.shape,limit:z.coerce.number().int().min(1).max(20).default(12),cursor:z.string().max(4096).optional()};
 export function register(app:FastifyInstance,{archiveReader,diagnostics,evidenceReader}:Pick<FeatureServices,'archiveReader'|'diagnostics'|'evidenceReader'>){
   app.get('/api/agent-view/catalog',async req=>archiveReader.catalog!(z.object({...scope,path:z.string().max(100).optional()}).strict().parse(req.query)));
@@ -76,3 +77,11 @@ export function register(app:FastifyInstance,{archiveReader,diagnostics,evidence
     return {items,nextSeq,oldestSeq:page.oldestSeq,recording:diagnostics.snapshot().agentTrace};
   });
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.agent-view',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.agent-view'));
+    register(app,services);
+  },
+};

@@ -7,6 +7,7 @@ import { registerModelSettingsRoutes } from '../model-settings-routes.js';
 import {registerModelAuthorizationRoutes} from '../model-authorization-routes.js';
 import {z} from 'zod';
 import {ModelSettingsError,type ModelDomain} from '../model-settings.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 function retainedCredential(current:unknown,patch:unknown):boolean {
   if(!current)return false;
@@ -41,3 +42,11 @@ app.get('/api/configuration',async()=>configurationView());
 app.put('/api/configuration/:id',{bodyLimit:1048576},async req=>{const {id}=z.object({id:z.string().min(1).max(128)}).parse(req.params),body=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),value:z.record(z.unknown()),allowCredentialReuse:z.boolean().optional()}).strict().parse(req.body);if(id==='models')checkModelCredentialReuse(configService.saved<ModelDomain>('models'),body.value,body.allowCredentialReuse===true);await configService.update(id,body.value,body.revision);return configurationView();});
 registerExecutionSettingsRoutes(app,{runtimeSettings,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,providerAdmission,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,delegatedSnapshot:()=>executor.poolSnapshot('delegated-agents'),wakeMemory:()=>memoryPipeline.wake()});
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.models',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.models'));
+    register(app,services);
+  },
+};

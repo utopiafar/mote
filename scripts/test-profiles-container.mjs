@@ -71,7 +71,7 @@ try {
     const serialized = JSON.stringify(configuration);
     for (const secret of secrets) assert.ok(!serialized.includes(JSON.stringify(secret).slice(1, -1)), 'Configuration must not contain credential values, including JSON-escaped tokens');
     const support = JSON.stringify(await request(p, '/api/support-bundle'));
-    for (const privateValue of [...secrets, p.envFile, p.directory, p.meta.volume, '/config', '/data']) {
+    for (const privateValue of [...secrets, p.configFile, p.directory, p.meta.volume, '/config', '/data']) {
       assert.ok(!support.includes(JSON.stringify(privateValue).slice(1, -1)), 'Reading owner configuration must not place secrets or paths in support bundles');
     }
   }
@@ -135,7 +135,7 @@ try {
   const source = { id: 'synthetic-current-google-source', name: 'Synthetic current calendar selection', kind: 'google-calendar', deviceId: 'synthetic-device', platform: 'import', retention: 'reference', enabled: false };
   await request(dev, '/api/sources', { method: 'POST', body: source });
   const credentials = { version: 1, tokens: { refresh_token: 'synthetic-offline-refresh-token' }, calendars: [{ id: 'synthetic-calendar', summary: 'Synthetic calendar', timeZone: 'Asia/Shanghai' }], checkpoints: { 'synthetic-calendar': { syncToken: 'synthetic-old-checkpoint' } } };
-  const envBeforeRollback = await readFile(dev.envFile);
+  const envBeforeRollback = await readFile(dev.configFile);
   await run(dev, 'stop');
   // Write only inert fixture credentials. Google configuration is absent, so startup cannot contact Google.
   await run(dev, 'compose', ['--', 'run', '--rm', '--no-deps', 'mote', 'node', '-e', `const fs=require('node:fs');fs.writeFileSync('/data/content-key',${JSON.stringify(dev.env.MOTE_DATA_KEY)},{mode:0o600});fs.mkdirSync('/data/connectors',{recursive:true,mode:0o700});fs.writeFileSync('/data/connectors/google-calendar.json',${JSON.stringify(JSON.stringify(credentials))},{mode:0o600});fs.writeFileSync('/data/connectors/opaque.json',JSON.stringify({credential:'synthetic-opaque-credential'}),{mode:0o600});`]);
