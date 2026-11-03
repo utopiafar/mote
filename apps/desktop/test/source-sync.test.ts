@@ -26,14 +26,15 @@ async function create() { const engine = new SourceSync(join(directory, 'state.j
 function fileTransport(sent: { item: SourceItem; previousRevision: string | null }[], fail?: (item: SourceItem) => number) {
   return async (path: string, body: any) => {
     if (path === '/api/sources') return { ...source, enabled: true };
-    if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 50 };
+    // Above the default batch size so these cases use the manifest batch path.
+    if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
     if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
     if (path === '/api/file-sync/v1/manifests') {
       const results = (body.items as { item: SourceItem; previousRevision?: string | null }[]).map(manifest => {
         sent.push({ item: manifest.item, previousRevision: manifest.previousRevision ?? null });
         const failOn = fail?.(manifest.item);
         if (failOn) throw new Error('simulated ACK loss');
-        return { externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item) };
+        return { externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, manifest.item.document?.fileIndex ? 'file-revision' : 'source-item') };
       });
       return { results };
     }

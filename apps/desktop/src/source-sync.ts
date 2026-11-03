@@ -323,6 +323,10 @@ export class SourceSync {
         return { acks };
       }
       const manifests=batch.map(({localOriginalBase64:_,localOriginal:__,snapshotRecovery:___,...item})=>({sourceId:source.id,item,sizeBytes:item.metadata?.file?.sizeBytes??0,...(this.data.delivered?.[sourceHash(item.externalId)]?{previousRevision:this.data.delivered[sourceHash(item.externalId)]}: {})}));
+      // Record the attempt before the request so a lost response keeps the
+      // revision resolvable instead of being withdrawn as never uploaded.
+      const attempted = manifests.filter(manifest => !Object.hasOwn(this.data.predecessors ?? {}, manifest.item.revision));
+      if (attempted.length) await this.mutate(() => this.commit({ ...this.data, predecessors: { ...this.data.predecessors, ...Object.fromEntries(attempted.map(manifest => [manifest.item.revision, this.data.delivered?.[sourceHash(manifest.item.externalId)] ?? null])) } }));
       const response=await request('/api/file-sync/v1/manifests',{items:manifests},'POST',signal) as {results?:{externalId:string;revision:string;state?:string;status?:number;ack?:unknown}[]};
       if(!Array.isArray(response?.results)||response.results.length!==batch.length)throw Error('Invalid manifest acknowledgement');
       const acks:Record<string,unknown>[]=[],rejected:RejectedItem[]=[];
