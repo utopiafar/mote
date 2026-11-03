@@ -33,7 +33,7 @@ try {
   assert.notEqual(devMedia.MOTE_MEDIA_OCR_ENDPOINT, testMedia.MOTE_MEDIA_OCR_ENDPOINT);
   assert.equal(devMedia.MOTE_MEDIA_ASR_ENDPOINT, `http://127.0.0.1:${devMedia.MOTE_MEDIA_ASR_PORT}/transcribe`);
   assert.equal(devMedia.MOTE_MEDIA_OCR_ENDPOINT, `http://127.0.0.1:${devMedia.MOTE_MEDIA_OCR_PORT}/ocr`);
-  assert.equal((await stat(dev.envFile)).mode & 0o777, 0o600);
+  assert.equal((await stat(dev.configFile)).mode & 0o777, 0o600);
   assert.equal(dev.env.MOTE_LOG_DIR, './logs'); assert.equal(dev.env.MOTE_LOG_MAX_ENTRIES, '2000'); assert.equal(dev.env.MOTE_AGENT_TRACE_ENABLED, '1'); assert.equal(test.env.MOTE_AGENT_TRACE_ENABLED, '0');
   assert.equal(dev.document.diagnostics.debug, true); assert.equal(test.document.diagnostics.debug, false);
   assert.equal(dev.env.MOTE_LOG_MAX_MB, '100'); assert.equal(Object.hasOwn(dev.savedDocument.diagnostics, 'maxBytes'), false); assert.equal(test.env.MOTE_LOG_MAX_MB, '2');
@@ -44,10 +44,10 @@ try {
   assert.deepEqual(JSON.parse(isolated.stdout), { profile: 'dev', file: dev.configFile, url: dev.url });
   await cli(home, 'dev', 'init', [], { fail: true });
   await cli(join(directory, 'reserved'), 'dev', 'init', ['--port', '47832'], { fail: true });
-  const originalEnv = await readFile(dev.envFile, 'utf8');
+  const originalEnv = await readFile(dev.configFile, 'utf8');
   assert.match(originalEnv, /dataDir: \.\/data/);
   await updateProfileConfiguration(dev, document => { document.storage.dataDir = '../test/data'; });
-  await cli(home, 'dev', 'status', [], { fail: true }); await writeFile(dev.envFile, originalEnv);
+  await cli(home, 'dev', 'status', [], { fail: true }); await writeFile(dev.configFile, originalEnv);
   const launch = JSON.parse((await cli(home, 'dev', 'launchd')).stdout), xml = await readFile(launch.generated, 'utf8');
   assert.equal(launch.installed, false); assert.ok(xml.includes('/dev/null')); assert.ok(!xml.includes(dev.env.MOTE_TOKEN));
   if (process.platform === 'darwin') assert.equal((await command('plutil', ['-lint', launch.generated])).code, 0);
@@ -61,9 +61,9 @@ try {
   // larger default is explicit and applies only after the owner's next restart.
   await cli(home, 'dev', 'stop');
   dev = await updateEnvironment(dev, { MOTE_LOG_MAX_MB: '2' });
-  const legacyEnv = await readFile(dev.envFile);
+  const legacyEnv = await readFile(dev.configFile);
   await cli(home, 'dev', 'start');
-  assert.deepEqual(await readFile(dev.envFile), legacyEnv);
+  assert.deepEqual(await readFile(dev.configFile), legacyEnv);
   assert.equal((await request(dev, '/api/diagnostics')).limits.maxFileBytes, 2 * 1024 * 1024);
   const adoption = JSON.parse((await cli(home, 'dev', 'log-retention', ['--defaults'])).stdout);
   assert.deepEqual(adoption, { profile: 'dev', changed: true, before: { maxFileMiB: 2, maxFiles: 3 }, after: { maxFileMiB: 100, maxFiles: 3 }, restartRequired: true });

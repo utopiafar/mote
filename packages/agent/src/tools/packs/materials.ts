@@ -1,5 +1,5 @@
 import {attributionContextSchema, formatEvidenceRef, parseEvidenceRef, sourceContentTime, sourceSchema} from '@mote/shared';
-import {originalEvidenceReceipt} from '../../bridge.js';
+import {originalEvidenceReceipt} from '../../evidence-receipt.js';
 import {CONTEXT_TOOLS} from '../../context-tools.js';
 import {defineToolDescriptor, toolContractError, type ToolDescriptor, type ToolFields} from '../descriptor.js';
 import type {HostSessionPort} from '../host-session.js';

@@ -37,11 +37,11 @@ try {
   await assert.rejects(initialize(profilePaths('dev',join(directory,'volume')),{runtime:'docker',volume:'formal-vault'}),/own profile/);
   await initialize(profilePaths('prod',join(directory,'volume')),{runtime:'docker',volume:'explicit-private-vault'});
   assert.equal((await loadProfile(profilePaths('prod',join(directory,'volume')))).meta.volume,'explicit-private-vault');
-  const envOriginal = await readFile(p.envFile,'utf8');
+  const envOriginal = await readFile(p.configFile,'utf8');
   for (const entry of ['DOCKER_CONTEXT=remote','DOCKER_HOST=tcp://remote:2375','COMPOSE_FILE=elsewhere','TUNNEL_TOKEN=synthetic','CLOUDFLARED_CONFIG=elsewhere']) {
-    await writeFile(p.envFile,envOriginal+'\n'+entry+'\n'); await assert.rejects(reload('dev'),/could not be parsed/);
+    await writeFile(p.configFile,envOriginal+'\n'+entry+'\n'); await assert.rejects(reload('dev'),/could not be parsed/);
   }
-  await writeFile(p.envFile,envOriginal);
+  await writeFile(p.configFile,envOriginal);
   const metaOriginal = await readFile(p.metaFile,'utf8');
   await writeFile(p.metaFile,`{invalid ${synthetic}`);
   const malformed = await cli(home,'dev','config',[],{fail:true}); noSecrets(malformed);
@@ -62,11 +62,11 @@ try {
   noSecrets(p.meta); noSecrets(nativeTunnelArgs(p)); noSecrets(effectiveConfiguration(p));
   p=await updateEnvironment(p,{MOTE_PUBLIC_URL:'https://edited.synthetic.invalid'});
   assert.equal(effectiveConfiguration(p).listener.publicUrl,'https://edited.synthetic.invalid');
-  const publicEnv=await readFile(p.envFile,'utf8');
-  await writeFile(p.envFile,publicEnv+'\nserver: { publicUrl: https://last.synthetic.invalid }\n');
+  const publicEnv=await readFile(p.configFile,'utf8');
+  await writeFile(p.configFile,publicEnv+'\nserver: { publicUrl: https://last.synthetic.invalid }\n');
   await assert.rejects(setPublicUrl(p,'https://new.synthetic.invalid'),/YAML is invalid/);
-  assert.equal(await readFile(p.envFile,'utf8'),publicEnv+'\nserver: { publicUrl: https://last.synthetic.invalid }\n');
-  await writeFile(p.envFile,publicEnv);
+  assert.equal(await readFile(p.configFile,'utf8'),publicEnv+'\nserver: { publicUrl: https://last.synthetic.invalid }\n');
+  await writeFile(p.configFile,publicEnv);
   await assert.rejects(configure(p,{enable:true,protocol:'bad'}),/metadata/);
   await assert.rejects(configure(p,{enable:true,'public-url':'https://synthetic.invalid/?private=value'}),/HTTPS origin/);
   const launch=JSON.parse((await cli(home,'dev','tunnel-launchd')).stdout); const xml=await readFile(launch.generated,'utf8'); noSecrets(xml); assert.match(xml,/<string>tunnel-run<\/string>/); assert.equal(xml.includes('--token-file'),false);

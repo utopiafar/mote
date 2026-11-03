@@ -9,6 +9,7 @@ import { registerCaptureBrowser } from '../capture-browser.js';
 import { safeError } from '../diagnostics.js';
 import type { FeatureServices } from '../feature-services.js';
 import { StoreError } from '../store.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** capture: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{perception,executor,maintenanceWorker,assertRequestActive,connections,credential,diagnostics,evidenceReader,files,ingress,parseCaptureBundle,store,materials}:Pick<FeatureServices,"perception"|"executor"|"maintenanceWorker"|"assertRequestActive"|"connections"|"credential"|"diagnostics"|"evidenceReader"|"files"|"ingress"|"parseCaptureBundle"|"store"|"materials">,scope?:ServerFeatureScope){
@@ -41,3 +42,11 @@ app.get('/api/captures',async req=>{
 app.delete('/api/captures/:id',async req=>deletion.delete((req.params as {id:string}).id));
 app.get('/api/activity',async req=>store.activity(rangeSchema.parse(req.query)));
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.capture',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.capture'));
+    register(app,services,scope);
+  },
+};

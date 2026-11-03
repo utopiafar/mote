@@ -7,6 +7,7 @@ import { registerImportUploads } from '../import-uploads.js';
 import { ImportInputError } from '../imports.js';
 import { StoreError } from '../store.js';
 import type {ServerFeatureScope} from '../feature-host.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** imports: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{archivedFiles,config,evidenceReader,importTasks,imports,jobId,launchOwnerImport,store}:Pick<FeatureServices,"archivedFiles"|"config"|"evidenceReader"|"importTasks"|"imports"|"jobId"|"launchOwnerImport"|"store">,scope?:ServerFeatureScope){
@@ -49,3 +50,11 @@ app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)
 app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.stream(id));});
 app.get('/api/captures/:id/archived-files',async req=>{const record=evidenceReader.evidence([formatEvidenceRef('capture',z.string().uuid().parse((req.params as {id:string}).id))],navigationScopeSchema.parse(req.query))[0];if(!record)throw new StoreError('Capture not found',404);return {items:archivedFiles.listForCapture(record.id)};});
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.imports',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.imports'));
+    register(app,services,scope);
+  },
+};

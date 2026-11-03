@@ -22,7 +22,7 @@ function fixture(directory: string): Config {
     embeddingModel: 'synthetic-embedding-name', embeddingBaseUrl: 'https://embedding.example.invalid/v1', embeddingApiKey: 'synthetic-embedding-private-key',
     diagnosticsEnabled: true, diagnosticsDebug: true, logDirectory: join(directory, 'private-logs'), logLevel: 'info', logMaxBytes: 1024 * 1024, logMaxFiles: 2, logMaxEntries: 100,
     configuration: {
-      envFile: '/app/deploy/empty.env', baseDir: '/app/deploy', hostConfigFile: join(directory, 'mote.env'), runtime: 'docker',
+      baseDir: '/app/deploy', hostConfigFile: join(directory, 'mote.env'), runtime: 'docker',
       publicUrl: 'https://mote.example.invalid', storageKind: 'docker-volume', storageSource: 'synthetic-private-volume-name', storageMount: '/data',
       tunnelEnabled: true, tunnelProvider: 'cloudflare', tunnelProtocol: 'http2',
       sources: { MOTE_PORT: 'environment', MOTE_MODEL: 'env-file', MOTE_TOKEN: 'env-file', MOTE_DATA_DIR: 'environment', MOTE_CONFIG_FILE: 'environment', MOTE_STORAGE_SOURCE: 'environment' },
@@ -35,7 +35,7 @@ test('configuration projection is serializable, preserves effective values and s
   const config = fixture('/synthetic-owner-only-directory'), view = serverConfiguration(config), all = fields(view);
   assert.deepEqual(JSON.parse(JSON.stringify(view)), view);
   assert.equal(view.envFile, config.configuration!.hostConfigFile);
-  assert.equal(all.get('effectiveEnvFile')!.value, '/app/deploy/empty.env');
+  assert.equal(all.has('effectiveEnvFile'), false, 'The obsolete environment-file projection must be removed');
   assert.equal(view.baseDir, '/app/deploy'); assert.equal(view.runtime, 'docker'); assert.equal(view.readOnly, true); assert.equal(view.restartRequired, true);
   assert.equal(view.storage.sqlitePath, join(config.dataDir, 'mote.sqlite')); assert.equal(view.storage.assetDir, join(config.dataDir, 'files', 'objects'));
   assert.equal(view.storage.kind, 'docker-volume'); assert.equal(view.storage.source, 'synthetic-private-volume-name'); assert.equal(view.storage.mountPath, '/data');
@@ -86,7 +86,7 @@ test('owner configuration ignores obsolete env files and support remains path/se
   assert.equal(fields((await app.inject({ url: '/api/configuration', headers })).json()).get('model')!.value, config.model);
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) assert.equal((await app.inject({ method, url: '/api/configuration', headers, payload: { MOTE_DATA_DIR: '/synthetic-unapproved-path', MOTE_DATA_KEY: 'replacement' } })).statusCode, 404);
   assert.equal(await readFile(file, 'utf8'), 'MOTE_MODEL=synthetic-new-value-for-next-restart\n');
-  const privateValues = [directory, config.token, config.dataKey!, config.apiKey, config.embeddingApiKey, config.configuration!.storageSource!, config.modelBaseUrl, '/app/deploy/empty.env'];
+  const privateValues = [directory, config.token, config.dataKey!, config.apiKey, config.embeddingApiKey, config.configuration!.storageSource!, config.modelBaseUrl];
   for (const route of ['/api/support-bundle', '/api/diagnostics']) {
     const result = await app.inject({ url: route, headers }); assert.equal(result.statusCode, 200);
     for (const value of privateValues) assert.ok(!result.body.includes(value), `${route} must exclude owner configuration`);

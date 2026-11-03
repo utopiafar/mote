@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | 首次查找来源与高级设置 | 首页、数据源目录及功能指南使用同一术语，16 个目的组和 78 个映射唯一；英文作者文案完整，原文不翻译 | `feature-guide-catalog.test.ts`、`source-catalog.test.ts`、i18n 同步检查 |
 | 功能缺失、版本不兼容或撤销 | 链接明确不可用；未确认中央支持时不请求缺失接口；Coding 不可用不隐藏其他处理任务 | `discovery-availability.test.ts`、`coding-receipt-panel.test.ts`、`library-browser.test.ts` |
-| 旧链接及任务返回 | 旧 Library/Coding 链接仍到正确类型；不存在类型不跳到另一类；模型设置返回确切任务，外部或无效返回链接不可执行 | `workspace-route.test.ts`、`route-query.test.ts`、`model-start-guide.test.ts` |
+| 资料库链接及任务返回 | 显式 Library collection 链接到正确类型；不存在类型不跳到另一类；已删除的旧路径回落到默认页；模型设置返回确切任务，外部或无效返回链接不可执行 | `workspace-route.test.ts`、`route-query.test.ts`、`model-start-guide.test.ts` |
 | 草稿和浏览历史 | 修改后还原不提示；真实修改继续受保护；同页分类及插件页签改变、移除参数和前进/后退同步；拒绝离开保留当前草稿与分类 | `navigation-drafts.test.ts`、`plugin-center.test.ts` |
 | 录音同步独立步骤 | 转写格式失败与音频归档分开，错误对应精确 code，未知原因不推断为网络或权限 | `recordings-settings.test.ts` |
 | 录音历史起止日期 | 逐键输入四位年份（如 2011）不改写中间值；轮询保留草稿；保存时按本地时区转换，重新打开仍显示选定日期；空起点及未填完整的终点不能提交，明确清空终点仍支持持续同步 | `recordings-settings.test.ts`、`recording-date-browser.cjs` |
