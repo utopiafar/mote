@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {ApiError,type Api,dateTime,errorMessage} from './api';
+import {ApiError,type Api,dateTime,errorMessage} from '../../api';
 import type {Memory} from './Memories';
 /** Only explicit stored replacement links form this history; contradictions remain separate. */
 export async function readMemoryHistory(api:Api,id:string,signal:AbortSignal){const pending=[id],seen=new Set<string>(),items:Memory[]=[],unavailable:{id:string;error:string}[]=[];while(pending.length){signal.throwIfAborted();const next=pending.shift()!;if(seen.has(next))continue;seen.add(next);let item:Memory;try{item=await api.request<Memory>('/api/memories/'+encodeURIComponent(next),{signal});}catch(error){if(next!==id&&error instanceof ApiError&&[404,410].includes(error.status)){unavailable.push({id:next,error:errorMessage(error)});continue;}throw error;}signal.throwIfAborted();if(item.id!==next)throw Error(moteText('记忆版本暂不可用。'));items.push(item);if(item.supersededBy)pending.push(item.supersededBy);for(const link of item.relations??[])if(link.kind==='supersedes')pending.push(link.memoryId);}return {items:items.sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||Number(Boolean(a.supersededBy))-Number(Boolean(b.supersededBy))||a.id.localeCompare(b.id)),unavailable};}

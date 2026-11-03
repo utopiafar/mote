@@ -1,8 +1,8 @@
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from './api';
+import {type Api,errorMessage} from '../../api';
 import {useEffect,useState} from 'react';
-import {resources} from './resource-cache';
-import {useResource} from './useResource';
+import {resources} from '../../resource-cache';
+import {useResource} from '../../useResource';
 export interface ContextTree {id:string;version:string;label:string;nodes:{id:string;label:string;parentId?:string}[]}
 export function MemoryTopics({api,treeId,nodeId,onChange}:{api:Api;treeId:string;nodeId:string;onChange:(treeId:string,nodeId:string)=>void}){
  const [pollMs,setPollMs]=useState<number|undefined>(undefined);

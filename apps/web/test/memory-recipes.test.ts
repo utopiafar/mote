@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {MemoryRecipeSelection} from '../src/MemoryRecipeSelection.js';
+import {MemoryRecipeSelection} from '../src/plugins/memory/index.js';
 import {resources} from '../src/resource-cache.js';
 import type {Api} from '../src/api.js';
 

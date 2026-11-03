@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {OwnerQuestionConversation,OwnerQuestionLinks} from '../src/OwnerQuestions.js';
+import {OwnerQuestionConversation,OwnerQuestionLinks} from '../src/plugins/memory/index.js';
 import {ownerQuestionRoute,readOwnerQuestion,ownerQuestionListPath} from '../src/owner-question-route.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
@@ -270,13 +270,13 @@ test('standalone Ask questions retain feature capability withdrawal and cannot a
 });
 
 test('a Home supplemental-question visit returns to that Home before a later guide visit gets its own return',async t=>{
- const {root,d,w}=await fixture(t),{OwnerQuestionWorkspace}=await import('../src/OwnerQuestions'),{openOwnerQuestionList}=await import('../src/owner-question-route'),{guideVisit}=await import('../src/feature-guide-state');const api={request:async()=>({items:[],nextCursor:null})} as Api;
+ const {root,d,w}=await fixture(t),{OwnerQuestionWorkspace}=await import('../src/plugins/memory/index'),{openOwnerQuestionList}=await import('../src/owner-question-route'),{guideVisit}=await import('../src/feature-guide-state');const api={request:async()=>({items:[],nextCursor:null})} as Api;
  guideVisit(api).returnAvailable=true;w.history.replaceState(null,'','#/today');openOwnerQuestionList(api);await act(async()=>root.render(React.createElement(OwnerQuestionWorkspace,{api,id:'',onOpen:()=>{}})));assert.equal(d.querySelector('.owner-question-workspace-header a')!.getAttribute('href'),'#/today','an old guide visit cannot steal a new Home return');
  await act(async()=>{w.history.replaceState(null,'','#/guide');root.render(null);});await act(async()=>{w.history.replaceState(null,'','#/ask?question=');root.render(React.createElement(OwnerQuestionWorkspace,{api,id:'',onOpen:()=>{}}));});assert.equal(d.querySelector('.owner-question-workspace-header a')!.getAttribute('href'),'#/guide');
 });
 
 test('question A then B returns consume their own scroll ticket once and later list polling never jumps back',async t=>{
- const {root,d,w}=await fixture(t),{OwnerQuestionWorkspace}=await import('../src/OwnerQuestions');const other={...generated,id:'00000000-0000-4000-8000-000000000002',title:'Generated question B'},scrolls:number[]=[];
+ const {root,d,w}=await fixture(t),{OwnerQuestionWorkspace}=await import('../src/plugins/memory/index');const other={...generated,id:'00000000-0000-4000-8000-000000000002',title:'Generated question B'},scrolls:number[]=[];
  Object.defineProperty(w,'scrollY',{value:0,configurable:true,writable:true});w.scrollTo=(_x:any,y?:number)=>scrolls.push(y??0);
  const api={request:async(path:string)=>path.startsWith('/api/owner-questions?')?{items:[generated,other],nextCursor:null}:path.includes(other.id)?other:generated}as Api;
  const view=(id='')=>React.createElement(OwnerQuestionWorkspace,{api,id,onOpen:()=>{}}),list=ownerQuestionRoute();

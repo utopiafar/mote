@@ -1,11 +1,11 @@
 import {useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,ApiError,dateTime,errorMessage} from './api';
-import {useResource} from './useResource';
-import {resources} from './resource-cache';
-import type {OwnerBrowsePage} from './owner-library-browse';
+import {type Api,ApiError,dateTime,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {resources} from '../../resource-cache';
+import type {OwnerBrowsePage} from '../../owner-library-browse';
 import type {Memory} from './Memories';
-import {currentIntegrationCandidate} from './MemoryIntegration';
+import {currentIntegrationCandidate} from '../../MemoryIntegration';
 
 export type ExtractionChoice={kind:'capture'|'material';ref:string;title:string;revision?:string};
 /** Current owner read projections only. Selection never reconstructs a material or a Memory pin. */

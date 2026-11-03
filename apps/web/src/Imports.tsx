@@ -11,7 +11,7 @@ import {Check,ChevronRight,FileArchive,FileText,FolderOpen,LoaderCircle,Plus,Ref
 import type {ArchivedFile,ImportJob,ImportStatus} from '@mote/shared';
 import {ApiError,type Api,type Capture,bytes,dateTime,errorMessage} from './api';
 import {ArchivedFileButton} from './ArchivedFileButton';
-import {MemoryProgress,useMemoryJob} from './MemoryProgress';
+import {MemoryProgress,useMemoryJob} from './plugins/memory/MemoryProgress';
 import {useResource} from './useResource';
 import {FileProcessingControls} from './FileProcessingControls';
 import {confirmNavigation,useUnsavedChanges} from './unsaved';

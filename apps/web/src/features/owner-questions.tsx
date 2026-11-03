@@ -1,5 +1,5 @@
 import React from 'react';
-import {OwnerQuestionConversation,OwnerQuestionLinks,OwnerQuestionWorkspace} from '../OwnerQuestions';
+import {OwnerQuestionConversation,OwnerQuestionLinks,OwnerQuestionWorkspace} from '../plugins/memory/OwnerQuestions';
 import type {ViewEntry} from './types';
 
 /** Exact host contexts, not Memory content or topic dispatch. */
