@@ -31,7 +31,7 @@ internal class CentralAdmin(
     private val body get() = screens.body
     private val client get() = screens.client
     private fun enc(value: String) = CentralScreens.encode(value)
-    private val library = CentralLibrary(screens)
+    private val library = dev.mote.collector.plugins.NativeLibraryPlugin.owner(ui).library(screens)
     private val plugins = PluginCenterPlugin(screens) { extensions() }
     fun close() = plugins.close()
     fun clearPrivateState() = plugins.clearPrivateState()

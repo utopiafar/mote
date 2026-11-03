@@ -12,7 +12,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 /** Existing archived results only. This independent read never generates a report. */
-internal class HomeDiscoveryView(private val activity: MoteActivity, private val present: (Boolean) -> Unit = {}, private val open: (String?) -> Unit) : LinearLayout(activity), HomeSection {
+internal class HomeDiscoveryView(private val activity: MoteActivity, private val present: (Boolean) -> Unit = {}, private val open: (String?) -> Unit, private val available: () -> Boolean = { true }) : LinearLayout(activity), HomeSection {
     private val task=UiTask(activity)
     private val gate=HomeReadGate()
     private var closed=false
@@ -25,6 +25,8 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
     override fun close(){closed=true;pause();task.close()}
     override fun refresh(){
         if(closed)return
+        // A stopped plugin publishes no discovery block, including while the home stays open.
+        if(!available()){active=false;gate.invalidate();clear();return}
         active=true
         val access=runCatching{CentralAccess.resolve(activity)}.getOrNull()
         if(access==null){gate.invalidate();clear();return}

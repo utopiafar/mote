@@ -11,7 +11,6 @@ import type {ServerFeatureAdapter} from './index.js';
 
 /** storage: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{archivedFiles,config,contentStorage,diagnostics,evidenceReader,files,indexer,store}:Pick<FeatureServices,"archivedFiles"|"config"|"contentStorage"|"diagnostics"|"evidenceReader"|"files"|"indexer"|"store">,scope?:ServerFeatureScope){
- scope?.every(5000,()=>indexer.tick());scope?.defer(()=>indexer.close());
  const maintain=()=>{files.sweep();if(config.retentionDays>0)return diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted})));};
  if(scope)void scope.run(maintain);else void maintain();scope?.every(3600000,maintain);
 registerContentStorage(app,contentStorage);

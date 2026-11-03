@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from './api';
-import {useResource} from './useResource';
+import {type Api,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
 import {recordedContext,recordedReads,recordedResponse,recordedCitationIds,traceLabel,type TraceEvent,type InitialContext} from './agent-view-trace';
 
 type Scope={deviceId?:string;after?:string;before?:string};
