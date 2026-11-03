@@ -23,7 +23,9 @@ import android.widget.*
 import dev.mote.collector.plugins.DailyHomeOwner
 import dev.mote.collector.plugins.DailyHomePlugin
 import dev.mote.collector.plugins.DailyHomeSections
+import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeRecordReceipt
+import dev.mote.collector.plugins.NativeSystemToolsPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import java.util.concurrent.Executors
 
@@ -190,7 +192,8 @@ class MainActivity : MoteActivity() {
     private var statusLoading = false
     private var statusRefreshPending = false
     private var resumed = false
-    private val settingsSummaries = SettingsSummaryTracker()
+    private val settingsSummaries by lazy { NativeAdministrationPlugin.owner(this).settingsSummary() }
+    private val systemTools by lazy { NativeSystemToolsPlugin.owner(this) }
     private var settingsSendRow: LinearLayout? = null
     private var settingsConnectionRow: LinearLayout? = null
     private var localStateJob: kotlinx.coroutines.Job? = null
@@ -1549,9 +1552,9 @@ class MainActivity : MoteActivity() {
         if (requestCode in setOf(103, 104)) {
             fun feedback(message:String){diagnosticExportStatus?.apply { text=message;visibility=View.VISIBLE }}
             if(resultCode!=RESULT_OK || data?.data==null){feedback(MoteI18n.text("导出已取消，记录与设置保留。"));return}
-            val uri = data.data!!; val app = applicationContext
+            val uri = data.data!!; val app = applicationContext; val tools = systemTools
             uiTask.start(MoteI18n.text("正在导出诊断包…"), { feedback(it) }, {
-                val body = if (requestCode == 104) SupportEvents.export(app, logExportHours) else Diagnostics(app).export()
+                val body = if (requestCode == 104) tools.supportBundle(app, logExportHours) else tools.diagnostics(app).export()
                 app.contentResolver.openOutputStream(uri)!!.use { it.write(body.toByteArray()) }
             }) { result -> feedback(if (result.isSuccess) MoteI18n.text("诊断包已导出") else MoteI18n.text("诊断导出失败")) }
             return
