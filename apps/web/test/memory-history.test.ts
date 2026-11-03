@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {configureLocale} from '@mote/shared/i18n';
-import {readMemoryHistory,savedMemoryValidAt} from '../src/MemoryHistory';
+import {readMemoryHistory,savedMemoryValidAt} from '../src/plugins/memory/index';
 import {ApiError,type Api} from '../src/api';
-import type {Memory} from '../src/Memories';
+import type {Memory} from '../src/plugins/memory/index';
 configureLocale(()=>'zh-CN');
 const old={id:'generated-old',title:'Original',status:'published',createdAt:'2026-10-29T01:00:00Z',validFrom:'2026-10-29T08:00:00+08:00',supersededBy:'generated-new',supersededAt:'2026-10-29T02:00:00Z',relations:[{kind:'contradicts',memoryId:'generated-unrelated'}]} as Memory;
 const current={id:'generated-new',title:'Correction',status:'published',createdAt:'2026-10-29T03:00:00Z',validFrom:'2026-10-29T02:00:00Z',validUntil:'2026-10-30T02:00:00Z',relations:[{kind:'supersedes',memoryId:old.id}]} as Memory;
