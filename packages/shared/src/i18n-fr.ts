@@ -7208,6 +7208,7 @@ export const french: Readonly<Record<string, string>> = {
   "正在安装": "Installation en cours",
   "安装失败": "Échec de l'installation",
   "等待节点重启": "En attente du redémarrage du nœud",
+  "需要构建": "Nécessite une compilation",
   "运行中": "En cours d'exécution",
   "已停用": "Désactivé",
   "停用中": "Désactivation en cours",
@@ -10105,5 +10106,15 @@ export const french: Readonly<Record<string, string>> = {
   "等你补充": "À compléter",
   "暂停全部采集": "Suspendre toute la collecte",
   "暂停屏幕采集": "Suspendre la capture d'écran",
-  "索引处理完成": "Traitement de l'index terminé"
+  "索引处理完成": "Traitement de l'index terminé",
+  "仍在运行的版本：{0}": "Version toujours en cours d’exécution : {0}",
+  "候选版本": "Version candidate",
+  "候选版本未生效：{0}": "La version candidate n’a pas pris effet : {0}",
+  "插件中心暂时不可用；请重新加载或返回设置。": "Le centre de plugins est temporairement indisponible. Rechargez la page ou revenez aux réglages.",
+  "插件构建": "Builds de plugins",
+  "构建版本与配置实例分开；候选失败时仍显示实际运行的版本。": "Les versions de build et les instances configurées sont distinctes ; un candidat en échec affiche toujours la version réellement en cours d’exécution.",
+  "正在启动": "Démarrage",
+  "没有正在运行的版本": "Aucune version n’est en cours d’exécution",
+  "阻塞原因": "Blocages",
+  "需要重新构建（requires-build）": "Reconstruction requise (requires-build)"
 };

@@ -3,14 +3,14 @@ import {ActiveExecutionBudget,DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active
 import {codexFailure,codexUsage} from './codex-protocol.js';
 import type {TokenUsage} from '@mote/shared';
 import {normalizeCodexServiceTier} from '@mote/shared/models';
-import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
-import {mkdtemp,mkdir,symlink,rm,writeFile,access} from 'node:fs/promises';
-import {tmpdir,homedir} from 'node:os';
-import {join,resolve} from 'node:path';
+import type {ChildProcessWithoutNullStreams} from 'node:child_process';
+import {rm} from 'node:fs/promises';
 import {AgentNotConfiguredError,AgentProviderError,AgentTimeoutError,type AgentOptions,type AgentTraceEvent} from './types.js';
 import {codexImageMetadata,codexImageSteerInputs,type ImagePayload} from './tools/image-result.js';
+import {launchCodexAppServer} from './runtime/codex/launch.js';
 
 export type CodexTool={type:'function';name:string;description:string;inputSchema:unknown};
+export type CodexToolDelivery=(result:unknown)=>Promise<unknown>;
 /** The receipt writer definitively rejected the request (non-2xx), so the Host
  * did not apply it. Network/transport failures are not this error and remain
  * ambiguous. */
@@ -65,7 +65,7 @@ export class CodexSession {
   private turnError?:unknown;
   private usageInterrupted=false;
   private imageSettlements=new Map<string,'true-pending'|'true'|'true-rejected'|'true-unknown'|'false'>();
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>,private assertImageDeliveryCurrent?:()=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'|'authorizeModelRequest'>,private toolCall:(name:string,args:unknown,callId:string,deliver:CodexToolDelivery)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void,private confirmImageDeliveryPort?:(token:string,delivered:boolean)=>unknown|Promise<unknown>,private assertImageDeliveryCurrent?:()=>void){this.budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);}
 
   /** True is attempted at most once. A definitive non-2xx rejection allows one
    * false fallback to release the Host reservation; a network-unknown true
@@ -99,32 +99,11 @@ export class CodexSession {
   private async initialize(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
     this.allowNative=Boolean(workspace);
     if(this.ending)throw new AgentProviderError();
-    this.root=await mkdtemp(join(tmpdir(),'mote-codex-'));
     try{
-      const home=join(this.root,'home'),cwd=workspace??join(this.root,'workspace');
-      await mkdir(home,{mode:0o700});if(!workspace)await mkdir(cwd,{mode:0o700});
-      const authHome=resolve(this.options.codex?.home??process.env.MOTE_CODEX_HOME??process.env.CODEX_HOME??join(homedir(),'.codex'));
-      try{await access(join(authHome,'auth.json'));await symlink(join(authHome,'auth.json'),join(home,'auth.json'));}
-      catch{throw new AgentNotConfiguredError();}
-      // No credential is read into prompts, process arguments, logs, or API responses.
-      const config=[
-        'cli_auth_credentials_store = "file"','approval_policy = "never"',
-        ...(this.options.serviceTier?[`service_tier = "${this.options.serviceTier}"`]:[]),
-        `sandbox_mode = "${workspace?'workspace-write':'read-only'}"`,'web_search = "disabled"',
-        'project_doc_max_bytes = 0','include_environment_context = false','include_apps_instructions = false',
-        '[tools.update_plan]','enabled = false','[tools.experimental_request_user_input]','enabled = false',
-        '[orchestrator.skills]','enabled = false','[orchestrator.mcp]','enabled = false','[skills]','include_instructions = false','[skills.bundled]','enabled = false',
-        '[history]','persistence = "none"','[analytics]','enabled = false',
-        '[features]',...['apps','connectors','plugins','hooks','codex_hooks','memories','goals','multi_agent','multi_agent_v2','collab','browser_use','computer_use','js_repl','code_mode','code_mode_only','image_generation','imagegenext','view_image','skill_mcp_dependency_install','tool_suggest','request_permissions_tool','shell_snapshot','remote_control'].map(key=>`${key} = false`),
-        ...(this.options.serviceTier==='fast'?['fast_mode = true']:[]),
-        `shell_tool = ${Boolean(workspace)}`,`unified_exec = ${Boolean(workspace)}`,`apply_patch_freeform = ${Boolean(workspace)}`,
-      ].join('\n');
-      await writeFile(join(home,'config.toml'),config,{mode:0o600});
+      const launched=await launchCodexAppServer({executable:this.options.codex?.executable,home:this.options.codex?.home,workspace,serviceTier:this.options.serviceTier});
+      this.root=launched.root;this.child=launched.child;
+      const cwd=launched.cwd;
       if(this.ending)throw new AgentProviderError();
-      const env:NodeJS.ProcessEnv={PATH:process.env.PATH,HOME:home,CODEX_HOME:home,TMPDIR:tmpdir()};
-      // Transport proxy configuration belongs to the server operator, not to the model.
-      for(const key of ['HTTPS_PROXY','HTTP_PROXY','ALL_PROXY','NO_PROXY','https_proxy','http_proxy','all_proxy','no_proxy','SystemRoot'])if(process.env[key])env[key]=process.env[key];
-      this.child=spawn(this.options.codex?.executable||process.env.MOTE_CODEX_BIN||'codex',['app-server','--listen','stdio://'],{cwd,env,stdio:'pipe'});
       this.exited=new Promise(done=>this.child!.once('close',()=>{this.fail(new AgentProviderError());done();}));
       this.child.on('error',()=>this.fail(new AgentProviderError()));
       this.child.stdin.on('error',()=>this.fail(new AgentProviderError()));
@@ -239,26 +218,31 @@ export class CodexSession {
       if(args?.threadId!==this.threadId||args.namespace){this.fail(new AgentProviderError());return;}
       this.toolQueue=this.toolQueue.then(async()=>{
         try{
-          const result=await this.toolCall(args.tool,args.arguments);
-          let content=result;
-          if(args.tool==='read_image'&&result&&typeof result==='object'&&'image' in result){
-            const value=result as any;
-            content=codexImageMetadata({source:'untrusted_personal_context',...value} as ImagePayload);
-            const token=typeof value.imageDelivery==='string'?value.imageDelivery:undefined;
-            if(token){
-              try{
+          let delivered=false;
+          const deliver:CodexToolDelivery=async result=>{
+            delivered=true;let content=result;
+            if(args.tool==='read_image'&&result&&typeof result==='object'&&'image' in result){
+              const value=result as any;
+              content=codexImageMetadata({source:'untrusted_personal_context',...value} as ImagePayload);
+              const token=typeof value.imageDelivery==='string'?value.imageDelivery:undefined;
+              if(token){
+                try{
+                  await this.deliverToolImage(args.turnId,content,value.image);
+                  await this.settleImageDelivery(token,true);
+                }catch(error){
+                  await this.settleImageDelivery(token,false);
+                  this.fail(error instanceof Error?error:new AgentProviderError());
+                  throw error;
+                }
+              }else{
                 await this.deliverToolImage(args.turnId,content,value.image);
-                await this.settleImageDelivery(token,true);
-              }catch(error){
-                await this.settleImageDelivery(token,false);
-                this.fail(error instanceof Error?error:new AgentProviderError());
-                throw error;
               }
-            }else{
-              await this.deliverToolImage(args.turnId,content,value.image);
             }
-          }
-          this.send({id:message.id,result:{contentItems:[{type:'inputText',text:JSON.stringify(content)}],success:true}});
+            this.send({id:message.id,result:{contentItems:[{type:'inputText',text:JSON.stringify(content)}],success:true}});
+            return content;
+          };
+          const result=await this.toolCall(args.tool,args.arguments,String(message.id),deliver);
+          if(!delivered)await deliver(result);
         }
         catch(error){if(!this.failure&&!this.ending)this.send({id:message.id,result:{contentItems:[{type:'inputText',text:error instanceof ContextToolError?JSON.stringify({toolError:error.toJSON()}):'Tool unavailable or arguments outside the permitted scope.'}],success:false}});}
       }).catch(()=>this.fail(new AgentProviderError()));return;

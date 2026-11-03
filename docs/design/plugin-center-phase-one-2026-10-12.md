@@ -214,7 +214,7 @@ Web/Electron 需通过实际 renderer 证明导航、安装配置表单、重启
 | `apps/desktop/src/navigation.ts` 与实际 renderer host；Android CentralCatalogDescriptor/设置/资料浏览 | 平台可用的声明式配置/状态/动作与导航 | 不能只验证 Web 或 schema；真机行为单独报告 |
 | `scripts/backup.ts`、`material-portable.ts` 与现有 portable/archive 消费入口 | provider snapshot、水位、映射、删除与恢复合同 | 当前便携归档格式与完整运行备份分开，不直接宣称旧格式承载新引擎 |
 
-已实现模块位于 `plugin-release.ts`、`plugin-center.ts`、`memory-automation.ts`、`memory-bindings.ts`、`memory-publication.ts`、`memory-adapters.ts`、固定 Mem0 worker 与 Hindsight runtime/engine。Web `PluginCenter.tsx` 和 Android `CentralPlugins.kt` 是实际消费者。上述责任分解不代表任意新 provider 已兼容；每个实例仍须实际核验。
+已实现模块位于 `plugin-release.ts`、`plugin-center.ts`、`memory-automation.ts`、`memory-bindings.ts`、`memory-publication.ts`、`memory-adapters.ts`、固定 Mem0 worker 与 Hindsight runtime/engine。Web `PluginCenter.tsx` 和 Android `plugins/PluginCenterPlugin.kt` 是实际消费者。上述责任分解不代表任意新 provider 已兼容；每个实例仍须实际核验。
 
 ## 8. 实施 waves、依赖与交付门槛
 

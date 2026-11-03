@@ -14,7 +14,7 @@ const dom=new JSDOM('<html><body></body></html>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,sessionStorage:dom.window.sessionStorage,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true});
 dom.window.confirm=()=>true;
 const {createRoot}=await import('react-dom/client');
-const {PluginQuickAdd}=await import('../src/PluginQuickAdd.js');
+const {PluginQuickAdd}=await import('../src/plugins/plugin-center/PluginQuickAdd.js');
 const tick=()=>new Promise(resolve=>setTimeout(resolve,20));
 const scope=randomUUID();
 function preview():PluginReleasePreview{return {id:randomUUID(),name:'Hindsight (Mote adapter)',version:'0.10.2',source:{repository:'vectorize-io/hindsight',tag:'v0.10.2',commit:'a'.repeat(40),digest:'b'.repeat(64)},runtime:'service',restartRequired:false,capabilities:[{id:'engine',state:'unknown'}],dependencies:['Generated Docker boundary'],access:['Configured provider endpoints'],issues:[],installable:true};}

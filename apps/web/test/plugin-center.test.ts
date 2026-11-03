@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import type {MemoryBindingView,MemoryPlanView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
+import type {MemoryBindingView,MemoryPlanView,PluginBuildView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
 import type {Api} from '../src/api.js';
 import {ApiError} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
-import {configurationValid,memoryAdmissionLabel} from '../src/plugin-center-presentation.js';
+import {configurationValid,memoryAdmissionLabel} from '../src/plugins/plugin-center/plugin-center-presentation.js';
 
 configureLocale(()=> 'zh-CN');
 const dom=new JSDOM('<html><body></body></html>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
 dom.window.confirm=()=>true;
 const {createRoot}=await import('react-dom/client');
-const {PluginCenter}=await import('../src/PluginCenter.js');
+const {PluginCenter}=await import('../src/plugins/plugin-center/index.js');
 const tick=()=>new Promise(resolve=>setTimeout(resolve,15));
 const bindingPath='/api/memory-spaces/default/binding';
 const source={repository:'https://github.com/generated-fixture/mote-compatible',tag:'generated-test-release',commit:'generated-test-commit',digest:'generated-test-digest'};
@@ -33,7 +33,7 @@ async function click(host:Element,name:string){await act(async()=>{button(host,n
 async function input(host:Element,label:string,value:string){const field=[...host.querySelectorAll('label')].find(element=>element.textContent?.startsWith(label))?.querySelector('input');assert.ok(field,`field ${label}`);await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(field,value);field.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});}
 async function mount(t:import('node:test').TestContext,api:Api,hash='#/system/plugins'){dom.window.history.replaceState(null,'',hash);const element=document.createElement('div');document.body.appendChild(element);const root=createRoot(element);t.after(async()=>{await act(async()=>root.unmount());element.remove();});await act(async()=>{root.render(React.createElement(PluginCenter,{api,onPage:()=>{}}));await tick();});return {element,root};}
 async function openInstalled(element:Element){await click(element,'已安装插件');await act(async()=>{element.querySelector<HTMLButtonElement>('.provider-card')!.click();await tick();});}
-function readFixture(path:string,plugins:PluginCenterView,binding:MemoryBindingView){if(path==='/api/model-authorization')return {authorization:{revision:1,state:'enabled'}};if(path==='/api/plugins')return structuredClone(plugins);if(path===bindingPath)return structuredClone(binding);if(path==='/api/features')return {features:[],capabilities:[]};throw new Error('Unexpected fixture read '+path);}
+function readFixture(path:string,plugins:PluginCenterView,binding:MemoryBindingView){if(path==='/api/model-authorization')return {authorization:{revision:1,state:'enabled'}};if(path==='/api/plugins')return structuredClone(plugins);if(path==='/api/plugin-builds')return [];if(path===bindingPath)return structuredClone(binding);if(path==='/api/features')return {features:[],capabilities:[]};throw new Error('Unexpected fixture read '+path);}
 
 test('installation requires an explicit pinned preview, config, verified capabilities, and separate enable; transport retry reuses its operation ID',async t=>{
  const {plugins,binding}=fixtures(),calls:{path:string;body:Record<string,unknown>}[]=[];let installAttempt=0;
@@ -172,7 +172,25 @@ test('automatic Memory desire is separate from the real global authorization; fa
  denied=true;await act(async()=>{resources(api).invalidate(path=>path==='/api/model-authorization');await tick();});assert.match(element.querySelector('.plugin-memory-control [role=status]')!.textContent!,/暂不可用/);assert.equal(element.querySelector('.plugin-waiting-authorization'),null);assert.match(element.textContent!,/Generated automatic processing authorization denied/);denied=false;state='enabled';await act(async()=>{resources(api).invalidate(path=>path==='/api/model-authorization');await tick();});assert.match(element.querySelector('.plugin-memory-control [role=status]')!.textContent!,/自动记忆已启用/);assert.equal(writes,0);
 });
 
-const pluginReadPaths=['/api/plugins',bindingPath,'/api/model-authorization'];
+test('build projection keeps desired, observed and blockers separate from the live version',async t=>{
+ const {plugins,binding}=fixtures(),build:PluginBuildView={id:'generated-build',packageId:'mote.generated',installationId:'generated-installation',revision:4,desired:{packageId:'fixture.build',version:'2.0.0',configurationRevision:1},retired:false,observed:'blocked',blockers:['requires_build'],operationId:'generated-operation',active:{packageId:'fixture.build',version:'1.0.0',configurationRevision:0},restartRequired:false};
+ const api={request:async(path:string,init?:RequestInit)=>{if(!init?.method&&path==='/api/plugin-builds')return [structuredClone(build)];return readFixture(path,plugins,binding);}} as unknown as Api;
+ const {element}=await mount(t,api);
+ assert.match(element.textContent!,/插件构建/);assert.match(element.textContent!,/候选版本/);assert.match(element.textContent!,/fixture\.build@2\.0\.0/);assert.match(element.textContent!,/fixture\.build@1\.0\.0/);assert.match(element.textContent!,/requires-build/);assert.match(element.textContent!,/候选版本未生效/);assert.match(element.textContent!,/仍在运行的版本/);assert.doesNotMatch(element.textContent!,/已升级/);
+ build.observed='active';build.blockers=[];build.desired=structuredClone(build.active!);await act(async()=>{resources(api).invalidate(path=>path==='/api/plugin-builds');await tick();});
+ assert.match(element.textContent!,/运行中/);assert.doesNotMatch(element.textContent!,/候选版本未生效/);assert.doesNotMatch(element.textContent!,/已升级/);
+});
+
+test('a failed disable keeps the desired state and reuses its original operation identity',async t=>{
+ const {plugins,binding}=fixtures();plugins.packages=[structuredClone(packageFixture)];plugins.instances=[{...structuredClone(instanceFixture),desired:true,observed:'ready',allowedActions:['configure','disable']}];plugins.packages[0].instanceIds=[instanceFixture.id];
+ const writes:{path:string;body:Record<string,unknown>}[]=[];let fail=true;
+ const api={request:async(path:string,init?:RequestInit)=>{if(!init?.method)return readFixture(path,plugins,binding);const body=JSON.parse(String(init.body));writes.push({path,body});if(fail){fail=false;throw new TypeError('Generated disable response lost');}return structuredClone(plugins.instances[0]);}} as unknown as Api;
+ const {element}=await mount(t,api);await openInstalled(element);assert.match(element.textContent!,/已选择启用/);await click(element,'停用');
+ const instance=element.querySelector('.plugin-instance')!;assert.match(element.textContent!,/连接暂时中断/);assert.match(instance.textContent!,/已选择启用/);assert.doesNotMatch(instance.textContent!,/已停用/);assert.equal(writes.length,1);
+ await click(element,'停用');assert.equal(writes.length,2,'clicking the original action again retries the same unresolved intent');assert.equal(writes[0].path,writes[1].path);assert.equal(writes[1].body.operationId,writes[0].body.operationId);assert.equal(writes[1].body.expectedRevision,writes[0].body.expectedRevision);
+});
+
+const pluginReadPaths=['/api/plugins','/api/plugin-builds',bindingPath,'/api/model-authorization'];
 function generatedPluginApi(){
  const data=fixtures(),reads:{path:string;signal?:AbortSignal|null}[]=[],feeds:{path:string;signal?:AbortSignal|null}[]=[],writes:{path:string;body:any;signal?:AbortSignal|null}[]=[];
  const authorization={authorization:{revision:1,state:'enabled'}};let change={cursor:0,ids:[] as string[],reset:false,hasMore:false};
@@ -195,7 +213,7 @@ async function pluginClock(t:import('node:test').TestContext,api:Api,hash='#/sys
  return{element,render,leave:()=>act(async()=>root.render(null)),tick:flush,visibility:async(value:boolean)=>{hidden=value;await act(async()=>{document.dispatchEvent(new dom.window.Event('visibilitychange'));});},click:async(name:string)=>{await act(async()=>button(element,name).click());await flush();},installed:async()=>{await act(async()=>button(element,'已安装插件').click());await act(async()=>element.querySelector<HTMLButtonElement>('.provider-card')!.click());await flush();}};
 }
 
-test('plugin foreground coalesces three idle shared resources after hidden 60s and preserves all 3s fallbacks',async t=>{
+test('plugin foreground coalesces four idle shared resources after hidden 60s and preserves all 3s fallbacks',async t=>{
  const f=generatedPluginApi();f.binding.admission.queued=0;f.binding.admission.running=0;
  const ui=await pluginClock(t,f.api,undefined,2);for(const path of pluginReadPaths)assert.equal(f.count(path),1);assert.equal(f.feeds.length,1,'one existing feed subscription per Api');
  await ui.visibility(true);f.binding.activePlan.name='Generated remote plan';f.authorization.authorization.state='paused';await ui.tick(60000);
@@ -220,7 +238,7 @@ test('plugin foreground hint follows a held read once without aborting it or dup
  f.read(undefined);await act(async()=>release(captured));await ui.tick();assert.equal(f.count('/api/plugins'),3,'one fresh follow-up after held completion');
 });
 
-test('plugin foreground keeps three 3s resource reads while an installation preview command is busy',async t=>{
+test('plugin foreground keeps four 3s resource reads while an installation preview command is busy',async t=>{
  const f=generatedPluginApi(),ui=await pluginClock(t,f.api,'#/system/plugins?tab=discover');let finish!:(value:unknown)=>void;
  f.write(path=>path==='/api/plugins/resolve'?new Promise(resolve=>finish=resolve):undefined);
  await act(async()=>ui.element.querySelector<HTMLElement>('.plugin-discovery summary')!.click());await ui.click('选择仓库');await ui.click('预览发布包');assert.equal(typeof finish,'function');const before=pluginReadPaths.map(path=>f.count(path));

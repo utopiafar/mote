@@ -6,6 +6,7 @@ import { useResource } from '../useResource';
 import {webFeatures} from './registry';
 import {ErrorNotice,Spinner} from '../shell-components';
 import {errorMessage} from '../api';
+import {PluginCenterRescue} from '../plugins/plugin-center/rescue';
 import type { PageProps,ViewProps } from './types';
 class ViewBoundary extends React.Component<{fallback:React.ReactNode;children:React.ReactNode},{failed:boolean}>{
   state={failed:false};static getDerivedStateFromError(){return {failed:true};}
@@ -25,8 +26,8 @@ export function FeaturePage({page,props}:{page:string;props:PageProps}){
   const entry=webFeatures.page(page);
   const remote=entry?.requires?.filter(dep=>typeof dep==='string'||dep.host==='server')??[];
   const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);
-  const unavailable=<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>;
-  if(remote.length&&capabilities.error)return <ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
+  const unavailable=page==='extensions'?<PluginCenterRescue onPage={props.onPage}/>:<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>;
+  if(remote.length&&capabilities.error)return page==='extensions'?unavailable:<ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
   if(remote.length&&!capabilities.data)return <Spinner/>;
   if(remote.length&&(!capabilities.data||capabilities.data.schemaVersion!==1||!featureRequirementsAvailable(remote,capabilities.data)))return unavailable;
   return <ViewBoundary key={page} fallback={unavailable}>{entry?<PageContent entry={entry} props={props}/>:unavailable}</ViewBoundary>;

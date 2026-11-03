@@ -1,5 +1,8 @@
 package dev.mote.collector
 
+import dev.mote.collector.plugins.PluginControlClient
+import dev.mote.collector.plugins.PluginControlProjection
+import dev.mote.collector.plugins.PluginField
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
