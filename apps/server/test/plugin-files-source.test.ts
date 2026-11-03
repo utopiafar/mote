@@ -27,7 +27,7 @@ function fixture(t:any,options:{sweepIntervalMs?:number;clock?:()=>number}={}){
   const store=new Store(directory,{maxStorageBytes:200*1024*1024}),sources=new SourceStore(store);
   sources.register({id:sourceId,name:'Generated phone',kind:'local-files',deviceId:sourceId,platform:'android',retention:'archive'});
   const archivedFiles=new ArchivedFileStore(store),allowed={value:true};
-  const source=createFilesSource({store,sources,archivedFiles,rawAccess:{
+  const source=createFilesSource({store,sources,archivedFiles,registerRoutes:registerFileRoutes,rawAccess:{
     mayReadFileVersion:()=>allowed.value,mayReadArchivedFile:()=>allowed.value,
     mayListSourceFiles:()=>allowed.value,mayListArchivedFiles:()=>allowed.value,
   }},{sweepIntervalMs:options.sweepIntervalMs??0,...(options.clock?{clock:options.clock}:{})});
@@ -163,6 +163,58 @@ test('HTTP playback cookie is scoped to the issuing file and stops verifying aft
   assert.equal(verify(request),false);
 });
 
+test('files-source route contribution keeps ranged original reads and source authorization, and rejects traffic after quiesce',async t=>{
+  const f=fixture(t);await f.source.prepare();f.source.start();
+  const app=Fastify();t.after(()=>app.close());
+  let playback:(req:unknown)=>boolean=()=>false;
+  const files=f.source.assemblyForRoutes().files,bytes=Buffer.from('0123456789'),input=manifest(bytes);
+  const upload=files.begin(input,()=>{});files.part(upload.uploadId,0,bytes,()=>{});const ack=await files.commit(upload.uploadId,()=>{});
+  f.source.routes(app,{
+    processing:{} as FileProcessing,
+    ingress:new IngressService(f.store,f.sources,files),
+    authorize:(_req,sourceId)=>{if(!f.allowed.value)throw new StoreError('Source is not authorized',403);},
+    device:()=>undefined,
+    evidence:{evidence:()=>[{}]} as any,
+    withOwnerIntent:async(_id:string,task:()=>unknown)=>task(),
+    withOwnerBatch:async(_ids:readonly string[],task:()=>unknown)=>task(),
+    setPlaybackAuthorization:value=>{playback=value;},
+  });
+  await app.ready();
+  const issued=await app.inject({method:'POST',url:`/api/files/${ack.id}/playback`,payload:{}});
+  assert.equal(issued.statusCode,200,issued.body);
+  const cookie=String(issued.headers['set-cookie']).split(';')[0];
+  assert.equal(playback({routeOptions:{url:'/api/files/:id/content'},method:'GET',params:{id:ack.id},headers:{cookie}}),true);
+  const content=await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie,range:'bytes=2-5'}});
+  assert.equal(content.statusCode,206);assert.equal(content.body,'2345');
+  assert.equal((await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie,range:'bytes=99-100'}})).statusCode,416);
+  f.allowed.value=false;
+  assert.equal((await app.inject({url:`/api/files/${ack.id}`,headers:{cookie}})).statusCode,403);
+  f.allowed.value=true;
+  f.source.quiesce('test');
+  assert.equal((await app.inject({url:'/api/files',headers:{cookie}})).statusCode,503);
+});
+
+test('a new files-source activation on the same profile reads the previously written original',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-files-restart-'));
+  const access={mayReadFileVersion:()=>true,mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false};
+  const open=()=>{
+    const store=new Store(directory,{maxStorageBytes:200*1024*1024}),sources=new SourceStore(store);
+    sources.register({id:sourceId,name:'Generated phone',kind:'local-files',deviceId:sourceId,platform:'android',retention:'archive'});
+    return {store,sources};
+  };
+  const first=open();
+  let second:ReturnType<typeof open>|undefined,secondSource:ReturnType<typeof createFilesSource>|undefined;
+  t.after(async()=>{await secondSource?.close();first.store.close();second?.store.close();rmSync(directory,{recursive:true,force:true});});
+  const firstSource=createFilesSource({store:first.store,sources:first.sources,archivedFiles:new ArchivedFileStore(first.store),registerRoutes:registerFileRoutes,rawAccess:access},{sweepIntervalMs:0});
+  await firstSource.prepare();firstSource.start();
+  const bytes=Buffer.from('Generated restart bytes'),input=manifest(bytes),files=firstSource.assemblyForRoutes().files;
+  const upload=files.begin(input,()=>{});files.part(upload.uploadId,0,bytes,()=>{});const ack=await files.commit(upload.uploadId,()=>{});
+  await firstSource.stop();
+  second=open();secondSource=createFilesSource({store:second.store,sources:second.sources,archivedFiles:new ArchivedFileStore(second.store),registerRoutes:registerFileRoutes,rawAccess:access},{sweepIntervalMs:0});
+  await secondSource.prepare();secondSource.start();
+  assert.deepEqual(Buffer.concat([...secondSource.assemblyForRoutes().files.bytes(ack.id)]),bytes);
+});
+
 test('files-source factory publishes only the read-only original port and closes with its host scope',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-files-port-')),store=new Store(directory),sources=new SourceStore(store);
   sources.register({id:sourceId,name:'Generated phone',kind:'local-files',deviceId:sourceId,platform:'android',retention:'archive'});
@@ -210,7 +262,7 @@ test('mote.files feature registration never closes the plugin-owned FileStore an
   const app=Fastify(),scope=new ServerFeatureScope();t.after(async()=>{await app.close();});
   let playback:(req:unknown)=>boolean=()=>true;
   registerFilesFeature(app,{
-    files:f.source.assemblyForRoutes().files,processing:{prepare(){},close(){}} as any,ingress:{} as any,
+    processing:{prepare(){},close(){}} as any,ingress:{} as any,
     sourceOwner:()=>{},credential:()=>undefined,evidenceReader:{evidence:()=>[{}]} as any,
     executor:{tick:()=>0} as any,withMediaOwnerIntent:async(_id:string,task:()=>unknown)=>task(),
     withMediaOwnerBatch:async(_ids:readonly string[],task:()=>unknown)=>task(),
