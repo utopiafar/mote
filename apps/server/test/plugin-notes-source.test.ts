@@ -34,8 +34,10 @@ async function fixture(t:any){
     noteDeletion:new MaterialNoteDeletion(node.store,node.materials),
   });
   await source.prepare();source.start();
-  const app=Fastify();
-  registerNotesFeature(app,{...node.featureServices,notesSource:source.assemblyForRoutes()} as any);
+  const app=Fastify(),pins=new WeakMap<object,RequestAuthority>();
+  app.addHook('onRequest',async request=>{if(!request.headers.authorization)return;pins.set(request,node.authorizationPlatform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
+  app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)node.authorizationPlatform.releaseRequest(pin);});
+  registerNotesFeature(app,{...node.featureServices,notesSource:source.assemblyForRoutes(),notesCapture:{authority:node.authorizationPlatform,route:{request:request=>pins.get(request)},intake:node.captureIntake.ports.captureIntake}} as any);
   await app.ready();
   t.after(async()=>{await app.close();await source.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   return {node,source,app,assembly:source.assemblyForRoutes(),headers:{authorization:'Bearer '+config.token}};
