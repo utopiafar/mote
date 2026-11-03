@@ -251,11 +251,16 @@ export class PluginCenter {
   private async applyBuild(id:string,operationId:string){
     let record=this.control.build(id)!;
     if(record.operationId!==operationId||!this.accepting)return;
-    const current=this.buildHandles.get(id);this.buildHandles.delete(id);
+    const current=this.buildHandles.get(id);
     try{
-      await current?.handle.close(record.desired?'upgrade':'disabled');
-      record=this.control.build(id)!;if(record.operationId!==operationId||!this.accepting)return;
-      if(!record.desired){record.observed='stopped';this.control.saveBuild(record);return;}
+      // A replacement installs its activation next to the running one; only a
+      // completed candidate is registered active and retires the prior handle.
+      if(!record.desired){
+        this.buildHandles.delete(id);
+        await current?.handle.close('disabled');
+        record=this.control.build(id)!;if(record.operationId!==operationId||!this.accepting)return;
+        record.observed='stopped';this.control.saveBuild(record);return;
+      }
       const selection=record.desired,build=this.builds.get(selection.packageId+'@'+selection.version);
       if(!build)throw new StoreError('Build dependency is unavailable',409);
       record.observed='starting';this.control.saveBuild(record);
@@ -268,7 +273,7 @@ export class PluginCenter {
           if(dependency.kind==='service')return pin.service.id===dependency.id&&pin.service.apiVersion===dependency.version;
           if(dependency.kind==='host')return this.hostOwner!.hostDependencies?.some(fact=>fact.id===dependency.id&&fact.version===dependency.version&&sameBinding(fact.binding,pin));
           return [...this.buildHandles.values()].some(owned=>{
-            if(!sameScope(owned.handle.identity,pin.provider.scope))return false;
+            if(owned===current||!sameScope(owned.handle.identity,pin.provider.scope))return false;
             const provider=this.builds.get(owned.selection.packageId+'@'+owned.selection.version);
             return dependency.kind==='package'?owned.selection.packageId===dependency.id&&owned.selection.version===dependency.version:
               provider?.contribution.id===dependency.id&&provider.contribution.version===dependency.version;
@@ -292,9 +297,14 @@ export class PluginCenter {
       const latest=this.control.build(id)!;
       if(!this.accepting||latest.operationId!==operationId){await handle.close('revoked');return;}
       this.buildHandles.set(id,{handle,selection});latest.observed='active';latest.blockers=[];this.control.saveBuild(latest);
+      await current?.handle.close('upgrade');
     }catch(error){
       const latest=this.control.build(id)!;if(latest.operationId!==operationId)return;
-      latest.observed='blocked';latest.blockers=[error instanceof PluginHostError?error.code:'activation_requires_attention'];this.control.saveBuild(latest);
+      // A failed candidate never kills the surviving activation; its reason is
+      // a blocker on the desired selection, not a loss of the observed one.
+      const surviving=this.buildHandles.get(id);
+      latest.observed=surviving&&!surviving.handle.signal.aborted?'active':'blocked';
+      latest.blockers=[error instanceof PluginHostError?error.code:'activation_requires_attention'];this.control.saveBuild(latest);
     }
   }
   async retireBuild(id:string,raw:unknown){
