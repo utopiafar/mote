@@ -13,6 +13,7 @@ import {
   type ToolSnapshotEntry,
 } from './descriptor.js';
 import type {HostReadOperation, HostSessionPort} from './host-session.js';
+import type {DerivedNavigationInputs} from './official-read-packs.js';
 import {toolInputSchema} from './runtime-schema.js';
 
 /** Registration lifecycle supplied by the parent. The signal and callback are
@@ -20,6 +21,14 @@ import {toolInputSchema} from './runtime-schema.js';
 export interface ToolLifecycle {
   readonly signal?: AbortSignal;
   readonly assertCurrent?: () => void;
+}
+
+/** Host assembly supplies an actual lifecycle for every pack. This does not
+ * own/close that scope: sibling packs may share it. The registry is the sole
+ * descriptor/pin authority; this object is only an acquisition batch. */
+export interface ReadPackRegistration {
+  readonly descriptors: readonly ToolDescriptor[];
+  readonly lifecycle: Required<ToolLifecycle>;
 }
 
 interface Registration {
@@ -269,5 +278,49 @@ export class ToolRegistry {
       requires: descriptor.requires,
       fingerprint,
     });
+  }
+}
+
+type DefaultReadPackFactory = (input: DerivedNavigationInputs) => readonly ToolDescriptor[];
+
+let defaultReadPackFactory: DefaultReadPackFactory | undefined;
+
+/** Official packs register their pure descriptor factory here, so the Host
+ * contribution assembly never needs a runtime import of a concrete pack. */
+export function registerDefaultReadPacks(factory: DefaultReadPackFactory): void {
+  defaultReadPackFactory = factory;
+}
+
+export function createRegisteredReadPacks(input: DerivedNavigationInputs): readonly ToolDescriptor[] {
+  if (!defaultReadPackFactory) throw new Error('Official read packs are not registered');
+  return defaultReadPackFactory(input);
+}
+
+/** Install a set of packs atomically into the one registry. A failed prepare
+ * removes only this batch's registrations; existing or replaced siblings are
+ * untouched. Descriptor execution and all receipts remain with Host session. */
+export function installReadPacks(registry: ToolRegistry, packs: readonly ReadPackRegistration[]): () => void {
+  const releases: Array<() => void> = [];
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    const errors: unknown[] = [];
+    for (const release of releases.reverse()) try { release(); } catch (error) { errors.push(error); }
+    releases.length = 0;
+    if (errors.length) throw new AggregateError(errors, 'Read pack registration cleanup failed');
+  };
+  try {
+    for (const pack of packs) {
+      pack.lifecycle.signal.throwIfAborted();
+      pack.lifecycle.assertCurrent();
+      for (const descriptor of pack.descriptors) releases.push(registry.register(descriptor, pack.lifecycle));
+      pack.lifecycle.signal.throwIfAborted();
+      pack.lifecycle.assertCurrent();
+    }
+    return close;
+  } catch (primary) {
+    try { close(); } catch (cleanup) { throw new AggregateError([primary, cleanup], 'Read pack preparation and cleanup failed', {cause: primary}); }
+    throw primary;
   }
 }
