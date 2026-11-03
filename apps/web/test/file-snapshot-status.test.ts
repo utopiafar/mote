@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {Files,FileDetail} from '../src/Files.js';
+import {Files,FileDetail} from '../src/plugins/intake/Files.js';
 import type {Api} from '../src/api.js';
 
 // Generated metadata only. The visible status must explain why no original was uploaded.

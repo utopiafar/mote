@@ -5,7 +5,7 @@ import {featureRequirementsAvailable} from '@mote/shared';
 import {DiscoveryLink,DiscoveryProvider} from './DiscoveryLink';
 import {getLocale,moteText} from '@mote/shared/i18n';
 import {ArrowRight,ArrowUpRight,ChevronRight,Database,Link2,MessageCircle,Sparkles} from 'lucide-react';
-import {answerPreview} from './AnswerMarkdown';
+import {answerPreview} from './plugins/ask/AnswerMarkdown';
 import {dateTime,errorMessage,type Answer,type Api,type Device,type Range,type Status} from './api';
 import {type Page} from './navigation';
 import {FeatureHome} from './features/home';

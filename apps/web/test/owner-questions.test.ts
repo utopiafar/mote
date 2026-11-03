@@ -8,7 +8,7 @@ import {ownerQuestionRoute,readOwnerQuestion,ownerQuestionListPath} from '../src
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 import type {OwnerQuestion} from '@mote/shared';
-import {Conversations} from '../src/Conversations.js';
+import {Conversations} from '../src/plugins/ask/Conversations.js';
 import { featuresReady } from '../src/features/bootstrap.js';
 import { webFeatures } from '../src/features/registry.js';
 import { FeaturePanels } from '../src/features/runtime.js';
@@ -262,7 +262,7 @@ test('a supplemental draft and unresolved reply identity survive leaving the que
 });
 
 test('standalone Ask questions retain feature capability withdrawal and cannot acquire a replacement material title',async t=>{
- const {root,d,w}=await fixture(t);await featuresReady;const {Ask}=await import('../src/Ask');let enabled=true;
+ const {root,d,w}=await fixture(t);await featuresReady;const {Ask}=await import('../src/plugins/ask/Ask');let enabled=true;
  const capabilities=['http:GET:/api/owner-questions','http:GET:/api/owner-questions/:id','http:POST:/api/owner-questions/:id/reply'];
  const api={request:async(path:string)=>{if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:enabled?capabilities.map(id=>({id,version:'1',surface:'data',featureId:'mote.owner-questions',state:'active'})):[]};if(path.startsWith('/api/materials/'))return {material:{ref:'material:replacement@new',title:'Generated replacement title'}};if(path.startsWith('/api/owner-questions?'))return {items:[generated],nextCursor:null};return generated;}} as Api;
  w.history.replaceState(null,'','#/ask?question='+generated.id);await act(async()=>root.render(React.createElement(Ask,{api,status:{agent:{configured:false}} as any,devices:[],onOpen:()=>{},onInsights:()=>{},onSettings:()=>{}})));assert.ok(d.querySelector('.owner-question-workspace h1'));assert.equal(d.querySelector('.conversation-toolbar'),null);assert.equal(d.querySelector('.model-notice'),null);assert.doesNotMatch(d.body.textContent!,/Generated replacement title/);

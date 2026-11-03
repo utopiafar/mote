@@ -235,6 +235,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     app.post('/api/login/requests',{bodyLimit:8192},request=>writable().handoffs.create(request.body));
     app.get('/api/login/requests/:id',request=>readable().handoffs.detail((request.params as {id:string}).id));
     app.post('/api/login/requests/:id/approve',{bodyLimit:8192},request=>writable().handoffs.approve((request.params as {id:string}).id,authorize(request)));
+    app.post('/api/login/requests/:id/reject',{bodyLimit:8192},request=>writable().handoffs.reject((request.params as {id:string}).id,authorize(request)));
     app.post('/api/login/poll',{bodyLimit:8192},request=>writable().handoffs.poll(request.body));
     app.post('/api/login/ack',{bodyLimit:8192},request=>writable().handoffs.poll(request.body,true));
     app.post('/api/login/session',{bodyLimit:8192},async request=>{

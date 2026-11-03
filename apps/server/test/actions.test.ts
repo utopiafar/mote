@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {QueryInput} from '@mote/agent';
+import {buildContextEnvelope,prepareTaskContext,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {calendarEventSchema,calendarDescription} from '@mote/shared';
 import {Store} from '../src/store.js';
@@ -40,6 +40,17 @@ test('uploaded originals produce evidence-backed proposals; writes require one e
  assert.equal(f.actions.receipt(a.id,'phone',{operationId:accepted.operationId,status:'succeeded',externalId:'generated-event-1'}).status,'succeeded');
  assert.throws(()=>f.actions.receipt(a.id,'phone',{operationId:accepted.operationId,status:'succeeded',externalId:'different'}),{statusCode:409});
  await f.actions.tick();assert.equal(f.calls.length,1);assert.equal(f.actions.list().length,1);
+});
+test('registered calendar descriptor carries the real action input while the host still validates the candidate',async t=>{
+ const f=fixture(t,async input=>{
+  const prepared=prepareTaskContext(input),envelope=buildContextEnvelope(input,[]);
+  assert.equal(prepared.id,'calendar');assert.equal(prepared.version,'1');assert.equal(prepared.responseMode,'calendar-extraction');
+  assert.equal(envelope.taskId,'calendar');assert.deepEqual(envelope.taskProfile,{output:'calendar-extraction',retrieval:'evidence'});
+  assert.equal(envelope.actionCatalog.tool,'action_catalog');assert.match(envelope.procedure,/Propose personal calendar events/);
+  return result(input.evidenceIds![0]);
+ });
+ await f.sources.upsert('fixtures',record());await f.actions.tick();
+ const proposal=f.actions.list()[0];assert.equal(proposal.status,'proposed');assert.equal(f.calls.length,1);
 });
 test('continuous captures and late OCR updates are discovered; obsolete proposals cannot be confirmed',async t=>{
  const f=fixture(t);const id=randomUUID();await f.store.ingest({id,deviceId:'capture-phone',deviceName:'合成手机',platform:'android',capturedAt:'2026-09-16T01:00:00Z',durationMs:0,source:'notification',appId:'fixture.notification',appName:'合成通知',privacy:{collection:'content',mode:'none'},metadata:{version:1,observedAt:'2026-09-16T01:00:00Z',collector:{method:'notification_listener'},observation:{sessionId:randomUUID(),elapsedRealtimeMs:1000},notification:{action:'posted',notificationKey:'ab'.repeat(32),postedAt:'2026-09-16T01:00:00Z',ongoing:false,groupSummary:false,text}}});

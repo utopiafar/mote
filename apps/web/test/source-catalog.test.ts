@@ -7,8 +7,8 @@ import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import type {FeatureCapability,FeatureInventory,RecordingStatus} from '@mote/shared';
 import type {Api} from '../src/api.js';
-import {SourceCatalog} from '../src/SourceCatalog.js';
-import {Sources} from '../src/Sources.js';
+import {SourceCatalog} from '../src/plugins/sources/SourceCatalog.js';
+import {Sources} from '../src/plugins/sources/Sources.js';
 import {FeatureGuide} from '../src/FeatureGuide.js';
 import {webFeatures} from '../src/features/registry.js';
 import {resolveDiscoveryTarget} from '../src/discovery-availability.js';
@@ -38,6 +38,7 @@ async function fixture(t:import('node:test').TestContext,options:{capabilities:F
     reads.push(path);
     if(path==='/api/features')return structuredClone(currentInventory);
     if(path==='/api/connectors/status'){if(options.statusError)throw new Error('Generated connector status read failed');return options.emptyStatus?{}:{[options.statusKey??recorderKey]:structuredClone(options.recorderStatus??recorder),gmail:{category:'mail',provider:'gmail'}};}
+    if(path==='/api/connectors/lark')return {installed:false,configured:false,connected:false,missingScopes:[],selection:{documents:[],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false}};
     if(path==='/api/sources')return {items:[]};
     if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
     throw new Error('Unexpected generated catalog read '+path);
