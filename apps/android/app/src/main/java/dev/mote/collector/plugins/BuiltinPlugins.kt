@@ -11,4 +11,6 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     NotesPlugin.register(this, buildId)
     NativeAskPlugin.register(this, buildId)
     registerPluginCenter(buildId)
+    NativeAdministrationPlugin.register(this, buildId)
+    NativeSystemToolsPlugin.register(this, buildId)
 }

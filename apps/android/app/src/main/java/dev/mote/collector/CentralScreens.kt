@@ -6,6 +6,7 @@ import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
 import android.widget.*
+import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeAskPlugin
 import org.json.JSONArray
 import org.json.JSONObject
@@ -58,7 +59,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private var detailBack: (() -> Unit)? = null
     private var noteHistory = JSONObject()
     private val library = CentralLibrary(this)
-    private val admin = CentralAdmin(this)
+    private val admin = NativeAdministrationPlugin.owner(ui).centralAdmin(this)
     private val activity = CentralWorkActivity(this)
     private val insights = CentralInsights(this)
 

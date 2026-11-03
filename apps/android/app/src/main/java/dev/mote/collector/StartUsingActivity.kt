@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
+import dev.mote.collector.plugins.NativeAdministrationPlugin
 
 /** Installation guidance is read or copied explicitly; this page never installs a service. */
 class StartUsingActivity : MoteActivity() {
@@ -27,10 +28,10 @@ class StartUsingActivity : MoteActivity() {
         text(MoteI18n.text("先准备你的中央档案"),NativeFontRole.TITLE_MOBILE)
         text(MoteI18n.text("在电脑上请安装助手准备 Central。完成后，用它给出的地址打开工作台，再生成设备连接邀请。"))
         button(MoteI18n.text("复制给安装助手"),true) {
-            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Mote",INSTALL_PROMPT))
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Mote",NativeAdministrationPlugin.INSTALL_PROMPT))
             android.widget.Toast.makeText(this,MoteI18n.text("已复制"),android.widget.Toast.LENGTH_SHORT).show()
         }
-        val prompt = TextView(this).apply { text = INSTALL_PROMPT; visibility = View.GONE; setTextIsSelectable(true); MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED) }
+        val prompt = TextView(this).apply { text = NativeAdministrationPlugin.INSTALL_PROMPT; visibility = View.GONE; setTextIsSelectable(true); MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED) }
         body.addView(View(this).apply { MoteUi.backgroundColor(this,NativeColorRole.DIVIDER) },android.widget.LinearLayout.LayoutParams(-1,moteDp(1)))
         lateinit var disclosure: TextView
         disclosure=action(MoteI18n.text("查看安装提示词")) {
@@ -38,20 +39,11 @@ class StartUsingActivity : MoteActivity() {
             disclosure.text=(if(prompt.visibility==View.VISIBLE) "▾ " else "▸ ")+MoteI18n.text("查看安装提示词")
         }.apply { text="▸ "+MoteI18n.text("查看安装提示词") }
         body.addView(prompt)
-        action(MoteI18n.text("查看安装文档"),link=true) { startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/utopiafar/mote/blob/main/docs/agent-install.md"))) }
+        action(MoteI18n.text("查看安装文档"),link=true) { startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(NativeAdministrationPlugin.INSTALL_DOCUMENT))) }
         body.addView(View(this).apply { MoteUi.backgroundColor(this,NativeColorRole.DIVIDER) },android.widget.LinearLayout.LayoutParams(-1,moteDp(1)).apply { topMargin=moteDp(20); bottomMargin=moteDp(12) })
         action(MoteI18n.text("现在先记下来")) { openRecordEditor(); finish() }
     }
     companion object {
-        internal val INSTALL_PROMPT = """Help me install Mote from https://github.com/utopiafar/mote.
-Read docs/agent-install.md and the linked deployment instructions first.
-Inspect my environment and any existing Mote installation without changing it.
-Use the project's CLI to create an isolated local trial, or reuse the installation
-I explicitly choose. Preserve existing archives, profiles, credentials and settings.
-Verify authenticated health and give me the actual Central address, then guide me
-through connecting a collector and opening its first received original in Central.
-Ask before changing network exposure, installing a persistent service, granting
-new permissions, using a paid model, or changing existing data. Keep secrets out
-of output and Git. Stop at an unavailable requirement and report what remains."""
+        internal val INSTALL_PROMPT: String get() = NativeAdministrationPlugin.INSTALL_PROMPT
     }
 }
