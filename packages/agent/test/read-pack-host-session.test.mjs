@@ -11,6 +11,27 @@ const id='11111111-1111-4111-8111-111111111111';
 const readSource={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 const completed=()=>({terminal:{kind:'completed'},candidate:{text:JSON.stringify({answer:'Generated metadata answer',citationIds:[]})}});
 
+test('Host completeness for directory and empty arrivals is published only by confirmed delivery',{timeout:5000},async()=>{
+  for(const [tool,rejectSender,complete] of [['devices',false,false],['devices',true,true],['changes',false,true]]){
+    const source={...readSource,devices:async()=>({items:[],disclosureDependencies:{version:1,complete:true,ids:[]}}),evidence:async()=>{throw Error('The Host empty arrivals snapshot needs no archive read');}};
+    const input=pinContextTools({question:'Generated completeness confirmation',hostContextToolMode:'all-native',incrementalEvidenceIds:[]},source),bridge=await startBridge(source,input);
+    const entered=deferred(),ack=deferred(),failure=Error('Generated sender rejection');
+    const session=await hostFixture(bridge,input,async(host,attempt)=>{
+      await host.tools.deliver(attempt,{callId:'generated-completeness',name:tool,arguments:{}},async payload=>{
+        assert.deepEqual(JSON.parse(payload.text).data,[]);entered.resolve();await ack.promise;if(rejectSender)throw failure;
+      });return completed();
+    });
+    try{
+      const running=session.execute(),settled=rejectSender?assert.rejects(running,error=>error===failure):running;
+      await entered.promise;
+      assert.deepEqual(bridge.evidenceDependencies,{version:1,complete:true,ids:[]});assert.equal(bridge.records.size,0);
+      ack.resolve();const result=await settled;
+      assert.deepEqual(bridge.evidenceDependencies,{version:1,complete,ids:[]});assert.equal(bridge.records.size,0);
+      if(!rejectSender){assert.equal(result.evidenceDependencies.complete,complete);assert.deepEqual(result.citations,[]);}
+    }finally{ack.resolve();await session.close();}
+  }
+});
+
 
 test('actual Host sender sees only projected pack metadata and confirms exact private contributor receipts afterward',{timeout:5000},async t=>{
   let input={question:'Generated metadata',hostContextToolMode:'all-native'};const started=deferred(),ack=deferred();
