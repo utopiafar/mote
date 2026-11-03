@@ -504,6 +504,34 @@ describe('source revisions and durable acknowledgments', () => {
     const knownEntry = Object.values(state.known as Record<string, any>).find(value => value.item.externalId === changed.externalId);
     expect(knownEntry?.revision).toBe(uploaded.revision);
   });
+  it('withdraws a removed file whose preflight request failed', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') {
+        entered = true; await gate;
+        if (!preflightFailed) { preflightFailed = true; throw new Error('capabilities failed'); }
+        return { manifestBatch: 200 };
+      }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('ACK loss'); }
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    // Absence is observed while the preflight request is still pending.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    // The preflight never committed: the next flush must withdraw, not publish.
+    await engine.flush(source, wire);
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
