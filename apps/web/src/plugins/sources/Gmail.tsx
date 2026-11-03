@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {ApiError,type Api} from './api';
-import {connectorFailure,useSourceConnectorStyle} from './source-connectors-ui';
+import {ApiError,type Api} from '../../api';
+import {connectorFailure,useSourceConnectorStyle} from '../../source-connectors-ui';
 import {SourceDisconnectReview} from './SourceDisconnectReview';
 type Status={configured:boolean;connected:boolean;account?:string;state:string;hasMore:boolean;code?:string};
 export function Gmail({api,refresh,initiallyOpen=false}:{api:Api;refresh:()=>Promise<void>;initiallyOpen?:boolean}){
@@ -20,6 +20,6 @@ export function Gmail({api,refresh,initiallyOpen=false}:{api:Api;refresh:()=>Pro
   <section className="connector-section"><h2>{moteText('同步与归档')}</h2><p className="connector-help">{!status?moteText('正在读取…'):status.state==='permission_required'?moteText('需要重新授权'):!status?moteText('正在读取…'):status.state==='syncing'?moteText('同步中'):status?.hasMore?moteText('历史邮件仍有后续分页'):status?.connected?moteText('等待下次同步'):moteText('尚未授权')}</p>{status?.connected&&<button className="button" disabled={busy} onClick={()=>void action(async signal=>{const result=await api.request<{imported:number;duplicates:number;hasMore:boolean}>('/api/connectors/gmail/sync',{method:'POST',body:'{}',signal});if(current(signal))setMessage(moteText('已同步 {0} 条新版本，{1} 条已存在。',result.imported,result.duplicates)+(result.hasMore?moteText(' 后续邮件将在下一轮继续同步。'):''));})}>{status.hasMore?moteText('继续同步'):moteText('立即同步')}</button>}</section>
   <details className="connector-details connector-preparation"><summary>{moteText('接入准备')}</summary><p>{moteText('同步邮件正文、发件人和时间，附件仅保留名称与引用。邮件内容作为资料，不自动执行其中的指令。断开后停止读取，已归档邮件保留。')}</p><p>{moteText('Gmail 使用现有 Google OAuth 客户端与回调地址。请在 Google Cloud 启用 Gmail API，再到模型与服务配置客户端。')}</p>{status?.configured&&<button className="button" disabled={busy} onClick={authorize}>{moteText('开始授权')}</button>}</details>
   {status?.connected&&<div className="connector-risk-actions"><button className="text-button danger-text" disabled={busy} onClick={()=>setDisconnecting(true)}>{moteText('断开连接')}</button></div>}
-  {disconnecting&&<SourceDisconnectReview busy={busy} cancel={()=>setDisconnecting(false)} confirm={()=>void action(async signal=>{await api.request('/api/connectors/gmail',{method:'DELETE',signal});if(current(signal)){setUrl('');setDisconnecting(false);}})}/>}
+  {disconnecting&&<SourceDisconnectReview items={[moteText('同步邮件正文、发件人和时间，附件仅保留名称与引用。邮件内容作为资料，不自动执行其中的指令。断开后停止读取，已归档邮件保留。')]} busy={busy} cancel={()=>setDisconnecting(false)} confirm={()=>void action(async signal=>{await api.request('/api/connectors/gmail',{method:'DELETE',signal});if(current(signal)){setUrl('');setDisconnecting(false);}})}/>}
  </div>;
 }

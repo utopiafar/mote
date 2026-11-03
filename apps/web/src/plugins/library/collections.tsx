@@ -12,7 +12,7 @@ import { canonicalDestination, workspaceHash } from '../../workspace-route';
 import { MediaActivitySummary } from './Media';
 import type { CollectionEntry, CollectionProps } from '../../features/types';
 const CaptureSessions = React.lazy(() => import('./CaptureSessions').then(module => ({ default: module.CaptureSessions })));
-const Sources = React.lazy(() => import('../../Sources').then(module => ({ default: module.Sources })));
+const Sources = React.lazy(() => import('../sources/Sources').then(module => ({ default: module.Sources })));
 const Memories = React.lazy(() => import('../../Memories').then(module => ({ default: module.Memories })));
 function ActivityCollection({ api, range, revision, rangeSelectionKey }: CollectionProps) {
     const continuity=rangeSelectionKey===undefined?undefined:JSON.stringify([rangeSelectionKey,range.deviceId]);
