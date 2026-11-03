@@ -625,6 +625,9 @@ export async function createContextToolSession(
           if(['catalog','sources','activity','mediaActivity','devices'].includes(operation)){
             const raw=value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
             rememberDisclosureDependencies(raw.disclosureDependencies);
+            // A directory without its producer's observation time cannot
+            // establish complete metadata lineage, even with an empty ID list.
+            if(operation==='devices'&&(typeof raw.observedAt!=='string'||!Number.isFinite(Date.parse(raw.observedAt))))state().completeLineage=false;
             if(raw.sourceContextDependencies!==undefined){const pins=sourceContextDeclarationSchema.array().safeParse(raw.sourceContextDependencies);if(pins.success)for(const pin of pins.data)rememberSourcePin(pin);else state().completeLineage=false;}
           }
           if(operation==='segments'&&value&&typeof value==='object')for(const item of (value as {items?:{id?:string;members?:string[];metadata?:{citations?:string[]}}[]}).items??[]){
@@ -659,7 +662,11 @@ export async function createContextToolSession(
           // metadata alone still never enters the delivered-original ledger.
           if(inScope(proof.record)&&visibleIds.has(proof.record.id))state().discovered.add(proof.record.id);
         }
-        if(!produced.length&&!progressOnly)state().completeLineage=false;
+        // An explicitly empty Host arrivals snapshot needs no archive read.
+        // Only its exact empty response is covered by that Host fact; extra
+        // plugin text, unknown arrivals or invented rows still lack a proof.
+        const hostEmptyChanges=tool==='changes'&&bounds.incrementalEvidenceIds?.length===0&&isDeepStrictEqual(body,{source:'untrusted_personal_context',data:[],pagination:{nextCursor:null,totalCount:0}});
+        if(!produced.length&&!progressOnly&&!hostEmptyChanges)state().completeLineage=false;
         const materialPage=tool==='material_read'?produced.find(read=>read.operation==='materialRead')?.value as {text?:unknown}|undefined:undefined;
         const traceArguments=materialPage?{ref:args.ref,offset:Number(args.offset??0),length:Number(args.length??4000)}:{...args,...scope};
         const count=tool==='material_catalog'&&data&&typeof data==='object'&&Array.isArray((data as {items?:unknown}).items)?(data as {items:unknown[]}).items.length:Array.isArray(data)?data.length:data===undefined?0:1;

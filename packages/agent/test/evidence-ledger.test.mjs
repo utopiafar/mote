@@ -5,6 +5,7 @@ import {rememberEvidence,evidenceLayers} from '../dist/evidence-ledger.js';
 import {startBridge} from '../dist/bridge.js';
 import {parseAnswer} from '../dist/index.js';
 import {randomUUID} from 'node:crypto';
+import {createDerivedNavigationPack} from '../dist/tools/packs/derived-navigation.js';
 test('evidence keeps delivered ranges per revision and layer without replacing original citation authority',()=>{
  const records=new Map(),original={id:'generated',ocrText:'Original',evidenceFingerprint:'v1',contentLayer:'L0_source_text',textRange:{start:0,end:8}};
  rememberEvidence(records,original);rememberEvidence(records,{...original,ocrText:'Model guess',contentLayer:'L2_model_interpretation'});
@@ -43,9 +44,11 @@ test('source metadata pins remain private, survive dialogue continuation and do 
  try{
   const response=await catalogRequest(bridge,'sources',{});assert.equal(response.status,200);const value=await response.json();
   assert.equal(value.data.sourceContextDependencies,undefined);assert.equal(value.data.disclosureDependencies,undefined);assert.equal(value.data.items[0].statusObservedAt,'2026-10-14T00:00:00Z');
-  assert.deepEqual(bridge.sourceContextDependencies,[description,metadata]);assert.deepEqual(observed.at(-1),[description,metadata]);assert.equal(bridge.evidenceDependencies.complete,true);assert.equal(bridge.records.size,0);
+  // The real source directory emits metadata before description; consumers
+  // validate each kind/identity, not array order. Keep both exact pins.
+  assert.deepEqual(new Set(bridge.sourceContextDependencies),new Set([description,metadata]));assert.deepEqual(new Set(observed.at(-1)),new Set([description,metadata]));assert.equal(bridge.evidenceDependencies.complete,true);assert.equal(bridge.records.size,0);
   const next=await startBridge(reader,{question:'Generated follow-up',conversation:{turns:[],omittedTurns:0,evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies}});
-  try{assert.deepEqual(next.sourceContextDependencies,[description,metadata]);assert.equal(next.evidenceDependencies.complete,true);}finally{await next.close();}
+  try{assert.deepEqual(new Set(next.sourceContextDependencies),new Set([description,metadata]));assert.equal(next.evidenceDependencies.complete,true);}finally{await next.close();}
  }finally{await bridge.close();}
  const invalid=await startBridge({...reader,sources:async()=>({items:[],disclosureDependencies:{version:1,complete:true,ids:[]},sourceContextDependencies:[{...metadata,fingerprint:'invalid'}]})},{question:'Generated invalid receipt'});
  try{assert.equal((await catalogRequest(invalid,'sources',{})).status,200);assert.equal(invalid.evidenceDependencies.complete,false);assert.deepEqual(invalid.sourceContextDependencies,[]);}finally{await invalid.close();}
@@ -74,8 +77,10 @@ test('device directory snapshots keep hard device scope, drop body fields and re
   const next=await startBridge(reader,{...input,conversation:{turns:[{question:'Generated prior',answer:'An earlier device report said paused.',createdAt:'2026-10-14T00:00:00Z',scope:{}}],omittedTurns:0,evidenceDependencies:bridge.evidenceDependencies}});
   try{const current=await catalogRequest(next,'devices',{});assert.equal(current.status,200);const data=(await current.json()).data;assert.equal(data[0].healthReport.statusAsReported,'capturing');assert.equal(data[0].healthReport.receivedAt,reportedAt);assert.equal(next.evidenceDependencies.complete,true);assert.equal(next.records.size,0);}finally{await next.close();}
  }finally{await bridge.close();}
- const missing=await startBridge({...reader,devices:async()=>({items:[],disclosureDependencies:{version:1,complete:true,ids:[]}})},input);
- try{assert.equal((await catalogRequest(missing,'devices',{})).status,200);assert.equal(missing.evidenceDependencies.complete,false);}finally{await missing.close();}
+ for(const observedAt of [undefined,'not-an-observation-time']){
+  const missing=await startBridge({...reader,devices:async()=>({items:[],observedAt,disclosureDependencies:{version:1,complete:true,ids:[]}})},input);
+  try{assert.equal((await catalogRequest(missing,'devices',{})).status,200);assert.equal(missing.evidenceDependencies.complete,false);}finally{await missing.close();}
+ }
 });
 test('changes metadata preserves exact filtered snapshot lineage through continuation without granting unread citations',async()=>{
  const original={id:randomUUID(),capturedAt:'2026-10-01T00:00:00Z',deviceId:'selected-device',appName:'Generated app',ocrText:'UNREAD_ORIGINAL_BODY'},outside={...original,id:randomUUID(),deviceId:'unselected-device'},unrequested={...original,id:randomUUID(),appName:'UNREQUESTED_APP'};
@@ -94,6 +99,20 @@ test('changes metadata preserves exact filtered snapshot lineage through continu
     assert.equal((await catalogRequest(next,'evidence',{ids:[original.id]})).status,400,'historical dependency IDs never grant an original read');
     assert.equal((await catalogRequest(next,'changes',{view:'overview'})).status,200);assert.deepEqual(next.evidenceDependencies,{version:1,complete:true,ids});assert.equal(next.records.size,0);
    }finally{await next.close();}
+  }finally{await bridge.close();}
+ }
+});
+test('only an exact empty changes response can use the Host empty snapshot instead of a producer read',async()=>{
+ const empty={source:'untrusted_personal_context',data:[],pagination:{nextCursor:null,totalCount:0}};
+ for(const [arrivals,body] of [[undefined,empty],[[],{...empty,note:'Generated unproved archive statement'}],[[],{...empty,data:[{id:randomUUID()}]}]]){
+  const lifetime=new AbortController(),descriptor=createDerivedNavigationPack({incrementalEvidenceIds:[]}).find(tool=>tool.name==='changes');
+  let reads=0;
+  const reader={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>{reads++;return [];},devices:async()=>[],activity:async()=>({}),
+   contextTools:()=>[{descriptors:[{...descriptor,execute:async()=>body}],lifecycle:{signal:lifetime.signal,assertCurrent(){lifetime.signal.throwIfAborted();}}}]};
+  const bridge=await startBridge(reader,{question:'Generated changes proof boundary',...(arrivals===undefined?{}:{incrementalEvidenceIds:arrivals})});
+  try{
+   const response=await catalogRequest(bridge,'changes',{view:'overview'});assert.equal(response.status,200);
+   assert.equal(bridge.evidenceDependencies.complete,false);assert.deepEqual(bridge.evidenceDependencies.ids,[]);assert.equal(bridge.records.size,0);assert.equal(reads,0);
   }finally{await bridge.close();}
  }
 });

@@ -43,15 +43,17 @@ test('a mutating and throwing public Host observer cannot change the run, finali
   // Replace only the external runtime boundary: the public facade still owns
   // the real PluginHost, leases, HostRunSession, output validation and cleanup.
   const install = PluginHost.prototype.install;
-  let runtimeRuns = 0, handleCloses = 0;
+  let runtimeRuns = 0, handleCloses = 0, readyToolCount = 0;
   t.mock.method(PluginHost.prototype, 'install', function(definition) {
     return install.call(this, {...definition, factory: context => definition.factory({...context,
       provide(id, contract, value, revision) {
         if (contract.id === runtimeService.id) value = {...value, async prepare(_profile, _model, host) {
+          readyToolCount = host.tools.definitions.length;
           host.emit({type: 'tools.ready', tools: host.tools.definitions}, null);
           return {
             run: request => host.runModel(request.attempt, async () => {
               runtimeRuns++;
+              host.emit({type: 'progress', progress: {stage: 'model', message: 'Generated runtime progress'}}, request.attempt);
               host.emit({type: 'usage', usage: {inputTokens: 900, outputTokens: 100, totalTokens: 1000, requests: 1, reportedRequests: 1}}, request.attempt);
               return {terminal: {kind: 'completed'}, candidate: {text: JSON.stringify({answer: 'Generated accepted answer.', citationIds: []})}};
             }),
@@ -64,16 +66,20 @@ test('a mutating and throwing public Host observer cannot change the run, finali
       },
     })});
   });
-  const modes = [], envelopes = [], usage = [];
+  const modes = [], envelopes = [], usage = [], progress = [], ready = [];
   const agent = createAgent({reader, model: 'generated-model', apiKey: 'generated-key', baseUrl: 'http://127.0.0.1:9/v1'});
   try {
     const query = agent.query({question: 'Generated public observer fixture',
       onUsage: sample => usage.push(structuredClone(sample)),
+      onProgress: event => progress.push(structuredClone(event)),
+      onTrace: event => { if (event.type === 'bridge.ready') ready.push(structuredClone(event)); },
       onHostRunEvent(envelope) {
         assert.deepEqual(modes, ['host']);
         envelopes.push(structuredClone(envelope));
         envelope.identity.runId = 'observer-forged-run';
         if (envelope.event.type === 'usage') envelope.event.usage.totalTokens = 99999;
+        if (envelope.event.type === 'progress') envelope.event.progress.message = 'Observer-forged progress';
+        if (envelope.event.type === 'tools.ready') envelope.event.tools.splice(0);
         if (envelope.event.type === 'run.terminal') envelope.event.terminal.kind = 'failed';
         throw new Error('Generated observer failure');
       },
@@ -87,6 +93,11 @@ test('a mutating and throwing public Host observer cannot change the run, finali
     assert.deepEqual(modes, ['host']);
     assert.equal(usage.length, 1);
     assert.equal(usage[0].totalTokens, 1000);
+    assert.equal(progress.filter(event => event.message === 'Generated runtime progress').length, 1);
+    assert.ok(!JSON.stringify(progress).includes('Observer-forged'));
+    assert.equal(ready.length, 1);
+    assert.ok(readyToolCount > 0);
+    assert.equal(ready[0].payload.tools, readyToolCount);
     assert.ok(envelopes.length >= 4);
     assert.ok(envelopes.every(envelope => envelope.identity.runId === answer.runId));
     assert.equal(envelopes.filter(envelope => envelope.event.type === 'run.terminal').length, 1);
