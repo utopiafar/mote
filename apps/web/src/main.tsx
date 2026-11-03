@@ -42,7 +42,7 @@ type Range,
 type Status,
 type Api
 } from "./api";
-import { changeEvidenceRoute,readEvidenceRoute } from './evidence-route';
+import { changeEvidenceRoute,readEvidenceRoute } from './plugins/reader/evidence-route';
 import { FeaturePage } from './features/runtime';
 import { PluginCenterRescue } from './plugins/plugin-center/rescue';
 import { featuresReady, featureScopes } from './features/bootstrap';

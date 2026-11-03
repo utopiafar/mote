@@ -1,8 +1,8 @@
 import { moteText } from '@mote/shared/i18n';
 import type {SourceDocument} from '@mote/shared';
-import {type Api,dateTime} from './api';
-import {ArchivedFileButton} from './ArchivedFileButton';
-import {fileIndexCoverageLabel,fileIndexReadNote} from './file-index-presentation';
+import {type Api,dateTime} from '../../api';
+import {ArchivedFileButton} from '../../ArchivedFileButton';
+import {fileIndexCoverageLabel,fileIndexReadNote} from '../../file-index-presentation';
 
 export function SourceDocumentDetails({api,document}:{api:Api;document?:SourceDocument}){
   if(!document)return null;

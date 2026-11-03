@@ -4,7 +4,8 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {EvidenceDialog} from '../src/shell-components.js';
-import {dateTime,type Api,type Capture} from '../src/api.js';
+import {ReferenceDetail} from '../src/plugins/reader/index.js';
+import {ApiError,dateTime,type Api,type Capture} from '../src/api.js';
 
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const generated:Capture={deletion:{available:true,kind:'capture'},id,source:'note',platform:'import',capturedAt:'2026-10-13T00:00:00Z',appName:'Generated note app',windowTitle:'Generated first line',deviceId:'generated-device',deviceName:'Generated device',ocrText:'Generated first line\n  Literal screen / media / file words <script>untrusted()</script>\n',durationMs:0,blobHash:null,indexingStatus:'pending',privacy:{redacted:false,mode:'standard'}};
@@ -70,6 +71,18 @@ test('a late old-owner media page cannot replace the next owner literal original
 test('a standalone direct speech declaration does not extend exact media projection',async t=>{
  const capture={...generated,source:'file' as const,evidencePresentation:'speech-json-v1' as const,ocrText:'{"speaker":"Vendor A","text":"Literal provider words"}'},calls:string[]=[];
  const {document:d}=await fixture(t,capture,async path=>{calls.push(path);throw Error('Unexpected extra lookup');});assert.equal(d.querySelector('.evidence-text>pre')!.textContent,capture.ocrText);assert.deepEqual(calls,[]);await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());assert.equal(d.querySelector('.evidence-canonical'),null);
+});
+
+test('a revoked exact reference clears the readable body and explains why it cannot continue',async t=>{
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/library',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();
+ for(const[key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
+ const d=dom.window.document,root=createRoot(d.querySelector('#root')!),ref='artifact:generated:revision-1';let revoked=false,reads=0;
+ t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const[key,descriptor]of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}});
+ const api={request:async(path:string,init?:RequestInit)=>{if(path!=='/api/context/read')throw Error('Unexpected generated path '+path);reads++;if(revoked)throw new ApiError('generated access revoked',403);const body=JSON.parse(String(init?.body));return {items:[{id:'generated',ref,title:'Generated exact',kind:'artifact',text:'Generated exact body',textRange:{offset:body.offset,total:20,nextOffset:8}}],missingRefs:[]};},setAgentTimeout:()=>{}} as Api;
+ const until=async(check:()=>boolean)=>{const end=Date.now()+5000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated reader did not settle');};
+ await act(async()=>root.render(React.createElement(ReferenceDetail,{api,reference:ref,onOpen:()=>{}})));await until(()=>d.body.textContent!.includes('Generated exact body'));
+ revoked=true;await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent==='继续展开')!.click());await until(()=>Boolean(d.querySelector('[role=alert]')));
+ assert.equal(reads,2);assert.doesNotMatch(d.body.textContent!,/Generated exact body/);assert.match(d.querySelector('[role=alert]')!.textContent!,/generated access revoked/);
 });
 
 test('an owner-confirmed speaker name remains visible above the exact speech body',async t=>{

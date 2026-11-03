@@ -17,6 +17,10 @@
     "./runtime/dsh": {
       "types": "./dist/runtime/dsh/provider.d.ts",
       "default": "./dist/runtime/dsh/provider.js"
+    },
+    "./runtime/codex": {
+      "types": "./dist/runtime/codex/provider.d.ts",
+      "default": "./dist/runtime/codex/provider.js"
     }
   },
   "scripts": {
