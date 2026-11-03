@@ -36,6 +36,10 @@ function fileTransport(sent: { item: SourceItem; previousRevision: string | null
     if (path === '/api/file-sync/v1/manifests') {
       const results = (body.items as { item: SourceItem; previousRevision?: string | null }[]).map(manifest => {
         sent.push({ item: manifest.item, previousRevision: manifest.previousRevision ?? null });
+        // Validate the predecessor against the simulated node head: an update
+        // must chain from the committed revision, a duplicate is idempotent.
+        const head = committed.get(manifest.item.externalId) ?? null;
+        if (manifest.item.revision !== head && (manifest.previousRevision ?? null) !== head) throw new Error('predecessor mismatch (409)');
         const failOn = fail?.(manifest.item);
         if (failOn && failBeforeCommit) throw new Error('simulated ACK loss');
         committed.set(manifest.item.externalId, manifest.item.revision);
