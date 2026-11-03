@@ -1,7 +1,7 @@
 import {useSourceConnectorStyle,connectorFailure} from './source-connectors-ui';
-import {SourceDisconnectReview} from './SourceDisconnectReview';
+import {SourceDisconnectReview} from './plugins/sources/SourceDisconnectReview';
 import {recordingBindingText,recordingSyncText} from './recording-status';
-import {RecordingAuthorization} from './RecordingAuthorization';
+import {RecordingAuthorization} from './plugins/sources/RecordingAuthorization';
 import { formatEvidenceRef } from '@mote/shared';
 import {ListPagination,useCursorPages} from './ListPagination';
 import {ArchivedFileButton} from './ArchivedFileButton';
@@ -13,7 +13,7 @@ import type { RecordingStatus, RecordingSelection } from '@mote/shared';
 import { type Api } from './api';
 import { useResource } from './useResource';
 import { useHashChoice } from './useHashChoice';
-import { SourceContextFields, useSourceContextDraft } from './SourceContextEditor';
+import { SourceContextFields, useSourceContextDraft } from './plugins/sources/SourceContextEditor';
 import { useUnsavedChanges } from './unsaved';
 const readProvider=(hash:string)=>new URLSearchParams(hash.slice(hash.indexOf('?')+1)).get('provider')??'';
 const names: Record<string, string> = { feishu: '飞书录音 / 妙记', dingtalk: '钉钉录音 / 闪记' };
@@ -152,7 +152,7 @@ export function RecordingConnection({ api, provider, onOpen }: {
  {Boolean(status.counts.empty)&&<p role="status">{moteText('采集完成，暂无文字：{0} 条',status.counts.empty!)}</p>}
  {status.counts.failed > 0 && <div className="notice error" role="alert"><p>{status.counts.failed}{' '}{moteText("个步骤需要处理。")}{' '}{moteText("核对原因后，可使用上方「重试失败步骤」。转写与音频状态分别核对。")}</p>{status.steps.filter(step=>['failed','blocked'].includes(step.state)).map(step=><Step key={step.id} step={step}/>)}</div>}<details className="discovery-bounded-details" onToggle={e=>setStepsOpen(e.currentTarget.open)}><summary>{moteText('同步步骤与状态')} · {status.stepsTotal??status.steps.length}{' '}{moteText("项")}</summary>{stepsOpen&&<RecordingSteps api={api} path={path}/>}</details></>}
 
- {disconnecting&&<SourceDisconnectReview busy={busy} cancel={()=>setDisconnecting(false)} confirm={()=>{void run('DELETE').then(saved=>{if(saved)setDisconnecting(false);});}}/>}
+ {disconnecting&&<SourceDisconnectReview items={[moteText('默认用转写生成洞察，原始音频在后台备份。厂商端删除后，Mote 归档继续保留。停止同步或断开连接会保留历史资料。')]} busy={busy} cancel={()=>setDisconnecting(false)} confirm={()=>{void run('DELETE').then(saved=>{if(saved)setDisconnecting(false);});}}/>}
  {Boolean(archive.data?.items.length) && <details className="discovery-bounded-details"><summary>{moteText('最近归档的录音')} · {archive.data!.items.length}{' '}{moteText("条")}</summary><div className="discovery-bounded-list" role="region" aria-label={moteText("最近归档的录音列表")} tabIndex={0}>{archive.data!.items.map(item => <div className="source-item" key={item.id}>{item.captureId?<button className="text-button" onClick={() => onOpen(formatEvidenceRef('capture', item.captureId!))}>{item.title || moteText('原始录音')}</button>:<strong>{item.title || moteText('原始录音')}</strong>}{item.empty&&<p>{moteText('采集完成，暂无文字')}</p>}{item.unsupported&&<p>{moteText('厂商转写格式尚不支持')}</p>}{item.export&&<ArchivedFileButton api={api} id={item.export.id} name={item.export.name}/>}{item.audio && <ArchivedAudio api={api} id={item.audio.id} name={item.audio.name} mimeType={item.audio.mimeType}/>}</div>)}</div></details>}
  </section>;
 }

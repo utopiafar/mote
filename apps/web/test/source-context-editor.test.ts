@@ -4,8 +4,8 @@ import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {ApiError,type Api} from '../src/api.js';
-import {SourceContextEditor,SourceContextFields,useSourceContextDraft,type SourceContextDraft} from '../src/SourceContextEditor.js';
-import {Sources} from '../src/Sources.js';
+import {SourceContextEditor,SourceContextFields,useSourceContextDraft,type SourceContextDraft} from '../src/plugins/sources/SourceContextEditor.js';
+import {Sources} from '../src/plugins/sources/Sources.js';
 configureLocale(()=> 'zh-CN');
 async function fixture(t:any){
  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();
