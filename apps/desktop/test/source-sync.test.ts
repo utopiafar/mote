@@ -295,6 +295,22 @@ describe('source revisions and durable acknowledgments', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+  it('withdraws an uncommitted absent attempt on the managed flush path', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let fail = true;
+    const wire = fileTransport(sent, () => (fail ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    // Managed scans stage the absence with deletion tracking on and supply the
+    // head resolver; flushPending then calls flush() directly without syncScan.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    expect(engine.status().pending).toBe(0);
+    fail = false;
+    const uploaded = sent.length;
+    await engine.flush(source, wire);
+    expect(sent).toHaveLength(uploaded);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

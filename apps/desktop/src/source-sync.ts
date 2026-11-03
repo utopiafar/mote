@@ -130,9 +130,9 @@ export class SourceSync {
     });
   }
 
-  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime',oneTime=false): Promise<number> {
+  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime',oneTime=false,resolveHead?: (item: SourceItem) => Promise<string | null | undefined>): Promise<number> {
     const withdrawn: SourceItem[] = [];
-    try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue,oneTime,withdrawn)); }
+    try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue,oneTime,withdrawn,resolveHead)); }
     finally { await this.discardUnqueuedOriginals([...scan.items, ...withdrawn]); }
   }
 
@@ -170,7 +170,7 @@ export class SourceSync {
     for (const directory of items.flatMap(directories)) if (!retained.has(directory)) await rm(directory, {force:true, recursive:true}).catch(() => {});
   }
 
-  private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName,oneTime:boolean,withdrawn: SourceItem[]): Promise<number> {
+  private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName,oneTime:boolean,withdrawn: SourceItem[],resolveHead?: (item: SourceItem) => Promise<string | null | undefined>): Promise<number> {
     const knownChanges=new Map<string,Known>();
     const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
     if(oneTime&&scan.complete)next.oneTimeCompletedAt=observedAt;
@@ -200,7 +200,19 @@ export class SourceSync {
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
-    this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn);
+    const deferred: SourceItem[] = [];
+    this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn, deferred);
+    // Managed scans have no syncScan pass; resolve an attempted revision against
+    // the node head before treating it as still deliverable.
+    if (resolveHead) for (const item of deferred) {
+      const head = await resolveHead(item);
+      if (head !== null) continue;
+      next.pendingRealtime = next.pendingRealtime.filter(queued => queued !== item);
+      next.pendingHistory = next.pendingHistory.filter(queued => queued !== item);
+      const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
+      if (known) knownChanges.set(key, { ...known, contentHash: '', discoveryHash: undefined });
+      withdrawn.push(item);
+    }
     if (trackDeletions && scan.complete) {
       const seen = new Set(scan.seen);
       const identities = new Set([...Object.keys(this.data.known), ...knownChanges.keys()]);
@@ -272,6 +284,7 @@ export class SourceSync {
     if (precedingError) throw precedingError;
     await prepare?.(); return { changes, state: await this.flush(source, request, signal) };
   }
+
 
   async flush(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal, observer?: SourceUploadObserver): Promise<'ready' | 'paused'> {
     signal?.throwIfAborted();
