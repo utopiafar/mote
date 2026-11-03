@@ -77,7 +77,7 @@ export function semanticProcessor(options:{store:Store;memories:MemoryStore;quer
   }catch(error){
    // A durable owner-authorization wait spends no execution attempt and no
    // model token: it must not create a usage row that repeats every recheck.
-   if(error instanceof ProviderFailure&&error.details.admissionWaiting===true)meter.discard();
+   if(error instanceof ProviderFailure&&error.details.admissionWaiting===true&&error.details.executionStarted===false)meter.discard();
    else meter.finish('failed');
    throw error;
   }

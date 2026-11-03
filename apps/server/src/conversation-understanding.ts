@@ -162,7 +162,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
   }catch(error){
    // Same admission-wait rule as segment understanding: no receipt while the
    // owner decision is pending.
-   if(error instanceof ProviderFailure&&error.details.admissionWaiting===true)meter.discard();
+   if(error instanceof ProviderFailure&&error.details.admissionWaiting===true&&error.details.executionStarted===false)meter.discard();
    else meter.finish('failed');
    if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
  }};

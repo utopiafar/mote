@@ -3,31 +3,60 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {ProviderFailure} from '@mote/shared';
 import {Store} from '../src/store.js';
 import {UsageLedger} from '../src/usage.js';
 import {MemoryStore} from '../src/memory.js';
 import {semanticProcessor} from '../src/semantic-extraction.js';
+import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 
-const admissionWait=()=>new ProviderFailure({category:'blocked',code:'background_model_authorization_required',executionStarted:false,admissionWaiting:true,retryAfterMs:60000},'Background model processing needs owner authorization');
+const connection={id:'generated-connection',fingerprint:'a'.repeat(64)};
+type Outcome='success'|'failure'|'cancel';
 
-async function fixture(t:import('node:test').TestContext,query:(input:unknown)=>Promise<never>){
+async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{authorize:boolean;outcome:Outcome}){
   const directory=mkdtempSync(join(tmpdir(),'mote-usage-wait-')),store=new Store(directory),ledger=new UsageLedger(store),memories=new MemoryStore(store);
+  const authorization=new BackgroundModelAuthorization(store,()=>[connection]);
+  // Approval is prospective: authorize first, then receive a new original, so
+  // the allowed cases exercise a genuinely admitted receipt.
+  if(authorize)authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'authorize',connections:[connection],scope:{sourceIds:null,dataKinds:['text']}});
+  store.db.exec('BEGIN IMMEDIATE');authorization.receive('generated-original',{sourceId:'generated-source',dataKind:'text'});store.db.exec('COMMIT');
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const query=async(input:never)=>{
+    const request=input as {onUsage?:(usage:{requests:number;reportedRequests:number;inputTokens:number;outputTokens:number;totalTokens:number})=>void};
+    // Real durable admission: unapproved state throws the 60s pending failure.
+    authorization.automatic('generated-work',['generated-original'],'semantic');
+    request.onUsage?.({requests:1,reportedRequests:1,inputTokens:5,outputTokens:2,totalTokens:7});
+    if(outcome==='failure')throw Error('Generated model failure');
+    if(outcome==='cancel')throw new ProviderFailure({category:'blocked',code:'cancelled',executionStarted:true},'Generated cancellation');
+    return {answer:JSON.stringify({summary:'Generated summary',evidence:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[],trace:[],runId:randomUUID()};
+  };
   const processor=semanticProcessor({store,memories,query:query as never,records:()=>[{id:'generated-r1',ocrText:'Generated segment text',capturedAt:'2026-11-03T00:00:00.000Z'} as never],selection:()=>({configured:true,fingerprint:'generated-fingerprint',provider:'generated-provider',model:'generated-model',profileId:'generated-profile'} as never),usage:ledger});
   const input={config:{modelFingerprint:'generated-fingerprint',artifactId:'generated-artifact'},artifacts:[{outputs:[{id:'generated-artifact',kind:'segment',revision:1,metadata:{complete:true,representatives:['generated-r1'],originalCharacters:22}}]}],execution:{operationId:'generated-op'},signal:new AbortController().signal};
-  return {store,input};
+  const rows=()=>store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String((row as {json:string}).json)) as {status:string;tokens?:{totalTokens:number}});
+  return {processor,input,rows};
 }
-const rows=(store:Store)=>store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String((row as {json:string}).json)) as {status:string});
 
-test('an owner-authorization wait creates no usage row and repeats no failed metering',async t=>{
-  const {store,input}=await fixture(t,async()=>{throw admissionWait();});
-  await assert.rejects(semanticProcessor({store,memories:new MemoryStore(store),query:(async()=>{throw admissionWait();}) as never,records:()=>[{id:'generated-r1',ocrText:'Generated segment text'} as never],selection:()=>({configured:true,fingerprint:'generated-fingerprint',provider:'generated-provider',model:'generated-model',profileId:'generated-profile'} as never),usage:new UsageLedger(store)}).process(input as never));
-  assert.equal(rows(store).length,0,'a pending owner authorization must not write model_usage');
+test('repeated owner-authorization rechecks create no usage receipt and never consume a model start',async t=>{
+  const f=await fixture(t,{authorize:false,outcome:'failure'});
+  for(let attempt=0;attempt<3;attempt++)await assert.rejects(f.processor.process(f.input as never));
+  assert.equal(f.rows().length,0,'a pending owner authorization must not write model_usage');
 });
 
-test('a real model failure still finalizes one failed receipt',async t=>{
-  const {store,input}=await fixture(t,async()=>{throw Error('Generated model failure');});
-  await assert.rejects(semanticProcessor({store,memories:new MemoryStore(store),query:(async()=>{throw Error('Generated model failure');}) as never,records:()=>[{id:'generated-r1',ocrText:'Generated segment text'} as never],selection:()=>({configured:true,fingerprint:'generated-fingerprint',provider:'generated-provider',model:'generated-model',profileId:'generated-profile'} as never),usage:new UsageLedger(store)}).process(input as never));
-  const usage=rows(store);assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');
+test('after authorization, a real model start and success finalize exactly one completed receipt',async t=>{
+  const f=await fixture(t,{authorize:true,outcome:'success'});
+  await f.processor.process(f.input as never);
+  const usage=f.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'completed');assert.equal(usage[0].tokens?.totalTokens,7);
+});
+
+test('after authorization, a started model that fails finalizes exactly one failed receipt',async t=>{
+  const f=await fixture(t,{authorize:true,outcome:'failure'});
+  await assert.rejects(f.processor.process(f.input as never));
+  const usage=f.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');
+});
+
+test('after authorization, a started model that is cancelled keeps the existing failed receipt contract',async t=>{
+  const f=await fixture(t,{authorize:true,outcome:'cancel'});
+  await assert.rejects(f.processor.process(f.input as never));
+  const usage=f.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');
 });
