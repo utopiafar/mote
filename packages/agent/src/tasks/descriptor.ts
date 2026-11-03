@@ -5,6 +5,9 @@ export type TaskResponseMode = NonNullable<QueryInput['responseMode']>;
 export type TaskRetrieval = 'archive' | 'evidence' | 'none';
 export type TaskProfile = Readonly<{output: TaskResponseMode; retrieval: TaskRetrieval}>;
 export type TaskSelection = Readonly<{id: string; version: string}>;
+/** Query procedures are selected by the Host query. Import procedures are only
+ * available to the dedicated writable import runtime. */
+export type SkillAvailability = 'query' | 'import';
 
 export const TASK_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = Object.freeze({
   type: 'object',
@@ -20,6 +23,8 @@ export interface SkillDescriptor {
   readonly version: string;
   readonly description: string;
   readonly content: string;
+  /** Default query; import procedures never enter an ordinary query session. */
+  readonly availability?: SkillAvailability;
   /** Default only; an explicit Host responseMode always wins. */
   readonly responseMode?: TaskResponseMode;
 }
@@ -47,6 +52,7 @@ export type TaskContractErrorCode =
   | 'duplicate_task'
   | 'duplicate_skill'
   | 'unknown_skill'
+  | 'skill_unavailable'
   | 'invalid_task_selection'
   | 'unknown_task'
   | 'task_version_mismatch'
@@ -92,6 +98,9 @@ export function defineSkillDescriptor(input: SkillDescriptor): SkillDescriptor {
   if (value.responseMode !== undefined && (typeof value.responseMode !== 'string' || !responseModes.has(value.responseMode as TaskResponseMode))) {
     throw new TaskContractError('invalid_skill_descriptor', 'Skill responseMode must be a supported Host response mode.');
   }
+  if (value.availability !== undefined && value.availability !== 'query' && value.availability !== 'import') {
+    throw new TaskContractError('invalid_skill_descriptor', 'Skill availability must be query or import.');
+  }
   return Object.freeze({
     apiVersion: TASK_DESCRIPTOR_API_VERSION,
     id: value.id as string,
@@ -99,6 +108,7 @@ export function defineSkillDescriptor(input: SkillDescriptor): SkillDescriptor {
     version: value.version as string,
     description: value.description as string,
     content: value.content as string,
+    ...(value.availability ? {availability: value.availability as SkillAvailability} : {}),
     ...(value.responseMode ? {responseMode: value.responseMode as TaskResponseMode} : {}),
   });
 }
