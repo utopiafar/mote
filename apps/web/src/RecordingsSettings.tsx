@@ -5,7 +5,7 @@ import {RecordingAuthorization} from './RecordingAuthorization';
 import { formatEvidenceRef } from '@mote/shared';
 import {ListPagination,useCursorPages} from './ListPagination';
 import {ArchivedFileButton} from './ArchivedFileButton';
-import { ArchivedAudio } from './ArchivedAudio';
+import { ArchivedAudio } from './plugins/reader';
 import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { moteText } from '@mote/shared/i18n';

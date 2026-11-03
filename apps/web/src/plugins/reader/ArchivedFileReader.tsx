@@ -2,8 +2,8 @@ import {useEffect,useState} from 'react';
 import type {ArchivedFile} from '@mote/shared';
 import {httpStatusMessage,commonFailureMessage} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,ApiError,bytes,errorMessage} from './api';
-import {ArchivedFileButton} from './ArchivedFileButton';
+import {type Api,ApiError,bytes,errorMessage} from '../../api';
+import {ArchivedFileButton} from '../../ArchivedFileButton';
 const images=new Set(['image/png','image/jpeg','image/webp','image/gif']);
 /** Existing owner-authorized immutable archive bytes; never an invented capture ref. */
 export function ArchivedFileReader({api,file,onBack}:{api:Api;file:ArchivedFile;onBack:()=>void}){
