@@ -873,6 +873,41 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent).toHaveLength(0);
     expect(reopened.status().pending).toBe(0);
   });
+  it('serves the other lane when the preferred lane is all unreconciled absence', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    // Realtime file becomes an absent in-flight candidate with an unresolved head.
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const gated = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), true);
+    const flushing = engine.flush(source, gated as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    // A valid record waits in the history lane.
+    const message: ScannedItem = { externalId: 'message:history-1', title: 'history message', text: 'body', kind: 'message', layer: 'snapshot', deleted: false };
+    await engine.stage(scan([message]), true, undefined, 'all', 'history');
+    const wire = fileTransport(sent);
+    const headFailing = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) throw new Error('head unavailable');
+      if (path === `/api/sources/${source.id}/items`) {
+        const item = body as SourceItem;
+        sent.push({ item, previousRevision: null });
+        return sourceAck(source.id, item);
+      }
+      return wire(path, body);
+    };
+    await engine.flush(source, headFailing as any);
+    // The history record is uploaded even though realtime is blocked.
+    expect(sent.some(entry => entry.item.externalId === 'message:history-1')).toBe(true);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

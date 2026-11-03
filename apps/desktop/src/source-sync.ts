@@ -347,13 +347,18 @@ export class SourceSync {
     const deferred=new Set<string>();let rejectedStatus:number|undefined;
     while (this.status().pending) {
       signal?.throwIfAborted();
-      const eligible=(items:SourceItem[])=>items.filter(item=>!deferred.has(itemKey(item)));
-      const queue = scheduler.next(eligible(this.data.pendingRealtime).length, eligible(this.data.pendingHistory).length);
+      const eligible=(items:SourceItem[])=>items.filter(item=>!deferred.has(itemKey(item))&&!this.unreconciledAbsent.has(itemKey(item)));
+      let queue = scheduler.next(eligible(this.data.pendingRealtime).length, eligible(this.data.pendingHistory).length);
       if(!queue)break;
-      const batches = this.takeBatches(queue,deferred);
-      // Everything left is unreconciled absence or deferred: stop this slice so
-      // the caller retries later instead of spinning without progress.
-      if (!batches.length) break;
+      let batches = this.takeBatches(queue,deferred);
+      if (!batches.length) {
+        // The preferred lane only holds unreconciled absence; serve the other one
+        // in this slice instead of ending without touching uploadable records.
+        const other = queue === 'realtime' ? 'history' : 'realtime';
+        batches = this.takeBatches(other, deferred);
+        if (!batches.length) break;
+        queue = other;
+      }
       let bytes=0;
       const measured:SourceRequest=(path,body,method,signal)=>{const pending=request(path,body,method,signal);bytes+=requestBytes(body);return pending;};
       const outcomes = await Promise.all(batches.map(async batch => { const keys=batch.map(itemKey); for(const key of keys)this.inflight.add(key); try { observer?.attempt(source,batch); return { batch, result: await this.sendBatch(source, batch, measured, signal, observer) }; } catch (error) { observer?.failed(source,batch,error); return { batch, error }; } finally { for(const key of keys)this.inflight.delete(key); } }));
