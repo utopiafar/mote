@@ -220,7 +220,14 @@ export class SourceSync {
     // deletion; otherwise the ACK would tombstone a file that is present.
     if (scan.complete) {
       const present = new Set(scan.seen);
-      for (const [key, known] of Object.entries(next.known)) if (known.deletionPending && present.has(known.item.externalId)) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), deletionPending: undefined });
+      for (const [key, known] of Object.entries(next.known)) {
+        const staged = knownChanges.get(key) ?? known;
+        if (!present.has(staged.item.externalId)) continue;
+        if (!staged.deletionPending && !staged.absentWhileInflight) continue;
+        // A positive sighting cancels both absence indicators, including a scan
+        // that produces no changed item for an unchanged file.
+        knownChanges.set(key, { ...staged, deletionPending: undefined, absentWhileInflight: undefined });
+      }
     }
     const deferred: SourceItem[] = [];
     this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn, deferred);
