@@ -127,6 +127,31 @@ describe('source revisions and durable acknowledgments', () => {
     await expect(stat(spool)).rejects.toThrow();
     expect(saved).toHaveLength(0);
   });
+  it('tombstones an acknowledged revision when its unconfirmed update is withdrawn', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    await engine.flush(source, transport(saved));
+    const delivered = saved[0];
+    expect(await engine.stage(scan([{ ...item, text: 'edited before removal' }]), false)).toBe(1);
+    expect(await engine.syncScan(scan([]), true, source, transport(saved))).toEqual({ changes: 1, state: 'ready' });
+    expect(saved).toHaveLength(2);
+    expect(saved[1].deleted).toBe(true);
+    expect(saved[1].revision).not.toBe(delivered.revision);
+    expect(engine.status().pending).toBe(0);
+  });
+  it('keeps the tombstone across a paused reconnect and restart', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    await engine.flush(source, transport(saved));
+    await engine.stage(scan([{ ...item, text: 'edited before removal' }]), false);
+    const paused = async (path: string) => path === '/api/sources' ? { ...source, enabled: false } : {};
+    expect(await engine.syncScan(scan([]), true, source, paused as any)).toEqual({ changes: 0, state: 'paused' });
+    expect(engine.status().pending).toBe(0);
+    const reopened = await create();
+    expect(await reopened.syncScan(scan([]), true, source, transport(saved))).toEqual({ changes: 1, state: 'ready' });
+    expect(saved).toHaveLength(2);
+    expect(saved[1].deleted).toBe(true);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

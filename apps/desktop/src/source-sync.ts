@@ -145,9 +145,12 @@ export class SourceSync {
     const keep = (queued: SourceItem) => {
       if (queued.kind !== 'file' || queued.deleted || present.has(queued.externalId)) return true;
       const key = sourceHash(queued.externalId);
-      if (this.data.delivered?.[key] !== queued.revision) {
+      const delivered = this.data.delivered?.[key];
+      if (delivered !== queued.revision) {
         const known = knownChanges.get(key) ?? next.known[key];
-        if (known?.contentHash) knownChanges.set(key, { ...known, contentHash: '', discoveryHash: undefined });
+        // Reappearance must be able to queue again, while an acknowledged
+        // revision stays the base for a later deletion tombstone.
+        if (known && (known.contentHash || delivered)) knownChanges.set(key, { ...known, contentHash: '', discoveryHash: undefined, revision: delivered ?? known.revision });
       }
       withdrawn.push(queued);
       return false;
@@ -195,9 +198,14 @@ export class SourceSync {
     this.withdrawAbsent(scan, next, knownChanges, withdrawn);
     if (trackDeletions && scan.complete) {
       const seen = new Set(scan.seen);
-      for (const previous of Object.values(this.data.known)) {
+      const identities = new Set([...Object.keys(this.data.known), ...knownChanges.keys()]);
+      for (const key of identities) {
+        const previous = knownChanges.get(key) ?? this.data.known[key];
+        if (!previous) continue;
         const item = previous.item;
-        if (!previous.contentHash || item.deleted || seen.has(item.externalId)) continue;
+        // Only an acknowledged revision can be tombstoned; a withdrawn queue
+        // entry has no central record to remove.
+        if (!this.data.delivered?.[key] || item.deleted || seen.has(item.externalId)) continue;
         if (scan.scope && (!item.calendar || item.calendar.start >= scan.scope.end || item.calendar.end < scan.scope.start)) continue;
         stage({ ...item, localOriginalBase64: undefined, localOriginal:undefined, text: '', deleted: true, syncQueue: 'realtime', ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }
