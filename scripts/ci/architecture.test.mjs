@@ -213,6 +213,32 @@ test('actual CLI fails a controlled browser leak, then passes the same fixture a
   const passed=f.run();assert.equal(passed.status,0,passed.stderr);assert.match(passed.stdout,/Architecture boundaries passed/);
 });
 
+test('Server plugins cannot import Store by value or type, and exceptions go stale when only Store is removed',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/store.ts','export class Store {} export class StoreError {}');
+  f.write('apps/server/src/plugins/example.ts',"import {StoreError} from '../store.js'; export const error=StoreError;");
+  assert.deepEqual(f.check().violations,[]);
+  f.write('apps/server/src/plugins/example.ts',"import {Store} from '../store.js'; export const store=new Store();");
+  let result=f.check();
+  assert.deepEqual(rule(result),['server-plugins-no-store']);
+  assert.equal(result.violations[0].kind,'runtime');
+  f.write('apps/server/src/plugins/example.ts',"import {Store as Borrowed} from '../store.js'; export const store=new Borrowed();");
+  assert.deepEqual(rule(f.check()),['server-plugins-no-store']);
+  f.write('apps/server/src/plugins/example.ts',"import * as store from '../store.js'; export const concrete=store.Store;");
+  assert.deepEqual(rule(f.check()),['server-plugins-no-store']);
+  f.write('apps/server/src/plugins/example.ts',"import type {Store} from '../store.js'; export type Borrowed=Store;");
+  result=f.check();
+  assert.deepEqual(rule(result),['server-plugins-no-store']);
+  assert.equal(result.violations[0].kind,'type');
+  f.write('apps/server/src/plugins/example.ts',"import {StoreError,type Store} from '../store.js'; export type Borrowed=Store; export const error=StoreError;");
+  const exception={...f.check().violations[0],reason:'Existing Vault boundary debt'};
+  f.write('apps/server/src/plugins/example.ts',"import {StoreError} from '../store.js'; export const error=StoreError;");
+  result=f.check([exception]);
+  assert.deepEqual(result.violations,[]);
+  assert.deepEqual(result.stale,[exception]);
+  assert.throws(()=>f.check([exception,exception]),/unique concrete edge/);
+});
+
 test('repository boundaries pass with only exact reviewed existing exceptions',()=>{
   const result=checkArchitecture(repository);
   assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
