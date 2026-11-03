@@ -5,6 +5,7 @@ import {agentModelConnection} from '../model-authorization-host.js';
 import { z } from 'zod';
 import type { FeatureServices } from '../feature-services.js';
 import type {ServerFeatureScope} from '../feature-host.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** ask: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,modelSettings,agent,conversations,queryRuns,queryWithAttachmentsSchema}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|'modelSettings'|"agent"|"conversations"|"queryRuns"|"queryWithAttachmentsSchema">,scope?:ServerFeatureScope){
@@ -29,3 +30,11 @@ app.post('/api/query-runs',async(req,reply)=>{
     return modelAuthorizationHost.manual('owner-query:'+id,queryConnections(input),async()=>reply.code(202).send(queryRuns.start(id,input)));
   });
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.ask',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.ask'));
+    register(app,services,scope);
+  },
+};
