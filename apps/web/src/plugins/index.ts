@@ -14,7 +14,7 @@ import { activity } from './activity';
 import { processing } from './processing';
 import { features } from './features';
 import { usage } from './usage';
-import { insights } from './insights';
+import { discovery } from './discovery';
 import { actions } from './actions';
 import { models } from './models';
 import { coding } from './coding';
@@ -46,7 +46,7 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   processing,
   features,
   usage,
-  insights,
+  discovery,
   actions,
   models,
   coding,

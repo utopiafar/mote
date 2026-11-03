@@ -1,6 +1,6 @@
 import {invalidateConfiguration} from './configuration-cache';
 import { useResource } from './useResource';
-import { MemoryRecipeSelection } from './MemoryRecipeSelection';
+import { MemoryRecipeSelection } from './plugins/memory/MemoryRecipeSelection';
 import { ApiError } from './api';
 import { useUnsavedChanges } from './unsaved';
 import { moteText } from '@mote/shared/i18n';

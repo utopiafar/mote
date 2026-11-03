@@ -1,6 +1,6 @@
 import { ViewLifetime } from '@mote/shared/plugin-view-lifetime';
 import type { Api } from '../../api';
-import type { Memory } from '../../Memories';
+import type { Memory } from '../memory/Memories';
 import type { OwnerBrowsePage } from '../library/owner-library-browse';
 import { resources, type Resource, type ResourceSnapshot } from '../../resource-cache';
 

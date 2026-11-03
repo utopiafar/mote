@@ -92,7 +92,7 @@ class MediaCollectionService : NotificationListenerService() {
         worker.post {
             if (destroyed || instanceGeneration != instances.get() || !::events.isInitialized) return@post
             platformConnected = false; connected = false
-            events.reset(); Notifications.showEvents(this, null)
+            events.reset(); systemEntries().showEvents(null)
             detach(); timeline.reset(); publishUnavailable("unavailable")
         }
         super.onListenerDisconnected()
@@ -121,11 +121,11 @@ class MediaCollectionService : NotificationListenerService() {
             if (!settings.enabled || !c.mediaCollectionEnabled || !c.metadataEnabled) {
                 detach(); timeline.reset(); lastStatus = null
                 MediaCollection.update(c, MediaPrivacy.snapshot("disabled", emptyList()))
-                Notifications.clearMedia(this); lastNotified = null; return
+                systemEntries().clearMedia(); lastNotified = null; return
             }
             if (ConnectionGuard.changing() || QueueStorage.recovering) { detach(); timeline.reset(); MediaCollection.clear(); return }
             if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
-                settings.enabled = false; detach(); timeline.reset(); MediaCollection.clear(); Notifications.clearMedia(this); return
+                settings.enabled = false; detach(); timeline.reset(); MediaCollection.clear(); systemEntries().clearMedia(); return
             }
             if (!MediaPrivacy.powerAllowed(c, Diagnostics.battery(this))) {
                 detach(); timeline.reset(); MediaCollection.clear()
@@ -143,7 +143,7 @@ class MediaCollectionService : NotificationListenerService() {
         catch (_: Exception) { detach(); timeline.reset(); publishUnavailable("unavailable") }
     }
     private fun notifyStatus(message: String) {
-        if (message != lastNotified) { Notifications.showMedia(this, message); lastNotified = message }
+        if (message != lastNotified) { systemEntries().showMedia(message); lastNotified = message }
         val c = settings.read()
         val screenAlive = c.screenCollectionEnabled && (if (c.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
         if (!screenAlive && settings.enabled) {
@@ -280,7 +280,7 @@ class MediaCollectionService : NotificationListenerService() {
         worker.post {
             platformConnected = false; detach(); timeline.reset()
             if (instanceGeneration == instances.get()) {
-                publishUnavailable("unavailable"); MediaCollection.clear(); Notifications.clearMedia(this); Notifications.showEvents(this, null)
+                publishUnavailable("unavailable"); MediaCollection.clear(); systemEntries().clearMedia(); systemEntries().showEvents(null)
             }
             thread.quitSafely()
         }

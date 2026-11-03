@@ -1,6 +1,6 @@
 import {useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {formatEvidenceRef} from '@mote/shared';
-import type {Answer} from './api';
+import type {Answer} from '../../api';
 import {reportDocument} from './report-document';
 import {acceptedReportHeight,acceptedReportSource,newReportSizeToken} from './report-sizing';
 
