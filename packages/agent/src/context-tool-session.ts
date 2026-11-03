@@ -15,7 +15,7 @@ import {taskTools,dispatchTools} from './task-context.js';
 import {actionEvidenceText,parseEvidenceRef,parseEvidenceId,formatEvidenceRef} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {AgentResponseError,reportTrace,reportProgress} from './types.js';
-import {sourceProtocolInstructions} from './instructions.js';
+import {sourceProtocolInstructions} from './tasks/evidence-rules.js';
 import {extractionSeedScopeValid} from './extraction-seed-scope.js';
 import {randomBytes,createHash} from "node:crypto";
 import type {BridgeToolHandler,PreparedToolDelivery,PrepareToolDelivery} from "./bridge-contracts.js";

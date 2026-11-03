@@ -30,10 +30,18 @@ export class LoginHandoffs {
   create(raw:unknown){this.prune();const input=loginDeviceSchema.parse(raw),id=randomBytes(32).toString('base64url');this.requests.set(hash(id),{input,deadline:this.clock()+10*60000});return {id};}
   private request(id:string){secret.parse(id);this.prune();const request=this.requests.get(hash(id));if(!request)throw new ConnectionError('login_expired',410,'Login request expired');return request;}
   detail(id:string){const r=this.request(id);return {deviceName:r.input.deviceName,platform:r.input.platform,serverUrl:r.input.serverUrl,expiresAt:r.deadline};}
+  /** Withdraw only this pending request. A request that already produced a
+   * grant is not revoked here: the client owns its normal logout path. */
+  reject(id:string,authorize:()=>void){
+    const r=this.request(id);authorize();
+    if(r.grant||r.approval)throw new ConnectionError('login_already_approved',409,'Login already approved');
+    this.requests.delete(hash(id));return {rejected:true};
+  }
   async approve(id:string,authorize:()=>void){
     const r=this.request(id);authorize();if(r.grant)return {approved:true};
+    const key=hash(id);
     r.approval??=(async()=>{const {serverUrl,deviceId,deviceName,platform,durationMs}=r.input;const grant=await this.connections.session(serverUrl,deviceName,{deviceId,deviceName,platform},durationMs);
-      try{this.assertOpen();authorize();if(r.deadline<=this.clock())throw new ConnectionError('login_expired',410,'Login request expired');}
+      try{this.assertOpen();authorize();if(r.deadline<=this.clock()||this.requests.get(key)!==r)throw new ConnectionError('login_expired',410,'Login request expired');}
       catch(error){try{await this.connections.revoke(grant.credentialId);}catch(cleanup){const failure=new AggregateError([error,cleanup],'Login approval and revocation failed',{cause:error});this.cleanupErrors.push(failure);throw failure;}throw error;}
       r.grant=grant;r.authorize=()=>{const c=this.connections.authenticate('Bearer '+grant.token);if(!c)throw new ConnectionError('unauthorized',401,'Login revoked');this.connections.assertActive(c);};return grant;
     })();const approval=r.approval;this.approvals.add(approval);

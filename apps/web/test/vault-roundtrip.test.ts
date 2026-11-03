@@ -11,7 +11,7 @@ import {storageStatistics} from '@mote/shared/storage-statistics';
 import {Store} from '../../server/src/store.js';
 import {SourceStore} from '../../server/src/sources.js';
 import {ArchivedFileStore} from '../../server/src/archived-files.js';
-import {Vault} from '../src/Vault.js';
+import {Vault} from '../src/plugins/maintenance/Vault.js';
 import type {Api,Status} from '../src/api.js';
 configureLocale(()=> 'zh-CN');
 

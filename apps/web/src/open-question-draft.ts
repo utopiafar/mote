@@ -1,6 +1,6 @@
 import type {Api} from './api';
 import {moteText} from '@mote/shared/i18n';
-import {unsentDrafts,unsentImages} from './chat-drafts';
+import {unsentDrafts,unsentImages} from './plugins/ask/chat-drafts';
 /** Preparing a question is navigation only. Existing unsent work requires the same explicit guard. */
 export function openQuestionDraft(api:Api,question:string){
  const draft=unsentDrafts.get(api);

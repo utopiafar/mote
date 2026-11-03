@@ -186,8 +186,8 @@ class GeneratedServiceResponsivenessInstrumentedTest {
                 ended(old); next.onCreate()
                 ProjectionService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, next)
                 ProjectionService::class.java.getDeclaredField("running").apply { isAccessible = true }.setBoolean(null, true)
-                val consent = RuntimeSettings::class.java.getDeclaredField("projectionConsent").apply { isAccessible = true }.get(null) as ProjectionConsentHandoff
-                consent.request()
+                val consent = dev.mote.collector.plugins.CapturePlugin.controllers()!!.reconfiguration
+                consent.requestConsent()
                 (ProjectionService::class.java.getDeclaredField("callback").apply { isAccessible = true }.get(old) as android.media.projection.MediaProjection.Callback).onStop()
                 assertTrue("old callback cannot cancel the new projection consent request", RuntimeSettings.takeProjectionConsentRequest())
                 old.onDestroy()

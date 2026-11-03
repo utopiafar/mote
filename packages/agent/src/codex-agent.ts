@@ -20,7 +20,7 @@ const toolsFor=(input:QueryInput,snapshot=contextToolSnapshot(input)):CodexTool[
   return [...contextToolDefinitions(input).map(([name,description,fields]):CodexTool=>{
     const pin=pins.get(name);
     return pin?toCodexTool(pin):{type:'function',name,description,inputSchema:toolInputSchema(fields)};
-  }),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.id!=='document-import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
+  }),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.availability!=='import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
 };
 export const codexContextTools=toolsFor({question:''});
 
@@ -59,7 +59,7 @@ export function createCodexAgent(options:AgentOptions){
         assertToolPins();
         trace({type:'tool.started',stage:'tool',phase:'started',tool:name,payload:{arguments:args}});
         if(name==='skill'){
-          const skill=bundledSkills.find(s=>s.id!=='document-import'&&s.id===(args as {name?:unknown})?.name);
+          const skill=bundledSkills.find(s=>s.availability!=='import'&&s.id===(args as {name?:unknown})?.name);
           if(!skill)throw new Error('Unknown skill');const result={name:skill.name,content:skill.content};trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result}});return result;
         }
         if(!taskTools(input).includes(name))throw new Error('Unknown tool');
