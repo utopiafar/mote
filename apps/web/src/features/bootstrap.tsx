@@ -18,7 +18,9 @@ export const featuresReady=(async()=>{
   const result=await bootstrapPlugins(webFeatures,instances);
   for(const [instanceId,scope] of result.scopes)featureScopes.set(instanceId,scope);
   const {reports}=result;
-  const failed=reports.find(report=>report.outcome.observed==='failed');
+  // The plugin center is itself replaceable. A failed mount must not prevent
+  // the shell from starting; the host-owned rescue route stays reachable.
+  const failed=reports.find(report=>report.outcome.observed==='failed'&&report.packageId!=='mote.features');
   if(failed&&failed.outcome.observed==='failed'){
     const original=failed.outcome.error;
     throw Object.assign(new Error(`Plugin ${original.pluginId} failed to mount`,{cause:original.cause}),{pluginId:original.pluginId,instanceId:original.instanceId});

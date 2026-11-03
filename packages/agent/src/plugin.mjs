@@ -1,116 +1,7 @@
+import {boundedModelFetch,modelFailureReporter,modelRequestAuthorization} from './models/http-transport.js';
+
 export const name = "mote-context";
 export const inject = ["tools", "agents", "attachments"];
-/** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
- * A token parameter and wall-clock timeout do not constrain a hostile response.
- * The limit covers retries and repair turns in this isolated agent process. */
-export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 1024, configuration, reportFailure, authorizeRequest) {
-  let received = 0;
-  let exceeded = false;
-  const tooLarge = () => new Error("Model response exceeds the agent byte budget");
-  return async (input, init) => {
-    const url = input instanceof Request ? input.url : String(input);
-    // Bridge responses already have their own authenticated evidence byte budget.
-    if (url.startsWith(bridge + "/")) return transport(input, init);
-    if (exceeded) throw tooLarge();
-    // Redirects can forward personal evidence to a destination the owner never
-    // selected. SSE is the only enabled SDK transport, so this covers every turn.
-    let requestInit = {...init, redirect: 'manual'};
-    if (configuration) {
-      const destination = new URL(url), base = new URL(configuration.baseUrl);
-      const prefix = base.pathname.replace(/\/+$/, '');
-      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-      if (destination.origin !== base.origin || (destination.pathname !== prefix && !destination.pathname.startsWith(prefix + '/')) || method.toUpperCase() !== 'POST') throw new Error('Unexpected model transport destination');
-      // Mote has no remote-file retention contract. The native adapter catches
-      // file-resolution failures and sends the already-authorized image inline.
-      // Refuse before I/O, request admission, or multipart body consumption.
-      if (configuration.protocol === 'deepseek' && destination.pathname === prefix + (prefix.endsWith('/v1') ? '/files' : '/v1/files')) throw new Error('Mote sends DeepSeek images inline without remote file storage');
-      if (configuration.protocol === 'deepseek' && destination.pathname !== prefix + (prefix.endsWith('/v1') ? '/messages' : '/v1/messages')) throw new Error('Unexpected model transport destination');
-      const headers = new Headers(input instanceof Request ? input.headers : undefined);
-      for (const [key, value] of new Headers(init?.headers)) headers.set(key, value);
-      if (configuration.provider === 'azure-openai') {
-        headers.delete('authorization');
-        headers.set('api-key', process.env.MOTE_MODEL_API_KEY);
-      }
-      for (const [key, value] of Object.entries(configuration.headers ?? {})) headers.set(key, value);
-      const raw = init?.body ?? (input instanceof Request ? await input.clone().text() : undefined);
-      if (typeof raw !== 'string') throw new Error('Model request must contain a JSON body');
-      const body = JSON.parse(raw);
-      if (configuration.protocol === 'deepseek' && configuration.reasoningEffort === 'auto') {
-        // The adapter cannot omit its own defaults. Remove only those
-        // defaults before applying the owner's explicitly supplied parameters.
-        delete body.thinking;
-        delete body.reasoning_effort;
-        if (body.output_config) {
-          delete body.output_config.effort;
-          if (!Object.keys(body.output_config).length) delete body.output_config;
-        }
-      }
-      // MiniMax's default inline <think> output would mix reasoning into the
-      // final JSON. This changes wire format only, not whether the model thinks.
-      if (configuration.provider === 'minimax' && configuration.protocol === 'openai-completions') body.reasoning_split = true;
-      const merge = (base, extra) => {
-        const result = {...base};
-        for (const [key, value] of Object.entries(extra)) result[key] = value && typeof value === 'object' && !Array.isArray(value) && result[key] && typeof result[key] === 'object' && !Array.isArray(result[key]) ? merge(result[key], value) : value;
-        return result;
-      };
-      const customized = merge(body, configuration.extraBody ?? {});
-      // Defense in depth: profile changes cannot add upload metadata to evidence requests.
-      if (configuration.protocol === 'deepseek') {delete customized.dsh_session_log;delete customized.dsh_plugin_packages;}
-      if (configuration.protocol === 'openai-responses') customized.store = false;
-      headers.delete('content-length');
-      requestInit = {...requestInit, headers, body: JSON.stringify(customized)};
-    }
-    await authorizeRequest?.();
-    let response;
-    try {response = await transport(input, requestInit);} catch (error) {if (reportFailure && !requestInit.signal?.aborted) await reportFailure({status:0});throw error;}
-    if (reportFailure && !response.ok) {
-      await response.body?.cancel();
-      const retryAfter=response.headers.get('retry-after');
-      await reportFailure({status:response.status,...(retryAfter&&retryAfter.length<=128?{retryAfter}:{})});
-      // Suppress opaque SDK retries. The durable host received the real status.
-      return new Response(JSON.stringify({error:{message:'Model request stopped by host'}}),{status:400,headers:{'Content-Type':'application/json'}});
-    }
-    if (response.status >= 300 && response.status < 400) {
-      await response.body?.cancel();
-      // A deterministic refusal avoids the SDK treating a redirect as a
-      // transient network exception and repeatedly resending the same evidence.
-      return new Response(JSON.stringify({error:{message:'Model redirects are not allowed'}}), {status:400, headers:{'Content-Type':'application/json'}});
-    }
-    if (!response.body) return response;
-    const reader = response.body.getReader();
-    const body = new ReadableStream({
-      async pull(controller) {
-        try {
-          const { done, value } = await reader.read();
-          if (done) { reader.releaseLock(); controller.close(); return; }
-          received += value.byteLength;
-          if (received > maximumBytes) {
-            exceeded = true;
-            await reader.cancel().catch(() => undefined);
-            reader.releaseLock();
-            controller.error(tooLarge());
-            return;
-          }
-          controller.enqueue(value);
-        } catch (error) { controller.error(error); }
-      },
-      async cancel(reason) { try { await reader.cancel(reason); } finally { reader.releaseLock(); } },
-    });
-    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
-  };
-}
-
-export function modelFailureReporter(transport) {
-  const configured=process.env.MOTE_MODEL_OBSERVER;if(!configured)return undefined;
-  const {url,token}=JSON.parse(configured);
-  return async value=>{const response=await transport(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(value),redirect:'error',signal:AbortSignal.timeout(5000)});await response.body?.cancel();if(!response.ok)throw Error('Host transport observer unavailable');};
-}
-
-export function modelRequestAuthorization(transport) {
-  const configured=process.env.MOTE_MODEL_OBSERVER;if(!configured)return undefined;
-  const {authorizationUrl,token}=JSON.parse(configured);if(!authorizationUrl)return undefined;
-  return async ()=>{const response=await transport(authorizationUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:'{}',redirect:'error',signal:AbortSignal.timeout(5000)});await response.body?.cancel();if(!response.ok)throw Error('Host model evidence authorization denied');};
-}
 
 /** A host receipt covers local preparation only, never remote model attention. */
 export async function imageToolResult(value, attachments, receipt) {
@@ -129,8 +20,7 @@ export async function imageToolResult(value, attachments, receipt) {
 export async function apply(ctx) {
   const configured=process.env.MOTE_HOST_RUN;
   if(!configured)throw new Error('A Host run session is required');
-  // The import runtime copies this module for its transport helpers. Resolve
-  // the query-only adapter only when the installed query plugin is activated.
+  // Resolve the query-only adapter only when the installed query plugin is activated.
   const {applyContextPlugin}=await import('./runtime/dsh/context-plugin.js');
   const {url:endpoint}=JSON.parse(configured);
   const configuration=process.env.MOTE_MODEL_TRANSPORT?JSON.parse(process.env.MOTE_MODEL_TRANSPORT):undefined;

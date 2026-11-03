@@ -7208,6 +7208,7 @@ export const german: Readonly<Record<string, string>> = {
   "正在安装": "Installation läuft",
   "安装失败": "Installation fehlgeschlagen",
   "等待节点重启": "Warten auf Knotenneustart",
+  "需要构建": "Erfordert einen neuen Build",
   "运行中": "Läuft",
   "已停用": "Deaktiviert",
   "停用中": "Wird deaktiviert",
@@ -10105,5 +10106,15 @@ export const german: Readonly<Record<string, string>> = {
   "等你补充": "Wartet auf Ihre Angaben",
   "暂停全部采集": "Gesamte Erfassung pausieren",
   "暂停屏幕采集": "Bildschirmerfassung pausieren",
-  "索引处理完成": "Indexverarbeitung abgeschlossen"
+  "索引处理完成": "Indexverarbeitung abgeschlossen",
+  "仍在运行的版本：{0}": "Weiterhin laufende Version: {0}",
+  "候选版本": "Kandidatenversion",
+  "候选版本未生效：{0}": "Die Kandidatenversion wurde nicht wirksam: {0}",
+  "插件中心暂时不可用；请重新加载或返回设置。": "Das Plugin-Center ist vorübergehend nicht verfügbar. Lade die Seite neu oder kehre zu den Einstellungen zurück.",
+  "插件构建": "Plugin-Builds",
+  "构建版本与配置实例分开；候选失败时仍显示实际运行的版本。": "Build-Versionen und konfigurierte Instanzen sind getrennt; bei einem fehlgeschlagenen Kandidaten wird weiterhin die tatsächlich laufende Version angezeigt.",
+  "正在启动": "Wird gestartet",
+  "没有正在运行的版本": "Keine Version wird ausgeführt",
+  "阻塞原因": "Blockierungen",
+  "需要重新构建（requires-build）": "Neuer Build erforderlich (requires-build)"
 };
