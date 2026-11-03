@@ -3,6 +3,7 @@ import type { BuiltinWebPlugin } from './types';
 import { agentView } from './agent-view';
 import { notes } from './notes';
 import { system } from './system';
+import { home } from './home';
 import { search } from './search';
 import { ask } from './ask';
 import { devices } from './devices';
@@ -34,6 +35,7 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   agentView,
   notes,
   system,
+  home,
   search,
   ask,
   devices,
