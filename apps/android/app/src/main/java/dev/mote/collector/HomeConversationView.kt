@@ -5,6 +5,25 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** Validates the exact conversation page the home renders. Central fields are
+ * untrusted: a malformed row fails the read instead of reaching the UI. */
+internal object HomeConversationRead {
+    fun page(read: (String) -> JSONObject): JSONArray {
+        val rows = read("/api/conversations?limit=5").getJSONArray("items")
+        for (index in 0 until rows.length()) {
+            val item = rows.getJSONObject(index)
+            val id = item.getString("id")
+            require(java.util.UUID.fromString(id).toString() == id)
+            require(item.get("title") is String && item.get("updatedAt") is String)
+            java.time.Instant.parse(item.getString("updatedAt"))
+            require(item.get("turnCount") is Number && item.getInt("turnCount") >= 0)
+        }
+        return rows
+    }
+}
 
 /** A read of existing conversation summaries; it never submits a question or starts capture. */
 internal class HomeConversationView(private val activity: MoteActivity, private val archiveEmpty: (Boolean) -> Unit = {}, private val open: (String) -> Unit) : LinearLayout(activity), HomeSection {
@@ -39,18 +58,9 @@ internal class HomeConversationView(private val activity: MoteActivity, private 
         val stamp = if (task.busy || !gate.due(SystemClock.elapsedRealtime())) return else gate.begin(SystemClock.elapsedRealtime())
         if (childCount == 0) label(MoteI18n.text("正在读取对话…"))
         task.start("", {}, {
-            val page = access.client.get("/api/conversations?limit=5")
+            val rows = HomeConversationRead.page(access.client::get)
             val after = CentralAccess.resolve(activity)
             check(after.generation == access.generation && after.server == access.server && after.client != null)
-            val rows = page.getJSONArray("items")
-            for (index in 0 until rows.length()) {
-                val item = rows.getJSONObject(index)
-                val id = item.getString("id")
-                require(java.util.UUID.fromString(id).toString() == id)
-                require(item.get("title") is String && item.get("updatedAt") is String)
-                java.time.Instant.parse(item.getString("updatedAt"))
-                require(item.get("turnCount") is Number && item.getInt("turnCount") >= 0)
-            }
             val emptyArchive = gate.archiveEmpty(rows.length() == 0, stamp, SystemClock.elapsedRealtime()) {
                 HomeArchiveProbe.empty(access.client::get)
             }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.CancellationSignal
 import android.os.Looper
 import androidx.work.*
+import dev.mote.collector.plugins.SourceWorkNames
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -19,9 +20,8 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
                 if (isStopped) return Result.retry()
                 val lease = store.lease(source) ?: continue
                 val adapter = SourceAdapters.default.forKind(source.kind)
-                if (!source.syncContinuously && source.binaryFiles() && applicationContext.fileArchives().configure(source).optBoolean("importCaptured")) continue
                 if (source.kind == "local-files" && source.retention == "snapshot" && !source.centralProcessingConsent) { store.status(source.id, "consent", lease = lease); continue }
-                if (!(source.binaryFiles() && !source.syncContinuously && applicationContext.fileArchives().configure(source).optBoolean("importCaptured")) && !SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission", lease = lease); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
+                if (!SourceWork.runnable(applicationContext, source)) { store.status(source.id, "permission", lease = lease); SourceWork.cancel(applicationContext, source.id); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
                 val last = adapter.lastScan(applicationContext, source)
                 if (!inputData.getBoolean("manual", false) && last.isNotEmpty() && Instant.parse(last).plusSeconds(source.intervalMinutes * 60L).isAfter(Instant.now())) continue
                 try {
@@ -79,7 +79,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 if (isStopped) return Result.retry()
                 SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
                 if (source.kind == "local-files" && source.retention == "snapshot" && !source.centralProcessingConsent) { store.status(source.id, "consent"); blocked = true; continue }
-                if (!(source.binaryFiles() && !source.syncContinuously && applicationContext.fileArchives().configure(source).optBoolean("importCaptured")) && !SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
+                if (!SourceWork.runnable(applicationContext, source)) { store.status(source.id, "permission"); SourceWork.cancel(applicationContext, source.id); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
                 try {
                     fun stillSelected(): Boolean = !isStopped && !ConnectionGuard.reconfiguring() && store.sources().any { it == source && it.enabled } && settings.read().let { SourceRules.target(it.server, it.token) == target }
                     if (!stillSelected()) return Result.retry()
@@ -210,18 +210,43 @@ object SourceWork {
             return
         }
         val manager = WorkManager.getInstance(context)
-        if (context.localSources().sources().none { it.enabled }) { manager.cancelUniqueWork("mote-source-scan"); manager.cancelUniqueWork("mote-source-periodic"); manager.cancelUniqueWork("mote-source-upload"); return }
-        val request = OneTimeWorkRequestBuilder<SourceScanWorker>().setInputData(workDataOf("manual" to manual, "syncExplicit" to syncExplicit)).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        // Appends a manual follow-up so a save near the end of an active scan cannot be lost.
-        manager.enqueueUniqueWork("mote-source-scan", if (manual) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, request)
+        val runnable = context.localSources().sources().filter { runnable(context, it) }
+        if (runnable.isEmpty()) { cancelAll(context); return }
+        // One unique chain per source: revoking a SAF grant cancels exactly that
+        // source instead of silencing its siblings.
+        for (source in runnable) {
+            val request = OneTimeWorkRequestBuilder<SourceScanWorker>()
+                .setInputData(workDataOf("manual" to manual, "syncExplicit" to syncExplicit, "sourceId" to source.id))
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
+            // Appends a manual follow-up so a save near the end of an active scan cannot be lost.
+            manager.enqueueUniqueWork(SourceWorkNames.scan(source.id), if (manual) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, request)
+        }
         val periodic = PeriodicWorkRequestBuilder<SourceScanWorker>(15, TimeUnit.MINUTES).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        manager.enqueueUniquePeriodicWork("mote-source-periodic", ExistingPeriodicWorkPolicy.UPDATE, periodic)
+        manager.enqueueUniquePeriodicWork(SourceWorkNames.PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, periodic)
         if (!syncExplicit) upload(context)
     }
     internal fun continueScan(context: Context, id: String, explicit: Boolean) {
         val request = OneTimeWorkRequestBuilder<SourceScanWorker>().setInitialDelay(1, TimeUnit.SECONDS)
             .setInputData(workDataOf("manual" to true, "syncExplicit" to explicit, "sourceId" to id)).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("mote-source-scan", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+        WorkManager.getInstance(context).enqueueUniqueWork(SourceWorkNames.scan(id), ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+    }
+    /** A revoked SAF grant stops this source and its scheduled chain. Global
+     * scan/upload work is cancelled only when no source remains runnable. */
+    internal fun cancel(context: Context, sourceId: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(SourceWorkNames.scan(sourceId))
+        if (context.localSources().sources().none { it.enabled && runnable(context, it) }) cancelAll(context)
+    }
+    internal fun cancelAll(context: Context) {
+        val manager = WorkManager.getInstance(context)
+        listOf(SourceWorkNames.SCAN, SourceWorkNames.PERIODIC, SourceWorkNames.UPLOAD).forEach { manager.cancelUniqueWork(it) }
+        context.localSources().sources().forEach { manager.cancelUniqueWork(SourceWorkNames.scan(it.id)) }
+    }
+    /** One-time imports that already captured their immutable bytes do not need
+     * the provider grant again; every other source must still be readable. */
+    internal fun runnable(context: Context, source: LocalSource): Boolean {
+        if (!source.enabled) return false
+        if (source.binaryFiles() && !source.syncContinuously && context.fileArchives().configure(source).optBoolean("importCaptured")) return true
+        return SourceAccess.available(context, source)
     }
     fun upload(context: Context, explicit: Boolean = false) = SyncSchedule.scheduleAfterSourceScan(context, Settings(context).read(), explicit)
     internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false, delaySeconds: Long = 0) {
@@ -229,6 +254,6 @@ object SourceWork {
         val request = OneTimeWorkRequestBuilder<SourceUploadWorker>().setInitialDelay(delaySeconds, TimeUnit.SECONDS).setConstraints(SyncSchedule.constraints(config, explicit))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to SyncSchedule.stamp(config)))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("mote-source-upload", if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
+        WorkManager.getInstance(context).enqueueUniqueWork(SourceWorkNames.UPLOAD, if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
     }
 }
