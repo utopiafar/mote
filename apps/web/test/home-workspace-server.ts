@@ -6,7 +6,7 @@ import {memoryEvidenceFingerprint} from '../../server/src/memory.js';
 import {materialId} from '../../server/src/materials.js';
 import sharp from 'sharp';
 import {sha256} from '../../server/src/store.js';
-import {uploadNoteAttachment} from '../src/note-attachments.js';
+import {uploadNoteAttachment} from '../src/plugins/notes/note-attachments.js';
 import type {Api} from '../src/api.js';
 const directory=process.argv[2];if(!directory)throw Error('Generated fixture directory required');
 const token=randomBytes(32).toString('hex'),when='2026-10-29T01:00:00.000Z',noteId=randomUUID(),reportId=randomUUID();

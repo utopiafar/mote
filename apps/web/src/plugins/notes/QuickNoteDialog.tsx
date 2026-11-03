@@ -2,8 +2,8 @@ import {useEffect,useRef} from 'react';
 import {createPortal} from 'react-dom';
 import {X} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
-import type {Api} from './api';
-import {containDialogFocus} from './dialog-focus';
+import type {Api} from '../../api';
+import {containDialogFocus} from '../../dialog-focus';
 import {Notes} from './Notes';
 
 export function QuickNoteDialog({api,namespace,revision,onSaved,onClose}: {

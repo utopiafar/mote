@@ -79,7 +79,7 @@ import './actions-final.css';
 import './discovery-final.css';
 import './conversation-final.css';
 import './imports-final.css';
-import {QuickNoteDialog} from './QuickNoteDialog';
+import {QuickNoteDialog} from './plugins/notes';
 import {QuickNoteContext} from './quick-note-context';
 import {enterGuide,guideVisit} from './feature-guide-state';
 import { confirmNavigation,hasUnsavedChanges } from './unsaved';

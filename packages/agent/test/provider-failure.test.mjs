@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createServer} from 'node:http';import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {createAgent,createImportAgent,AgentProviderError} from '../dist/index.js';import {observeModelTransport} from '../dist/model-transport-observer.js';
+import {createAgent,createImportAgent,AgentProviderError} from '../dist/index.js';import {observeModelTransport} from '../dist/models/http-transport.js';
 const reader={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 test('private transport reporter rejects unauthorized or unstructured reports',async()=>{
  const observer=await observeModelTransport();try{const {url,token}=observer.configuration;assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,403);assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify({status:429,body:'private text'})})).status,400);
