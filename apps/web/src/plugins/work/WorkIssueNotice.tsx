@@ -1,10 +1,10 @@
 import {moteText} from '@mote/shared/i18n';
 import type { OperationDetail, WorkActivity } from '@mote/shared';
-import type { Api } from './api';
-import { errorMessage } from './api';
-import { failureMessage } from './failure-message';
-import { useResource } from './useResource';
-import { modelSetupHref } from './ModelStartGuide';
+import type { Api } from '../../api';
+import { errorMessage } from '../../api';
+import { failureMessage } from '../../failure-message';
+import { useResource } from '../../useResource';
+import { modelSetupHref } from '../../ModelStartGuide';
 const hints: Record<string, {
     text: string;
     category?: 'providers' | 'model' | 'images' | 'file-processing';

@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {Api} from '../src/api.js';
-import {OperationFeed,affectedResource} from '../src/operation-feed.js';
+import {OperationFeed,affectedResource} from '../src/plugins/work/operation-feed.js';
 import {resources} from '../src/resource-cache.js';
 import {Store} from '../../server/src/store.js';
 import {ExecutionEngine} from '../../server/src/execution-engine.js';

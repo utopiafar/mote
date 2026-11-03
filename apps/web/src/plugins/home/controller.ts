@@ -6,7 +6,7 @@ import type {DiscoveryState} from '../../discovery-availability';
 import type {HomeEntry} from '../../features/types';
 import type {OwnerBrowsePage} from '../library/owner-library-browse';
 import {webFeatures} from '../../features/registry';
-import {operationFeed,type OperationFeed} from '../../operation-feed';
+import {operationFeed,type OperationFeed} from '../work/operation-feed';
 import {ownerQuestionListPath} from '../../owner-question-route';
 import {resources,type Resource,type ResourceSnapshot} from '../../resource-cache';
 

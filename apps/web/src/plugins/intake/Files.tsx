@@ -1,5 +1,5 @@
 import {installRecordingStyles,recordingClock,recordingSpeaker} from '../../recording-presentation';
-import {RecordingTools,RawRecording} from '../../RecordingTools';
+import {RecordingTools,RawRecording} from '../sources/RecordingTools';
 import {dialogueGroups,transcriptChunkText} from '../../dialogue-groups';
 import {failureMessage} from '../../failure-message';
 import {ImageProgress} from '../../ImageProgress';

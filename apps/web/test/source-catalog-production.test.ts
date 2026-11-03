@@ -13,7 +13,7 @@ import {buildApp} from '../../server/src/app.js';
 import type {Config} from '../../server/src/config.js';
 import type {RecordingProvider} from '../../server/src/connectors/recordings.js';
 import type {Api} from '../src/api.js';
-import {pages as sourcePages} from '../src/features/sources.js';
+import {pages as sourcePages} from '../src/plugins/sources/index.js';
 import {webFeatures} from '../src/features/registry.js';
 import type {PageEntry,PageProps} from '../src/features/types.js';
 

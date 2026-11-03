@@ -1,6 +1,6 @@
 import type {OperationChanges} from '@mote/shared';
-import type {Api} from './api';
-import {resources} from './resource-cache';
+import type {Api} from '../../api';
+import {resources} from '../../resource-cache';
 /** One bounded change subscription per authenticated session, shared by views. */
 export class OperationFeed {
  private listeners=new Set<()=>void>();private controller?:AbortController;private timer?:ReturnType<typeof setTimeout>;private cursor=Number.MAX_SAFE_INTEGER;private error:unknown;

@@ -1,12 +1,12 @@
 import {formatEvidenceRef} from '@mote/shared';
 import {useEffect,useLayoutEffect,useState,useRef} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,ApiError,dateTime} from './api';
-import {useResource} from './useResource';
-import {resources} from './resource-cache';
-import {useUnsavedChanges} from './unsaved';
+import {type Api,ApiError,dateTime} from '../../api';
+import {useResource} from '../../useResource';
+import {resources} from '../../resource-cache';
+import {useUnsavedChanges} from '../../unsaved';
 import {ActionDialog} from './ActionDialog';
-import {actionFailure} from './action-presentation';
+import {actionFailure} from '../../action-presentation';
 export type Todo={id:string;version:number;title:string;description?:string;dueAt:string|null;status:'open'|'completed'|'cancelled';evidenceIds:string[]};
 type Draft={id:string;title:string;due:string;description:string;evidenceIds:string[]};
 type EditDraft={id:string;version:number;title:string;due:string;description:string};

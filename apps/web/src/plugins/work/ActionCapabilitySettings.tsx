@@ -3,9 +3,9 @@ import {actionPluginIdentitySchema,actionSourceIdentitySchema} from '@mote/share
 import React,{useEffect,useRef,useState} from 'react';
 import type {ActionCapabilityDraft,ActionDeviceCapability,ActionGrant,ActionPluginProvider} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {createApi,errorMessage} from './api';
-import {useResource} from './useResource';
-import {useUnsavedChanges} from './unsaved';
+import {createApi,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {useUnsavedChanges} from '../../unsaved';
 type Inventory={providers:ActionPluginProvider[];grants:(ActionGrant&{available:boolean})[];declarations:ActionDeviceCapability[];drafts:ActionCapabilityDraft[];sources:(ActionCapabilityDraft['inputs']['sources'][number]&{name:string})[]};
 // Validate the fields rendered/selected here. A malformed response is an error,
 // never an empty inventory or permission to submit a partial grant.

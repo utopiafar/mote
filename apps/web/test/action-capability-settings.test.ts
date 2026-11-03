@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {ActionCapabilitySettings} from '../src/ActionCapabilitySettings.js';
+import {ActionCapabilitySettings} from '../src/plugins/work/ActionCapabilitySettings.js';
 import {ApiError,createApi,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 configureLocale(()=> 'zh-CN');
