@@ -780,7 +780,7 @@ describe('source revisions and durable acknowledgments', () => {
     expect(engine.status().pending).toBe(0);
     expect(sent).toHaveLength(0);
   });
-  it('yields the slice instead of swallowing slice control during reconciliation', async () => {
+  it('ends the attempt instead of yielding with no progress during reconciliation', async () => {
     const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
     // Produce an absent in-flight candidate through the real path.
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
@@ -806,7 +806,9 @@ describe('source revisions and durable acknowledgments', () => {
       return { manifestBatch: 200 };
     };
     const slice = await engine.flushSlice(source, sliceWire as any, undefined);
-    expect(slice.state).toBe('yielded');
+    // A slice exhausted before any upload must end this attempt; returning
+    // 'yielded' would make the managed task requeue the same source forever.
+    expect(slice.state).toBe('ready');
     expect(engine.status().pending).toBe(1);
     expect(sent).toHaveLength(0);
   });
@@ -836,7 +838,7 @@ describe('source revisions and durable acknowledgments', () => {
     const { UploadSlice } = await import('../src/upload-slice');
     const tight = new UploadSlice(4 * 1024 * 1024, 1);
     const tightResult = await reopened.flushSlice(source, wire as any, undefined, undefined, tight);
-    expect(tightResult.state).toBe('yielded');
+    expect(tightResult.state).toBe('ready');
     expect(reopened.status().pending).toBe(100);
     expect(sent).toHaveLength(0);
     // A later slice that can resolve null heads withdraws them and still uploads nothing,

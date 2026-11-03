@@ -336,7 +336,13 @@ export class SourceSync {
     const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown };
     if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error(moteText("中央来源注册确认无效"));
     if (!registered.enabled) return 'paused';
-    await this.reconcileAbsentInflight(source, request, signal);
+    try { await this.reconcileAbsentInflight(source, request, signal); }
+    catch (error) {
+      // A slice exhausted before any upload: end this attempt instead of
+      // yielding with zero progress, which would requeue the source forever.
+      if (error instanceof UploadSliceYield) return 'ready';
+      throw error;
+    }
     const scheduler = this.scheduler;
     const deferred=new Set<string>();let rejectedStatus:number|undefined;
     while (this.status().pending) {
