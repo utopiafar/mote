@@ -133,7 +133,7 @@ export interface FeatureServices {
   sourceOwner:(request:FastifyRequest,id:string)=>void;
   setPlaybackAuthorization:(authorize:(request:FastifyRequest)=>boolean)=>void;
   filesSource?:FilesFeatureSource;
-  notesSource?:NotesSourceAssembly;
+  notesSource:NotesSourceAssembly;
   notesCapture?:NotesCapture;
   agentFeatures:Awaited<ReturnType<typeof installAgentFeatures>>;
   archiveReader:ContextReader;
