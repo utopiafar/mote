@@ -4,7 +4,7 @@ import type {CapturePreview} from '@mote/shared';
 import {ArrowLeft,ArrowRight,Clock3,Monitor,Plus,QrCode,Smartphone} from 'lucide-react';
 import {ago,dateTime,deviceLabels,errorMessage,type Api,type Capture,type Device} from './api';
 import {Metadata} from './Metadata';
-import {MediaSnapshot} from './Media';
+import {MediaSnapshot} from './plugins/library/Media';
 import {useResource} from './useResource';
 const modes={realtime:'实时同步',interval:'定时同步',batch:'批量同步',manual:'手动同步'};
 const states={unconfigured:'尚未配置节点',idle:'等待新记录',waiting:'等待同步条件',uploading:'正在上传',error:'同步需要处理',manual:'等待手动同步'};

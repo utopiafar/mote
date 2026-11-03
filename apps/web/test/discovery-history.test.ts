@@ -12,7 +12,7 @@ import {configureLocale,getLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app.js';
 import type {Config} from '../../server/src/config.js';
 import {ApiError,createApi,INSIGHT_HISTORY_PATH,type Api,type Answer} from '../src/api.js';
-import {Insights} from '../src/Insights.js';
+import {Insights} from '../src/plugins/discovery/Insights.js';
 
 const when='2026-10-01T00:00:00.000Z';
 const report=(runId:string,answer:string):Answer=>({runId,answer,citations:[],trace:[],createdAt:when});
