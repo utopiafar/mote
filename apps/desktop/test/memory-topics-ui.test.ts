@@ -5,7 +5,7 @@ import type {DesktopApi,Status} from '../src/contracts';
 const id='11111111-1111-4111-8111-111111111111';
 let dom:JSDOM,root:HTMLDialogElement,api:DesktopApi,ui:ReturnType<typeof createMemoryTopicsUi>;
 const flush=()=>new Promise<void>(r=>setImmediate(r));
-beforeEach(()=>{dom=new JSDOM('<dialog></dialog>');vi.stubGlobal('document',dom.window.document);root=document.querySelector('dialog')!;root.showModal=()=>{root.open=true;};root.close=()=>{root.open=false;};api={memoryTopics:vi.fn(async()=>({items:[{id:'auto.one',label:'One',nodes:[{id:'a',label:'<img src=x onerror=alert(1)>'}]}]})),memoryTopicPage:vi.fn(async()=>({items:[{id,title:'Memory',status:'published',version:1}],nextCursor:null})),memoryTopicDetail:vi.fn(async()=>({id,title:'Memory',status:'published',version:1,statement:'GENERATED BODY',evidenceIds:[]}))} as unknown as DesktopApi;ui=createMemoryTopicsUi(api,root);});
+beforeEach(()=>{dom=new JSDOM('<dialog></dialog>',{pretendToBeVisual:true});vi.stubGlobal('document',dom.window.document);root=document.querySelector('dialog')!;root.showModal=()=>{root.open=true;};root.close=()=>{root.open=false;};api={memoryTopics:vi.fn(async()=>({items:[{id:'auto.one',label:'One',nodes:[{id:'a',label:'<img src=x onerror=alert(1)>'}]}]})),memoryTopicPage:vi.fn(async()=>({items:[{id,title:'Memory',status:'published',version:1}],nextCursor:null})),memoryTopicDetail:vi.fn(async()=>({id,title:'Memory',status:'published',version:1,statement:'GENERATED BODY',evidenceIds:[]}))} as unknown as DesktopApi;ui=createMemoryTopicsUi(api,root);});
 afterEach(()=>{ui.close();dom.window.close();vi.useRealTimers();vi.unstubAllGlobals();});
 function click(label:string){[...root.querySelectorAll('button')].find(b=>b.textContent===label)!.click();}
 it('renders model labels as text, opens one stable Memory and returns to its selected node',async()=>{
@@ -56,6 +56,17 @@ it('overlapping validations compare against the latest pinned Memory',async()=>{
  resolvers[1](v1);await flush();resolvers[2]({...v1,version:2});await flush();resolvers[0](v1);await flush();
  expect(root.textContent).toContain('所选记忆已变化');expect(root.textContent).not.toContain('GENERATED BODY');
 });
+it('pauses polling while the window is hidden and catches up once when it returns',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
+ const hidden=vi.spyOn(document,'hidden','get').mockReturnValue(true);
+ document.dispatchEvent(new dom.window.Event('visibilitychange'));
+ await vi.advanceTimersByTimeAsync(120000);expect(api.memoryTopics).toHaveBeenCalledTimes(1);
+ hidden.mockReturnValue(false);document.dispatchEvent(new dom.window.Event('visibilitychange'));await flush();
+ expect(api.memoryTopics).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(59999);expect(api.memoryTopics).toHaveBeenCalledTimes(2);
+ await vi.advanceTimersByTimeAsync(1);expect(api.memoryTopics).toHaveBeenCalledTimes(3);
+});
+
 it('polls the directory once per 60s while classification is not running',async()=>{
  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});ui.open();await flush();expect(api.memoryTopics).toHaveBeenCalledTimes(1);
  await vi.advanceTimersByTimeAsync(59999);expect(api.memoryTopics).toHaveBeenCalledTimes(1);
