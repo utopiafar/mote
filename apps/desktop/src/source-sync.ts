@@ -385,8 +385,12 @@ export class SourceSync {
       catch { continue; }
       if (!head || !('revision' in head)) continue;
       const key = sourceHash(item.externalId);
-      if (head.revision === null) withdrawn.push(item);
-      else cleared.add(key);
+      const predecessor = this.data.predecessors?.[item.revision] ?? this.data.delivered?.[key] ?? null;
+      if (head.revision === item.revision) { cleared.add(key); continue; }
+      // Only an explicit head equal to the confirmed predecessor proves the send
+      // never committed; anything newer is ambiguous and stays queued.
+      if (head.revision !== predecessor) { cleared.add(key); continue; }
+      withdrawn.push(item);
     }
     if (!withdrawn.length && !cleared.size) return;
     await this.mutate(async () => {

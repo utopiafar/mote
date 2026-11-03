@@ -602,6 +602,34 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent[0].item.deleted).toBe(false);
     expect(reopened.status().pending).toBe(0);
   });
+  it('withdraws an in-flight update when the head still equals its predecessor', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, fileTransport(sent));
+    const acknowledged = sent.at(-1)!.item;
+    // Fresh engine so the manifest capability is resolved inside the gated flush.
+    const reopened = await create();
+    await reopened.stage(scan([{ ...fileItem, text: 'update B' }]), false);
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: acknowledged.revision };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('ACK loss'); }
+      throw new Error('unexpected ' + path);
+    };
+    const flushing = reopened.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    await reopened.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    release();
+    await flushing;
+    expect(reopened.status().pending).toBe(1);
+    const before = sent.length;
+    await reopened.flush(source, wire as any);
+    expect(reopened.status().pending).toBe(0);
+    expect(sent).toHaveLength(before);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
