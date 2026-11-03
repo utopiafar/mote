@@ -434,9 +434,10 @@ export class SourceSync {
     // Bound the reconciliation per call so a slice still reaches its uploads
     // when many candidates stay unresolved; the rest are retried next time.
     // Rotate the starting point so unresolved heads cannot starve later ones.
-    const ordered = candidates.length ? [...candidates.slice(this.headCursor % candidates.length), ...candidates.slice(0, this.headCursor % candidates.length)] : [];
+    const start = this.headCursor % candidates.length;
+    const ordered = [...candidates.slice(start), ...candidates.slice(0, start)];
     const examined = ordered.slice(0, 8);
-    this.headCursor = candidates.length ? (this.headCursor + examined.length) % candidates.length : 0;
+    let admitted = 0;
     for (const [index, item] of examined.entries()) {
       if (this.inflight.has(itemKey(item))) continue;
       const marker = this.data.known[sourceHash(item.externalId)]?.absentWhileInflight;
@@ -448,8 +449,10 @@ export class SourceSync {
           for (const remaining of ordered.slice(index)) this.unreconciledAbsent.add(itemKey(remaining));
           break; // Commit completed withdrawals before ending this slice.
         }
+        admitted = index + 1;
         this.unreconciledAbsent.add(itemKey(item)); continue;
       }
+      admitted = index + 1;
       if (!head || !('revision' in head)) { this.unreconciledAbsent.add(itemKey(item)); continue; }
       const key = sourceHash(item.externalId);
       const delivered = this.data.delivered?.[key] ?? null;
@@ -462,6 +465,9 @@ export class SourceSync {
       else if (head.revision === predecessor) withdrawKeys.add(itemKey(item));
       else this.unreconciledAbsent.add(itemKey(item));
     }
+    // Admission can stop before the planned window ends. Resume at the next
+    // unexamined candidate rather than letting a slow unresolved head starve it.
+    this.headCursor = (start + admitted) % candidates.length;
     for (const item of ordered.slice(8)) this.unreconciledAbsent.add(itemKey(item));
     if (!withdrawKeys.size) { if (exhausted) throw exhausted; return; }
     const removed: SourceItem[] = [];

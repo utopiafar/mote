@@ -465,3 +465,52 @@ it('persists absence during paused local discovery without Central reads until m
   expect(wire.requests.slice(before).filter(request => request.path === '/api/file-sync/v1/head')).toHaveLength(1);
   expect(wire.unmatched).toEqual([]);
 });
+
+it('rotates past a slow unresolved head to the unexamined healthy candidate on the next managed call', async () => {
+  const files = [generatedFile('file:slow-unresolved-A', 'generated A'), generatedFile('file:healthy-head-B', 'generated B')];
+  const entered = deferred(), release = deferred(); let present = true, sourceId = '', firstCaps = true, resolvedA = false, clock: number | undefined;
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false, validateConfiguration() {},
+    async scan() { const items = present ? files : []; return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } }; },
+  });
+  const wire = transport(request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities' && firstCaps) {
+      firstCaps = false; entered.resolve(); return release.promise.then(() => response(503, { error: 'Generated preflight failure' }));
+    }
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId);
+      const id = request.url.searchParams.get('externalId'); expect(files.map(item => item.externalId)).toContain(id);
+      if (id === files[0]!.externalId) {
+        if (clock !== undefined) clock += 15001;
+        if (!resolvedA) return response(503, { error: 'Generated slow unresolved head' });
+      }
+      return response(200, { revision: null });
+    }
+    return wire.reject(request);
+  });
+  let flushing: Promise<void> | undefined, failed: Promise<void> | undefined;
+  try {
+    const app = await openManaged(adapters);
+    sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated slow head fairness' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: false, syncContinuously: true });
+    await app.sync(true);
+    flushing = app.flushPending(new AbortController().signal); failed = expect(flushing).rejects.toMatchObject({ httpStatus: 503 }); await entered.promise;
+    present = false; await app.sync(true); expect(await markerCount(sourceId)).toBe(2); release.resolve(); await failed;
+    clock = Date.now(); const now = vi.spyOn(Date, 'now').mockImplementation(() => clock!);
+    try {
+      const flush = async () => {
+        const start = wire.requests.length; let slices = 0;
+        await expect(app.flushPending(new AbortController().signal, async () => { slices++; })).resolves.toBeUndefined();
+        expect(slices).toBe(1);
+        return wire.requests.slice(start).filter(request => request.path === '/api/file-sync/v1/head').map(request => request.url.searchParams.get('externalId'));
+      };
+      expect(await flush()).toEqual([files[0]!.externalId]); expect(app.status()[0]!.pending).toBe(2);
+      expect((await flush())[0]).toBe(files[1]!.externalId); expect(app.status()[0]!.pending).toBe(1);
+      expect(app.pendingContent().map(row => row.item.externalId)).toEqual([files[0]!.externalId]);
+      resolvedA = true; await flush(); expect(app.status()[0]!.pending).toBe(0);
+    } finally { now.mockRestore(); clock = undefined; }
+    expect(wire.writes()).toHaveLength(0); expect(wire.unmatched).toEqual([]);
+  } finally { release.resolve(); await flushing?.catch(() => {}); await failed; }
+});
