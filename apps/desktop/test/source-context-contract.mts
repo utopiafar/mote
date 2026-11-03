@@ -52,6 +52,24 @@ test('source archive HTTP rows are consumed with exact identities, pagination an
  }finally{globalThis.fetch=originalFetch;await app.close();store.close();await rm(directory,{recursive:true,force:true});}
 });
 
+test('processed snapshot metadata rows render in the Mac archive page for both read permissions',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-snapshot-page-contract-')),store=new Store(join(directory,'vault')),sources=new SourceStore(store),app=Fastify(),originalFetch=globalThis.fetch;
+ const id='local-ff0dca9c-dc56-4f25-b35a-aac044731313',deviceId='generated-device',definition={id,name:'Generated snapshot folder',kind:'local-files',deviceId,platform:'macos' as const,retention:'snapshot' as const,enabled:true};
+ try{
+  sources.register(definition);
+  const fileIndex={version:1 as const,fileId:'generated-file',contentVersion:'f'.repeat(64),mode:'index' as const,coverage:'full' as const,parser:'text.utf8',status:'ready' as const,totalCharacters:633,offset:0,length:633,maxIndexCharacters:8000,allowRead:false};
+  const item={externalId:'file:generated-metadata',revision:'v1',observedAt:'2026-11-03T00:00:00.000Z',title:'Generated snapshot',text:'',kind:'file' as const,layer:'snapshot' as const,mimeType:'text/plain',document:{fileId:'generated-file',contentRole:'other',timeBasis:'unknown',fileIndex}};
+  await sources.upsert(id,item);
+  await sources.upsert(id,{...item,externalId:'file:generated-metadata-readable',revision:'v2',document:{...item.document,fileIndex:{...fileIndex,allowRead:true}}});
+  app.setErrorHandler((error,req,res)=>res.status((error as {statusCode?:number}).statusCode??500).send({error:error.message}));
+  registerSourceRoutes(app,{sources,credential:()=>undefined,sourceOwner:(_req,sourceId)=>{sources.getSource(sourceId);},layers:{} as never,evidenceReader:{} as never,ingress:{} as never,connections:{} as never});
+  globalThis.fetch=async(input,init)=>{const url=new URL(String(input));const response=await app.inject({url:url.pathname+url.search,method:'GET',headers:init?.headers as Record<string,string>});return new Response(response.body,{status:response.statusCode,headers:{'content-type':'application/json'}});};
+  const config={...defaultConfig(),serverUrl:'http://127.0.0.1:1',token:'generated-owner',deviceId},source={...DEFAULT_SOURCE_OPTIONS,...definition},page=await centralSourceContentPage(config,source);
+  assert.equal(page.items.length,2);
+  assert.ok(page.items.every(row=>row.key.startsWith('capture:')&&row.source==='file'&&row.sourceName===definition.name));
+ }finally{globalThis.fetch=originalFetch;await app.close();store.close();await rm(directory,{recursive:true,force:true});}
+});
+
 test('desktop capture-channel outbox consumes actual device context routes without changing original bytes',async()=>{
  const {LocalSourceManager}=await import('../src/source-manager');
  const directory=await mkdtemp(join(tmpdir(),'mote-capture-context-contract-')),store=new Store(join(directory,'vault')),sources=new SourceStore(store),app=Fastify(),deviceId='generated-mac-context';let manager:InstanceType<typeof LocalSourceManager>|undefined;

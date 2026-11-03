@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
+import {FILE_PART_BYTES,sourceItemSchema,type FileRevision} from '@mote/shared';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
@@ -26,6 +26,11 @@ test('central snapshot extraction ignores legacy client caps, removes raw bytes,
 });
 test('explicit allowRead permits central text ranges and revision/source fences revoke the grant',async t=>{
  const {files,store,sources,cleanup}=fixture(t),text='Generated '+'x'.repeat(9000)+'TAIL EVIDENCE',ack=await upload(files,Buffer.from(text),true),processing=new FileProcessing(files);cleanup.push(()=>processing.close());await processing.tick();const requests=new FileEvidence(sources);
+ // allowRead=true has the same empty parent SourceItem DTO; the metadata projection validates and readability stays a separate axis.
+ const readableEvidence=store.evidence([ack.id])[0],readableProvenance=readableEvidence.provenance!;
+ assert.equal(readableEvidence.ocrText,'');assert.equal(readableProvenance.document?.fileIndex?.allowRead,true);
+ assert.doesNotThrow(()=>sourceItemSchema.parse({externalId:readableProvenance.externalId,revision:readableProvenance.revision,observedAt:readableEvidence.capturedAt,title:readableEvidence.windowTitle,text:'',kind:'file',layer:'snapshot',mimeType:readableProvenance.mimeType,deleted:false,document:readableProvenance.document}));
+ assert.throws(()=>[...files.bytes(ack.id)],{statusCode:404},'raw snapshot bytes stay released');
  assert.equal(files.search({query:'TAIL'}).length,1);const full=store.assets.read(String(store.db.prepare('SELECT object_hash FROM file_snapshot_text WHERE capture_id=?').get(ack.id)!.object_hash)).toString();const result:any=await requests.read(ack.id,full.indexOf('TAIL'),13);assert.equal(result.status,'ready');assert.equal(result.record.ocrText,'TAIL EVIDENCE');assert.throws(()=>[...files.bytes(ack.id)],{statusCode:404});sources.update('fixture',{enabled:false});await assert.rejects(requests.read(ack.id,0,10),{statusCode:409});files.sweep();assert.equal(store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_text').get()!.n,0);
 });
 test('generated audio is interpreted by the central provider, and cancellation destroys transient input',async t=>{
@@ -59,4 +64,24 @@ test('snapshot dialogue executes diarization, alignment and semantic turns with 
  const settings={...processing.view().settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'generated.snapshot-diarize',speakerCount:2,semanticTurns:true};processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'succeeded',JSON.stringify(files.detail(ack.id).job));assert.deepEqual([asr,diarize,turns],[1,1,1]);assert.deepEqual(files.chunks(ack.id).map(chunk=>chunk.fileEvidence?.speaker),['SPEAKER_0','SPEAKER_1']);
  const receipt=processing.explain(ack.id).snapshots[0] as any;assert.deepEqual(receipt.stagePins.map((pin:any)=>pin.name),['extract','diarize','align','turns']);assert.equal(store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(ack.id),undefined);assert.equal(files.detail(ack.id).hasOriginal,false);
+});
+
+test('processed snapshot metadata validates without granting any access to its text',async t=>{
+ const {files,store,sources,cleanup}=fixture(t),text='Generated '+'x'.repeat(632),ack=await upload(files,Buffer.from(text),false);
+ const processing=new FileProcessing(files);cleanup.push(()=>processing.close());await processing.tick();
+ const evidence=store.evidence([ack.id])[0],provenance=evidence.provenance!,index=provenance.document?.fileIndex!;
+ assert.equal(index.allowRead,false);assert.equal(index.status,'ready');assert.ok(index.length>0);assert.equal(evidence.ocrText,'');
+ const projection={externalId:provenance.externalId,revision:provenance.revision,observedAt:evidence.capturedAt,title:evidence.windowTitle,text:'',kind:'file',layer:'snapshot',mimeType:provenance.mimeType,deleted:false,document:provenance.document};
+ assert.doesNotThrow(()=>sourceItemSchema.parse(projection),'processed snapshot metadata projection must validate');
+ // allowRead=true has the same empty parent DTO; readability is a separate axis.
+ assert.doesNotThrow(()=>sourceItemSchema.parse({...projection,document:{...provenance.document,fileIndex:{...index,allowRead:true}}}),'allowRead=true empty parent metadata also validates');
+ // Every other consistency rule survives.
+ assert.throws(()=>sourceItemSchema.parse({...projection,text:'Generated text'}),'carried text keeps the length rule');
+ assert.throws(()=>sourceItemSchema.parse({...projection,layer:'original'}),'other layers keep the length rule');
+ assert.throws(()=>sourceItemSchema.parse({...projection,document:{...provenance.document,fileIndex:{...index,offset:1}}}),'out-of-bounds offsets stay rejected');
+ assert.throws(()=>sourceItemSchema.parse({...projection,document:{...provenance.document,fileIndex:{...index,mode:'catalog',allowRead:true}}}),'catalog keeps its no-read/no-text rule');
+
+ // The metadata projection grants no original read or byte access.
+ const requests=new FileEvidence(sources);await assert.rejects(requests.read(ack.id,0,10),{statusCode:409});
+ assert.throws(()=>[...files.bytes(ack.id)],{statusCode:404});
 });
