@@ -207,9 +207,11 @@ export class SourceSync {
         const previous = knownChanges.get(key) ?? this.data.known[key];
         if (!previous) continue;
         const item = previous.item;
-        // Only an acknowledged revision can be tombstoned; a withdrawn queue
-        // entry has no central record to remove.
-        if (!this.data.delivered?.[key] || item.deleted || seen.has(item.externalId)) continue;
+        // Files need an acknowledged revision: a withdrawn queue entry was never
+        // recorded centrally. Other kinds keep their existing staged-content
+        // rule so an offline calendar removal still queues its tombstone.
+        const tombstoneBase = item.kind === 'file' ? this.data.delivered?.[key] : previous.contentHash;
+        if (!tombstoneBase || item.deleted || seen.has(item.externalId)) continue;
         if (scan.scope && (!item.calendar || item.calendar.start >= scan.scope.end || item.calendar.end < scan.scope.start)) continue;
         stage({ ...item, localOriginalBase64: undefined, localOriginal:undefined, text: '', deleted: true, syncQueue: 'realtime', ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }

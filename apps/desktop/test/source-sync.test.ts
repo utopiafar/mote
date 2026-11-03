@@ -210,6 +210,18 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent.at(-1)!.item.deleted).toBe(true);
     expect(sent.at(-1)!.previousRevision).toBe(sent.at(-2)!.item.revision);
   });
+  it('queues a calendar deletion before its first acknowledgement', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    const calendar = { ...item, externalId: 'calendar:pending', kind: 'calendar', calendar: { start: '2026-09-01T00:00:00Z', end: '2026-09-01T01:00:00Z', allDay: false, status: 'confirmed' } } as ScannedItem;
+    await engine.stage(scan([calendar]), true);
+    expect(engine.status().pending).toBe(1);
+    await engine.stage(scan([]), true);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const queued = [...state.pendingRealtime, ...state.pendingHistory];
+    expect(queued.some((entry: SourceItem) => entry.externalId === 'calendar:pending' && entry.deleted)).toBe(true);
+    await engine.flush(source, transport(saved));
+    expect(saved.some(entry => entry.deleted)).toBe(true);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
