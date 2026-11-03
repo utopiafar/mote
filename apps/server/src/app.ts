@@ -3,7 +3,8 @@ import {createMemoryControl} from './memory-control.js';
 import {createMemoryModelAuthorityJobReader} from './memory-model-authority.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
 import {createModelEvidenceAuthority,contextFailure} from './model-evidence-authority.js';
-import type {QueryAgent} from './query-agent.js';
+import type {QueryAgent,AgentRunFinalizer,QueryRunLease} from './query-agent.js';
+import {createHostRunUsageObserver} from './agent-runtime-events.js';
 import {AgentRuntimeHost} from './agent-runtime-host.js';
 import type {FeatureServices} from './feature-services.js';
 import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
@@ -247,10 +248,16 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const unsubscribeMedia=configService.onChange(()=>{try{if(mediaConfigurationIdentity()!==initialMediaConfiguration)mediaPreparation.invalidate();}catch{mediaPreparation.invalidate();}});
   resources.beforeClose(()=>mediaPreparation.close());resources.defer(unsubscribeMedia);
   if(dependencies?.backgroundWorker)mediaPreparation.resume();
-  const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
+  const admittedUsageFactory=(route?:{mode:()=>AgentRunFinalizer|undefined;host?:()=>ReturnType<typeof observabilityAssembly.admittedUsage>|undefined})=>(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
-    const accounting={agentStarted:()=>{agentStarted=true;},modelQueued:()=>{modelQueued=true;},modelStarted:()=>{agentStarted=true;start().modelStarted();}};
+    const accounting={agentStarted:()=>{agentStarted=true;},modelQueued:()=>{modelQueued=true;},modelStarted:()=>{
+      agentStarted=true;
+      // Admission for a declared Host run belongs to the Host meter. Starting
+      // the legacy receipt here would leave a second, permanently running row.
+      if(route?.mode()==='host'){route.host?.()?.modelStarted();return;}
+      start().modelStarted();
+    }};
     return {
       run:<T>(task:()=>Promise<T>)=>queryAccounting.run(accounting,task),
       update:(tokens:import('@mote/shared').TokenUsage)=>{const current=start();current.modelStarted();current.update(tokens);},
@@ -265,6 +272,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       },
     };
   };
+  const admittedUsage=admittedUsageFactory();
   const indexer=new Indexer(store,config,diagnostics,files,input=>{
     const operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=config.embeddingModel;
     const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
@@ -654,7 +662,28 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     };
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,evidenceReadRanges:input.evidenceReadRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
-    const meter=usageOwner==='query'?admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()}):undefined;
+    const usageAttribution={agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()};
+    // Trusted per-query run accounting. Only app callbacks mutate this state and
+    // none of them throw: observation isolation must not govern execution.
+    const runState:{mode?:AgentRunFinalizer;runId?:string;hostEvents:boolean;hostTerminal:boolean;violation?:string}={hostEvents:false,hostTerminal:false};
+    // The Host path owns usage through one C06 receipt; capture its terminal
+    // receipt so the response reports the finalized sample without a second
+    // finalize. Constructing this meter writes nothing until a model starts.
+    const hostMeterBase=usageOwner==='query'?observabilityAssembly.admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
+    let hostReceipt:import('@mote/shared').UsageReceipt|undefined;
+    const hostMeter=hostMeterBase&&{...hostMeterBase,complete:()=>hostReceipt=hostMeterBase.complete(),fail:()=>hostReceipt=hostMeterBase.fail()};
+    const meter=usageOwner==='query'?admittedUsageFactory({mode:()=>runState.mode,host:()=>hostMeterBase})(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
+    let hostObserver:ReturnType<typeof createHostRunUsageObserver>|undefined;
+    // Latch violations always reject. A missing Host terminal is only a success
+    // gap: the leaf reports host before any Host session exists, so an early
+    // failure or pre-cancel must keep its original error instead of being
+    // rewritten into a terminal gap.
+    const runViolation=()=>runState.violation?new StoreError('Agent run accounting contradiction',409):undefined;
+    const runSuccessGap=()=>runState.mode==='host'&&!runState.hostTerminal?new StoreError('Agent run terminal is missing',409):undefined;
+    const runLease:QueryRunLease={onFinalizer:mode=>{
+      if(runState.mode!==undefined&&runState.mode!==mode){runState.violation??='finalizer_mode_contradiction';return;}
+      runState.mode=mode;
+    }};
     // Agent implementations account admitted model/tool/repair work. A second
     // wall-clock deadline here would charge host resource-gate waiting again.
     const deadline=agentDeadline(input.signal,null),taskSignal=deadline.signal;
@@ -671,9 +700,23 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
         disclosedSourcePins=next;observed.contextSourceContextDependencies=next;
         input.onSourceContextDependencies?.(pins);
       },
-      onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter?.update(tokens);input.onUsage?.(tokens);}};
+      onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,
+      onUsage:(tokens:import('@mote/shared').TokenUsage)=>{if(runState.mode!=='host')meter?.update(tokens);input.onUsage?.(tokens);},
+      onHostRunEvent:(envelope)=>{
+        // Bind only after the chosen leaf declared host and only from the first
+        // trusted Host identity; never infer the mode from an event.
+        if(runState.mode!=='host'){runState.violation??='host_event_without_host_mode';return;}
+        const identity=envelope?.identity;
+        const runId=identity&&typeof identity==='object'&&typeof identity.runId==='string'?identity.runId:undefined;
+        if(!runId){runState.violation??='invalid_host_identity';return;}
+        if(runState.runId===undefined)runState.runId=runId;
+        else if(runState.runId!==runId){runState.violation??='run_identity_contradiction';return;}
+        runState.hostEvents=true;
+        if(envelope.event.type==='run.terminal')runState.hostTerminal=true;
+        if(hostMeter)(hostObserver??=createHostRunUsageObserver({runId,meter:hostMeter,diagnostics}))(envelope);
+      }};
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
-    const promise=diagnostics.measure('agent',operation,()=>(meter?meter.run(()=>agent.query(observed)):agent.query(observed)).then(result=>{
+    const promise=diagnostics.measure('agent',operation,()=>(meter?meter.run(()=>agent.query(observed,runLease)):agent.query(observed,runLease)).then(result=>{
       taskSignal?.throwIfAborted();
       assertModelEvidence(observed);
       if(observed.executionLane==='interactive'&&observed.evidenceIds&&result.citations.some(citation=>![...observed.evidenceIds!,...(observed.directImages?.map(image=>image.id)??[])].includes(citation.id)))throw contextFailure('context_evidence_restricted');
@@ -696,13 +739,31 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
           if(!evidenceDependencies?.complete||used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
         }
       }
+      // A contradiction or a Host success without its terminal latches before
+      // any success finalize or product commit.
+      const accounting=runViolation()??runSuccessGap();
+      if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
-      const completedUsage=meter?.completed();
+      const completedUsage=runState.mode==='host'?hostReceipt:meter?.completed();
       return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
     }).catch(error=>{
-      if(error instanceof AgentYieldError){meter?.completed();trace({type:'query.yielded',status:'waiting'});throw error;}
+      // The Host path finalizes only through its observer's run terminal; the
+      // legacy path keeps its existing finalizers. A latched contradiction
+      // replaces the outcome after the legacy finalizer has settled its row.
+      if(error instanceof AgentYieldError){
+        // Accounting is decided before the yield finalizer: a contradiction
+        // must fail the started legacy receipt rather than complete it.
+        const accounting=runViolation();
+        if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
+        const gap=runSuccessGap();
+        if(gap){if(runState.mode!=='host')meter?.failed(gap);throw gap;}
+        if(runState.mode!=='host')meter?.completed();
+        trace({type:'query.yielded',status:'waiting'});throw error;
+      }
       const wait=error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited')?{code:error.details.code,retryAfterMs:error.details.retryAfterMs}:error instanceof ExecutionFailure&&error.category==='waiting'?{code:error.code,retryAfterMs:error.retryAfterMs}:undefined;
-      meter?.failed(error);
+      if(runState.mode!=='host')meter?.failed(error);
+      const accounting=runViolation();
+      if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId});
       trace(wait?{type:'query.waiting',status:'waiting',payload:wait}:{type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;
     }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
