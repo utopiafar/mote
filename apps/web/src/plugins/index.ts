@@ -4,6 +4,7 @@ import { agentView } from './agent-view';
 import { notes } from './notes';
 import { system } from './system';
 import { home } from './home';
+import { search } from './search';
 import { ask } from './ask';
 import { devices } from './devices';
 import { storage } from './storage';
@@ -39,6 +40,7 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   notes,
   system,
   home,
+  search,
   ask,
   devices,
   storage,

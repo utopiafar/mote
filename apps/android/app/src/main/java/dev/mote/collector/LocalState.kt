@@ -1,10 +1,8 @@
 package dev.mote.collector
 
-import android.app.Activity
-import android.content.Context
-import android.content.SharedPreferences
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Counts image-bearing records; physical blobs can be shared by multiple records. */
 data class QueueInventory(
@@ -54,72 +52,4 @@ data class LocalStateSnapshot(
 internal fun LocalStateSnapshot.withSources(load: () -> Pair<Int, Int>): LocalStateSnapshot {
     val result = runCatching(load)
     return copy(sourcePending = result.getOrNull()?.first, sourceIssues = result.getOrNull()?.second, sourceError = result.isFailure)
-}
-
-/** One application-owned producer. No images, credentials or captured text enter this stream. */
-class LocalStateRepository private constructor(context: Context) {
-    private val app = context.applicationContext
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val mutable = MutableStateFlow(LocalStateSnapshot())
-    val state: StateFlow<LocalStateSnapshot> = mutable.asStateFlow()
-    private val preferences = app.getSharedPreferences("mote", Context.MODE_PRIVATE)
-    private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> LocalStateChanges.changed() }
-    init {
-        preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
-        scope.launch {
-            LocalStateChanges.revisions.collect { request ->
-                // StateFlow conflates bursts. A fixed delay (not debounce) guarantees progress
-                // during continuous writes and permits only one storage read at a time.
-                if (!request.immediate) delay(300)
-                val previous = mutable.value
-                val next = try {
-                    check(!QueueStorage.recovering) { MoteI18n.text("正在恢复本机存储") }
-                    // Settings.save may hold Settings.class while checking queued work.
-                    // Resolve handles before taking the queue lock to keep that lock order.
-                    val activeQueue = app.queue()
-                    val quarantineQueue = BulkDedupeStore(app).quarantine()
-                    // Index upgrades inspect a few records per lock acquisition; starting capture
-                    // must not wait behind scanning the entire library.
-                    if (previous.active == null || previous.error != null || previous.revision.storage != LocalStateChanges.revisions.value.storage) {
-                        activeQueue.prepareIndex()
-                        quarantineQueue.prepareIndex()
-                    }
-                    val (revision, active, pending) = DurableQueue.exclusive {
-                        val version = LocalStateChanges.revisions.value
-                        if (previous.error == null && previous.active != null && previous.quarantine != null && previous.revision.storage == version.storage)
-                            Triple(version, previous.active, previous.quarantine)
-                        else Triple(version, activeQueue.inventory(), quarantineQueue.inventory())
-                    }
-                    val settings = Settings(app)
-                    LocalStateSnapshot(revision, active, pending, captureState = settings.state(), captureMessage = settings.message(),
-                        syncMessage = settings.uploadStatus(), checkedAt = System.currentTimeMillis()).withSources {
-                        val issues = SyncHealth.sourceAttentionCount(app)
-                        val count = app.localSources().pendingSync().count + app.fileArchives().pendingSync().count
-                        count to issues
-                    }
-                } catch (error: Exception) {
-                    previous.copy(revision = LocalStateChanges.revisions.value, error = error.message ?: MoteI18n.text("本机状态暂不可读取"))
-                }
-                mutable.value = next
-                // Notifications are a consumer even when no Activity is visible.
-                withContext(Dispatchers.Main) { runCatching { Notifications.showLocalState(app, next) } }
-            }
-        }
-    }
-    fun refresh() = LocalStateChanges.changed(immediate = true)
-    companion object {
-        @Volatile private var instance: LocalStateRepository? = null
-        fun get(context: Context): LocalStateRepository = instance ?: synchronized(this) {
-            instance ?: LocalStateRepository(context).also { instance = it }
-        }
-    }
-}
-
-/** Platform Activities explicitly pair this subscription with onResume/onPause. */
-fun Activity.observeLocalState(onState: (LocalStateSnapshot) -> Unit): Job {
-    val repository = LocalStateRepository.get(this)
-    repository.refresh() // Calibrate against storage after backgrounding or a missed process event.
-    return CoroutineScope(Dispatchers.Main.immediate).launch {
-        repository.state.collect { if (!isDestroyed && !isFinishing) onState(it) }
-    }
 }

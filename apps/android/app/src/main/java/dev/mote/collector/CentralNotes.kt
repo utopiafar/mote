@@ -27,7 +27,8 @@ internal class CentralNoteStore(private val directory: File, private val cipher:
         return note
     }
     @Synchronized fun acknowledge(id: String, response: JSONObject) {
-        require(response.optString("id") == id) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
+        val receipt = dev.mote.collector.plugins.NoteSaveReceipt.parse(response)
+        require(receipt.id == id) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
         val state = read(); val pending = state.getJSONArray("pending")
         state.put("pending", JSONArray((0 until pending.length()).map { pending.getJSONObject(it) }.filter { it.getString("id") != id })); write(state)
     }

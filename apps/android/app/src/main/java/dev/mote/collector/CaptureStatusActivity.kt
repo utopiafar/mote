@@ -40,7 +40,7 @@ class CaptureStatusActivity : MoteActivity() {
     }) {
         instanceReadHooks?.read?.invoke() ?: run {
             val settings = Settings(applicationContext); val config = settings.read()
-            CaptureOverview.facts(applicationContext, settings, config, LocalStateRepository.get(applicationContext).state.value)
+            CaptureOverview.facts(applicationContext, settings, config, LocalStatusProducer.get(applicationContext).state.value)
         }
     }
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 2500) } }

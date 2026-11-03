@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import dev.mote.collector.plugins.NativeRecordReceipt
 import android.Manifest
 import android.app.Activity
 import android.app.NotificationManager
