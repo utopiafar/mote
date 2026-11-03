@@ -21,6 +21,7 @@ import {createSourceRuntime,sourceRuntimeContribution,sourceRuntimeDeclaration,s
 import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSourceReplacement} from '../plugins/files-source.js';
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
 import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSourceReplacement} from '../plugins/notes-source.js';
+import {c10IntegrationContribution,c10IntegrationDeclaration,c10IntegrationReplacement} from '../plugins/c10-integration.js';
 import {devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacement} from '../plugins/devices-source.js';
 
 /** Declared build-time domain plugins the sources assembly wires; the
@@ -29,6 +30,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:sourceRuntimeContribution,declaration:sourceRuntimeDeclaration,replacement:sourceRuntimeReplacement},
   {contribution:filesSourceContribution,declaration:filesSourceDeclaration,replacement:filesSourceReplacement},
   {contribution:captureIntakeContribution,declaration:captureIntakeDeclaration,replacement:captureIntakeReplacement},
+  {contribution:c10IntegrationContribution,declaration:c10IntegrationDeclaration,replacement:c10IntegrationReplacement},
   {contribution:notesSourceContribution,declaration:notesSourceDeclaration,replacement:notesSourceReplacement},
   {contribution:devicesSourceContribution,declaration:devicesSourceDeclaration,replacement:devicesSourceReplacement},
 ]);
