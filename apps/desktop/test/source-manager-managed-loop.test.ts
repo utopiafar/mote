@@ -383,3 +383,85 @@ it('commits each resolved null head before the real managed slice budget expires
     expect(wire.writes()).toHaveLength(0); expect(wire.unmatched).toEqual([]);
   } finally { release.resolve(); await flushing?.catch(() => {}); await failed; }
 });
+
+it('returns finitely after a slow committed head and carries its confirmation into the next managed ACK slice', async () => {
+  const file = generatedFile('file:slow-committed-head', 'generated committed A'), entered = deferred(), release = deferred();
+  let present = true, sourceId = '', firstWrite = true, head: string | null = null, clock: number | undefined;
+  const attempts: { revision: string; deleted: boolean; previousRevision: string | null }[] = [];
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false, validateConfiguration() {},
+    async scan() { const items = present ? [file] : []; return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } }; },
+  });
+  const wire = transport(async request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities') return response(200, { manifestBatch: 200 });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId); expect(request.url.searchParams.get('externalId')).toBe(file.externalId);
+      if (clock !== undefined) clock += 15001;
+      return response(200, { revision: head });
+    }
+    if (request.method === 'POST' && request.path === '/api/file-sync/v1/manifests') {
+      expect(request.body.items).toHaveLength(1); const { item, previousRevision = null } = request.body.items[0];
+      attempts.push({ revision: item.revision, deleted: item.deleted, previousRevision });
+      if (firstWrite) { firstWrite = false; entered.resolve(); await release.promise; head = item.revision; return response(503, { error: 'Generated committed response loss' }); }
+      const duplicate = item.revision === head; if (!duplicate) expect(previousRevision).toBe(head); head = item.revision;
+      return response(200, { results: [{ externalId: item.externalId, revision: item.revision, state: duplicate ? 'existing' : 'accepted', ack: sourceAck(sourceId, item, 'file-revision', duplicate) }] });
+    }
+    return wire.reject(request);
+  });
+  let flushing: Promise<void> | undefined, failed: Promise<void> | undefined;
+  try {
+    const app = await openManaged(adapters);
+    sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated slow committed head' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: true, syncContinuously: true });
+    await app.sync(true);
+    flushing = app.flushPending(new AbortController().signal); failed = expect(flushing).rejects.toMatchObject({ httpStatus: 503 }); await entered.promise;
+    present = false; await app.sync(true); release.resolve(); await failed;
+    const start = wire.requests.length; clock = Date.now(); const now = vi.spyOn(Date, 'now').mockImplementation(() => clock!);
+    try {
+      let slices = 0;
+      await expect(app.flushPending(new AbortController().signal, async () => {
+        if (++slices > 2) throw Error('Generated guard: zero-progress source immediately requeued');
+      })).resolves.toBeUndefined();
+      expect(slices).toBe(1); expect(app.status()[0]!.pending).toBe(1); expect(attempts).toHaveLength(1);
+      await expect(app.flushPending(new AbortController().signal)).resolves.toBeUndefined();
+      expect(app.status()[0]!.pending).toBe(0);
+      expect(wire.requests.slice(start).filter(request => request.path === '/api/file-sync/v1/head')).toHaveLength(1);
+      expect(attempts.map(item => item.deleted)).toEqual([false, false, true]);
+      expect(attempts[1]!.revision).toBe(attempts[0]!.revision); expect(attempts[2]!.previousRevision).toBe(attempts[0]!.revision);
+    } finally { now.mockRestore(); clock = undefined; }
+    expect(wire.unmatched).toEqual([]);
+  } finally { release.resolve(); await flushing?.catch(() => {}); await failed; }
+});
+
+it('persists absence during paused local discovery without Central reads until managed sending resumes', async () => {
+  const file = generatedFile('file:paused-discovery', 'generated paused file'); let present = true, sourceId = '';
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false, validateConfiguration() {},
+    async scan() { const items = present ? [file] : []; return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } }; },
+  });
+  const wire = transport(request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities') return response(200, { manifestBatch: 200 });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId); expect(request.url.searchParams.get('externalId')).toBe(file.externalId);
+      return response(200, { revision: null });
+    }
+    if (request.method === 'POST' && request.path === '/api/file-sync/v1/manifests') return response(503, { error: 'Generated precommit failure' });
+    return wire.reject(request);
+  });
+  const app = await openManaged(adapters);
+  sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated paused discovery' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: false, syncContinuously: true });
+  await app.sync(true); await expect(app.flushPending(new AbortController().signal)).rejects.toMatchObject({ httpStatus: 503 });
+  await app.setSyncPaused(true); const before = wire.requests.length; present = false;
+  await app.sync(true); await app.flushPending(new AbortController().signal);
+  expect(wire.requests).toHaveLength(before); expect(app.status()[0]!.pending).toBe(1); expect(await markerCount(sourceId)).toBe(1);
+  await app.setSyncPaused(false); await app.sync(true); expect(wire.requests).toHaveLength(before);
+  await expect(app.flushPending(new AbortController().signal)).resolves.toBeUndefined();
+  expect(app.status()[0]!.pending).toBe(0);
+  expect(wire.requests.slice(before).filter(request => request.path === '/api/file-sync/v1/head')).toHaveLength(1);
+  expect(wire.unmatched).toEqual([]);
+});

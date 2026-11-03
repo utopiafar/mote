@@ -296,14 +296,9 @@ export class LocalSourceManager {
           source.importCompletedAt = new Date().toISOString(); await this.persist(); await this.refreshWatchers();
         }
         if (this.managedUploads) {
-          const managedRequest = this.request(signal);
-          const resolveHead = async (item: import('./source-types').SourceItem) => {
-            try {
-              const head = await managedRequest(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined;
-              return head && 'revision' in head ? (head.revision ?? null) : undefined;
-            } catch { return undefined; }
-          };
-          await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync,undefined,false,resolveHead);
+          // Discovery only journals absence. Head reconciliation belongs to the
+          // paused/scheduled, bounded transport path in flushPending.
+          await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync);
           Object.assign(status, engine.status(), { state: 'idle', message: !this.connection.serverUrl || !connectionToken(this.connection) ? moteText("已保存在本机；尚未配置中央同步") : moteText("已检查本地变化，按同步设置等待上传") });
         } else {
           const pending = this.pendingStats();

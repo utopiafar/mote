@@ -62,6 +62,7 @@ export class SourceSync {
   private inflight=new Set<string>();
   private unreconciledAbsent=new Set<string>();
   private confirmedAbsent=new Map<string,string>();
+  private uploadProgress=0;
   private headCursor=0;
   private knownItems=0;
   private pendingContentRevision=0;
@@ -387,7 +388,13 @@ export class SourceSync {
       const outcomes = await Promise.all(batches.map(async batch => { const keys=batch.map(itemKey); for(const key of keys)this.inflight.add(key); try { observer?.attempt(source,batch); return { batch, result: await this.sendBatch(source, batch, measured, signal, observer) }; } catch (error) { observer?.failed(source,batch,error); return { batch, error }; } finally { for(const key of keys)this.inflight.delete(key); } }));
       let failure: unknown;
       for (const outcome of outcomes) {
-        if ('error' in outcome) { if(!failure||failure instanceof UploadSliceYield)failure=outcome.error;continue; }
+        if ('error' in outcome) {
+          // Admission yield has not consumed the confirmed duplicate. A real
+          // failure must obtain a fresh head before another absent retry.
+          if (!(outcome.error instanceof UploadSliceYield)) for (const item of outcome.batch) this.confirmedAbsent.delete(itemKey(item));
+          if(!failure||failure instanceof UploadSliceYield)failure=outcome.error;continue;
+        }
+        for (const item of outcome.batch) this.confirmedAbsent.delete(itemKey(item));
         const {acks,rejected=[]}=outcome.result;
         const accepted=new Set(acks.map(ack=>itemKey({externalId:String(ack.externalId),revision:String(ack.revision)})));
         observer?.settle(source,outcome.batch,acks,rejected);
@@ -403,9 +410,10 @@ export class SourceSync {
   }
 
   async flushSlice(source:SourceDefinition,request:SourceRequest,signal?:AbortSignal,observer?:SourceUploadObserver,slice=new UploadSlice()){
+    const progress = this.uploadProgress;
     const bounded:SourceRequest=(path,body,method,requestSignal)=>{signal?.throwIfAborted();slice.admit(body);return request(path,body,method,requestSignal);};
     try{return {state:await this.flush(source,bounded,signal,observer),bytes:slice.bytes,requests:slice.requests};}
-    catch(error){if(!(error instanceof UploadSliceYield))throw error;return {state:'yielded' as const,bytes:slice.bytes,requests:slice.requests};}
+    catch(error){if(!(error instanceof UploadSliceYield))throw error;return {state:this.uploadProgress===progress?'ready' as const:'yielded' as const,bytes:slice.bytes,requests:slice.requests};}
   }
 
 
@@ -413,8 +421,13 @@ export class SourceSync {
    * managed flush can publish an absent file, confirm the node head. */
   private async reconcileAbsentInflight(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<void> {
     this.unreconciledAbsent.clear();
-    this.confirmedAbsent.clear();
-    const candidates = this.pendingItems().filter(item => item.kind === 'file' && !item.deleted && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight);
+    const pending = this.pendingItems(), markers = new Map(pending.map(item => [itemKey(item), this.data.known[sourceHash(item.externalId)]?.absentWhileInflight]));
+    for (const [key, marker] of this.confirmedAbsent) if (markers.get(key) !== marker) this.confirmedAbsent.delete(key);
+    // Carry an unconsumed confirmation across admission boundaries; otherwise a
+    // slow but successful head could consume every slice before its ACK send.
+    // Serve that confirmation before more head reads can exhaust another slice.
+    if (this.confirmedAbsent.size) return;
+    const candidates = pending.filter(item => this.awaitingAbsentHead(item));
     if (!candidates.length) return;
     const withdrawKeys = new Set<string>();
     let exhausted: UploadSliceYield | undefined;
@@ -478,6 +491,7 @@ export class SourceSync {
       next.known = known;
       await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...[...identities.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
     });
+    this.uploadProgress += removed.length;
     await this.discardUnqueuedOriginals(removed);
     if (exhausted) throw exhausted;
   }
@@ -570,6 +584,7 @@ export class SourceSync {
           if (existing?.hash === hash && existing.bytes === bytes.length) continue;
           const receipt = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/parts/' + part, bytes, 'PUT', signal) as {part?:number;hash?:string;bytes?:number};
           if (receipt?.part !== part || receipt.hash !== hash || receipt.bytes !== bytes.length) throw Error('File part acknowledgement does not match the queued original');
+          this.uploadProgress++;
         }
         ack = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/commit', {}, 'POST', signal) as Record<string, unknown>;
       }
@@ -601,6 +616,7 @@ export class SourceSync {
     for(const item of batch)patches.push({section:'predecessors',key:item.revision},{section:'delivered',key:sourceHash(item.externalId),value:item.revision});
     for(const value of rejected)patches.push({section:'quarantined',key:itemKey(value.item),value});
     await this.commit(next,undefined,patches);
+    this.uploadProgress += batch.length + rejected.length;
     // Apply only touched map entries after the SQLite transaction is durable.
     // A one-item ACK never clones or scans the full historical catalog.
     for(const item of batch){delete this.data.predecessors?.[item.revision];(this.data.delivered??={})[sourceHash(item.externalId)]=item.revision;}
