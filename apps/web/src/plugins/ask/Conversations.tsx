@@ -1,24 +1,25 @@
 import {SaveConversationRecord} from './SaveConversationRecord';
 import {queryRecovery,type OwnedQuery} from './query-recovery';
 import {unsentDrafts,unsentImages,type ChatAttachment,type ChatImageUpload} from './chat-drafts';
-import {useOriginalReference} from './ask-original-reference';
-import {containDialogFocus} from './dialog-focus';
+import {useOriginalReference} from '../../ask-original-reference';
+import {containDialogFocus} from '../../dialog-focus';
 import {conversationFailure,ConversationDialog,ConversationTurnDetails} from './ConversationTurnDetails';
-import {useResource} from './useResource';
-import {useOperationUpdates} from './useOperationUpdates';
-import {readResource,resources} from './resource-cache';
-import {failureMessage} from './failure-message';
-import {ModelSelector} from './ModelSelector';
+import {useResource} from '../../useResource';
+import {useOperationUpdates} from '../../useOperationUpdates';
+import {readResource,resources} from '../../resource-cache';
+import {failureMessage} from '../../failure-message';
+import {ModelSelector} from '../../ModelSelector';
 import { moteText } from '@mote/shared/i18n';
 import {QueryProgress,type QueryRun} from './QueryProgress';
-import {uploadChatImage} from './plugins/notes/note-attachments';
+import {uploadChatImage} from '../notes/note-attachments';
 import React,{useCallback,useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode} from 'react';
 import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
-import {ApiError,dateTime, type Answer, type Api, type Device, type Range} from './api';
+import {ApiError,dateTime, type Answer, type Api, type Device, type Range} from '../../api';
 import {ConversationHeading,ConversationComposer} from './ConversationShell';
-import {FeaturePanels} from './features/runtime';
-import {readOwnerQuestion} from './owner-question-route';
+import {FeaturePanels} from '../../features/runtime';
+import {readOwnerQuestion} from '../../owner-question-route';
 import {readOriginTurn} from './conversation-origin';
+import {type AskController,useAskController} from './controller';
 
 const StableModelSelector=React.memo(ModelSelector);
 
@@ -69,13 +70,15 @@ function DraftComposer({draft,children}:{draft:ReturnType<typeof createQuestionD
  const question=useSyncExternalStore(draft.subscribe,draft.getSnapshot,draft.getSnapshot);
  return children(question);
 }
-export function Conversations({api, configured, devices, renderAnswer,onOpen=()=>{}}: {
+export function Conversations({api, configured, devices, renderAnswer,onOpen=()=>{},controller:provided}: {
   api: Api;
   configured: boolean;
   devices: Device[];
   renderAnswer: (answer: Answer, openReference:(ref:string)=>void) => ReactNode;
   onOpen?: (ref:string)=>void;
+  controller?: AskController;
 }) {
+  const runController=useAskController(api,provided);
   const reference=useOriginalReference(api);
   const referenceScope=useRef({api,key:reference.key});
   useEffect(()=>{if(referenceScope.current.api===api&&referenceScope.current.key!==reference.key)queryRecovery.contextChanged(api);referenceScope.current={api,key:reference.key};},[api,reference.key]);
@@ -226,20 +229,11 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     setBusy(false);setPendingQuestion('');setPollError(conversationFailure(cause));setPollReceiptMissing(cause instanceof ApiError&&cause.status===404);
   }
   useEffect(()=>{
-    if(!run||run.status!=='running'&&settledReceipts.current.has(run.id))return;
-    const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
-    const update=async()=>{
-      try{
-        const current=await readResource<QueryRun>(api,`/api/query-runs/${run.id}`,controller.signal);
-        if(controller.signal.aborted)return;
-        if(current.id!==run.id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
-        receiveRun(current);
-        if(current.status==='running')timer=setTimeout(()=>void update(),1000);
-      }catch(e){if(!controller.signal.aborted){unconfirmed(e);timer=setTimeout(()=>void update(),3000);}}
-    };
-    void update();
-    return()=>{controller.abort();clearTimeout(timer);};
-  },[api,run?.id,run?.status,recheck]);
+    if(!run||run.status!=='running'&&settledReceipts.current.has(run.id)){runController.stopPolling();return;}
+    const id=run.id;
+    runController.poll(id,{onRun:current=>{if(current.id!==id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));receiveRun(current);},onError:unconfirmed});
+    return()=>runController.stopPolling();
+  },[api,run?.id,run?.status,recheck,runController]);
   async function checkOriginal(){
     const retained=queryRecovery.get(api),id=retained?.id??run?.id;if(!id||operation.current)return;
     const controller=new AbortController();operation.current=controller;setBusy(true);setPollError('');setPollReceiptMissing(false);

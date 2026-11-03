@@ -1,8 +1,8 @@
-import {useUnsavedChanges} from './unsaved';
+import {useUnsavedChanges} from '../../unsaved';
 import {useId,useRef,useState} from 'react';
 import {formatEvidenceRef} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {type Answer,type Api,errorMessage} from './api';
+import {type Answer,type Api,errorMessage} from '../../api';
 import {ConversationDialog} from './ConversationTurnDetails';
 import {AnswerMarkdown} from './AnswerMarkdown';
 /** One owner-reviewed quote, comment and optional context, with one retry identity. */

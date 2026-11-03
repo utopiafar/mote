@@ -13,7 +13,7 @@ import {verifyCompleteNoteQuote} from './note-material-quote';
 import { useResource } from './useResource';
 import type { LibraryCatalogDescriptor } from '@mote/shared';
 import { FeatureActions, FeaturePanels, FeatureView } from './features/runtime';
-import { AnswerMarkdown } from './AnswerMarkdown';
+import { AnswerMarkdown } from './plugins/ask/AnswerMarkdown';
 import { AttributionEditor, AttributionSummary, type AttributionContext } from './AttributionContext';
 import { memoryMaterialRoute } from './memory-source-route';
 import { artifactDisplay, materialKind, materialState, sourceDisplay } from './material-presentation';

@@ -1,4 +1,4 @@
-import {associateChatScope,clearChatReloadDraft} from './chat-drafts';
+import {associateChatScope,clearChatReloadDraft} from './plugins/ask/chat-drafts';
 import {installGlobalErrorLogging,log} from './logger';
 import { ClientLoginApproval } from './ClientLoginApproval';
 import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';

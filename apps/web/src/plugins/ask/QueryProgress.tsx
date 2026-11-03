@@ -1,9 +1,9 @@
-import {failureMessage} from './failure-message';
+import {failureMessage} from '../../failure-message';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {queryWorkProgress,type WorkActivity} from '@mote/shared';
-import {WorkProgress,WorkStateBadge} from './plugins/work/WorkProgress';
-import {useResource} from './useResource';
-import type {Api} from './api';
+import {WorkProgress,WorkStateBadge} from '../work/WorkProgress';
+import {useResource} from '../../useResource';
+import type {Api} from '../../api';
 import {useEffect,useState} from 'react';
 import {LoaderCircle,CheckCircle2,AlertCircle} from 'lucide-react';
 export interface QueryRun {id:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;conversationId?:string;turnId?:string;events:{stage:'starting'|'model'|'tool'|'validating';at:string;tool?:string;message?:string;count?:number;phase?:'started'|'completed';step?:number}[];error?:{code?:string;message:string};execution?:import('@mote/shared').ExecutionEnvelope}

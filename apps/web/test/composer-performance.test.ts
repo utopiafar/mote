@@ -8,7 +8,7 @@ import {unified} from 'unified';
 import {configureLocale} from '@mote/shared/i18n';
 import type {Answer,Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
-import {queryRecovery} from '../src/query-recovery.js';
+import {queryRecovery} from '../src/plugins/ask/query-recovery.js';
 
 const when='2026-10-20T00:00:00Z',citation='11111111-1111-4111-8111-111111111111';
 const summary=(id='A')=>({id,title:'Generated '+id,createdAt:when,updatedAt:when,turnCount:1,scope:{},status:'completed'});
@@ -28,7 +28,7 @@ async function fixture(t:any){
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/ask',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();
  for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  dom.window.HTMLElement.prototype.scrollIntoView=()=>{};
- const {createRoot}=await import('react-dom/client'),{Conversations}=await import('../src/Conversations.js'),{AnswerView}=await import('../src/shell-components.js');
+ const {createRoot}=await import('react-dom/client'),{Conversations}=await import('../src/plugins/ask/Conversations.js'),{AnswerView}=await import('../src/shell-components.js');
  const root=createRoot(dom.window.document.getElementById('root')!),d=dom.window.document,opened:string[]=[],onOpen=(ref:string)=>opened.push(ref);
  let renders=0;
  const renderAnswer=(value:Answer)=>{renders++;return React.createElement(AnswerView,{answer:value,onOpen});};
@@ -86,7 +86,7 @@ test('model selection and override input keep draft edit ordering, live settings
  assert.match(selector.textContent!,/Generated refreshed provider/,'memo still consumes real shared resource updates');assert.equal(version(),expected,'settings refresh does not edit the draft');
  await act(async()=>f.input().focus());await f.press('Enter');
  assert.equal(posts.length,1);assert.equal(posts[0].input.question,'Generated selected-model question');assert.equal(posts[0].input.modelProfileId,'generated-second-provider');assert.equal(posts[0].input.modelOverride,'generated-final-override');
- assert.equal((queryRecovery.get(api) as import('../src/query-recovery.js').OwnedQuery).draftVersion,expected,'admission freezes the version after the model edits');
+ assert.equal((queryRecovery.get(api) as import('../src/plugins/ask/query-recovery.js').OwnedQuery).draftVersion,expected,'admission freezes the version after the model edits');
  assert.equal(f.d.querySelector<HTMLInputElement>('[aria-label="临时模型 ID"]')!.disabled,true);
  const nextTransport=apiWith(()=>({items:[]})),next={...nextTransport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:nextTransport.request(path,init)} as Api;
  await f.render(next);const oldVersion=version(),nextVersion=version(next);await inputModel('generated-next-owner-model');

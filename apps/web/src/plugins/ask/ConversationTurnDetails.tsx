@@ -1,10 +1,10 @@
 import {useEffect,useRef,type ReactNode} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import {commonFailureMessage,httpStatusMessage,formatEvidenceRef} from '@mote/shared';
-import type {Api,Answer} from './api';
-import {dateTime,ApiError,errorMessage} from './api';
-import {containDialogFocus} from './dialog-focus';
-import {TurnUsage} from './Usage';
+import type {Api,Answer} from '../../api';
+import {dateTime,ApiError,errorMessage} from '../../api';
+import {containDialogFocus} from '../../dialog-focus';
+import {TurnUsage} from '../../Usage';
 import {QueryProgress,type QueryRun} from './QueryProgress';
 export function conversationFailure(error:unknown){return error instanceof ApiError?(error.code&&commonFailureMessage(error.code,error.status)||httpStatusMessage(error.status)):errorMessage(error);}
 /** Hidden children stay mounted so closing More never discards a save draft. */

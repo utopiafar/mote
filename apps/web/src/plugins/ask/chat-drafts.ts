@@ -1,4 +1,4 @@
-import type {Api} from './api';
+import type {Api} from '../../api';
 export type ChatAttachment={id:string;name:string;mimeType:string};
 export type ChatImageUpload={key:string;file:File;status:'uploading'|'failed'};
 export const unsentDrafts=new WeakMap<Api,{question:string;attachments:ChatAttachment[]}>();

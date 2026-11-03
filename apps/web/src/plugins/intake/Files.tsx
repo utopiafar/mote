@@ -13,7 +13,7 @@ import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {type Api,type Capture,bytes,dateTime,errorMessage} from '../../api';
 import {archivePageWithdrawn,currentArchivePages,mergeArchivePage,reconcileArchivePages,type ArchivePage,type ArchivePages} from '../../archive-pages';
 import {downloadFileExport,FileReview} from './FileReview';
-import {AnswerMarkdown} from '../../AnswerMarkdown';
+import {AnswerMarkdown} from '../ask/AnswerMarkdown';
 import {FileProcessingControls} from '../../FileProcessingControls';
 
 type FileRow={cancellation?:{canCancel:boolean;wait:'running'|'unknown'|null};processingPolicy?:{capabilities?:{dialogue:boolean;summary:boolean};applied:any;current:any};captureId:string;sourceId:string;sizeBytes:number;hasOriginal:boolean;originMissing:boolean;item:{document?:{fileIndex?:import('@mote/shared').FileIndex};text?:string;title:string;layer:string;observedAt:string;mimeType?:string};job:null|import('@mote/shared').FileProcessingJobView;steps?:{step:string;state:string;attempts:number;execution?:import('@mote/shared').ExecutionEnvelope}[];artifacts:{id:string;kind:string;durationMs?:number;complete?:boolean;sections?:{answer:string;citationIds:string[]}[];calendarId?:string;title?:string;confirmed?:boolean;providerSupplied?:boolean}[]};

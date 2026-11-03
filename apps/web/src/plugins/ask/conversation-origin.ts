@@ -1,4 +1,4 @@
-import type {Answer,Api} from './api';
+import type {Answer,Api} from '../../api';
 export interface OriginTurn {id:string;question:string;result?:Answer;evidenceDeleted?:boolean;evidenceStale?:boolean}
 interface Page {id:string;revision?:number;turns:OriginTurn[];nextCursor?:string|null}
 /** Resolve stable IDs through fresh authorized reads, including older pages. Never infer by text. */
