@@ -1,9 +1,6 @@
-import {parseEvidenceRef,formatEvidenceRef,parseArtifactRef} from '@mote/shared';
+import {parseMoteReference} from '@mote/shared';
 function normalizePublicReference(value:string):string|null {
- const parsed=parseEvidenceRef(value);
- if(parsed)return formatEvidenceRef(parsed.kind,parsed.id);
- if(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(value)||parseArtifactRef(value))return value;
- return null;
+ return parseMoteReference(value)??null;
 }
 export function readEvidenceRoute(hash:string):string|null {
  const value=new URLSearchParams(hash.split('?')[1]??'').get('evidence');
