@@ -5,7 +5,6 @@ import androidx.work.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
-import java.util.concurrent.TimeUnit
 
 /** Explicit recovery only. Does not delete local data or treat remote existence as an acknowledgement. */
 class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
@@ -67,13 +66,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
         }
     }
     companion object {
-        fun start(context: Context, replay: Boolean) {
-            val config = Settings(context).read(); config.validateConnection()
-            val request = OneTimeWorkRequestBuilder<SyncRecoveryWorker>().setConstraints(SyncSchedule.constraints(config, explicit = true))
-                .setInputData(workDataOf("replay" to replay, "syncStamp" to SyncSchedule.stamp(config)))
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-            WorkManager.getInstance(context).enqueueUniqueWork("mote-sync-recovery", ExistingWorkPolicy.KEEP, request)
-            context.getSharedPreferences("sync-recovery", Context.MODE_PRIVATE).edit().putString("message", MoteI18n.text("操作已请求；重复点击会合并，等待网络条件或当前操作完成")).apply()
-        }
+        fun start(context: Context, replay: Boolean) =
+            dev.mote.collector.plugins.DurableTransportPlugin.get(context).startRecovery(replay)
     }
 }

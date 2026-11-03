@@ -66,7 +66,8 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
             if (UploadHistoryRecovery.unavailable && !UploadHistoryRecovery.restore(applicationContext, applicationContext.queue(), settings)) return Result.retry()
             SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
             settings.syncStatus("uploading", MoteI18n.text("正在同步来源记录"))
-            val itemHistory = ItemUploadSession(applicationContext, config, lane = "source").also { it.restore() }
+            val itemHistory = dev.mote.collector.plugins.DurableTransportPlugin.get(applicationContext)
+                .uploadSession(config, lane = "source").also { it.restore() }
             val rotation = applicationContext.getSharedPreferences("source-upload-turns", Context.MODE_PRIVATE)
             val after = if (rotation.getString("target", null) == target) rotation.getString("after", null) else null
             val dispatch = UploadSlice(maxBytes = 8L * 1024 * 1024, maxRequests = 128)

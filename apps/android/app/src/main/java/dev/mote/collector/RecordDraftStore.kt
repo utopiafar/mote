@@ -97,5 +97,5 @@ internal fun android.content.Context.recordDraftStore(): RecordDraftStore {
     LocalDataFormat.requireCurrent(this)
     val app = applicationContext
     val directory = File(app.noBackupFilesDir, "record-draft")
-    return recordStores.computeIfAbsent(directory.absolutePath) { RecordDraftStore(directory, app.localContentCipher()) { app.getSharedPreferences("mote", android.content.Context.MODE_PRIVATE).getInt("maxQueue", 256) * 1024L * 1024L - QueueStorage(app).openQueue().stats().bytes - File(app.filesDir, "record-pending").listFiles().orEmpty().sumOf { it.length() } } }
+    return recordStores.computeIfAbsent(directory.absolutePath) { RecordDraftStore(directory, app.localContentCipher()) { app.getSharedPreferences("mote", android.content.Context.MODE_PRIVATE).getInt("maxQueue", 256) * 1024L * 1024L - app.queue().stats().bytes - File(app.filesDir, "record-pending").listFiles().orEmpty().sumOf { it.length() } } }
 }

@@ -81,7 +81,5 @@ internal class ItemUploadHistory(private val file: File, private val cipher: Byt
         } finally { db.endTransaction() }
     }
 }
-internal fun Context.itemUploadHistory(): ItemUploadHistory {
-    LocalDataFormat.requireCurrent(this)
-    return ItemUploadHistory(File(noBackupFilesDir, "upload-history/items.sqlite"), secretBox())
-}
+internal fun Context.itemUploadHistory(): ItemUploadHistory =
+    dev.mote.collector.plugins.DurableTransportPlugin.get(this).itemHistory()
