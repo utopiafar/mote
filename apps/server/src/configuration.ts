@@ -42,7 +42,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
   const hasAgentKey = Boolean(config.apiKey.trim()), hasEmbeddingKey = Boolean(config.embeddingApiKey.trim());
   const localWithoutKey = Boolean(config.allowUnauthenticatedLocal && (() => { try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(config.modelBaseUrl).hostname); } catch { return false; } })());
   const view: ServerConfiguration = {
-    version: 1, profile: config.profile ?? 'default', runtime, envFile: context?.hostConfigFile ?? context?.envFile ?? null, baseDir,
+    version: 1, profile: config.profile ?? 'default', runtime, envFile: context?.hostConfigFile ?? context?.configFile ?? null, baseDir,
     readOnly: true, restartRequired: true,
     description: moteText("此接口只读展示中央的生效配置，只向已认证的节点所有者提供。模型可在模型设置中保存并立即生效；其余部署设置修改后需重启中央。路径不会加入安全支持包。"),
     storage,
@@ -54,8 +54,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
       { id: 'deployment', title: moteText("部署与配置来源"), description: moteText("环境文件修改后不会立即影响运行中的进程。容器中的加载文件与宿主机可编辑配置可能不同。"), fields: [
         field('profile', moteText("环境"), config.profile ?? 'default', moteText("dev、test、prod 或显式命名的独立环境。"), 'MOTE_PROFILE'),
         field('runtime', moteText("运行方式"), runtime, moteText("部署工具声明的运行方式；缺少元数据时显示 unknown，不探测宿主环境。"), 'MOTE_RUNTIME'),
-        field('configurationFile', moteText("部署配置文件"), context?.hostConfigFile ?? context?.envFile ?? null, moteText("部署工具提供的宿主配置路径；请在部署机器修改。未提供时显示实际加载文件。"), 'MOTE_CONFIG_FILE', { ...ownerPath, source: context?.hostConfigFile ? context.sources.MOTE_CONFIG_FILE ?? 'environment' : 'derived' }),
-        field('effectiveEnvFile', moteText("进程加载文件"), context?.envFile ?? null, moteText("显式 MOTE_ENV_FILE 只读取该文件；Docker 可使用空文件哨兵，生效值由容器环境注入。"), 'MOTE_ENV_FILE', ownerPath),
+        field('configurationFile', moteText("部署配置文件"), context?.hostConfigFile ?? context?.configFile ?? null, moteText("部署工具提供的宿主配置路径；请在部署机器修改。未提供时显示实际加载文件。"), 'MOTE_CONFIG_FILE', { ...ownerPath, source: context?.hostConfigFile ? context.sources.MOTE_CONFIG_FILE ?? 'environment' : 'derived' }),
         field('baseDirectory', moteText("相对路径基准"), baseDir, moteText("MOTE_DATA_DIR 与 MOTE_LOG_DIR 的相对路径以此目录解析。"), undefined, ownerPath),
       ] },
       { id: 'storage', title: moteText("数据与空间"), description: storage.description, fields: [

@@ -5,7 +5,7 @@ import {spawn} from 'node:child_process';
 import {connect} from 'node:net';
 import {isolatedEnvironment} from '../profile-lib.mjs';
 
-const profile={profile:'test',env:{MOTE_TOKEN:'generated-profile-token'},meta:{runtime:'native'},project:'generated-profile-proxy',directory:'/tmp/generated-profile-proxy',dataDir:'/tmp/generated-profile-proxy/data',envFile:'/tmp/generated-profile-proxy/mote.env',url:'http://127.0.0.1:47852'};
+const profile={profile:'test',env:{MOTE_TOKEN:'generated-profile-token'},meta:{runtime:'native'},project:'generated-profile-proxy',directory:'/tmp/generated-profile-proxy',dataDir:'/tmp/generated-profile-proxy/data',configFile:'/tmp/generated-profile-proxy/mote.yaml',url:'http://127.0.0.1:47852'};
 const cleanProxy={HTTP_PROXY:undefined,http_proxy:undefined,HTTPS_PROXY:undefined,https_proxy:undefined,NO_PROXY:undefined,no_proxy:undefined};
 
 test('profile proxies preserve configured bypasses and always bypass IPv4/IPv6 loopback in both cases',()=>{

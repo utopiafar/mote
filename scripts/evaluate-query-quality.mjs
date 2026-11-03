@@ -7,9 +7,9 @@ import {parseArgs} from 'node:util';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 
-const {values}=parseArgs({options:{'isolated-data-dir':{type:'string'},'env-file':{type:'string'},questions:{type:'string'},output:{type:'string'},strategy:{type:'string',default:'base'},'context-time':{type:'string'},'profile-id':{type:'string',default:'env:deployment'},model:{type:'string',default:'gpt-6.1-sol'},'fixture-records':{type:'string'},'prepare-only':{type:'boolean',default:false},'allow-live-model':{type:'boolean',default:false},help:{type:'boolean',default:false}}});
-if(values.help){process.stdout.write('Usage: node --import tsx scripts/evaluate-query-quality.mjs --isolated-data-dir ABS --env-file ABS --questions ABS --output ABS --strategy base|review|research-writer|both --allow-live-model\nUse --prepare-only instead of --allow-live-model to settle deterministic startup with model execution disabled.\nVault requires .query-quality-isolated.json: {"purpose":"mote-query-quality","frozenAt":"ISO","datasetFingerprint":"optional shared prepared fingerprint"}. Questions: {"cases":[{"id":"case","turns":[{"question":"..."},{"question":"follow-up"}]}]}. Each case uses real Ask API conversation continuation. Never pass the running vault.\n');process.exit(0);}
-for(const key of ['isolated-data-dir','env-file','questions','output'])if(!values[key])throw new Error('Missing --'+key);
+const {values}=parseArgs({options:{'isolated-data-dir':{type:'string'},'config-file':{type:'string'},questions:{type:'string'},output:{type:'string'},strategy:{type:'string',default:'base'},'context-time':{type:'string'},'profile-id':{type:'string',default:'env:deployment'},model:{type:'string',default:'gpt-6.1-sol'},'fixture-records':{type:'string'},'prepare-only':{type:'boolean',default:false},'allow-live-model':{type:'boolean',default:false},help:{type:'boolean',default:false}}});
+if(values.help){process.stdout.write('Usage: node --import tsx scripts/evaluate-query-quality.mjs --isolated-data-dir ABS --config-file ABS --questions ABS --output ABS --strategy base|review|research-writer|both --allow-live-model\nUse --prepare-only instead of --allow-live-model to settle deterministic startup with model execution disabled.\nVault requires .query-quality-isolated.json: {"purpose":"mote-query-quality","frozenAt":"ISO","datasetFingerprint":"optional shared prepared fingerprint"}. Questions: {"cases":[{"id":"case","turns":[{"question":"..."},{"question":"follow-up"}]}]}. Each case uses real Ask API conversation continuation. Never pass the running vault.\n');process.exit(0);}
+for(const key of ['isolated-data-dir','config-file','questions','output'])if(!values[key])throw new Error('Missing --'+key);
 if(!values['allow-live-model']&&!values['prepare-only'])throw new Error('Live model work requires the explicit --allow-live-model execution flag');
 if(!['base','review','research-writer','both'].includes(values.strategy))throw new Error('Invalid experiment strategy');
 const dataDir=await realpath(resolve(values['isolated-data-dir'])),marker=JSON.parse(await readFile(join(dataDir,'.query-quality-isolated.json'),'utf8'));
@@ -19,11 +19,12 @@ const input=JSON.parse(await readFile(resolve(values.questions),'utf8'));
 const cases=Array.isArray(input)?[{id:'conversation',turns:input.map(turn=>typeof turn==='string'?{question:turn}:turn)}]:input.cases;
 if(!Array.isArray(cases)||!cases.length||cases.some(c=>typeof c.id!=='string'||!Array.isArray(c.turns)||!c.turns.length||c.turns.some(t=>typeof t.question!=='string')))throw new Error('Invalid question cases');
 for(const key of Object.keys(process.env))if(key.startsWith('MOTE_'))delete process.env[key];
-// Keep enabled traces in the isolated private log directory; console output carries experiment metadata only.
-Object.assign(process.env,{MOTE_ENV_FILE:resolve(values['env-file']),MOTE_DATA_DIR:dataDir,MOTE_PROFILE:'quality',MOTE_TOKEN:randomBytes(32).toString('hex'),MOTE_HOST:'127.0.0.1',MOTE_PORT:'47852',MOTE_LOG_DIR:join(dataDir,'logs'),MOTE_LOG_LEVEL:'info',MOTE_AGENT_TRACE_ENABLED:'1',MOTE_CONNECTOR_PLUGINS:'[]',MOTE_BACKEND_PLUGINS:'[]',MOTE_FILE_PROCESSOR_PLUGINS:'[]',MOTE_EMBEDDING_MODEL:'',MOTE_MCP_ENABLED:'0',MOTE_MCP_WRITE_ENABLED:'0'});
-const {configFromEnv}=await import('../apps/server/src/config.ts'),{buildApp}=await import('../apps/server/src/app.ts');
-const config=configFromEnv();config.connectors={...config.connectors,directory:join(dataDir,'.quality-empty-connectors'),modules:[]};
-config.fileProcessorModules=[];config.backendPluginModules=[];config.retentionDays=0;config.insightIntervalHours=0;
+const {configFromFile}=await import('../apps/server/src/config.ts'),{buildApp}=await import('../apps/server/src/app.ts');
+// The selected YAML owns model settings; only the isolated experiment runtime is overridden.
+const config=configFromFile(resolve(values['config-file']),{initializeCredentials:false});
+Object.assign(config,{dataDir,tokenPath:join(dataDir,'access-token'),profile:'quality',token:randomBytes(32).toString('hex'),host:'127.0.0.1',port:47852,
+  logDirectory:join(dataDir,'logs'),logLevel:'info',agentTraceEnabled:true,retentionDays:0,insightIntervalHours:0,embeddingModel:'',fileProcessorModules:[],backendPluginModules:[]});
+config.connectors={...config.connectors,directory:join(dataDir,'.quality-empty-connectors'),modules:[],mcpEnabled:false,mcpWriteEnabled:false};
 const output=resolve(values.output),report={version:1,strategy:values.strategy,contextTime,dataDir,startedAt:new Date().toISOString(),cases:[]};
 await mkdir(dirname(output),{recursive:true,mode:0o700});
 const save=()=>writeFile(output,JSON.stringify(report,null,2)+'\n',{mode:0o600});

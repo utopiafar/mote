@@ -40,15 +40,15 @@ const freePort = () => new Promise((resolve, reject) => { const listener = net.c
   assert.throws(() => prepareScreenshot(nativeImage.createFromBitmap(Buffer.alloc(120*80*4), {width:120,height:80}), {width:120,height:80}, 1280), /空白/);
   assert.throws(() => prepareScreenshot(nativeImage.createFromBitmap(pixels, {width:120,height:80}), {width:80,height:120}, 1280), /尺寸/);
   const port = await freePort(), origin = `http://127.0.0.1:${port}`, token = randomBytes(32).toString('hex');
-  const envFile = join(root, 'fixture.env');
-  writeFileSync(envFile, `MOTE_PROFILE=test\nMOTE_HOST=127.0.0.1\nMOTE_PORT=${port}\nMOTE_TOKEN=${token}\nMOTE_DATA_DIR=${join(root, 'data')}\n`, { mode: 0o600 });
+  const configFile = join(root, 'mote.yaml');
+  writeFileSync(configFile, `version: 1\nrevision: 0\nserver:\n  profile: "test"\n  host: "127.0.0.1"\n  port: ${port}\n  token: ${JSON.stringify(token)}\nstorage:\n  dataDir: ${JSON.stringify(join(root, 'data'))}\n`, { mode: 0o600 });
   const env = { ...process.env }; for (const key of Object.keys(env)) if (key.startsWith('MOTE_')) delete env[key];
   const repository = resolve(__dirname, '../../..');
   const centralCode = `
     const {buildApp} = await import(${JSON.stringify(pathToFileURL(join(repository,'apps/server/dist/app.js')).href)});
-    const {configFromEnv} = await import(${JSON.stringify(pathToFileURL(join(repository,'apps/server/dist/config.js')).href)});
+    const {configFromFile} = await import(${JSON.stringify(pathToFileURL(join(repository,'apps/server/dist/config.js')).href)});
     const {createHash} = await import('node:crypto');
-    const cfg=configFromEnv(),node=await buildApp(cfg,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Live models forbidden in generated browser fixture');},close:async()=>{}}});
+    const cfg=configFromFile(),node=await buildApp(cfg,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Live models forbidden in generated browser fixture');},close:async()=>{}}});
     node.perception.configure({...node.perception.settings(),enabled:false,ocrEndpoint:'http://127.0.0.1/generated-ocr-fixture'});
     let calls=0,expectedImageHash;
     node.processing.runtime.registry.get('image.http').process=async input=>{
@@ -70,7 +70,7 @@ const freePort = () => new Promise((resolve, reject) => { const listener = net.c
     await node.app.listen({host:cfg.host,port:cfg.port});
     process.on('SIGTERM',async()=>{await node.app.close();process.exit(0);});
   `;
-  server = spawn('node', ['--input-type=module', '-e', centralCode], { cwd: repository, env: { ...env, MOTE_ENV_FILE: envFile }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  server = spawn('node', ['--input-type=module', '-e', centralCode], { cwd: repository, env: { ...env, MOTE_CONFIG_FILE: configFile }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
   let failure = ''; server.stderr.on('data', data => { failure += data; });
   let ready = false;
   for (let n = 0; n < 100; n++) { if (server.exitCode !== null) throw new Error('Fixture server exited: ' + failure.slice(0, 300)); try { if ((await fetch(origin + '/api/health')).ok) { ready = true; break; } } catch {} await wait(100); }
