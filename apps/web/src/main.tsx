@@ -44,6 +44,7 @@ type Api
 } from "./api";
 import { changeEvidenceRoute,readEvidenceRoute } from './evidence-route';
 import { FeaturePage } from './features/runtime';
+import { PluginCenterRescue } from './plugins/plugin-center/rescue';
 import { featuresReady, featureScopes } from './features/bootstrap';
 import { attachBootstrapLifetime } from './plugin-host/bootstrap';
 import { webFeatures } from './features/registry';
@@ -345,12 +346,12 @@ function App() {
   },[api,page,routeHash]);
   function onPage(next: Page) {
     const target=canonicalDestination(next,archiveTabRef.current,collectionIds());
-    if(!webFeatures.page(target.page)){setNotice(moteText('当前服务未提供此入口'));return;}
+    if(!webFeatures.page(target.page)&&target.page!=='extensions'){setNotice(moteText('当前服务未提供此入口'));return;}
     const retainImportOrigin=page==='archive'&&['materials','records','memories'].includes(archiveTabRef.current)&&!hasUnsavedChanges();
     if ((target.page !== page || (target.page==='archive'&&target.collection!==archiveTabRef.current)) && !confirmNavigation()) return;
     if(target.page==='featureGuide'&&page!=='featureGuide'&&api)enterGuide(api,location.hash);
     const origin=target.page==='imports'&&page!=='imports'&&api?rememberImportOrigin(api,currentHash.current,window.scrollY,document.activeElement,retainImportOrigin):undefined;
-    history.pushState(origin?{moteImportOrigin:origin.token}:null, '', workspaceHash(routes[target.page],target.page==='archive'?target.collection:undefined));
+    history.pushState(origin?{moteImportOrigin:origin.token}:null, '', workspaceHash(webFeatures.page(target.page)?.route??(target.page==='extensions'?'system/plugins':target.page),target.page==='archive'?target.collection:undefined));
     activeImportParent.current=undefined;
     currentHash.current=location.hash;
     currentHistoryState.current=history.state;
@@ -395,7 +396,7 @@ function App() {
   const returningImport=api&&page==='imports'?importOrigin(api,history.state,'moteImportOrigin'):undefined;
   const importReturnLabel=returningImport?readPage(returningImport.hash)==='archive'&&(!new URLSearchParams(returningImport.hash.split('?')[1]??'').get('view')||new URLSearchParams(returningImport.hash.split('?')[1]??'').get('view')==='materials')?'我的资料':'返回':'资料库';
   const importNavigation={label:importReturnLabel,leave:()=>{if(!confirmNavigation())return;if(returningImport){allowedImportHash.current=returningImport.hash;history.back();}else{allowedImportHash.current='#/library?view=materials';window.location.hash=allowedImportHash.current;}}};
-  const pageLabel=page==='ask'&&new URLSearchParams(routeHash.split('?')[1]??'').has('question')?moteText('需要你补充'):pageLabels[page];
+  const pageLabel=page==='ask'&&new URLSearchParams(routeHash.split('?')[1]??'').has('question')?moteText('需要你补充'):pageLabels[page]??(page==='extensions'?moteText('自动记忆与插件'):undefined);
   useEffect(()=>{if(!notesAvailable)setQuickNoteApi(null);},[notesAvailable]);
   const openQuickNote=useCallback(()=>{if(!webFeatures.page('notes')){setNotice(moteText('当前服务未提供此入口'));return;}if(api&&verified)setQuickNoteApi(api);else setShowConnect(true);},[api,verified]);
   return (
@@ -453,7 +454,7 @@ function App() {
               </button>
             </div>
           )}
-          {!webFeatures.page(page)?<section className="panel panel-pad"><h1>{moteText('当前服务未提供此入口')}</h1><button className="button" onClick={()=>onPage('archive')}>{moteText('资料库')}</button></section>:!connection && settingsContext ? <section className="panel settings-sign-in"><div className="page-heading"><h1>{moteText("登录后查看{0}", pageLabels[page])}</h1><p>{moteText("调整服务与资料管理方式，或管理当前登录。")}</p></div><button className="button" onClick={()=>setShowConnect(true)}><Link2 size={16}/>{moteText("登录 Mote")}<ArrowRight size={16}/></button></section> : !connection ? (
+          {!webFeatures.page(page)?(page==='extensions'?<PluginCenterRescue onPage={onPage}/>:<section className="panel panel-pad"><h1>{moteText('当前服务未提供此入口')}</h1><button className="button" onClick={()=>onPage('archive')}>{moteText('资料库')}</button></section>):!connection && settingsContext ? <section className="panel settings-sign-in"><div className="page-heading"><h1>{moteText("登录后查看{0}", pageLabels[page])}</h1><p>{moteText("调整服务与资料管理方式，或管理当前登录。")}</p></div><button className="button" onClick={()=>setShowConnect(true)}><Link2 size={16}/>{moteText("登录 Mote")}<ArrowRight size={16}/></button></section> : !connection ? (
             <>
               <div className="greeting welcome simple-welcome archive-welcome">
                 <div>

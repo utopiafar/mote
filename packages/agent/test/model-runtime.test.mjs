@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {modelConnection,modelRuntimeEntries} from '../dist/model-runtime.js';
+import {modelConnection,modelRuntimeEntries} from '../dist/models/provider-registry.js';
 
 test('explicit endpoints are preserved and only an omitted endpoint selects the current preset',()=>{
  assert.equal(modelConnection({protocol:'deepseek'}).baseUrl,'https://api.deepseek.com/anthropic');

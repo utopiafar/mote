@@ -8,4 +8,5 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     register(NativePluginProvider("mote.capture.accessibility", "1", buildId = buildId, osGrants = listOf("accessibility")))
     register(NativePluginProvider("mote.durable-upload", "1", buildId = buildId))
     NotesPlugin.register(this, buildId)
+    registerPluginCenter(buildId)
 }

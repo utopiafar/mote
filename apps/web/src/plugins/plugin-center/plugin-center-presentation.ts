@@ -1,6 +1,6 @@
 import {moteText} from '@mote/shared/i18n';
-import {failureMessage} from './failure-message';
-import type {CapabilityState,MemoryBindingView,MemoryModuleBinding,MemoryPreparationView,PluginConfigurationField} from '@mote/shared';
+import {failureMessage} from '../../failure-message';
+import type {CapabilityState,MemoryBindingView,MemoryModuleBinding,MemoryPreparationView,PluginBuildSelection,PluginBuildView,PluginConfigurationField,PluginInstanceView} from '@mote/shared';
 
 export function capabilityLabel(state:CapabilityState){
  return state==='verified'?moteText('已核验'):state==='unsupported'?moteText('不支持'):moteText('尚未核验');
@@ -21,6 +21,31 @@ export function moduleLabel(stage:MemoryModuleBinding['stage']){
 export function packageStateLabel(state:string){
  const labels:Record<string,string>={installed:moteText('已安装'),installing:moteText('正在安装'),failed:moteText('安装失败'),'restart-required':moteText('等待节点重启'),enabled:moteText('已启用'),disabled:moteText('已停用'),paused:moteText('已暂停'),draining:moteText('停用中'),stopping:moteText('正在停止'),blocked:moteText('需要处理'),unconfigured:moteText('待配置'),ready:moteText('可运行'),unknown:moteText('状态未知')};
  return labels[state]??state;
+}
+export function packageObservedLabel(state:string){
+ return state==='disabled'?moteText('未启用'):packageStateLabel(state);
+}
+export function buildObservedLabel(state:PluginBuildView['observed']){
+ const labels:Record<PluginBuildView['observed'],string>={queued:moteText('等待处理'),starting:moteText('正在启动'),active:moteText('运行中'),stopped:moteText('已停止'),blocked:moteText('需要处理'),restart_required:moteText('等待节点重启'),draining:moteText('停用中')};
+ return labels[state]??state;
+}
+export function buildSelectionLabel(selection:PluginBuildSelection){
+ return selection.packageId+'@'+selection.version+' · '+moteText('配置版本 {0}',selection.configurationRevision);
+}
+/** A missing required native provider is requires-build, not a generic
+ * unavailable state. Other blocker codes stay literal so support can identify
+ * the exact host or dependency failure. */
+export function blockerLabel(code:string){
+ return code.replaceAll('_','-')==='requires-build'?moteText('需要重新构建（requires-build）'):code;
+}
+export function hasRequiresBuild(blockers:readonly string[]){
+ return blockers.some(code=>code.replaceAll('_','-')==='requires-build');
+}
+/** Observed is a runtime fact; a desired enable that has not reached it never
+ * reads as the opposite stopped state. */
+export function instanceObservedLabel(instance:Pick<PluginInstanceView,'desired'|'observed'>){
+ if(instance.desired&&instance.observed==='disabled')return moteText('需要处理');
+ return packageStateLabel(instance.observed);
 }
 export function configurationValid(fields:PluginConfigurationField[],values:Record<string,string|number|boolean>){
  return fields.every(field=>{

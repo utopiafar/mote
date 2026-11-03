@@ -4,7 +4,7 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {createServer} from 'node:http';
 import {createAgent} from '../dist/index.js';
 import {ProviderFailure} from '@mote/shared';
-import {boundedModelFetch} from '../dist/plugin.mjs';
+import {boundedModelFetch} from '../dist/models/http-transport.js';
 
 test('every outbound model attempt is authorized before transport, including repeated turns',async()=>{
  let calls=0,admissions=0;const fetch=boundedModelFetch(async()=>{calls++;return new Response('{}');},'http://bridge',undefined,undefined,undefined,()=>{if(++admissions===2)throw Error('generated evidence authorization denied');});

@@ -10,18 +10,19 @@ import type {FeatureServices} from './feature-services.js';
 import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
+import {assemblePlatform} from './assembly/platform.js';
+import {assembleSources} from './assembly/sources.js';
 import {MemoryTopicsHost} from './memory-topics-host.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
 import type {ModelProcessingAuthority} from './model-processing-authority.js';
 import {modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
 import {agentModelConnection,captureModelIdentity,sourceModelIdentity} from './model-authorization-host.js';
 import {MODEL_FEATURES,DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
-import type {ObservationIdentity,ObservationName} from './execution-observability.js';
+import type {ObservationName} from './execution-observability.js';
 import {memoryIntegrationImageInputs} from './memory-image-grants.js';
 import {assertMemoryImageGrants} from './memory-image-grants.js';
 import {memoryReadRanges} from './memory-read-context.js';
 import {retainFailureContext} from './execution-failures.js';
-import {defaultLogMaxBytes} from './log-retention-config.mjs';
 import {OwnerQuestions} from './owner-questions.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,formatEvidenceRef} from '@mote/shared';
 import {imageOutput} from './evidence-image.js';
@@ -36,10 +37,9 @@ import { AgentNotConfiguredError,AgentYieldError,originalEvidenceReceipt,createI
 import { ProviderFailure,captureSchema,type CaptureInput,type CaptureRecord,type QueryResult } from '@mote/shared';
 import { negotiateLocale } from '@mote/shared/i18n';
 import Fastify,{ type FastifyInstance,type FastifyReply,type FastifyRequest } from 'fastify';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { existsSync,readFileSync } from 'node:fs';
-import { dirname,join,relative,sep } from 'node:path';
+import { join,relative,sep } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
 import { Actions } from './actions.js';
@@ -50,7 +50,6 @@ import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityChe
 import { registerMemoryDelegation } from './memory-delegation.js';
 import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
-import { codingSourcePlugin } from './coding-source-plugin.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
@@ -68,7 +67,6 @@ import { installServerFeatures } from './features/index.js';
 import { FileProcessing,type FileAnalysis,type TranscriptionProvider } from './file-processing.js';
 import {fileOriginalRawRef } from './file-raw-reader.js';
 import { registerFileRoutes } from './file-routes.js';
-import { FileStore } from './files.js';
 import { moteText,requestLocale } from './i18n.js';
 import { prepareImportInput } from './import-runtime.js';
 import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
@@ -105,23 +103,12 @@ import { linkOperationParent } from './operation-projection.js';
 import {ImageProcessing} from './image-processing.js';
 import {imageUnderstanding} from './image-understanding.js';
 import { ProcessingRuntime } from './processing-runtime.js';
-import { createExecutionPlatform } from './plugins/execution-platform.js';
 import { createEvidenceContextReader } from './plugins/evidence-context-reader.js';
-import { closeSourcePlatforms } from './platform-close-order.js';
-import { createAuthorizationPlatform,type AuthorizationPlatform } from './plugins/authorization-platform.js';
-import { createSourceRuntime,type SourceRuntime } from './plugins/source-runtime.js';
-import { createFilesSource,type FilesSource } from './plugins/files-source.js';
-import { createCaptureIntake,type CaptureIntakePlatform } from './plugins/capture-intake.js';
-import { createNotesSource,type NotesSource } from './plugins/notes-source.js';
-import { MaterialNoteDeletion } from './material-note-deletion.js';
-import { PluginResourceScope } from '@mote/plugin-host';
-import type { PluginScope } from '@mote/plugin-api/contracts';
 import { PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput } from './python-source-pack-executor.js';
 import type {QueryScope} from './query-scope.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
 import { semanticProcessor } from './semantic-extraction.js';
 import { conversationUnderstandingProcessor } from './conversation-understanding.js';
-import { SourceStore } from './sources.js';
 import { Store,StoreError,sha256 } from './store.js';
 import { UsageLedger } from './usage.js';
 import { WorkingMemory } from './working-memory.js';
@@ -150,14 +137,11 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   assertCurrentDelegationSchema(store);
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   let availableModelConnections=():ModelConnection[]=>[];
-  const authorizationPlatform=createAuthorizationPlatform({ownerToken:config.token,connectorConfiguration:()=>config.connectors,allowedOrigins:config.allowedOrigins},{
-    store,availableModelConnections:()=>availableModelConnections(),...(dependencies?.connections?{connections:dependencies.connections}:{}),
-  });
-  resources.defer(()=>authorizationPlatform.close());
-  await authorizationPlatform.prepare();
-  const modelAuthorization=authorizationPlatform.assembly.modelAuthorization;
-  // MVP cut-over is explicit: never silently keep the old Coding event indexes live.
-  if(store.db.prepare("SELECT 1 FROM captures WHERE json_extract(json,'$.provenance.document.coding') IS NOT NULL LIMIT 1").get()){throw new Error('Legacy Coding event vault: back up and use a fresh data directory for the source-pipeline architecture. No automatic migration is performed.');}
+  const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
+    bootstrap,config,store,resources,serverVersion,
+    availableModelConnections:()=>availableModelConnections(),connections:dependencies?.connections,
+    queryQualityExperiment:dependencies?.queryQualityExperiment,
+    assertModelEvidence:input=>assertModelEvidence(input)});
   projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
   const materials=new MaterialStore(store);
   resources.defer(()=>materials.index?.close());
@@ -167,79 +151,13 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>backendContext.fiber.dispose());
   backendContext.provide('moteMaterials',materials);
   backendContext.provide('moteConfig',configService);
-  const runtimeSettings=configurationPlatform.runtimeSettings;
-  const observability=await bootstrap.installObservabilityPlatform({
-    logDirectory:config.logDirectory??join(config.dataDir,'logs'),
-    diagnostics:{...runtimeSettings.diagnostics(),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries},
-    update:{currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel},
-    eventLoopResolutionMs:20,
-  });
-  const observabilityPlatform=observability.platform,observabilityScope=observability.scope,observabilityAssembly=observabilityPlatform.forAssembly(observability.scope);
-  const diagnostics=observabilityAssembly.diagnostics,executionObserver=observabilityAssembly.observer,eventLoop=observabilityAssembly.eventLoop,usageLedger=observabilityAssembly.usage,softwareUpdate=observabilityAssembly.softwareUpdate;
-  resources.defer(()=>observabilityPlatform.close());
-  const executionPlatform=createExecutionPlatform({store,modelAuthorization,settings:runtimeSettings});
-  resources.defer(()=>executionPlatform.stop('shutdown'));
-  await executionPlatform.prepare();executionPlatform.start();
-  const {executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate}=executionPlatform.assembly;
-  const modelContext=new AsyncLocalStorage<QueryInput>();
-  const modelOperation=new AsyncLocalStorage<string>();
-  // Accounting observes trusted admission boundaries, independently of model
-  // input. A host cooldown or gate cancellation can happen before any call.
-  const queryAccounting=new AsyncLocalStorage<{agentStarted:()=>void;modelQueued:()=>void;modelStarted:()=>void}>();
-  const assertModelPurpose=(input:QueryInput|undefined)=>{if(dependencies?.queryQualityExperiment&&!input?.traceContext?.operationId?.startsWith('query:'))throw new StoreError('Isolated Ask experiment does not authorize background model work',409);};
-  const authorizeModelRequest=()=>{modelAuthorization.assertCurrent();assertModelPurpose(modelContext.getStore());assertModelEvidence(modelContext.getStore());};
-  const runModelFor=(settings:import('@mote/shared/models').ModelSettings,connection?:ModelConnection):NonNullable<import('@mote/agent').AgentOptions['runModel']>=>(task,signal)=>{
-    const assertAuthority=connection?modelAuthorization.capture(connection):undefined;assertAuthority?.();
-    signal?.throwIfAborted();assertModelPurpose(modelContext.getStore());providerAdmission.check(settings);
-    const queuedAt=performance.now(),input=modelContext.getStore(),gate=input?.executionLane==='interactive'?interactiveModelGate:llmGate;input?.onTrace?.({type:'model.queued',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background'}});
-    input?.onProgress?.({stage:'model',message:moteText('等待模型执行名额')});
-    queryAccounting.getStore()?.modelQueued();
-    return gate.run(async()=>{assertAuthority?.();providerAdmission.check(settings);assertModelEvidence(input);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});const admittedAt=performance.now(),lane=input?.executionLane??'background',queueWaitMs=admittedAt-queuedAt;input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane,queueWaitMs}});let status:'completed'|'failed'|'yielded'='failed';
-      try{queryAccounting.getStore()?.modelStarted();const result=await task();status='completed';return result;}
-      catch(error){if(error instanceof AgentYieldError)status='yielded';throw error;}
-      finally{diagnostics.record('agent.harness_timing',{jobId:input?.traceContext?.jobId,batchId:input?.traceContext?.batchId,lane,unit:'harness_session',queueWaitMs,durationMs:performance.now()-admittedAt,status},'info');}
-    },signal??input?.signal,input?.traceContext?.operationId??modelOperation.getStore());
-  };
-  const observationIdentity=(input:QueryInput):ObservationIdentity=>({jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,attempt:input.traceContext?.attempt,
-    phase:input.traceContext?.phase==='coding-understanding'?'coding_understanding':input.traceContext?.phase==='review'?'review':'extract'});
-  const observeMemory=<T>(input:QueryInput|undefined,name:ObservationName,work:()=>T):T=>input?.responseMode==='memory-extraction'?executionObserver.sync(name,observationIdentity(input),work):work();
-  const observeMemoryAsync=<T>(input:QueryInput|undefined,name:ObservationName,work:()=>Promise<T>):Promise<T>=>input?.responseMode==='memory-extraction'?executionObserver.async(name,observationIdentity(input),work):work();
-  executor.bindObserver(value=>executionObserver.lease(value),()=>executionObserver.enabled());
   backendContext.provide('moteExecution',executor);
   const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
   const memoryAutomation=new MemoryAutomation(store);
   let memoryBindings:MemoryBindings|undefined;
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
   const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>true,memoryRecipeSettings,()=>memoryBindings?.accepting()??memoryAutomation.accepting());
-  const sourceScopeResources=new PluginResourceScope(()=>{},'Source runtime scope disposal failed');
-  const sourceScope:PluginScope={identity:{packageId:'mote.roots',installationId:'build',instanceId:'source-runtime',activationId:randomUUID(),host:bootstrap.snapshot().host},signal:sourceScopeResources.signal,
-    assertCurrent:()=>sourceScopeResources.assertCurrent(),defer:dispose=>sourceScopeResources.defer(dispose)};
-  resources.defer(()=>sourceScopeResources.close());
-  const sourceRuntime=createSourceRuntime({plugins:[codingSourcePlugin]},{store,materials,execution:executionPlatform,memoryWork:materialMemoryWork,context:backendContext});
-  resources.defer(()=>sourceRuntime.close());
-  await sourceRuntime.prepare(sourceScope);sourceRuntime.start();
-  const sourcePipelines=sourceRuntime.runtimeForAssembly;
-  const sources=new SourceStore(store,sourcePipelines);
-  let filesForAccess:FileStore|undefined;
-  const filesPlatform=createFilesSource({store,sources,archivedFiles:bootstrap.vault.archivedFiles,rawAccess:{
-    mayReadFileVersion:(_sourceId,id)=>{try{const current=filesForAccess;if(!current)return false;const version=current.version(id);return Boolean(version.object_hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&!store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted);}catch{return false;}},
-    mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
-  }});
-  resources.defer(()=>filesPlatform.close());
-  await filesPlatform.prepare();filesPlatform.start();
-  const filesAssembly=filesPlatform.assemblyForRoutes(),files=filesAssembly.files,fileEvidence=filesAssembly.evidence,fileRawReader=filesAssembly.originalRead;
-  filesForAccess=files;
-  const captureIntake=createCaptureIntake({diagnostics},{store,sources,files,materials});
-  resources.defer(()=>captureIntake.close());
-  await captureIntake.prepare();
-  await authorizationPlatform.bindRepositories({sources,files,materials,ingress:captureIntake.ingress,memoryInputs:materialMemoryWork.inputs,memoryWork:materialMemoryWork});
-  await authorizationPlatform.start();
-  captureIntake.bindAuthorization(authorizationPlatform);captureIntake.start();
-  const ingress=captureIntake.ingress,modelAuthorizationHost=authorizationPlatform.assembly.modelAuthorizationHost!;
-  resources.beforeClose(()=>closeSourcePlatforms({authorization:authorizationPlatform,capture:captureIntake,files:filesPlatform,source:sourceRuntime,execution:executionPlatform}));
-  const notesSource=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
-  await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
-  materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
+  const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,backendContext,resources});
   const mediaAssets=new MediaAssets(config.media?.modelDirectory??join(store.directory,'media-models'));
   resources.defer(()=>mediaAssets.close());
   const mediaPreparation=new MediaPreparation({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets});
