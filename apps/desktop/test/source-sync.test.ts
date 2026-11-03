@@ -21,6 +21,34 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
   };
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
+
+/** File-sync transport that records the predecessor sent with each manifest. */
+function fileTransport(sent: { item: SourceItem; previousRevision: string | null }[], fail?: (item: SourceItem) => number) {
+  return async (path: string, body: any) => {
+    if (path === '/api/sources') return { ...source, enabled: true };
+    if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 50 };
+    if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+    if (path === '/api/file-sync/v1/manifests') {
+      const results = (body.items as { item: SourceItem; previousRevision?: string | null }[]).map(manifest => {
+        sent.push({ item: manifest.item, previousRevision: manifest.previousRevision ?? null });
+        const failOn = fail?.(manifest.item);
+        if (failOn) throw new Error('simulated ACK loss');
+        return { externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item) };
+      });
+      return { results };
+    }
+    if (path === '/api/file-sync/v1/revisions') {
+      const manifest = body as { item: SourceItem; previousRevision?: string | null };
+      sent.push({ item: manifest.item, previousRevision: manifest.previousRevision ?? null });
+      if (fail?.(manifest.item)) throw new Error('simulated ACK loss');
+      return sourceAck(source.id, manifest.item, manifest.item.document?.fileIndex ? 'file-revision' : 'source-item');
+    }
+    throw new Error('unexpected ' + path);
+  };
+}
+const fileIndex = { version: 1 as const, fileId: 'file:' + 'b'.repeat(64), contentVersion: 'a'.repeat(64), mode: 'index' as const, coverage: 'full' as const, status: 'ready' as const, totalCharacters: 10, offset: 0, length: 10, allowRead: false };
+const fileItem: ScannedItem = { ...item, document: { fileIndex } };
+
 describe('source revisions and durable acknowledgments', () => {
   it('accepts a known 17MiB snapshot recovery and rejects unknown versions or over-limit bytes',async()=>{
     const engine=await create(),sent:SourceItem[]=[],large={...item,metadata:{version:1 as const,file:{sizeBytes:17*1024*1024+19}}};
@@ -151,6 +179,36 @@ describe('source revisions and durable acknowledgments', () => {
     expect(await reopened.syncScan(scan([]), true, source, transport(saved))).toEqual({ changes: 1, state: 'ready' });
     expect(saved).toHaveLength(2);
     expect(saved[1].deleted).toBe(true);
+  });
+  it('keeps an attempted update queued when its ACK is lost, then tombstones from the real head', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, fileTransport(sent));
+    const first = sent[0].item;
+    expect(sent[0].previousRevision).toBe(null);
+    const edited = { ...fileItem, text: 'edited before removal' };
+    await engine.stage(scan([edited]), false);
+    await expect(engine.flush(source, fileTransport(sent, () => 1))).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    // Removing the file must not drop the attempted revision: its ACK was lost.
+    await engine.syncScan(scan([]), true, source, fileTransport(sent));
+    expect(engine.status().pending).toBe(0);
+    const retried = sent.at(-2)!.item;
+    const tombstone = sent.at(-1)!.item;
+    expect(tombstone.deleted).toBe(true);
+    // The tombstone chains from the revision Central actually accepted.
+    expect(sent.at(-1)!.previousRevision).toBe(retried.revision);
+    expect(tombstone.revision).not.toBe(first.revision);
+  });
+  it('tombstones a first upload whose ACK was lost instead of leaving it active', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, fileTransport(sent, () => 1))).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    await engine.syncScan(scan([]), true, source, fileTransport(sent));
+    expect(engine.status().pending).toBe(0);
+    expect(sent.at(-1)!.item.deleted).toBe(true);
+    expect(sent.at(-1)!.previousRevision).toBe(sent.at(-2)!.item.revision);
   });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);

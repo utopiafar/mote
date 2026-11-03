@@ -145,6 +145,10 @@ export class SourceSync {
     const keep = (queued: SourceItem) => {
       if (queued.kind !== 'file' || queued.deleted || present.has(queued.externalId)) return true;
       const key = sourceHash(queued.externalId);
+      // An attempted revision may already be the node's head when its ACK was
+      // lost. Keep it queued so the existing retry resolves that ambiguity
+      // instead of dropping the only record of the upload.
+      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) return true;
       const delivered = this.data.delivered?.[key];
       if (delivered !== queued.revision) {
         const known = knownChanges.get(key) ?? next.known[key];
