@@ -437,15 +437,17 @@ export class SourceSync {
     if (acked.size !== batch.length || [...expected].some(key => !acked.has(key))) throw new Error(moteText("中央批量来源确认不完整，已保留待重试版本"));
     const remove = new Set([...batch,...rejected.map(value=>value.item)].map(itemKey)), filter = (items: SourceItem[]) => items.filter(item => !remove.has(itemKey(item)));
     const next={...this.data,lastAcknowledgedAt:batch.length?new Date().toISOString():this.data.lastAcknowledgedAt,pendingRealtime:filter(this.data.pendingRealtime),pendingHistory:filter(this.data.pendingHistory)};
-    for(const item of batch){const key=sourceHash(item.externalId),known=this.data.known[key];if(!known?.deletionPending||item.deleted||item.kind!=='file')continue;const deletedAt=new Date().toISOString();const revision=`deleted:${item.revision}`;next.pendingRealtime.push({...item,text:'',localOriginalBase64:undefined,localOriginal:undefined,deleted:true,revision,observedAt:deletedAt,metadata:{...item.metadata,version:1,file:{...item.metadata?.file,deletionObservedAt:deletedAt}}});}
+    const knownUpdates=new Map<string,Known>();
+    for(const item of batch){const key=sourceHash(item.externalId),known=this.data.known[key];if(!known?.deletionPending||item.deleted||item.kind!=='file')continue;const deletedAt=new Date().toISOString();const revision=`deleted:${item.revision}`;const tombstone={...item,text:'',localOriginalBase64:undefined,localOriginal:undefined,deleted:true,revision,observedAt:deletedAt,metadata:{...item.metadata,version:1 as const,file:{...item.metadata?.file,deletionObservedAt:deletedAt}}};next.pendingRealtime.push(tombstone);knownUpdates.set(key,{...known,contentHash:'',revision,item:{...tombstone,localOriginalBase64:undefined,localOriginal:undefined}});}
     const patches:StatePatch[]=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>);
+    for(const [key,value] of knownUpdates)patches.push({section:'known',key,value});
     for(const item of batch)patches.push({section:'predecessors',key:item.revision},{section:'delivered',key:sourceHash(item.externalId),value:item.revision});
     for(const value of rejected)patches.push({section:'quarantined',key:itemKey(value.item),value});
     await this.commit(next,undefined,patches);
     // Apply only touched map entries after the SQLite transaction is durable.
     // A one-item ACK never clones or scans the full historical catalog.
-    for(const item of batch){delete this.data.predecessors?.[item.revision];(this.data.delivered??={})[sourceHash(item.externalId)]=item.revision;if(this.data.known[sourceHash(item.externalId)]?.deletionPending)patches.push({section:'known',key:sourceHash(item.externalId),value:{...this.data.known[sourceHash(item.externalId)],deletionPending:undefined}});}
-    for(const item of batch)if(this.data.known[sourceHash(item.externalId)]?.deletionPending)this.data.known[sourceHash(item.externalId)]={...this.data.known[sourceHash(item.externalId)],deletionPending:undefined};
+    for(const item of batch){delete this.data.predecessors?.[item.revision];(this.data.delivered??={})[sourceHash(item.externalId)]=item.revision;}
+    for(const [key,value] of knownUpdates)this.data.known[key]=value;
     for(const value of rejected)(this.data.quarantined??={})[itemKey(value.item)]=value;
     for(const item of batch)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true}).catch(()=>{});
   }

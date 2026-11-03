@@ -339,6 +339,24 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent.at(-1)!.item.deleted).toBe(true);
     expect(sent.at(-1)!.previousRevision).toBe(sent.at(-2)!.item.revision);
   });
+  it('re-uploads an identical file restored after a managed tombstone', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    // A repeated absent scan must not queue another deletion from the same entry.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    await engine.flush(source, wire);
+    const tombstone = sent.at(-1)!.item;
+    expect(tombstone.deleted).toBe(true);
+    // The same bytes return: the identity must queue again instead of staying deleted.
+    expect(await engine.stage(scan([fileItem]), true)).toBe(1);
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.item.deleted).toBe(false);
+    expect(sent.at(-1)!.item.revision).not.toBe(tombstone.revision);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
