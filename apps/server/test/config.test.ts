@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { serializeConfigDocument } from '@mote/shared/config-file';
-import { configFromFile, configFromDocument, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, ConfigError } from '../src/config.js';
+import { configFromFile, configFromDocument, documentFromConfig, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, ConfigError } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 
 const moduleUrl = new URL('../src/config.ts', import.meta.url).href;
@@ -265,6 +265,23 @@ test('provider presets and Codex launch paths share the domain model schema', t 
   const result = readConfig({ MOTE_CONFIG_FILE: file }); assert.equal(result.status, 0, result.stderr); const config = JSON.parse(result.stdout);
   assert.equal(config.modelProtocol, 'codex-app-server'); assert.equal(config.modelRequestTimeoutMs, null); assert.equal(config.agentTimeoutMs, null);
   assert.equal(config.codexBin, '/fixture/bin/codex'); assert.equal(config.codexHome, join(root, 'login'));
+});
+
+test('programmatic Codex configuration preserves its empty endpoint through a file roundtrip', t => {
+  const { file, write, vault } = fixture(t, 'codex-roundtrip');
+  for (const provider of ['openai', 'codex']) {
+    write({ models: { deployment: { provider, protocol: 'codex-app-server', baseUrl: '', model: 'gpt-6.1-terra' } } });
+    const loaded = configFromFile(file, { initializeCredentials: false });
+    assert.equal(loaded.modelProvider, provider); assert.equal(loaded.modelBaseUrl, '');
+    const document = documentFromConfig(loaded);
+    writeFileSync(file, serializeConfigDocument(document));
+    const reloaded = configFromFile(file, { initializeCredentials: false });
+    assert.equal(reloaded.modelProvider, provider); assert.equal(reloaded.modelProtocol, 'codex-app-server');
+    assert.equal(reloaded.modelBaseUrl, ''); assert.equal(reloaded.model, 'gpt-6.1-terra');
+    assert.equal(reloaded.modelRequestTimeoutMs, null); assert.equal(reloaded.agentTimeoutMs, null);
+    assert.throws(() => documentFromConfig({ ...loaded, modelBaseUrl: 'https://fixture.invalid/v1' }));
+  }
+  assert.equal(existsSync(vault), false);
 });
 
 test('model advanced validation and deadlines use the same rules before storage', t => {
