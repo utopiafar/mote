@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {PluginHost,PluginHostError,type HostPluginContext,type HostScope} from '@mote/plugin-host';
-import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease} from '@mote/plugin-api/contracts';
+import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease,type ReplacementPolicy} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {Config} from './config.js';
 import type {ConfigService} from './config-service.js';
@@ -35,9 +35,17 @@ export interface FoundationProvider<K extends FoundationKind=FoundationKind> {
    * Passing this registry is executable assembly authority, never user config. */
   readonly create:(context:HostPluginContext,input:FoundationInput)=>Promise<FoundationValues[K]>|FoundationValues[K];
 }
+/** Trusted build-time descriptor of one domain plugin the distribution selects.
+ * The assembly owns construction; H05/H14 turn this table into host installs. */
+export interface CentralDomainPlugin {
+  readonly contribution:ManifestContribution;
+  readonly declaration:{readonly id:string;readonly apiVersion:string};
+  readonly replacement:ReplacementPolicy;
+}
 export interface CentralDistribution {
   readonly foundations:readonly ({[K in FoundationKind]:FoundationProvider<K>}[FoundationKind])[];
   readonly features:readonly ServerFeatureAdapter[];
+  readonly plugins:readonly CentralDomainPlugin[];
 }
 export const foundationContracts=Object.freeze<{readonly [K in FoundationKind]:ServiceContract<FoundationValues[K]>}>({
   configuration:serviceContract<FoundationValues['configuration']>('mote.platform.configuration','1'),
@@ -67,6 +75,9 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   if(selected.length!==kinds.length)invalid('Unknown foundation provider kind');
   const features=distribution.features.map(entry=>({descriptor:{...entry.descriptor},factory:entry.factory}));
   if(new Set(features.map(entry=>entry.descriptor.id)).size!==features.length)invalid('Duplicate feature contribution');
+  const plugins=distribution.plugins.map(entry=>({...entry,contribution:{...entry.contribution}}));
+  if(new Set(plugins.map(entry=>entry.contribution.id)).size!==plugins.length)invalid('Duplicate domain plugin contribution');
+  for(const plugin of plugins)if(plugin.contribution.id!==plugin.declaration.id||!plugin.replacement)invalid('Invalid domain plugin descriptor');
   let stateStore:Store|undefined;
   const host=new PluginHost({kind:'central',id:randomUUID()},undefined,undefined,{
     // The vault store is created by the storage foundation. State is bound
@@ -99,7 +110,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     const authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
     return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
-      authorization:authorization.value,features:Object.freeze(features),get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
+      authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
       /** Trusted build-only installation in the same host; no public service or second host. */
       async installObservabilityPlatform(options:ObservabilityPlatformOptions){
         if(observability)return observability;

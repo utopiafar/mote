@@ -9,6 +9,12 @@ export type PluginPackageView={id:string;name:string;version:string;source:Plugi
 export type PluginInstanceView={id:string;packageId:string;name:string;revision:number;scope:string;configurationSchema:PluginConfigurationField[];configuration:Record<string,string|number|boolean>;secretStatus:Record<string,boolean>;capabilities:PluginCapability[];desired:boolean;observed:string;issues:string[];allowedActions:PluginAction[]};
 export type PluginReleasePreview={id:string;name:string;version:string;source:PluginSource;runtime:'worker'|'service';restartRequired:boolean;capabilities:PluginCapability[];dependencies:string[];access:string[];issues:string[];installable:boolean};
 export type PluginCenterView={revision:number;installation:{supported:boolean;reason?:string;runtime:'worker'|'service';restartRequired:boolean};packages:PluginPackageView[];instances:PluginInstanceView[];catalog:{repository:string;name:string;description:string}[]};
+export type PluginBuildSelection={packageId:string;version:string;configurationRevision:number};
+export type PluginBuildObserved='queued'|'starting'|'active'|'stopped'|'blocked'|'restart_required'|'draining';
+/** One trusted host build instance. desired is the selected next-start
+ * activation; active is the activation currently serving. A failed candidate
+ * never replaces active, and blockers explain why it did not become observed. */
+export type PluginBuildView={id:string;packageId:string;installationId:string;revision:number;desired:PluginBuildSelection|null;retired:boolean;observed:PluginBuildObserved;blockers:string[];operationId:string;active?:(PluginBuildSelection&{identity?:unknown})|null;restartRequired:boolean};
 export type MemoryControlAction='pause'|'resume'|'stop'|'prepare'|'activate'|'retry'|'cancel';
 export type MemoryModuleBinding={stage:'extract'|'review'|'integrate'|'repository'|'retrieval';id:string;name:string;instanceId?:string;state:CapabilityState;reason?:string};
 export type MemoryPlanView={id:string;name:string;mode:'modules'|'engine';instanceId?:string;modules:MemoryModuleBinding[];capabilities:PluginCapability[];available:boolean;reason?:string;allowedActions:MemoryControlAction[]};
