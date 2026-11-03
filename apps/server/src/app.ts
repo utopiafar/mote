@@ -1,4 +1,3 @@
-import {MediaPreparation} from './media-preparation.js';
 import {createMemoryControl} from './memory-control.js';
 import {createMemoryModelAuthorityJobReader} from './memory-model-authority.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
@@ -12,9 +11,10 @@ import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {assemblePlatform} from './assembly/platform.js';
 import {assembleSources} from './assembly/sources.js';
+import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
+import {assembleMedia,assemblePerception,assembleProcessing} from './assembly/processing.js';
 import {MemoryTopicsHost} from './memory-topics-host.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
-import type {ModelProcessingAuthority} from './model-processing-authority.js';
 import {modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
 import {agentModelConnection,captureModelIdentity,sourceModelIdentity} from './model-authorization-host.js';
 import {MODEL_FEATURES,DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
@@ -64,24 +64,19 @@ import { ExecutionFailure } from './execution-engine.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
 import { installServerFeatures } from './features/index.js';
-import { FileProcessing,type FileAnalysis,type TranscriptionProvider } from './file-processing.js';
+import type { TranscriptionProvider } from './file-processing.js';
 import {fileOriginalRawRef } from './file-raw-reader.js';
 import { registerFileRoutes } from './file-routes.js';
 import { moteText,requestLocale } from './i18n.js';
 import { prepareImportInput } from './import-runtime.js';
 import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
-import { Indexer } from './indexer.js';
 import { INGRESS_PROTOCOL_VERSION,collectorIngressWrite } from './ingress.js';
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
 import {MemoryIntegrationSettings} from './memory-integration-settings.js';
-import { MaterialMemoryWork } from './material-memory-work.js';
 import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import {AutomaticActivity} from './automatic-activity.js';
-import { MaterialOrganizerRuntime } from './material-organizers.js';
-import { MaterialStore } from './materials.js';
-import { MediaAssets } from './media-assets.js';
 import { MemoryLifecycle,projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,freezeSemanticContextTime,type LifecycleExtension,type LifecycleSettings } from './memory-lifecycle.js';
 import {MemoryStrategies} from './memory-strategies.js';
 import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
@@ -100,10 +95,6 @@ import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
 import { ModelSettingsError } from './model-settings.js';
 import { linkOperationParent } from './operation-projection.js';
-import {ImageProcessing} from './image-processing.js';
-import {imageUnderstanding} from './image-understanding.js';
-import { ProcessingRuntime } from './processing-runtime.js';
-import { createEvidenceContextReader } from './plugins/evidence-context-reader.js';
 import { PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput } from './python-source-pack-executor.js';
 import type {QueryScope} from './query-scope.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
@@ -143,8 +134,10 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     queryQualityExperiment:dependencies?.queryQualityExperiment,
     assertModelEvidence:input=>assertModelEvidence(input)});
   projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
-  const materials=new MaterialStore(store);
-  resources.defer(()=>materials.index?.close());
+  const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
+  const memoryAutomation=new MemoryAutomation(store);
+  let memoryBindings:MemoryBindings|undefined;
+  const {materials,materialMemoryWork}=prepareMaterials({store,resources,memoryRecipeSettings,newInputAdmission:()=>memoryBindings?.accepting()??memoryAutomation.accepting()});
   // One service tree owns backend plugins. Each runtime installs into its own
   // managed scope below this root, so closing one cannot dispose a sibling.
   const backendContext=new Context();
@@ -152,20 +145,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   backendContext.provide('moteMaterials',materials);
   backendContext.provide('moteConfig',configService);
   backendContext.provide('moteExecution',executor);
-  const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
-  const memoryAutomation=new MemoryAutomation(store);
-  let memoryBindings:MemoryBindings|undefined;
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
-  const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>true,memoryRecipeSettings,()=>memoryBindings?.accepting()??memoryAutomation.accepting());
   const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,backendContext,resources});
-  const mediaAssets=new MediaAssets(config.media?.modelDirectory??join(store.directory,'media-models'));
-  resources.defer(()=>mediaAssets.close());
-  const mediaPreparation=new MediaPreparation({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets});
-  const mediaConfigurationIdentity=()=>{const document=configService.document();return JSON.stringify([document.media,(document.server as {runtime?:string})?.runtime]);};
-  const initialMediaConfiguration=mediaConfigurationIdentity();
-  const unsubscribeMedia=configService.onChange(()=>{try{if(mediaConfigurationIdentity()!==initialMediaConfiguration)mediaPreparation.invalidate();}catch{mediaPreparation.invalidate();}});
-  resources.beforeClose(()=>mediaPreparation.close());resources.defer(unsubscribeMedia);
-  if(dependencies?.backgroundWorker)mediaPreparation.resume();
+  const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker});
   const admittedUsageFactory=(route?:{mode:()=>AgentRunFinalizer|undefined;host?:()=>ReturnType<typeof observabilityAssembly.admittedUsage>|undefined})=>(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
@@ -191,33 +173,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     };
   };
   const admittedUsage=admittedUsageFactory();
-  const indexer=new Indexer(store,config,diagnostics,files,input=>{
-    const operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=config.embeddingModel;
-    const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
-    return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');}};
-  },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId,
-    assertModel:()=>modelAuthorization.assertCurrent(modelConnection('embedding:central',{model:config.embeddingModel,baseUrl:config.embeddingBaseUrl,apiKey:config.embeddingApiKey})),
-    authorize:(id,signal,task)=>{
-      const roots=modelAuthorizationHost.evidenceTriggers([id]);
-      const work='automatic-embedding:'+sha256(JSON.stringify(roots));
-      return modelAuthorizationHost.automatic(work,'embedding',roots,authorizedSignal=>{modelAuthorizationHost.assertEvidence([id]);return task(authorizedSignal);},signal);
-    },
-  });
-  resources.defer(()=>indexer.close());
-  const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
-  resources.defer(()=>materialOrganizer.close());
-  backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
   let catalogChangesEnabled=false;
-  // One EvidenceReader and one context registry own every read surface. The
-  // factory borrows the roots repositories; it never constructs a second
-  // Store/Source/File/Material/Indexer or a second reader.
-  const sourceContexts=sources.contexts;
-  const evidenceContext=createEvidenceContextReader({store,sources,files,indexer,fileEvidence,materials,sourcePipelines,
-    sourceItemRecipes:materialOrganizer.sourceItemRecipes,materialMemoryReady:ref=>materialMemoryWork.readyForMemory(ref),sourceContexts});
-  resources.defer(()=>evidenceContext.dispose());
-  const contextTrees=evidenceContext.assembly.contextTrees,evidenceReader=evidenceContext.assembly.reader;
-  resources.beforeClose(()=>{catalogChangesEnabled=false;});
-  backendContext.provide('moteContextTrees',evidenceContext.assembly.contextTrees);
+  const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts}=assembleMaterials({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,conversations=new Conversations(store);
   conversations.onTurnReceived=turnId=>modelAuthorizationHost.conversation(turnId);
@@ -346,83 +303,15 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   pluginCenter.retired=id=>{void memoryAdapters.retire(id);};
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
-  const resolveFileModel=(settings:Parameters<FileAnalysis>[2])=>{
-    const profile=modelSettings.select('file');
-    let selected=profile.settings;
-    const identity:ModelAgentIdentity=settings.analysisModel?{kind:'file-service',id:settings.analysisModel.id}:{kind:'profile',id:profile.id};
-    if(settings.analysisModel){
-      const m=settings.analysisModel;
-      selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:m.endpoint,model:m.model,apiKey:m.apiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:m.execution==='local',reasoningEffort:'auto',serviceTier:undefined};
-    }
-    return {settings:structuredClone(selected),identity};
-  };
-  const analyzeFile:FileAnalysis=async(records,prompt,settings,signal,host,validateOutput)=>{
-    const currentRecords=()=>records.map(record=>({...record,...(record.provenance?{attributionContext:materials.contextForEvidence(record as CaptureRecord)}:{})}));
-    const scoped:ContextReader={search:async()=>currentRecords(),timeline:async args=>{
-      const offset=args.cursor===undefined?0:Number(args.cursor);if(!Number.isSafeInteger(offset)||offset<0||offset>records.length)throw new StoreError('Invalid file analysis cursor');
-      const limit=Math.min(100,Math.max(1,args.limit??8)),items=currentRecords().slice(offset,offset+limit);
-      return {items,nextCursor:offset+items.length<records.length?String(offset+items.length):null};
-    },evidence:async args=>currentRecords().filter(r=>args.ids.includes(r.id)),activity:async()=>({}),devices:async()=>[]};
-    const resolved=settings.modelSnapshot?{settings:settings.modelSnapshot,identity:settings.modelIdentity}:resolveFileModel(settings);
-    if(!resolved.identity)throw new StoreError('File model snapshot identity is missing',409);
-    const selected=resolved.settings,identity=resolved.identity;
-    const meter=admittedUsage(selected.provider,selected.model,'file-analysis',{agentId:'file-analysis',moduleId:'files',skillId:null,...host});
-    let model:QueryAgent|undefined;
-    const request:QueryInput={question:prompt,language:requestLocale.getStore()??'zh-CN',signal,traceContext:host,onUsage:meter.update,validateOutput,
-      onSourceContextDependencies:pins=>{
-        const current=combineSourceContextDependencies([request.contextSourceContextDependencies,pins]);
-        assertSourceContextDependencies(sourceContexts,current);request.contextSourceContextDependencies=current;
-      },
-    };
-    try{model=await factory(selected,scoped,undefined,identity);const result=await meter.run(()=>model!.query(request));
-      const pins=combineSourceContextDependencies([request.contextSourceContextDependencies,result.sourceContextDependencies]);
-      assertSourceContextDependencies(sourceContexts,pins);
-      return {...result,...(pins.length?{sourceContextDependencies:pins}:{}),usage:meter.completed()};}
-    catch(error){meter.failed(error);throw error;}finally{await model?.close();}
-  };
   let queryRuns:DelegatedQueryRuns;
   const insightRuns=new InsightRuns(store,{executor,evidenceReader});
   resources.defer(()=>insightRuns.close());
-  const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext,configService);
-  resources.defer(()=>workflows.close());
-  sourcePipelines.setProductConsumer(workflows);workflows.consumerAllowed=(sourceId,bindingId)=>sourcePipelines.options(sourceId).consumers.includes(bindingId);
+  const {workflows,processing,resolveFileModel,mediaModelAuthority}=await assembleProcessing({store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider});
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
-  const mediaModelAuthority:ModelProcessingAuthority=async(request,signal,task)=>{
-    const original=captureModelIdentity(request.captureId);
-    const execute=async(authorizedSignal:AbortSignal)=>{
-      const assertCurrent=()=>{
-        authorizedSignal.throwIfAborted();modelAuthorization.assertCurrent(request.connection);
-        if(!store.isCurrentEvidence(request.captureId))throw new StoreError('Media original is no longer available',409);
-        const records=store.evidence([request.captureId]);if(!records.length)throw new StoreError('Media original is unavailable',409);
-        modelAuthorization.assertDisclosure(records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId,dataKind:request.dataKind})));
-      };
-      assertCurrent();const result=await task(authorizedSignal,assertCurrent);assertCurrent();return result;
-    };
-    if(request.ownerIntentId){modelAuthorization.assertOwnerIntent(request.ownerIntentId,original);return modelAuthorization.run(request.ownerIntentId,execute,signal);}
-    // All stages of this immutable original share one admitted media work,
-    // including a later summary. Retry cannot mint a new trigger.
-    return modelAuthorizationHost.automatic('automatic-media:'+request.captureId,'file',[original],execute,signal);
-  };
-  mediaModelAuthority.ownerIntent=id=>modelAuthorization.ownerIntent(captureModelIdentity(id));
-  mediaModelAuthority.deniedOriginal=id=>modelAuthorization.deniedOriginal(captureModelIdentity(id));
   const withMediaOwnerIntent=<T>(id:string,task:()=>Promise<T>|T)=>modelAuthorizationHost.manual('owner-media:'+randomUUID(),availableModelConnections(),async()=>task(),undefined,'manual',[captureModelIdentity(id)]);
-  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{modelAuthority:mediaModelAuthority,configService,executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets,media:config.media,contextForEvidence:record=>materials.contextForEvidence(record)});
-  const previousSourceContextChanged=materials.onSourceContextChanged;
-  materials.onSourceContextChanged=id=>{previousSourceContextChanged?.(id);processing.invalidateSourceContext(id);};
-  resources.defer(()=>processing.settle());
-  resources.defer(()=>processing.close());
-  await processing.initializeConfiguration();
-
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
   resources.defer(disposeCaptureMemoryIntake);
-  const perception=new ImageProcessing(store,processing,executor,{modelAuthority:mediaModelAuthority,configService,materials,mediaAssets,media:config.media,understanding:imageUnderstanding({factory,metered:async(settings,attribution,task)=>{
-    const meter=admittedUsage(settings.provider,settings.model,'image-understanding',{agentId:'image-understanding',moduleId:'images',skillId:null,...attribution});
-    return meter.run(async()=>{try{const output=await task(meter.update);meter.completed();return output;}catch(error){meter.failed(error);throw error;}});
-  },selection:service=>{
-    const selected=modelSettings.select('file'),resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service}),settings=resolved.settings,configuration=modelConfiguration(service?.id??selected.id,settings,modelSettings.view().revision);
-    return {identity:resolved.identity,fingerprint:configuration.fingerprint,configured:service?Boolean(service.apiKey||service.execution==='local'):agent.configuredFor(selected.id),settings,receipt:{profileId:service?.id??selected.id,provider:settings.provider,model:settings.model,revision:modelSettings.view().revision}};
-  }})});
-  resources.defer(()=>perception.close());
+  const {perception}=assemblePerception({store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
   additionalModelConnections=()=>[...processing.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
