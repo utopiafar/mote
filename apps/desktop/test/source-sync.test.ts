@@ -550,6 +550,27 @@ describe('source revisions and durable acknowledgments', () => {
     expect(deletion).toBeDefined();
     expect(engine.status().pending).toBe(0);
   });
+  it('tombstones the acknowledged base in the same cycle after a precommit update is withdrawn', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let attempts = 0;
+    const wire = fileTransport(sent, () => (++attempts === 2 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, wire);
+    const acknowledged = sent.at(-1)!.item;
+    await engine.stage(scan([{ ...fileItem, text: 'update B fails precommit' }]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // Head still equals A: the managed stage withdraws B and must stage A's
+    // deletion in the same cycle.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    const uploaded = sent.length;
+    await engine.flush(source, wire);
+    const sentNow = sent.slice(uploaded);
+    expect(sentNow.some(entry => entry.item.revision && !entry.item.deleted)).toBe(false);
+    const deletion = sentNow.find(entry => entry.item.deleted);
+    expect(deletion).toBeDefined();
+    expect(deletion!.previousRevision).toBe(acknowledged.revision);
+    expect(engine.status().pending).toBe(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
