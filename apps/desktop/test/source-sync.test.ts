@@ -190,9 +190,16 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.stage(scan([edited]), false);
     await expect(engine.flush(source, fileTransport(sent, () => 1))).rejects.toThrow('ACK loss');
     expect(engine.status().pending).toBe(1);
+    const attempted = sent.at(-1)!.item;
+    const durable = sourceState(join(directory, 'state.json')) as any;
+    expect(Object.hasOwn(durable.predecessors ?? {}, attempted.revision)).toBe(true);
+    // Restart keeps the attempted revision and its predecessor, so the retry can
+    // still resolve the real Central head.
+    const reopened = await create();
+    expect(reopened.status().pending).toBe(1);
     // Removing the file must not drop the attempted revision: its ACK was lost.
-    await engine.syncScan(scan([]), true, source, fileTransport(sent));
-    expect(engine.status().pending).toBe(0);
+    await reopened.syncScan(scan([]), true, source, fileTransport(sent));
+    expect(reopened.status().pending).toBe(0);
     const retried = sent.at(-2)!.item;
     const tombstone = sent.at(-1)!.item;
     expect(tombstone.deleted).toBe(true);
