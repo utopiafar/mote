@@ -3,9 +3,9 @@ import {
   CustomPageFrameGuard,
   DesktopPluginHost,
   type CustomPageFrameLike,
-  type CustomPageFrameRevocation,
   type CustomPageNavigationDetails,
 } from '../src/plugin-host/desktop-host.js';
+import type {CustomPageFrameRevocation} from '../src/contracts/custom-page.js';
 import {NativeProviderRegistry} from '../src/plugin-host/native-registry.js';
 import type {IpcRouter} from '../src/plugin-host/ipc-registry.js';
 
