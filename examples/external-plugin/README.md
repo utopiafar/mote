@@ -1,6 +1,8 @@
-# Mote external source template
+# Mote external source template (ordinary integration)
 
-This is a minimal repository-external Source connector. It imports only the public
+This is a minimal repository-external Source connector — the ordinary
+integration template described in
+[plugin-development](../../docs/plugin-development.md). It imports only the public
 `@mote/plugin-sdk` package, declares one namespaced external-push source kind, and
 registers one owner-only status route through the existing connector host. It does
 not scan a vault, read credentials or call a model.
@@ -16,6 +18,7 @@ tarball produced by H07:
 
 ```sh
 node scripts/mote.mjs plugin-dev create ./my-source-plugin --sdk-tarball /absolute/mote-plugin-sdk-0.1.0.tgz
+npm run build --prefix ./my-source-plugin   # connector modules ship as source; build checks the entries load cleanly
 node scripts/mote.mjs plugin-dev dev --plugin ./my-source-plugin --once --seed
 ```
 
