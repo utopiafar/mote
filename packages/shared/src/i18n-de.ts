@@ -7208,6 +7208,7 @@ export const german: Readonly<Record<string, string>> = {
   "正在安装": "Installation läuft",
   "安装失败": "Installation fehlgeschlagen",
   "等待节点重启": "Warten auf Knotenneustart",
+  "需要构建": "Erfordert einen neuen Build",
   "运行中": "Läuft",
   "已停用": "Deaktiviert",
   "停用中": "Wird deaktiviert",
