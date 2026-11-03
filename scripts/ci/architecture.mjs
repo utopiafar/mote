@@ -186,6 +186,27 @@ export function dependencyGraph(root){
   return {nodes,browserEntries,unresolved};
 }
 
+/** Runtime import cycles inside the Agent are ESM initialization-order bugs.
+ * Erased type-only edges never participate in module evaluation. */
+function agentRuntimeCycles(nodes){
+  const directory='packages/agent/src';
+  const issues=[],state=new Map(),stack=[];
+  const visit=file=>{
+    state.set(file,1);stack.push(file);
+    for(const edge of nodes.get(file)??[]){
+      if(edge.kind!=='runtime'||edge.specifier===null||!inside(edge.to,directory)||!nodes.has(edge.to))continue;
+      const seen=state.get(edge.to);
+      if(seen===1){
+        const start=stack.indexOf(edge.to);
+        issues.push({...edge,rule:'agent-import-cycle',chain:[...stack.slice(start),edge.to]});
+      }else if(seen===undefined)visit(edge.to);
+    }
+    stack.pop();state.set(file,2);
+  };
+  for(const file of nodes.keys())if(inside(file,directory)&&state.get(file)===undefined)visit(file);
+  return issues;
+}
+
 export function architectureViolations({nodes,browserEntries,unresolved=[]}){
   const issues=[];
   const desktopContract=file=>file==='apps/desktop/src/contracts.ts'||inside(file,'apps/desktop/src/contracts');
@@ -204,6 +225,7 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
     if(runtime&&edge.from==='apps/web/src/features/runtime.tsx'&&['apps/web/src/features/entries.ts','apps/web/src/features/collections.ts','apps/web/src/features/collections.tsx','apps/web/src/features/agent-view.tsx','apps/web/src/features/agent-view.ts'].includes(edge.to))rule='web-runtime-no-builtins';
     if(rule)issues.push({...edge,rule});
   }
+  issues.push(...agentRuntimeCycles(nodes));
   const visited=new Set();
   const visit=(file,chain)=>{
     if(visited.has(file))return;visited.add(file);
