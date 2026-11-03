@@ -1,4 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
+import { connectionServerUrl, formatEvidenceRef, isMoteRunId, moteRoute, parseMoteReference, type MoteLinkScope, type MoteRoute } from '@mote/shared';
 import type { Config } from './contracts';
 import { connectionToken, loginRequest } from './login-session';
 import { openCentralBrowser } from './central-browser';
@@ -14,8 +15,38 @@ export interface CentralNavigation {
   openDefault(url: string): Promise<unknown>;
 }
 
+/** The exact instance scope a Mac handoff belongs to. Different spellings of
+ * the same node URL must never imply another owner. */
+export function centralScope(config: Pick<Config,'serverUrl'>): MoteLinkScope {
+  return { origin: connectionServerUrl(config.serverUrl) };
+}
+
+/** Resolve the Mac handoff arguments through the shared deep-link schema.
+ * Plain page destinations have no route identity; a reference, run or
+ * conversation is validated and canonicalized before any ticket is minted. */
+export function centralRoute(evidenceId?: string, workId?: string, conversationId?: string): MoteRoute | undefined {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (workId !== undefined) {
+    if (conversationId !== undefined) throw Error('Invalid conversation destination');
+    if (evidenceId !== undefined) throw Error('Invalid work destination');
+    if (!isMoteRunId(workId)) throw Error('Invalid work reference');
+    return moteRoute({ kind: 'run', id: workId });
+  }
+  if (evidenceId !== undefined) {
+    if (!evidenceId.trim() || evidenceId !== evidenceId.trim() || evidenceId.length > 4096 || /[\u0000-\u001f\u007f]/.test(evidenceId)) throw Error('Invalid evidence reference');
+    const reference = uuid.test(evidenceId) ? formatEvidenceRef('capture', evidenceId) : parseMoteReference(evidenceId);
+    if (!reference || (!reference.startsWith('capture:') && !reference.startsWith('material:'))) throw Error('Invalid evidence reference');
+    return moteRoute({ kind: 'reference', ref: reference, ...(conversationId !== undefined ? { conversation: conversationId } : {}) });
+  }
+  if (conversationId !== undefined) return moteRoute({ kind: 'conversation', id: conversationId });
+  return undefined;
+}
+
 const changed = () => Error(moteText('登录会话已变更，请重新打开中央页面。'));
-const sameLocation = (a: Config, b: Config) => a.serverUrl === b.serverUrl && a.deviceId === b.deviceId;
+const sameLocation = (a: Config, b: Config) => {
+  try { return centralScope(a).origin === centralScope(b).origin && a.deviceId === b.deviceId; }
+  catch { return false; }
+};
 const sameSession = (a: Config, b: Config) => sameLocation(a,b) && a.token === b.token &&
   a.authSignedOut === b.authSignedOut && a.authExpiresAt === b.authExpiresAt &&
   a.authSessionOnly === b.authSessionOnly && a.authSourceBinding === b.authSourceBinding;
@@ -68,16 +99,25 @@ export async function showCentral(navigation: CentralNavigation, page?: string, 
     if (login) return login(page, evidenceId, undefined, workId,conversationId);
     throw Error(moteText('请先登录中央节点，各页面会共用这次登录。'));
   }
+  const route = centralRoute(evidenceId, workId, conversationId);
   await navigation.ensureBrowserLogin();
   const prepared = { ...navigation.settings() }, token = connectionToken(prepared), generation = navigation.authorizationGeneration();
   if (!sameLocation(selected,prepared) || !token) throw changed();
+  const scope = centralScope(prepared);
+  const target = route?.kind === 'run'
+    ? { evidenceId: undefined, workId: route.id, conversationId: undefined }
+    : route?.kind === 'reference'
+      ? { evidenceId: route.ref, workId: undefined, conversationId: route.conversation }
+      : route?.kind === 'conversation'
+        ? { evidenceId: undefined, workId: undefined, conversationId: route.id }
+        : { evidenceId, workId, conversationId };
   const ensureCurrent = () => {
     const current = navigation.settings();
     if (generation !== navigation.authorizationGeneration() || !sameSession(prepared,current) || connectionToken(current) !== token) throw changed();
   };
   const { code } = await loginRequest(prepared, '/api/login/ticket', { expiresAt: prepared.authExpiresAt }, token);
   ensureCurrent();
-  await openCentralBrowser(prepared.serverUrl, page, navigation.platform,
+  await openCentralBrowser(scope.origin, page, navigation.platform,
     url => { ensureCurrent(); return navigation.launchChrome(url); },
-    url => { ensureCurrent(); return navigation.openDefault(url); }, evidenceId, code, undefined, workId,conversationId);
+    url => { ensureCurrent(); return navigation.openDefault(url); }, target.evidenceId, code, undefined, target.workId, target.conversationId);
 }
