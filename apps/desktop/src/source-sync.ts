@@ -61,6 +61,7 @@ export class SourceSync {
   private manifestBatch?:boolean;
   private inflight=new Set<string>();
   private unreconciledAbsent=new Set<string>();
+  private headCursor=0;
   private knownItems=0;
   private pendingContentRevision=0;
   private data: State = { version: DESKTOP_STORAGE_VERSION, ingressVersion:2, adapterVersion:1, known: {}, pendingRealtime: [], pendingHistory: [] };
@@ -367,8 +368,7 @@ export class SourceSync {
     await this.mutate(()=>this.commit({ ...this.data, lastSyncAt: new Date().toISOString() })); return 'ready';
   }
 
-  async flushSlice(source:SourceDefinition,request:SourceRequest,signal?:AbortSignal,observer?:SourceUploadObserver){
-    const slice=new UploadSlice();
+  async flushSlice(source:SourceDefinition,request:SourceRequest,signal?:AbortSignal,observer?:SourceUploadObserver,slice=new UploadSlice()){
     const bounded:SourceRequest=(path,body,method,requestSignal)=>{signal?.throwIfAborted();slice.admit(body);return request(path,body,method,requestSignal);};
     try{return {state:await this.flush(source,bounded,signal,observer),bytes:slice.bytes,requests:slice.requests};}
     catch(error){if(!(error instanceof UploadSliceYield))throw error;return {state:'yielded' as const,bytes:slice.bytes,requests:slice.requests};}
@@ -384,7 +384,11 @@ export class SourceSync {
     const withdrawKeys = new Set<string>(), cleared = new Map<string, string>();
     // Bound the reconciliation per call so a slice still reaches its uploads
     // when many candidates stay unresolved; the rest are retried next time.
-    for (const item of candidates.slice(0, 8)) {
+    // Rotate the starting point so unresolved heads cannot starve later ones.
+    const ordered = candidates.length ? [...candidates.slice(this.headCursor % candidates.length), ...candidates.slice(0, this.headCursor % candidates.length)] : [];
+    const examined = ordered.slice(0, 8);
+    this.headCursor = candidates.length ? (this.headCursor + examined.length) % candidates.length : 0;
+    for (const item of examined) {
       if (this.inflight.has(itemKey(item))) continue;
       let head: { revision?: string | null } | undefined;
       try { head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined; }
@@ -399,7 +403,7 @@ export class SourceSync {
       else if (head.revision === predecessor) withdrawKeys.add(itemKey(item));
       else this.unreconciledAbsent.add(itemKey(item));
     }
-    for (const item of candidates.slice(8)) this.unreconciledAbsent.add(itemKey(item));
+    for (const item of ordered.slice(8)) this.unreconciledAbsent.add(itemKey(item));
     if (!withdrawKeys.size && !cleared.size) return;
     const removed: SourceItem[] = [];
     await this.mutate(async () => {

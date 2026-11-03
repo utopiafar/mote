@@ -817,11 +817,11 @@ describe('source revisions and durable acknowledgments', () => {
     const state = sourceState(join(directory, 'state.json')) as any;
     sourceState(join(directory, 'state.json'), items.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: { ...state.known[sourceHash(item.externalId)], absentWhileInflight: state.known[sourceHash(item.externalId)].revision } })));
     const reopened = await create();
-    let heads = 0, nullHeads = false;
+    let heads = 0, nullHeads = false; const examined: string[] = [];
     const wire = async (path: string, body: any) => {
       if (path === '/api/sources') return { ...source, enabled: true };
       if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
-      if (path.startsWith('/api/file-sync/v1/head')) { heads++; if (!nullHeads) throw new Error('head unavailable'); return { revision: null }; }
+      if (path.startsWith('/api/file-sync/v1/head')) { heads++; examined.push(decodeURIComponent(new URL(path, 'http://x').searchParams.get('externalId') ?? '')); if (!nullHeads) throw new Error('head unavailable'); return { revision: null }; }
       if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('must not upload absent files'); }
       throw new Error('unexpected ' + path);
     };
@@ -831,13 +831,24 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent).toHaveLength(0);
     expect(reopened.status().pending).toBe(100);
     expect(['ready', 'yielded']).toContain(first.state);
-    // A later slice that can resolve null heads withdraws them and still uploads nothing.
+    const firstExamined = new Set(examined);
+    // A real exhausted slice budget yields before any head work.
+    const { UploadSlice } = await import('../src/upload-slice');
+    const tight = new UploadSlice(4 * 1024 * 1024, 1);
+    const tightResult = await reopened.flushSlice(source, wire as any, undefined, undefined, tight);
+    expect(tightResult.state).toBe('yielded');
+    expect(reopened.status().pending).toBe(100);
+    expect(sent).toHaveLength(0);
+    // A later slice that can resolve null heads withdraws them and still uploads nothing,
+    // examining different candidates than the previous call (rotation).
     nullHeads = true;
     heads = 0;
+    examined.length = 0;
     await reopened.flushSlice(source, wire as any, undefined);
     expect(heads).toBeLessThanOrEqual(8);
     expect(sent).toHaveLength(0);
     expect(reopened.status().pending).toBe(92);
+    expect(examined.some(id => !firstExamined.has(id))).toBe(true);
   });
   it('never uploads the ninth absent candidate before its head is checked', async () => {
     const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
