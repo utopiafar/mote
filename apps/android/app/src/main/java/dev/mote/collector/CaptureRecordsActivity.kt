@@ -479,12 +479,12 @@ class CaptureRecordsActivity : MoteActivity() {
                 if (remote && intent.getStringExtra("recordVersion").orEmpty().isNotBlank())
                     check(record.optString("libraryVersion") == intent.getStringExtra("recordVersion")) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
                 if (remote && intent.hasExtra("recordObservationCount"))
-                    check(LibraryCaptureProjection.observations(record) == intent.getIntExtra("recordObservationCount", -1)) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                    check(dev.mote.collector.plugins.NativeLibraryPlugin.observations(record) == intent.getIntExtra("recordObservationCount", -1)) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
                 require(record.getString("id") == id); Instant.parse(record.getString("capturedAt"))
                 val bytes = if (exact != null) exact.second else if (CapturePreview.hasImage(record)) if (remote) requireNotNull(readerClient).image(id, false) else queue().image(id) else null
                 if (selection != null && bytes != null && intent.getStringExtra("recordVersion").orEmpty().isNotBlank()) {
                     val afterImage=requireNotNull(readerClient).detail(id)
-                    check(afterImage.getString("id") == id && afterImage.optString("libraryVersion") == intent.getStringExtra("recordVersion") && afterImage.getString("deviceId") == record.getString("deviceId") && LibraryCaptureProjection.observations(afterImage) == LibraryCaptureProjection.observations(record)) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                    check(afterImage.getString("id") == id && afterImage.optString("libraryVersion") == intent.getStringExtra("recordVersion") && afterImage.getString("deviceId") == record.getString("deviceId") && dev.mote.collector.plugins.NativeLibraryPlugin.observations(afterImage) == dev.mote.collector.plugins.NativeLibraryPlugin.observations(record)) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
                 }
                 if (selection != null) {
                     val current = CentralAccess.resolve(this)

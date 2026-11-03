@@ -20,7 +20,7 @@ async function freePort(){
 }
 
 /** Actual source entrypoint in a private YAML profile, with explicit stop/start. */
-export async function createPrivateProcess({version='1',directory,healthTimeoutMs=15000,stopTimeoutMs=10000,entry:entrypoint=entry}={}){
+export async function createPrivateProcess({version='1',directory,healthTimeoutMs=15000,stopTimeoutMs=10000,entry:entrypoint=entry,extraDocument}={}){
   const parent=directory??mkdtempSync(join(tmpdir(),'mote-native-plugin-process-'));
   if(directory)mkdirSync(parent,{recursive:true,mode:0o700});
   const root=directory?join(parent,`process-${randomUUID()}`):parent;
@@ -28,9 +28,11 @@ export async function createPrivateProcess({version='1',directory,healthTimeoutM
   const dataDir=join(root,'data'),configFile=join(root,'mote.yaml'),token=randomBytes(32).toString('hex'),runId=randomUUID();
   mkdirSync(dataDir,{recursive:true,mode:0o700});
   let port=await freePort(),child,output='',baseUrl=`http://127.0.0.1:${port}`;
-  writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'generated',runtime:'native',host:'127.0.0.1',port,token},storage:{dataDir},models:{deployment:{model:''}},diagnostics:{traceEnabled:false,level:'silent'}}),{mode:0o600});
+  const document=()=>({version:1,revision:0,server:{profile:'generated',runtime:'native',host:'127.0.0.1',port,token},storage:{dataDir},models:{deployment:{model:''}},diagnostics:{traceEnabled:false,level:'silent'},...extraDocument});
+  writeFileSync(configFile,serializeConfigDocument(document()),{mode:0o600});
   const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_')));
   async function start(){
+    output='';
     const spawned=spawn(process.execPath,['--import','tsx','--input-type=module','-e',`await import(${JSON.stringify(entrypoint)})`],{cwd:repository,env:{...env,MOTE_CONFIG_FILE:configFile},stdio:['ignore','pipe','pipe']});
     child=spawned;
     for(const stream of [spawned.stdout,spawned.stderr])stream.on('data',chunk=>{output=(output+chunk.toString('utf8')).slice(-12000);});
@@ -39,6 +41,16 @@ export async function createPrivateProcess({version='1',directory,healthTimeoutM
       if(spawned.exitCode!==null)throw Error(`Central process exited before health: ${output.slice(-2000)}`);
       try{const response=await fetch(baseUrl+'/api/health',{signal:AbortSignal.timeout(500)});if(response.ok)break;}catch{}
       if(Date.now()>=deadline)throw Error(`Central process health deadline: ${output.slice(-2000)}`);
+      await delay(20);
+    }
+    // The real entrypoint registers signal handlers immediately after logging
+    // server.listening; an earlier SIGTERM is an ungraceful default kill.
+    // Custom stub entries own their readiness contract and skip this wait.
+    if(entrypoint!==entry)return;
+    for(;;){
+      if(output.includes('server.listening'))break;
+      if(spawned.exitCode!==null)throw Error(`Central process exited before the listening event: ${output.slice(-2000)}`);
+      if(Date.now()>=deadline)throw Error(`Central process listening deadline: ${output.slice(-2000)}`);
       await delay(20);
     }
   }
@@ -83,7 +95,7 @@ export async function createPrivateProcess({version='1',directory,healthTimeoutM
     async writeNote(note){return this.request('/api/notes',{method:'POST',body:note});},
     async readNote(id){return this.request('/api/notes/'+encodeURIComponent(id));},
     async stop(){return stop();},
-    async restart(){await stop();writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'generated',runtime:'native',host:'127.0.0.1',port,token},storage:{dataDir},models:{deployment:{model:''}},diagnostics:{traceEnabled:false,level:'silent'}}),{mode:0o600});await start();return this;},
+    async restart(){await stop();writeFileSync(configFile,serializeConfigDocument(document()),{mode:0o600});await start();return this;},
     async close({remove=true,strict=true}={}){
       let failure,outcome;
       try{outcome=await stop({strict});}catch(error){failure=error;outcome=error.outcome;}

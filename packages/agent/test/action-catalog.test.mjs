@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 import {taskTools,buildContextEnvelope} from '../dist/task-context.js';
 import {TaskRegistry,prepareTaskContext} from '../dist/index.js';
-import {installImportProcedurePack} from '../dist/tasks/import-procedure.js';
+import {installImportTaskPack} from '../dist/tasks/import.js';
 const id='11111111-1111-4111-8111-111111111111',actionId='22222222-2222-4222-8222-222222222222';
 const record={id,deviceId:'selected',capturedAt:'2026-09-16T01:00:00Z',appName:'Generated',ocrText:'Generated original change evidence'};
 const reader={evidence:async()=>[record],search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),activity:async()=>({}),devices:async()=>[]};
@@ -24,13 +24,16 @@ test('ordinary queries refuse the import procedure while the dedicated import ru
  const query={question:'Generated ordinary query',skill:'document-import'};
  assert.throws(()=>prepareTaskContext(query),error=>error?.code==='skill_unavailable');
  assert.throws(()=>buildContextEnvelope(query,[]),error=>error?.code==='skill_unavailable');
- const registry=new TaskRegistry(),dispose=installImportProcedurePack(registry);
+ const registry=new TaskRegistry(),dispose=installImportTaskPack(registry);
  try{
   const skill=registry.skill('document-import');
   assert.equal(skill.version,'1.0.6');assert.equal(skill.availability,'import');assert.match(skill.content,/name: document-import/);
   assert.throws(()=>prepareTaskContext({...query,taskRegistry:registry}),error=>error?.code==='skill_unavailable');
+  const task=prepareTaskContext({question:'Generated import capability',taskSelection:{id:'import',version:'1'},taskRegistry:registry});
+  assert.equal(task.id,'import');assert.equal(task.version,'1');assert.deepEqual(task.profile,{output:'answer',retrieval:'none'});
  }finally{dispose();}
  assert.throws(()=>registry.skill('document-import'),error=>error?.code==='unknown_skill');
+ assert.throws(()=>prepareTaskContext({question:'Generated retired import task',taskSelection:{id:'import',version:'1'},taskRegistry:registry}),error=>error?.code==='unknown_task');
 });
 test('real calendar actions input selects the proposal task and exposes no calendar mutation capability',async t=>{
  const input={question:'Generated extraction from host scheduling',skill:'calendar-extraction',responseMode:'calendar-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:record.ocrText.length}],deviceId:'selected',after:'2026-09-01T00:00:00Z',timeZone:'Asia/Shanghai',actionCatalog:async()=>({items:[],nextCursor:null})};

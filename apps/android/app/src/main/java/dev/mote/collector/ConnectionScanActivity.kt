@@ -8,14 +8,14 @@ import android.os.Bundle
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.google.zxing.client.android.Intents
-import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeCallback
 import com.journeyapps.barcodescanner.BarcodeResult
 import com.journeyapps.barcodescanner.DecoratedBarcodeView
-import com.journeyapps.barcodescanner.DefaultDecoderFactory
+import dev.mote.collector.plugins.NativeAdministrationPlugin
 
-internal fun connectionScanDecoderFactory() = DefaultDecoderFactory(listOf(BarcodeFormat.QR_CODE), null, null, Intents.Scan.MIXED_SCAN)
+/** The scan Activity only hosts the camera view; the administration plugin
+ * owns the mixed-polarity decoder policy. */
+internal fun connectionScanDecoderFactory() = NativeAdministrationPlugin.scanDecoderFactory()
 
 /** Camera frames are decoded locally in memory; no image capture/storage or external scanner app. */
 class ConnectionScanActivity : MoteActivity() {
