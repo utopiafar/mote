@@ -4,8 +4,7 @@ package dev.mote.collector.plugins
  * own provider file and one registration line here; the application bootstrap
  * only builds the host. */
 fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
-    register(NativePluginProvider("mote.capture.projection", "1", buildId = buildId, osGrants = listOf("projection")))
-    register(NativePluginProvider("mote.capture.accessibility", "1", buildId = buildId, osGrants = listOf("accessibility")))
+    CapturePlugin.register(this, buildId)
     registerDurableTransport(buildId)
     SystemEntriesPlugin.register(this, buildId)
     NotesPlugin.register(this, buildId)
