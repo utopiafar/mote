@@ -140,6 +140,34 @@ The `domain` seed itself checks one error branch (invalid input must fail
 through the real mount as the host's generic operation error, never as a
 silent success).
 
+## Scanning generated artifacts
+
+`scripts/ci/sensitive-scan.mjs` checks support bundles and built bundles
+before they are shared, attached to a release or copied into an issue. It
+reports redacted locations only, so the report does not repeat the value that
+must be removed.
+
+```sh
+# A support bundle: also rejects captured-content fields outright
+node scripts/ci/sensitive-scan.mjs --support /tmp/mote-support.json
+
+# Compiled files or directories
+node scripts/ci/sensitive-scan.mjs --bundle apps/web/dist packages/plugin-sdk/dist
+
+# Generated private-body markers can be supplied explicitly for a fixture
+node scripts/ci/sensitive-scan.mjs --bundle --private "$GENERATED_PRIVATE_BODY" dist
+```
+
+The scan rejects private-key blocks, common API/token formats, host-private
+absolute paths (user profiles, temporary roots and the current checkout), and
+support-bundle fields that would export captured text, titles, URLs,
+credentials or device identities. A compiled bundle cannot distinguish
+arbitrary user prose from product copy, so generated private-body values are
+passed with `--private`; every artifact is still checked for keys and host
+paths. `--json` prints the complete report and a finding exits nonzero.
+`--private-root` adds an isolated host root when a fixture lives outside the
+standard home, temporary or repository directories.
+
 ## G4 — independent author checklist
 
 For manual verification by an author who did not participate in the
