@@ -2,8 +2,8 @@ package dev.mote.collector
 
 import android.app.Application
 import dev.mote.collector.plugins.NativePluginHost
-import dev.mote.collector.plugins.NativePluginProvider
 import dev.mote.collector.plugins.NativePluginRegistry
+import dev.mote.collector.plugins.registerBuiltinPlugins
 import java.util.concurrent.Executors
 
 class MoteApplication : Application() {
@@ -23,12 +23,7 @@ class MoteApplication : Application() {
         MoteAppearance.initialize(this)
         if (getProcessName() != packageName) return
         val buildId = runCatching { packageManager.getPackageInfo(packageName, 0).versionName ?: "dev" }.getOrDefault("dev")
-        pluginHost = NativePluginHost(NativePluginRegistry().apply {
-            register(NativePluginProvider("mote.capture.projection", "1", buildId = buildId, osGrants = listOf("projection")))
-            register(NativePluginProvider("mote.capture.accessibility", "1", buildId = buildId, osGrants = listOf("accessibility")))
-            register(NativePluginProvider("mote.durable-upload", "1", buildId = buildId))
-            register(NativePluginProvider("mote.quick-note", "1", buildId = buildId))
-        })
+        pluginHost = NativePluginHost(NativePluginRegistry().apply { registerBuiltinPlugins(buildId) })
         try { LocalDataFormat.requireCurrent(this) } catch (error: Exception) {
             QueueStorage.recoveryFailure = error.message
             return

@@ -3,18 +3,16 @@ import test from 'node:test';
 import { canonicalDestination, readWorkspaceRoute, workspaceHash } from '../src/workspace-route';
 const collections = ['materials', 'records', 'segments', 'sources', 'files', 'activity', 'media', 'memories', 'extension'];
 const readPage = (hash:string)=>hash.replace(/^#\//,'').split('?')[0]==='library'?'archive':'overview';
-test('current collection links and documented legacy routes retain their destination', () => {
+test('collection links use explicit query parameters while retired path aliases fall through', () => {
   for(const collection of ['files','segments','materials','memories']){
     assert.deepEqual(readWorkspaceRoute('#/library?view='+collection,readPage,collections),{page:'archive',collection});
-    assert.deepEqual(readWorkspaceRoute('#/library/'+collection,readPage,collections),{page:'archive',collection});
+    assert.deepEqual(readWorkspaceRoute('#/library/'+collection,readPage,collections),{page:'overview',collection:'materials'});
   }
 });
-test('legacy task destinations resolve to registered Library routes without undefined hashes',()=>{
- for(const [page,collection] of Object.entries({library:'materials',files:'files',timeline:'records',memories:'memories'})){
-  const target=canonicalDestination(page,'materials',collections);
-  assert.deepEqual(target,{page:'archive',collection});
-  assert.equal(workspaceHash('library',target.collection),'#/library?view='+collection);
- }
+test('canonical destinations no longer rewrite retired page names',()=>{
+  for(const [page,collection] of Object.entries({archive:'materials',notes:'files',insights:'insights'}))assert.deepEqual(canonicalDestination(page,collection,collections),{page,collection});
+  assert.deepEqual(canonicalDestination('library','materials',collections),{page:'library',collection:'materials'});
+  assert.equal(workspaceHash('library','materials'),'#/library?view=materials');
 });
 test('explicit unavailable collection types stay visible instead of opening unrelated materials', () => {
   assert.deepEqual(readWorkspaceRoute('#/library?view=extension',readPage,collections),{page:'archive',collection:'extension'});

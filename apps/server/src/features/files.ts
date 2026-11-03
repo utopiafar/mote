@@ -3,6 +3,7 @@ import type {FastifyInstance} from 'fastify';
 import {registerFileRoutes} from '../file-routes.js';
 import type {FeatureServices} from '../feature-services.js';
 import type {FilePlaybackGrants} from '../plugins/files-source.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** C11's files-source factory owns FileStore creation/close/sweep and the
  * playback-grant scope. This feature only registers the existing HTTP protocol. */
@@ -17,3 +18,11 @@ export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwner
  // separately retires the token registry when its own scope quiesces.
  scope?.defer(()=>setPlaybackAuthorization(()=>false));
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.files',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.files'));
+    register(app,services,scope);
+  },
+};

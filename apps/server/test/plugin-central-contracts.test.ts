@@ -34,17 +34,33 @@ test('every actually installed server feature has replaceable factory owners and
   assert.ok(initializer && ts.isCallExpression(initializer) && initializer.expression.getText(file) === 'Object.freeze', 'unexpected default feature registry');
   const entries = initializer.arguments[0];
   assert.ok(entries && ts.isArrayLiteralExpression(entries), 'default feature registry must expose its complete entries');
+  const imported = new Map<string,string>();
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || statement.importClause?.isTypeOnly) continue;
+    const specifier = statement.moduleSpecifier, named = statement.importClause?.namedBindings;
+    if (!ts.isStringLiteral(specifier) || !specifier.text.startsWith('./') || !ts.isNamedImports(named)) continue;
+    for (const element of named.elements) {
+      if ((element.propertyName ?? element.name).text === 'adapter') imported.set(element.name.text, specifier.text);
+    }
+  }
   const installed: string[] = [];
   for (const entry of entries.elements) {
-    assert.ok(ts.isObjectLiteralExpression(entry), 'unexpected feature adapter');
-    const descriptor = entry.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(file) === 'descriptor');
-    const factory = entry.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(file) === 'factory');
+    assert.ok(ts.isIdentifier(entry), 'feature registry must aggregate imported adapters');
+    const specifier = imported.get(entry.text);
+    assert.ok(specifier, `missing imported adapter for ${entry.text}`);
+    const module = source(`../src/features/${specifier.slice(2).replace(/\.js$/, '.ts')}`);
+    const adapter = module.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : [])
+      .find(node => ts.isIdentifier(node.name) && node.name.text === 'adapter');
+    assert.ok(adapter?.initializer && ts.isObjectLiteralExpression(adapter.initializer), `unexpected feature adapter in ${specifier}`);
+    const descriptor = adapter.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(module) === 'descriptor');
+    const factory = adapter.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(module) === 'factory');
     assert.ok(factory && ts.isPropertyAssignment(factory) && (ts.isArrowFunction(factory.initializer) || ts.isFunctionExpression(factory.initializer)), 'feature must have an executable adapter');
     assert.ok(descriptor && ts.isPropertyAssignment(descriptor) && ts.isObjectLiteralExpression(descriptor.initializer), 'unexpected feature descriptor');
-    const id = descriptor.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(file) === 'id');
+    const id = descriptor.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(module) === 'id');
     assert.ok(id && ts.isPropertyAssignment(id) && ts.isStringLiteral(id.initializer));
     installed.push(id.initializer.text);
   }
+  assert.equal(imported.size, entries.elements.length, 'every imported adapter must be installed exactly once');
   assert.equal(installed.length, 25);
   assert.equal(new Set(installed).size, installed.length);
   assert.deepEqual(Object.keys(centralFeatureMigrations).sort(), installed.sort());
