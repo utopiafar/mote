@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "example.reading-export",
+  "name": "Reading export",
+  "version": "1.0.0",
+  "trust": "external",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "reading-export-1.0.0.zip",
+    "sha256": "254f8a0e79aa180eaf783c5bcfd17a2426312ce8c5b6040c8f38b8c464ccfcce"
+  },
+  "contributions": [
+    {
+      "id": "reading-export.archive",
+      "version": "1",
+      "surface": "data",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "provides": [
+        {
+          "kind": "service",
+          "id": "example.reading-export.materials",
+          "apiVersion": "1",
+          "cardinality": "single"
+        }
+      ],
+      "capabilities": [
+        "reading.export"
+      ]
+    },
+    {
+      "id": "reading-export.page",
+      "version": "1",
+      "surface": "page",
+      "runtime": "host",
+      "entry": "web/index.html",
+      "requires": [
+        {
+          "kind": "contribution",
+          "id": "reading-export.archive",
+          "version": "1",
+          "required": true
+        }
+      ],
+      "capabilities": [
+        "reading.export.page"
+      ]
+    }
+  ],
+  "capabilities": [
+    "reading.export",
+    "reading.export.page"
+  ],
+  "configuration": [],
+  "dependencies": [
+    {
+      "kind": "service",
+      "id": "example.reading-review.plan",
+      "version": "1"
+    }
+  ],
+  "access": [
+    "Read-only reading plan port example.reading-review.plan@1",
+    "Instance-scoped generic material archive in ctx.state"
+  ]
+}
