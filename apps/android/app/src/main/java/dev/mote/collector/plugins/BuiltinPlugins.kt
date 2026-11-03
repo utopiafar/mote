@@ -7,6 +7,7 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     CapturePlugin.register(this, buildId)
     registerDurableTransport(buildId)
     SourceProviderPlugin.register(this, buildId)
+    StorageBackupPlugin.register(this, buildId)
     SystemEntriesPlugin.register(this, buildId)
     NotesPlugin.register(this, buildId)
     NativeLibraryPlugin.register(this, buildId)
