@@ -74,4 +74,32 @@ class ConnectionAndOperationsTest {
             assertEquals(id, state.getJSONArray("events").getJSONObject(2).getString("recordId")); assertFalse(state.toString().contains("GENERATED_PRIVATE_BODY"))
         } finally { directory.deleteRecursively() }
     }
+
+    @Test fun scanningAnInvitationDoesNotWriteSettingsBeforeConfirmation() {
+        var commits = 0
+        var confirmedName = ""
+        val connection = dev.mote.collector.plugins.AdministrationConnection(
+            now = { now },
+            debug = false,
+            commit = { _, _, name, _, finished ->
+                commits++
+                confirmedName = name
+                finished(Result.success(RuntimeSettings.Applied(projectionConsentRequired = false)))
+            },
+        )
+        val selected = connection.stage(invitation().toString(), false)
+        assertEquals("https://mote.example", selected.serverUrl)
+        assertEquals("parsing and review never persist the active connection", 0, commits)
+        assertTrue(connection.selected() != null)
+        assertFalse(connection.selected().toString().contains("A".repeat(43)))
+
+        connection.confirm(CollectorConfig(deviceName = "Generated device"), "Generated device", false) { assertTrue(it.isSuccess) }
+        assertEquals(1, commits)
+        assertEquals("Generated device", confirmedName)
+        assertNull("a confirmed invitation cannot be replayed", connection.selected())
+        assertThrows(ConnectionFailure::class.java) {
+            connection.confirm(CollectorConfig(deviceName = "Generated device"), "Generated device", false) {}
+        }
+        assertEquals(1, commits)
+    }
 }

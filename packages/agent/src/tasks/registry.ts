@@ -58,7 +58,7 @@ export class TaskRegistry {
   }
 
   prepare(input: QueryInput): PreparedTask {
-    const skill = input.skill === undefined ? undefined : this.skill(input.skill);
+    const skill = input.skill === undefined ? undefined : this.querySkill(input.skill);
     const descriptor = this.selectTask(input.taskSelection, input);
     // A procedure contributes only a default. Explicit Host policy and the
     // selected task's retrieval scope remain authoritative.
@@ -72,6 +72,16 @@ export class TaskRegistry {
       responseMode,
       ...(skill ? {skill} : {}),
     });
+  }
+
+  /** Import procedures remain registered for their dedicated runtime, but a
+   * query may only select a procedure whose declared surface is query. */
+  private querySkill(id: string): SkillDescriptor {
+    const skill = this.skill(id);
+    if ((skill.availability ?? 'query') !== 'query') {
+      throw new TaskContractError('skill_unavailable', `Skill is not available to a query task: ${id}`);
+    }
+    return skill;
   }
 
   private selectTask(selection: TaskSelection | undefined, input: QueryInput): TaskDescriptor {

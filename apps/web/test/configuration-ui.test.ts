@@ -7,7 +7,7 @@ import {JSDOM} from 'jsdom';
 import {ConfigurationBuilder} from '../src/ConfigurationBuilder.js';
 import {RuntimeSettings} from '../src/RuntimeSettings.js';
 import {MemorySettings} from '../src/MemorySettings.js';
-import {ContentStorage} from '../src/ContentStorage.js';
+import {ContentStorage} from '../src/plugins/maintenance/ContentStorage.js';
 import {PerceptionSettings} from '../src/PerceptionSettings.js';
 import {Actions} from '../src/plugins/work/Actions.js';
 import {ApiError, type Api} from '../src/api.js';

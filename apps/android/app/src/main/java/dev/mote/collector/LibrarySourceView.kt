@@ -17,7 +17,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
     private var localPending = false
     private var remoteRequested = false
     private var remotePages = 0
-    private val projection = LibrarySourceProjection()
+    private val projection = dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).sourceProjection()
     private var stamp = 0
     private var identity: Pair<String, Long>? = null
     private var localCursor: Pair<String,String>? = null
@@ -93,7 +93,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
         if (localTask.busy) { localPending = true; return }
         val generation = stamp; val access = CentralAccess.resolve(activity); val scope = access.server to access.generation
         val (after, until) = range(); val kind = filter; val sourceId = source; val cursor = localCursor
-        localTask.start("", {}, { LibraryLocalSources.page(activity.applicationContext, after, until, cursor, kind, sourceId) }) { result ->
+        localTask.start("", {}, { dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).localPage(activity.applicationContext, after, until, cursor, kind, sourceId) }) { result ->
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && scope == current.server to current.generation) {
                 result.onSuccess { page ->
