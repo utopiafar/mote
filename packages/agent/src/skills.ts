@@ -3,7 +3,7 @@ import {TASK_DESCRIPTOR_API_VERSION,type SkillDescriptor,type TaskResponseMode} 
 import {defaultTaskRegistry} from './tasks/registry.js';
 import {CALENDAR_SKILL_VERSION,calendarSkillDescriptor,installCalendarTaskPack} from './tasks/calendar.js';
 import {insightSkillDescriptor,installInsightTaskPack} from './tasks/insight.js';
-import {importProcedureSkillDescriptor,installImportProcedurePack} from './tasks/import-procedure.js';
+import {importSkillDescriptor,installImportTaskPack} from './tasks/import.js';
 
 export const SKILL_VERSION = CALENDAR_SKILL_VERSION;
 const catalog = [
@@ -14,18 +14,18 @@ const catalog = [
   {id:'memory-consolidation',name:'memory-consolidation',version:'3.4.0',description:'Consolidate episodic text memories into supported semantic or procedural proposals; revisit originals and preserve conflicting and historical evidence.'},
   {id:'working-memory',name:'working-memory',version:'1.0.0',description:'Compact conversation context into a bounded textual working memory, preserving decisions, open questions and attribution.'},
 ] as const satisfies readonly {id:string;name:string;description:string;version:string;responseMode?:TaskResponseMode}[];
-export type MoteSkillId = typeof catalog[number]['id'] | typeof calendarSkillDescriptor.id | typeof insightSkillDescriptor.id | typeof importProcedureSkillDescriptor.id;
+export type MoteSkillId = typeof catalog[number]['id'] | typeof calendarSkillDescriptor.id | typeof insightSkillDescriptor.id | typeof importSkillDescriptor.id;
 const content = (id:string) => readFileSync(new URL(`../skills/${id}/SKILL.md`,import.meta.url),'utf8');
 const memorySkills = catalog.map(skill=>({...skill,content:content(skill.id)}));
 const bundled = [
   calendarSkillDescriptor,
   insightSkillDescriptor,
   ...memorySkills,
-  importProcedureSkillDescriptor,
+  importSkillDescriptor,
 ];
 installCalendarTaskPack();
 installInsightTaskPack();
-installImportProcedurePack();
+installImportTaskPack();
 defaultTaskRegistry.register({skills:memorySkills.map(skill=>({...skill,apiVersion:TASK_DESCRIPTOR_API_VERSION}))});
 export const bundledSkills = bundled.map((skill):SkillDescriptor=>{
   const availability = 'availability' in skill ? skill.availability : undefined;
