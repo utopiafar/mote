@@ -21,6 +21,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.NativeRecordReceipt
+import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import java.util.concurrent.Executors
 
 class MainActivity : MoteActivity() {
@@ -329,8 +330,13 @@ class MainActivity : MoteActivity() {
             (layoutParams as LinearLayout.LayoutParams).bottomMargin = 0
         }
         homeSections.forEach { it.close() }; homeSections.clear()
-        HomeCalendarNeedsView(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
-            homeSections += it; content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        // Work and discovery own their home blocks: a stopped plugin publishes none.
+        val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
+        val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
+        if (NativeWorkDiscoveryPlugin.HomeSection.CALENDAR_NEEDS in workHomeSections) {
+            workDiscovery.homeCalendarNeeds(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
+                homeSections += it; content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+            }
         }
         homeReceiptSignature = null
         homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
@@ -369,9 +375,11 @@ class MainActivity : MoteActivity() {
         }.also { homeSections += it; content.addView(it) }
         content = pageContent
         // Existing discoveries follow the continuing work; the home never generates a new one.
-        HomeDiscoveryView(this){id->
-            startActivity(Intent(this,CentralActivity::class.java).putExtra("page","insights").apply{if(id!=null)putExtra("insightId",id)})
-        }.also { homeSections += it; content.addView(it) }
+        if (NativeWorkDiscoveryPlugin.HomeSection.DISCOVERY in workHomeSections) {
+            workDiscovery.homeDiscovery(this) { id ->
+                startActivity(Intent(this,CentralActivity::class.java).putExtra("page","insights").apply{if(id!=null)putExtra("insightId",id)})
+            }.also { homeSections += it; content.addView(it) }
+        }
         updateFirstUse()
     }
 

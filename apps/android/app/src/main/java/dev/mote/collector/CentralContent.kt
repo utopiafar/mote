@@ -11,6 +11,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import java.io.File
 
 /** Reusable native central content. The host owns the window and primary navigation. */
@@ -174,6 +175,14 @@ internal class CentralContent(
     private var downloadOrigin: String? = null
     private var downloadGeneration = -1L
     private val refreshRun = Runnable { if (resumed) when (page) { "ask" -> screens?.pollAsk(); "activity" -> screens?.pollWorkActivity(); "memories" -> screens?.pollMemoryTopics(); "insights" -> screens?.pollInsight() } }
+    // Work and discovery polling belongs to the plugin: only a visible page
+    // keeps a refresh armed, and leaving either page cancels it.
+    private val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
+    private val workPolling = workDiscovery.polling(
+        visible = { workDiscovery.active && resumed && page in setOf("activity", "insights") },
+        schedule = { delay -> handler.postDelayed(refreshRun, delay) },
+        cancel = { handler.removeCallbacks(refreshRun) },
+    )
 
     private val refreshLogin = object : Runnable {
         override fun run() {
@@ -320,7 +329,7 @@ internal class CentralContent(
         accessReady = true
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
-    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.pauseInsights(); screens?.close() }
+    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.pauseInsights(); screens?.close() }
     fun close() { disposePluginView(); pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)
@@ -372,7 +381,7 @@ internal class CentralContent(
     internal fun navigate(next: String, remember: Boolean = true) {
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
-        page = next; revision++; pending.clear(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
+        page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
         updateCollectionBar(); updateBackButton()
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("中央资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
@@ -572,7 +581,7 @@ internal class CentralContent(
         status.text = message
         status.visibility = if (message.isBlank()) View.GONE else View.VISIBLE
     }
-    internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); handler.removeCallbacks(refreshRun) }
+    internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun) }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
         notice((if(page=="ask")screens?.askFailurePresentation(error) else null) ?: error.message ?: MoteI18n.text("操作失败"))
         if (client == null && body.childCount == 0) {
@@ -587,8 +596,8 @@ internal class CentralContent(
     }
     internal fun scheduleAskPoll(delay: Long = 1500) { handler.removeCallbacks(refreshRun); if (resumed && page == "ask") handler.postDelayed(refreshRun, delay) }
     internal fun scheduleMemoryTopicsPoll() { handler.removeCallbacks(refreshRun); if (resumed && page == "memories") handler.postDelayed(refreshRun, 5000) }
-    internal fun scheduleActivityPoll(delay: Long = 3000) { handler.removeCallbacks(refreshRun); if (resumed && page == "activity") handler.postDelayed(refreshRun, delay) }
-    internal fun scheduleInsightPoll(delay: Long = 5000) { handler.removeCallbacks(refreshRun); if (resumed && page == "insights") handler.postDelayed(refreshRun, delay) }
+    internal fun scheduleActivityPoll(delay: Long = 3000) { workPolling.rearm(delay) }
+    internal fun scheduleInsightPoll(delay: Long = 5000) { workPolling.rearm(delay) }
     private data class WorkValue<T>(val value: T, val generation: Long)
     internal fun <T> work(label: String, job: (UiTask.Progress) -> T, done: (T) -> Unit) = work(label, job, false, done)
     private fun <T> work(label: String, job: (UiTask.Progress) -> T, allowSessionChange: Boolean, done: (T) -> Unit) {

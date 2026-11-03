@@ -7,6 +7,7 @@ import android.text.InputFilter
 import android.text.TextWatcher
 import android.widget.*
 import dev.mote.collector.plugins.NativeAskPlugin
+import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -59,8 +60,10 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private var noteHistory = JSONObject()
     private val library = CentralLibrary(this)
     private val admin = CentralAdmin(this)
-    private val activity = CentralWorkActivity(this)
-    private val insights = CentralInsights(this)
+    // Work and discovery pages are plugin-owned; this screen only routes to them.
+    private val workDiscovery = NativeWorkDiscoveryPlugin.owner(ui)
+    private val activity = workDiscovery.work(this)
+    private val insights = workDiscovery.insights(this)
 
     fun show(page: String) {
         currentPage = page; detailBack = null; question = null; messages = null; noteText = null; noteMood = null
