@@ -1,6 +1,6 @@
 import type {TokenUsage} from '@mote/shared';
 import {CodexSession} from './codex-session.js';
-import {skillContent} from './skills.js';
+import {ImportTaskContractError,importSkillDescriptor,importTaskDescriptor,resolveImportRecordsPath} from './tasks/import.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 import type {ImportAgentInput,ImportAgentResult,ImportAgentObserver} from './import-agent.js';
 
@@ -15,13 +15,14 @@ export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
     const session=new CodexSession(options,async()=>{throw new AgentProviderError();},undefined,onUsage);sessions.add(session);
     try{
-      await session.start(skillContent('document-import'),[],input.workspace);
-      let text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),importAnswerSchema);
+      await session.start(importSkillDescriptor.content,[],input.workspace);
+      let text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:importSkillDescriptor.id,taskId:importTaskDescriptor.id,taskVersion:importTaskDescriptor.version,importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),importAnswerSchema);
       for(let repair=0;;repair++){
         try{
          if(text.length>64000)throw new AgentResponseError('Import response exceeds its limit');
          let result:ImportAgentResult;try{result=JSON.parse(text);}catch{throw new AgentResponseError('Import response is not valid JSON');}
          if(!result||typeof result.summary!=='string'||(result.recordsPath!=null&&typeof result.recordsPath!=='string')||(result.warnings!==undefined&&(!Array.isArray(result.warnings)||result.warnings.some(w=>typeof w!=='string'))))throw new AgentResponseError('Import response has an invalid shape');
+         try{resolveImportRecordsPath(input.workspace,result.recordsPath??undefined);}catch(error){if(error instanceof ImportTaskContractError)throw new AgentResponseError(error.message);throw error;}
          return {...result,recordsPath:result.recordsPath??undefined,reviewDecision:result.reviewDecision??undefined};
         }catch(error){
          if(!(error instanceof AgentResponseError)||repair>=MAX_OUTPUT_REPAIRS)throw error;

@@ -9,6 +9,7 @@ import {defaultTaskRegistry} from './tasks/registry.js';
 import {prepareTaskContext} from './tasks/context-assembly.js';
 import {CALENDAR_TASK_PROFILE} from './tasks/calendar.js';
 import {INSIGHT_TASK_PROFILE} from './tasks/insight.js';
+import {IMPORT_TASK_PROFILE} from './tasks/import.js';
 // Register the official descriptor factory before this module publishes the
 // default task tools; the Host contribution assembly consumes only the registry.
 import './tools/official-read-packs.js';
@@ -20,10 +21,11 @@ export const TASK_PROFILES = {
   extraction:{output:'memory-extraction',retrieval:'evidence'},
   selectedAnswer:{output:'answer',retrieval:'evidence'},
   calendar:CALENDAR_TASK_PROFILE,
+  import:IMPORT_TASK_PROFILE,
   working:{output:'answer',retrieval:'none'},
 } as const satisfies Record<string,TaskProfile>;
 const task=(id:string,profile:TaskProfile,priority:number,select:(input:QueryInput)=>boolean):TaskDescriptor=>({apiVersion:TASK_DESCRIPTOR_API_VERSION,id,version:'1',profile,outputSchema:TASK_OUTPUT_SCHEMA,priority,select});
-// skills.ts installs the Insight, Calendar and Import procedure packs before
+// skills.ts installs the Insight, Calendar and Import task packs before
 // this module publishes the remaining profiles.
 defaultTaskRegistry.register({tasks:[
   task('working',TASK_PROFILES.working,60,input=>input.hostRetrieval==='none'||input.skill==='working-memory'),
