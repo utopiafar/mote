@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "example.reading-review",
+  "name": "Reading review",
+  "version": "1.0.0",
+  "trust": "external",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "reading-review-1.0.0.zip",
+    "sha256": "c4b46317e3157385c187ea61c04c06e3cc810b5618de4856b70b07c13e042e65"
+  },
+  "contributions": [
+    {
+      "id": "reading-review.port",
+      "version": "1",
+      "surface": "data",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "provides": [
+        {
+          "kind": "service",
+          "id": "example.reading-review.plan",
+          "apiVersion": "1",
+          "cardinality": "single"
+        }
+      ],
+      "capabilities": [
+        "reading.plan"
+      ]
+    },
+    {
+      "id": "reading-review.page",
+      "version": "1",
+      "surface": "page",
+      "runtime": "host",
+      "entry": "web/index.html",
+      "requires": [
+        {
+          "kind": "contribution",
+          "id": "reading-review.port",
+          "version": "1",
+          "required": true
+        }
+      ],
+      "capabilities": [
+        "reading.page"
+      ]
+    }
+  ],
+  "capabilities": [
+    "reading.plan",
+    "reading.page"
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Instance-scoped review plan in ctx.state"
+  ]
+}

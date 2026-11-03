@@ -2,19 +2,15 @@ package dev.mote.collector
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.DocumentsContract
-import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
-import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.plugins.SourceProviderPlugin
 import org.json.JSONObject
-import java.io.File
 import java.util.concurrent.Executors
 
 /** One opt-in task page for one-time file imports and persistent folder sources. */
@@ -26,6 +22,7 @@ class FileTaskActivity : MoteActivity() {
     }
     private val worker = Executors.newSingleThreadExecutor()
     private val task by lazy { UiTask(this, worker, ownsExecutor = false) }
+    private val owner by lazy { SourceProviderPlugin.owner(this) }
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
     private lateinit var description: EditText
@@ -73,8 +70,9 @@ class FileTaskActivity : MoteActivity() {
         }
         body.addView(status); status.text = MoteI18n.text("正在读取来源…")
         task.start(MoteI18n.text("正在读取来源…"), { status.text = it }, {
-            val existing = id?.let { key -> localSources().sources().find { it.id == key } ?: error(MoteI18n.text("所选文件不可用")) }
-            Triple(existing, if (existing == null) readDraft() else null, existing?.let { localSources().state(it.id).optString("status") == "context-conflict" } ?: false)
+            val existing = id?.let { key -> owner.source(key) ?: error(MoteI18n.text("所选文件不可用")) }
+            Triple(existing, if (existing == null) owner.readDraft(draftKey) else null,
+                existing?.let { owner.state(it).optString("status") == "context-conflict" } ?: false)
         }) { result ->
             result.onSuccess { (existing, draft, conflict) ->
                 savedSource = existing
@@ -88,11 +86,6 @@ class FileTaskActivity : MoteActivity() {
             }.onFailure { status.text = MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。") }
         }
     }
-    private fun readDraft(): JSONObject? {
-        val file = draftFile()
-        return if (file.exists()) JSONObject(String(localContentCipher().open(file.readBytes()), Charsets.UTF_8)) else null
-    }
-    private fun draftFile() = File(noBackupFilesDir, "file-task-${SourceRules.hash(draftKey)}.enc")
     private fun values() = JSONObject().put("description", description.text.toString()).put("name", name.text.toString())
         .put("retention", retention.selectedItemPosition).put("initial", initial.selectedItemPosition).put("interval", interval.text.toString())
         .put("maximum", maximum.text.toString()).put("extensions", extensions.text.toString()).put("excludes", excludes.text.toString())
@@ -100,13 +93,8 @@ class FileTaskActivity : MoteActivity() {
     private fun persistDraft() {
         if (building || !::description.isInitialized || worker.isShutdown || savedSource != null) return
         // The private persisted draft contains no URI permission; reopening requires explicit selection.
-        val draft = JSONObject().put("values", values()).put("preset", preset).put("retentionEdited", retentionEdited)
         worker.execute { runCatching {
-            val file = draftFile(); val temp = File(file.parentFile, file.name + ".tmp")
-            try {
-                java.io.FileOutputStream(temp).use { it.write(localContentCipher().seal(draft.toString().toByteArray(Charsets.UTF_8))); it.fd.sync() }
-                check(temp.renameTo(file))
-            } finally { temp.delete() }
+            owner.saveDraft(draftKey, values(), preset, retentionEdited)
         }.onFailure { runOnUiThread { if (!isDestroyed && !isFinishing) status.text = MoteI18n.text("无法保存本机草稿，请检查存储后重试。") } } }
     }
     override fun onSaveInstanceState(state: Bundle) {
@@ -120,7 +108,7 @@ class FileTaskActivity : MoteActivity() {
     }
     override fun onPause() { persistDraft(); super.onPause() }
     override fun onDestroy() {
-        if (!isChangingConfigurations) { val uris = grants.toList(); worker.execute { uris.forEach(::releaseUnused) } }
+        if (!isChangingConfigurations) { val uris = grants.toList(); worker.execute { uris.forEach { owner.releaseUnused(it) } } }
         worker.shutdown(); super.onDestroy()
     }
     private fun showForm() {
@@ -259,37 +247,28 @@ class FileTaskActivity : MoteActivity() {
         grants.add(uri.toString())
         val previousUri = source.uri
         task.start(MoteI18n.text("正在读取所选文件…"), { status.text = it }, {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            try {
-                val document = if (source.tree) DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri)) else uri
-                val display = contentResolver.query(document, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null }
-                val existing = if (savedSource == null) localSources().sources().find { it.kind == "local-files" && it.uri == uri.toString() } else null
-                Triple(uri.toString(), (display ?: MoteI18n.text(if (source.tree) "选择的文件目录" else "选择的文件")).take(200),
-                    existing to (existing?.let { localSources().state(it.id).optString("status") == "context-conflict" } ?: false))
-            } catch (e: Exception) { releaseUnused(uri.toString()); throw e }
+            owner.select(uri.toString(), source.tree, savedSource)
         }) { result ->
-            result.onSuccess { (location, display, saved) ->
-                val (existing, conflict) = saved
+            result.onSuccess { selectedSource ->
+                val existing = selectedSource.existing
                 if (existing != null) {
                     // A repeated selection reopens the existing source instead of applying a new preset.
                     val draftDescription = description.text.toString()
                     source = existing; savedSource = existing; selected = true
                     preset = when (existing.extensions) { ALL_EXTENSIONS -> "all"; AUDIO_EXTENSIONS -> "audio"; else -> "custom" }
-                    hasContextConflict = conflict
+                    hasContextConflict = selectedSource.contextConflict
                     restoredValues = if (draftDescription.isNotEmpty()) JSONObject().put("description", draftDescription) else null
                     showForm()
                 } else {
-                    if (savedSource == null && (!selected || name.text.toString() == source.name)) name.setText(display)
-                    source = source.copy(uri = location, name = if (savedSource == null) display else source.name); selected = true
+                    if (savedSource == null && (!selected || name.text.toString() == source.name)) name.setText(selectedSource.displayName)
+                    source = source.copy(uri = selectedSource.uri, name = if (savedSource == null) selectedSource.displayName else source.name); selected = true
                 }
-                if (previousUri != location && previousUri != UNSELECTED) worker.execute { previousUri?.let(::releaseUnused) }
+                if (previousUri != selectedSource.uri && previousUri != UNSELECTED) worker.execute { previousUri?.let { owner.releaseUnused(it) } }
                 status.text = MoteI18n.text("文件已读取，请确认来源设置"); updateSelection(); persistDraft()
             }.onFailure { status.text = MoteI18n.text("无法读取文件或持久授权，请重新选择") }
         }
     }
-    private fun releaseUnused(uri: String) {
-        runCatching { if (localSources().sources().none { it.uri == uri }) contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-    }
+    private fun releaseUnused(uri: String) = owner.releaseUnused(uri)
     private fun save() {
         if (task.busy || !selected) return
         try {
@@ -302,16 +281,7 @@ class FileTaskActivity : MoteActivity() {
             if (next.maxFileMiB !in 1..512) { advanced.visibility=View.VISIBLE;maximum.error=MoteI18n.text("单文件上限（MiB，1–512）");maximum.requestFocus();status.text=MoteI18n.text("单文件上限（MiB，1–512）");return }
             next.validate(); confirm.isEnabled = false; pickButton.isEnabled = false
             task.start(MoteI18n.text("正在保存来源设置…"), { status.text = it }, {
-                val store = localSources()
-                val latest = store.sources().find { it.id == next.id }
-                val original = savedSource
-                val acknowledgedOnly = original != null && latest != null && latest.copy(contextVersion = original.contextVersion, contextDirty = original.contextDirty, contextTarget = original.contextTarget) == original
-                check(latest == original || acknowledgedOnly) { MoteI18n.text("来源已在后台更新，请重新打开设置；当前草稿仍在页面中。") }
-                val saved = if (acknowledgedOnly && source.contextVersion == original.contextVersion && source.contextTarget == original.contextTarget)
-                    next.copy(contextVersion = latest.contextVersion, contextTarget = latest.contextTarget, contextDirty = latest.contextDirty || descriptionText != latest.description) else next
-                store.save(saved); SourceWork.schedule(applicationContext, true); draftFile().delete()
-                savedSource?.uri?.takeIf { it != next.uri }?.let(::releaseUnused)
-                saved
+                owner.saveFile(next, savedSource, descriptionText, draftKey)
             }) { result ->
                 confirm.isEnabled = true; pickButton.isEnabled = true
                 result.onSuccess { source = it; savedSource = it; status.text = MoteI18n.text("来源已保存，正在等待后台扫描"); updateMetadataStatus(); finish() }
@@ -325,13 +295,12 @@ class FileTaskActivity : MoteActivity() {
         if (!config.hasSyncConnection() || current.contextDirty || hasContextConflict) return
         // Reading metadata is independent of upload policies; unsupported older nodes preserve old settings.
         task.start(MoteI18n.text("正在读取资料说明…"), { status.text = it }, {
-            val (code, value) = HttpJson.get(config.server.trimEnd('/') + "/api/sources/${current.id}/context", config.connectionToken())
-            if (code !in 200..299 || value == null) null else SourceContextSnapshot.from(value, current.id)
+            runCatching { owner.remoteContext(current) }.getOrNull()
         }) { result ->
             result.getOrNull()?.takeIf { it.version > 0 }?.let { snapshot ->
                 if (description.text.toString() == current.description) {
                     task.start(MoteI18n.text("正在保存来源设置…"), { status.text = it }, {
-                        localSources().confirmContext(current, SourceRules.target(config.server, config.token), snapshot)
+                        owner.confirmContext(current, snapshot)
                     }) { ack -> ack.getOrNull()?.let {
                         source = it; savedSource = it
                         // The metadata ACK can arrive after the user started typing in this still-editable field.
@@ -347,17 +316,16 @@ class FileTaskActivity : MoteActivity() {
         if (task.busy) return
         val config = Settings(this).read(); if (!config.hasSyncConnection()) { status.text = MoteI18n.text("等待网络/节点恢复"); return }
         task.start(MoteI18n.text("正在读取资料说明…"), { status.text = it }, {
-            val (code, body) = HttpJson.get(config.server.trimEnd('/') + "/api/sources/${source.id}/context", config.connectionToken())
-            check(code in 200..299 && body != null); SourceContextSnapshot.from(body!!, source.id)
+            owner.remoteContext(source)
         }) { result ->
             result.onSuccess { remote ->
                 MoteDialogBuilder(this).setTitle(MoteI18n.text("解决资料说明冲突"))
                     .setMessage(MoteI18n.text("中央说明（版本 {0}）：\n{1}\n\n本机说明：\n{2}", remote.version, remote.description, description.text.toString()))
                     .setPositiveButton(MoteI18n.text("以本机说明更新")) { _, _ ->
-                        source = source.copy(contextVersion = remote.version, contextTarget = SourceRules.target(config.server, config.token), contextDirty = true)
+                        source = owner.applyContextChoice(source, remote, useRemote = false)
                         status.text = MoteI18n.text("请保存设置以确认本机说明。")
                     }.setNeutralButton(MoteI18n.text("使用中央说明")) { _, _ ->
-                        source = source.copy(contextVersion = remote.version, description = remote.description, contextTarget = SourceRules.target(config.server, config.token), contextDirty = false)
+                        source = owner.applyContextChoice(source, remote, useRemote = true)
                         description.setText(remote.description); status.text = MoteI18n.text("请保存设置以确认中央说明。")
                     }.setNegativeButton(MoteI18n.text("取消"), null).show()
             }.onFailure { status.text = MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。") }
@@ -368,7 +336,7 @@ class FileTaskActivity : MoteActivity() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("移除连接")).setMessage(MoteI18n.text("移除这个来源和本机待发缓存；手机原文件与中央历史保留。"))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("移除连接")) { _, _ ->
                 task.start(MoteI18n.text("正在移除来源连接…"), { status.text = it }, {
-                    localSources().remove(source.id); fileArchives().remove(source.id); source.uri?.let(::releaseUnused); SourceWork.schedule(applicationContext)
+                    owner.remove(source.id)
                 }) { result -> result.onSuccess { finish() }.onFailure { status.text = MoteI18n.text("操作失败，请重试") } }
             }.show()
     }

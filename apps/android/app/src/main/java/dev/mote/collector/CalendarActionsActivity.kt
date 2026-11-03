@@ -13,6 +13,8 @@ import android.content.pm.PackageManager
 import android.content.Intent
 import android.view.View
 import android.widget.*
+import dev.mote.collector.plugins.ManagedCalendarController
+import dev.mote.collector.plugins.ManagedCalendarPlugin
 import org.json.JSONObject
 
 internal data class NativeTodoDraft(val origin:String,val generation:Long,val text:String)
@@ -110,10 +112,10 @@ class CalendarActionsActivity : MoteActivity() {
         } }, primary), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(MoteTheme.spaceInline) })
     }
     private fun calendarPermissions() = listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR).all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
-    private fun work(label: String, fn: CalendarActions.(Long) -> JSONObject) {
+    private fun work(label: String, fn: ManagedCalendarController.(Long) -> JSONObject) {
         val expected=withdrawChangedCalendar();val epoch=calendarEpoch;val page=cursor
         task.start(label, { if(current(expected,epoch))status.text=it else withdrawChangedCalendar() }, {
-            val client=CalendarActions(applicationContext,foreground=true,sessionIdentity=expected)
+            val client=ManagedCalendarPlugin.controller(applicationContext,foreground=true,sessionIdentity=expected)
             client.fn(page) to Settings(applicationContext).deviceId
         }) { result ->
             if(!current(expected,epoch)){withdrawChangedCalendar();if(active&&selectedTab=="calendar")refresh();return@start}
@@ -121,17 +123,9 @@ class CalendarActionsActivity : MoteActivity() {
                 .onFailure { status.text=it.message ?: MoteI18n.text("操作失败，请重试") }
         }
     }
-    private fun refresh() = work(MoteI18n.text("正在读取日程建议…")) { page ->
-        val data = list(page)
-        if (permissions()) { val items = data.getJSONArray("items"); for (i in 0 until items.length()) { val a = items.getJSONObject(i); if (a.optJSONObject("target")?.optString("deviceId") == Settings(this@CalendarActionsActivity).deviceId && a.optString("status") == "approved") execute(a.getString("id"), a.optJSONObject("managed")?.let { a.getString("operationId") }) } }
-        list(page)
-    }
-    private fun connect() = work(MoteI18n.text("正在连接日历…")) { page -> connect();list(page) }
-    private fun sync() = work(MoteI18n.text("正在同步已确认日程…")) { page ->
-        val data = list(page); val items = data.getJSONArray("items")
-        for (i in 0 until items.length()) { val a = items.getJSONObject(i); if (a.optJSONObject("target")?.optString("deviceId") == Settings(this@CalendarActionsActivity).deviceId && a.optString("status") in listOf("approved", "executing", "uncertain")) execute(a.getString("id"), a.optJSONObject("managed")?.let { a.getString("operationId") }) }
-        list(page)
-    }
+    private fun refresh() = work(MoteI18n.text("正在读取日程建议…")) { page -> refresh(page) }
+    private fun connect() = work(MoteI18n.text("正在连接日历…")) { page -> connectAndList(page) }
+    private fun sync() = work(MoteI18n.text("正在同步已确认日程…")) { page -> sync(page) }
     private fun render(data: JSONObject) {
         nextCursor = if (data.isNull("nextCursor")) 0 else data.optLong("nextCursor")
         list.removeAllViews(); val items = data.getJSONArray("items")
@@ -145,7 +139,7 @@ class CalendarActionsActivity : MoteActivity() {
             text(card, when (kind) { "calendar.update" -> MoteI18n.text("更新日程"); "calendar.cancel" -> MoteI18n.text("取消日程"); "calendar.complete" -> MoteI18n.text("标记安排完成"); else -> MoteI18n.text("添加日程") })
             a.optJSONObject("related")?.getJSONObject("event")?.let { text(card, MoteI18n.text("原安排") + ": " + it.getString("title") + " · " + it.optString("start") + " → " + it.optString("end")) }
             if (managed?.has("cancelRequestedAt") == true && state == "succeeded") text(card, MoteI18n.text("取消请求后收到成功回执；未删除系统日历事件。"))
-            val label = CalendarActionPresentation.stateKey(kind,state,a.optString("resolution"),managed?.optString("state").orEmpty())?.let { MoteI18n.text(it) } ?: state
+            val label = ManagedCalendarPlugin.stateKey(kind,state,a.optString("resolution"),managed?.optString("state").orEmpty())?.let { MoteI18n.text(it) } ?: state
             text(card, label).apply { tag="calendar-action-status:"+a.getString("id") }
             text(card, "${e.optString("start")} → ${e.optString("end")}\n${e.optString("timeZone")} · ${e.optString("location")}")
             if (a.optString("uncertainty").isNotBlank()) text(card, a.getString("uncertainty"))

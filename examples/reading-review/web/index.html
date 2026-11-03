@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Reading review</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: Canvas; color: CanvasText; }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    p { line-height: 1.5; }
+    .muted { opacity: .7; }
+    .strategies, .ratings { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    button { font: inherit; padding: 8px 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); background: Canvas; color: CanvasText; cursor: pointer; }
+    button:hover { border-color: color-mix(in srgb, CanvasText 45%, transparent); }
+    button[aria-pressed="true"] { background: color-mix(in srgb, Highlight 18%, Canvas); border-color: Highlight; }
+    .card, .notice { border: 1px solid color-mix(in srgb, CanvasText 16%, transparent); border-radius: 14px; padding: 16px; margin: 16px 0; }
+    .prompt { font-size: 18px; font-weight: 600; }
+    .answer { margin-top: 12px; padding-top: 12px; border-top: 1px dashed color-mix(in srgb, CanvasText 22%, transparent); }
+    .stats { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; }
+    .stat { min-width: 96px; }
+    .stat strong { display: block; font-size: 20px; }
+    .hidden { display: none; }
+    code { font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Reading review</h1>
+  <p class="muted">Plan data lives in the plugin instance state. This page never receives the owner token or a host API object.</p>
+  <div id="notice" class="notice" role="status">Waiting for the Mote custom-page bridge…</div>
+  <section id="content" class="hidden" aria-live="polite">
+    <div class="stats">
+      <div class="stat"><span class="muted">Strategy</span><strong id="strategy">—</strong></div>
+      <div class="stat"><span class="muted">Cards</span><strong id="cards">—</strong></div>
+      <div class="stat"><span class="muted">Due</span><strong id="due">—</strong></div>
+      <div class="stat"><span class="muted">Reviews</span><strong id="reviews">—</strong></div>
+    </div>
+    <h2>Review strategy</h2>
+    <p class="muted">Choose how the next successful review extends the interval.</p>
+    <div id="strategies" class="strategies"></div>
+    <h2>Next card</h2>
+    <div id="card" class="card hidden">
+      <div class="prompt" id="prompt"></div>
+      <div class="answer" id="answer"></div>
+      <p class="muted">Rate this review to schedule the next round.</p>
+      <div id="ratings" class="ratings"></div>
+    </div>
+    <div id="empty" class="notice hidden">No card is due. The plan keeps its strategy and history for the next round.</div>
+    <h2>Recent rounds</h2>
+    <div id="rounds" class="muted"></div>
+  </section>
+</main>
+<script>
+  'use strict';
+  const elements = Object.fromEntries(['notice', 'content', 'strategy', 'cards', 'due', 'reviews', 'strategies', 'card', 'prompt', 'answer', 'ratings', 'empty', 'rounds'].map(id => [id, document.getElementById(id)]));
+  let channel = null;
+  let sequence = 0;
+  const pending = new Map();
+
+  function request(method, payload) {
+    if (!channel) return Promise.reject(new Error('no bridge'));
+    const requestId = 'page-' + (++sequence);
+    return new Promise((resolve, reject) => {
+      pending.set(requestId, {resolve, reject});
+      channel.port.postMessage({...channel.handshake, kind: 'request', requestId, method, payload});
+      setTimeout(() => {
+        if (!pending.delete(requestId)) return;
+        reject(new Error('bridge timeout'));
+      }, 10000);
+    });
+  }
+
+  function showNotice(text) {
+    elements.notice.textContent = text;
+    elements.notice.classList.remove('hidden');
+    elements.content.classList.add('hidden');
+  }
+
+  function showState(state) {
+    elements.notice.classList.add('hidden');
+    elements.content.classList.remove('hidden');
+    elements.strategy.textContent = state.strategy ? state.strategies.find(entry => entry.id === state.strategy)?.label ?? state.strategy : 'Not selected';
+    elements.cards.textContent = String(state.cards.length);
+    elements.due.textContent = String(state.dueCardIds.length);
+    elements.reviews.textContent = String(state.historyCount);
+
+    elements.strategies.replaceChildren(...state.strategies.map(entry => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = entry.label;
+      button.title = entry.description;
+      button.setAttribute('aria-pressed', String(state.strategy === entry.id));
+      button.addEventListener('click', () => {
+        button.disabled = true;
+        request('select-strategy', {strategy: entry.id}).then(showState).catch(() => showNotice('The strategy selection was not accepted.')).finally(() => { button.disabled = false; });
+      });
+      return button;
+    }));
+
+    const dueId = state.dueCardIds[0];
+    const card = state.cards.find(entry => entry.id === dueId);
+    elements.card.classList.toggle('hidden', !card);
+    elements.empty.classList.toggle('hidden', Boolean(card));
+    if (card) {
+      elements.prompt.textContent = card.prompt;
+      elements.answer.textContent = card.answer;
+      elements.ratings.replaceChildren(...state.ratings.map(rating => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = rating;
+        button.addEventListener('click', () => {
+          button.disabled = true;
+          request('review', {cardId: card.id, rating}).then(showState).catch(() => showNotice('The review round was not accepted.')).finally(() => { button.disabled = false; });
+        });
+        return button;
+      }));
+    } else {
+      elements.ratings.replaceChildren();
+    }
+    elements.rounds.replaceChildren(...state.rounds.slice().reverse().map(round => {
+      const line = document.createElement('div');
+      line.textContent = new Date(round.reviewedAt).toLocaleString() + ' — ' + round.rating + ' (' + round.strategy + ', next ' + round.dueAtAfter.slice(0, 10) + ')';
+      return line;
+    }));
+    if (!state.rounds.length) elements.rounds.textContent = 'No review rounds yet.';
+  }
+
+  window.addEventListener('message', event => {
+    const data = event.data;
+    if (!data || data.kind !== 'channel' || !event.ports?.[0]) return;
+    if (!data.contractVersion || !data.nonce || !data.documentKey || !data.instanceId || !Number.isSafeInteger(data.generation)) {
+      showNotice('The host bridge handshake is unavailable.');
+      return;
+    }
+    channel?.port.close();
+    channel = {port: event.ports[0], handshake: {
+      contractVersion: data.contractVersion, nonce: data.nonce, documentKey: data.documentKey,
+      instanceId: data.instanceId, generation: data.generation,
+    }};
+    channel.port.onmessage = reply => {
+      const envelope = reply.data;
+      if (!envelope || envelope.kind !== 'response' || envelope.requestId === undefined) return;
+      const waiting = pending.get(envelope.requestId);
+      if (!waiting) return;
+      pending.delete(envelope.requestId);
+      if (envelope.ok) waiting.resolve(envelope.payload);
+      else waiting.reject(new Error(envelope.error || 'invoke_failed'));
+    };
+    channel.port.start();
+    request('state').then(showState).catch(() => showNotice('The reading review plan is unavailable.'));
+  });
+
+  setTimeout(() => {
+    if (!channel) showNotice('Open this page from the Mote plugin host to connect its custom-page bridge.');
+  }, 2000);
+</script>
+</body>
+</html>

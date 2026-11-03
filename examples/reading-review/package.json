@@ -1,0 +1,20 @@
+{
+  "name": "@mote-example/reading-review",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Repository-external reading review domain package built only on the public Mote plugin SDK.",
+  "dependencies": {
+    "@mote/plugin-sdk": "0.1.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "boundary": "node test/main-boundary.mjs",
+    "acceptance": "node --import tsx test/acceptance.mjs",
+    "check": "npm run test && npm run boundary && npm run acceptance",
+    "pack": "node scripts/pack.mjs"
+  }
+}
