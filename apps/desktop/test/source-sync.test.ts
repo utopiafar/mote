@@ -908,6 +908,36 @@ describe('source revisions and durable acknowledgments', () => {
     // The history record is uploaded even though realtime is blocked.
     expect(sent.some(entry => entry.item.externalId === 'message:history-1')).toBe(true);
   });
+  it('holds a failed precommit revision until its absence head resolves', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let attempts = 0;
+    const wire = fileTransport(sent, () => (++attempts === 1 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    // The send has ended; a complete absence scan cannot read the head.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => undefined);
+    expect(engine.status().pending).toBe(1);
+    const uploaded = sent.length;
+    // A direct managed retry with an unavailable head must not publish it.
+    const headFailing = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) throw new Error('head unavailable');
+      return wire(path, body);
+    };
+    await expect(engine.flush(source, headFailing as any)).resolves.toBe('ready');
+    expect(sent).toHaveLength(uploaded);
+    expect(engine.status().pending).toBe(1);
+    // Once the head answers null the uncommitted revision is withdrawn.
+    const resolving = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      return wire(path, body);
+    };
+    await expect(engine.flush(source, resolving as any)).resolves.toBe('ready');
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(uploaded);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
