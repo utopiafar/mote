@@ -62,6 +62,20 @@ test('AST classifies explicit type dependencies separately from runtime aliases,
   assert.equal(moduleReferences('generated.d.ts',"import {Shape} from './one'; export {Shape};")[0].kind,'type');
 });
 
+test('Agent runtime import cycles are rejected while erased type cycles stay valid',t=>{
+  const f=fixture(t);
+  f.write('packages/agent/src/cycle-a.ts',"import './cycle-b.js'; export const a=1;");
+  f.write('packages/agent/src/cycle-b.ts',"import './cycle-a.js'; export const b=1;");
+  const cyclic=f.check();
+  assert.deepEqual(rule(cyclic),['agent-import-cycle']);
+  assert.equal(cyclic.violations[0].kind,'runtime');
+  const chain=cyclic.violations[0].chain;
+  assert.ok(chain.includes('packages/agent/src/cycle-a.ts')&&chain.includes('packages/agent/src/cycle-b.ts'));
+  assert.equal(chain[0],chain.at(-1));
+  f.write('packages/agent/src/cycle-b.ts',"import type {a} from './cycle-a.js'; export const b=1;");
+  assert.deepEqual(f.check().violations,[]);
+});
+
 test('every runtime assembly syntax is rejected, including tsconfig aliases and computed constant paths',async t=>{
   const sources=[
     "import './index.js';",
