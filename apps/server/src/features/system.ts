@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { FeatureServices } from '../feature-services.js';
 import { registerUpdateRoutes } from '../updates.js';
 import { MOTE_PROTOCOL_RANGE } from '@mote/shared';
+import type {ServerFeatureAdapter} from './index.js';
 
 type HealthServices = Pick<FeatureServices,"serverVersion">;
 type ViewServices = Pick<FeatureServices,"agent"|"config"|"diagnostics"|"eventLoop"|"indexer"|"lifecycle"|"maintenanceWorker"|"modelSettings"|"serverVersion"|"store"|"webVersion">;
@@ -32,3 +33,11 @@ export function register(app:FastifyInstance,services:HealthServices&ViewService
   registerSystemView(app,services);
   registerSystemUpdate(app,services);
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.system',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.system'));
+    register(app,services);
+  },
+};

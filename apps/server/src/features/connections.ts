@@ -6,6 +6,7 @@ import type { FeatureServices } from '../feature-services.js';
 import { moteText } from '../i18n.js';
 import { INGRESS_PROTOCOL_VERSION } from '../ingress.js';
 import { MOTE_PROTOCOL_RANGE } from '@mote/shared';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** connections: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{config,connections,connectionIdentity,serverVersion}:Pick<FeatureServices,"config"|"connections"|"connectionIdentity"|"serverVersion">){
@@ -35,3 +36,11 @@ app.get('/api/connections/self',async req=>{
     return {credential:c?{id:c.id,scope:owner?'owner':c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'default',...protocol},capabilities:{ingest:owner||c?.scope==='collector',ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||c?.scope==='collector',archiveRead:owner||c?.scope==='mcp-read'}};
   });
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.connections',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.connections'));
+    register(app,services);
+  },
+};

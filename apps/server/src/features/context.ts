@@ -7,6 +7,7 @@ import { createContextQuery } from '../context-query-composition.js';
 import { registerContextRoutes } from '../context-routes.js';
 import { registerEvidenceRoutes } from '../evidence-routes.js';
 import type { FeatureServices } from '../feature-services.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** context: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{contextTrees,evidenceReader,sources,store}:Pick<FeatureServices,"contextTrees"|"evidenceReader"|"sources"|"store">){
@@ -18,3 +19,11 @@ app.get('/api/context-index',async req=>evidenceReader.catalogAsync(z.object({pa
 registerContextRoutes(app,createContextQuery(store,sources,evidenceReader));
 app.get('/api/skills',async()=>({items:skillCatalog()}));
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.context',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.context'));
+    register(app,services);
+  },
+};
