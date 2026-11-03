@@ -1,7 +1,7 @@
 import type {ConversationPreparation} from './memory-pipeline.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {CODING_DIALOGUE_SCHEMA_VERSION,type CaptureRecord,type QueryResult} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,ProviderFailure,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {AgentResponseError,type QueryInput} from '@mote/agent';
 import {ProcessingFailure,type ContextProcessor} from './processing-runtime.js';
 import type {MaterialReadPage} from './materials.js';
@@ -159,7 +159,12 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     evidenceRanges:scope.ranges,supportRanges:output.evidenceRanges,citations:[...new Set(output.evidenceRanges.map(range=>range.id))],
     coverage:{scope:'bounded-conversation',ranges:input.materials.map(page=>({ref:page.material.ref,offset:page.textRange.offset,length:page.text.length,total:page.textRange.total})),source:material.coverage},
     complete:true,usage,runId:result.runId,model:selected.model,originalCharacters:scope.characters,characters:text.length}}];
-  }catch(error){meter.finish('failed');if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
+  }catch(error){
+   // Same admission-wait rule as segment understanding: no receipt while the
+   // owner decision is pending.
+   if(error instanceof ProviderFailure&&error.details.admissionWaiting===true)meter.discard();
+   else meter.finish('failed');
+   if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
  }};
 }
 
