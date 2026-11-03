@@ -1,7 +1,7 @@
 import React from 'react';
 import {FileText,LoaderCircle} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
-import {bytes} from './api';
+import {bytes} from '../../api';
 import type {ImportQueue,ImportQueueEntry as Entry} from './import-queue';
 
 function stateLabel(entry:Entry){

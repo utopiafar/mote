@@ -1,5 +1,5 @@
-import {type Api} from './api';
-import {uploadFilePart} from './upload-part';
+import {type Api} from '../../api';
+import {uploadFilePart} from '../../upload-part';
 type Upload={id:string;partBytes:number;fileId?:string;parts:{part:number;hash:string;bytes?:number}[]};
 /** One part (at most 4 MiB) per file turn. Files keep their own session, offset and hash. */
 export async function uploadImportFiles(api:Api,files:readonly File[],identities:WeakMap<File,string>,progress:(bytes:number)=>void,signal?:AbortSignal,completed:WeakMap<File,string>=new WeakMap()):Promise<string[]>{

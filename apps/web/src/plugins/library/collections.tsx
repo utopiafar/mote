@@ -4,7 +4,7 @@ import { useResource } from '../../useResource';
 import { queryString, errorMessage, type Activity } from '../../api';
 import { ErrorNotice, Spinner } from '../../shell-components';
 import { ActivitySummary, RecordTimeline } from './Archive';
-import { Files } from '../../Files';
+import { Files } from '../intake';
 import { LibraryMaterials } from './LibraryBrowse';
 import { CodingUploads } from '../../CodingUploads';
 import { webFeatures } from '../../features/registry';

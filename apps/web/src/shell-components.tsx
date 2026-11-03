@@ -63,7 +63,7 @@ import { MediaSnapshot } from './plugins/library/Media';
 import { activityExplanation,Metadata,sourceLabels } from './Metadata';
 import { mediaCardText,mediaExplanation,mediaStatus } from './media-presentation';
 
-import { FileDetail } from './Files';
+import { FileDetail } from './plugins/intake';
 import { SourceDocumentDetails } from './plugins/reader';
 
 

@@ -13,7 +13,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { type Api, type Capture, ApiError, dateTime, duration, errorMessage } from '../../api';
 import { evidencePresentation, ocrPresentation } from '../../capture-presentation';
 import { EvidenceState } from '../../EvidenceState';
-import { FileDetail } from '../../Files';
+import { FileDetail } from '../intake';
 import { type Material } from '../../Materials';
 import { MediaSnapshot } from './Media';
 import { activityExplanation, Metadata, sourceLabels } from '../../Metadata';
