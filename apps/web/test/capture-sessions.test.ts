@@ -6,7 +6,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import type {CaptureSession} from '@mote/shared';
 import {configureLocale,getLocale,type Locale} from '@mote/shared/i18n';
-import {CaptureSessions} from '../src/CaptureSessions.js';
+import {CaptureSessions} from '../src/plugins/library/CaptureSessions.js';
 import {captureDateRange} from '../src/capture-presentation.js';
 import {createApi,type Device} from '../src/api.js';
 

@@ -70,10 +70,10 @@ class SyncQueueActivity : MoteActivity() {
         historyBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
         historyPanel = UploadHistoryPanel(this, historyBody, state)
         SecondaryUi.row(body, MoteI18n.text("同步与恢复")) { startActivity(Intent(this, SyncRecoveryActivity::class.java)) }
-        refreshSendState(LocalStateRepository.get(this).state.value)
+        refreshSendState(LocalStatusProducer.get(this).state.value)
         statusTextTask.start(MoteI18n.text("正在读取本机同步状态…"), {}, { MoteI18n.translations(SyncReadiness.obsoleteMessages) }) { outcome ->
             statusTranslations = outcome.getOrNull(); statusTranslationFailed = outcome.isFailure
-            refreshSendState(LocalStateRepository.get(this).state.value)
+            refreshSendState(LocalStatusProducer.get(this).state.value)
         }
         MoteUi.styleTree(body)
         updateTabs()
@@ -116,7 +116,7 @@ class SyncQueueActivity : MoteActivity() {
         actionTask.start(MoteI18n.text("正在保存发送状态…"), { sendStatus.text = it }, {
             SendPauseControl.set(applicationContext, requestedPause)
         }) { outcome ->
-            refreshSendState(LocalStateRepository.get(this).state.value)
+            refreshSendState(LocalStatusProducer.get(this).state.value)
             outcome.onFailure { sendStatus.text = it.message ?: MoteI18n.text("操作失败，请重试") }
         }
     }
@@ -130,7 +130,7 @@ class SyncQueueActivity : MoteActivity() {
                 else UploadWorker.schedule(applicationContext, config, true)
             } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
         }) { outcome ->
-            refreshSendState(LocalStateRepository.get(this).state.value)
+            refreshSendState(LocalStatusProducer.get(this).state.value)
             outcome.onFailure { sendStatus.text = it.message ?: MoteI18n.text("操作失败，请重试") }
             load()
         }

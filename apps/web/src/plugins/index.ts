@@ -3,6 +3,8 @@ import type { BuiltinWebPlugin } from './types';
 import { agentView } from './agent-view';
 import { notes } from './notes';
 import { system } from './system';
+import { home } from './home';
+import { search } from './search';
 import { ask } from './ask';
 import { devices } from './devices';
 import { storage } from './storage';
@@ -16,14 +18,10 @@ import { discovery } from './discovery';
 import { actions } from './actions';
 import { models } from './models';
 import { coding } from './coding';
-import { materials } from './materials';
+import { library } from './library';
 import { reader } from './reader';
 import { connections } from './connections';
 import { diagnostics } from './diagnostics';
-import { capture } from './capture';
-import { files } from './files';
-import { media } from './media';
-import { memory } from './memory';
 import { savedRecordViews } from './saved-record-views';
 import { sourceMaterialViewsPlugin } from './source-material';
 import { ownerQuestions } from './owner-questions';
@@ -37,6 +35,8 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   agentView,
   notes,
   system,
+  home,
+  search,
   ask,
   devices,
   storage,
@@ -50,14 +50,10 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   actions,
   models,
   coding,
-  materials,
+  library,
   reader,
   connections,
   diagnostics,
-  capture,
-  files,
-  media,
-  memory,
   savedRecordViews,
   sourceMaterialViewsPlugin,
   ownerQuestions,

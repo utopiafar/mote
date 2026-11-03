@@ -253,6 +253,6 @@ class Settings(private val context: Context) {
     fun uploadStatus(): String = prefs.getString("uploadStatus", MoteI18n.text("尚未上传"))!!
 }
 
-fun Context.queue() = QueueStorage(this).openQueue().apply { archiveOrigin = Settings(this@queue).dataOrigin() }
+fun Context.queue() = dev.mote.collector.plugins.DurableTransportPlugin.get(this).openQueue()
 
 internal object LoginProcess { val id: String = UUID.randomUUID().toString() }
