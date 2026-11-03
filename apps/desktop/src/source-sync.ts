@@ -170,9 +170,9 @@ export class SourceSync {
       const knownAbsent = knownChanges.get(key) ?? next.known[key];
       // A preflight may end before its predecessor is journaled. After restart
       // the durable absence marker still requires resolution against the head.
-      // The marker witnesses absence of the identity, not just one revision:
-      // both lanes can retain attempts for the same file.
-      if (knownAbsent?.absentWhileInflight || (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision))) {
+      // A sibling's absence marker does not prove this revision was attempted.
+      // Only its own preflight marker or recorded send requires a head check.
+      if (knownAbsent?.absentWhileInflight === queued.revision || (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision))) {
         markAbsent();
         const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key];
         if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: queued.revision });

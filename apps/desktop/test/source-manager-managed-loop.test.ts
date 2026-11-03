@@ -231,3 +231,67 @@ it('protects both attempted revisions of an absent identity across history, real
     expect(reopened.status()[0]!.pending).toBe(0); expect(attempts).toHaveLength(2); expect(wire.unmatched).toEqual([]);
   } finally { release.resolve(); await flushing?.catch(() => {}); }
 });
+
+it.each(['history', 'realtime'] as const)('withdraws a never-sent sibling while an attempted %s revision commits with a lost ACK', async firstQueue => {
+  let text: string | undefined = 'generated A';
+  const externalId = 'file:managed-never-sent-sibling', entered = deferred(), release = deferred();
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false,
+    validateConfiguration() {},
+    async scan() {
+      const items: ScannedItem[] = text === undefined ? [] : [{ externalId, title: 'generated', text, kind: 'file', layer: 'snapshot', deleted: false,
+        syncQueue: text === 'generated A' ? firstQueue : firstQueue === 'history' ? 'realtime' : 'history',
+        document: { fileIndex: { version: 1, fileId: externalId, contentVersion: sourceHash(text), mode: 'index', parser: 'generated-index', coverage: 'full', status: 'ready', totalCharacters: text.length, offset: 0, length: text.length, allowRead: false } } }];
+      return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } };
+    },
+  });
+  let sourceId = '', firstWrite = true, head: string | null = null;
+  const attempts: { revision: string; text: string; deleted: boolean; previousRevision: string | null }[] = [];
+  const wire = transport(async request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities') return response(200, { manifestBatch: 200 });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId); expect(request.url.searchParams.get('externalId')).toBe(externalId);
+      return head === null ? response(503, { error: 'Generated head unavailable during send' }) : response(200, { revision: head });
+    }
+    if (request.method === 'POST' && request.path === '/api/file-sync/v1/manifests') {
+      expect(request.body.items).toHaveLength(1);
+      const { item, previousRevision = null } = request.body.items[0];
+      attempts.push({ revision: item.revision, text: item.text, deleted: item.deleted, previousRevision });
+      expect(item.text).not.toBe('generated B');
+      if (firstWrite) {
+        firstWrite = false; entered.resolve(); await release.promise; head = item.revision;
+        return response(503, { error: 'Generated committed response loss' });
+      }
+      const duplicate = item.revision === head;
+      if (!duplicate) expect(previousRevision).toBe(head);
+      head = item.revision;
+      return response(200, { results: [{ externalId, revision: item.revision, state: duplicate ? 'existing' : 'accepted', ack: sourceAck(sourceId, item, 'file-revision', duplicate) }] });
+    }
+    return wire.reject(request);
+  });
+  let flushing: Promise<void> | undefined, failed: Promise<void> | undefined;
+  try {
+    const app = await openManaged(adapters);
+    sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated unattempted sibling' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: true, syncContinuously: true });
+    await app.sync(true);
+    flushing = app.flushPending(new AbortController().signal); failed = expect(flushing).rejects.toMatchObject({ httpStatus: 503 }); await entered.promise;
+    text = 'generated B'; await app.sync(true);
+    expect(app.status()[0]).toMatchObject({ pending: 2, historyPending: 1, realtimePending: 1 });
+    text = undefined; await app.sync(true);
+    const afterAbsence = app.status()[0]!.pending;
+    expect(attempts).toHaveLength(1); expect(await markerCount(sourceId)).toBe(1);
+    release.resolve(); await failed;
+    const reopened = await restart(app, adapters);
+    await expect(reopened.flushPending(new AbortController().signal)).resolves.toBeUndefined();
+    expect(attempts.map(item => item.deleted)).toEqual([false, false, true]);
+    expect(attempts[1]!.revision).toBe(attempts[0]!.revision);
+    expect(attempts[2]!.previousRevision).toBe(attempts[0]!.revision);
+    const reopenedAgain = await restart(reopened, adapters);
+    await expect(reopenedAgain.flushPending(new AbortController().signal)).resolves.toBeUndefined();
+    expect(attempts).toHaveLength(3); expect(wire.unmatched).toEqual([]);
+    expect(reopenedAgain.status()[0]!.pending).toBe(0); expect(afterAbsence).toBe(1);
+  } finally { release.resolve(); await flushing?.catch(() => {}); await failed; }
+});
