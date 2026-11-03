@@ -10,6 +10,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.mote.collector.plugins.DailyHomePlugin
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.Executors
@@ -49,7 +50,7 @@ class CaptureStatusActivity : MoteActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val content = moteDetailPage(primary = null, title = MoteI18n.text("采集状态"), onBack = ::leave)
-        line = HomeCaptureRow(this, open = null, act = ::forward)
+        line = DailyHomePlugin.owner(this).captureRow(this, open = null, act = ::forward)
         content.addView(line, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(MoteTheme.spaceItem) })
         heading(content, MoteI18n.text("来源"))
         screen = control(content, MoteI18n.text("屏幕采集"), "capture-status-screen") { forwardPage("PRIVACY") }
