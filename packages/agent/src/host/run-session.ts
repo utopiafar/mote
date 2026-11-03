@@ -12,6 +12,7 @@ import {prepareTaskContext} from '../tasks/context-assembly.js';
 import {contextToolDefinitions} from '../tool-contributions.js';
 import type {ContextRecord} from '../context-contracts.js';
 import {hostOutputPolicy, snapshotHostEvidence} from './output.js';
+import {createHostRunLifecycle} from './run-lifecycle.js';
 import {createRuntimeUsageEvents} from './runtime-events.js';
 import {hostOutputService} from './run-contracts.js';
 import type {HostEvidenceSnapshot, HostOutputDecision, HostRunDependencies, HostRunEvent, HostRunSession} from './run-contracts.js';
@@ -127,7 +128,7 @@ class ManagedHostRunSession implements HostRunSession {
   private runtimeHandle?: RuntimeHandle;
   private runtimeClosed = false;
   private ready = false;
-  private phase: 'prepare' | 'idle' | 'running' | 'closing' | 'closed' = 'prepare';
+  private readonly lifecycle = createHostRunLifecycle();
   private attempt?: RuntimeAttempt;
   private lastAttempt?: RuntimeAttempt;
   private pending = new Set<Promise<unknown>>();
@@ -138,13 +139,12 @@ class ManagedHostRunSession implements HostRunSession {
   private runtimeWork?: Promise<RuntimeOutcome>;
   private closing?: Promise<void>;
   private released = false;
-  private cancellation?: Cancellation;
   private cancellationTask?: Promise<void>;
   private deadlineTimer?: ReturnType<typeof setTimeout>;
   private abortListener: () => void;
   private readonly usageEvents: ReturnType<typeof createRuntimeUsageEvents>;
   constructor(readonly dependencies: HostRunDependencies, private assembly: HostSessionAssembly) {
-    this.usageEvents = createRuntimeUsageEvents(({attemptId, usage}) => this.observe({identity: dependencies.identity, attemptId, event: {type: 'usage', usage}}));
+    this.usageEvents = createRuntimeUsageEvents(({attemptId, usage}) => this.observeRuntime({identity: dependencies.identity, attemptId, event: {type: 'usage', usage}}));
     // Required providers can stop independently of the consumer scope. Relay
     // their revocation until each lease is intentionally released; release()
     // itself aborts the lease signal and must not cancel a successful run.
@@ -159,7 +159,7 @@ class ManagedHostRunSession implements HostRunSession {
       const kind = dependencies.scope.signal.aborted ? cancellationKind(dependencies.scope.signal, 'scope_stopped')
         : dependencies.input.signal?.aborted ? cancellationKind(dependencies.input.signal, 'cancelled')
         : this.leaseRevocation.signal.aborted ? 'revoked' : 'cancelled';
-      void this.cancel(this.cancellation ?? {kind}).catch(() => {});
+      void this.cancel(this.lifecycle.cancellation ?? {kind}).catch(() => {});
     };
     signal.addEventListener('abort', this.abortListener, {once: true});
     this.port = {
@@ -205,25 +205,25 @@ class ManagedHostRunSession implements HostRunSession {
       emit: (event, attempt) => {
         this.assertCurrent();
         if (event.type === 'tools.ready') {
-          if (attempt !== null || this.phase !== 'prepare') throw new RuntimeContractError();
+          if (attempt !== null || this.lifecycle.phase !== 'prepare') throw new RuntimeContractError();
           const actual = [...event.tools].sort((a, b) => a.name.localeCompare(b.name));
           const expected = [...dependencies.tools.definitions].sort((a, b) => a.name.localeCompare(b.name));
           if (actual.length !== expected.length || actual.some((tool, i) => tool.name !== expected[i]!.name || tool.version !== expected[i]!.version || tool.fingerprint !== expected[i]!.fingerprint)) throw new AgentResponseError('Loaded tools differ from the Host pin.', 'tools_unverified');
           this.ready = true;
-          this.observe({identity: dependencies.identity, attemptId: null, event});
+          this.observeRuntime({identity: dependencies.identity, attemptId: null, event});
         } else {
           if (event.type !== 'progress' && event.type !== 'usage') throw new RuntimeContractError();
           if (!attempt) throw new RuntimeContractError();
           this.assertAttempt(attempt);
           if (event.type === 'usage') this.usageEvents.emit(attempt.id, event.usage);
-          else this.observe({identity: dependencies.identity, attemptId: attempt.id, event});
+          else this.observeRuntime({identity: dependencies.identity, attemptId: attempt.id, event});
         }
       },
     };
     if (signal.aborted) this.abortListener();
     if (dependencies.budget.deadline !== undefined) {
       const remaining = dependencies.budget.deadline - Date.now();
-      if (remaining <= 0) { this.cancellation = {kind: 'deadline_exceeded'}; this.controller.abort(new AgentTimeoutError()); }
+      if (remaining <= 0) { this.lifecycle.cancel({kind: 'deadline_exceeded'}); this.controller.abort(new AgentTimeoutError()); }
       else {
         const tick = () => {
           const left = dependencies.budget.deadline! - Date.now();
@@ -239,10 +239,16 @@ class ManagedHostRunSession implements HostRunSession {
     return this.runtimeHandle;
   }
   get evidence(): HostEvidenceSnapshot { return snapshotHostEvidence(this.assembly.evidence()); }
-  private observe(event: HostRunEvent) { try { this.assembly.observe?.(event); } catch { /* Observation grants nothing. */ } }
+  private notify(event: HostRunEvent) { try { this.assembly.observe?.(event); } catch { /* Observation grants nothing. */ } }
+  private observeRuntime(event: HostRunEvent) {
+    this.lifecycle.commitEvent(() => this.notify(event));
+  }
   /** Remains meaningful after this session has deliberately released leases. */
   private assertLifetime() {
-    if (this.cancellation?.kind === 'deadline_exceeded' || this.dependencies.budget.deadline !== undefined && Date.now() >= this.dependencies.budget.deadline) throw new AgentTimeoutError();
+    const cancellation = this.lifecycle.cancellation;
+    if (cancellation) {
+      if (cancellation.kind === 'deadline_exceeded') throw new AgentTimeoutError();
+    } else if (this.dependencies.budget.deadline !== undefined && Date.now() >= this.dependencies.budget.deadline) throw new AgentTimeoutError();
     this.port.signal.throwIfAborted();
     this.dependencies.scope.assertCurrent();
   }
@@ -252,14 +258,14 @@ class ManagedHostRunSession implements HostRunSession {
     if (this.hostToolFailure) throw this.hostToolFailure.error;
     this.assertLifetime();
     if (this.deliveryCleanupErrors.length) throw new AgentProviderError();
-    if (this.phase === 'closed' || this.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
+    if (this.lifecycle.phase === 'closed' || this.lifecycle.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
     const deps = this.dependencies;
     deps.runtime.assertCurrent(); deps.model.assertCurrent(); deps.output.assertCurrent();
     deps.tools.assertCurrent(); deps.commitFence.assertCurrent();
   }
   private assertAttempt(attempt: RuntimeAttempt) {
     this.assertCurrent();
-    if (!this.attempt || this.attempt !== attempt || this.phase !== 'running') throw new RuntimeContractError();
+    if (!this.attempt || this.attempt !== attempt || this.lifecycle.phase !== 'running') throw new RuntimeContractError();
   }
   private track<T>(task: () => Promise<T>): Promise<T> {
     const pending = Promise.resolve().then(task); this.pending.add(pending);
@@ -273,18 +279,18 @@ class ManagedHostRunSession implements HostRunSession {
       if (!isDeepStrictEqual(this.dependencies.profile.binding, this.dependencies.runtime.binding) || !isDeepStrictEqual(this.dependencies.output.binding.service, hostOutputService)) throw new RuntimeContractError();
       if (typeof this.dependencies.input.question !== 'string' || !this.dependencies.input.question.trim()) throw new AgentInputError();
       this.runtimeHandle = await this.dependencies.runtime.value.prepare(this.dependencies.profile, this.dependencies.model, this.port);
-      this.assertCurrent(); this.phase = 'idle';
+      this.assertCurrent(); this.lifecycle.setPhase('idle');
     } catch (error) {
-      const terminal = this.port.signal.aborted ? {kind: 'cancelled' as const, cause: this.cancellation?.kind ?? 'cancelled' as const} : {kind: 'failed' as const, failure: {code: 'internal' as const}};
+      const terminal = this.port.signal.aborted ? {kind: 'cancelled' as const, cause: this.lifecycle.cancellation?.kind ?? 'cancelled' as const} : {kind: 'failed' as const, failure: {code: 'internal' as const}};
       await this.cleanup(true);
-      this.observe({identity: this.dependencies.identity, attemptId: null, event: {type: 'run.terminal', terminal}});
+      this.notify({identity: this.dependencies.identity, attemptId: null, event: {type: 'run.terminal', terminal}});
       throw error;
     }
   }
   private async runAttempt(prompt: string, index: number, error?: AgentResponseError): Promise<RuntimeOutcome> {
     this.assertCurrent();
     const attempt = Object.freeze({id: randomUUID(), index});
-    this.attempt = attempt; this.lastAttempt = attempt; this.phase = 'running';
+    this.attempt = attempt; this.lastAttempt = attempt; this.lifecycle.setPhase('running');
     if (index) this.repairs = index;
     const request: RuntimeRunRequest = {attempt, prompt, ...(this.assembly.outputSchema ? {outputSchema: this.assembly.outputSchema} : {})};
     const started = performance.now(), repair = index ? {repair: true, repairAttempt: index} : {};
@@ -296,9 +302,9 @@ class ManagedHostRunSession implements HostRunSession {
       this.assertAttempt(attempt);
       const outcome = parseRuntimeOutcome(raw);
       reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.completed', stage: 'model', phase: 'completed', durationMs: performance.now() - started, payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...repair}});
-      this.observe({identity: this.dependencies.identity, attemptId: attempt.id, event: {type: 'attempt.terminal', terminal: outcome.terminal}});
+      this.observeRuntime({identity: this.dependencies.identity, attemptId: attempt.id, event: {type: 'attempt.terminal', terminal: outcome.terminal}});
       return outcome;
-    } finally { this.usageEvents.forget(attempt.id); this.runtimeWork = undefined; this.attempt = undefined; if (this.phase === 'running') this.phase = 'idle'; }
+    } finally { this.usageEvents.forget(attempt.id); this.runtimeWork = undefined; this.attempt = undefined; if (this.lifecycle.phase === 'running') this.lifecycle.setPhase('idle'); }
   }
   execute(): Promise<AgentAnswer> { return this.execution ??= this.executeOnce(); }
   private async executeOnce(): Promise<AgentAnswer> {
@@ -319,29 +325,31 @@ class ManagedHostRunSession implements HostRunSession {
       : failure instanceof AgentYieldError ? {kind: 'yielded' as const}
       : failure instanceof AgentTimeoutError ? {kind: 'cancelled' as const, cause: 'deadline_exceeded' as const}
       : failure instanceof HostCancellationError ? {kind: 'cancelled' as const, cause: failure.kind}
-      : cancelledBeforeCleanup || !failedBeforeCleanup && this.port.signal.aborted ? {kind: 'cancelled' as const, cause: this.cancellation?.kind ?? 'cancelled' as const}
+      : cancelledBeforeCleanup || !failedBeforeCleanup && this.port.signal.aborted ? {kind: 'cancelled' as const, cause: this.lifecycle.cancellation?.kind ?? 'cancelled' as const}
       : {kind: 'failed' as const, failure: {code: 'internal' as const}};
-    if (this.lastAttempt) this.observe({identity: this.dependencies.identity, attemptId: this.lastAttempt.id, event: {type: 'run.terminal', terminal}});
-    else if (terminal.kind === 'failed' || terminal.kind === 'cancelled') this.observe({identity: this.dependencies.identity, attemptId: null, event: {type: 'run.terminal', terminal}});
+    if (this.lastAttempt) this.notify({identity: this.dependencies.identity, attemptId: this.lastAttempt.id, event: {type: 'run.terminal', terminal}});
+    else if (terminal.kind === 'failed' || terminal.kind === 'cancelled') this.notify({identity: this.dependencies.identity, attemptId: null, event: {type: 'run.terminal', terminal}});
     if (primary) throw failure;
     return result!;
   }
   cancel(cause: Cancellation): Promise<void> {
-    this.cancellation ??= cause;
-    this.cancellationTask ??= Promise.resolve().then(() => this.runtimeClosed ? undefined : this.runtimeHandle?.cancel(this.cancellation!));
-    this.controller.abort(cause);
+    const cancellation = this.lifecycle.cancel(cause);
+    this.cancellationTask ??= Promise.resolve().then(() => this.runtimeClosed ? undefined : this.runtimeHandle?.cancel(cancellation));
+    this.controller.abort(cancellation);
     this.attempt = undefined;
     return this.cancellationTask;
   }
   private async cleanup(primary: boolean, checkFinal = false): Promise<void> {
     if (this.closing) return this.closing;
     this.closing = (async () => {
-      const prior = this.phase; this.phase = 'closing'; this.attempt = undefined;
+      const prior = this.lifecycle.phase;
+      this.lifecycle.releaseEvents();
+      this.lifecycle.setPhase('closing'); this.attempt = undefined;
       const errors: unknown[] = [];
       try {
         await settleHostCleanup([
           async () => {
-            if (primary) await settleHostCleanup([() => this.cancel(this.cancellation ?? {kind: 'cancelled'})], true, failures => errors.push(...failures));
+            if (primary) await settleHostCleanup([() => this.cancel(this.lifecycle.cancellation ?? {kind: 'cancelled'})], true, failures => errors.push(...failures));
             try { await this.runtimeHandle?.close(); } finally { this.runtimeClosed = true; }
           },
           async () => { await Promise.allSettled([...this.pending, ...(this.runtimeWork ? [this.runtimeWork] : [])]); },
@@ -350,8 +358,8 @@ class ManagedHostRunSession implements HostRunSession {
         if (!primary) await settleHostCleanup([() => this.cancellationTask], true, failures => errors.push(...failures));
         await settleHostCleanup([() => this.assembly.close()], true, failures => errors.push(...failures));
         if (checkFinal && !errors.length) {
-          this.phase = prior;
-          try { this.assertCurrent(); } finally { this.phase = 'closing'; }
+          this.lifecycle.setPhase(prior);
+          try { this.assertCurrent(); } finally { this.lifecycle.setPhase('closing'); }
         }
       } catch (error) { errors.push(error); }
       finally {
@@ -375,7 +383,7 @@ class ManagedHostRunSession implements HostRunSession {
           this.port.signal.removeEventListener('abort', this.abortListener);
           for (const remove of this.leaseListeners.values()) remove();
           this.leaseListeners.clear();
-          this.phase = 'closed';
+          this.lifecycle.setPhase('closed');
         }
       }
       if (errors.length) {
@@ -386,7 +394,7 @@ class ManagedHostRunSession implements HostRunSession {
     return this.closing;
   }
   async close(): Promise<void> {
-    if (this.phase === 'closed') return this.closing;
+    if (this.lifecycle.phase === 'closed') return this.closing;
     const errors: unknown[] = [];
     await settleHostCleanup([() => this.cancel({kind: 'cancelled'})], true, failures => errors.push(...failures));
     await this.preparing?.catch(() => {});

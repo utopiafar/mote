@@ -20,6 +20,7 @@ import {createSourceRuntime,sourceRuntimeContribution,sourceRuntimeDeclaration,s
 import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSourceReplacement} from '../plugins/files-source.js';
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
 import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSourceReplacement} from '../plugins/notes-source.js';
+import {devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacement} from '../plugins/devices-source.js';
 
 /** Declared build-time domain plugins the sources assembly wires; the
  * distribution concatenates each domain's list into one selected table. */
@@ -28,6 +29,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:filesSourceContribution,declaration:filesSourceDeclaration,replacement:filesSourceReplacement},
   {contribution:captureIntakeContribution,declaration:captureIntakeDeclaration,replacement:captureIntakeReplacement},
   {contribution:notesSourceContribution,declaration:notesSourceDeclaration,replacement:notesSourceReplacement},
+  {contribution:devicesSourceContribution,declaration:devicesSourceDeclaration,replacement:devicesSourceReplacement},
 ]);
 
 export interface SourcesAssemblyDependencies {

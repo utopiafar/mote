@@ -109,7 +109,7 @@ class LocalStateInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         require(context.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
         require(!Settings(context).enabled && !CaptureAccessibilityService.connected && !ProjectionService.running && context.queue().depth() == 0)
-        val repository = LocalStateRepository.get(context)
+        val repository = LocalStatusProducer.get(context)
         val settingsLocked = CountDownLatch(1); val releaseSettings = CountDownLatch(1); val inspected = CountDownLatch(1)
         val error = AtomicReference<Throwable?>()
         val owner = Thread { synchronized(Settings::class.java) { settingsLocked.countDown(); releaseSettings.await(10, TimeUnit.SECONDS) } }.apply { start() }

@@ -8,6 +8,7 @@ import { DEFAULT_SOURCE_OPTIONS, type SourceItem } from '../src/source-types';
 import { sourceAck } from './fixtures';
 import {builtInSourceAdapters, SourceAdapterRegistry, type SourceScanContext} from '../src/source-adapters';
 import {SourceSync} from '../src/source-sync';
+import {defaultConfig} from '../src/config';
 let directory: string;
 let managers: LocalSourceManager[] = [];
 let servers: Server[] = [];
@@ -45,6 +46,44 @@ async function manager(url: string, token = 'synthetic-source-token', adapters?:
   if (controlledWatcher) vi.spyOn((value as any).watcher, 'setTargets').mockResolvedValue(undefined);
   managers.push(value); await value.initialize(); return value;
 }
+it('disabling one source stops only its watcher and scans while the other source continues', async () => {
+  const config = { ...defaultConfig(), serverUrl: '', token: undefined, syncMode: 'manual' as const };
+  const scans: string[] = [];
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'fixture.watched', version: 1, watchesPath: true, tracksDeletions: false, allowsArchive: false,
+    validateConfiguration(source) { if (typeof source.path !== 'string') throw new Error('Invalid watched source'); },
+    async scan({ source }) {
+      scans.push(source.id);
+      return {version: 1, scan: {items: [], seen: [], complete: true, skipped: 0}};
+    },
+  });
+  const app = new LocalSourceManager(join(directory, 'toggle-state'), config, '/must-not-be-invoked-calendar-helper', true, undefined, adapters);
+  managers.push(app); await app.initialize();
+  const setTargets = vi.spyOn((app as any).watcher, 'setTargets');
+  const firstPath = join(directory, 'generated-first'), secondPath = join(directory, 'generated-second');
+  await mkdir(firstPath); await mkdir(secondPath);
+  const first = await app.addAdapterSource({kind: 'fixture.watched', name: 'Generated first', path: firstPath}, DEFAULT_SOURCE_OPTIONS);
+  const second = await app.addAdapterSource({kind: 'fixture.watched', name: 'Generated second', path: secondPath}, DEFAULT_SOURCE_OPTIONS);
+  await app.sync(true); scans.length = 0;
+  const targets = () => ((setTargets.mock.lastCall?.[0] as {sourceId: string}[] | undefined) ?? []).map(target => target.sourceId);
+  const firstSource = app.status().find(row => row.source.id === first)!.source;
+
+  await app.update(first, {...firstSource, enabled: false});
+  expect(targets()).toEqual([second]);
+  await app.sync(true);
+  expect(scans).toEqual([second]);
+
+  scans.length = 0;
+  await app.update(first, {...firstSource, enabled: true});
+  expect(targets()).toEqual([first, second]);
+  await app.sync(true);
+  expect(scans).toEqual([first, second]);
+
+  // An idempotent re-enable reconciles the same watcher set instead of adding another one.
+  await app.update(first, {...firstSource, enabled: true});
+  expect(targets()).toEqual([first, second]);
+});
+
 it('connects the discovered Kimi Code home and queues its main conversation',async()=>{
   const home=join(directory,'generated-kimi'),root=join(home,'sessions');
   const main=join(root,'wd_fixture','session_fixture','agents','main');await mkdir(main,{recursive:true});
