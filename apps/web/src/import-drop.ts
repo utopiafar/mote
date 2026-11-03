@@ -1,5 +1,5 @@
 import {moteText} from '@mote/shared/i18n';
-import {validateImportFiles} from './import-queue';
+import {validateImportFiles} from './plugins/intake/import-queue';
 
 /** Capture entries while the drop event's data store is readable. Directory
  * entries are traversed as directories, never sent to the Blob upload reader. */

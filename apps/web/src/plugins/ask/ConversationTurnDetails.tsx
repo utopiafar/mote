@@ -1,0 +1,18 @@
+import {useEffect,useRef,type ReactNode} from 'react';
+import {moteText} from '@mote/shared/i18n';
+import {commonFailureMessage,httpStatusMessage,formatEvidenceRef} from '@mote/shared';
+import type {Api,Answer} from '../../api';
+import {dateTime,ApiError,errorMessage} from '../../api';
+import {containDialogFocus} from '../../dialog-focus';
+import {TurnUsage} from '../../Usage';
+import {QueryProgress,type QueryRun} from './QueryProgress';
+export function conversationFailure(error:unknown){return error instanceof ApiError?(error.code&&commonFailureMessage(error.code,error.status)||httpStatusMessage(error.status)):errorMessage(error);}
+/** Hidden children stay mounted so closing More never discards a save draft. */
+export function ConversationDialog({open,title,onClose,children,footer,busy=false}:{open:boolean;title:string;onClose:()=>void;children:ReactNode;footer?:ReactNode;busy?:boolean}){
+ const panel=useRef<HTMLElement>(null);
+ useEffect(()=>open&&panel.current?containDialogFocus(panel.current,document.activeElement as HTMLElement|null):undefined,[open]);
+ return <div hidden={!open} className="conversation-dialog-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget&&!busy)onClose();}} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();if(!busy)onClose();}}}><section ref={panel} className="conversation-dialog" role={open?'dialog':undefined} aria-modal={open?true:undefined} aria-label={title}><header><h2>{title}</h2><button className="icon-button" aria-label={moteText('关闭')} disabled={busy} onClick={onClose}>×</button></header><div className="conversation-dialog-body">{children}</div><footer>{footer??<button className="button subtle" disabled={busy} onClick={onClose}>{moteText('关闭')}</button>}</footer></section></div>;
+}
+export function ConversationTurnDetails({api,conversationId,id,question,answer,open,onClose,onOpen,run,pollError}:{api:Api;conversationId:string;id:string;question:string;answer:Answer;open:boolean;onClose:()=>void;onOpen:(ref:string)=>void;run?:QueryRun;pollError:string}){
+ return <ConversationDialog open={open} title={moteText('本轮详情')} onClose={onClose}><dl className="conversation-details-facts"><dt>{moteText('使用模型')}</dt><dd>{answer.modelSelection?[answer.modelSelection.profileName,answer.modelSelection.model].filter(Boolean).join(' · '):answer.usage?.model??moteText('未记录')}</dd><dt>{moteText('检索')}</dt><dd>{answer.trace.length} {moteText('次工具调用')}</dd><dt>{moteText('费用')}</dt><dd>{answer.usage?.estimatedCost===undefined||answer.usage.estimatedCost===null?moteText('未提供估价'):answer.usage.currency+' '+answer.usage.estimatedCost}</dd></dl><details className="conversation-read-evidence"><summary>{moteText('已读取的依据')}</summary><p>{moteText('证据来源 ·')} {answer.citations.length}</p>{answer.citations.length?answer.citations.map((cite,index)=><button className="text-button citation" key={cite.id} onClick={()=>onOpen(formatEvidenceRef('capture',cite.id))}>{index+1} · {cite.appName} · {dateTime(cite.contentAt??cite.capturedAt)}<small>{cite.excerpt}</small></button>):<p>{moteText('没有档案引用')}</p>}</details><details className="conversation-run-details"><summary>{moteText('运行详情')}</summary><TurnUsage usage={answer.usage}/><details className="trace"><summary>{moteText('查看检索过程')} · {answer.trace.length} {moteText('次工具调用')}</summary>{answer.trace.map((step,index)=><div key={index}><code>{step.tool}</code><pre>{JSON.stringify(step.arguments,null,2)}</pre><small>{step.count} {moteText('项结果')}</small></div>)}<p>{moteText('运行 ID ·')} {answer.runId}</p></details>{open&&run&&<QueryProgress api={api} run={run} error={pollError}/>}</details></ConversationDialog>;
+}

@@ -39,7 +39,7 @@ class NativePluginHostTest {
     @Test fun `builtin providers register in the APK registry with their OS grants`() {
         val registry = NativePluginRegistry().apply { registerBuiltinPlugins("test-build") }
         assertEquals(
-            listOf("mote.capture.projection", "mote.capture.accessibility", "mote.durable-upload", "mote.system-entries", "mote.notes", "mote.plugin-center"),
+            listOf("mote.capture.projection", "mote.capture.accessibility", "mote.durable-upload", "mote.system-entries", "mote.notes", "mote.ask", "mote.plugin-center"),
             registry.list().map { it.capability },
         )
         assertEquals(listOf("projection"), registry.provider("mote.capture.projection", "1")?.osGrants)
