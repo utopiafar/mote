@@ -9,7 +9,6 @@ import { connectionToken, loginRequest, loginVerifier } from './login-session';
 import { SyncHistory, type SyncHistoryQuery, type SyncHistoryContentQuery } from './sync-history';
 import { randomUUID } from 'node:crypto';
 import { syncContent } from './sync-content';
-import { AskController } from './ask-controller';
 import { ConnectionController } from './connection-controller';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, locales, type LanguagePreference } from '@mote/shared/i18n';
@@ -26,6 +25,7 @@ import { registerBuiltinDesktopPlugins } from './plugins';
 import { createNotesPlugin, notesReadCapability, notesWriteCapability } from './plugins/notes';
 import { createLibraryWorkspacePlugin, libraryReadCapability, memoryReadCapability } from './plugins/library-workspace';
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
+import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -296,7 +296,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -589,8 +589,14 @@ else {
       if(connectionToken(settings)&&Date.now()>=nextAuthCheck&&!authCheck){const selected=settings;nextAuthCheck=Date.now()+15000;authCheck=testConnection(selected).catch(error=>{if(settings===selected&&error instanceof ConnectionError&&error.code==='AUTH')return endLogin();}).finally(()=>{authCheck=undefined;});}
       if(settings.token&&!settings.authSignedOut&&settings.authExpiresAt&&settings.authExpiresAt<=Date.now())void endLogin().catch(()=>{});
     },1000);authTimer.unref();app.once('before-quit',()=>clearInterval(authTimer));
-    const askController = new AskController({ settings: () => settings, installLogin, endLogin, browserLogin });
-    handle('mote:ask', (command, input) => askController.request(command, input));
+    const askPlugin = createAskWorkspacePlugin({
+      settings: () => settings,
+      installLogin,
+      endLogin,
+      browserLogin,
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+    });
+    await askPlugin.register({host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain});
     handle('mote:permission-status', async () => ({
       appPath: bundlePath ?? app.getPath('exe'),
       canDrag: process.platform === 'darwin' && Boolean(bundlePath),
