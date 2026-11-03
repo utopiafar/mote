@@ -24,7 +24,7 @@ function snapshotMetadataIdentity(raw:ScannedItem):string{
   const {localOriginal:_,localOriginalBase64:__,snapshotRecovery:___,revision:____,observedAt:_____,...item}=raw as SourceItem;
   return sourceHash(JSON.stringify(item));
 }
-interface Known { policy?:string; contentHash: string; discoveryHash?: string; revision: string; item: ScannedItem }
+interface Known { policy?:string; contentHash: string; discoveryHash?: string; revision: string; item: ScannedItem; deletionPending?: boolean }
 interface RejectedItem { item: SourceItem; status: number }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
 export interface SnapshotRecovery {captureId:string;externalId:string;revision:string;sha256:string;sizeBytes:number;observedAt:string}
@@ -149,7 +149,12 @@ export class SourceSync {
       // lost. With deletion tracking the retry must resolve that ambiguity so a
       // tombstone can chain from the real head. Without it, retrying would
       // publish a removed file as a lasting active revision, so withdraw.
-      if (trackDeletions && this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) { deferred.push(queued); return true; }
+      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) {
+        // The absence is observed now; a managed flush may acknowledge this
+        // revision later, so remember to enqueue its deletion when that happens.
+        if (trackDeletions) { const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key]; if (known) knownChanges.set(key, { ...known, deletionPending: true }); }
+        deferred.push(queued); return true;
+      }
       const delivered = this.data.delivered?.[key];
       if (delivered !== queued.revision) {
         const known = knownChanges.get(key) ?? next.known[key];
@@ -261,9 +266,11 @@ export class SourceSync {
             } catch { continue; } // Unknown delivery: keep the revision and its spool.
             if (!head || !('revision' in head)) continue; // Malformed answer is not proof of absence.
             if (head.revision === item.revision) continue; // Committed with a lost ACK.
-            // Only an explicit "no revision" proves the send never committed. A
-            // different revision may be a later head we must not rewind.
-            if (head.revision !== null) continue;
+            // The recorded predecessor is the last revision the node confirmed.
+            // If the head still equals it, this attempt never committed; a newer
+            // head is ambiguous and must not be rewound.
+            const predecessor = this.data.predecessors?.[item.revision] ?? null;
+            if (head.revision !== predecessor) continue;
             next.pendingRealtime = next.pendingRealtime.filter(queued => queued !== item);
             next.pendingHistory = next.pendingHistory.filter(queued => queued !== item);
             const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
@@ -430,13 +437,15 @@ export class SourceSync {
     if (acked.size !== batch.length || [...expected].some(key => !acked.has(key))) throw new Error(moteText("中央批量来源确认不完整，已保留待重试版本"));
     const remove = new Set([...batch,...rejected.map(value=>value.item)].map(itemKey)), filter = (items: SourceItem[]) => items.filter(item => !remove.has(itemKey(item)));
     const next={...this.data,lastAcknowledgedAt:batch.length?new Date().toISOString():this.data.lastAcknowledgedAt,pendingRealtime:filter(this.data.pendingRealtime),pendingHistory:filter(this.data.pendingHistory)};
+    for(const item of batch){const key=sourceHash(item.externalId),known=this.data.known[key];if(!known?.deletionPending||item.deleted||item.kind!=='file')continue;const deletedAt=new Date().toISOString();const revision=`deleted:${item.revision}`;next.pendingRealtime.push({...item,text:'',localOriginalBase64:undefined,localOriginal:undefined,deleted:true,revision,observedAt:deletedAt,metadata:{...item.metadata,version:1,file:{...item.metadata?.file,deletionObservedAt:deletedAt}}});}
     const patches:StatePatch[]=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>);
     for(const item of batch)patches.push({section:'predecessors',key:item.revision},{section:'delivered',key:sourceHash(item.externalId),value:item.revision});
     for(const value of rejected)patches.push({section:'quarantined',key:itemKey(value.item),value});
     await this.commit(next,undefined,patches);
     // Apply only touched map entries after the SQLite transaction is durable.
     // A one-item ACK never clones or scans the full historical catalog.
-    for(const item of batch){delete this.data.predecessors?.[item.revision];(this.data.delivered??={})[sourceHash(item.externalId)]=item.revision;}
+    for(const item of batch){delete this.data.predecessors?.[item.revision];(this.data.delivered??={})[sourceHash(item.externalId)]=item.revision;if(this.data.known[sourceHash(item.externalId)]?.deletionPending)patches.push({section:'known',key:sourceHash(item.externalId),value:{...this.data.known[sourceHash(item.externalId)],deletionPending:undefined}});}
+    for(const item of batch)if(this.data.known[sourceHash(item.externalId)]?.deletionPending)this.data.known[sourceHash(item.externalId)]={...this.data.known[sourceHash(item.externalId)],deletionPending:undefined};
     for(const value of rejected)(this.data.quarantined??={})[itemKey(value.item)]=value;
     for(const item of batch)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true}).catch(()=>{});
   }

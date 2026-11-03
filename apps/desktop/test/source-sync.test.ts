@@ -311,6 +311,34 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.flush(source, wire);
     expect(sent).toHaveLength(uploaded);
   });
+  it('keeps a committed update whose ACK was lost so reappearance chains from it', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failures = 0;
+    const wire = fileTransport(sent, () => (sent.length === 2 && failures++ === 0 ? 1 : 0));
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, wire);
+    await engine.stage(scan([{ ...fileItem, text: 'update B' }]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // Withdrawal is not required: the node holds B, so keep it and let the retry
+    // confirm the duplicate receipt.
+    await engine.syncScan(scan([]), false, source, wire);
+    const update = sent.at(-2)!.item;
+    await engine.stage(scan([{ ...fileItem, text: 'revision C' }]), false);
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.previousRevision).toBe(update.revision);
+  });
+  it('queues the deletion after a managed flush acknowledges an absent first upload', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // Managed stage sees the absence and a head that already holds the revision.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.item.deleted).toBe(true);
+    expect(sent.at(-1)!.previousRevision).toBe(sent.at(-2)!.item.revision);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
