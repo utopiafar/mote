@@ -1,4 +1,4 @@
-import {originalEvidenceReceipt} from '../../bridge.js';
+import {originalEvidenceReceipt} from '../../evidence-receipt.js';
 import {ContextToolError} from '../../tool-errors.js';
 import {defineToolDescriptor, type ToolDescriptor} from '../descriptor.js';
 import type {ContextRange} from '../../context-contracts.js';
