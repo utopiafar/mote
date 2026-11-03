@@ -810,34 +810,55 @@ describe('source revisions and durable acknowledgments', () => {
     expect(engine.status().pending).toBe(1);
     expect(sent).toHaveLength(0);
   });
-  it('makes progress with more absent candidates than a slice request budget', async () => {
+  it('makes bounded progress with 100 absent candidates and unresolved heads', async () => {
     const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
     const items = Array.from({ length: 100 }, (_, index) => ({ ...fileItem, externalId: `file:generated-${index}`, title: `file-${index}` }));
     await engine.stage(scan(items), false);
-    expect(engine.status().pending).toBe(100);
-    // Mark every identity as observed absent while its upload was in flight.
     const state = sourceState(join(directory, 'state.json')) as any;
-    const patches = items.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: { ...state.known[sourceHash(item.externalId)], absentWhileInflight: state.known[sourceHash(item.externalId)].revision } }));
-    sourceState(join(directory, 'state.json'), patches);
+    sourceState(join(directory, 'state.json'), items.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: { ...state.known[sourceHash(item.externalId)], absentWhileInflight: state.known[sourceHash(item.externalId)].revision } })));
     const reopened = await create();
-    let heads = 0;
+    let heads = 0, nullHeads = false;
     const wire = async (path: string, body: any) => {
       if (path === '/api/sources') return { ...source, enabled: true };
       if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
-      if (path.startsWith('/api/file-sync/v1/head')) { heads++; throw new Error('head unavailable'); }
-      if (path === '/api/file-sync/v1/manifests') {
-        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
-        return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
-      }
+      if (path.startsWith('/api/file-sync/v1/head')) { heads++; if (!nullHeads) throw new Error('head unavailable'); return { revision: null }; }
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('must not upload absent files'); }
       throw new Error('unexpected ' + path);
     };
-    const slice = await reopened.flushSlice(source, wire as any, undefined);
-    // Bounded head work, yet the slice still reaches its uploads.
+    // Unresolved heads: bounded work and no blind upload.
+    const first = await reopened.flushSlice(source, wire as any, undefined);
     expect(heads).toBeLessThanOrEqual(8);
-    expect(sent.length).toBeGreaterThan(0);
-    expect(['ready', 'yielded']).toContain(slice.state);
-    const remaining = reopened.status().pending;
-    expect(remaining).toBeLessThan(100);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(100);
+    expect(['ready', 'yielded']).toContain(first.state);
+    // A later slice that can resolve null heads withdraws them and still uploads nothing.
+    nullHeads = true;
+    heads = 0;
+    await reopened.flushSlice(source, wire as any, undefined);
+    expect(heads).toBeLessThanOrEqual(8);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(92);
+  });
+  it('never uploads the ninth absent candidate before its head is checked', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    const items = Array.from({ length: 9 }, (_, index) => ({ ...fileItem, externalId: `file:nine-${index}`, title: `nine-${index}` }));
+    await engine.stage(scan(items), false);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    sourceState(join(directory, 'state.json'), items.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: { ...state.known[sourceHash(item.externalId)], absentWhileInflight: state.known[sourceHash(item.externalId)].revision } })));
+    const reopened = await create();
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) }; }
+      throw new Error('unexpected ' + path);
+    };
+    await reopened.flushSlice(source, wire as any, undefined);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(1);
+    await reopened.flushSlice(source, wire as any, undefined);
+    expect(sent).toHaveLength(0);
+    expect(reopened.status().pending).toBe(0);
   });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);

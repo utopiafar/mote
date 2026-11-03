@@ -60,6 +60,7 @@ export class SourceSync {
   private scheduler=new PriorityScheduler(16*1024*1024);
   private manifestBatch?:boolean;
   private inflight=new Set<string>();
+  private unreconciledAbsent=new Set<string>();
   private knownItems=0;
   private pendingContentRevision=0;
   private data: State = { version: DESKTOP_STORAGE_VERSION, ingressVersion:2, adapterVersion:1, known: {}, pendingRealtime: [], pendingHistory: [] };
@@ -343,6 +344,9 @@ export class SourceSync {
       const queue = scheduler.next(eligible(this.data.pendingRealtime).length, eligible(this.data.pendingHistory).length);
       if(!queue)break;
       const batches = this.takeBatches(queue,deferred);
+      // Everything left is unreconciled absence or deferred: stop this slice so
+      // the caller retries later instead of spinning without progress.
+      if (!batches.length) break;
       let bytes=0;
       const measured:SourceRequest=(path,body,method,signal)=>{const pending=request(path,body,method,signal);bytes+=requestBytes(body);return pending;};
       const outcomes = await Promise.all(batches.map(async batch => { const keys=batch.map(itemKey); for(const key of keys)this.inflight.add(key); try { observer?.attempt(source,batch); return { batch, result: await this.sendBatch(source, batch, measured, signal, observer) }; } catch (error) { observer?.failed(source,batch,error); return { batch, error }; } finally { for(const key of keys)this.inflight.delete(key); } }));
@@ -374,6 +378,7 @@ export class SourceSync {
   /** A preflight failure leaves no committed revision behind. Before a later
    * managed flush can publish an absent file, confirm the node head. */
   private async reconcileAbsentInflight(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<void> {
+    this.unreconciledAbsent.clear();
     const candidates = this.pendingItems().filter(item => item.kind === 'file' && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight === item.revision);
     if (!candidates.length) return;
     const withdrawKeys = new Set<string>(), cleared = new Map<string, string>();
@@ -383,8 +388,8 @@ export class SourceSync {
       if (this.inflight.has(itemKey(item))) continue;
       let head: { revision?: string | null } | undefined;
       try { head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined; }
-      catch (error) { if (error instanceof UploadSliceYield) throw error; continue; }
-      if (!head || !('revision' in head)) continue;
+      catch (error) { if (error instanceof UploadSliceYield) throw error; this.unreconciledAbsent.add(itemKey(item)); continue; }
+      if (!head || !('revision' in head)) { this.unreconciledAbsent.add(itemKey(item)); continue; }
       const key = sourceHash(item.externalId);
       const delivered = this.data.delivered?.[key] ?? null;
       const predecessor = this.data.predecessors?.[item.revision] ?? delivered;
@@ -392,7 +397,9 @@ export class SourceSync {
       // Only a head equal to the confirmed base proves the send never committed;
       // anything newer is ambiguous and keeps its marker for the next attempt.
       else if (head.revision === predecessor) withdrawKeys.add(itemKey(item));
+      else this.unreconciledAbsent.add(itemKey(item));
     }
+    for (const item of candidates.slice(8)) this.unreconciledAbsent.add(itemKey(item));
     if (!withdrawKeys.size && !cleared.size) return;
     const removed: SourceItem[] = [];
     await this.mutate(async () => {
@@ -422,7 +429,7 @@ export class SourceSync {
   }
 
   private takeBatches(queue: QueueName, deferred=new Set<string>()): SourceItem[][] {
-    const items = (queue === 'realtime' ? this.data.pendingRealtime : this.data.pendingHistory).filter(item=>!deferred.has(itemKey(item)));
+    const items = (queue === 'realtime' ? this.data.pendingRealtime : this.data.pendingHistory).filter(item=>!deferred.has(itemKey(item))&&!this.unreconciledAbsent.has(itemKey(item)));
     if (!items.length) return [];
     if (items[0]!.kind === 'file' && items[0]!.document?.fileIndex) {
       if(items[0]!.localOriginalBase64||items[0]!.localOriginal)return [[items[0]!]];
