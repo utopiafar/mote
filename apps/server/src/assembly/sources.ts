@@ -16,6 +16,7 @@ import {fileAttachmentAvailable} from '../file-attachments.js';
 import {MaterialNoteDeletion} from '../material-note-deletion.js';
 import {codingSourcePlugin} from '../coding-source-plugin.js';
 import {closeSourcePlatforms} from '../platform-close-order.js';
+import {registerFileRoutes} from '../file-routes.js';
 import {createSourceRuntime,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
 import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSourceReplacement} from '../plugins/files-source.js';
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
@@ -58,7 +59,7 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   const sourcePipelines=sourceRuntime.runtimeForAssembly;
   const sources=new SourceStore(store,sourcePipelines);
   let filesForAccess:FileStore|undefined;
-  const filesPlatform=createFilesSource({store,sources,archivedFiles:bootstrap.vault.archivedFiles,rawAccess:{
+  const filesPlatform=createFilesSource({store,sources,archivedFiles:bootstrap.vault.archivedFiles,registerRoutes:registerFileRoutes,rawAccess:{
     mayReadFileVersion:(_sourceId,id)=>{try{const current=filesForAccess;if(!current)return false;const version=current.version(id);return Boolean(version.object_hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&!store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted);}catch{return false;}},
     mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
   }});

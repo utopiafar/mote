@@ -62,14 +62,6 @@
   },
   {
     "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/files-source.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "runtime",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the files source still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
     "from": "apps/server/src/plugins/instance-state.ts",
     "to": "apps/server/src/store.ts",
     "kind": "type",

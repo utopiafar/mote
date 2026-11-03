@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Template collection</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; max-width: 40rem; }
+  .hidden { display: none; }
+  .notice { padding: .75rem 1rem; border: 1px solid #c8c8c8; border-radius: .375rem; }
+  ul { padding-left: 1.25rem; }
+  form { display: flex; gap: .5rem; margin-top: 1rem; }
+  input { flex: 1; padding: .4rem .6rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Template collection</h1>
+  <div id="notice" class="notice hidden"></div>
+  <section id="content" class="hidden">
+    <ul id="items"></ul>
+    <form id="add">
+      <input id="text" name="text" maxlength="1024" required placeholder="New collection item">
+      <button type="submit">Add</button>
+    </form>
+  </section>
+</main>
+<script>
+  'use strict';
+  const elements = Object.fromEntries(['notice', 'content', 'items', 'add', 'text'].map(id => [id, document.getElementById(id)]));
+  let channel = null;
+  let sequence = 0;
+  const pending = new Map();
+
+  function request(method, payload) {
+    if (!channel) return Promise.reject(new Error('no bridge'));
+    const requestId = 'page-' + (++sequence);
+    return new Promise((resolve, reject) => {
+      pending.set(requestId, {resolve, reject});
+      channel.port.postMessage({...channel.handshake, kind: 'request', requestId, method, payload});
+      setTimeout(() => {
+        if (!pending.delete(requestId)) return;
+        reject(new Error('bridge timeout'));
+      }, 10000);
+    });
+  }
+
+  function showNotice(text) {
+    elements.notice.textContent = text;
+    elements.notice.classList.remove('hidden');
+    elements.content.classList.add('hidden');
+  }
+
+  function showState(state) {
+    elements.notice.classList.add('hidden');
+    elements.content.classList.remove('hidden');
+    elements.items.replaceChildren(...state.items.map(item => {
+      const line = document.createElement('li');
+      line.textContent = item.text;
+      return line;
+    }));
+    if (!state.items.length) elements.items.textContent = 'No items yet.';
+  }
+
+  elements.add.addEventListener('submit', event => {
+    event.preventDefault();
+    const text = elements.text.value;
+    request('add', {text}).then(showState).then(() => { elements.text.value = ''; }).catch(() => showNotice('The item was not accepted.'));
+  });
+
+  window.addEventListener('message', event => {
+    const data = event.data;
+    if (!data || data.kind !== 'channel' || !event.ports?.[0]) return;
+    if (!data.contractVersion || !data.nonce || !data.documentKey || !data.instanceId || !Number.isSafeInteger(data.generation)) {
+      showNotice('The host bridge handshake is unavailable.');
+      return;
+    }
+    channel?.port.close();
+    channel = {port: event.ports[0], handshake: {
+      contractVersion: data.contractVersion, nonce: data.nonce, documentKey: data.documentKey,
+      instanceId: data.instanceId, generation: data.generation,
+    }};
+    channel.port.onmessage = reply => {
+      const envelope = reply.data;
+      if (!envelope || envelope.kind !== 'response' || envelope.requestId === undefined) return;
+      const waiting = pending.get(envelope.requestId);
+      if (!waiting) return;
+      pending.delete(envelope.requestId);
+      if (envelope.ok) waiting.resolve(envelope.payload);
+      else waiting.reject(new Error(envelope.error || 'invoke_failed'));
+    };
+    channel.port.start();
+    request('state').then(showState).catch(() => showNotice('The collection is unavailable.'));
+  });
+
+  setTimeout(() => {
+    if (!channel) showNotice('Open this page from the Mote plugin host to connect its custom-page bridge.');
+  }, 2000);
+</script>
+</body>
+</html>

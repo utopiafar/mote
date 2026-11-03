@@ -5,5 +5,8 @@
   "type": "module",
   "dependencies": {
     "@mote/plugin-sdk": "0.1.0"
+  },
+  "scripts": {
+    "build": "node --check source.mjs && node --check seed.mjs"
   }
 }
