@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app';
-import {Connections} from '../src/Connections';
+import {Connections} from '../src/plugins/sources/Connections';
 import {ApiError,type Api} from '../src/api';
 import {resources} from '../src/resource-cache';
 

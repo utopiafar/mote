@@ -1,13 +1,13 @@
-import { useResource } from './useResource';
-import { readResource, resources } from './resource-cache';
+import { useResource } from '../../useResource';
+import { readResource, resources } from '../../resource-cache';
 import { moteText } from '@mote/shared/i18n';
-import { connectionQrDataUrl } from './connection-qr';
+import { connectionQrDataUrl } from '../../connection-qr';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, ChevronRight, Copy, Diamond, Download, Link2, Plus, QrCode, RefreshCw, ShieldCheck, Unplug, X } from 'lucide-react';
 import { connectionServerUrl, type ConnectionInvitation, type ServerConfiguration } from '@mote/shared';
-import { ApiError, type Api, type Device, ago, dateTime, errorMessage } from './api';
-import {useHashChoice} from './useHashChoice';
-import {containDialogFocus} from './dialog-focus';
+import { ApiError, type Api, type Device, ago, dateTime, errorMessage } from '../../api';
+import {useHashChoice} from '../../useHashChoice';
+import {containDialogFocus} from '../../dialog-focus';
 const readAccess=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('connection');
 type Credential = {
     id: string;

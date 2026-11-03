@@ -1,8 +1,8 @@
-import {recordingClock} from './recording-presentation';
+import {recordingClock} from '../../recording-presentation';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {transcriptSchema,type Transcript} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from './api';
+import {type Api,errorMessage} from '../../api';
 const limit=64*1024*1024;
 const rawNames=new Set(['原始转写.json','Original_transcript.json','Transcription_originale.json','Transcripción_original.json','元の転写.json','Исходный_транскрипт.json','Originaltranskript.json']);
 /** Read the current export in memory; never extract paths onto a filesystem. */
