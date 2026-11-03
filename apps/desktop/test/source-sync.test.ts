@@ -1,6 +1,6 @@
 import {sourceState} from '../src/source-state-store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SourceSync } from '../src/source-sync';
@@ -92,6 +92,39 @@ describe('source revisions and durable acknowledgments', () => {
     expect(saved).toHaveLength(0);
     const reopened = await create();
     expect(reopened.status().pending).toBe(0);
+  });
+  it('reconciles an absent file before the pre-stage flush on reconnect', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    expect(engine.status().pending).toBe(1);
+    // Reconnecting with a complete scan that no longer contains the file must
+    // not upload it; syncScan flushes before staging.
+    expect(await engine.syncScan(scan([]), false, source, transport(saved))).toEqual({ changes: 0, state: 'ready' });
+    expect(saved).toHaveLength(0);
+    expect(engine.status().pending).toBe(0);
+  });
+  it('queues the same file again after it leaves and returns unconfirmed', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    await engine.stage(scan([]), false);
+    expect(engine.status().pending).toBe(0);
+    expect(await engine.stage(scan([item]), false)).toBe(1);
+    expect(engine.status().pending).toBe(1);
+    await engine.flush(source, transport(saved));
+    expect(saved).toHaveLength(1);
+  });
+  it('releases the spool of a withdrawn queued original', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    const spool = join(directory, 'spool');
+    await mkdir(spool, { recursive: true });
+    await writeFile(join(spool, '0'), 'spooled');
+    const staged: ScannedItem = { ...item, localOriginal: { directory: spool, sha256: 'a'.repeat(64), sizeBytes: 7, partBytes: 4 * 1024 * 1024 } };
+    await engine.stage(scan([staged]), false);
+    expect(engine.status().pending).toBe(1);
+    await engine.stage(scan([]), false);
+    expect(engine.status().pending).toBe(0);
+    await expect(stat(spool)).rejects.toThrow();
+    expect(saved).toHaveLength(0);
   });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);

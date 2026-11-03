@@ -131,8 +131,29 @@ export class SourceSync {
   }
 
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime',oneTime=false): Promise<number> {
-    try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue,oneTime)); }
-    finally { await this.discardUnqueuedOriginals(scan.items); }
+    const withdrawn: SourceItem[] = [];
+    try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue,oneTime,withdrawn)); }
+    finally { await this.discardUnqueuedOriginals([...scan.items, ...withdrawn]); }
+  }
+
+  /** A complete scan proves which files no longer exist. Their queued revisions
+   * must not upload stale bytes, and a revision the node never confirmed must be
+   * able to queue again when the same file returns. */
+  private withdrawAbsent(scan: SourceScan, next: State, knownChanges: Map<string, Known>, withdrawn: SourceItem[]): void {
+    if (!scan.complete) return;
+    const present = new Set(scan.seen);
+    const keep = (queued: SourceItem) => {
+      if (queued.kind !== 'file' || queued.deleted || present.has(queued.externalId)) return true;
+      const key = sourceHash(queued.externalId);
+      if (this.data.delivered?.[key] !== queued.revision) {
+        const known = knownChanges.get(key) ?? next.known[key];
+        if (known?.contentHash) knownChanges.set(key, { ...known, contentHash: '', discoveryHash: undefined });
+      }
+      withdrawn.push(queued);
+      return false;
+    };
+    next.pendingRealtime = next.pendingRealtime.filter(keep);
+    next.pendingHistory = next.pendingHistory.filter(keep);
   }
 
   async discardUnqueuedOriginals(items: ScannedItem[]): Promise<void> {
@@ -141,7 +162,7 @@ export class SourceSync {
     for (const directory of items.flatMap(directories)) if (!retained.has(directory)) await rm(directory, {force:true, recursive:true}).catch(() => {});
   }
 
-  private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName,oneTime:boolean): Promise<number> {
+  private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName,oneTime:boolean,withdrawn: SourceItem[]): Promise<number> {
     const knownChanges=new Map<string,Known>();
     const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
     if(oneTime&&scan.complete)next.oneTimeCompletedAt=observedAt;
@@ -171,14 +192,7 @@ export class SourceSync {
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
-    // A file that left the folder before its first upload is gone for the owner;
-    // never flush the queued copy later. Only a complete scan proves absence.
-    if (scan.complete) {
-      const present = new Set(scan.seen);
-      const stillInFolder = (queued: SourceItem) => queued.kind !== 'file' || queued.deleted || present.has(queued.externalId);
-      next.pendingRealtime = next.pendingRealtime.filter(stillInFolder);
-      next.pendingHistory = next.pendingHistory.filter(stillInFolder);
-    }
+    this.withdrawAbsent(scan, next, knownChanges, withdrawn);
     if (trackDeletions && scan.complete) {
       const seen = new Set(scan.seen);
       for (const previous of Object.values(this.data.known)) {
@@ -201,7 +215,21 @@ export class SourceSync {
   async syncScan(scan: SourceScan, trackDeletions: boolean, source: SourceDefinition, request: SourceRequest, signal?: AbortSignal, prepare?: () => Promise<void>): Promise<{ changes: number; state: 'ready' | 'paused' }> {
     let precedingError: unknown;
     if (this.status().pending) {
-      try { await prepare?.(); if (await this.flush(source, request, signal) === 'paused') return { changes: 0, state: 'paused' }; } catch (error) { precedingError = error; }
+      try {
+        // The scan is already complete here. Withdraw absent files before the
+        // pre-stage flush so a reconnect never uploads a file the owner removed.
+        const withdrawn: SourceItem[] = [];
+        await this.mutate(async () => {
+          const knownChanges = new Map<string, Known>();
+          const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
+          this.withdrawAbsent(scan, next, knownChanges, withdrawn);
+          if (!withdrawn.length) return;
+          await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...Array.from(knownChanges, ([key, value]) => ({ section: 'known' as const, key, value }))]);
+        });
+        await this.discardUnqueuedOriginals(withdrawn);
+        await prepare?.();
+        if (await this.flush(source, request, signal) === 'paused') return { changes: 0, state: 'paused' };
+      } catch (error) { precedingError = error; }
     }
     signal?.throwIfAborted();
     const changes = await this.stage(scan, trackDeletions, undefined, source.initialSync, scan.queue ?? 'realtime');
