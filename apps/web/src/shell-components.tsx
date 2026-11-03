@@ -3,7 +3,7 @@ import {useMediaEvidenceText} from './media-evidence-presentation';
 import {ReaderToolsDialog} from './ReaderToolsDialog';
 import {originalReferenceRoute,rememberOriginalReturn} from './ask-original-reference';
 import {confirmNavigation} from './unsaved';
-import {ActionResults} from './ActionResults';
+import {ActionResults} from './plugins/work/ActionResults';
 import {NoteOrigin,NoteAttachments} from './NoteOrigin';
 import {StructuredObservation} from './StructuredObservation';
 import {ImageProgress} from './ImageProgress';

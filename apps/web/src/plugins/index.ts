@@ -10,12 +10,11 @@ import { devices } from './devices';
 import { storage } from './storage';
 import { sources } from './sources';
 import { imports } from './imports';
-import { activity } from './activity';
+import { work } from './work';
 import { processing } from './processing';
 import { features } from './features';
 import { usage } from './usage';
 import { discovery } from './discovery';
-import { actions } from './actions';
 import { models } from './models';
 import { coding } from './coding';
 import { library } from './library';
@@ -42,12 +41,11 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   storage,
   sources,
   imports,
-  activity,
+  work,
   processing,
   features,
   usage,
   discovery,
-  actions,
   models,
   coding,
   library,

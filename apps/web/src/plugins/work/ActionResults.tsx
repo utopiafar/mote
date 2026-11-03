@@ -1,10 +1,10 @@
 import React,{useEffect} from 'react';
 import type {ActionProposal} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import type {Api} from './api';
-import {errorMessage} from './api';
-import {useResource} from './useResource';
-import {useForegroundResources} from './useForegroundResources';
+import type {Api} from '../../api';
+import {errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {useForegroundResources} from '../../useForegroundResources';
 import {operationFeed} from './operation-feed';
 export function ActionResults({api,evidenceId}:{api:Api;evidenceId:string}){
  const path='/api/actions/by-evidence/'+encodeURIComponent(evidenceId);

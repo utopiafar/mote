@@ -10,7 +10,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import type {WorkActivity,WorkState} from '@mote/shared';
 import {ActivityMemoryResults} from '../src/ActivityMemoryResults.js';
-import {Activity} from '../src/Activity.js';
+import {Activity} from '../src/plugins/work/Activity.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 
