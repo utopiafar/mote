@@ -24,7 +24,7 @@ function snapshotMetadataIdentity(raw:ScannedItem):string{
   const {localOriginal:_,localOriginalBase64:__,snapshotRecovery:___,revision:____,observedAt:_____,...item}=raw as SourceItem;
   return sourceHash(JSON.stringify(item));
 }
-interface Known { policy?:string; contentHash: string; discoveryHash?: string; revision: string; item: ScannedItem; deletionPending?: boolean; absentWhileInflight?: boolean }
+interface Known { policy?:string; contentHash: string; discoveryHash?: string; revision: string; item: ScannedItem; deletionPending?: boolean; absentWhileInflight?: string }
 interface RejectedItem { item: SourceItem; status: number }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
 export interface SnapshotRecovery {captureId:string;externalId:string;revision:string;sha256:string;sizeBytes:number;observedAt:string}
@@ -162,7 +162,7 @@ export class SourceSync {
       if (this.inflight.has(itemKey(queued))) {
         markAbsent();
         const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key];
-        if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: true });
+        if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: queued.revision });
         return true;
       }
       if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) { markAbsent(); deferred.push(queued); return true; }
@@ -374,7 +374,7 @@ export class SourceSync {
   /** A preflight failure leaves no committed revision behind. Before a later
    * managed flush can publish an absent file, confirm the node head. */
   private async reconcileAbsentInflight(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<void> {
-    const candidates = this.pendingItems().filter(item => item.kind === 'file' && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight);
+    const candidates = this.pendingItems().filter(item => item.kind === 'file' && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight === item.revision);
     if (!candidates.length) return;
     const withdrawKeys = new Set<string>(), cleared = new Map<string, string>();
     for (const item of candidates) {
@@ -398,7 +398,7 @@ export class SourceSync {
       // flight; only apply a decision that still matches the durable state.
       const withdraw = (queued: SourceItem) => {
         const key = sourceHash(queued.externalId), entry = this.data.known[key];
-        if (!withdrawKeys.has(itemKey(queued)) || entry?.absentWhileInflight !== true || entry?.revision !== queued.revision) return true;
+        if (!withdrawKeys.has(itemKey(queued)) || entry?.absentWhileInflight !== queued.revision) return true;
         removed.push(queued); return false;
       };
       const next: State = { ...this.data, pendingRealtime: this.data.pendingRealtime.filter(withdraw), pendingHistory: this.data.pendingHistory.filter(withdraw) };
@@ -412,7 +412,7 @@ export class SourceSync {
           known[key] = { ...entry, contentHash: '', revision, item: tombstone, deletionPending: undefined, absentWhileInflight: undefined };
         } else if (entry) known[key] = { ...entry, contentHash: '', discoveryHash: undefined, absentWhileInflight: undefined };
       }
-      for (const [key, revision] of cleared) { const entry = known[key]; if (entry?.absentWhileInflight && entry.revision === revision) known[key] = { ...entry, absentWhileInflight: undefined }; }
+      for (const [key, revision] of cleared) { const entry = known[key]; if (entry?.absentWhileInflight === revision) known[key] = { ...entry, absentWhileInflight: undefined }; }
       next.known = known;
       await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...removed.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: known[sourceHash(item.externalId)] })), ...[...cleared.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
     });

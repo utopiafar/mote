@@ -754,6 +754,32 @@ describe('source revisions and durable acknowledgments', () => {
     expect(knownEntry?.revision).toBe(latest.item.revision);
     expect(reopened.status().pending).toBe(0);
   });
+  it('withdraws an older in-flight revision whose queued successor was withdrawn', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') { sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null }))); throw new Error('ACK loss'); }
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    // A changed revision is staged while the first upload is in flight, so the
+    // known entry's revision is no longer the queued revision.
+    await engine.stage(scan([{ ...fileItem, text: 'changed while uploading' }]), false);
+    // Complete absence: the in-flight revision stays, the newer queued one goes.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    await engine.flush(source, wire as any);
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
