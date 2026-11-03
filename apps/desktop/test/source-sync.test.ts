@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SourceSync } from '../src/source-sync';
+import { SourceSync, sourceHash } from '../src/source-sync';
 import type { ScannedItem, SourceDefinition, SourceItem, SourceRequest, SourceScan } from '../src/source-types';
 import {sourceAck} from './fixtures';
 let directory: string;
@@ -809,6 +809,35 @@ describe('source revisions and durable acknowledgments', () => {
     expect(slice.state).toBe('yielded');
     expect(engine.status().pending).toBe(1);
     expect(sent).toHaveLength(0);
+  });
+  it('makes progress with more absent candidates than a slice request budget', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    const items = Array.from({ length: 100 }, (_, index) => ({ ...fileItem, externalId: `file:generated-${index}`, title: `file-${index}` }));
+    await engine.stage(scan(items), false);
+    expect(engine.status().pending).toBe(100);
+    // Mark every identity as observed absent while its upload was in flight.
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const patches = items.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: { ...state.known[sourceHash(item.externalId)], absentWhileInflight: state.known[sourceHash(item.externalId)].revision } }));
+    sourceState(join(directory, 'state.json'), patches);
+    const reopened = await create();
+    let heads = 0;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) { heads++; throw new Error('head unavailable'); }
+      if (path === '/api/file-sync/v1/manifests') {
+        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+        return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
+      }
+      throw new Error('unexpected ' + path);
+    };
+    const slice = await reopened.flushSlice(source, wire as any, undefined);
+    // Bounded head work, yet the slice still reaches its uploads.
+    expect(heads).toBeLessThanOrEqual(8);
+    expect(sent.length).toBeGreaterThan(0);
+    expect(['ready', 'yielded']).toContain(slice.state);
+    const remaining = reopened.status().pending;
+    expect(remaining).toBeLessThan(100);
   });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
