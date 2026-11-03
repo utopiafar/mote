@@ -60,30 +60,40 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       return `data:image/jpeg;base64,${(await image.jpeg({ quality: request.thumbnail ? 70 : 90 }).toBuffer()).toString('base64')}`;
     }
     case 'archive-export': {
+      signal?.throwIfAborted();
       const names = (await readdir(join(request.directory, 'events'))).filter(name => /^[0-9a-f-]{36}\.json$/i.test(name));
       const temporary = `${request.path}.${randomUUID()}.tmp`;
+      signal?.throwIfAborted();
       const file = await open(temporary, 'wx', 0o600);
       const blobs = new Set<string>();
       try {
         await file.writeFile(`{"format":"mote-desktop-queue","version":${DESKTOP_STORAGE_VERSION},"records":[`);
         for (let i = 0; i < names.length; i++) {
+          signal?.throwIfAborted();
           const record = validateRecord(JSON.parse((await readLocalContent(join(request.directory, 'events', names[i]))).toString('utf8')));
+          signal?.throwIfAborted();
           if (record.blobHash) blobs.add(record.blobHash);
           await file.writeFile((i ? ',' : '') + JSON.stringify(record));
           progress({ message: moteText("正在导出记录"), completed: i + 1, total: names.length });
         }
+        signal?.throwIfAborted();
         await file.writeFile('],"blobs":{');
         let count = 0;
         for (const hash of blobs) {
+          signal?.throwIfAborted();
           const bytes = await readLocalContent(join(request.directory, 'blobs', hash + '.jpg')); validateImage(bytes, hash);
+          signal?.throwIfAborted();
           await file.writeFile((count ? ',' : '') + JSON.stringify(hash) + ':' + JSON.stringify(bytes.toString('base64')));
           progress({ message: moteText("正在导出图片"), completed: ++count, total: blobs.size });
         }
+        signal?.throwIfAborted();
         await file.writeFile('}}'); await file.sync();
       } catch (error) { await file.close(); await unlink(temporary).catch(() => {}); throw error; }
       await file.close();
-      try { await rename(temporary, request.path); }
-      catch (error) { await unlink(temporary).catch(() => {}); throw error; }
+      try {
+        signal?.throwIfAborted();
+        await rename(temporary, request.path);
+      } catch (error) { await unlink(temporary).catch(() => {}); throw error; }
       return;
     }
     case 'archive-prepare': {

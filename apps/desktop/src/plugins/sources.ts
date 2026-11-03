@@ -4,7 +4,7 @@
  * selections stay inside the privileged process. */
 import { moteText } from '@mote/shared/i18n';
 import type {Config} from '../contracts';
-import type {CalendarChoice, CaptureContextChannel, SourceOptions} from '../contracts/sources';
+import type {CalendarChoice, SourceOptions} from '../contracts/sources';
 import { normalizeSourceOptions } from '../source-types';
 import { SourceSelectionController } from '../source-selection';
 import { CalendarPermissionError } from '../source-calendar';
@@ -30,8 +30,6 @@ export const sourcesChannels = {
   confirm: 'mote:source-confirm',
   files: 'mote:source-files',
   calendarPermissions: 'mote:calendar-permissions',
-  captureContext: 'mote:capture-context',
-  captureContextSave: 'mote:capture-context-save',
 } as const;
 
 export interface SourcePathChoiceRequest {
@@ -182,11 +180,6 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
         })));
         register(sourcesChannels.calendarPermissions, sourcesWriteCapability, () =>
           execute(sourcesChannels.calendarPermissions, () => options.openCalendarPermissions?.()));
-        register(sourcesChannels.captureContext, sourcesReadCapability, args =>
-          execute(sourcesChannels.captureContext, () => manager.captureContext(args[0] as CaptureContextChannel)));
-        register(sourcesChannels.captureContextSave, sourcesWriteCapability, args =>
-          execute(sourcesChannels.captureContextSave, () => serialize(() =>
-            manager.saveCaptureContext(args[0] as CaptureContextChannel, args[1]))));
 
         plugin.registerJob({id: 'sources-manager', durable: true, drain: () => manager.close()});
         plugin.defer(() => { void manager.close(); });
