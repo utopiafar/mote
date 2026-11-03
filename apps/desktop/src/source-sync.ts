@@ -378,6 +378,7 @@ export class SourceSync {
     if (!candidates.length) return;
     const withdrawn: SourceItem[] = [];
     const cleared = new Set<string>();
+    const specs: { item: SourceItem; delivered: string; known: Known }[] = [];
     for (const item of candidates) {
       if (this.inflight.has(itemKey(item))) continue;
       let head: { revision?: string | null } | undefined;
@@ -385,18 +386,27 @@ export class SourceSync {
       catch { continue; }
       if (!head || !('revision' in head)) continue;
       const key = sourceHash(item.externalId);
-      const predecessor = this.data.predecessors?.[item.revision] ?? this.data.delivered?.[key] ?? null;
+      const delivered = this.data.delivered?.[key] ?? null;
+      const predecessor = this.data.predecessors?.[item.revision] ?? delivered;
       if (head.revision === item.revision) { cleared.add(key); continue; }
-      // Only an explicit head equal to the confirmed predecessor proves the send
-      // never committed; anything newer is ambiguous and stays queued.
-      if (head.revision !== predecessor) { cleared.add(key); continue; }
+      // Only a head equal to the confirmed base proves the send never committed;
+      // anything newer is ambiguous and keeps its marker for the next attempt.
+      if (head.revision !== predecessor) continue;
       withdrawn.push(item);
+      const known = this.data.known[key];
+      if (known?.deletionPending && delivered && item.kind === 'file') specs.push({ item, delivered, known });
     }
     if (!withdrawn.length && !cleared.size) return;
     await this.mutate(async () => {
       const next: State = { ...this.data, pendingRealtime: this.data.pendingRealtime.filter(item => !withdrawn.includes(item)), pendingHistory: this.data.pendingHistory.filter(item => !withdrawn.includes(item)) };
       const known: Record<string, Known> = { ...next.known };
-      for (const item of withdrawn) { const key = sourceHash(item.externalId); if (known[key]) known[key] = { ...known[key], contentHash: '', discoveryHash: undefined, absentWhileInflight: undefined }; }
+      for (const spec of specs) {
+        const key = sourceHash(spec.item.externalId), deletedAt = new Date().toISOString(), revision = `deleted:${spec.delivered}`;
+        const tombstone = { ...spec.item, text: '', localOriginalBase64: undefined, localOriginal: undefined, deleted: true, revision, observedAt: deletedAt, metadata: { ...spec.item.metadata, version: 1 as const, file: { ...spec.item.metadata?.file, deletionObservedAt: deletedAt } } };
+        next.pendingRealtime.push(tombstone);
+        known[key] = { ...spec.known, contentHash: '', revision, item: tombstone, deletionPending: undefined, absentWhileInflight: undefined };
+      }
+      for (const item of withdrawn) { const key = sourceHash(item.externalId); if (!specs.some(spec => spec.item === item) && known[key]) known[key] = { ...known[key], contentHash: '', discoveryHash: undefined, absentWhileInflight: undefined }; }
       for (const key of cleared) if (known[key]) known[key] = { ...known[key], absentWhileInflight: undefined };
       next.known = known;
       await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...withdrawn.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: known[sourceHash(item.externalId)] })), ...[...cleared].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
