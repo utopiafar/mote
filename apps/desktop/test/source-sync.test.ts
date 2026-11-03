@@ -229,6 +229,19 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.flush(source, transport(saved));
     expect(saved.some(entry => entry.deleted)).toBe(true);
   });
+  it('does not publish a removed file after a failed attempt when deletion tracking is off', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    await engine.stage(scan([fileItem]), false);
+    await expect(engine.flush(source, fileTransport(sent, () => 1))).rejects.toThrow('ACK loss');
+    expect(engine.status().pending).toBe(1);
+    expect(Object.hasOwn((sourceState(join(directory, 'state.json')) as any).predecessors ?? {}, sent.at(-1)!.item.revision)).toBe(true);
+    const uploaded = sent.length;
+    // Complete scan after removal, deletion tracking off: the uncertain upload
+    // must be withdrawn rather than retried into an active remote file.
+    expect(await engine.syncScan(scan([]), false, source, fileTransport(sent))).toEqual({ changes: 0, state: 'ready' });
+    expect(engine.status().pending).toBe(0);
+    expect(sent).toHaveLength(uploaded);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

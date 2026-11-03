@@ -139,16 +139,17 @@ export class SourceSync {
   /** A complete scan proves which files no longer exist. Their queued revisions
    * must not upload stale bytes, and a revision the node never confirmed must be
    * able to queue again when the same file returns. */
-  private withdrawAbsent(scan: SourceScan, next: State, knownChanges: Map<string, Known>, withdrawn: SourceItem[]): void {
+  private withdrawAbsent(scan: SourceScan, trackDeletions: boolean, next: State, knownChanges: Map<string, Known>, withdrawn: SourceItem[]): void {
     if (!scan.complete) return;
     const present = new Set(scan.seen);
     const keep = (queued: SourceItem) => {
       if (queued.kind !== 'file' || queued.deleted || present.has(queued.externalId)) return true;
       const key = sourceHash(queued.externalId);
       // An attempted revision may already be the node's head when its ACK was
-      // lost. Keep it queued so the existing retry resolves that ambiguity
-      // instead of dropping the only record of the upload.
-      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) return true;
+      // lost. With deletion tracking the retry must resolve that ambiguity so a
+      // tombstone can chain from the real head. Without it, retrying would
+      // publish a removed file as a lasting active revision, so withdraw.
+      if (trackDeletions && this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) return true;
       const delivered = this.data.delivered?.[key];
       if (delivered !== queued.revision) {
         const known = knownChanges.get(key) ?? next.known[key];
@@ -199,7 +200,7 @@ export class SourceSync {
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
-    this.withdrawAbsent(scan, next, knownChanges, withdrawn);
+    this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn);
     if (trackDeletions && scan.complete) {
       const seen = new Set(scan.seen);
       const identities = new Set([...Object.keys(this.data.known), ...knownChanges.keys()]);
@@ -236,7 +237,7 @@ export class SourceSync {
         const knownChanges = new Map<string, Known>();
         await this.mutate(async () => {
           const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
-          this.withdrawAbsent(scan, next, knownChanges, withdrawn);
+          this.withdrawAbsent(scan, trackDeletions, next, knownChanges, withdrawn);
           if (!withdrawn.length) return;
           await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...Array.from(knownChanges, ([key, value]) => ({ section: 'known' as const, key, value }))]);
           for (const [key, value] of knownChanges) this.data.known[key] = value;
