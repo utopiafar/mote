@@ -9,6 +9,7 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     SourceProviderPlugin.register(this, buildId)
     SystemEntriesPlugin.register(this, buildId)
     NotesPlugin.register(this, buildId)
+    NativeLibraryPlugin.register(this, buildId)
     NativeAskPlugin.register(this, buildId)
     registerPluginCenter(buildId)
 }
