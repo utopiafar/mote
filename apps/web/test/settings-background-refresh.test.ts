@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {Sources} from '../src/Sources.js';
+import {Sources} from '../src/plugins/sources/Sources.js';
 import {FileProcessingSettings} from '../src/FileProcessingSettings.js';
 import {ModelProfiles} from '../src/ModelProfiles.js';
 import {Diagnostics} from '../src/Diagnostics.js';

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {uploadImportFiles} from '../src/import-upload-scheduler.js';
+import {uploadImportFiles} from '../src/plugins/intake/import-upload-scheduler.js';
 import type {Api} from '../src/api.js';
 const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
 function fixture(){const uploads=new Map<string,{name:string;parts:Map<number,Uint8Array>;fileId?:string}>(),events:string[]=[],attempts:{id:string;part:number}[]=[];let failOnce=false,badAck=false;

@@ -8,7 +8,7 @@ import type {CaptureTimelineGroup,CaptureTimelineMember,CaptureTimelinePage} fro
 import {LibraryTimeline} from '../src/plugins/library/LibraryTimeline.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
-import {affectedResource,OperationFeed} from '../src/operation-feed.js';
+import {affectedResource,OperationFeed} from '../src/plugins/work/operation-feed.js';
 import {clearImportReturn,markImportReturn,rememberImportOrigin} from '../src/import-navigation.js';
 configureLocale(()=> 'zh-CN');
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',other='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

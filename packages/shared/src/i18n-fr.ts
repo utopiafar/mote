@@ -6710,6 +6710,8 @@ export const french: Readonly<Record<string, string>> = {
   "客户端登录": "Connexion du client",
   "允许「{0}」登录并使用所有中央功能。": "Autoriser « {0} » à se connecter et à utiliser toutes les fonctions centrales.",
   "继续登录客户端": "Continuer la connexion du client",
+  "拒绝这次登录": "Refuser cette connexion",
+  "已拒绝这次客户端登录。": "Cette connexion client a été refusée.",
   "客户端已登录，可返回客户端继续。": "Le client est connecté. Retournez au client pour continuer.",
   "请升级中央节点后再登录。": "Mettez à niveau le nœud central avant de vous connecter.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Les identifiants de connexion sont enregistrés en toute sécurité. Toutes les fonctions centrales partagent cette connexion.",

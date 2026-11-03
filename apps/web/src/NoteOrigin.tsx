@@ -3,8 +3,8 @@ import {moteText} from '@mote/shared/i18n';
 import {formatEvidenceRef} from '@mote/shared';
 import {useResource} from './useResource';
 import {useEffect,useRef,useState} from 'react';
-import {readOriginTurn,conversationTurnRoute,type OriginTurn} from './conversation-origin';
-import {AnswerMarkdown} from './AnswerMarkdown';
+import {readOriginTurn,conversationTurnRoute,type OriginTurn} from './plugins/ask/conversation-origin';
+import {AnswerMarkdown} from './plugins/ask/AnswerMarkdown';
 export function NoteOrigin({api,capture,onOpen,onSettled}:{api:Api;capture:Capture;onOpen:(ref:string)=>void;onSettled?:(instance:object)=>void}){
  const origin=capture.metadata?.noteOrigin;
  if(!origin||origin.kind==='manual')return null;
