@@ -870,7 +870,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   private materialCard(material:MaterialRecord,head:CaptureRecord,query?:string,selected?:CaptureRecord):CaptureRecord|undefined {
     if(!this.materials)return;
-    const candidates=selected?[selected]:this.materials.evidence(this.materials.evidenceIds(material.ref).filter(id=>this.materials!.isCurrentEvidence(id)).slice(0,query?64:1))
+    const candidates=selected?[selected]:this.materials.evidence(this.materials.cardEvidenceIds(material.ref).filter(id=>this.materials!.isCurrentEvidence(id)).slice(0,query?64:1))
       .flatMap(record=>{const current=this.currentMaterialAnchor(record,material);return current?[current]:[];});
     const needle=query?.trim().toLocaleLowerCase();
     const anchor=selected??(needle?candidates.find(row=>row.ocrText.toLocaleLowerCase().includes(needle))??candidates[0]:candidates[0]);
@@ -888,7 +888,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     if(head)return this.materialCard(material,head,query);
     // Coding sessions and compressed screen groups have no single SourceStore
     // head. Their text anchors are already derived, pinned Material evidence.
-    const anchors=this.materials.evidence(this.materials.evidenceIds(material.ref).filter(id=>this.materials!.isCurrentEvidence(id)).slice(0,64));
+    const anchors=this.materials.evidence(this.materials.cardEvidenceIds(material.ref).filter(id=>this.materials!.isCurrentEvidence(id)).slice(0,64));
     const needle=query?.trim().toLocaleLowerCase();
     const selected=(needle?anchors.find(row=>row.ocrText.toLocaleLowerCase().includes(needle)):undefined)??anchors[0];
     const anchor=selected&&this.currentMaterialAnchor(selected,material);
