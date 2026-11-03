@@ -60,12 +60,18 @@ export class Collector {
   private lastUploadAt?: string;
   private archiveAcknowledgment?:{at:string;origin:string};
   private lastUploadError?: string;
+  private powerWatchersBound = false;
+  private readonly onLockScreen = () => { this.locked = true; this.pause(moteText("屏幕已锁定，暂停采集")); };
+  private readonly onUnlockScreen = () => { this.locked = false; this.resumeCapture(); };
+  private readonly onSuspend = () => { this.sleeping = true; this.pause(moteText("电脑休眠，暂停采集")); };
+  private readonly onResume = () => { this.sleeping = false; this.resumeCapture(); };
   constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager, private readonly history?: SyncHistory, private readonly browserCapture?: BrowserCaptureProvider) {
     this.config = config; this.lastUploadAt = this.queue.stats().lastUploadAt; this.archiveAcknowledgment=this.queue.stats().archiveAcknowledgment;
-    powerMonitor.on('lock-screen', () => { this.locked = true; this.pause(moteText("屏幕已锁定，暂停采集")); });
-    powerMonitor.on('unlock-screen', () => { this.locked = false; this.resumeCapture(); });
-    powerMonitor.on('suspend', () => { this.sleeping = true; this.pause(moteText("电脑休眠，暂停采集")); });
-    powerMonitor.on('resume', () => { this.sleeping = false; this.resumeCapture(); });
+    powerMonitor.on('lock-screen', this.onLockScreen);
+    powerMonitor.on('unlock-screen', this.onUnlockScreen);
+    powerMonitor.on('suspend', this.onSuspend);
+    powerMonitor.on('resume', this.onResume);
+    this.powerWatchersBound = true;
   }
   initialize(): void {
     this.uploadTimer = setInterval(() => { if (this.uploading) this.publish(); else void this.upload(); }, 1000);
@@ -182,9 +188,16 @@ export class Collector {
   shutdown(): void {
     this.closed = true; this.heartbeatAbort?.abort();
     this.running = false; this.captureAbort?.abort(); this.uploadAbort?.abort();
-    if (this.timer) clearTimeout(this.timer);
-    if (this.uploadTimer) clearInterval(this.uploadTimer);
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+    if (this.uploadTimer) { clearInterval(this.uploadTimer); this.uploadTimer = undefined; }
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = undefined; }
+    if (this.powerWatchersBound) {
+      powerMonitor.off('lock-screen', this.onLockScreen);
+      powerMonitor.off('unlock-screen', this.onUnlockScreen);
+      powerMonitor.off('suspend', this.onSuspend);
+      powerMonitor.off('resume', this.onResume);
+      this.powerWatchersBound = false;
+    }
     void this.diagnostics?.close();
   }
   requireRecovery(message: string): void { this.shutdown(); this.state = 'error'; this.message = message; this.publish(); }
