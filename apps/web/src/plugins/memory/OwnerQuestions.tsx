@@ -2,12 +2,12 @@ import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {ArrowRight,LoaderCircle} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {OwnerQuestion} from '@mote/shared';
-import {ApiError,dateTime,errorMessage,type Api} from './api';
-import {useResource} from './useResource';
-import {resources} from './resource-cache';
-import {ConversationHeading} from './ConversationShell';
-import {ownerQuestionListPath,ownerQuestionRoute,ownerQuestionListOrigin,clearOwnerQuestionListOrigin,readOwnerQuestion} from './owner-question-route';
-import {guideVisit} from './feature-guide-state';
+import {ApiError,dateTime,errorMessage,type Api} from '../../api';
+import {useResource} from '../../useResource';
+import {resources} from '../../resource-cache';
+import {ConversationHeading} from '../../ConversationShell';
+import {ownerQuestionListPath,ownerQuestionRoute,ownerQuestionListOrigin,clearOwnerQuestionListOrigin,readOwnerQuestion} from '../../owner-question-route';
+import {guideVisit} from '../../feature-guide-state';
 
 type Reply={requestId:string;expectedRevision:number;action:'answer'|'unknown'|'defer';answer?:string;choiceId?:string};
 type QuestionDraft={draft:string;choiceId?:string;reopened:boolean;pending?:{fingerprint:string;body:Reply}};
@@ -19,7 +19,7 @@ const questionReturns=new WeakMap<Api,QuestionReturn>();
 function rememberQuestion(api:Api,id:string){let all=questionOrigins.get(api);if(!all){all=new Map();questionOrigins.set(api,all);}all.set(id,{hash:window.location.hash,scroll:window.scrollY,opener:document.activeElement as HTMLElement|null,questionId:id});}
 function draftFor(api:Api,id:string){let all=questionDrafts.get(api);if(!all){all=new Map();questionDrafts.set(api,all);}let value=all.get(id);if(!value){value={draft:'',reopened:false};all.set(id,value);}return value;}
 type QuestionPage={items:OwnerQuestion[];nextCursor:string|null};
-const presentationHref=new URL('./owner-question-final.css',import.meta.url).href;
+const presentationHref=new URL('../../owner-question-final.css',import.meta.url).href;
 function useOwnerQuestionStyle(){useEffect(()=>{if(document.head.querySelector('link[data-mote-owner-question-final]'))return;const link=document.createElement('link');link.rel='stylesheet';link.href=presentationHref;link.dataset.moteOwnerQuestionFinal='true';document.head.append(link);},[]);}
 const foregroundQuestions=new WeakSet<object>();
 function useQuestionForeground(api:Api,path:string){

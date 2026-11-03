@@ -60,8 +60,8 @@ class ClientFeedbackInstrumentedTest {
             scenario.onActivity { activity ->
                 original = activity
                 views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.contentDescription?.toString() == "写一条随手记" }.performClick()
-                Notifications.create(activity)
-                Notifications.notification(activity, "合成测试通知").contentIntent.send()
+                activity.systemEntries().create()
+                activity.systemEntries().notification("合成测试通知").contentIntent.send()
             }
             instrumentation.waitForIdleSync()
             scenario.onActivity { activity ->
@@ -87,8 +87,8 @@ class ClientFeedbackInstrumentedTest {
             }
             instrumentation.runOnMainSync {
                 assertTrue(original is CaptureRecordsActivity)
-                Notifications.create(original!!)
-                Notifications.notification(original!!, "合成状态通知").contentIntent.send()
+                original!!.systemEntries().create()
+                original!!.systemEntries().notification("合成状态通知").contentIntent.send()
             }
             instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync {

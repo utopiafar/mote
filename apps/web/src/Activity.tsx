@@ -12,7 +12,7 @@ import {FeaturePanels} from './features/runtime';
 import {WorkIssueNotice} from './WorkIssueNotice';
 import {CodingReceiptPanel} from './CodingReceiptPanel';
 import {Imports} from './Imports';
-import {MemoryDetailPage} from './Memories';
+import {MemoryDetailPage} from './plugins/memory/Memories';
 import {ActivityMemoryResults} from './ActivityMemoryResults';
 import {confirmNavigation} from './unsaved';
 
