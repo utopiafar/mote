@@ -6,14 +6,11 @@ import { connectionToken, loginRequest, loginVerifier } from './login-session';
 import { SyncHistory, type SyncHistoryQuery, type SyncHistoryContentQuery } from './sync-history';
 import { randomUUID } from 'node:crypto';
 import { syncContent } from './sync-content';
-import { AskController } from './ask-controller';
 import { ConnectionController } from './connection-controller';
-import { SourceSelectionController } from './source-selection';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, locales, type LanguagePreference } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
-import { CalendarPermissionError } from './source-calendar';
 import { PermissionGuide } from './permission-guide';
 import { permissionKind, type SettingsWindow } from './permission-types';
 import {previewWork} from './background';
@@ -25,6 +22,8 @@ import { registerBuiltinDesktopPlugins } from './plugins';
 import { createNotesPlugin, notesReadCapability, notesWriteCapability } from './plugins/notes';
 import { createLibraryWorkspacePlugin, libraryReadCapability, memoryReadCapability } from './plugins/library-workspace';
 import { createChromePlugin, chromeManageCapability, chromeReadCapability, type ChromePlugin } from './plugins/chrome';
+import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
+import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -44,8 +43,6 @@ import { pathToFileURL } from 'node:url';
 import { readFile, realpath, stat, writeFile, open, mkdir } from 'node:fs/promises';
 import { currentPlatform, Collector } from './collector';
 import { ConfigStore, updateConfig, signedOutConfig } from './config';
-import { LocalSourceManager } from './source-manager';
-import { normalizeSourceOptions } from './source-types';
 import { DesktopUpdater } from './updater';
 import { createUpdateNetwork } from './update-network';
 import { createChromiumUpdateFetch } from './electron-update-fetch';
@@ -103,7 +100,8 @@ let tray: Tray | undefined;
 let quickNoteWindow: BrowserWindow | undefined;
 let openQuickNote: (()=>Promise<void>) | undefined;
 let collector: Collector;
-let localSources: LocalSourceManager | undefined;
+let sourcesPlugin: SourcesPlugin | undefined;
+let localSources: SourcesPlugin['manager'] | undefined;
 let updater: DesktopUpdater | undefined;
 const onboarding = new ConnectionOnboarding();
 let connectionState: ConnectionStatus = { state: 'unchecked', get message() { return moteText("连接尚未检查"); } };
@@ -218,8 +216,33 @@ else {
     const updateSession = session.fromPartition('mote-public-updates', { cache: false });
     updater = new DesktopUpdater({ directory: updateDirectory, helper: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'), bundlePath, currentVersion: app.getVersion(), arch: process.arch === 'arm64' ? 'arm64' : 'x64', profile: profile.name }, createUpdateNetwork(createChromiumUpdateFetch(options => net.request({ ...options, session: updateSession }))));
     await updater.initialize();
-    localSources = new LocalSourceManager(join(dataDirectory, 'local-sources'), settings, helperPath, true, events);
-    await localSources.initialize();
+    sourcesPlugin = createSourcesPlugin({
+      directory: join(dataDirectory, 'local-sources'),
+      settings: () => settings,
+      helperPath,
+      events,
+      serialize,
+      background: (channel, label, operation) => backgroundJobs.run(channel, label, operation),
+      retry: () => collector.retry(),
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+      changed: () => { if (!quitting) updateUi(clientStatus()); },
+      choosePaths: async ({mode, purpose, extensions}) => {
+        const title = purpose === 'select'
+          ? mode === 'directory' ? moteText("同步文件夹") : moteText("导入文件")
+          : moteText("选择持续同步到中央仓库的本地资料");
+        const result = await dialog.showOpenDialog(window!, {
+          title,
+          properties: mode === 'directory' ? ['openDirectory'] : ['openFile', 'multiSelections'],
+          ...(purpose === 'import' && mode === 'files' ? {filters: [{name: moteText("UTF-8 文本资料"), extensions: (extensions ?? []).map(extension => extension.slice(1))}]} : {}),
+        });
+        return {canceled: result.canceled, filePaths: result.filePaths};
+      },
+      openCalendarPermissions: async () => {
+        if (process.platform === 'darwin') await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars');
+      },
+    });
+    localSources = sourcesPlugin.manager;
+    await sourcesPlugin.initialize();
     const diagnostics = new DiagnosticsRecorder(join(dataDirectory, 'diagnostics'));
     const configureDiagnostics = async () => diagnostics.configure({ enabled: settings.diagnosticsEnabled, intervalMs: settings.diagnosticIntervalSeconds * 1000 }, async () => ({
       queueBytes: queue.stats().bytes, modelBytes: 0, ...await readPowerState(helperPath).catch(() => ({})),
@@ -271,7 +294,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, chromeReadCapability, chromeManageCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -280,7 +303,7 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, chromePlugin!]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!, chromePlugin!]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
@@ -322,19 +345,17 @@ else {
     // Retain authored keys: a renderer locale change does not restart the main process.
     const operationLabels: Record<string, string> = {
       'mote:configure': "正在应用设置或迁移存储", 'mote:import-queue': "正在导入队列", 'mote:export-queue': "正在导出队列",
-      'mote:source-sync': "正在扫描并同步来源",
-      'mote:retry': "正在同步待发记录", 'mote:source-files': "正在连接文件来源", 'mote:source-update': "正在保存来源设置",
-      'mote:source-calendar': "正在连接日历", 'mote:calendar-authorize': "正在读取日历授权", 'mote:installed-applications': "正在读取应用列表",
+      'mote:retry': "正在同步待发记录", 'mote:installed-applications': "正在读取应用列表",
       'mote:support-export': "正在导出支持包", 'mote:diagnostics-export': "正在导出诊断", 'mote:diagnostics-sample': "正在读取诊断",
       'mote:connection-confirm': "正在连接中央节点", 'mote:connection-test': "正在测试连接",
       'mote:update-download': "正在下载更新", 'mote:update-install': "正在准备安装更新", 'mote:update-check': "正在检查更新",
       'mote:start': "正在准备采集", 'mote:stop': "正在结束当前采集",
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      const stage: EventStage | undefined = ({ 'mote:source-sync': 'SOURCE', 'mote:source-files': 'SOURCE', 'mote:source-calendar': 'SOURCE', 'mote:source-update': 'SOURCE', 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:retry': 'UPLOAD', 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
+      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:retry': 'UPLOAD', 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
     ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
-        if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:stop', 'mote:connection-status', 'mote:update-status', 'mote:sources'].includes(channel)) throw new Error(recoveryRequired);
+        if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:stop', 'mote:connection-status', 'mote:update-status'].includes(channel)) throw new Error(recoveryRequired);
         const startedAt = Date.now();
         if (stage) void events.record(stage, 'STARTED', {operation:channel});
         try { const label = operationLabels[channel]; const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args)); if (stage) void events.record(stage, 'OK', { elapsedMs: Date.now() - startedAt,operation:channel }); return result; }
@@ -432,34 +453,7 @@ else {
       environment: moteText("桌面客户端 · {0}", ['dev', 'test', 'prod', 'default'].includes(profile.name) ? profile.name : moteText("自定义环境")),
     })));
     handle('mote:coding-agents', () => discoverCodingAgents());
-    handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error(moteText("不支持的 Coding Agent")); return localSources!.addCodingAgent(provider, options); }));
-    handle('mote:sources', () => localSources!.status());
-    handle('mote:source-context',id=>serialize(()=>{if(typeof id!=='string')throw Error('Invalid source');return localSources!.sourceContext(id);}));
-    handle('mote:source-context-save',(id,input)=>serialize(()=>{if(typeof id!=='string')throw Error('Invalid source');return localSources!.saveSourceContext(id,input);}));
-    handle('mote:source-sync', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); });
     handle('mote:action-calendar-connect', () => serialize(() => nativeCalendarActions({...settings},helperPath,dataDirectory).connectAndDeliver(()=>settings.syncPaused===true)));
-    handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
-    handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("日历选择无效")); return localSources!.addCalendar(id, options); }));
-    handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("来源选择无效")); await localSources!.update(id, options); }));
-    const sourceSelections = new SourceSelectionController((path, options) => localSources!.addFiles(path, options));
-    handle('mote:source-select', mode => serialize(async () => {
-      if (mode !== 'files' && mode !== 'directory') throw new Error(moteText("文件选择方式无效"));
-      const result = await dialog.showOpenDialog(window!, {title:mode==='directory'?moteText("同步文件夹"):moteText("导入文件"),properties:mode==='directory'?['openDirectory']:['openFile','multiSelections']});
-      if (result.canceled || !result.filePaths.length) return {canceled:true};
-      // Paths remain in the privileged process; the renderer can confirm only this native selection.
-      return sourceSelections.select(result.filePaths);
-    }));
-    handle('mote:source-cancel', id => sourceSelections.cancel(id));
-    handle('mote:source-confirm', (id, input) => serialize(() => sourceSelections.confirm(id, input)));
-    handle('mote:source-files', (mode, input) => serialize(async () => {
-      const options = normalizeSourceOptions(input);
-      if (mode !== 'files' && mode !== 'directory') throw new Error(moteText("文件选择方式无效"));
-      const result = await dialog.showOpenDialog(window!, { title: moteText("选择持续同步到中央仓库的本地资料"), properties: mode === 'directory' ? ['openDirectory'] : ['openFile', 'multiSelections'], ...(mode === 'files' ? { filters: [{ name: moteText("UTF-8 文本资料"), extensions: options.extensions.map(e => e.slice(1)) }] } : {}) });
-      if (result.canceled) return { canceled: true };
-      for (const path of result.filePaths) await localSources!.addFiles(path, options);
-      return { canceled: false };
-    }));
-    handle('mote:calendar-permissions', async () => { if (process.platform === 'darwin') await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars'); });
     handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
     handle('mote:storage-statistics',async()=>storageStatistics([dataDirectory,queue.directory]));
     handle('mote:events-raw', async () => events.readRaw());
@@ -578,8 +572,14 @@ else {
       if(connectionToken(settings)&&Date.now()>=nextAuthCheck&&!authCheck){const selected=settings;nextAuthCheck=Date.now()+15000;authCheck=testConnection(selected).catch(error=>{if(settings===selected&&error instanceof ConnectionError&&error.code==='AUTH')return endLogin();}).finally(()=>{authCheck=undefined;});}
       if(settings.token&&!settings.authSignedOut&&settings.authExpiresAt&&settings.authExpiresAt<=Date.now())void endLogin().catch(()=>{});
     },1000);authTimer.unref();app.once('before-quit',()=>clearInterval(authTimer));
-    const askController = new AskController({ settings: () => settings, installLogin, endLogin, browserLogin });
-    handle('mote:ask', (command, input) => askController.request(command, input));
+    const askPlugin = createAskWorkspacePlugin({
+      settings: () => settings,
+      installLogin,
+      endLogin,
+      browserLogin,
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+    });
+    await askPlugin.register({host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain});
     handle('mote:permission-status', async () => ({
       appPath: bundlePath ?? app.getPath('exe'),
       canDrag: process.platform === 'darwin' && Boolean(bundlePath),
@@ -605,8 +605,8 @@ else {
       if (kind === 'calendar' && process.platform === 'darwin') {
         const generation = ++permissionSettingsGeneration;
         permissionGuide.close();
-        try { await localSources!.authorizeCalendar(); }
-        catch (error) { if (!(error instanceof CalendarPermissionError)) throw error; if (generation === permissionSettingsGeneration) await openPermissionSettings(kind); }
+        try { await sourcesPlugin!.authorizeCalendar(); }
+        catch (error) { if (!sourcesPlugin!.isCalendarPermissionError(error)) throw error; if (generation === permissionSettingsGeneration) await openPermissionSettings(kind); }
       } else await openPermissionSettings(kind);
     });
     handle('mote:permission-restart', () => { app.relaunch(); app.quit(); });
@@ -616,8 +616,6 @@ else {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
-    handle('mote:capture-context',channel=>localSources!.captureContext(channel as import('./source-manager').CaptureContextChannel));
-    handle('mote:capture-context-save',(channel,input)=>serialize(()=>localSources!.saveCaptureContext(channel as import('./source-manager').CaptureContextChannel,input)));
     handle('mote:export-queue', async () => {
       const selected = await dialog.showSaveDialog(window!, { title: moteText("导出已脱敏待上传队列（包含个人资料）"), defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };

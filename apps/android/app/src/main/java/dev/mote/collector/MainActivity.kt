@@ -310,11 +310,11 @@ class MainActivity : MoteActivity() {
         refreshStatus()
         if (savedInstanceState == null && intent.getStringExtra("page") == "OBSERVATIONS") pagesHost.post { showObservations() }
         if (savedInstanceState == null) takeCaptureAction(intent)
-        MoteSystemEntries.refresh(applicationContext)
+        dev.mote.collector.plugins.SystemEntriesPlugin.refresh(applicationContext)
     }
 
     private fun buildToday() {
-        val local = LocalStateRepository.get(this).state.value
+        val local = LocalStatusProducer.get(this).state.value
         homeHasRecords = (local.active?.records ?: 0) > 0 || (local.sourcePending ?: 0) > 0
         firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
         page(Page.OVERVIEW, null)
@@ -393,7 +393,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun buildManagement() {
-        val local = LocalStateRepository.get(this).state.value
+        val local = LocalStatusProducer.get(this).state.value
         page(Page.MANAGE, null)
         content.setPadding(dp(20), dp(23), dp(20), dp(28))
         fun caption(label: String) { text(label, NativeFontRole.META, NativeColorRole.MUTED).apply { NativePresentationStyles.bind(this, "menu-caption") { (it as TextView).textSize = 11f } } }
@@ -504,7 +504,7 @@ class MainActivity : MoteActivity() {
                     }
                 }
             }
-            val captures = HomeLocalCaptures.collect(homeRecordsCache, LocalStateRepository.get(applicationContext).state.value.revision.records,
+            val captures = HomeLocalCaptures.collect(homeRecordsCache, LocalStatusProducer.get(applicationContext).state.value.revision.records,
                 applicationContext.recordDraftStore().draft(),
                 NativeRecordReceipt.recordId?.let { id -> QueueStorage(applicationContext).committedCapture(id)?.let { applicationContext.withNativeNotePreview(it) } },
                 pendingRecovery = { QueueStorage(applicationContext).stageRecoveryPending() }) {
@@ -1097,7 +1097,7 @@ class MainActivity : MoteActivity() {
         localContentOcr = sourceCheck("使用本机 OCR 补充结构化内容", config.localContentOcr)
         localContentOcr.setOnCheckedChangeListener { _, _ -> updateSaveBar(); renderAppRules() }
         uiPageRules.addTextChangedListener(rulesWatcher)
-        appCaptureEditor = AppCaptureEditor(this,
+        appCaptureEditor = dev.mote.collector.plugins.SystemEntriesPlugin.appCaptureEditor(this,
             snapshot = { runCatching { AppCapturePresentation.Snapshot(currentAppRules(), PrivacyRules.exclusions(excludes.text.toString()), uiPageRules.text.toString(),
                 loadedConfig.mode == "projection", localContentOcr.isChecked) }.getOrNull() },
             change = { id, mode ->
@@ -1675,7 +1675,7 @@ class MainActivity : MoteActivity() {
     }
     private fun readStatus(): StatusSnapshot {
         val c = runCatching { settings.read() }.getOrNull()
-        val local = LocalStateRepository.get(this).state.value
+        val local = LocalStatusProducer.get(this).state.value
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val screenLive = c?.screenCollectionEnabled == true && (if (c.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
         val systemLive = c?.observesSystem() == true && MediaCollectionService.connected

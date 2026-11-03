@@ -307,7 +307,7 @@ class LibraryRecordsRefreshInstrumentedTest {
         // an unprobed third-page local would legitimately change UNKNOWN to
         // UNAVAILABLE when the first append supplies its missing match.
         api.post("/api/captures", note(locals[50], device, base.minusSeconds(50), "Generated library record 50"))
-        val repository = LocalStateRepository.get(context); repository.refresh()
+        val repository = LocalStatusProducer.get(context); repository.refresh()
         waitFor("paired generated inventory before opening the library") { repository.state.value.let { it.error == null && it.active?.records == 65 } }
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
@@ -636,7 +636,7 @@ class LibraryRecordsRefreshInstrumentedTest {
             val remotes = (0 until 70).map { index -> UUID.randomUUID().toString().also {
                 api.post("/api/captures", note(it, "generated-frontier-remote", base.minusSeconds(index.toLong()), "Generated frontier R${index + 1}"))
             } }
-            val repository = LocalStateRepository.get(context); repository.refresh()
+            val repository = LocalStatusProducer.get(context); repository.refresh()
             waitFor("the frontier fixture has exactly twenty local originals") { repository.state.value.let { it.error == null && it.active?.records == 20 } }
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity ->

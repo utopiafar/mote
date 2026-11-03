@@ -82,7 +82,7 @@ class ProjectionService : Service() {
                     state.execute { try {
                         if (!closed && !ending && ticket == generation && config == c && !ConnectionGuard.changing()) {
                             UploadWorker.heartbeat(this@ProjectionService, c)
-                            Notifications.show(this@ProjectionService, LocalStateRepository.get(this@ProjectionService).state.value.captureLabel)
+                            systemEntries().show(LocalStatusProducer.get(this@ProjectionService).state.value.captureLabel)
                         }
                     } finally { statusPending = false } }
                 }
@@ -128,7 +128,7 @@ class ProjectionService : Service() {
             val ticket = ++generation
             // Meet the foreground-service deadline before a settings writer can delay validation.
             // No display or Surface exists until the background validation succeeds.
-            startForeground(Notifications.ID, Notifications.notification(this, MoteI18n.text("投屏采集已启动，可随时停止")), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            startForeground(Notifications.ID, systemEntries().notification(MoteI18n.text("投屏采集已启动，可随时停止")), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
             state.execute {
                 val prepared = runCatching {
                     val opened = Settings(this)
@@ -307,7 +307,7 @@ class ProjectionService : Service() {
                     val opened = Settings(this)
                     if (instanceGeneration != instances.get()) return@runCatching
                     if (!preserveEnabledOnStop) opened.enabled = false
-                    Notifications.clear(this)
+                    systemEntries().clear()
                     UploadWorker.schedule(this, opened.read())
                 }
             }

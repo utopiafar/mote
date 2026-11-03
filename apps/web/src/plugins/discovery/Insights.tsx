@@ -1,19 +1,19 @@
 import {InsightAutomaticSettings} from './InsightAutomaticSettings';
-import { useResource } from './useResource';
-import { useOperationUpdates } from './useOperationUpdates';
-import { readResource, resources } from './resource-cache';
-import { failureMessage } from './failure-message';
+import { useResource } from '../../useResource';
+import { useOperationUpdates } from '../../useOperationUpdates';
+import { readResource, resources } from '../../resource-cache';
+import { failureMessage } from '../../failure-message';
 import { moteText } from '@mote/shared/i18n';
-import { ModelSelector } from './ModelSelector';
+import { ModelSelector } from '../../ModelSelector';
 import { useEffect, useRef, useState } from 'react';
 import { InsightProgress, type InsightRun } from './InsightProgress';
 import { ArrowLeft, ArrowRight, LoaderCircle, Plus, Sparkles } from 'lucide-react';
-import { ApiError, type Answer, type Api, type Range, dateTime, errorMessage } from './api';
+import { ApiError, type Answer, type Api, type Range, dateTime, errorMessage } from '../../api';
 import {useInsightHistory} from './useInsightHistory';
 import { InsightReport } from './InsightReport';
-import { answerPreview } from './AnswerMarkdown';
-import { useHashChoice } from './useHashChoice';
-import {rememberOriginalReturn,originalReferenceRoute} from './ask-original-reference';
+import { answerPreview } from '../../AnswerMarkdown';
+import { useHashChoice } from '../../useHashChoice';
+import {rememberOriginalReturn,originalReferenceRoute} from '../../ask-original-reference';
 type DiscoveryDraft={prompt:string;allTime:boolean;modelProfileId:string};
 const drafts=new WeakMap<Api,DiscoveryDraft>();
 const pendingAdmissions=new WeakMap<Api,{id:string;body:string}>();
@@ -63,6 +63,14 @@ export function Insights({ api, range, configured, onOpen, onSettings, onChanged
     const visibleItems=denied?[]:items;
     useEffect(()=>{if(report.error instanceof ApiError&&[401,403,404,410].includes(report.error.status))history.refresh();},[api,report.error]);
     const [cancelling, setCancelling] = useState(false), cancelRequest = useRef<AbortController | null>(null);
+    const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden);
+    useEffect(() => {
+        if (typeof document === 'undefined')
+            return;
+        const change = () => setVisible(!document.hidden);
+        document.addEventListener('visibilitychange', change);
+        return () => document.removeEventListener('visibilitychange', change);
+    }, []);
     const [run, setRun] = useState<InsightRun | null>(null), [pollError, setPollError] = useState(''), [reconnect, setReconnect] = useState(0), [now, setNow] = useState(Date.now());
     const busy = launching || run?.status === 'running', launchGuard = useRef(false), pendingRequest = useRef<{
         id: string;
@@ -88,7 +96,7 @@ export function Insights({ api, range, configured, onOpen, onSettings, onChanged
     useEffect(() => { if (!busy)
         return; const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, [busy]);
     useEffect(() => {
-        if (!run || run.status === 'completed' && completedRuns.current.has(run.id))
+        if (!run || !visible || run.status === 'completed' && completedRuns.current.has(run.id))
             return;
         const controller = new AbortController();
         let timer: ReturnType<typeof setTimeout>;
@@ -124,7 +132,7 @@ export function Insights({ api, range, configured, onOpen, onSettings, onChanged
         };
         void poll();
         return () => { controller.abort(); clearTimeout(timer); };
-    }, [api, run?.id, run?.status, reconnect]);
+    }, [api, run?.id, run?.status, reconnect, visible]);
     async function cancel() {
         if (!run || run.status !== 'running' || cancelRequest.current)
             return;

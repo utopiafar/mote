@@ -1,17 +1,20 @@
-import React,{useSyncExternalStore} from 'react';
-import {featureRequirementsAvailable,type FeatureInventory} from '@mote/shared';
-import {useResource} from '../useResource';
+import React from 'react';
+import {featureRequirementsAvailable} from '@mote/shared';
 import type {Api} from '../api';
-import {webFeatures} from './registry';
+import type {Page} from '../navigation';
 import type {HomeEntry} from './types';
-type Props={api:Api;onPage:(page:string)=>void};
+import type {HomeSnapshot} from '../plugins/home/controller';
+type Props={api:Api;state:HomeSnapshot;onPage:(page:Page)=>void};
 class HomeBoundary extends React.Component<{children:React.ReactNode},{failed:boolean}>{
   state={failed:false};static getDerivedStateFromError(){return {failed:true};}
   render(){return this.state.failed?null:this.props.children;}
 }
-function HomeContent({entry,props}:{entry:HomeEntry;props:Props}){const remote=entry.requires?.filter(dep=>typeof dep==='string'||dep.host==='server')??[];const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);return !remote.length||featureRequirementsAvailable(remote,capabilities.data)?entry.render(props):null;}
-/** The home page is a host slot. Installed Cordis features own its contents. */
+function HomeContent({entry,props}:{entry:HomeEntry;props:Props}){
+ const remote=entry.requires?.filter(dep=>typeof dep==='string'||dep.host==='server')??[];
+ return !remote.length||featureRequirementsAvailable(remote,props.state.availability.inventory)?entry.render({api:props.api,onPage:props.onPage}):null;
+}
+/** The home page is a host slot. Installed plugins own its contents; the
+ * home controller owns the registry subscription and inventory read. */
 export function FeatureHome(props:Props){
-  useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
-  return <>{webFeatures.homes().map(entry=><HomeBoundary key={entry.id}><HomeContent entry={entry} props={props}/></HomeBoundary>)}</>;
+ return <>{props.state.homeEntries.map(entry=><HomeBoundary key={entry.id}><HomeContent entry={entry} props={props}/></HomeBoundary>)}</>;
 }

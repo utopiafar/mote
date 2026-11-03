@@ -1,8 +1,10 @@
 package dev.mote.collector
 
 import android.app.Application
+import dev.mote.collector.plugins.DurableTransportPlugin
 import dev.mote.collector.plugins.NativePluginHost
 import dev.mote.collector.plugins.NativePluginRegistry
+import dev.mote.collector.plugins.SystemEntriesPlugin
 import dev.mote.collector.plugins.registerBuiltinPlugins
 import java.util.concurrent.Executors
 
@@ -28,6 +30,10 @@ class MoteApplication : Application() {
             QueueStorage.recoveryFailure = error.message
             return
         }
+        val transport = try { DurableTransportPlugin.start(this, pluginHost) } catch (error: Exception) {
+            QueueStorage.recoveryFailure = error.message ?: MoteI18n.text("本机存储恢复失败")
+            return
+        }
         HttpJson.onUnauthorized = { url, token -> Settings(this).rejectCredential(url, token) }
         HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
         HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
@@ -40,11 +46,10 @@ class MoteApplication : Application() {
             override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
             override fun onActivityDestroyed(activity: android.app.Activity) = Unit
         })
-        Notifications.create(this)
+        SystemEntriesPlugin.start(this, pluginHost)
         // Remove jobs left by releases with the retired local visual model.
         androidx.work.WorkManager.getInstance(this).cancelUniqueWork("mote-nsfw-download")
         QueueStorage.recovering = true
-        LocalStateRepository.get(this)
         Executors.newSingleThreadExecutor().apply {
             execute {
                 SupportEvents.record(this@MoteApplication, EventStage.APP, EventCode.STARTED)
@@ -80,10 +85,10 @@ class MoteApplication : Application() {
                     // Launch noninteractive consumers after warming current metadata;
                     // they must not race to rebuild the same library under a longer lock.
                     val current = settings.read()
-                    UploadHistoryRecovery.restore(this@MoteApplication, local, settings)
+                    transport.restoreHistory(local, settings)
                     local.pruneUploaded()
                     RetentionWorker.schedule(this@MoteApplication)
-                    UploadWorker.schedule(this@MoteApplication, current)
+                    transport.scheduleUpload(current)
                     SourceWork.schedule(this@MoteApplication)
                 } catch (error: Exception) {
                     SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)

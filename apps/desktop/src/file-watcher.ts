@@ -27,10 +27,19 @@ export function fileWatchBackend(platform = process.platform): FileWatchBackend 
 export class FileWatcher {
   private readonly watchers = new Map<string, ActiveWatcher>();
   private readonly backend: FileWatchBackend;
+  /** Overlapping reconciliation runs must not both observe a missing entry
+   * and open a second native watcher for the same source. */
+  private targets: Promise<void> = Promise.resolve();
   constructor(private readonly listener: FileWatchListener, platform = process.platform) { this.backend = fileWatchBackend(platform); }
   get platformBackend(): FileWatchBackend { return this.backend; }
 
-  async setTargets(targets: readonly WatchTarget[]): Promise<void> {
+  setTargets(targets: readonly WatchTarget[]): Promise<void> {
+    const next = this.targets.then(() => this.applyTargets(targets));
+    this.targets = next.catch(() => undefined);
+    return next;
+  }
+
+  private async applyTargets(targets: readonly WatchTarget[]): Promise<void> {
     const desired = new Map(targets.map(target => [target.sourceId, target]));
     for (const sourceId of [...this.watchers.keys()]) if (!desired.has(sourceId)) this.closeSource(sourceId);
     for (const target of desired.values()) {
