@@ -185,11 +185,12 @@ test('an attachment-only note keeps its metadata card instead of attachment text
  assert.ok(blocks.includes('record-metadata'),'the attachment-only note keeps its metadata anchor');
  const attachment=blocks.findIndex(blockId=>blockId.startsWith('record-attachment:')&&blockId.split(':').length===3);
  assert.ok(attachment>=0,'processed attachment text is anchored on the note');
- // materialView is the automatic card selector for discovery/search lists.
- const view=(reader as unknown as {materialView(material:unknown,scope:unknown):{id:string;ocrText:string;provenance?:{uri?:string}}|undefined}).materialView(material,{});
- assert.ok(view,'the attachment-only note has a Material card');
- assert.equal(view!.provenance?.uri?.split('#')[1],'record-metadata','the note card shows its own metadata, not attachment text');
- assert.match(view!.ocrText,/"captureId"/);assert.doesNotMatch(view!.ocrText,/idempotent/);
+ // Public discovery pages visit formal Materials first (MCP browse/search and the context bundle use queryPage).
+ const page=reader.queryPage({limit:30},'browse') as {items:{id:string;ocrText:string;provenance?:{uri?:string}}[]};
+ const view=page.items.find(row=>row.provenance?.uri?.split('#')[0]===material.ref)!;
+ assert.ok(view,'the attachment-only note appears in public discovery');
+ assert.equal(view.provenance?.uri?.split('#')[1],'record-metadata','the note card shows its own metadata, not attachment text');
+ assert.match(view.ocrText,/"captureId"/);assert.doesNotMatch(view.ocrText,/idempotent/);
  const agent=reader.agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
  const expanded=await agent.evidence!({ids:[anchors[attachment]!]}) as {ocrText:string}[];
  assert.match(expanded[0]!.ocrText,/Generated participant described testing idempotent writes/,'attachment text stays explicitly addressable');
