@@ -6710,6 +6710,8 @@ export const english: Readonly<Record<string, string>> = {
   "客户端登录": "Client login",
   "允许「{0}」登录并使用所有中央功能。": "Allow “{0}” to sign in and use all central features.",
   "继续登录客户端": "Continue client login",
+  "拒绝这次登录": "Reject this login",
+  "已拒绝这次客户端登录。": "This client login was rejected.",
   "客户端已登录，可返回客户端继续。": "The client is signed in. Return to the client to continue.",
   "请升级中央节点后再登录。": "Upgrade the central node before signing in.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Login credentials are securely saved. All central features share this login.",
@@ -10116,5 +10118,9 @@ export const english: Readonly<Record<string, string>> = {
   "正在启动": "Starting",
   "没有正在运行的版本": "No version is running",
   "阻塞原因": "Blockers",
-  "需要重新构建（requires-build）": "Rebuild required (requires-build)"
+  "需要重新构建（requires-build）": "Rebuild required (requires-build)",
+  "快捷入口不可用": "Quick entries unavailable",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "The system entries plugin is stopped; quick entries and notification actions are unavailable.",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "The system entries plugin is not loaded; quick entries and notification actions are unavailable.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "The system entries plugin needs a rebuild; quick entries and notification actions are unavailable."
 };

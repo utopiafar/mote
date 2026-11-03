@@ -6709,6 +6709,8 @@
   "客户端登录": "Inicio de sesión del cliente",
   "允许「{0}」登录并使用所有中央功能。": "Permitir que «{0}» inicie sesión y use todas las funciones centrales.",
   "继续登录客户端": "Continuar inicio de sesión del cliente",
+  "拒绝这次登录": "Rechazar este inicio de sesión",
+  "已拒绝这次客户端登录。": "Se rechazó este inicio de sesión del cliente.",
   "客户端已登录，可返回客户端继续。": "El cliente ha iniciado sesión. Vuelve al cliente para continuar.",
   "请升级中央节点后再登录。": "Actualiza el nodo central antes de iniciar sesión.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Las credenciales de inicio de sesión se guardaron de forma segura. Todas las funciones centrales comparten este inicio de sesión.",
@@ -10115,5 +10117,9 @@
   "正在启动": "Iniciando",
   "没有正在运行的版本": "Ninguna versión está en ejecución",
   "阻塞原因": "Bloqueos",
-  "需要重新构建（requires-build）": "Se requiere recompilar (requires-build)"
+  "需要重新构建（requires-build）": "Se requiere recompilar (requires-build)",
+  "快捷入口不可用": "Accesos rápidos no disponibles",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "El complemento de accesos del sistema está detenido; los accesos rápidos y las acciones de notificación no están disponibles.",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "El complemento de accesos del sistema no está cargado; los accesos rápidos y las acciones de notificación no están disponibles.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "El complemento de accesos del sistema necesita recompilarse; los accesos rápidos y las acciones de notificación no están disponibles."
 }

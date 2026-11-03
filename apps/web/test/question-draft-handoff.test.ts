@@ -5,10 +5,10 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {ApiError,type Api} from '../src/api';
-import {Conversations} from '../src/Conversations';
+import {Conversations} from '../src/plugins/ask/Conversations';
 import {openQuestionDraft} from '../src/open-question-draft';
-import {unsentDrafts} from '../src/chat-drafts';
-import {queryRecovery} from '../src/query-recovery';
+import {unsentDrafts} from '../src/plugins/ask/chat-drafts';
+import {queryRecovery} from '../src/plugins/ask/query-recovery';
 import {modelView} from './fixtures/model-settings';
 
 configureLocale(()=> 'zh-CN');

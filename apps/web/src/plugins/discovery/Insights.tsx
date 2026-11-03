@@ -11,7 +11,7 @@ import { ArrowLeft, ArrowRight, LoaderCircle, Plus, Sparkles } from 'lucide-reac
 import { ApiError, type Answer, type Api, type Range, dateTime, errorMessage } from '../../api';
 import {useInsightHistory} from './useInsightHistory';
 import { InsightReport } from './InsightReport';
-import { answerPreview } from '../../AnswerMarkdown';
+import { answerPreview } from '../ask/AnswerMarkdown';
 import { useHashChoice } from '../../useHashChoice';
 import {rememberOriginalReturn,originalReferenceRoute} from '../../ask-original-reference';
 type DiscoveryDraft={prompt:string;allTime:boolean;modelProfileId:string};

@@ -6709,6 +6709,8 @@
   "客户端登录": "Connexion du client",
   "允许「{0}」登录并使用所有中央功能。": "Autoriser « {0} » à se connecter et à utiliser toutes les fonctions centrales.",
   "继续登录客户端": "Continuer la connexion du client",
+  "拒绝这次登录": "Refuser cette connexion",
+  "已拒绝这次客户端登录。": "Cette connexion client a été refusée.",
   "客户端已登录，可返回客户端继续。": "Le client est connecté. Retournez au client pour continuer.",
   "请升级中央节点后再登录。": "Mettez à niveau le nœud central avant de vous connecter.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Les identifiants de connexion sont enregistrés en toute sécurité. Toutes les fonctions centrales partagent cette connexion.",
@@ -10115,5 +10117,9 @@
   "正在启动": "Démarrage",
   "没有正在运行的版本": "Aucune version n’est en cours d’exécution",
   "阻塞原因": "Blocages",
-  "需要重新构建（requires-build）": "Reconstruction requise (requires-build)"
+  "需要重新构建（requires-build）": "Reconstruction requise (requires-build)",
+  "快捷入口不可用": "Entrées rapides indisponibles",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "Le plugin des entrées système est arrêté ; les entrées rapides et les actions de notification sont indisponibles.",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "Le plugin des entrées système n’est pas chargé ; les entrées rapides et les actions de notification sont indisponibles.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Le plugin des entrées système doit être reconstruit ; les entrées rapides et les actions de notification sont indisponibles."
 }

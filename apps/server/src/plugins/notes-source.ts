@@ -59,6 +59,7 @@ export function createNotesSource(dependencies:NotesSourceDependencies):NotesSou
     },
     delete(id:string){
       if(phase!=='active')throw unavailable();
+      if(noteDeletion.resolve(id).virtual)return {deleted:0};
       const record=evidence([id])[0];
       if(record&&record.source!=='note')throw new StoreError('Note not found',404);
       return deleteNote(id);

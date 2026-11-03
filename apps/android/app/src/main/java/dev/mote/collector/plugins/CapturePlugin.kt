@@ -18,6 +18,7 @@ import dev.mote.collector.Settings
 import dev.mote.collector.SystemEventCollector
 import dev.mote.collector.UploadWorker
 import dev.mote.collector.captureResume
+import dev.mote.collector.systemEntries
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -214,7 +215,7 @@ internal class CaptureControlsController(private val active: () -> Boolean) {
         RuntimeSettings.cancelProjectionConsentRequest()
         // Joining a stop under way still reports only after that stop and this status are saved.
         RuntimeSettings.stop(app) { result ->
-            Notifications.showEvents(app, null)
+            app.systemEntries().showEvents(null)
             if (result.isFailure) { finished(result); return@stop }
             worker.execute {
                 runCatching {

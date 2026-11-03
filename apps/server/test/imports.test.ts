@@ -157,6 +157,25 @@ test('manifest source paths and changed preview are rejected',async t=>{
  const other=new ImportStore(imports.store,imports.files,imports.sources,{prepare:async({workspace,inputPaths})=>{writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:inputPaths})+'\n');return {summary:'valid fixture'};}});
  cleanup.push(()=>other.stop());await other.retry(job.id);writeFileSync(join(directory,'imports',job.id,'prepared.jsonl'),'changed');assert.equal((await other.confirm(job.id)).status,'failed');assert.match(other.get(job.id).error!,/preview changed/);
 });
+test('escaping records paths and invalid manifests fail the preview without publishing originals',async t=>{
+ const outside=join(tmpdir(),'mote-generated-outside-'+randomUUID()+'.jsonl');
+ let invalidManifest=false;
+ const {imports,store,files}=fixture(t,{prepare:async({workspace,inputPaths})=>{
+   if(invalidManifest){writeFileSync(join(workspace,'records.jsonl'),'{"generated":\n');return {summary:'Generated invalid manifest'};}
+   writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:inputPaths})+'\n');
+   writeFileSync(outside,JSON.stringify({item:item(),evidencePaths:inputPaths})+'\n');
+   return {summary:'Generated escaping preview',recordsPath:outside};
+ }});
+ t.after(()=>rmSync(outside,{force:true}));
+ const job=await imports.create({files:[entry('fixture.txt','Synthetic original')]});
+ const escaping=await imports.prepare(job.id);
+ assert.equal(escaping.status,'failed');assert.match(escaping.error!,/inside the import workspace/);
+ assert.equal(store.list().items.length,0);assert.deepEqual(escaping.captureIds,[]);assert.equal(files.read(job.files[0].id).toString(),'Synthetic original');
+ imports.updateInstruction(job.id,'Generate an invalid records manifest');invalidManifest=true;
+ const invalid=await imports.prepare(job.id);
+ assert.equal(invalid.status,'failed');assert.match(invalid.error!,/Invalid JSON/);
+ assert.equal(store.list().items.length,0);assert.deepEqual(invalid.captureIds,[]);assert.equal(files.read(job.files[0].id).toString(),'Synthetic original');
+});
 test('retry after memory callback failure resumes archive without duplicate captures',async t=>{
  let attempts=0;const {imports,store}=fixture(t,{prepare:async({workspace,inputPaths})=>{writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:inputPaths})+'\n');return {summary:'one fixture'};},onImported:async ids=>{assert.equal(ids.length,1);if(++attempts===1)throw Error('synthetic temporary failure');return {memoryJobId:'recovered'};}});
  const job=await imports.create({files:[entry('fixture.txt','fixture')]});await imports.prepare(job.id);const failed=await imports.confirm(job.id);assert.equal(failed.status,'failed');assert.equal(failed.progress.imported,1);

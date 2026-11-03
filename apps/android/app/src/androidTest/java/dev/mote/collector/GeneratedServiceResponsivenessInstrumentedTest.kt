@@ -144,17 +144,17 @@ class GeneratedServiceResponsivenessInstrumentedTest {
         val settings = Settings(context); settings.save(settings.read().copy(diagnosticsEnabled = true))
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
         val pipeline = CapturePipeline(context) { }
-        Notifications.show(context, "Generated initial service status")
+        context.systemEntries().show("Generated initial service status")
         try {
             mainWhileSettingsLocked("notification-stop-pause") {
-                Notifications.show(context, "Generated changed service status")
+                context.systemEntries().show("Generated changed service status")
                 StopReceiver().onReceive(context, Intent(context, StopReceiver::class.java))
                 pipeline.pause("Generated pipeline pause")
             }
             waitUntil("accepted stop must persist after the settings writer releases") { !RuntimeSettings.stopping }
             assertFalse(settings.enabled); assertFalse(ConnectionGuard.reconfiguring())
             assertEquals(0, context.queue().depth())
-        } finally { pipeline.close(); Notifications.clear(context); Notifications.showEvents(context, null) }
+        } finally { pipeline.close(); context.systemEntries().clear(); context.systemEntries().showEvents(null) }
     }
 
     @Test fun heartbeatSnapshotWaitDoesNotOwnTheSchedulingMonitor() {

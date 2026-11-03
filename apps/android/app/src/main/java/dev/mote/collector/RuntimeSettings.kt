@@ -47,7 +47,7 @@ object RuntimeSettings {
             main.post {
                 if (ownsHold) ConnectionGuard.endReconfiguration()
                 app.stopService(android.content.Intent(app, ProjectionService::class.java))
-                Notifications.clear(app); Notifications.clearMedia(app)
+                app.systemEntries().clear(); app.systemEntries().clearMedia()
                 MediaCollection.clear(); MediaCollectionService.refresh()
                 stopping = false
                 val waiting = stopCallers.toList(); stopCallers.clear()

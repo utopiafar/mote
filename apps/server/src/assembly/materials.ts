@@ -2,10 +2,11 @@ import {randomUUID} from 'node:crypto';
 import type {AsyncLocalStorage} from 'node:async_hooks';
 import type {Context} from '@deepseek-ai/cordis';
 import type {QueryInput} from '@mote/agent';
+import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {Config} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
-import {sha256,type Store} from '../store.js';
+import type {Store} from '../store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {UsageLedger} from '../usage.js';
 import type {FileStore} from '../files.js';
@@ -14,16 +15,24 @@ import type {SourceStore} from '../sources.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
-import {modelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
-import {MaterialStore} from '../materials.js';
+import type {MaterialStore} from '../materials.js';
 import {MaterialMemoryWork} from '../material-memory-work.js';
-import {Indexer} from '../indexer.js';
 import {MaterialOrganizerRuntime} from '../material-organizers.js';
 import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
+import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
+import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
+import {createMaterialRetrievalIndex,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,materialRetrievalIndexReplacement} from '../plugins/material-retrieval-index.js';
+
+export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement},
+  {contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement},
+]);
 
 export interface MaterialInputDependencies {
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly store:Store;
+  readonly authorization:CommitAuthorization;
   readonly resources:ServerResources;
   readonly memoryRecipeSettings:MemoryRecipeSettings;
   /** New-input admission reads the live Memory binding: the trusted root
@@ -31,11 +40,19 @@ export interface MaterialInputDependencies {
   readonly newInputAdmission:()=>boolean;
 }
 
-/** MaterialStore and the Memory-work admission inputs the sources domain
- * consumes; close order still follows acquisition order at the root. */
-export function prepareMaterials(dependencies:MaterialInputDependencies){
-  const materials=new MaterialStore(dependencies.store);
-  dependencies.resources.defer(()=>materials.index?.close());
+/** Install the repository owner, then lend its actual store to the remaining
+ * trusted consumers through the host's leased port. */
+export async function prepareMaterials(dependencies:MaterialInputDependencies){
+  const platform=createMaterialRepository(dependencies.store,dependencies.authorization);
+  let bindings:MaterialRepositoryBindings|undefined;
+  const handle=await dependencies.bootstrap.host.install({
+    identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.material-repository',installationId:'build:material-repository@1.0.0',instanceId:'materials',activationId:randomUUID()},
+    contributions:[materialRepositoryDeclaration],factory:createMaterialRepositoryFactory(platform,value=>{bindings=value;}),
+  });
+  dependencies.resources.defer(()=>handle.close('shutdown'));
+  const lease=await dependencies.bootstrap.host.acquire(centralServices.materialRepository,bindings!.repository);
+  dependencies.resources.defer(()=>lease.release());
+  const materials=lease.value as MaterialStore;
   const materialMemoryWork=new MaterialMemoryWork(dependencies.store,materials,Date.now,()=>true,dependencies.memoryRecipeSettings,dependencies.newInputAdmission);
   return Object.freeze({materials,materialMemoryWork});
 }
@@ -62,23 +79,16 @@ export interface MaterialsAssemblyDependencies {
   readonly disableCatalogChanges:()=>void;
 }
 
-/** Indexer, material organizers and the shared evidence-context reader — the
- * materials read tail the sources domain feeds — plus their close hooks. */
+/** Retrieval index, material organizers and the shared evidence-context
+ * reader — the materials read tail the sources domain feeds — plus their close
+ * hooks. The retrieval-index domain plugin owns the Indexer, the bound
+ * material index runtime and the shared engine's embedding/index timer. */
 export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
   const {store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence}=dependencies;
-  const indexer=new Indexer(store,config,diagnostics,files,input=>{
-    const operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=config.embeddingModel;
-    const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
-    return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');}};
-  },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId,
-    assertModel:()=>modelAuthorization.assertCurrent(modelConnection('embedding:central',{model:config.embeddingModel,baseUrl:config.embeddingBaseUrl,apiKey:config.embeddingApiKey})),
-    authorize:(id,signal,task)=>{
-      const roots=modelAuthorizationHost.evidenceTriggers([id]);
-      const work='automatic-embedding:'+sha256(JSON.stringify(roots));
-      return modelAuthorizationHost.automatic(work,'embedding',roots,authorizedSignal=>{modelAuthorizationHost.assertEvidence([id]);return task(authorizedSignal);},signal);
-    },
-  });
-  resources.defer(()=>indexer.close());
+  const retrievalIndex=createMaterialRetrievalIndex({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,files,materials});
+  resources.defer(()=>retrievalIndex.close());
+  retrievalIndex.prepare();retrievalIndex.start();
+  const indexer=retrievalIndex.retrievalIndex;
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
   resources.defer(()=>materialOrganizer.close());
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);

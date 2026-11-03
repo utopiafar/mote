@@ -5,7 +5,7 @@ import type {OperationPage,OperationDetail,OperationState,OperationSummary} from
 import {type Api,errorMessage} from './api';
 import type {Page} from './navigation';
 import {useResource} from './useResource';
-import {operationFeed} from './operation-feed';
+import {operationFeed} from './plugins/work/operation-feed';
 import {ListPagination,useCursorPages} from './ListPagination';
 import {containDialogFocus} from './dialog-focus';
 import {WorkflowProcessing} from './WorkflowProcessing';

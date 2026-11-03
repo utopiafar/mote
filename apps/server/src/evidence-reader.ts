@@ -72,7 +72,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   private readonly retainedSnapshots=new Set<MemoryReadSnapshot>();
   private readonly archivedFiles:ArchivedFileStore;
   private lifecycleDisposed=false;
-  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean,private readonly sourceContexts:SourceContextStore=new SourceContextStore(store)){
+  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Pick<Indexer,'search'>,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean,private readonly sourceContexts:SourceContextStore=new SourceContextStore(store)){
     this.archivedFiles=new ArchivedFileStore(store);
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must

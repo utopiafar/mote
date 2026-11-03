@@ -5,6 +5,7 @@ import dev.mote.collector.plugins.CapturePlugin
 import dev.mote.collector.plugins.DurableTransportPlugin
 import dev.mote.collector.plugins.NativePluginHost
 import dev.mote.collector.plugins.NativePluginRegistry
+import dev.mote.collector.plugins.SystemEntriesPlugin
 import dev.mote.collector.plugins.registerBuiltinPlugins
 import java.util.concurrent.Executors
 
@@ -47,7 +48,7 @@ class MoteApplication : Application() {
             override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
             override fun onActivityDestroyed(activity: android.app.Activity) = Unit
         })
-        Notifications.create(this)
+        SystemEntriesPlugin.start(this, pluginHost)
         // Remove jobs left by releases with the retired local visual model.
         androidx.work.WorkManager.getInstance(this).cancelUniqueWork("mote-nsfw-download")
         QueueStorage.recovering = true

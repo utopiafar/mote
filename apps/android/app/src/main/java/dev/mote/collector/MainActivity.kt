@@ -310,7 +310,7 @@ class MainActivity : MoteActivity() {
         refreshStatus()
         if (savedInstanceState == null && intent.getStringExtra("page") == "OBSERVATIONS") pagesHost.post { showObservations() }
         if (savedInstanceState == null) takeCaptureAction(intent)
-        MoteSystemEntries.refresh(applicationContext)
+        dev.mote.collector.plugins.SystemEntriesPlugin.refresh(applicationContext)
     }
 
     private fun buildToday() {
@@ -1097,7 +1097,7 @@ class MainActivity : MoteActivity() {
         localContentOcr = sourceCheck("使用本机 OCR 补充结构化内容", config.localContentOcr)
         localContentOcr.setOnCheckedChangeListener { _, _ -> updateSaveBar(); renderAppRules() }
         uiPageRules.addTextChangedListener(rulesWatcher)
-        appCaptureEditor = AppCaptureEditor(this,
+        appCaptureEditor = dev.mote.collector.plugins.SystemEntriesPlugin.appCaptureEditor(this,
             snapshot = { runCatching { AppCapturePresentation.Snapshot(currentAppRules(), PrivacyRules.exclusions(excludes.text.toString()), uiPageRules.text.toString(),
                 loadedConfig.mode == "projection", localContentOcr.isChecked) }.getOrNull() },
             change = { id, mode ->

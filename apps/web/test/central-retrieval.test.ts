@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {GlobalRetrieval,SearchWorkspace} from '../src/plugins/search';
-import {MemoryTopics} from '../src/MemoryTopics';
+import {MemoryTopics} from '../src/plugins/memory/index';
 import type {Api} from '../src/api';
 import {modelView} from './fixtures/model-settings';
 configureLocale(()=> 'zh-CN');
@@ -46,7 +46,7 @@ test('plugin topic dimensions use supplied exact IDs without replacing or guessi
 
 test('saving a conversation requires editor confirmation and keeps quoted model output separate from the owner comment',async t=>{
  const {root,d}=await fixture(t),writes:any[]=[];
- const {SaveConversationRecord}=await import('../src/SaveConversationRecord');
+ const {SaveConversationRecord}=await import('../src/plugins/ask/SaveConversationRecord');
  const api={request:async(path:string,init:RequestInit)=>{writes.push({path,body:JSON.parse(String(init.body))});return {id:writes.at(-1).body.id};}} as unknown as Api;
  await act(async()=>root.render(React.createElement(SaveConversationRecord,{api,conversationId:'generated-conversation',messageId:'generated-message',question:'Generated question',answer:'Generated untrusted model output',onOpen:()=>{}})));
  assert.equal(writes.length,0);await act(async()=>d.querySelector<HTMLButtonElement>('button')!.click());assert.equal(writes.length,0);assert.match(d.querySelector('details')!.textContent!,/Generated untrusted model output/);
@@ -62,7 +62,7 @@ test('shared content remains attributed as a quote and safely rendered',async()=
 
 test('clearing Ask scope changes only the next submitted turn and history navigation resets the pending override',async t=>{
  const {root,d,w}=await fixture(t);w.HTMLElement.prototype.scrollIntoView=()=>{};
- const {Conversations}=await import('../src/Conversations');const {modelView}=await import('./fixtures/model-settings');
+ const {Conversations}=await import('../src/plugins/ask/Conversations');const {modelView}=await import('./fixtures/model-settings');
  const id='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',evidence='33333333-3333-4333-8333-333333333333',when='2026-10-01T00:00:00Z';
  const summary=(value:string)=>({id:value,title:value===id?'Generated scoped conversation':'Generated other conversation',createdAt:when,updatedAt:when,turnCount:0,scope:value===id?{evidenceIds:[evidence]}:{},status:'completed'});
  const scopedRecord={...summary(id),revision:1,turns:[],nextCursor:null},otherRecord={...summary(other),revision:1,turns:[],nextCursor:null};
@@ -103,7 +103,7 @@ test('search keeps independent real material and Memory cursors and literal filt
 });
 
 test('preparing a Home or search question preserves an existing unsent question and attachments when switching is cancelled',async t=>{
- const {w}=await fixture(t),{openQuestionDraft}=await import('../src/open-question-draft'),{unsentDrafts}=await import('../src/chat-drafts');
+ const {w}=await fixture(t),{openQuestionDraft}=await import('../src/open-question-draft'),{unsentDrafts}=await import('../src/plugins/ask/chat-drafts');
  const api={} as Api,attachment={id:'11111111-1111-4111-8111-111111111111',name:'Generated attachment',mimeType:'image/png'},draft={question:'Generated later question',attachments:[attachment]};unsentDrafts.set(api,draft);let prompts=0;w.confirm=()=>{prompts++;return false;};const hash=w.location.hash;
  openQuestionDraft(api,'Generated search question');assert.equal(w.location.hash,hash);assert.equal(unsentDrafts.get(api),draft);assert.deepEqual(unsentDrafts.get(api)?.attachments,[attachment]);assert.equal(prompts,1);
  w.confirm=()=>true;openQuestionDraft(api,'Generated search question');assert.equal(new URLSearchParams(w.location.hash.split('?')[1]).get('questionDraft'),'Generated search question');assert.equal(unsentDrafts.get(api),draft,'preparing navigation never edits or submits the existing composer');
