@@ -83,10 +83,10 @@ internal class SystemEventCollector(private val context: Context, private val wo
 
     fun refresh() {
         val c = settings.read()
-        if (!allowed(c)) { seen.clear(); lastState = null; Notifications.showEvents(context, null); return }
+        if (!allowed(c)) { seen.clear(); lastState = null; context.systemEntries().showEvents(null); return }
         if (!c.notificationCollectionEnabled) seen.clear()
         state("state_observed")
-        Notifications.showEvents(context, listOfNotNull(
+        context.systemEntries().showEvents(listOfNotNull(
             if (c.notificationCollectionEnabled) MoteI18n.text("通知事件已启用") else null,
             if (c.deviceEventCollectionEnabled) MoteI18n.text("亮屏与锁定事件已启用") else null
         ).takeIf { it.isNotEmpty() }?.joinToString(" · "))

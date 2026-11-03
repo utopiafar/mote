@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import type {MediaMetadata,MediaSession} from '@mote/shared';
-import {MediaActivityContent,MediaSnapshot} from '../src/Media';
+import {MediaActivityContent,MediaSnapshot} from '../src/plugins/library/Media';
 import {mediaStatus,mediaCardText,mediaDuration} from '../src/media-presentation';
 import {dateTime,type MediaActivity} from '../src/api';
 

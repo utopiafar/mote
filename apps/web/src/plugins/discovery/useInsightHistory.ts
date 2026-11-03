@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
-import {ApiError,INSIGHT_HISTORY_PATH,type Api,type Answer,type InsightPage} from './api';
-import {useResource} from './useResource';
-import {resources} from './resource-cache';
+import {ApiError,INSIGHT_HISTORY_PATH,type Api,type Answer,type InsightPage} from '../../api';
+import {useResource} from '../../useResource';
+import {resources} from '../../resource-cache';
 
 /** Extra pages belong to the exact first-page boundary and authenticated API.
  * A changed boundary or invalid cursor discards them before they can be reused. */

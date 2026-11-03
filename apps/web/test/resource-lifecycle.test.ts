@@ -6,7 +6,7 @@ import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {useResource} from '../src/useResource.js';
-import {RecordTimeline} from '../src/Archive.js';
+import {RecordTimeline} from '../src/plugins/library/Archive.js';
 import {ApiError,type Api} from '../src/api.js';
 
 configureLocale(()=> 'zh-CN');
