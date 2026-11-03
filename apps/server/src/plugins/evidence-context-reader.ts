@@ -37,7 +37,7 @@ export interface EvidenceContextReaderDependencies {
   readonly store:Store;
   readonly sources:SourceStore;
   readonly files?:FileStore;
-  readonly indexer?:Indexer;
+  readonly indexer?:Pick<Indexer,'search'>;
   readonly fileEvidence?:FileEvidence;
   readonly materials?:MaterialStore;
   readonly sourcePipelines?:SourcePipelineRuntime;

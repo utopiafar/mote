@@ -2,7 +2,7 @@ import {formatEvidenceRef} from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useId,useRef,useState,useSyncExternalStore} from 'react';
 import {Ellipsis} from 'lucide-react';
-import {AnswerMarkdown} from '../../AnswerMarkdown';
+import {AnswerMarkdown} from '../ask/AnswerMarkdown';
 import {type Answer,dateTime} from '../../api';
 import {webAppearance} from '../../appearance';
 import {createPortal} from 'react-dom';

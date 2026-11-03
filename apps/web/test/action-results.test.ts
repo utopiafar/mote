@@ -10,7 +10,7 @@ configureLocale(()=> 'zh-CN');
 const dom=new JSDOM('<html><body></body></html>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
 const {createRoot}=await import('react-dom/client');
-const {ActionResults}=await import('../src/ActionResults.js');
+const {ActionResults}=await import('../src/plugins/work/ActionResults.js');
 const evidence='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',otherEvidence='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const pathFor=(id=evidence)=>'/api/actions/by-evidence/'+encodeURIComponent(id);
 type Row=Pick<ActionProposal,'id'|'status'|'managed'|'resolution'|'kind'>&{title:string};

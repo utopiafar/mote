@@ -26,7 +26,7 @@ export {contextToolDefinitions} from './tool-contributions.js';
 export {ToolRegistry} from './tools/registry.js';
 export {defineToolDescriptor,type ToolDescriptor} from './tools/descriptor.js';
 export {TaskRegistry} from './tasks/registry.js';
-export {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,TaskContractError,defineTaskDescriptor,defineSkillDescriptor,type TaskDescriptor,type SkillDescriptor,type TaskPack,type TaskSelection} from './tasks/descriptor.js';
+export {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,TaskContractError,defineTaskDescriptor,defineSkillDescriptor,type TaskDescriptor,type SkillDescriptor,type TaskPack,type TaskSelection,type SkillAvailability} from './tasks/descriptor.js';
 export {prepareTaskContext} from './tasks/context-assembly.js';
 export {createOfficialReadPacks,type ReadPackRegistration,type DerivedNavigationInputs} from './tools/official-read-packs.js';
 export {buildContextEnvelope, taskTools} from './task-context.js';
@@ -61,7 +61,7 @@ export function createAgent(original: AgentOptions): {
   const options = {...original, headers: original.headers && {...original.headers}, extraBody: original.extraBody && structuredClone(original.extraBody)};
   const {reader, runModel, contextToolMode, codex: _codex, ...adapter} = options;
   const configured = dshModelConfigured(adapter);
-  const skills = Object.freeze(bundledSkills.filter(skill => skill.id !== 'document-import').map(skill => Object.freeze({...skill})));
+  const skills = Object.freeze(bundledSkills.filter(skill => skill.availability !== 'import').map(skill => Object.freeze({...skill})));
   const skillTool = Object.freeze({name: 'skill', version: SKILL_VERSION, fingerprint: hash(skills),
     description: 'Load the full instructions for a Host-granted bundled skill. Available skills:\n' + skills.map(skill => `${skill.name}: ${skill.description}`).join('\n'),
     inputSchema: {type: 'object', properties: {name: {type: 'string', enum: skills.map(skill => skill.name)}}, required: ['name'], additionalProperties: false},
