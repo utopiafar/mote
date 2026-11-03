@@ -13,7 +13,7 @@ import {codexImageMetadata,type ImagePayload} from './tools/image-result.js';
 import {CodexSession,ImageAcknowledgementRejected,type CodexTool} from './codex-session.js';
 import {bundledSkills} from './skills.js';
 import {displayTime} from './time.js';
-import {AgentInputError,AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
+import {AgentInputError,AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,type AgentOptions,type QueryInput,type QueryRunLease,type AgentAnswer} from './types.js';
 
 const toolsFor=(input:QueryInput,snapshot=contextToolSnapshot(input)):CodexTool[]=>{
   const pins=new Map(snapshot.entries.map(entry=>[entry.name,entry]));
@@ -136,5 +136,5 @@ export function createCodexAgent(options:AgentOptions){
       try{releasePinnedTools();}catch(error){if(!primaryFailure)throw error;}
     }
   }
-  return {configured:Boolean(options.model?.trim()),query(input:QueryInput){const task=execute(input);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};
+  return {configured:Boolean(options.model?.trim()),query(input:QueryInput,lease?:QueryRunLease){lease?.onFinalizer?.('legacy');const task=execute(input);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};
 }
