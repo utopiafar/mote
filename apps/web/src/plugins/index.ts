@@ -18,6 +18,7 @@ import { actions } from './actions';
 import { models } from './models';
 import { coding } from './coding';
 import { materials } from './materials';
+import { reader } from './reader';
 import { connections } from './connections';
 import { diagnostics } from './diagnostics';
 import { capture } from './capture';
@@ -52,6 +53,7 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   models,
   coding,
   materials,
+  reader,
   connections,
   diagnostics,
   capture,

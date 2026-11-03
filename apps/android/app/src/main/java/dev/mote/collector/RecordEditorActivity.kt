@@ -15,10 +15,11 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.plugins.NotesEditor
+import dev.mote.collector.plugins.NotesPlugin
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.time.Instant
 import java.util.UUID
 
 /** One explicit Save boundary for all manual and shared records. */
@@ -38,7 +39,8 @@ open class RecordEditorActivity : MoteActivity() {
     private var originPresentation: JSONObject? = null
     private var ready = false
     private var originExpanded = true
-    private val io = QuickNotes.io
+    private lateinit var notes: NotesEditor
+    private val io get() = notes.io
     private lateinit var task: UiTask
     private lateinit var attachmentTask: UiTask
     private var recorder: MediaRecorder? = null
@@ -46,9 +48,9 @@ open class RecordEditorActivity : MoteActivity() {
     private var player: MediaPlayer? = null
     private var cameraPath: String? = null
     private var cameraResultReady = false
-    private val store get() = applicationContext.recordDraftStore()
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        notes = NotesPlugin.owner(applicationContext).view()
         cameraPath = state?.getString("cameraPath"); cameraResultReady = state?.getBoolean("cameraResultReady") ?: false
         originExpanded = state?.getBoolean("originExpanded",true) ?: true
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -112,7 +114,7 @@ open class RecordEditorActivity : MoteActivity() {
             override fun afterTextChanged(s: Editable?) { if (ready) persist() }
         })
         enabled(false)
-        task.start("", {}, { store.draft() }) { outcome -> outcome.onSuccess { draft ->
+        task.start("", {}, { notes.draft() }) { outcome -> outcome.onSuccess { draft ->
             attachments = draft.getJSONArray("attachments"); origin = draft.getJSONObject("origin"); originPresentation = draft.optJSONObject("originPresentation"); field.setText(draft.getString("text")); description.setText(draft.optString("description")); ready = true; enabled(!attachmentTask.busy); renderAttachments()
             if (state == null) importIntent(intent)
             if (cameraResultReady) stageCamera() else if (state == null) recoverPendingMedia()
@@ -135,7 +137,7 @@ open class RecordEditorActivity : MoteActivity() {
         val text = field.text.toString(); val files = JSONArray(attachments.toString()); val source = JSONObject(origin.toString()); val noteDescription = description.text.toString(); val presentation = originPresentation?.let { JSONObject(it.toString()) }
         save.isEnabled = canSubmit() && !task.busy && !attachmentTask.busy
         renderDraftState()
-        io.execute { runCatching { store.edit(text, files, source, noteDescription, presentation) }.onFailure { error -> runOnUiThread { status.text = error.message } } }
+        io.execute { runCatching { notes.edit(text, files, source, noteDescription, presentation) }.onFailure { error -> runOnUiThread { status.text = error.message } } }
     }
     private fun pick(mime: String, request: Int) {
         @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true), request)
@@ -145,7 +147,7 @@ open class RecordEditorActivity : MoteActivity() {
             val directory = File(filesDir, "record-pending").apply { mkdirs() }
             val file = File.createTempFile("photo-", ".jpg", directory); cameraPath = file.absolutePath
             val descriptor = mediaDescriptor(file, "image/jpeg")
-            task.start("", {}, { store.holdMedia(descriptor) }) { outcome -> outcome.onSuccess {
+            task.start("", {}, { notes.holdMedia(descriptor) }) { outcome -> outcome.onSuccess {
                 val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.record-files", file)
                 @Suppress("DEPRECATION") startActivityForResult(Intent(MediaStore.ACTION_IMAGE_CAPTURE).putExtra(MediaStore.EXTRA_OUTPUT, uri).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION), 13)
             }.onFailure { file.delete(); status.text = it.message } }
@@ -159,7 +161,7 @@ open class RecordEditorActivity : MoteActivity() {
     }
     @Suppress("DEPRECATION") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK) { if (requestCode == 13) { cameraPath?.let { path -> File(path).delete(); io.execute { store.finishMedia(mediaDescriptor(File(path), "image/jpeg").getString("id")) } }; cameraPath = null }; return }
+        if (resultCode != RESULT_OK) { if (requestCode == 13) { cameraPath?.let { path -> File(path).delete(); io.execute { notes.finishMedia(mediaDescriptor(File(path), "image/jpeg").getString("id")) } }; cameraPath = null }; return }
         if (requestCode == 13) {
             cameraResultReady = true; stageCamera()
         } else if (requestCode == 11 || requestCode == 12) {
@@ -173,12 +175,12 @@ open class RecordEditorActivity : MoteActivity() {
         val file = File(item.getString("path"))
         require(file.canonicalFile.parentFile == File(filesDir, "record-pending").canonicalFile)
         stage({ file.inputStream().use(::readBounded) }, item.getString("name"), item.getString("mime"), attachmentId = item.getString("id"), onStored = {
-            file.delete(); store.finishMedia(item.getString("id"))
+            file.delete(); notes.finishMedia(item.getString("id"))
             runOnUiThread { if (cameraPath == file.absolutePath) { cameraPath = null; cameraResultReady = false } }
         })
     }
     private fun recoverPendingMedia() {
-        val pending = store.pendingMedia()
+        val pending = notes.pendingMedia()
         if (!attachmentTask.busy && pending.length() > 0) {
             val first = pending.getJSONObject(0)
             if (File(first.getString("path")).length() > 0) stagePending(first)
@@ -188,14 +190,14 @@ open class RecordEditorActivity : MoteActivity() {
         if (uris.isEmpty()) return
         enabled(false)
         attachmentTask.start("", {}, {
-            require(uris.size <= 10 - store.draft().getJSONArray("attachments").length())
+            require(uris.size <= 10 - notes.draft().getJSONArray("attachments").length())
             val added = uris.map { uri ->
                 require(uri.scheme == "content")
                 var name = "attachment"; contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) name = it.getString(0) ?: name }
                 val bytes = contentResolver.openInputStream(uri)!!.use { input -> readBounded(input) }
-                store.stage(bytes, name, contentResolver.getType(uri) ?: "application/octet-stream")
+                notes.stage(bytes, name, contentResolver.getType(uri) ?: "application/octet-stream")
             }
-            val draft = store.draft(); val files = draft.getJSONArray("attachments"); require(files.length() + added.size <= 10); added.forEach { files.put(it) }; store.edit(draft.getString("text"), files, draft.getJSONObject("origin"), draft.optString("description"), draft.optJSONObject("originPresentation")); files
+            val draft = notes.draft(); val files = draft.getJSONArray("attachments"); require(files.length() + added.size <= 10); added.forEach { files.put(it) }; notes.edit(draft.getString("text"), files, draft.getJSONObject("origin"), draft.optString("description"), draft.optJSONObject("originPresentation")); files
         }) { result -> enabled(true); result.onSuccess { items -> attachments = items; renderAttachments() }.onFailure { status.text = it.message } }
     }
     private fun readBounded(input: java.io.InputStream): ByteArray {
@@ -203,7 +205,7 @@ open class RecordEditorActivity : MoteActivity() {
         while (true) { val n = input.read(buffer); if (n < 0) break; require(out.size() + n <= CentralAttachments.MAX_BYTES); out.write(buffer, 0, n) }; return out.toByteArray()
     }
     private fun stage(bytes: () -> ByteArray, name: String, mime: String, attachmentId: String? = null, onStored: () -> Unit = {}): Boolean {
-        enabled(false); return attachmentTask.start("", {}, { val added = store.stage(bytes(), name, mime, attachmentId); val draft = store.draft(); val files = draft.getJSONArray("attachments"); if ((0 until files.length()).none { files.getJSONObject(it).getString("id") == added.getString("id") }) { require(files.length() < 10); files.put(added) }; store.edit(draft.getString("text"), files, draft.getJSONObject("origin"), draft.optString("description"), draft.optJSONObject("originPresentation")); onStored(); files }) { result -> enabled(true); result.onSuccess { attachments = it; renderAttachments(); recoverPendingMedia() }.onFailure { status.text = it.message; renderAttachments() } }
+        enabled(false); return attachmentTask.start("", {}, { val added = notes.stage(bytes(), name, mime, attachmentId); val draft = notes.draft(); val files = draft.getJSONArray("attachments"); if ((0 until files.length()).none { files.getJSONObject(it).getString("id") == added.getString("id") }) { require(files.length() < 10); files.put(added) }; notes.edit(draft.getString("text"), files, draft.getJSONObject("origin"), draft.optString("description"), draft.optJSONObject("originPresentation")); onStored(); files }) { result -> enabled(true); result.onSuccess { attachments = it; renderAttachments(); recoverPendingMedia() }.onFailure { status.text = it.message; renderAttachments() } }
     }
     private fun renderAttachments() {
         save.isEnabled = ready && canSubmit() && !task.busy && !attachmentTask.busy
@@ -226,11 +228,11 @@ open class RecordEditorActivity : MoteActivity() {
             originView.addView(quote)
             originView.addView(separation)
         }
-        val pending = store.pendingMedia()
+        val pending = notes.pendingMedia()
         for (index in 0 until pending.length()) {
             val item = pending.getJSONObject(index)
             attachmentsView.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("重试附件") + " · " + item.getString("name"); setOnClickListener { if (!attachmentTask.busy) stagePending(item) } }))
-            attachmentsView.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("移除附件"); setOnClickListener { File(item.getString("path")).delete(); io.execute { store.finishMedia(item.getString("id")); runOnUiThread { renderAttachments() } } } }))
+            attachmentsView.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("移除附件"); setOnClickListener { File(item.getString("path")).delete(); io.execute { notes.finishMedia(item.getString("id")); runOnUiThread { renderAttachments() } } } }))
         }
         for (index in 0 until attachments.length()) {
             val item = attachments.getJSONObject(index)
@@ -243,12 +245,12 @@ open class RecordEditorActivity : MoteActivity() {
     }
     private fun preview(item: JSONObject) {
         player?.release(); val temp = File.createTempFile("record-preview-", ".audio", cacheDir)
-        runCatching { temp.writeBytes(store.bytes(item.getString("id"))); player = MediaPlayer().apply { setDataSource(temp.absolutePath); setOnCompletionListener { release(); player = null; temp.delete() }; prepare(); start() }; temp.delete() }.onFailure { temp.delete(); status.text = it.message }
+        runCatching { temp.writeBytes(notes.bytes(item.getString("id"))); player = MediaPlayer().apply { setDataSource(temp.absolutePath); setOnCompletionListener { release(); player = null; temp.delete() }; prepare(); start() }; temp.delete() }.onFailure { temp.delete(); status.text = it.message }
     }
     @Suppress("DEPRECATION") private fun startRecording() {
         runCatching {
             val directory = File(filesDir, "record-pending").apply { mkdirs() }; val file = File.createTempFile("record-microphone-", ".m4a", directory); recordingFile = file
-            store.holdMedia(mediaDescriptor(file, "audio/mp4"))
+            notes.holdMedia(mediaDescriptor(file, "audio/mp4"))
             recorder = MediaRecorder().apply { setAudioSource(MediaRecorder.AudioSource.MIC); setOutputFormat(MediaRecorder.OutputFormat.MPEG_4); setAudioEncoder(MediaRecorder.AudioEncoder.AAC); setMaxFileSize(CentralAttachments.MAX_BYTES.toLong()); setOutputFile(file.absolutePath); prepare(); start() }
             microphone.text = "■\n" + MoteI18n.text("停止录音"); microphone.contentDescription = MoteI18n.text("停止录音"); save.isEnabled = false
             renderDraftState()
@@ -260,7 +262,7 @@ open class RecordEditorActivity : MoteActivity() {
         val stopped = runCatching { active.stop() }; active.release(); microphone.text = "♩\n" + MoteI18n.text("录音"); microphone.contentDescription = MoteI18n.text("录音"); save.isEnabled = ready && canSubmit()
         renderDraftState()
         if (file == null) return
-        if (stopped.isSuccess && file.length() > 0) stagePending(mediaDescriptor(file, "audio/mp4")) else { file.delete(); io.execute { store.finishMedia(mediaDescriptor(file, "audio/mp4").getString("id")) } }
+        if (stopped.isSuccess && file.length() > 0) stagePending(mediaDescriptor(file, "audio/mp4")) else { file.delete(); io.execute { notes.finishMedia(mediaDescriptor(file, "audio/mp4").getString("id")) } }
     }
     private fun importIntent(value: Intent, replaceExisting: Boolean = false) {
         val conversation = this is ConversationRecordEditorActivity && value.hasExtra("recordText")
@@ -301,32 +303,17 @@ open class RecordEditorActivity : MoteActivity() {
     }
     private fun submit() {
         if (!ready || task.busy || attachmentTask.busy || recorder != null) return
-        if (store.pendingMedia().length() > 0) { status.text = MoteI18n.text("请先处理未保存的附件"); return }
+        if (notes.pendingMedia().length() > 0) { status.text = MoteI18n.text("请先处理未保存的附件"); return }
         val text = field.text.toString(); val files = JSONArray(attachments.toString()); val source = JSONObject(origin.toString()); val noteDescription = description.text.toString(); val presentation = originPresentation?.let { JSONObject(it.toString()) }; enabled(false)
         task.start("", {}, {
-            ConnectionGuard.sync {
-                store.edit(text, files, source, noteDescription, presentation)
-                val settings = Settings(applicationContext); val config = settings.read(); config.validate()
-                if (source.optString("kind") == "conversation") check(presentation?.optString("server") == settings.dataOrigin() && settings.dataOrigin().isNotBlank()) { MoteI18n.text("访问凭据已失效，请重新连接。") }
-                val event = store.prepare(settings.dataOrigin()) { draft ->
-                    JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
-                        .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)
-                        .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("随手记")).put("source", "note").put("ocrText", draft.getString("text"))
-                        .put("metadata", JSONObject().put("version", 1).put("observedAt", Instant.now().toString()).put("noteOrigin", draft.getJSONObject("origin")).also { metadata -> draft.optString("description").takeIf { it.isNotBlank() }?.let { metadata.put("ownerDescription", it) } })
-                        .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
-                }
-                applicationContext.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
-                store.finish(event.getString("id")); runCatching { UploadWorker.schedule(applicationContext, config) }
-                event.getString("id")
-            } ?: error(MoteI18n.text("请稍后重试"))
-        }) { result -> result.onSuccess { NativeRecordReceipt.recordId = it; NativeRecordReceipt.fromFirstUse=intent.getBooleanExtra("firstUse",false); setResult(RESULT_OK, Intent().putExtra("recordId", it)); finish() }.onFailure { enabled(true); status.text = it.message } }
+            notes.submit(text, files, source, noteDescription, presentation, intent.getBooleanExtra("firstUse", false))
+        }) { result -> result.onSuccess { setResult(RESULT_OK, Intent().putExtra("recordId", it)); finish() }.onFailure { enabled(true); status.text = it.message } }
     }
     override fun onPause() { if (recorder != null) stopRecording(); player?.release(); player = null; super.onPause() }
+    override fun onDestroy() { notes.close(); super.onDestroy() }
 }
 /** Only the app can launch a conversation-origin editor; system sharing uses the exported base activity. */
 class ConversationRecordEditorActivity : RecordEditorActivity()
-/** This session's receipt points to a real local row; it never claims a Central acknowledgement. */
-internal object NativeRecordReceipt { @Volatile var recordId: String? = null; @Volatile var fromFirstUse: Boolean = false }
 internal fun android.app.Activity.openRecordEditor(text: String? = null, conversationId: String? = null, turnId: String? = null, question: String? = null, citations: List<String>? = null, quoteOrigin: String? = null, media: String? = null) {
     val editor = if (text == null) RecordEditorActivity::class.java else ConversationRecordEditorActivity::class.java
     startActivity(Intent(this, editor).apply { putExtra("firstUse",(this@openRecordEditor as? MainActivity)?.isFirstUseRecordEntry() ?: this@openRecordEditor.intent.getBooleanExtra("firstUse",false)); text?.let { putExtra("recordText", it) }; conversationId?.let { putExtra("conversationId", it) }; turnId?.let { putExtra("turnId", it) }; question?.let { putExtra("quoteQuestion", it) }; citations?.let { putStringArrayListExtra("quoteCitations", ArrayList(it)) }; quoteOrigin?.let { putExtra("quoteOrigin",it) }; media?.let { putExtra("startMedia", it) } })
