@@ -4,6 +4,7 @@ import type {ServerFeatureScope} from '../feature-host.js';
 import type { FastifyInstance } from 'fastify';
 import type { FeatureServices } from '../feature-services.js';
 import { registerMemoryRoutes } from '../memory-routes.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** memory: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,ownerQuestions,materials,automaticMemoryScheduling,memoryDelegation,memoryIntegrationSettings,memoryRecipeSettings,sourcePipelines,agent,evidenceReader,files,lifecycle,memories,memoryPipeline,memoryPublication,modelSettings,queryAgent,reviewExtraction,store}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|"ownerQuestions"|"materials"|"automaticMemoryScheduling"|"memoryDelegation"|"memoryIntegrationSettings"|"memoryRecipeSettings"|"sourcePipelines"|"agent"|"evidenceReader"|"files"|"lifecycle"|"memories"|"memoryPipeline"|"memoryPublication"|"modelSettings"|"queryAgent"|"reviewExtraction"|"store">,scope?:ServerFeatureScope){
@@ -18,3 +19,11 @@ export function register(app:FastifyInstance,{modelAuthorizationHost,availableMo
  app.addHook('onReady',async()=>{for(const id of recoverableMemoryJobs(store,lifecycle))void scope?.run(()=>memoryPipeline.run(id));});
 registerMemoryRoutes(app,{ownerPublication:memoryPublication,modelAuthorizationHost,availableModelConnections,memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query:input=>queryAgent(input,'query','memories'),reviewExtraction});
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.memory',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.memory'));
+    register(app,services,scope);
+  },
+};
