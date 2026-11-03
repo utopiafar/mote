@@ -11,7 +11,7 @@ export const ACTIVATION_PLAN_VERSION = 1 as const;
 export const activationFailureCodes = [
   'invalid_input', 'duplicate_package', 'duplicate_contribution', 'missing_dependency',
   'version_mismatch', 'api_incompatible', 'dependency_cycle', 'ambiguous_provider',
-  'invalid_binding', 'unsupported_host', 'unsupported_runtime',
+  'invalid_binding', 'unsupported_host', 'unsupported_runtime', 'undeclared_capability',
 ] as const;
 export type ActivationFailureCode = typeof activationFailureCodes[number];
 
@@ -21,6 +21,10 @@ export interface ActivationFailure {
   readonly packageId?: string;
   readonly contributionId?: string;
   readonly dependency?: {readonly kind: ManifestDependency['kind']; readonly id: string; readonly version: string};
+  /** The capability ID whose package-level declaration is absent. */
+  readonly capability?: string;
+  /** The author-facing fix for a missing or mismatched declaration. */
+  readonly remediation?: string;
   readonly path?: readonly string[];
 }
 
@@ -106,17 +110,39 @@ function runtimeSupported(host: HostKind, runtime: RuntimeLocation) {
   return host === 'mac' || host === 'android';
 }
 
+const dependencyName = (dependency: ManifestDependency) =>
+  `${dependency.kind === 'host' ? 'host distribution' : dependency.kind} "${dependency.id}" version "${dependency.version}"`;
+
+function dependencyRemediation(dependency: ManifestDependency, code: 'missing_dependency' | 'version_mismatch' | 'api_incompatible') {
+  if (code === 'version_mismatch') {
+    return dependency.kind === 'host'
+      ? `This Mote build distributes "${dependency.id}" at a different version; align the declared version or the host build to exactly "${dependency.version}"`
+      : `Install ${dependency.kind} "${dependency.id}" at exactly version "${dependency.version}"`;
+  }
+  if (code === 'api_incompatible') {
+    return `Install a provider of service "${dependency.id}" at API version "${dependency.version}", or update the requirement to the API version a provider actually offers`;
+  }
+  if (dependency.kind === 'host') {
+    return `This Mote build does not distribute "${dependency.id}"; use a build that includes it or remove the "dependencies" entry in mote-plugin.json`;
+  }
+  if (dependency.kind === 'package') return `Install package "${dependency.id}" version "${dependency.version}", or mark the dependency optional`;
+  if (dependency.kind === 'contribution') return `Install a package that contributes "${dependency.id}" version "${dependency.version}", or mark the dependency optional`;
+  return `Install a package that provides service "${dependency.id}" at API version "${dependency.version}", or mark the dependency optional`;
+}
+
 function dependencyFailure(
   dependency: ManifestDependency,
   code: 'missing_dependency' | 'version_mismatch' | 'api_incompatible',
   owner: {readonly packageId: string; readonly contributionId?: string},
 ) {
-  return failure(code, code === 'missing_dependency' ? 'A required dependency is unavailable'
-    : code === 'version_mismatch' ? 'A dependency version is not the exact declared version'
-      : 'A dependency API version is incompatible', {
+  const name = dependencyName(dependency);
+  return failure(code, code === 'missing_dependency' ? `Required ${name} is unavailable`
+    : code === 'version_mismatch' ? `The available ${name} is not the exact declared version`
+      : `No available provider satisfies ${name}`, {
     packageId: owner.packageId,
     ...(owner.contributionId === undefined ? {} : {contributionId: owner.contributionId}),
     dependency: {kind: dependency.kind, id: dependency.id, version: dependency.version},
+    remediation: dependencyRemediation(dependency, code),
   });
 }
 
@@ -169,6 +195,16 @@ export function planComposition(input: CompositionInput): CompositionResult {
         failures.push(failure('unsupported_runtime', 'The contribution execution location is unavailable on this host', {
           packageId: manifest.id, contributionId: contribution.id,
         }));
+      }
+      // The control plane verifies only package-level capabilities; a
+      // contribution claiming an undeclared one would never be checked.
+      for (const capability of contribution.capabilities ?? []) {
+        if (!manifest.capabilities.includes(capability)) {
+          failures.push(failure('undeclared_capability', `Contribution "${contribution.id}" provides capability "${capability}" that package "${manifest.id}" never declares`, {
+            packageId: manifest.id, contributionId: contribution.id, capability,
+            remediation: `Add "${capability}" to the package "capabilities" list in mote-plugin.json`,
+          }));
+        }
       }
     }
   }
