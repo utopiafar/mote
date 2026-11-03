@@ -10,7 +10,7 @@ const builtinNames=new Set(builtinModules.flatMap(name=>[name,name.replace(/^nod
 const nodeBuiltin=name=>name.startsWith('node:')||builtinNames.has(name);
 const slash=value=>value.replaceAll('\\','/');
 const inside=(file,directory)=>file.startsWith(directory+'/');
-const key=edge=>JSON.stringify([edge.rule,edge.from,edge.to,edge.kind]);
+const key=edge=>JSON.stringify([edge.rule,edge.from,edge.to,edge.kind,edge.symbol??'']);
 
 function sourceFiles(directory){
   if(!existsSync(directory))return [];
@@ -22,9 +22,9 @@ export function moduleReferences(file,text){
   const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
   if(source.parseDiagnostics.length)throw Error(`${file}: ${ts.flattenDiagnosticMessageText(source.parseDiagnostics[0].messageText,' ')}`);
   const references=[];
-  const add=(node,specifier,kind)=>{
+  const add=(node,specifier,kind,bindings)=>{
     if(specifier===undefined)return;
-    references.push({specifier,kind:source.isDeclarationFile?'type':kind,line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1});
+    references.push({specifier,kind:source.isDeclarationFile?'type':kind,bindings,line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1});
   };
   const scopes=new WeakMap();
   const scopeFor=node=>{
@@ -66,22 +66,40 @@ export function moduleReferences(file,text){
     const bound=binding(node);
     return bound.found?bound.value&&requireCall(bound.value,seen):node.text==='require';
   };
+  const importedBindings=clause=>{
+    if(!clause)return {names:[],whole:false};
+    const named=clause.namedBindings,names=clause.name?['default']:[];
+    if(named&&ts.isNamedImports(named))names.push(...named.elements.map(element=>(element.propertyName??element.name).text));
+    return {names,whole:named!==undefined&&ts.isNamespaceImport(named)};
+  };
+  const exportedBindings=named=>{
+    if(!named||ts.isNamespaceExport(named))return {names:[],whole:true};
+    return {names:ts.isNamedExports(named)?named.elements.map(element=>(element.propertyName??element.name).text):[],whole:false};
+  };
+  const typeReferenceName=qualifier=>{
+    let name=qualifier;
+    while(name&&ts.isQualifiedName(name))name=name.left;
+    return name&&ts.isIdentifier(name)?name.text:undefined;
+  };
   const visit=node=>{
     if(ts.isImportDeclaration(node)){
       const clause=node.importClause,named=clause?.namedBindings;
       const types=clause?.isTypeOnly||!clause?.name&&named&&ts.isNamedImports(named)&&named.elements.length>0&&named.elements.every(item=>item.isTypeOnly);
-      add(node,literal(node.moduleSpecifier),types?'type':'runtime');
+      add(node,literal(node.moduleSpecifier),types?'type':'runtime',importedBindings(clause));
     }else if(ts.isExportDeclaration(node)&&node.moduleSpecifier){
       const named=node.exportClause;
       const types=node.isTypeOnly||named&&ts.isNamedExports(named)&&named.elements.length>0&&named.elements.every(item=>item.isTypeOnly);
-      add(node,literal(node.moduleSpecifier),types?'type':'runtime');
+      add(node,literal(node.moduleSpecifier),types?'type':'runtime',exportedBindings(named));
     }else if(ts.isImportTypeNode(node)){
-      if(ts.isLiteralTypeNode(node.argument))add(node,literal(node.argument.literal),'type');
+      if(ts.isLiteralTypeNode(node.argument)){
+        const name=typeReferenceName(node.qualifier);
+        add(node,literal(node.argument.literal),'type',name?{names:[name],whole:false}:{names:[],whole:true});
+      }
     }else if(ts.isImportEqualsDeclaration(node)&&ts.isExternalModuleReference(node.moduleReference)){
-      add(node,literal(node.moduleReference.expression),node.isTypeOnly?'type':'runtime');
+      add(node,literal(node.moduleReference.expression),node.isTypeOnly?'type':'runtime',{names:[],whole:true});
     }else if(ts.isCallExpression(node)&&(node.expression.kind===ts.SyntaxKind.ImportKeyword||requireCall(node.expression))){
       const specifier=literal(node.arguments[0]);
-      if(specifier!==undefined)add(node,specifier,'runtime');
+      if(specifier!==undefined)add(node,specifier,'runtime',{names:[],whole:true});
       else references.push({specifier:null,expression:node.arguments[0]?.getText(source)??'<missing>',kind:'runtime',line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1});
     }
     ts.forEachChild(node,visit);
@@ -223,7 +241,8 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
       if(!ownsAssembly&&['apps/web/src/boot.ts','apps/web/src/main.tsx','apps/web/src/features/bootstrap.tsx','apps/web/src/features/bootstrap.ts'].includes(edge.to))rule='web-no-bootstrap-import';
     }
     if(runtime&&edge.from==='apps/web/src/features/runtime.tsx'&&['apps/web/src/features/entries.ts','apps/web/src/features/collections.ts','apps/web/src/features/collections.tsx','apps/web/src/features/agent-view.tsx','apps/web/src/features/agent-view.ts'].includes(edge.to))rule='web-runtime-no-builtins';
-    if(rule)issues.push({...edge,rule});
+    if(inside(edge.from,'apps/server/src/plugins')&&edge.to==='apps/server/src/store.ts'&&(edge.bindings?.whole||edge.bindings?.names.includes('Store')))rule='server-plugins-no-store';
+    if(rule)issues.push({...edge,rule,...(rule==='server-plugins-no-store'?{symbol:edge.bindings?.whole?'*':'Store'}:{})});
   }
   issues.push(...agentRuntimeCycles(nodes));
   const visited=new Set();
