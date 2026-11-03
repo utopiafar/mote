@@ -519,3 +519,21 @@ test('source-item card for an interpreted image shows the interpretation instead
  assert.match(card.ocrText,/A third-party article says its author resigned/);
  assert.doesNotMatch(card.ocrText,/originalImage/,'a navigation locator is never the item body');
 });
+
+test('an image with empty OCR and no interpretation falls back to its metadata, never the locator',async t=>{
+ const f=await fixture(t);
+ f.images.configure({...f.images.settings(),understandingEnabled:false});
+ const id=await f.upload();
+ f.empty();await f.images.tick();await f.organize();
+ const record=f.store.evidence([id])[0],externalId=record.provenance!.externalId,material=f.materials.get(materialId('generated-import',externalId))!;
+ const anchors=f.materials.evidenceIds(material.ref),blocks=anchors.map(anchor=>String((f.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(anchor) as {block_id:string}).block_id));
+ assert.ok(blocks.includes('image:original'),'the original image locator stays an anchor for read_image navigation');
+ assert.ok(!blocks.includes('image:understanding'),'no interpretation product was requested');
+ const agent=new EvidenceReader(f.store,f.sources,f.files,undefined,undefined,f.materials).agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
+ const page=await agent.sourceItems!({sourceId:'generated-import'}) as {items:{id:string;ocrText:string;provenance?:{externalId?:string;uri?:string}}[]};
+ const card=page.items.find(row=>row.provenance?.externalId===externalId)!;
+ assert.equal(card.provenance?.uri?.split('#')[1],'source-metadata','without a body the item metadata is the card, not the locator');
+ assert.match(card.ocrText,/"captureId"/);assert.doesNotMatch(card.ocrText,/originalImage/);
+ const locator=await agent.evidence!({ids:[anchors[blocks.indexOf('image:original')]!]}) as {ocrText:string}[];
+ assert.match(locator[0]!.ocrText,/original_image_reference/,'the locator stays explicitly addressable for read_image');
+});
