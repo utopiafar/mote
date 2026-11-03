@@ -1,18 +1,12 @@
-import {builtinCollections} from '../library/collections';
-import type {BuiltinWebPlugin} from '../types';
-
 /**
  * The Memory workspace package owns the list/detail/filter reads, the manual
  * extraction and integration work pages, deletion confirmation, version
  * history and owner-question conversations. Mounted surfaces share the
  * owner-scoped resource cache; this package exposes the same components to
- * the shell, feature panels and Search detail.
+ * the shell, feature panels and Search detail. Its `memories` collection tab
+ * (featureId `mote.memory`) is registered through the library collection
+ * registry (`plugins/library/collections.tsx`), which owns tab ordering.
  */
-export const memory:BuiltinWebPlugin={
-  id:'mote.memory',
-  collections:builtinCollections.filter(entry=>entry.featureId==='mote.memory'),
-};
-
 export {Memories,MemoryDetailPage,memoryStatus} from './Memories';
 export type {Memory} from './Memories';
 export {MemoryTopics} from './MemoryTopics';
