@@ -179,21 +179,22 @@ test('conversation coverage repairs keep the unified envelope through invalid co
 // instance and the C06 ledger are the production ones; only the model call is
 // replaced by the test query callback.
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
+import {ProviderFailure} from '@mote/shared';
 import {randomUUID} from 'node:crypto';
 const meteringConnection={id:'generated-metering-connection',fingerprint:'b'.repeat(64)};
 function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wait'|'admitted-wait'|'trace-wait'){
  const ledger=new UsageLedger(f.store),authorization=new BackgroundModelAuthorization(f.store,()=>[meteringConnection]);
  if(outcome==='usage-wait'||outcome==='admitted-wait')authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'authorize',connections:[meteringConnection],scope:{sourceIds:null,dataKinds:['text']}});
  f.store.db.exec('BEGIN IMMEDIATE');authorization.receive(f.anchor,{sourceId:'fixture',dataKind:'text'});f.store.db.exec('COMMIT');
+ let sawOnTrace=false;
  const query=async(input:QueryInput):Promise<QueryResult>=>{
+  sawOnTrace=typeof input.onTrace==='function';
   if(outcome==='trace-wait'){
-   assert.equal(typeof input.onTrace,'function','the conversation processor must wire onTrace into the real query surface');
    input.onTrace!({type:'model.started',stage:'model'} as never);
    authorization.automatic('conversation-work',[f.anchor],'semantic');
   }
   if(outcome!=='trace-wait')authorization.automatic('conversation-work',[f.anchor],'semantic');
   if(outcome==='admitted-wait'){
-   assert.equal(typeof input.onTrace,'function','the conversation processor must wire onTrace into the real query surface');
    input.onTrace!({type:'model.admitted',stage:'model'} as never);
   }else input.onUsage?.({requests:1,reportedRequests:1,inputTokens:19,outputTokens:3,totalTokens:22});
   if(outcome==='usage-wait'||outcome==='admitted-wait'){
@@ -204,29 +205,32 @@ function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wa
  };
  const processor=conversationUnderstandingProcessor({memories:f.memories,usage:ledger,resolveEvidence:f.resolveEvidence,selection:()=>config,query});
  const rows=()=>f.store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String((row as {json:string}).json)) as {status:string;tokens?:{totalTokens:number}});
- return {processor,rows,input:input(f.page())};
+ const admissionWait=(error:unknown)=>error instanceof ProviderFailure&&error.details.code==='background_model_authorization_required'&&error.details.admissionWaiting===true&&error.details.executionStarted===false;
+ return {processor,rows,input:input(f.page()),admissionWait,onTraceWired:()=>sawOnTrace};
 }
 
 test('conversation metering: repeated authorization waits create no usage receipt',async t=>{
  const f=await fixture(t),metered=metering(f,'wait');
- for(let attempt=0;attempt<2;attempt++)await assert.rejects(metered.processor.process(metered.input as never));
+ for(let attempt=0;attempt<2;attempt++)await assert.rejects(metered.processor.process(metered.input as never),metered.admissionWait);
  assert.equal(metered.rows().length,0);
 });
 
 test('conversation metering: usage before a later admission wait keeps one failed partial receipt',async t=>{
  const f=await fixture(t),metered=metering(f,'usage-wait');
- await assert.rejects(metered.processor.process(metered.input as never));
+ await assert.rejects(metered.processor.process(metered.input as never),metered.admissionWait);
  const usage=metered.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens?.totalTokens,22);
 });
 
 test('conversation metering: a model trace without admission is discarded on a real wait',async t=>{
  const f=await fixture(t),metered=metering(f,'trace-wait');
- await assert.rejects(metered.processor.process(metered.input as never));
+ await assert.rejects(metered.processor.process(metered.input as never),metered.admissionWait);
+ assert.equal(metered.onTraceWired(),true,'the conversation processor must wire onTrace into the real query surface');
  assert.equal(metered.rows().length,0,'a trace is not an admitted model operation');
 });
 
 test('conversation metering: an admitted call without a token sample survives a later admission wait',async t=>{
  const f=await fixture(t),metered=metering(f,'admitted-wait');
- await assert.rejects(metered.processor.process(metered.input as never));
+ await assert.rejects(metered.processor.process(metered.input as never),metered.admissionWait);
+ assert.equal(metered.onTraceWired(),true,'the conversation processor must wire onTrace into the real query surface');
  const usage=metered.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens,undefined);
 });
