@@ -181,18 +181,22 @@ test('conversation coverage repairs keep the unified envelope through invalid co
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {randomUUID} from 'node:crypto';
 const meteringConnection={id:'generated-metering-connection',fingerprint:'b'.repeat(64)};
-function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wait'|'started-wait'){
+function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wait'|'admitted-wait'|'trace-wait'){
  const ledger=new UsageLedger(f.store),authorization=new BackgroundModelAuthorization(f.store,()=>[meteringConnection]);
- if(outcome!=='wait')authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'authorize',connections:[meteringConnection],scope:{sourceIds:null,dataKinds:['text']}});
+ if(outcome==='usage-wait'||outcome==='admitted-wait')authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'authorize',connections:[meteringConnection],scope:{sourceIds:null,dataKinds:['text']}});
  f.store.db.exec('BEGIN IMMEDIATE');authorization.receive(f.anchor,{sourceId:'fixture',dataKind:'text'});f.store.db.exec('COMMIT');
  const query=async(input:QueryInput):Promise<QueryResult>=>{
-  authorization.automatic('conversation-work',[f.anchor],'semantic');
-  if(outcome==='usage-wait')input.onUsage?.({requests:1,reportedRequests:1,inputTokens:19,outputTokens:3,totalTokens:22});
-  if(outcome==='started-wait'){
+  if(outcome==='trace-wait'){
    assert.equal(typeof input.onTrace,'function','the conversation processor must wire onTrace into the real query surface');
    input.onTrace!({type:'model.started',stage:'model'} as never);
+   authorization.automatic('conversation-work',[f.anchor],'semantic');
   }
-  if(outcome!=='wait'){
+  if(outcome!=='trace-wait')authorization.automatic('conversation-work',[f.anchor],'semantic');
+  if(outcome==='admitted-wait'){
+   assert.equal(typeof input.onTrace,'function','the conversation processor must wire onTrace into the real query surface');
+   input.onTrace!({type:'model.admitted',stage:'model'} as never);
+  }else input.onUsage?.({requests:1,reportedRequests:1,inputTokens:19,outputTokens:3,totalTokens:22});
+  if(outcome==='usage-wait'||outcome==='admitted-wait'){
    authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
    authorization.automatic('conversation-work-2',[f.anchor],'semantic');
   }
@@ -215,8 +219,14 @@ test('conversation metering: usage before a later admission wait keeps one faile
  const usage=metered.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens?.totalTokens,22);
 });
 
-test('conversation metering: a started call without a token sample survives a later admission wait',async t=>{
- const f=await fixture(t),metered=metering(f,'started-wait');
+test('conversation metering: a model trace without admission is discarded on a real wait',async t=>{
+ const f=await fixture(t),metered=metering(f,'trace-wait');
+ await assert.rejects(metered.processor.process(metered.input as never));
+ assert.equal(metered.rows().length,0,'a trace is not an admitted model operation');
+});
+
+test('conversation metering: an admitted call without a token sample survives a later admission wait',async t=>{
+ const f=await fixture(t),metered=metering(f,'admitted-wait');
  await assert.rejects(metered.processor.process(metered.input as never));
  const usage=metered.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens,undefined);
 });

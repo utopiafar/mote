@@ -12,7 +12,7 @@ import {semanticProcessor} from '../src/semantic-extraction.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 
 const connection={id:'generated-connection',fingerprint:'a'.repeat(64)};
-type Outcome='success'|'failure'|'cancel'|'usage-wait'|'started-wait';
+type Outcome='success'|'failure'|'cancel'|'usage-wait'|'admitted-wait'|'trace-wait';
 
 async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{authorize:boolean;outcome:Outcome}){
   const directory=mkdtempSync(join(tmpdir(),'mote-usage-wait-')),store=new Store(directory),ledger=new UsageLedger(store),memories=new MemoryStore(store);
@@ -23,19 +23,24 @@ async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{au
   store.db.exec('BEGIN IMMEDIATE');authorization.receive('generated-original',{sourceId:'generated-source',dataKind:'text'});store.db.exec('COMMIT');
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   const query=async(input:never)=>{
-    const request=input as {onUsage?:(usage:{requests:number;reportedRequests:number;inputTokens:number;outputTokens:number;totalTokens:number})=>void};
+    const request=input as {onUsage?:(usage:{requests:number;reportedRequests:number;inputTokens:number;outputTokens:number;totalTokens:number})=>void;onTrace?:(event:unknown)=>void};
+    if(outcome==='trace-wait'){
+      // A model trace is emitted before the host admission gate, so it must not
+      // count as an admitted call when the real authorization rejects it.
+      assert.equal(typeof request.onTrace,'function','the processor must wire onTrace into the real query surface');
+      request.onTrace!({type:'model.started',stage:'model'});
+      authorization.automatic('generated-work',['generated-original'],'semantic');
+    }
     // Real durable admission: unapproved state throws the 60s pending failure.
     authorization.automatic('generated-work',['generated-original'],'semantic');
-    if(outcome==='started-wait'){
-      const onTrace=(input as {onTrace?:(event:unknown)=>void}).onTrace;
-      assert.equal(typeof onTrace,'function','the processor must wire onTrace into the real query surface');
-      onTrace!({type:'model.started',stage:'model'});
-    }
-    else request.onUsage?.({requests:1,reportedRequests:1,inputTokens:5,outputTokens:2,totalTokens:7});
+    if(outcome==='admitted-wait'){
+      assert.equal(typeof request.onTrace,'function','the processor must wire onTrace into the real query surface');
+      request.onTrace!({type:'model.admitted',stage:'model'});
+    }else request.onUsage?.({requests:1,reportedRequests:1,inputTokens:5,outputTokens:2,totalTokens:7});
     if(outcome==='failure')throw Error('Generated model failure');
     if(outcome==='cancel')throw new ProviderFailure({category:'blocked',code:'cancelled',executionStarted:true},'Generated cancellation');
-    if(outcome==='usage-wait'||outcome==='started-wait'){
-      // A later call hits a real admission wait after the first call started work.
+    if(outcome==='usage-wait'||outcome==='admitted-wait'){
+      // A later call hits a real admission wait after the first call was admitted.
       authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
       authorization.automatic('generated-work-2',['generated-original'],'semantic');
     }
@@ -77,8 +82,14 @@ test('usage reported before a later admission wait is preserved as one failed re
   const usage=f.rows();assert.equal(usage.length,1,'reported tokens must not be discarded');assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens?.totalTokens,7);
 });
 
-test('a started call without a token sample is retained when a later admission wait follows',async t=>{
-  const f=await fixture(t,{authorize:true,outcome:'started-wait'});
+test('a model trace without admission is discarded on a real authorization wait',async t=>{
+  const f=await fixture(t,{authorize:false,outcome:'trace-wait'});
   await assert.rejects(f.processor.process(f.input as never));
-  const usage=f.rows();assert.equal(usage.length,1,'a started call must not be discarded');assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens,undefined);
+  assert.equal(f.rows().length,0,'a trace is not an admitted model operation');
+});
+
+test('an admitted call without a token sample is retained when a later admission wait follows',async t=>{
+  const f=await fixture(t,{authorize:true,outcome:'admitted-wait'});
+  await assert.rejects(f.processor.process(f.input as never));
+  const usage=f.rows();assert.equal(usage.length,1,'an admitted call must not be discarded');assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens,undefined);
 });
