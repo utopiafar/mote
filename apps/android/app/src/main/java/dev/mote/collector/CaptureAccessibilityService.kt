@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
+import dev.mote.collector.plugins.CaptureControllers
+import dev.mote.collector.plugins.CapturePlugin
 import java.time.Instant
 
 /** Passive collection. Page text requires explicit rules; no gestures, actions or hidden grants. */
@@ -17,6 +19,8 @@ class CaptureAccessibilityService : AccessibilityService() {
     private val stateWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private lateinit var settings: Settings
     private var pipeline: CapturePipeline? = null
+    @Volatile private var captureOwner: CaptureControllers? = null
+    private data class Prepared(val settings: Settings, val config: CollectorConfig, val owner: CaptureControllers, val pipeline: CapturePipeline?)
     private val pixels = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue<Runnable>(1))
     @Volatile private var destroyed = false
     @Volatile private var contentRevision=0L
@@ -49,6 +53,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         refreshSchedule()
     }
     private fun shouldSchedule(config: CollectorConfig): Boolean = !destroyed && ::settings.isInitialized && settings.enabled &&
+        captureOwner?.active == true && CapturePlugin.controllers() === captureOwner &&
         config.screenCollectionEnabled && config.effectiveMode() == "accessibility" && CapturePipeline.unlocked(this)
     fun refreshSchedule() {
         handler.post {
@@ -139,39 +144,46 @@ class CaptureAccessibilityService : AccessibilityService() {
     }
     private fun collectIfEnabled() {
         if (destroyed || preparing) return
+        val owner = CapturePlugin.controllers()
+        if (owner == null) {
+            if (pipeline != null || captureOwner != null) stopCapture()
+            return
+        }
         if (ConnectionGuard.changing()) { handler.postDelayed(tick, 1000); return }
         preparing = true
         val generation = configurationGeneration
-        val previous = pipeline
+        val previous = pipeline.takeIf { captureOwner === owner }
         stateWorker.execute {
             val prepared = runCatching {
                 val opened = if (::settings.isInitialized) settings else Settings(this)
                 val config = opened.read()
-                val capture = previous ?: if (opened.enabled && config.screenCollectionEnabled && config.effectiveMode() == "accessibility") CapturePipeline(this) else null
-                Triple(opened, config, capture)
+                val capture = previous ?: if (owner.active && opened.enabled && config.screenCollectionEnabled && config.effectiveMode() == "accessibility") owner.openPipeline(this) else null
+                Prepared(opened, config, owner, capture)
             }
             handler.post {
                 preparing = false
-                if (destroyed || generation != configurationGeneration) {
-                    prepared.getOrNull()?.third?.takeIf { it !== previous }?.close()
-                    if (!destroyed) handler.post(tick)
+                if (destroyed || generation != configurationGeneration || !owner.active || CapturePlugin.controllers() !== owner) {
+                    prepared.getOrNull()?.pipeline?.takeIf { it !== previous }?.let(owner::closePipeline)
+                    if (!destroyed && CapturePlugin.controllers() != null) handler.post(tick)
                     return@post
                 }
-                prepared.onSuccess { (opened, config, capture) ->
-                    settings = opened; pipeline = capture
-                    runCatching { collectWithConfig(config) }.onFailure { error ->
+                prepared.onSuccess { ready ->
+                    settings = ready.settings; pipeline = ready.pipeline; captureOwner = ready.owner
+                    runCatching { collectWithConfig(ready.config) }.onFailure { error ->
                         inFlight = false
                         Operations.record(this, OperationKind.CAPTURE_FAILED, Operations.failure(error, EventStage.CAPTURE))
                         stateWorker.execute { settings.status("paused", MoteI18n.text("无障碍采集暂不可用，下一周期重试")) }
                     }
-                    if (shouldSchedule(config)) handler.postDelayed(tick, (nextCapture - android.os.SystemClock.elapsedRealtime()).coerceIn(1000L, 300_000L))
-                    else if (settings.enabled && config.screenCollectionEnabled && config.effectiveMode() == "accessibility")
+                    if (shouldSchedule(ready.config)) handler.postDelayed(tick, (nextCapture - android.os.SystemClock.elapsedRealtime()).coerceIn(1000L, 300_000L))
+                    else if (settings.enabled && ready.config.screenCollectionEnabled && ready.config.effectiveMode() == "accessibility")
                         pipeline?.pause(MoteI18n.text("锁屏或熄屏，暂停采集"), OperationReason.LOCKED)
-                }.onFailure { if (!destroyed) handler.postDelayed(tick, 1000) }
+                }.onFailure { if (!destroyed && owner.active) handler.postDelayed(tick, 1000) }
             }
         }
     }
     private fun collectWithConfig(config: CollectorConfig) {
+        val owner = captureOwner
+        if (owner == null || !owner.active || CapturePlugin.controllers() !== owner) { stopCapture(); return }
         if (destroyed || ConnectionGuard.changing()) return
         if (!settings.enabled || !config.screenCollectionEnabled || config.effectiveMode() != "accessibility") { stopCapture(); return }
         stateWorker.execute { if (!destroyed) UploadWorker.heartbeat(this, config) }
@@ -211,7 +223,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         collectPage(snapshot,config,sample)
     }
     private fun captureScreen(snapshot: WindowSnapshot, config: CollectorConfig, sample:CaptureObservation=CaptureObservation()) {
-        if (destroyed || ConnectionGuard.changing() || !settings.enabled || windowSnapshot()!=snapshot || !CapturePipeline.unlocked(this)) {
+        if (captureOwner?.active != true || CapturePlugin.controllers() !== captureOwner || destroyed || ConnectionGuard.changing() || !settings.enabled || windowSnapshot()!=snapshot || !CapturePipeline.unlocked(this)) {
             Operations.record(this, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED)
             return
         }
@@ -225,6 +237,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         }
     }
     private fun requestScreen(snapshot: WindowSnapshot, config: CollectorConfig, sample:CaptureObservation) {
+        if(captureOwner?.active != true || CapturePlugin.controllers() !== captureOwner)return
         if(!CapturePipeline.allows(config,snapshot,AppCollectionChannel.SCREENSHOT)&&!(config.localContentOcr&&sample.contentCurrent()&&CapturePipeline.allows(config,snapshot,AppCollectionChannel.OCR)&&sample.nodes?.optBoolean("ocrSafe")==true))return
         if (Build.VERSION.SDK_INT < 30) { stateWorker.execute { settings.status("permission_required", MoteI18n.text("此系统需投屏模式采集内容；仅应用活动无需截图API")) }; return }
         val capturePipeline = pipeline!!
@@ -275,9 +288,9 @@ class CaptureAccessibilityService : AccessibilityService() {
             }
         })
     }
-    private fun captureValid(snapshot:WindowSnapshot,config:CollectorConfig,generation:Long):Boolean = runCatching { !destroyed && generation==configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read().sameCaptureConfiguration(config) && CapturePipeline.unlocked(this) && windowSnapshot()==snapshot }.getOrDefault(false)
+    private fun captureValid(snapshot:WindowSnapshot,config:CollectorConfig,generation:Long):Boolean = runCatching { captureOwner?.active == true && CapturePlugin.controllers() === captureOwner && !destroyed && generation==configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read().sameCaptureConfiguration(config) && CapturePipeline.unlocked(this) && windowSnapshot()==snapshot }.getOrDefault(false)
     private fun captureCurrent(snapshot: WindowSnapshot, config: CollectorConfig, generation: Long, collection: AppCollectionMode = AppCollectionMode.CONTENT): Boolean =
-        runCatching { !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read().sameCaptureConfiguration(config) &&
+        runCatching { captureOwner?.active == true && CapturePlugin.controllers() === captureOwner && !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read().sameCaptureConfiguration(config) &&
             CapturePipeline.unlocked(this) && windowSnapshot() == snapshot && CapturePipeline.policy(config, snapshot) == collection }.getOrDefault(false)
     private fun collectPage(snapshot: WindowSnapshot, config: CollectorConfig, sample:CaptureObservation) {
         inFlight=true
@@ -375,7 +388,8 @@ class CaptureAccessibilityService : AccessibilityService() {
         handler.removeCallbacks(tick)
         configurationGeneration++; nextCapture = 0; inFlight = false
         pageMerge.reset()
-        pipeline?.close(); pipeline = null
+        captureOwner?.closePipeline(pipeline) ?: pipeline?.close()
+        pipeline = null; captureOwner = null
         if (!ProjectionService.running) Notifications.clear(this)
     }
     override fun onDestroy() {

@@ -62,5 +62,5 @@ object Notifications {
 }
 
 class StopReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = holdUntilDone { done -> CaptureControls.stopAll(context) { done() } }
+    override fun onReceive(context: Context, intent: Intent) = holdUntilDone { done -> dev.mote.collector.plugins.CapturePlugin.controls().stopAll(context) { done() } }
 }

@@ -17,6 +17,8 @@ import android.os.HandlerThread
 import android.os.Build
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
+import dev.mote.collector.plugins.CaptureControllers
+import dev.mote.collector.plugins.CapturePlugin
 import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
@@ -27,7 +29,8 @@ class MediaCollectionService : NotificationListenerService() {
     @Volatile private var destroyed = false
     private lateinit var thread: HandlerThread
     private lateinit var worker: Handler
-    private lateinit var events: SystemEventCollector
+    private var events: SystemEventCollector? = null
+    private var captureOwner: CaptureControllers? = null
     private lateinit var settings: Settings
     private lateinit var preferences: SharedPreferences
     private val timeline = MediaTimeline()
@@ -44,9 +47,9 @@ class MediaCollectionService : NotificationListenerService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_BATTERY_CHANGED) { timeline.reset(); MediaCollection.clear() }
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> events.state("screen_on")
-                Intent.ACTION_SCREEN_OFF -> { events.state("screen_off"); worker.postDelayed({ events.state("state_observed") }, 1000) }
-                Intent.ACTION_USER_PRESENT -> events.state("user_present")
+                Intent.ACTION_SCREEN_ON -> events?.state("screen_on")
+                Intent.ACTION_SCREEN_OFF -> { events?.state("screen_off"); worker.postDelayed({ events?.state("state_observed") }, 1000) }
+                Intent.ACTION_USER_PRESENT -> events?.state("user_present")
             }
             refresh()
         }
@@ -67,10 +70,7 @@ class MediaCollectionService : NotificationListenerService() {
         worker = Handler(thread.looper)
         worker.post {
             if (destroyed) return@post
-            runCatching {
-                settings = Settings(this)
-                events = SystemEventCollector(this, worker)
-            }.onFailure { thread.quitSafely() }
+            runCatching { settings = Settings(this) }.onFailure { thread.quitSafely() }
         }
         preferences = getSharedPreferences("mote", MODE_PRIVATE)
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
@@ -85,27 +85,36 @@ class MediaCollectionService : NotificationListenerService() {
     }
     override fun onListenerConnected() {
         super.onListenerConnected()
-        worker.post { if (!destroyed && instanceGeneration == instances.get() && ::settings.isInitialized && ::events.isInitialized) { platformConnected = true; connected = true; refresh() } }
+        worker.post { if (!destroyed && instanceGeneration == instances.get() && ::settings.isInitialized) { platformConnected = true; connected = true; refresh() } }
     }
     override fun onListenerDisconnected() {
         if (instance === this) { connected = false; MediaCollection.clear() }
         worker.post {
-            if (destroyed || instanceGeneration != instances.get() || !::events.isInitialized) return@post
+            if (destroyed || instanceGeneration != instances.get()) return@post
             platformConnected = false; connected = false
-            events.reset(); Notifications.showEvents(this, null)
+            events?.reset(); Notifications.showEvents(this, null)
             detach(); timeline.reset(); publishUnavailable("unavailable")
         }
         super.onListenerDisconnected()
     }
     override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification) {
         worker.post {
-            if (destroyed || instanceGeneration != instances.get() || !::events.isInitialized) return@post
-            runCatching { events.notification(sbn, false) }
+            val collector = events ?: return@post
+            if (destroyed || instanceGeneration != instances.get()) return@post
+            runCatching { collector.notification(sbn, false) }
                 .onFailure { settings.status("error", MoteI18n.text("系统通知无法读取，部分事件可能缺失")) }
         }
     }
+    private fun attachEvents() {
+        val owner = CapturePlugin.controllers()
+        if (events != null && captureOwner === owner) return
+        events?.reset()
+        events = owner?.openEventCollector(this, worker)
+        captureOwner = if (events != null) owner else null
+    }
     private fun eligible(): Boolean = runCatching {
-        if (destroyed || instanceGeneration != instances.get()) return@runCatching false
+        if (destroyed || instanceGeneration != instances.get() || events == null || captureOwner == null ||
+            CapturePlugin.controllers() !== captureOwner) return@runCatching false
         val c = settings.read()
         platformConnected && connected && settings.enabled && c.mediaCollectionEnabled && c.metadataEnabled &&
             MediaCollection.permissionAllowed(this) &&
@@ -113,7 +122,13 @@ class MediaCollectionService : NotificationListenerService() {
             MediaPrivacy.powerAllowed(c, Diagnostics.battery(this)) && !ConnectionGuard.changing() && !QueueStorage.recovering
     }.getOrDefault(false)
     private fun refresh() {
-        if (destroyed || instanceGeneration != instances.get() || !::settings.isInitialized || !::events.isInitialized) return
+        if (destroyed || instanceGeneration != instances.get() || !::settings.isInitialized) return
+        attachEvents()
+        val events = events ?: run {
+            detach(); timeline.reset(); lastStatus = null
+            MediaCollection.clear()
+            return
+        }
         try {
             val c = settings.read()
             events.refresh()
@@ -237,7 +252,7 @@ class MediaCollectionService : NotificationListenerService() {
         return result
     }
     private fun enqueue(c: CollectorConfig, status: String, sessions: List<JSONObject>, duration: Long, wall: Long, epoch: Long = MediaCollection.epoch.get()) {
-        if (epoch != MediaCollection.epoch.get() || !settings.enabled || !settings.read().sameCaptureConfiguration(c) || ConnectionGuard.changing() ||
+        if (captureOwner == null || CapturePlugin.controllers() !== captureOwner || epoch != MediaCollection.epoch.get() || !settings.enabled || !settings.read().sameCaptureConfiguration(c) || ConnectionGuard.changing() ||
             status == "available" && !MediaCollection.permissionAllowed(this)) { timeline.reset(); MediaCollection.clear(); return }
         val one = sessions.singleOrNull()
         val activityOnly = sessions.all { MediaPrivacy.mode(it.getString("appId"), c) == AppCollectionMode.ACTIVITY }
@@ -253,6 +268,7 @@ class MediaCollectionService : NotificationListenerService() {
     }
     private fun publishUnavailable(status: String) {
         runCatching {
+            if (captureOwner == null || CapturePlugin.controllers() !== captureOwner) { MediaCollection.clear(); return }
             val c = settings.read()
             if (!settings.enabled || !c.mediaCollectionEnabled || !c.metadataEnabled) { MediaCollection.clear(); return }
             MediaCollection.update(c, MediaPrivacy.snapshot(status, emptyList()))
@@ -279,6 +295,7 @@ class MediaCollectionService : NotificationListenerService() {
         worker.removeCallbacksAndMessages(null)
         worker.post {
             platformConnected = false; detach(); timeline.reset()
+            events?.reset(); events = null; captureOwner = null
             if (instanceGeneration == instances.get()) {
                 publishUnavailable("unavailable"); MediaCollection.clear(); Notifications.clearMedia(this); Notifications.showEvents(this, null)
             }
@@ -291,7 +308,7 @@ class MediaCollectionService : NotificationListenerService() {
         @Volatile var instance: MediaCollectionService? = null; private set
         @Volatile var connected = false; private set
         private val configurationKeys = setOf("enabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "screenCollectionEnabled", "mediaCollectionEnabled", "metadataEnabled", "appCollectionRules", "excluded", "chargingOnly", "batteryPauseBelowPct", "server", "token", "maxQueue", "syncMode", "wifiOnly")
-        fun suspendObservation() { MediaCollection.epoch.incrementAndGet(); MediaCollection.clear(); instance?.let { it.worker.post { it.detach(); it.timeline.reset(); it.events.reset() } } }
+        fun suspendObservation() { MediaCollection.epoch.incrementAndGet(); MediaCollection.clear(); instance?.let { it.worker.post { it.detach(); it.timeline.reset(); it.events?.reset() } } }
         fun refresh() { instance?.let { it.worker.post { it.refresh() } } }
     }
 }

@@ -1588,7 +1588,7 @@ class MainActivity : MoteActivity() {
     private fun pauseScreenCapture() {
         if (applyingSettings || uiTask.busy) return
         applyingSettings = true
-        CaptureControls.pauseScreen(this) { result ->
+        dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result ->
             applyingSettings = false
             if (isDestroyed) return@pauseScreen
             result.onSuccess { loadedConfig = settings.read(); refreshStatus(); loadHomeContent() }

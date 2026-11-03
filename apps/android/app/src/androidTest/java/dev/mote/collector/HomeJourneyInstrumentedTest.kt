@@ -302,7 +302,7 @@ class HomeJourneyInstrumentedTest {
         // One stop is still under way when the notification's stop arrives, as after a panel stop and a quick notification tap.
         instrumentation.runOnMainSync {
             RuntimeSettings.stop(context) { first.put(it.isSuccess) }
-            CaptureControls.stopAll(context) { result -> second.put(result.isSuccess && !settings.enabled && settings.state() == "paused" && settings.message() == stopped) }
+            dev.mote.collector.plugins.CapturePlugin.controls().stopAll(context) { result -> second.put(result.isSuccess && !settings.enabled && settings.state() == "paused" && settings.message() == stopped) }
         }
         assertEquals("The stop under way still reports to its own caller", true, first.poll(20, TimeUnit.SECONDS))
         assertEquals("The joining stop reports only after capture is off and its status is saved", true, second.poll(20, TimeUnit.SECONDS))
