@@ -1,7 +1,7 @@
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Actions} from '../../src/Actions';
-import {ActionResults} from '../../src/ActionResults';
+import {Actions} from '../../src/plugins/work/Actions';
+import {ActionResults} from '../../src/plugins/work/ActionResults';
 import {createApi} from '../../src/api';
 import {configureLocale} from '@mote/shared/i18n';
 import '../../src/styles.css';

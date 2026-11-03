@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readOriginTurn,conversationTurnRoute} from '../src/conversation-origin';
+import {readOriginTurn,conversationTurnRoute} from '../src/plugins/ask/conversation-origin';
 import type {Api} from '../src/api';
 test('saved origin finds exact older turn, never a similar question, and rejects changed/revoked pages',async()=>{
  const wanted={id:'old',question:'same question'},signal=new AbortController().signal;

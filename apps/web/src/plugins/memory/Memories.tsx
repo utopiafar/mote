@@ -17,7 +17,7 @@ import { moteText } from '@mote/shared/i18n';
 import {ExecutionQueueOverview} from '../../RuntimeSettings';
 import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ChevronRight,Layers3,LoaderCircle,RefreshCw,Trash2} from 'lucide-react';
-import {AnswerMarkdown} from '../../AnswerMarkdown';
+import {AnswerMarkdown} from '../ask/AnswerMarkdown';
 import {ArchivedFileButton} from '../../ArchivedFileButton';
 import {useMemoryJob,memoryJobLabel,type MemoryJob} from './MemoryProgress';
 import {currentIntegrationCandidate} from '../../MemoryIntegration';

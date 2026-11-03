@@ -5,8 +5,8 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {Sources} from '../src/Sources.js';
-import {Files} from '../src/Files.js';
+import {Sources} from '../src/plugins/sources/Sources.js';
+import {Files} from '../src/plugins/intake/Files.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 

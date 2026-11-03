@@ -1,4 +1,4 @@
-import {associateChatScope,clearChatReloadDraft} from './chat-drafts';
+import {associateChatScope,clearChatReloadDraft} from './plugins/ask/chat-drafts';
 import {installGlobalErrorLogging,log} from './logger';
 import { ClientLoginApproval } from './ClientLoginApproval';
 import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';
@@ -55,7 +55,7 @@ import { pageLabels,readPage,routes,type Page } from './navigation';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';
 import { isSettingsContext,primaryDestination,WorkspaceNavigation } from './WorkspaceNavigation';
 import { readResource,resources } from './resource-cache';
-import { importQueue } from './import-queue';
+import { intakePlugin } from './plugins/intake';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { ErrorNotice,EvidenceDialog,LoginDialog,Spinner } from './shell-components';
 import "./styles.css";
@@ -283,14 +283,13 @@ function App() {
   }, [api]);
   useEffect(() => {
     if (!api) return;
-    const queue=importQueue(api);
-    queue.start();
+    const plugin=intakePlugin(api),queue=plugin.activate();
     let completed=queue.getSnapshot().completedVersion;
     const unsubscribe=queue.subscribe(()=>{
       const next=queue.getSnapshot().completedVersion;
       if(next!==completed){completed=next;refresh();}
     });
-    return ()=>{unsubscribe();queue.close();};
+    return ()=>{unsubscribe();plugin.dispose();};
   }, [api,refresh]);
   useEffect(() => {
     if (!api || !verified) return;

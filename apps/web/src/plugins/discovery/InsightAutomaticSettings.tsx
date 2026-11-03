@@ -4,7 +4,7 @@ import type {ModelSettingsView} from '@mote/shared/models';
 import {commonFailureMessage,httpStatusMessage} from '@mote/shared';
 import {ApiError,errorMessage,type Api} from '../../api';
 import {useResource} from '../../useResource';
-import {ConversationDialog} from '../../ConversationTurnDetails';
+import {ConversationDialog} from '../ask/ConversationTurnDetails';
 import {invalidateConfiguration} from '../../configuration-cache';
 type Policy={enabled:boolean;intervalHours:number;minChanges:number;maxItems:number;maxWaitHours?:number};
 type View={revision:number;settings:Record<string,unknown>&{insights:Policy}};

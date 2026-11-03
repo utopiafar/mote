@@ -4,12 +4,12 @@ import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {createHash} from 'node:crypto';
 import {configureLocale} from '@mote/shared/i18n';
-import {importQueue} from '../src/import-queue.js';
-import {Imports} from '../src/Imports.js';
+import {importQueue} from '../src/plugins/intake/import-queue.js';
+import {Imports} from '../src/plugins/intake/Imports.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 import {confirmNavigation} from '../src/unsaved.js';
-import {pages as importPages} from '../src/features/imports.js';
+import {pages as importPages} from '../src/plugins/intake/index.js';
 configureLocale(()=> 'zh-CN');
 const fixtureApis=new Set<Api>();
 async function fixture(t:any){
