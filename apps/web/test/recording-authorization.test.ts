@@ -5,7 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {randomUUID} from 'node:crypto';
 import {configureLocale} from '@mote/shared/i18n';
-import {RecordingAuthorization} from '../src/RecordingAuthorization.js';
+import {RecordingAuthorization} from '../src/plugins/sources/RecordingAuthorization.js';
 import {ProviderAuthorization} from '../src/plugins/agent-access/ProviderAuthorization.js';
 import type {Api} from '../src/api.js';
 configureLocale(()=> 'zh-CN');

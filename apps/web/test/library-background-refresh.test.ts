@@ -8,7 +8,7 @@ import type { CaptureSession, WorkActivity } from '@mote/shared';
 import { CaptureSessions } from '../src/plugins/library/CaptureSessions.js';
 import { LibraryMaterials } from '../src/plugins/library/LibraryBrowse.js';
 import { Notes } from '../src/plugins/notes/Notes.js';
-import { WorkIssueNotice } from '../src/WorkIssueNotice.js';
+import { WorkIssueNotice } from '../src/plugins/work/WorkIssueNotice.js';
 import { ApiError } from '../src/api.js';
 import { featuresReady } from '../src/features/bootstrap.js';
 import { FeatureCollections } from '../src/features/runtime.js';

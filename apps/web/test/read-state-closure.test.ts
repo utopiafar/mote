@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {Conversations} from '../src/Conversations.js';
+import {Conversations} from '../src/plugins/ask/Conversations.js';
 import {Insights} from '../src/plugins/discovery/Insights.js';
-import {Connections} from '../src/Connections.js';
+import {Connections} from '../src/plugins/sources/Connections.js';
 import {RuntimeSettings,ExecutionQueueOverview} from '../src/RuntimeSettings.js';
 import {ImageProgress} from '../src/ImageProgress.js';
 import {PerceptionSettings} from '../src/PerceptionSettings.js';
@@ -241,7 +241,7 @@ test('model assignment refresh preserves owner choices and their original revisi
 });
 
 test('Markdown citation renderer retains the exact focused control across parent and cache refreshes',async t=>{
- const {AnswerMarkdown}=await import('../src/AnswerMarkdown.js'),{root,d}=await fixture(t),id='memory:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',onOpen=()=>{};
+ const {AnswerMarkdown}=await import('../src/plugins/ask/AnswerMarkdown.js'),{root,d}=await fixture(t),id='memory:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',onOpen=()=>{};
  const answer=()=>({answer:'Generated citation ['+id+']',runId:'fixture',trace:[],citations:[{id,appName:'Generated',excerpt:'Generated',capturedAt:when}]});
  await act(async()=>root.render(React.createElement(AnswerMarkdown,{answer:answer(),onOpen})));const original=d.querySelector<HTMLButtonElement>('.inline-citation')!;original.focus();
  await act(async()=>root.render(React.createElement(AnswerMarkdown,{answer:answer(),onOpen})));assert.equal(original.isConnected,true);assert.equal(d.activeElement,original);
