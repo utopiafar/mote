@@ -377,11 +377,13 @@ export class SourceSync {
     const candidates = this.pendingItems().filter(item => item.kind === 'file' && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight === item.revision);
     if (!candidates.length) return;
     const withdrawKeys = new Set<string>(), cleared = new Map<string, string>();
-    for (const item of candidates) {
+    // Bound the reconciliation per call so a slice still reaches its uploads
+    // when many candidates stay unresolved; the rest are retried next time.
+    for (const item of candidates.slice(0, 8)) {
       if (this.inflight.has(itemKey(item))) continue;
       let head: { revision?: string | null } | undefined;
       try { head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined; }
-      catch { continue; }
+      catch (error) { if (error instanceof UploadSliceYield) throw error; continue; }
       if (!head || !('revision' in head)) continue;
       const key = sourceHash(item.externalId);
       const delivered = this.data.delivered?.[key] ?? null;

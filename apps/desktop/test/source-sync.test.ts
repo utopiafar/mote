@@ -780,6 +780,36 @@ describe('source revisions and durable acknowledgments', () => {
     expect(engine.status().pending).toBe(0);
     expect(sent).toHaveLength(0);
   });
+  it('yields the slice instead of swallowing slice control during reconciliation', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    // Produce an absent in-flight candidate through the real path.
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false, preflightFailed = false;
+    const gated = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; entered = true; await gate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const flushing = engine.flush(source, gated as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    // The head read yields the slice; flushSlice must surface that, not drop it.
+    const { UploadSliceYield } = await import('../src/upload-slice');
+    const sliceWire = async (path: string) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path.startsWith('/api/file-sync/v1/head')) throw new UploadSliceYield();
+      return { manifestBatch: 200 };
+    };
+    const slice = await engine.flushSlice(source, sliceWire as any, undefined);
+    expect(slice.state).toBe('yielded');
+    expect(engine.status().pending).toBe(1);
+    expect(sent).toHaveLength(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
