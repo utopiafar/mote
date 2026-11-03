@@ -3,6 +3,7 @@ import {FeatureRegistry,type FeatureManifest,type FeatureSurface} from '@mote/sh
 import type {FastifyInstance} from 'fastify';
 import {collectorIngressWrite} from './ingress.js';
 import {PluginResourceScope} from '@mote/plugin-host';
+import type {DomainRouteContribution} from './plugins/domain-routes.js';
 
 export class ServerFeatureScope extends PluginResourceScope {
   constructor(onError:(error:unknown)=>void=()=>{}){super(onError,'Feature disposal failed',true);}
@@ -17,6 +18,14 @@ export class ServerFeatureHost {
   private scopes=new Set<ServerFeatureScope>();
   private closing?:Promise<void>;
   constructor(private root:Context,private app:FastifyInstance,private onError:(error:unknown)=>void=()=>{}){}
+  /** Mount a domain-owned route table inside this feature's child app. The
+   * contribution resolves its current activation per request; the feature host
+   * still owns route revocation and inventory registration. */
+  mountDomainRoutes(id:string,app:FastifyInstance){
+    const contribution:DomainRouteContribution|undefined=this.root.get('moteDomainRoutes')?.[id];
+    if(!contribution)throw Error(`Domain routes are unavailable: ${id}`);
+    contribution.mount(app);
+  }
   async install(manifest:FeatureManifest,entry:(app:FastifyInstance,scope:ServerFeatureScope)=>void){
     if(this.closing)throw Error('Feature host is closed');
     await this.disposals.get(manifest.id);this.disposals.delete(manifest.id);

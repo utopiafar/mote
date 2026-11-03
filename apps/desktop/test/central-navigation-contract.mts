@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseMoteLink } from '@mote/shared';
 import { buildApp, type QueryAgent } from '../../server/src/app';
 import type { Config as ServerConfig } from '../../server/src/config';
 import { defaultConfig } from '../src/config';
-import { pollBrowserLogin, prepareBrowserSession, showCentral, type CentralNavigation } from '../src/central-navigation';
+import { centralRoute, centralScope, pollBrowserLogin, prepareBrowserSession, showCentral, type CentralNavigation } from '../src/central-navigation';
 import { consumeLoginTicket } from '../../web/src/login-handoff';
 import { createApi } from '../../web/src/api';
 import { clearSession, connectionStorageKey, readStoredSession } from '../../web/src/session';
@@ -51,14 +52,15 @@ async function fixture(serviceOrigin = origin) {
 }
 
 function browser(url: string) {
-  let href = url;
+  let href = url, scrollY = 0;
   const local = new Map<string, string>(), session = new Map<string, string>();
   const storage = (values: Map<string, string>) => ({ getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
   stubGlobal('location', { get href() { return href; }, get hash() { return new URL(href).hash; }, get pathname() { return new URL(href).pathname; }, get search() { return new URL(href).search; }, get origin() { return new URL(href).origin; } });
   stubGlobal('history', { replaceState: (_data: unknown, _unused: string, path: string) => { href = new URL(path, href).href; } });
   stubGlobal('localStorage', storage(local));
   stubGlobal('sessionStorage', storage(session));
-  return { local, session, href: () => href };
+  stubGlobal('scrollY', 0);
+  return { local, session, href: () => href, scrollY: () => scrollY, setScrollY: (value: number) => { scrollY = value; stubGlobal('scrollY', value); } };
 }
 
 function navigation(settings = { ...defaultConfig(), serverUrl: origin, token: owner }): CentralNavigation & { launchChrome: ReturnType<typeof mock.fn>; openDefault: ReturnType<typeof mock.fn> } {
@@ -90,6 +92,39 @@ it('carries the current desktop ticket into the real Web session consumer and re
     await assert.rejects(consumeLoginTicket(), /Login link expired/);
     assert.equal(localStorage.getItem(connectionStorageKey), null); assert.equal(sessionStorage.getItem(connectionStorageKey), null);
   } finally { await f.close(); }
+});
+
+it('opens the canonical shared scope and route and restores that origin and reader position after login', async () => {
+  const f = await fixture();
+  try {
+    const grant = await f.connections.session(origin, 'Generated desktop', { deviceId: 'generated-scope-mac', deviceName: 'Generated Mac', platform: 'macos' }, 86400000);
+    const current: import('../src/contracts').Config = { ...defaultConfig(), serverUrl: origin + '/', token: owner };
+    const entry = navigation(current);
+    entry.settings = () => current;
+    entry.ensureBrowserLogin = async () => { current.token = grant.token; current.authExpiresAt = grant.expiresAt; };
+    const reference = 'capture:11111111-2222-4333-8444-555555555555', conversationId = '11111111-2222-4333-8444-555555555555';
+    await showCentral(entry, 'ask', reference, undefined, conversationId);
+    const link = parseMoteLink(entry.launchChrome.mock.calls[0].arguments[0] as string);
+    assert.deepEqual(link, { scope: { origin }, route: { kind: 'reference', ref: reference, conversation: conversationId } });
+    const b = browser(entry.launchChrome.mock.calls[0].arguments[0] as string);
+    b.setScrollY(240); await consumeLoginTicket();
+    assert.equal(b.scrollY(), 240, 'returning from login keeps the reader position');
+    assert.deepEqual(parseMoteLink(b.href()), link, 'returning from login keeps the exact origin and route');
+    await showCentral(entry, 'activity', undefined, 'generated-work-scope');
+    assert.deepEqual(parseMoteLink(entry.launchChrome.mock.calls[1].arguments[0] as string), { scope: { origin }, route: { kind: 'run', id: 'generated-work-scope' } });
+  } finally { await f.close(); }
+});
+
+it('resolves Mac handoff arguments through the shared route schema before minting a ticket', () => {
+  const reference = 'capture:11111111-2222-4333-8444-555555555555', conversationId = '11111111-2222-4333-8444-555555555555';
+  assert.deepEqual(centralScope({ serverUrl: origin + '/' }), { origin });
+  assert.deepEqual(centralRoute(reference), { kind: 'reference', ref: reference });
+  assert.deepEqual(centralRoute(reference, undefined, conversationId), { kind: 'reference', ref: reference, conversation: conversationId });
+  assert.deepEqual(centralRoute(undefined, 'generated-run-scope'), { kind: 'run', id: 'generated-run-scope' });
+  assert.deepEqual(centralRoute(undefined, undefined, conversationId), { kind: 'conversation', id: conversationId });
+  assert.equal(centralRoute(), undefined);
+  for (const invalid of ['memory:11111111-2222-4333-8444-555555555555', 'artifact:generated:version%3A2', 'not-a-reference', ' ' + reference]) assert.throws(() => centralRoute(invalid), /Invalid evidence reference/);
+  assert.throws(() => centralRoute(undefined, 'generated-run', conversationId), /Invalid conversation destination/);
 });
 
 it('rejects expired tickets at the real exchange and discards a late exchange after a new login', async () => {
