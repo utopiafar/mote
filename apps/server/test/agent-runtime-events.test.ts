@@ -71,7 +71,7 @@ test('actual Host repairs keep one cumulative C06 receipt and terminal identity 
   }});
   const session=await f.create(),result=await session.execute();assert.equal(result.answer,'Generated answer');assert.equal(session.repairs,1);
   const [receipt]=f.receipts();assert.equal(f.receipts().length,1);assert.equal(receipt.status,'completed');assert.equal(receipt.tokens!.totalTokens,1250);assert.equal(receipt.tokens!.cacheReadTokens,undefined);assert.equal(hasCompleteTokenUsage(receipt.tokens),true);
-  assert.equal(f.counts.updates,4,'successive samples in the same attempt must not be dropped by an event-type key');assert.equal(f.counts.completed,1);assert.equal(f.counts.failed,0);
+  assert.equal(f.counts.updates,3,'distinct successive samples in the same attempt must still update; the identical repeat is deduplicated by the Host event boundary');assert.equal(f.counts.completed,1);assert.equal(f.counts.failed,0);
   const attempts=f.diagnosticEvents().filter(event=>event.event==='agent.runtime_attempt_terminal');assert.equal(attempts.length,2);assert.equal(new Set(attempts.map(event=>event.attemptId)).size,2);assert.ok(attempts.every(event=>event.runId===f.runId));
   const terminal=f.events.find(event=>event.event.type==='run.terminal')!;assert.notEqual(terminal.attemptId,null);f.observe(terminal);f.observe({...terminal,event:{type:'run.terminal',terminal:{kind:'failed',failure:{code:'internal'}}}});f.observe({...terminal,event:{type:'usage',usage:sample(9000)}} as HostEvent);
   assert.equal(f.counts.completed,1);assert.equal(f.counts.failed,0);assert.equal(f.receipts()[0].tokens!.totalTokens,1250);assert.equal(f.diagnosticEvents().filter(event=>event.event==='agent.runtime_run_terminal').length,1);
@@ -106,10 +106,10 @@ test('throwing Host and diagnostics observers cannot turn an accepted Host candi
   assert.equal(f.counts.completed,1);assert.equal(f.receipts()[0].status,'completed');assert.ok(f.events.some(event=>event.identity.runId===f.runId&&event.event.type==='run.terminal'));
 });
 
-test('foreign or invalid samples cannot poison the bound run and unknown usage fields are not persisted',async t=>{
+test('foreign samples are rejected and malformed or unknown provider usage never poisons the bound run',async t=>{
   const secret='GENERATED_PRIVATE_UNKNOWN_USAGE_FIELD',f=await fixture(t,{run:async(port,request)=>{
     port.emit({type:'usage',usage:sample(-1)},request.attempt);port.emit({type:'usage',usage:sample(Number.POSITIVE_INFINITY)},request.attempt);port.emit({type:'usage',usage:{...sample(1000),privateBody:secret} as TokenUsage},request.attempt);return completed();
   }}),session=await f.create();
   const ready=f.events[0];f.observe({...ready,identity:{...ready.identity,runId:'different-run'},attemptId:'foreign',event:{type:'usage',usage:sample(9000)}});
-  await session.execute();assert.equal(f.counts.updates,1);assert.equal(f.receipts()[0].tokens!.totalTokens,1000);assert.ok(!JSON.stringify(f.receipts()).includes(secret));assert.ok(!JSON.stringify(f.diagnosticEvents()).includes(secret));assert.equal(f.diagnosticEvents().filter(event=>event.event==='agent.runtime_event_rejected').length,3);
+  await session.execute();assert.equal(f.counts.updates,1);assert.equal(f.events.filter(event=>event.event.type==='usage').length,1,'malformed samples stop at the Host event boundary');assert.equal(f.receipts()[0].tokens!.totalTokens,1000);assert.ok(!JSON.stringify(f.receipts()).includes(secret));assert.ok(!JSON.stringify(f.diagnosticEvents()).includes(secret));assert.equal(f.diagnosticEvents().filter(event=>event.event==='agent.runtime_event_rejected').length,1,'only the foreign run identity reaches the observer');
 });
