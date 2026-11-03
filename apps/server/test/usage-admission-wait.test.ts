@@ -26,7 +26,11 @@ async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{au
     const request=input as {onUsage?:(usage:{requests:number;reportedRequests:number;inputTokens:number;outputTokens:number;totalTokens:number})=>void};
     // Real durable admission: unapproved state throws the 60s pending failure.
     authorization.automatic('generated-work',['generated-original'],'semantic');
-    if(outcome==='started-wait')(input as {onTrace?:(event:unknown)=>void}).onTrace?.({type:'model.started',stage:'model'});
+    if(outcome==='started-wait'){
+      const onTrace=(input as {onTrace?:(event:unknown)=>void}).onTrace;
+      assert.equal(typeof onTrace,'function','the processor must wire onTrace into the real query surface');
+      onTrace!({type:'model.started',stage:'model'});
+    }
     else request.onUsage?.({requests:1,reportedRequests:1,inputTokens:5,outputTokens:2,totalTokens:7});
     if(outcome==='failure')throw Error('Generated model failure');
     if(outcome==='cancel')throw new ProviderFailure({category:'blocked',code:'cancelled',executionStarted:true},'Generated cancellation');

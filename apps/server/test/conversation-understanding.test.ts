@@ -188,7 +188,10 @@ function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wa
  const query=async(input:QueryInput):Promise<QueryResult>=>{
   authorization.automatic('conversation-work',[f.anchor],'semantic');
   if(outcome==='usage-wait')input.onUsage?.({requests:1,reportedRequests:1,inputTokens:19,outputTokens:3,totalTokens:22});
-  if(outcome==='started-wait')input.onTrace?.({type:'model.started',stage:'model'} as never);
+  if(outcome==='started-wait'){
+   assert.equal(typeof input.onTrace,'function','the conversation processor must wire onTrace into the real query surface');
+   input.onTrace!({type:'model.started',stage:'model'} as never);
+  }
   if(outcome!=='wait'){
    authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
    authorization.automatic('conversation-work-2',[f.anchor],'semantic');
