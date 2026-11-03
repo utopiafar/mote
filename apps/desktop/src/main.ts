@@ -3,9 +3,8 @@ import {canSendFromTray,showTraySendFailure} from './tray-send';
 import {describeBackupFile} from './queue-backup-identity';
 import {appearancePreference,resolveColorScheme,linearUiTheme,type AppearancePreference} from '@mote/shared';
 import { connectionToken, loginRequest, loginVerifier } from './login-session';
-import { SyncHistory, type SyncHistoryQuery, type SyncHistoryContentQuery } from './sync-history';
+import { SyncHistory } from './sync-history';
 import { randomUUID } from 'node:crypto';
-import { syncContent } from './sync-content';
 import { ConnectionController } from './connection-controller';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, locales, type LanguagePreference } from '@mote/shared/i18n';
@@ -25,6 +24,7 @@ import { createChromePlugin, chromeManageCapability, chromeReadCapability, type 
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
 import { createCapturePlugin, createCaptureStages, captureReadCapability, captureWriteCapability, type CapturePlugin } from './plugins/capture';
 import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
+import { createWorkHistoryWorkspacePlugin, workHistoryReadCapability } from './plugins/work-history-workspace';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -34,7 +34,6 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { openCentralBrowser,validateCentralWorkId } from './central-browser';
 import { showCentral as navigateCentral, prepareBrowserSession, pollBrowserLogin, type BrowserLogin } from './central-navigation';
-import {centralWorkActivity} from './work-activity';
 import { join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { resolveProfile, profileDefaults, isDevelopmentProfile } from './profile';
@@ -289,6 +288,13 @@ else {
       syncHistory,
       guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
     });
+    const workHistory = createWorkHistoryWorkspacePlugin({
+      settings: () => settings,
+      history: syncHistory,
+      queue,
+      sources: () => localSources!,
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+    });
     pluginHost = new DesktopPluginHost({ router: electronIpcRouter(ipcMain, () => pluginHost!.windowFacts), native: new NativeProviderRegistry('mac') });
     const host: DesktopPluginHost = pluginHost;
     window = new BrowserWindow({
@@ -304,7 +310,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, workHistoryReadCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -313,7 +319,7 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!, chromePlugin!, capturePlugin!]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
@@ -432,19 +438,6 @@ else {
       return clientStatus();
     }));
     handle('mote:get-status', () => clientStatus());
-    const browseWithConnection = async <T>(operation: (config: Config) => Promise<T>): Promise<T> => {
-      const requested = settings; const result = await operation(requested);
-      if (settings !== requested) throw new Error(moteText("连接已改变，请刷新采集记录")); return result;
-    };
-    handle('mote:work-activity',input=>browseWithConnection(config=>centralWorkActivity(config,input as import('./work-activity').WorkActivityQuery|undefined)));
-    handle('mote:sync-history', input => syncHistory.page(settings,input as SyncHistoryQuery));
-    handle('mote:sync-history-contents', input => syncHistory.contents(settings,input as SyncHistoryContentQuery));
-    handle('mote:sync-history-content', (runId,key,offset,includeImage) => browseWithConnection(config => { if(typeof runId!=='string'||typeof key!=='string')throw Error('Invalid sync content reference'); return syncContent(syncHistory,queue,localSources!,config,runId,key,offset as number|undefined,includeImage===undefined?true:includeImage===true); }));
-    handle('mote:sync-history-pending', () => {
-      const pending=queue.historyPending();
-      const rows=localSources!.status();
-      return [...pending,...(['file','calendar','coding'] as const).map(source=>{const sources=rows.filter(r=>source==='file'?r.source.kind==='local-files':source==='calendar'?r.source.kind==='local-calendar':r.source.kind.startsWith('coding-'));return {source,pending:sources.reduce((sum,r)=>sum+r.pending+(r.blocked??0),0),review:0,blocked:sources.reduce((sum,r)=>sum+(r.blocked??0),0),retrying:sources.reduce((sum,r)=>sum+(r.state==='error'?r.pending:0),0)};})];
-    });
     handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
     handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
     const devUpdateStatus = () => ({...updater!.status(), manualDownload:true, state:'idle' as const, canInstall:false, availableVersion:undefined, notesUrl:desktopDevDownloadsUrl, message:moteText('查看版本说明与安装包'), installReason:''});
