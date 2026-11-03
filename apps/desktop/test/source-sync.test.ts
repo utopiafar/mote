@@ -532,6 +532,24 @@ describe('source revisions and durable acknowledgments', () => {
     expect(engine.status().pending).toBe(0);
     expect(sent).toHaveLength(0);
   });
+  it('stages the acknowledged deletion in the same scan that withdraws an unattempted update', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    const wire = fileTransport(sent);
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, wire);
+    await engine.stage(scan([{ ...fileItem, text: 'queued but never sent' }]), true);
+    // Complete absence withdraws the unattempted update; the deletion of the
+    // acknowledged revision must be staged in this same pass.
+    await engine.stage(scan([]), true);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const queued = [...state.pendingRealtime, ...state.pendingHistory];
+    expect(queued.some((entry: SourceItem) => entry.deleted)).toBe(true);
+    const before = sent.length;
+    await engine.flush(source, wire);
+    const deletion = sent.slice(before).find(entry => entry.item.deleted);
+    expect(deletion).toBeDefined();
+    expect(engine.status().pending).toBe(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
