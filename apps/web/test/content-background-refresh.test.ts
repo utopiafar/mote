@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {Memories} from '../src/Memories.js';
+import {Memories} from '../src/plugins/memory/index.js';
 import {Insights} from '../src/plugins/discovery/Insights.js';
 import {Imports} from '../src/Imports.js';
 import {ApiError,type Api} from '../src/api.js';
