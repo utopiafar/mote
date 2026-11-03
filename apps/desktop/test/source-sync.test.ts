@@ -378,7 +378,10 @@ describe('source revisions and durable acknowledgments', () => {
     expect(sent.every(entry => !entry.item.deleted)).toBe(true);
     expect(reopened.status().pending).toBe(0);
   });
-  it.each(['null', 'committed'] as const)('honors a durable seen-only reappearance before syncScan flushes a %s head', async mode => {
+  it.each([
+    { mode: 'null', complete: true }, { mode: 'committed', complete: true },
+    { mode: 'null', complete: false }, { mode: 'committed', complete: false },
+  ])('honors a durable seen-only reappearance before syncScan flushes a $mode head (complete=$complete)', async ({ mode, complete }) => {
     const spool = join(directory, 'seen-only-spool'), bytes = Buffer.from('generated reappearing source'); await mkdir(spool); await writeFile(join(spool, '0'), bytes);
     const original = { directory: spool, sha256: sourceHash(bytes), sizeBytes: bytes.length, partBytes: 4 * 1024 * 1024 };
     const returned = { ...fileItem, localOriginal: original };
@@ -404,7 +407,7 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => undefined);
     const before = sourceState(join(directory, 'state.json')) as any;
     expect(before.known[sourceHash(fileItem.externalId)]).toMatchObject({ absentWhileInflight: sent[0]!.revision, deletionPending: true });
-    const reopened = await create(), seenOnly = { ...scan([]), seen: [fileItem.externalId] };
+    const reopened = await create(), seenOnly = { ...scan([], complete), seen: [fileItem.externalId] };
     await expect(reopened.syncScan(seenOnly, true, source, wire)).resolves.toEqual({ changes: 0, state: 'ready' });
     expect(sent).toHaveLength(2); expect(sent.every(item => !item.deleted && item.revision === sent[0]!.revision)).toBe(true);
     expect(reopened.status().pending).toBe(0);

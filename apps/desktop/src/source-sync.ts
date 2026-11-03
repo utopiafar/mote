@@ -63,6 +63,7 @@ export class SourceSync {
   private unreconciledAbsent=new Set<string>();
   private confirmedAbsent=new Map<string,string>();
   private uploadProgress=0;
+  private uploadTurn=false;
   private headCursor=0;
   private knownItems=0;
   private pendingContentRevision=0;
@@ -195,7 +196,7 @@ export class SourceSync {
   }
 
   private clearObservedAbsence(scan: SourceScan, next: State, knownChanges: Map<string, Known>): void {
-    if (!scan.complete) return;
+    // Incompleteness prevents inferring absence, not honoring observed presence.
     const present = new Set(scan.seen);
     for (const [key, known] of Object.entries(next.known)) {
       const staged = knownChanges.get(key) ?? known;
@@ -364,7 +365,7 @@ export class SourceSync {
     catch (error) {
       // A slice exhausted before any upload: end this attempt instead of
       // yielding with zero progress, which would requeue the source forever.
-      if (error instanceof UploadSliceYield) return 'ready';
+      if (error instanceof UploadSliceYield) { this.uploadTurn = true; return 'ready'; }
       throw error;
     }
     const scheduler = this.scheduler;
@@ -413,7 +414,12 @@ export class SourceSync {
     const progress = this.uploadProgress;
     const bounded:SourceRequest=(path,body,method,requestSignal)=>{signal?.throwIfAborted();slice.admit(body);return request(path,body,method,requestSignal);};
     try{return {state:await this.flush(source,bounded,signal,observer),bytes:slice.bytes,requests:slice.requests};}
-    catch(error){if(!(error instanceof UploadSliceYield))throw error;return {state:this.uploadProgress===progress?'ready' as const:'yielded' as const,bytes:slice.bytes,requests:slice.requests};}
+    catch(error){
+      if(!(error instanceof UploadSliceYield))throw error;
+      const progressed = this.uploadProgress !== progress;
+      this.uploadTurn = !progressed;
+      return {state:progressed?'yielded' as const:'ready' as const,bytes:slice.bytes,requests:slice.requests};
+    }
   }
 
 
@@ -426,7 +432,10 @@ export class SourceSync {
     // Carry an unconsumed confirmation across admission boundaries; otherwise a
     // slow but successful head could consume every slice before its ACK send.
     // Serve that confirmation before more head reads can exhaust another slice.
-    if (this.confirmedAbsent.size) return;
+    const uploadTurn = this.uploadTurn; this.uploadTurn = false;
+    // A slow unresolved head must not consume every retry before an ordinary
+    // eligible record can send. Marked, unconfirmed records remain blocked.
+    if (this.confirmedAbsent.size || uploadTurn && pending.some(item => !this.awaitingAbsentHead(item))) return;
     const candidates = pending.filter(item => this.awaitingAbsentHead(item));
     if (!candidates.length) return;
     const withdrawKeys = new Set<string>();

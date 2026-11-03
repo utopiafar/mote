@@ -514,3 +514,51 @@ it('rotates past a slow unresolved head to the unexamined healthy candidate on t
     expect(wire.writes()).toHaveLength(0); expect(wire.unmatched).toEqual([]);
   } finally { release.resolve(); await flushing?.catch(() => {}); await failed; }
 });
+
+it('gives a healthy upload a turn while an unrelated absent head stays slow and unresolved with its spool retained', async () => {
+  const spool = join(directory, 'unknown-original'), bytes = Buffer.from('generated unknown original'); await mkdir(spool); await writeFile(join(spool, '0'), bytes);
+  const original = { directory: spool, sha256: sourceHash(bytes), sizeBytes: bytes.length, partBytes: 4 * 1024 * 1024 };
+  const a = { ...generatedFile('file:slow-absent-original', 'generated A'), localOriginal: original }, c = generatedFile('file:healthy-present-upload', 'generated C');
+  let items: ScannedItem[] = [a], sourceId = '', firstWrite = true, clock: number | undefined;
+  const published: string[] = [];
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false, validateConfiguration() {},
+    async scan() { return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } }; },
+  });
+  const wire = transport(request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities') return response(200, { manifestBatch: 200 });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId); expect(request.url.searchParams.get('externalId')).toBe(a.externalId);
+      if (firstWrite) return response(200, { revision: null });
+      if (clock !== undefined) clock += 15001;
+      return response(503, { error: 'Generated persistently slow unknown head' });
+    }
+    if (request.method === 'POST' && request.path === '/api/file-sync/v1/uploads') {
+      expect(request.body.item.externalId).toBe(a.externalId);
+      if (firstWrite) { firstWrite = false; return response(503, { error: 'Generated precommit failure' }); }
+      published.push(a.externalId);
+      return response(200, { ack: { ...sourceAck(sourceId, request.body.item, 'file-revision'), sha256: original.sha256, sizeBytes: original.sizeBytes } });
+    }
+    if (request.method === 'POST' && request.path === '/api/file-sync/v1/manifests') {
+      expect(request.body.items).toHaveLength(1); const item = request.body.items[0].item; published.push(item.externalId);
+      return response(200, { results: [{ externalId: item.externalId, revision: item.revision, state: 'accepted', ack: sourceAck(sourceId, item, 'file-revision') }] });
+    }
+    return wire.reject(request);
+  });
+  const app = await openManaged(adapters);
+  sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated upload fairness' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: false, syncContinuously: true });
+  await app.sync(true); await expect(app.flushPending(new AbortController().signal)).rejects.toMatchObject({ httpStatus: 503 });
+  items = [c]; await app.sync(true); expect(await markerCount(sourceId)).toBe(1); expect(app.status()[0]!.pending).toBe(2);
+  clock = Date.now(); const now = vi.spyOn(Date, 'now').mockImplementation(() => clock!);
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let slices = 0; await expect(app.flushPending(new AbortController().signal, async () => { slices++; })).resolves.toBeUndefined(); expect(slices).toBe(1);
+    }
+    expect(published).toEqual([c.externalId]); expect(app.status()[0]!.pending).toBe(1);
+    expect(app.pendingContent()[0]!.item).toMatchObject({ externalId: a.externalId, localOriginal: original });
+    expect(await readFile(join(spool, '0'))).toEqual(bytes); expect(wire.unmatched).toEqual([]);
+  } finally { now.mockRestore(); clock = undefined; }
+});
