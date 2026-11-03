@@ -2,19 +2,19 @@ import {useEffect,useRef,useState} from 'react';
 import {parseEvidenceRef} from '@mote/shared';
 import type {ModelSettingsView} from '@mote/shared/models';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,type Range,type Capture,errorMessage,dateTime} from './api';
-import {useResource} from './useResource';
-import {failureMessage} from './failure-message';
-import {resources} from './resource-cache';
-import {captureDateRange,localDateInput} from './capture-presentation';
-import {ModelSelector} from './ModelSelector';
+import {type Api,type Range,type Capture,errorMessage,dateTime} from '../../api';
+import {useResource} from '../../useResource';
+import {failureMessage} from '../../failure-message';
+import {resources} from '../../resource-cache';
+import {captureDateRange,localDateInput} from '../../capture-presentation';
+import {ModelSelector} from '../../ModelSelector';
 import {ManualMemoryRecipes} from './ManualMemoryRecipes';
 import {MemoryWorkChoices,type ExtractionChoice} from './MemoryWorkChoices';
 import {MemoryProgress,memoryJobLabel,useMemoryJob} from './MemoryProgress';
-import {MemoryIntegration,type IntegrationCandidate} from './MemoryIntegration';
-import type {MemoryRecipeRef} from './memory-recipes';
-import type {Material} from './Materials';
-export function installMemoryWorkspaceStyles(){if(document.querySelector('link[data-mote-memory-workspace]'))return;const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('./memory-workspace-final.css?no-inline',import.meta.url).href;link.dataset.moteMemoryWorkspace='';document.head.append(link);}
+import {MemoryIntegration,type IntegrationCandidate} from '../../MemoryIntegration';
+import type {MemoryRecipeRef} from '../../memory-recipes';
+import type {Material} from '../../Materials';
+export function installMemoryWorkspaceStyles(){if(document.querySelector('link[data-mote-memory-workspace]'))return;const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('../../memory-workspace-final.css?no-inline',import.meta.url).href;link.dataset.moteMemoryWorkspace='';document.head.append(link);}
 
 export type MemoryWorkLaunch={api:Api;token:number|string;kind:'extract'|'integrate'|'current';choice?:ExtractionChoice;candidate?:IntegrationCandidate;jobId?:string};
 type Scope={kind:'range';after:string;before:string;deviceId?:string}|{kind:'source';choice:ExtractionChoice};

@@ -121,7 +121,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     queryQualityExperiment:dependencies?.queryQualityExperiment,
     assertModelEvidence:input=>assertModelEvidence(input)});
   const {memoryStrategies,memoryRecipeSettings,memoryAutomation,integrationSettings,bindings,topics}=memoryInputs({store,configService});
-  const {materials,materialMemoryWork}=prepareMaterials({store,resources,memoryRecipeSettings,newInputAdmission:()=>bindings.current?.accepting()??memoryAutomation.accepting()});
+  const {materials,materialMemoryWork}=await prepareMaterials({bootstrap,store,authorization:authorizationPlatform.commits,resources,memoryRecipeSettings,newInputAdmission:()=>bindings.current?.accepting()??memoryAutomation.accepting()});
   // One service tree owns backend plugins. Each runtime installs into its own
   // managed scope below this root, so closing one cannot dispose a sibling.
   const backendContext=new Context();
