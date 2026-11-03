@@ -518,6 +518,22 @@ export class MaterialStore {
       WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`)
       .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs) as {anchor_id:string}[]).map(row=>row.anchor_id);
     return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs).map(r=>String(r.anchor_id));}
+  /** A listing card represents the item itself: its own body text first, then
+   * processed text (for example a visual interpretation). The transport metadata
+   * projection is the fallback for items without either, followed by attachment
+   * content and navigation locators, which describe other evidence. */
+  cardEvidenceIds(ref:string){const material=this.get(ref);if(!material)return [];
+    const order=`ORDER BY CASE
+      WHEN block_id IN ('source-record','record') OR block_id LIKE 'chunk:%' THEN 0
+      WHEN block_id IN ('source-metadata','record-metadata') THEN 2
+      WHEN block_id LIKE 'attachment:%' OR block_id LIKE 'attachment/%' OR block_id LIKE 'record-attachment:%' THEN 3
+      WHEN block_id LIKE '%:original' OR kind='asset' THEN 4
+      ELSE 1 END, idx`;
+    const rows=this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
+      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${order}`)
+      .all(material.id,material.sequence,material.sequence):this.store.db.prepare(`SELECT anchor_id FROM material_blocks
+      WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${order}`).all(material.id,material.revision);
+    return (rows as {anchor_id:string}[]).map(row=>String(row.anchor_id));}
   /** An explicit owner selection pins the named outputs containing its current
    * anchors. Automatic source defaults cannot silently discard selected OCR or
    * other independently ready outputs. Unmapped legacy blocks stay conservative. */

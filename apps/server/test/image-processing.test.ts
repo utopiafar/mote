@@ -25,6 +25,7 @@ import {MaterialMemoryWork} from '../src/material-memory-work.js';
 import {installCaptureMemoryIntake} from '../src/capture-memory-intake.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
+import {EvidenceReader} from '../src/evidence-reader.js';
 import {processorContract,processorSettingsFingerprint} from '../src/file-configuration.js';
 import {DEFAULT_IMAGE_RECIPE} from '../src/image-recipes.js';
 import {generatedAppleDouble} from './fixtures/appledouble.js';
@@ -501,4 +502,38 @@ for(const withdrawal of ['delete','source-context'] as const)test(`queued image 
  const response=await node.app.inject(withdrawal==='delete'?{method:'DELETE',url:'/api/captures/'+id,headers:{authorization:'Bearer '+config.token}}:{method:'PATCH',url:'/api/sources/'+encodeURIComponent(sourceId),headers:{authorization:'Bearer '+config.token},payload:{ownerRelation:'third_party'}});
  assert.equal(response.statusCode,200,response.body);release();await blocker;await imageWork;
  assert.equal(imageCalls,0);assert.equal(node.store.db.prepare("SELECT count(*) n FROM model_usage WHERE json_extract(json,'$.operation')='image-understanding'").get()!.n,0);
+});
+
+test('source-item card for an interpreted image shows the interpretation instead of the locator',async t=>{
+ const f=await fixture(t),id=await f.upload();
+ f.empty();await f.images.tick();await f.organize();
+ const record=f.store.evidence([id])[0],externalId=record.provenance!.externalId,material=f.materials.get(materialId('generated-import',externalId))!;
+ const blocks=f.materials.evidenceIds(material.ref).map(anchor=>String((f.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(anchor) as {block_id:string}).block_id));
+ assert.ok(blocks.includes('image:original'),'the original image locator is a navigation anchor');
+ assert.ok(blocks.includes('image:understanding'),'the ready visual interpretation is an anchor');
+ const agent=new EvidenceReader(f.store,f.sources,f.files,undefined,undefined,f.materials).agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
+ const page=await agent.sourceItems!({sourceId:'generated-import'}) as {items:{id:string;ocrText:string;provenance?:{externalId?:string;uri?:string}}[]};
+ const card=page.items.find(row=>row.provenance?.externalId===externalId)!;
+ assert.ok(card,'the interpreted image keeps its source-item card');
+ assert.equal(card.provenance?.uri?.split('#')[1],'image:understanding','the card shows processed text, not the locator');
+ assert.match(card.ocrText,/A third-party article says its author resigned/);
+ assert.doesNotMatch(card.ocrText,/originalImage/,'a navigation locator is never the item body');
+});
+
+test('an image with empty OCR and no interpretation falls back to its metadata, never the locator',async t=>{
+ const f=await fixture(t);
+ f.images.configure({...f.images.settings(),understandingEnabled:false});
+ const id=await f.upload();
+ f.empty();await f.images.tick();await f.organize();
+ const record=f.store.evidence([id])[0],externalId=record.provenance!.externalId,material=f.materials.get(materialId('generated-import',externalId))!;
+ const anchors=f.materials.evidenceIds(material.ref),blocks=anchors.map(anchor=>String((f.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(anchor) as {block_id:string}).block_id));
+ assert.ok(blocks.includes('image:original'),'the original image locator stays an anchor for read_image navigation');
+ assert.ok(!blocks.includes('image:understanding'),'no interpretation product was requested');
+ const agent=new EvidenceReader(f.store,f.sources,f.files,undefined,undefined,f.materials).agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
+ const page=await agent.sourceItems!({sourceId:'generated-import'}) as {items:{id:string;ocrText:string;provenance?:{externalId?:string;uri?:string}}[]};
+ const card=page.items.find(row=>row.provenance?.externalId===externalId)!;
+ assert.equal(card.provenance?.uri?.split('#')[1],'source-metadata','without a body the item metadata is the card, not the locator');
+ assert.match(card.ocrText,/"captureId"/);assert.doesNotMatch(card.ocrText,/originalImage/);
+ const locator=await agent.evidence!({ids:[anchors[blocks.indexOf('image:original')]!]}) as {ocrText:string}[];
+ assert.match(locator[0]!.ocrText,/original_image_reference/,'the locator stays explicitly addressable for read_image');
 });

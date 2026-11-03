@@ -15,6 +15,7 @@ import type {Config} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {materialId} from '../src/materials.js';
 import {fileAttachmentParent} from '../src/file-attachments.js';
+import {EvidenceReader} from '../src/evidence-reader.js';
 
 const token='generated-attachment-owner',headers={authorization:'Bearer '+token};
 const caption='I saved a generated engineering discussion because I wanted to revisit it.';
@@ -145,4 +146,52 @@ test('deleting a parent while OCR is running prevents late attachment evidence f
  await running;await f.organize();assert.equal(fileAttachmentParent(f.node.store,child),undefined);
  assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_artifacts WHERE capture_id=?').get(child)!.n,0);
  await assert.rejects(f.node.featureServices.archiveReader.readImage!({id:child}));
+});
+
+test('an empty parent keeps its metadata card while attachment content stays explicitly addressable',async t=>{
+ const f=await fixture(t),original=f.node.archivedFiles.put({name:'generated-empty-parent.png',mimeType:'application/octet-stream',bytes:f.bytes});
+ const parent=await f.node.sources.upsert('generated-notes',{externalId:'empty-parent',revision:'1',kind:'message',layer:'original',text:'',observedAt:'2026-09-27T00:00:00Z',
+  document:{contentRole:'authored',timeBasis:'unknown',attachments:[{id:original.id,mimeType:original.mimeType,name:original.name}]}});
+ f.node.archivedFiles.attach(parent.id,[original.id]);
+ const child=await f.prepare(parent.id,original.id);
+ await f.node.processing.tick();await f.organize();
+ const material=f.node.materials.get(materialId('generated-notes','empty-parent'))!,anchors=f.node.materials.evidenceIds(material.ref);
+ const blocks=anchors.map(anchor=>String((f.node.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(anchor) as {block_id:string}).block_id));
+ assert.ok(blocks.includes('source-metadata'),'the empty parent keeps its metadata projection');
+ assert.ok(blocks.some(id=>id.startsWith('attachment:')),'attachment text is anchored on the parent material');
+ assert.ok(blocks.some(id=>id.startsWith('attachment/')),'the attachment image locator is anchored too');
+ const agent=new EvidenceReader(f.node.store,f.node.sources,f.node.files,undefined,undefined,f.node.materials).agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
+ const page=await agent.sourceItems!({sourceId:'generated-notes'}) as {items:{id:string;ocrText:string;provenance?:{externalId?:string;uri?:string}}[]};
+ const card=page.items.find(row=>row.provenance?.externalId==='empty-parent')!;
+ assert.ok(card,'the empty parent keeps its source-item card');
+ assert.equal(card.provenance?.uri?.split('#')[1],'source-metadata','the parent card shows its own metadata, not attachment content');
+ assert.match(card.ocrText,/"captureId"/);
+ const attachment=await agent.evidence!({ids:[anchors[blocks.findIndex(id=>id.startsWith('attachment:'))]!]}) as {ocrText:string}[];
+ assert.match(attachment[0]!.ocrText,/"attachment"/,'attachment content stays explicitly addressable');
+ assert.match(attachment[0]!.ocrText,/Generated participant described testing idempotent writes/);
+});
+
+test('an attachment-only note keeps its metadata card instead of attachment text',async t=>{
+ const f=await fixture(t),attachmentId=await f.upload('note-attachment'),id=randomUUID();
+ const created=await f.node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,text:'',deviceId:'generated-device',deviceName:'Generated',platform:'macos',capturedAt:'2026-10-29T01:00:00Z',
+  metadata:{version:1,observedAt:'2026-10-29T01:00:00Z',attachments:[attachmentId]}}});
+ assert.equal(created.statusCode,201,created.body);
+ await f.node.processing.tick();await f.organize();
+ const material=f.node.materials.list({kind:'mote.note'}).items.find(item=>item.origin.externalId===id)!;
+ assert.ok(material,'the attachment-only note has its authored Material');
+ const reader=new EvidenceReader(f.node.store,f.node.sources,f.node.files,undefined,undefined,f.node.materials);
+ const anchors=f.node.materials.evidenceIds(material.ref);
+ const blocks=anchors.map(anchor=>String((f.node.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(anchor) as {block_id:string}).block_id));
+ assert.ok(blocks.includes('record-metadata'),'the attachment-only note keeps its metadata anchor');
+ const attachment=blocks.findIndex(blockId=>blockId.startsWith('record-attachment:')&&blockId.split(':').length===3);
+ assert.ok(attachment>=0,'processed attachment text is anchored on the note');
+ // Public discovery pages visit formal Materials first (MCP browse/search and the context bundle use queryPage).
+ const page=reader.queryPage({limit:30},'browse') as {items:{id:string;ocrText:string;provenance?:{uri?:string}}[]};
+ const view=page.items.find(row=>row.provenance?.uri?.split('#')[0]===material.ref)!;
+ assert.ok(view,'the attachment-only note appears in public discovery');
+ assert.equal(view.provenance?.uri?.split('#')[1],'record-metadata','the note card shows its own metadata, not attachment text');
+ assert.match(view.ocrText,/"captureId"/);assert.doesNotMatch(view.ocrText,/idempotent/);
+ const agent=reader.agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
+ const expanded=await agent.evidence!({ids:[anchors[attachment]!]}) as {ocrText:string}[];
+ assert.match(expanded[0]!.ocrText,/Generated participant described testing idempotent writes/,'attachment text stays explicitly addressable');
 });

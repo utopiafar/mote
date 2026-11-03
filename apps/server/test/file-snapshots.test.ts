@@ -14,6 +14,7 @@ import {TRANSCRIPT_OUTPUT} from '../src/file-recipes.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {CaptureRawReader} from '../src/capture-raw-reader.js';
+import {EvidenceReader} from '../src/evidence-reader.js';
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-snapshot-fixture-')),store=new Store(dir,{maxStorageBytes:100*1024*1024}),sources=new SourceStore(store),files=new FileStore(store,sources);const cleanup:Array<()=>Promise<void>>=[];sources.register({id:'fixture',name:'Generated',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});t.after(async()=>{for(const close of cleanup.reverse())await close();store.close();rmSync(dir,{recursive:true,force:true});});return {store,sources,files,cleanup};}
 async function upload(files:FileStore,bytes:Buffer,allowRead=false,mimeType='text/plain'){
  const hash=sha256(bytes),m:FileRevision={sourceId:'fixture',previousRevision:null,sizeBytes:bytes.length,sha256:hash,relativePath:'generated.txt',item:{externalId:'generated-file',revision:hash,observedAt:'2026-10-01T00:00:00Z',title:'Generated',kind:'file',layer:'snapshot',text:'',mimeType,deleted:false,document:{fileIndex:{version:1,fileId:'generated-file',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead}}}};
@@ -84,4 +85,39 @@ test('processed snapshot metadata validates without granting any access to its t
  // The metadata projection grants no original read or byte access.
  const requests=new FileEvidence(sources);await assert.rejects(requests.read(ack.id,0,10),{statusCode:409});
  assert.throws(()=>[...files.bytes(ack.id)],{statusCode:404});
+});
+
+test('source-item cards surface the processed body block instead of the transport metadata projection',async t=>{
+ const {files,store,sources,cleanup}=fixture(t),body='Generated snapshot body '+'y'.repeat(600),ack=await upload(files,Buffer.from(body),false);
+ const processing=new FileProcessing(files);cleanup.push(()=>processing.close());await processing.tick();
+ assert.equal(files.detail(ack.id).job.state,'succeeded');
+ const materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);
+ try{
+  while(await organizers.tick(100));
+  const material=materials.get(materialId('fixture','generated-file'))!;
+  const anchors=materials.evidenceIds(material.ref),chunk=anchors.at(-1)!;
+  assert.match(materials.evidence([chunk])[0]!.ocrText,/Generated snapshot body/);
+  const agent=new EvidenceReader(store,sources,undefined,undefined,undefined,materials).agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
+  const page=await agent.sourceItems!({sourceId:'fixture'}) as {items:{id:string;ocrText:string;provenance?:{uri?:string}}[]};
+  const card=page.items.find(item=>item.provenance?.uri?.split('#')[0]===material.ref)!;
+  assert.ok(card,'the processed snapshot keeps its source-item card');
+  assert.equal(card.id,chunk,'the card id is the body anchor, not the metadata projection');
+  assert.equal(card.ocrText,materials.evidence([chunk])[0]!.ocrText);
+  assert.match(card.ocrText,/Generated snapshot body/);
+  assert.doesNotMatch(card.ocrText,/"captureId"/,'the transport metadata manifest is not the item body');
+  // Explicit anchor order is unchanged: the organizer still writes the metadata projection first.
+  assert.equal(materials.evidence(materials.cardEvidenceIds(material.ref).slice(0,1))[0]!.id,chunk,'card anchor order prefers the body block');
+  const expanded=await agent.evidence!({ids:[card.id]}) as {id:string;ocrText:string}[];
+  assert.equal(expanded[0]!.id,chunk);assert.match(expanded[0]!.ocrText,/Generated snapshot body/);
+  // The transport metadata stays explicitly addressable; only the automatic card anchor moved.
+  const metadata=await agent.evidence!({ids:[anchors[0]!]}) as {id:string;ocrText:string}[];
+  assert.equal(metadata[0]!.id,anchors[0]);assert.match(metadata[0]!.ocrText,/"captureId"/);
+  // A Material without a body block keeps the metadata projection as its card anchor.
+  const metadataOnly=materials.publish({id:materialId('fixture','metadata-only'),kind:'mote.file',schemaVersion:1,title:'Metadata only',
+   origin:{sourceId:'fixture',externalId:'metadata-only',deviceId:'fixture'},
+   blocks:[{id:'source-metadata',kind:'text',format:'json',text:'{"captureId":"generated"}',memberIds:[ack.id]}],
+   members:[{id:ack.id,kind:'capture',ref:`capture:${ack.id}`}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'unavailable',policy:'keep'}});
+  assert.deepEqual(materials.cardEvidenceIds(metadataOnly.ref),materials.evidenceIds(metadataOnly.ref));
+  assert.equal(materials.evidence(materials.cardEvidenceIds(metadataOnly.ref))[0]!.ocrText,'{"captureId":"generated"}');
+ }finally{await organizers.close();}
 });
