@@ -137,11 +137,11 @@ class CaptureStatusActivity : MoteActivity() {
         listOf(screenAction, sendAction, all).forEach { it.isEnabled = !working }
     }
 
-    private fun pauseScreen() = work { done -> CaptureControls.pauseScreen(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
-    private fun toggleSend(paused: Boolean) = work { done -> CaptureControls.setSendingPaused(this, paused) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+    private fun pauseScreen() = work { done -> dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+    private fun toggleSend(paused: Boolean) = work { done -> dev.mote.collector.plugins.CapturePlugin.controls().setSendingPaused(this, paused) { result -> result.exceptionOrNull()?.let(::notice); done() } }
     private fun toggleAll() {
         if (facts?.enabled != true) { forward(CaptureOverview.Action.RESUME); return }
-        work { done -> CaptureControls.stopAll(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+        work { done -> dev.mote.collector.plugins.CapturePlugin.controls().stopAll(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
     }
     private fun work(run: (() -> Unit) -> Unit) {
         if (working) return

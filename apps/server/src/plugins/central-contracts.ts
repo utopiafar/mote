@@ -24,6 +24,7 @@ import type {UsageLedger} from '../usage.js';
 import type {PluginCenter} from '../plugin-center.js';
 import type {ProcessingRuntime} from '../processing-runtime.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
+import type {MediaAssets} from '../media-assets.js';
 import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-publication-contract.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
@@ -121,6 +122,9 @@ export type UsageRecording = Pick<UsageLedger, 'start' | 'operation'>;
 export type PluginControlRead = Pick<PluginCenter, 'view' | 'instanceView'>;
 export type ProcessingSubmission = Pick<ProcessingRuntime, 'enqueue' | 'view' | 'retry' | 'cancel'>;
 export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'withdraw' | 'planningInput' | 'sourceRequirements' | 'authorized'>;
+/** Read-only managed-asset state. Installs, imports, cancellation and the
+ * managed directory itself stay with the C18A owner, never the port. */
+export type MediaAssetsRead = Pick<MediaAssets, 'ready' | 'status' | 'statuses'>;
 
 /** Separate tokens deliberately keep owner mutation, model disclosure and retained-reader
  * lifetimes out of each other's read capability. Actual grant/cleanup behavior is not here. */
@@ -159,6 +163,7 @@ export const centralServices = {
   memoryInputSelection: serviceContract<MemoryInputSelection>('mote.central.memory-input-selection', '1'),
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
+  mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
 } as const;
 export type CentralService = keyof typeof centralServices;
 
@@ -214,7 +219,7 @@ export const centralServiceOwners = {
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
   configuration:'configuration', usage:'observability', pluginControlRead:'control', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', mediaAssetsRead:'media',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {
@@ -243,7 +248,7 @@ export const centralFeatureMigrations = {
   'mote.processing': {owners:['processing','media','activity'], requires:['execution','executionHandlers','configuration','modelAuthority']},
   'mote.notes': {owners:['capture','materials'], requires:['captureIntake','captureRead','requestAuthorization']},
   'mote.devices': {owners:['capture'], requires:['vault','requestAuthorization']},
-  'mote.media': {owners:['media'], requires:['configuration','modelAuthority','fileOriginalRead']},
+  'mote.media': {owners:['media'], requires:['configuration','modelAuthority','fileOriginalRead','mediaAssetsRead']},
   'mote.owner-questions': {owners:['activity','memoryRuntime'], requires:['vault','requestAuthorization']},
   'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']},
   'mote.imports': {owners:['imports','files','agent'], requires:['execution','sourceIntake','contentRead','requestAuthorization']},
