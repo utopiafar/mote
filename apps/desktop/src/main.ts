@@ -26,6 +26,7 @@ import { registerBuiltinDesktopPlugins } from './plugins';
 import { createNotesPlugin, notesReadCapability, notesWriteCapability } from './plugins/notes';
 import { createLibraryWorkspacePlugin, libraryReadCapability, memoryReadCapability } from './plugins/library-workspace';
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
+import { createCapturePlugin, createCaptureStages, captureReadCapability, captureWriteCapability, type CapturePlugin } from './plugins/capture';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -43,7 +44,7 @@ import { desktopSecretStorage } from './secret-storage';
 import { EventJournal, buildSupportBundle, failureCode, safeErrorName, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
 import { readFile, realpath, stat, writeFile, open, mkdir } from 'node:fs/promises';
-import { currentPlatform, Collector } from './collector';
+import { currentPlatform, type Collector } from './collector';
 import { ConfigStore, updateConfig, signedOutConfig } from './config';
 import { DesktopUpdater } from './updater';
 import { createUpdateNetwork } from './update-network';
@@ -102,6 +103,7 @@ let tray: Tray | undefined;
 let quickNoteWindow: BrowserWindow | undefined;
 let openQuickNote: (()=>Promise<void>) | undefined;
 let collector: Collector;
+let capturePlugin: CapturePlugin | undefined;
 let sourcesPlugin: SourcesPlugin | undefined;
 let localSources: SourcesPlugin['manager'] | undefined;
 let updater: DesktopUpdater | undefined;
@@ -182,10 +184,10 @@ else {
   app.on('second-instance', showWindow);
   let pluginHost: DesktopPluginHost | undefined;
   app.on('before-quit', event => {
-    quitting = true; void events.record('APP', 'STOPPED'); collector?.shutdown();
+    quitting = true; void events.record('APP', 'STOPPED'); capturePlugin?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void Promise.allSettled([controlChain, localSources?.close(), updater?.close(), chromeCaptureBridge?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
+    void Promise.allSettled([controlChain, localSources?.close(), updater?.close(), chromeCaptureBridge?.close(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
@@ -199,7 +201,7 @@ else {
     await store.save(settings); // Persist stable device identity before the first observation.
     void events.record('APP', 'STARTED');
     const storage = new QueueStorage(dataDirectory, profile.name, settings.deviceId, [dataDirectory, ...await Promise.all([defaultDataDirectory, `${defaultDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))]);
-    const queue = new DurableQueue(await storage.open(settings.captureStorageDirectory), settings);
+    const queue = new DurableQueue(await storage.open(settings.captureStorageDirectory), settings, createCaptureStages());
     queue.setStorageGuard(async () => { if (recoveryRequired) throw new Error(recoveryRequired); await storage.assertOwned(queue.directory); });
     await queue.initialize();
     await storage.recover(queue.directory);
@@ -251,7 +253,15 @@ else {
     }));
     const syncHistory = new SyncHistory(join(dataDirectory,'sync-history.sqlite')); await syncHistory.initialize();
     if(process.platform==='darwin'){chromeCaptureBridge=new ChromeCaptureBridge({profileDirectory:dataDirectory,helperPath});await chromeCaptureBridge.start();}
-    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, diagnostics, events, localSources,syncHistory,chromeCaptureBridge);
+    capturePlugin = createCapturePlugin({
+      queue, settings: () => settings, helperPath, encryptedStorageAvailable,
+      onChange: updateUi, status: clientStatus, diagnostics, events, sources: localSources,
+      history: syncHistory, browserCapture: chromeCaptureBridge, serialize,
+      background: (channel, label, operation) => backgroundJobs.run(channel, label, operation),
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+      changed: () => { if (!quitting) updateUi(clientStatus()); },
+    });
+    collector = capturePlugin.collector;
     let calendarDelivery:Promise<void>|undefined;
     const calendarTimer=setInterval(()=>{
       if(calendarDelivery||settings.syncPaused||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
@@ -296,7 +306,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, captureReadCapability, captureWriteCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -305,7 +315,7 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!, capturePlugin!]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
@@ -347,17 +357,16 @@ else {
     // Retain authored keys: a renderer locale change does not restart the main process.
     const operationLabels: Record<string, string> = {
       'mote:configure': "正在应用设置或迁移存储", 'mote:import-queue': "正在导入队列", 'mote:export-queue': "正在导出队列",
-      'mote:retry': "正在同步待发记录", 'mote:installed-applications': "正在读取应用列表",
+      'mote:installed-applications': "正在读取应用列表",
       'mote:support-export': "正在导出支持包", 'mote:diagnostics-export': "正在导出诊断", 'mote:diagnostics-sample': "正在读取诊断",
       'mote:connection-confirm': "正在连接中央节点", 'mote:connection-test': "正在测试连接",
       'mote:update-download': "正在下载更新", 'mote:update-install': "正在准备安装更新", 'mote:update-check': "正在检查更新",
-      'mote:start': "正在准备采集", 'mote:stop': "正在结束当前采集",
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:retry': 'UPLOAD', 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
+      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:configure': 'CONFIG', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
     ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
-        if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:stop', 'mote:connection-status', 'mote:update-status'].includes(channel)) throw new Error(recoveryRequired);
+        if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:connection-status', 'mote:update-status'].includes(channel)) throw new Error(recoveryRequired);
         const startedAt = Date.now();
         if (stage) void events.record(stage, 'STARTED', {operation:channel});
         try { const label = operationLabels[channel]; const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args)); if (stage) void events.record(stage, 'OK', { elapsedMs: Date.now() - startedAt,operation:channel }); return result; }
@@ -528,12 +537,6 @@ else {
       else await pausedSettings(() => applySettings(updated));
       updateUi(clientStatus()); return clientStatus();
     }));
-    handle('mote:start', () => serialize(async () => { await collector.start(); return clientStatus(); }));
-    handle('mote:stop', () => { collector.stop(); return serialize(async () => { await collector.settleCapture(); return clientStatus(); }); });
-    handle('mote:review-pending', () => queue!.reviewPending());
-    handle('mote:review-reject', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.rejectReview(id); });
-    handle('mote:review-approve', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.approveReview(id); });
-    handle('mote:retry', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); return clientStatus(); });
     let loginGeneration=0;
     const endLogin=()=>serialize(async()=>{
       loginGeneration++;
@@ -658,10 +661,10 @@ else {
     await acknowledgeInstalledUpdate({ argv: process.argv, directory: updateDirectory, bundlePath, version: app.getVersion(), profile: profile.name });
     await updater.startupCompleted();
     const receiptTimer = setTimeout(() => { void updater?.startupCompleted(); }, 2500); receiptTimer.unref();
-    collector.initialize();
+    capturePlugin!.initialize();
     if (app.getLoginItemSettings().wasOpenedAtLogin) window.hide();
   }).catch(async error => {
-    collector?.shutdown();
+    capturePlugin?.shutdown();
     const result = await dialog.showMessageBox({ type: 'error', title: moteText("Mote 存储或配置需要恢复"), message: moteText("未开启采集，现有数据已保留"), detail: moteText("{0}\n如使用外接磁盘，请连接原磁盘后重试。应用不会创建空队列替代原目录。", error instanceof Error ? error.message : moteText("无法读取配置或持久队列")), buttons: [moteText("重试"), moteText("退出")], defaultId: 0, cancelId: 1 });
     if (result.response === 0) app.relaunch(); app.quit();
   });
