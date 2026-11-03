@@ -4,7 +4,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {buildApp} from '../../server/src/app.js';
 import {materialId} from '../../server/src/materials.js';
 import sharp from 'sharp';
-import {uploadNoteAttachment} from '../src/note-attachments.js';
+import {uploadNoteAttachment} from '../src/plugins/notes/note-attachments.js';
 import type {Api} from '../src/api.js';
 const directory=process.argv[2],webRoot=process.argv[3];if(!directory||!webRoot)throw Error('Generated profile and isolated built Web directory required');
 const token=randomBytes(32).toString('hex'),when='2026-10-29T01:00:00.000Z';
