@@ -183,7 +183,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             } }
             return
         }
-        systemEntries().show(LocalStateRepository.get(this).state.value.captureLabel)
+        systemEntries().show(LocalStatusProducer.get(this).state.value.captureLabel)
         if (inFlight || android.os.SystemClock.elapsedRealtime() < nextCapture || pipeline!!.isBusy()) return
         nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
         val snapshot = windowSnapshot()

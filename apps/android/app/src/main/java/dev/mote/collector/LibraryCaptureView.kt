@@ -47,7 +47,7 @@ internal class LibraryCaptureView(
     private var files = emptyList<JSONObject>()
     private var remoteNotice = ""
     @Volatile private var verifiedConnection: Pair<String, Long>? = null
-    private val refreshPolicy = LocalStateRepository.get(activity).state.value.let { LibraryRefreshPolicy(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
+    private val refreshPolicy = LocalStatusProducer.get(activity).state.value.let { LibraryRefreshPolicy(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var incrementalScheduled = false
     private var incrementalPending = false
@@ -168,7 +168,7 @@ internal class LibraryCaptureView(
     }
     fun refresh() {
         cancelIncremental()
-        LocalStateRepository.get(activity).state.value.let { refreshPolicy.baseline(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
+        LocalStatusProducer.get(activity).state.value.let { refreshPolicy.baseline(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
         val current = CentralAccess.resolve(activity)
         if (task.busy && session == current.server to current.generation && activeFilter == source && activeDay == day) {
             refreshPending = true; sourceView.refresh(source, day); return

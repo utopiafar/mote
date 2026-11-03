@@ -2,18 +2,18 @@ import { featureRequirementsAvailable, formatEvidenceRef, parseEvidenceRef, type
 import { getLocale, moteText } from '@mote/shared/i18n';
 import { ArrowLeft, ArrowRight, Clock3, FileText, Monitor, RefreshCw, Upload } from "lucide-react";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, } from "react";
-import { ApiError, duration, dateTime, errorMessage, queryString, type Activity, type Api, type Device, type Range } from "./api";
-import { captureDateRange, localDateInput, ocrPresentation } from './capture-presentation';
-import { CollectionContent } from './features/runtime';
-import { webFeatures } from './features/registry';
+import { ApiError, duration, dateTime, errorMessage, queryString, type Activity, type Api, type Device, type Range } from "../../api";
+import { captureDateRange, localDateInput, ocrPresentation } from '../../capture-presentation';
+import { CollectionContent } from '../../features/runtime';
+import { webFeatures } from '../../features/registry';
 import { LibraryBrowseLayout } from './LibraryBrowse';
 import {LibraryTimeline} from './LibraryTimeline';
 const CaptureSessions = React.lazy(() => import('./CaptureSessions').then(module => ({ default: module.CaptureSessions })));
-import { sourceLabels } from './Metadata';
-import { CaptureCard, Empty, ErrorNotice, Spinner } from './shell-components';
-import { confirmNavigation } from './unsaved';
-import { DiscoveryLink, DiscoveryProvider, useDiscoveryState } from './DiscoveryLink';
-import { pageLabels, sections } from './navigation';
+import { sourceLabels } from '../../Metadata';
+import { CaptureCard, Empty, ErrorNotice, Spinner } from '../../shell-components';
+import { confirmNavigation } from '../../unsaved';
+import { DiscoveryLink, DiscoveryProvider, useDiscoveryState } from '../../DiscoveryLink';
+import { pageLabels, sections } from '../../navigation';
 export type ArchiveTab = string;
 export function ActivitySummary({ activity }: {
     activity: Activity;

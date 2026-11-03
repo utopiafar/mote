@@ -27,7 +27,7 @@ useState,
 useSyncExternalStore,
 } from "react";
 import { createRoot } from "react-dom/client";
-import type { ArchiveTab } from './Archive';
+import type { ArchiveTab } from './plugins/library/Archive';
 import {
 ApiError,
 INSIGHT_HISTORY_PATH,

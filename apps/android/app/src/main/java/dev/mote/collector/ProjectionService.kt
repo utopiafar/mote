@@ -82,7 +82,7 @@ class ProjectionService : Service() {
                     state.execute { try {
                         if (!closed && !ending && ticket == generation && config == c && !ConnectionGuard.changing()) {
                             UploadWorker.heartbeat(this@ProjectionService, c)
-                            systemEntries().show(LocalStateRepository.get(this@ProjectionService).state.value.captureLabel)
+                            systemEntries().show(LocalStatusProducer.get(this@ProjectionService).state.value.captureLabel)
                         }
                     } finally { statusPending = false } }
                 }

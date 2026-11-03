@@ -1,23 +1,19 @@
-import {FirstUseHome,FirstDataFailure,type FirstDeviceData} from './FirstUseHome';
-import {OriginalNoteRow,type OwnerBrowsePage} from './owner-library-browse';
-import {useEffect,useState} from 'react';
+import {FirstUseHome,FirstDataFailure} from './FirstUseHome';
+import {OriginalNoteRow} from './plugins/library/owner-library-browse';
+import {useState,useSyncExternalStore} from 'react';
 import {featureRequirementsAvailable} from '@mote/shared';
-import {DiscoveryLink,DiscoveryProvider,useDiscoveryState} from './DiscoveryLink';
+import {DiscoveryLink,DiscoveryProvider} from './DiscoveryLink';
 import {getLocale,moteText} from '@mote/shared/i18n';
 import {ArrowRight,ArrowUpRight,ChevronRight,Database,Link2,MessageCircle,Sparkles} from 'lucide-react';
 import {answerPreview} from './AnswerMarkdown';
 import {dateTime,errorMessage,type Answer,type Api,type Device,type Range,type Status} from './api';
 import {type Page} from './navigation';
 import {FeatureHome} from './features/home';
-import {useOperationUpdates} from './useOperationUpdates';
-import {useResource} from './useResource';
 import {HomeMaterialRow,type RecentMaterial} from './HomeMaterialRow';
-import {ownerQuestionListPath,openOwnerQuestionList} from './owner-question-route';
+import {openOwnerQuestionList} from './owner-question-route';
 import {openQuestionDraft} from './open-question-draft';
 import {useWorkspaceStyle} from './workspace-final-style';
-import type {InsightRun} from './InsightProgress';
-
-type Conversation={id:string;title:string;updatedAt:string;turnCount:number};
+import {useHomeController} from './plugins/home/hooks';
 
 export function Overview({api,status,devices,insights,onPage,onOpen}: {
  api:Api;status:Status;devices:Device[];insights:Answer[];
@@ -25,31 +21,20 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
 }){
  useWorkspaceStyle();
  const [query,setQuery]=useState('');
- const availability=useDiscoveryState(api);
+ const controller=useHomeController(api,{captures:status.storage?.captures,deviceIds:devices.map(device=>device.deviceId)});
+ const state=useSyncExternalStore(controller.subscribe,controller.getSnapshot,controller.getSnapshot);
+ const availability=state.availability;
  const hasPage=(id:string)=>availability.pages.some(page=>page.id===id);
  const supports=(path:string)=>!availability.inventoryError&&featureRequirementsAvailable(['http:GET:'+path],availability.inventory);
- const canConversations=hasPage('ask')&&supports('/api/conversations'),canQuestions=hasPage('ask')&&supports('/api/owner-questions');
+ const canConversations=hasPage('ask')&&supports('/api/conversations');
  const canActions=hasPage('actions')&&supports('/api/actions'),canTodos=hasPage('actions')&&supports('/api/todos');
- const canInsightRuns=hasPage('insights')&&supports('/api/insight-runs');
  const canReadMaterial=supports('/api/materials/:id/read');
  const canPreviewMaterial=supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/thumbnail');
- const sources=useResource<{items:{id:string;name?:string;status?:{state:string}}[]}>(api,'/api/sources');
- const connections=useResource<{items:{scope:string;revokedAt?:string;expiresAt?:string}[]}>(api,'/api/connections');
- const catalog=useResource<OwnerBrowsePage>(api,'/api/library/browse?limit=3');
- const conversations=useResource<{items:Conversation[]}>(api,canConversations?'/api/conversations?limit=3':null);
- const questions=useResource<{items:{id:string}[];nextCursor?:string|null}>(api,canQuestions?ownerQuestionListPath():null);
- // The shared change feed is what discovers reviews started on other devices:
- // its insight: rule invalidates the run list, which then enters running polls.
- useOperationUpdates(api);
- const [runsActive,setRunsActive]=useState(false);
- const insightRuns=useResource<{items:InsightRun[]}>(api,canInsightRuns?'/api/insight-runs':null,runsActive?5000:undefined);
- useEffect(()=>setRunsActive(Boolean(insightRuns.data?.items.some(run=>run.status==='running'))),[insightRuns.data]);
- const actions=useResource<{items:{status:string;resolution?:string;event?:{start?:string|null;end?:string|null}}[];nextCursor:number|null}>(api,canActions?'/api/actions?cursor=0':null);
- const todos=useResource<{items:{status:string}[];nextCursor:string|null}>(api,canTodos?'/api/todos?status=open':null);
- const firstData=useResource<FirstDeviceData>(api,'/api/devices/first-data',undefined,String(status.storage?.captures??0)+':'+devices.map(device=>device.deviceId).sort().join(','));
- const [firstUseJourney,setFirstUseJourney]=useState<Api|null>(null);
- useEffect(()=>{if(firstData.error===undefined&&!firstData.loading&&firstData.data&&['waiting','unverified'].includes(firstData.data.state)&&catalog.error===undefined&&catalog.data?.items.length===0)setFirstUseJourney(api);},[api,firstData.data,firstData.error,firstData.loading,catalog.data,catalog.error]);
- const firstUse=firstUseJourney===api;
+ const sources=state.sources,connections=state.connections,catalog=state.catalog;
+ const conversations=state.conversations,questions=state.questions;
+ const insightRuns=state.insightRuns,actions=state.actions,todos=state.todos;
+ const firstData=state.firstData,firstPreview=state.firstPreview;
+ const firstUse=state.firstUse;
  const checked=!firstData.loading&&!firstData.error?firstData.data:undefined;
  const retained=!firstData.error?firstData.data:undefined;
  const sample=retained?.candidate;
@@ -88,7 +73,7 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
   </section>;
  return <DiscoveryProvider state={availability}><div className="home-page central-overview">
   <div className="page-heading home-heading"><h1>{moteText('首页')}</h1><div className="home-heading-meta"><time>{new Date().toLocaleDateString(getLocale(),{month:'long',day:'numeric'})} · {new Date().toLocaleDateString(getLocale(),{weekday:'short'})}</time><button className="text-button" onClick={()=>onPage('activity')}>{moteText('后台活动')}<ArrowRight size={13}/></button></div></div>
-  {firstUse?<FirstUseHome api={api} data={firstData.data} error={firstData.error} loading={firstData.loading} configured={status.agent.configured} onRefresh={firstData.refresh} onPage={onPage} onOpen={onOpen}/>:<>
+  {firstUse?<FirstUseHome data={firstData.data} error={firstData.error} loading={firstData.loading} configured={status.agent.configured} preview={firstPreview} onRefresh={()=>{controller.refreshFirstData();controller.refreshFirstPreview();}} onPage={onPage} onOpen={onOpen}/>:<>
   {!foldReceipt&&firstReceipt}
   <form className="home-find" role="search" aria-label={moteText('搜索资料或提问')} onSubmit={event=>{event.preventDefault();if(query.trim())window.location.hash='/search?query='+encodeURIComponent(query.trim());}}>
    <input aria-label={moteText('搜索资料或提问')} placeholder={moteText('想找什么，或问点什么…')} maxLength={500} value={query} onChange={event=>setQuery(event.target.value)}/><button type="submit" className="button primary">{moteText('搜索')}</button><button type="button" className="button ghost" disabled={!hasPage('ask')} onClick={()=>openQuestionDraft(api,query.trim())}>{moteText('问一问')}<ArrowUpRight size={13}/></button>
@@ -116,7 +101,7 @@ export function Overview({api,status,devices,insights,onPage,onOpen}: {
    {recentConversations?.map(item=><DiscoveryLink className="home-conversation-row" key={item.id} target={{pageId:'ask',href:'#/ask?conversation='+encodeURIComponent(item.id)}}><MessageCircle size={18}/><span><strong>{item.title}</strong><small>{moteText('{0} 轮对话',item.turnCount)} · <time dateTime={item.updatedAt}>{dateTime(item.updatedAt)}</time></small></span><ChevronRight size={14}/></DiscoveryLink>)}
    {conversations.error!==undefined?<p className="home-read-error" role="alert">{errorMessage(conversations.error)}<button className="text-button" onClick={conversations.refresh}>{moteText('重新读取')}</button></p>:conversations.loading&&!conversations.data?<p role="status" className="home-empty">{moteText('正在读取…')}</p>:!recentConversations?.length&&<button className="text-button home-empty" onClick={()=>onPage('ask')}>{moteText('开启一段对话')}<ArrowRight size={13}/></button>}
   </section>}
-  <details className="home-extensions"><summary>{moteText('更多上下文视图')}</summary>{foldReceipt&&firstReceipt}<FeatureHome api={api} onPage={onPage}/></details>
+  <details className="home-extensions"><summary>{moteText('更多上下文视图')}</summary>{foldReceipt&&firstReceipt}<FeatureHome api={api} state={state} onPage={onPage}/></details>
  </>}
  </div></DiscoveryProvider>;
 }

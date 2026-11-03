@@ -119,7 +119,7 @@ class BulkDedupeActivity : MoteActivity() {
             val active = info != null && !info.state.isFinished
             val key = "${info?.id}:${info?.state}"
             val changed = refresh || key != stamp
-            val recordsVersion = LocalStateRepository.get(this).state.value.revision.records
+            val recordsVersion = LocalStatusProducer.get(this).state.value.revision.records
             val store = BulkDedupeStore(this)
             val showingPending = pending
             var loaded: List<JSONObject>? = null
@@ -144,7 +144,7 @@ class BulkDedupeActivity : MoteActivity() {
                     rowsKey = "report:${report.optString("at")}:${report.optString("mode")}:${report.optBoolean("complete")}"
                 }
                 rowsKey += loaded.joinToString(separator = "|") { id(it) + ":" + it.getJSONObject("candidate").optString("blob") }
-                refresh = LocalStateRepository.get(this).state.value.revision.records != recordsVersion
+                refresh = LocalStatusProducer.get(this).state.value.revision.records != recordsVersion
             }
             stamp = key
             val data = info?.progress ?: Data.EMPTY
