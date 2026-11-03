@@ -24,6 +24,9 @@ export class ResourceCache {
  constructor(private api:Api){}
  get<T>(key:string):Resource<T>{let entry=this.entries.get(key);if(!entry){for(const [old,value] of this.entries){if(this.entries.size<100)break;if(!value.observed)this.entries.delete(old);}entry=new Resource(key,this.api);this.entries.set(key,entry);}return entry as Resource<T>;}
  invalidate(matches:(key:string)=>boolean){for(const [key,entry] of this.entries)if(matches(key))entry.invalidate();}
+ /** Drop this owner's cached entries. Used when an authenticated owner
+  * changes; a later reader must not resolve an old owner's page from cache. */
+ clear(){this.entries.clear();}
 }
 const caches=new WeakMap<Api,ResourceCache>();
 export function resources(api:Api){let cache=caches.get(api);if(!cache){cache=new ResourceCache(api);caches.set(api,cache);}return cache;}
