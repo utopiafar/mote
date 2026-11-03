@@ -1,5 +1,7 @@
 import {z} from 'zod';
-/** Positions are UTF-16 text offsets in the central parser's versioned output. */
+/** Positions are UTF-16 text offsets in the central parser's versioned output.
+ * length/coverage describe that processed output extent and completeness, not
+ * text carried by a SourceItem DTO, and they grant no original read access. */
 export const fileIndexSchema=z.object({
  version:z.literal(1),fileId:z.string().min(1).max(200),contentVersion:z.string().regex(/^[a-f0-9]{64}$/),
  mode:z.enum(['catalog','index','archive']),coverage:z.enum(['none','full','lightweight','excerpt']),
