@@ -27,7 +27,7 @@ internal class CentralContent(
         pendingReaderReturn = restore
         val workRestore = if(workMemory!=null) ReaderReturn(origin,accessGeneration,revision,workMemory.work,contentScroll()) else null
         try {
-            CentralCaptureReader.open(activity,origin,row,conversationId,workMemory,accessGeneration)
+            dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).openCapture(activity,origin,row,conversationId,workMemory,accessGeneration)
             if(workRestore!=null) { pendingWorkReaderReturn=workRestore;body.visibility=View.INVISIBLE }
         }
         catch (error: Exception) { pendingReaderReturn = null; throw error }

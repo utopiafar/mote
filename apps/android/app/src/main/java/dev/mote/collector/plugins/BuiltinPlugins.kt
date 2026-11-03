@@ -8,5 +8,6 @@ fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     register(NativePluginProvider("mote.capture.accessibility", "1", buildId = buildId, osGrants = listOf("accessibility")))
     registerDurableTransport(buildId)
     NotesPlugin.register(this, buildId)
+    NativeLibraryPlugin.register(this, buildId)
     registerPluginCenter(buildId)
 }

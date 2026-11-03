@@ -58,7 +58,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private var noteDraft = JSONObject().put("text", "").put("mood", "").put("attachments", JSONArray())
     private var detailBack: (() -> Unit)? = null
     private var noteHistory = JSONObject()
-    private val library = CentralLibrary(this)
+    private val library = dev.mote.collector.plugins.NativeLibraryPlugin.owner(ui).library(this)
     private val admin = CentralAdmin(this)
     private val activity = CentralWorkActivity(this)
     private val insights = CentralInsights(this)
