@@ -1,6 +1,6 @@
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {InsightReport} from '../../src/InsightReport';
+import {InsightReport} from '../../src/plugins/discovery/InsightReport';
 import {EvidenceDialog} from '../../src/shell-components';
 import {createApi,type Api,type Answer} from '../../src/api';
 import {webAppearance} from '../../src/appearance';

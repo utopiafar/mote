@@ -2,14 +2,14 @@ import {commonFailureMessage,httpStatusMessage,formatEvidenceRef,type CaptureTim
 import {moteText,getLocale} from '@mote/shared/i18n';
 import {ChevronDown,ChevronLeft,ChevronRight,Clock3,FileText,Monitor,RefreshCw} from 'lucide-react';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {ApiError,dateTime,errorMessage,type Api,type Device} from './api';
-import {captureDateRange,localDateInput} from './capture-presentation';
-import {sourceLabels} from './Metadata';
-import {AuthImage,Empty,ErrorNotice,Spinner} from './shell-components';
-import {useResource} from './useResource';
-import {useImportReturnRead} from './useImportReturnRead';
-import {captureImportSnapshot,importSnapshot} from './import-navigation';
-import {resources} from './resource-cache';
+import {ApiError,dateTime,errorMessage,type Api,type Device} from '../../api';
+import {captureDateRange,localDateInput} from '../../capture-presentation';
+import {sourceLabels} from '../../Metadata';
+import {AuthImage,Empty,ErrorNotice,Spinner} from '../../shell-components';
+import {useResource} from '../../useResource';
+import {useImportReturnRead} from '../../useImportReturnRead';
+import {captureImportSnapshot,importSnapshot} from '../../import-navigation';
+import {resources} from '../../resource-cache';
 
 type Filters={api:Api;after:string;before:string;device:string;source:string;collection:string;ocr:string;appId:string};
 type TimelineSnapshot={filters:Filters;filterOpen:boolean;paging:{api:Api;scope:string;cursors:(string|undefined)[]}};

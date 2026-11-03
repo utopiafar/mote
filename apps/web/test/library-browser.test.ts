@@ -4,12 +4,12 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {Archive} from '../src/Archive.js';
+import {Archive} from '../src/plugins/library/Archive.js';
 import { featuresReady } from '../src/features/bootstrap.js';
 import { webFeatures } from '../src/features/registry.js';
 import {type Api,type Capture,type Activity} from '../src/api.js';
 import {type Material} from '../src/Materials.js';
-import {LibraryMaterials} from '../src/LibraryBrowse.js';
+import {LibraryMaterials} from '../src/plugins/library/LibraryBrowse.js';
 
 configureLocale(()=> 'zh-CN');
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',other='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
