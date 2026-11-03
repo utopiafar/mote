@@ -35,7 +35,7 @@ useState
 } from "react";
 import { AnswerMarkdown } from "./AnswerMarkdown";
 import { EvidenceState,EvidenceProcessingHelp } from './EvidenceState';
-import { ReferenceDetail } from './ReferenceDetail';
+import { ReferenceDetail } from './plugins/reader';
 import { TurnUsage } from './Usage';
 import {
 ApiError,
@@ -64,7 +64,7 @@ import { activityExplanation,Metadata,sourceLabels } from './Metadata';
 import { mediaCardText,mediaExplanation,mediaStatus } from './media-presentation';
 
 import { FileDetail } from './Files';
-import { SourceDocumentDetails } from './SourceDocumentDetails';
+import { SourceDocumentDetails } from './plugins/reader';
 
 
 export function Spinner({ label = moteText("正在读取…") }: { label?: string }) {
