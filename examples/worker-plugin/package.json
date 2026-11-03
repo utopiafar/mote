@@ -1,0 +1,12 @@
+{
+  "name": "@mote-plugin-template/local-memory-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mote/plugin-sdk": "0.1.0"
+  },
+  "scripts": {
+    "build": "node scripts/pack.mjs"
+  }
+}
