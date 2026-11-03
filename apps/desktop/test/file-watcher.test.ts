@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileWatcher, fileWatchBackend, type FileWatchEvent } from '../src/file-watcher';
@@ -20,6 +20,31 @@ describe('native file watcher', () => {
     expect(fileWatchBackend('darwin')).toBe('fsevents');
     expect(fileWatchBackend('linux')).toBe('inotify');
     expect(fileWatchBackend('win32')).toBe('read-directory-changes');
+  });
+
+  it('serializes overlapping target updates so re-enabling never opens a second watcher', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'mote-file-watcher-targets-')));
+    roots.push(root);
+    const first = join(root, 'generated-first'), second = join(root, 'generated-second');
+    await mkdir(first); await mkdir(second);
+    const watcher = new FileWatcher(() => {});
+    watchers.push(watcher);
+    // This case owns target reconciliation; it does not need native events.
+    const open = vi.spyOn(watcher as any, 'openSource').mockImplementation(async (target: {sourceId: string; path: string}) => {
+      (watcher as any).watchers.set(target.sourceId, {targetPath: target.path, close: () => undefined});
+    });
+    const firstTarget = {sourceId: 'local-first', path: first};
+    const secondTarget = {sourceId: 'local-second', path: second};
+    await Promise.all([watcher.setTargets([firstTarget, secondTarget]), watcher.setTargets([firstTarget, secondTarget])]);
+    expect(open).toHaveBeenCalledTimes(2);
+    expect([...(watcher as any).watchers.keys()]).toEqual(['local-first', 'local-second']);
+
+    await watcher.setTargets([secondTarget]);
+    expect([...(watcher as any).watchers.keys()]).toEqual(['local-second']);
+
+    await watcher.setTargets([firstTarget, secondTarget]);
+    expect(open).toHaveBeenCalledTimes(3);
+    expect([...(watcher as any).watchers.keys()].sort()).toEqual(['local-first', 'local-second']);
   });
 
   it.skipIf(!supported)('emits a dirty event for a generated fixture change', async () => {
