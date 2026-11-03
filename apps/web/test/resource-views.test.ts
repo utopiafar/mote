@@ -11,7 +11,7 @@ import { featuresReady } from '../src/features/bootstrap.js';
 import { FeaturePage } from '../src/features/runtime.js';
 import {Files,FileDetail} from '../src/Files.js';
 import {Sources} from '../src/Sources.js';
-import {ReferenceDetail} from '../src/ReferenceDetail.js';
+import {ReferenceDetail} from '../src/plugins/reader/index.js';
 import {MaterialDetail,type Material} from '../src/Materials.js';
 import {SourceMaterialView} from '../src/features/source-material.js';
 import {resources} from '../src/resource-cache.js';

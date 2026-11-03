@@ -92,10 +92,4 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
         }
     }
 }
-private val recordStores = java.util.concurrent.ConcurrentHashMap<String, RecordDraftStore>()
-internal fun android.content.Context.recordDraftStore(): RecordDraftStore {
-    LocalDataFormat.requireCurrent(this)
-    val app = applicationContext
-    val directory = File(app.noBackupFilesDir, "record-draft")
-    return recordStores.computeIfAbsent(directory.absolutePath) { RecordDraftStore(directory, app.localContentCipher()) { app.getSharedPreferences("mote", android.content.Context.MODE_PRIVATE).getInt("maxQueue", 256) * 1024L * 1024L - QueueStorage(app).openQueue().stats().bytes - File(app.filesDir, "record-pending").listFiles().orEmpty().sumOf { it.length() } } }
-}
+internal fun android.content.Context.recordDraftStore(): RecordDraftStore = dev.mote.collector.plugins.NotesPlugin.draftStore(this)

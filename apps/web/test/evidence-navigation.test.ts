@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {changeEvidenceRoute,evidenceRoute,readEvidenceRoute} from '../src/evidence-route.js';
+import {changeEvidenceRoute,evidenceRoute,readEvidenceRoute} from '../src/plugins/reader/index.js';
 import {containDialogFocus} from '../src/dialog-focus.js';
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 test('detail history preserves the exact origin filters, replaces nested evidence and closes with one back',async()=>{

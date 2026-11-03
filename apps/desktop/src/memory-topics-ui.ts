@@ -10,8 +10,9 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  const text=(tag:string,value:string)=>{const node=document.createElement(tag);node.textContent=value;if(tag==='pre')node.className='content-reading-body';return node;};
  const button=(label:string,run:()=>void)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.style.margin='4px 8px 4px 0';b.textContent=label;b.onclick=run;root.append(b);return b;};
  const valid=(directory:TopicDirectory)=>!nodeId||directory.items.some(tree=>tree.id===treeId&&tree.nodes.some(node=>node.id===nodeId));
- function schedule(){if(timer)clearTimeout(timer);if(root.open)timer=setTimeout(()=>void poll(),classificationState==='running'?5000:60000);scheduleDetail();}
- function scheduleDetail(){if(detailTimer)clearTimeout(detailTimer);if(root.open&&selected!==undefined&&classificationState!=='running')detailTimer=setTimeout(()=>void recheck(),5000);}
+ function schedule(){if(timer)clearTimeout(timer);if(root.open&&!document.hidden)timer=setTimeout(()=>void poll(),classificationState==='running'?5000:60000);scheduleDetail();}
+ function scheduleDetail(){if(detailTimer)clearTimeout(detailTimer);if(root.open&&!document.hidden&&selected!==undefined&&classificationState!=='running')detailTimer=setTimeout(()=>void recheck(),5000);}
+ function pause(){if(timer){clearTimeout(timer);timer=undefined;}if(detailTimer){clearTimeout(detailTimer);detailTimer=undefined;}}
  function clear(){generation++;if(timer)clearTimeout(timer);if(detailTimer)clearTimeout(detailTimer);root.replaceChildren();}
  function heading(){root.append(text('h2',moteText('记忆主题')));button(moteText('关闭详情'),close);}
  function close(){clear();root.close();originButton?.focus();}
@@ -19,6 +20,7 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  function failed(error:unknown){clear();heading();const message=text('p',error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''):moteText('操作失败'));message.setAttribute('role','alert');root.append(message);button(moteText('重试'),()=>void show());button(moteText('全部记忆'),()=>{nodeId=undefined;selected=undefined;cursors=[undefined];void show();});schedule();}
  function detailUnavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('所选记忆已变化，请刷新后重新选择。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
  async function poll(){
+  if(document.hidden)return;
   const stamp=generation,id=selected;
   try{
    const next=await api.memoryTopics();if(stamp!==generation||!root.open)return;classificationState=next.classification?.state;
@@ -33,6 +35,7 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
   }catch(error){if(stamp===generation&&root.open)failed(error);}finally{schedule();}
  }
  async function recheck(){
+  if(document.hidden)return;
   const stamp=generation,id=selected;
   if(id===undefined)return;
   try{
@@ -65,5 +68,11 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  function renderMemory(memory:TopicMemory){root.append(text('h3',memory.title),text('p',memory.status),text('pre',memory.statement??''),text('p',memory.uncertainty??''));for(const [index,id] of (memory.evidenceIds??[]).entries())button(moteText('查看原文依据')+' '+(index+1),()=>void original(id));}
  async function original(id:string){clear();heading();const stamp=generation;button(moteText('返回'),()=>void show());schedule();try{const result=await api.memoryTopicEvidence(selected!,id);if(stamp!==generation||!root.open)return;const body=text('pre',result.text);body.className='content-reading-body';root.append(body,text('pre',result.metadata??''));}catch(error){if(stamp===generation&&root.open)failed(error);}finally{schedule();}}
  root.addEventListener('cancel',event=>{event.preventDefault();close();});
+ // A tray-hidden window stops polling; its first visible moment performs one
+ // fresh directory read and resumes the normal schedule.
+ document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){pause();return;}
+  if(root.open)void poll();
+ });
  return {open(){originButton=document.activeElement as HTMLElement;selected=undefined;detailSnapshot=undefined;if(!root.open)root.showModal();void show();},close,update(status:Status){const next=JSON.stringify([status.authorizationGeneration,status.config.serverUrl,status.config.tokenConfigured,status.config.authSignedOut,status.config.authExpiresAt,status.config.authSourceBinding]);if(signature&&signature!==next){catalog=undefined;nodeId=undefined;selected=undefined;detailSnapshot=undefined;cursors=[undefined];treeId='';if(root.open)close();}signature=next;}};
 }

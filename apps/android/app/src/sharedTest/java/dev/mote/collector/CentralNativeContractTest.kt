@@ -89,7 +89,8 @@ class CentralNativeContractTest {
         assertFalse(String(File(root, "notes.enc").readBytes()).contains("untrusted evidence"))
         assertThrows(IllegalArgumentException::class.java) { restored.acknowledge(note.getString("id"), JSONObject().put("id", UUID.randomUUID().toString())) }
         assertEquals(1, restored.read().getJSONArray("pending").length())
-        restored.acknowledge(note.getString("id"), JSONObject().put("id", note.getString("id")))
+        val receipt = JSONObject().put("version", 2).put("id", note.getString("id")).put("kind", "capture").put("state", "received").put("duplicate", false)
+        restored.acknowledge(note.getString("id"), JSONObject().put("id", note.getString("id")).put("duplicate", false).put("receipt", receipt))
         assertEquals(0, restored.read().getJSONArray("pending").length())
     }
     private fun fileAck(manifest: JSONObject, id: String): JSONObject {

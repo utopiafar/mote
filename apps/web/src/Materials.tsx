@@ -8,7 +8,7 @@ import type {ArchivedFile} from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import { type Api, type Capture, ApiError, errorMessage,dateTime } from './api';
 import {ConversationOrigin} from './NoteOrigin';
-import {readEvidenceRoute} from './evidence-route';
+import {readEvidenceRoute} from './plugins/reader/evidence-route';
 import {verifyCompleteNoteQuote} from './note-material-quote';
 import { useResource } from './useResource';
 import type { LibraryCatalogDescriptor } from '@mote/shared';

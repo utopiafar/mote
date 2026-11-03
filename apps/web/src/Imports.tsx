@@ -1,5 +1,5 @@
 import {importReviewMessage,importHostDiagnostics} from './import-messages';
-import {ArchivedFileReader} from './ArchivedFileReader';
+import {ArchivedFileReader} from './plugins/reader';
 import {ImportInstructions} from './ImportInstructions';
 import {formatEvidenceRef,commonFailureMessage,httpStatusMessage} from '@mote/shared';
 import {importQueue,validateImportFiles,type ImportQueueEntry} from './import-queue';
