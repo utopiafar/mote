@@ -25,7 +25,7 @@ import type {EvidenceReader} from './evidence-reader.js';
 import type {FileEvidence} from './file-evidence.js';
 import type {FileStore} from './files.js';
 import type {ImportStore} from './imports.js';
-import type {Indexer} from './indexer.js';
+import type {RetrievalIndex} from './plugins/central-contracts.js';
 import type {IngressService} from './ingress.js';
 import type {InsightRuns} from './insight-runs.js';
 import type {MemoryLifecycle} from './memory-lifecycle.js';
@@ -98,7 +98,7 @@ export interface FeatureServices {
   fileEvidence:FileEvidence;
   files:FileStore;
   imports:ImportStore;
-  indexer:Indexer;
+  indexer:RetrievalIndex;
   ingress:IngressService;
   insightRuns:InsightRuns;
   lifecycle:MemoryLifecycle;

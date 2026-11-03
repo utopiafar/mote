@@ -11,6 +11,8 @@ import type {ContextTreeRegistry} from '../context-trees.js';
 import type {registerEvidenceRoutes} from '../evidence-routes.js';
 import type {IngressService} from '../ingress.js';
 import type {MaterialStore} from '../materials.js';
+import type {MaterialIndexRuntime} from '../material-index.js';
+import type {Indexer} from '../indexer.js';
 import type {SourceStore} from '../sources.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {ExecutionEngine} from '../execution-engine.js';
@@ -92,6 +94,13 @@ export type SourceRepository = Pick<SourceStore, 'register' | 'getSource' | 'lis
 export type SourceBindings = Pick<SourcePipelineRuntime, 'options' | 'configure' | 'memoryAllowed'>;
 
 export type MaterialRepositoryRead = Pick<MaterialStore, 'get' | 'read' | 'members' | 'input' | 'isCurrentEvidence' | 'contextForEvidence'>;
+/** C19C retrieval/index surface: hybrid search status and reads plus the
+ * new-work submission points. Embedding construction and close stay with the
+ * retrieval-index owner; consumers receive this port, never the engine. */
+export type RetrievalIndex = Pick<Indexer, 'configured' | 'search' | 'tick' | 'retry'>;
+/** Durable material FTS work: drain queued index requests or explicitly retry
+ * a failed input. The owner binds the per-engine runtime on the MaterialStore. */
+export type MaterialIndexWork = Pick<MaterialIndexRuntime, 'tick' | 'retry'>;
 export interface MaterialPublication {
   /** The provider's fixed C04 verifier checks the grant/fence within atomic publication. */
   publish(draft: Parameters<MaterialStore['publish']>[0], options: Parameters<MaterialStore['publish']>[1], authority: CommitAuthority): ReturnType<MaterialStore['publish']>;
@@ -135,6 +144,8 @@ export const centralServices = {
   materialRepository: serviceContract<MaterialRepositoryRead>('mote.central.material-repository-read', '1'),
   materialPublication: serviceContract<MaterialPublication>('mote.central.material-publication', '1'),
   materialRead: serviceContract<MaterialRead>('mote.central.material-read', '1'),
+  retrievalIndex: serviceContract<RetrievalIndex>('mote.central.retrieval-index', '1'),
+  materialIndex: serviceContract<MaterialIndexWork>('mote.central.material-index', '1'),
   fileOriginalRead: serviceContract<FileOriginalRead>('mote.central.file-original-read', '1'),
   execution: serviceContract<ExecutionSubmission>('mote.central.execution-submission', '1'),
   executionHandlers: serviceContract<ExecutionHandlers>('mote.central.execution-handlers', '1'),
@@ -199,6 +210,7 @@ export const centralServiceOwners = {
   captureRead:'materials', captureImageRead:'materials', captureContextRead:'materials',
   contextNavigationRead:'materials', contextInventoryRead:'materials', contextTreesRead:'materials',
   materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
+  retrievalIndex:'materials', materialIndex:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
   configuration:'configuration', usage:'observability', pluginControlRead:'control', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
