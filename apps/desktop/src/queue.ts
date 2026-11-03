@@ -459,12 +459,12 @@ export class DurableQueue {
     });
   }
   exportMetadata() { return {format:'mote-local-metadata',version:1,exportedAt:new Date().toISOString(),records:[...this.records.values()].map(r=>({...r.event,blobHash:r.blobHash,sizeBytes:r.blobBytes}))}; }
-  async exportArchiveFile(path: string, progress?: (value: WorkProgress) => void): Promise<void> {
+  async exportArchiveFile(path: string, progress?: (value: WorkProgress) => void, signal?: AbortSignal): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();
       if(Object.values(this.captureCheckpoint?.stages??{}).some(stage=>stage.held))throw new Error('Flush held capture stage inputs before exporting the queue');
       if (this.stats().bytes > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
-      await archiveWork.run({ kind: 'archive-export', directory: this.directory, path }, progress);
+      await archiveWork.run({ kind: 'archive-export', directory: this.directory, path }, progress, signal);
     });
   }
   async importArchiveFile(path: string, progress?: (value: WorkProgress) => void): Promise<number> {

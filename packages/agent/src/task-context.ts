@@ -8,6 +8,8 @@ import {defaultTaskRegistry} from './tasks/registry.js';
 import {prepareTaskContext} from './tasks/context-assembly.js';
 import {ASK_TASK_PROFILE,SELECTED_ANSWER_TASK_PROFILE,installQueryTaskPack} from './tasks/query.js';
 import {WORKING_TASK_PROFILE,installWorkingTaskPack} from './tasks/working.js';
+import {CALENDAR_TASK_PROFILE} from './tasks/calendar.js';
+import {INSIGHT_TASK_PROFILE} from './tasks/insight.js';
 // Register the official descriptor factory before this module publishes the
 // default task tools; the Host contribution assembly consumes only the registry.
 import './tools/official-read-packs.js';
@@ -15,20 +17,18 @@ import './tools/official-read-packs.js';
 /** Host-selected task definitions, never inferred from natural-language keywords. */
 export const TASK_PROFILES = {
   answer:ASK_TASK_PROFILE,
-  insight:{output:'personal-insight',retrieval:'archive'},
+  insight:INSIGHT_TASK_PROFILE,
   extraction:{output:'memory-extraction',retrieval:'evidence'},
   selectedAnswer:SELECTED_ANSWER_TASK_PROFILE,
-  calendar:{output:'calendar-extraction',retrieval:'evidence'},
+  calendar:CALENDAR_TASK_PROFILE,
   working:WORKING_TASK_PROFILE,
 } as const satisfies Record<string,TaskProfile>;
 const task=(id:string,profile:TaskProfile,priority:number,select:(input:QueryInput)=>boolean):TaskDescriptor=>({apiVersion:TASK_DESCRIPTOR_API_VERSION,id,version:'1',profile,outputSchema:TASK_OUTPUT_SCHEMA,priority,select});
-// Query and working own their task identities. Install them before publishing
-// the remaining profiles so the registry has one complete built-in set.
+// skills.ts installs the Insight, Calendar and Import procedure packs; query and
+// working own their task identities. Install them before publishing the rest.
 installQueryTaskPack();
 installWorkingTaskPack();
 defaultTaskRegistry.register({tasks:[
-  task('calendar',TASK_PROFILES.calendar,50,input=>input.skill==='calendar-extraction'),
-  task('insight',TASK_PROFILES.insight,40,input=>input.skill==='personal-insight'),
   task('extraction',TASK_PROFILES.extraction,30,input=>input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'),
 ]});
 export function taskProfile(input:QueryInput){return prepareTaskContext(input).profile;}

@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale, getLocale} from '@mote/shared/i18n';
 import {Overview} from '../src/Overview';
 import {Insights} from '../src/plugins/discovery/Insights';
-import {Conversations} from '../src/Conversations';
+import {Conversations} from '../src/plugins/ask/Conversations';
 import {Connections} from '../src/plugins/sources/Connections';
 import {webFeatures} from '../src/features/registry';
 import { featuresReady } from '../src/features/bootstrap.js';

@@ -5,7 +5,7 @@ import type {OwnerQuestion} from '@mote/shared';
 import {ApiError,dateTime,errorMessage,type Api} from '../../api';
 import {useResource} from '../../useResource';
 import {resources} from '../../resource-cache';
-import {ConversationHeading} from '../../ConversationShell';
+import {ConversationHeading} from '../ask/ConversationShell';
 import {ownerQuestionListPath,ownerQuestionRoute,ownerQuestionListOrigin,clearOwnerQuestionListOrigin,readOwnerQuestion} from '../../owner-question-route';
 import {guideVisit} from '../../feature-guide-state';
 

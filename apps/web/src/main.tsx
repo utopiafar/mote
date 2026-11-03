@@ -1,6 +1,6 @@
-import {associateChatScope,clearChatReloadDraft} from './chat-drafts';
+import {associateChatScope,clearChatReloadDraft} from './plugins/ask/chat-drafts';
 import {installGlobalErrorLogging,log} from './logger';
-import { ClientLoginApproval } from './ClientLoginApproval';
+import { ClientLoginApproval } from './plugins/agent-access/ClientLoginApproval';
 import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';
 import { getLocale,moteText } from '@mote/shared/i18n';
 import {
@@ -439,7 +439,7 @@ function App() {
             )}
           </div>
           </div>
-      {clientLogin&&api&&verified&&<ClientLoginApproval id={clientLogin} api={api} done={()=>{removeLoginParameter('loginRequest');setClientLogin(undefined);setNotice(moteText('客户端已登录，可返回客户端继续。'));}}/>}
+      {clientLogin&&api&&verified&&<ClientLoginApproval id={clientLogin} api={api} done={outcome=>{removeLoginParameter('loginRequest');setClientLogin(undefined);setNotice(outcome==='approved'?moteText('客户端已登录，可返回客户端继续。'):moteText('已拒绝这次客户端登录。'));}}/>}
           {notice && (
             <div className="notice" role="status">
               <Info size={17} />
