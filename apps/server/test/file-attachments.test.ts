@@ -170,3 +170,27 @@ test('an empty parent keeps its metadata card while attachment content stays exp
  assert.match(attachment[0]!.ocrText,/"attachment"/,'attachment content stays explicitly addressable');
  assert.match(attachment[0]!.ocrText,/Generated participant described testing idempotent writes/);
 });
+
+test('an attachment-only note keeps its metadata card instead of attachment text',async t=>{
+ const f=await fixture(t),attachmentId=await f.upload('note-attachment'),id=randomUUID();
+ const created=await f.node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,text:'',deviceId:'generated-device',deviceName:'Generated',platform:'macos',capturedAt:'2026-10-29T01:00:00Z',
+  metadata:{version:1,observedAt:'2026-10-29T01:00:00Z',attachments:[attachmentId]}}});
+ assert.equal(created.statusCode,201,created.body);
+ await f.node.processing.tick();await f.organize();
+ const material=f.node.materials.list({kind:'mote.note'}).items.find(item=>item.origin.externalId===id)!;
+ assert.ok(material,'the attachment-only note has its authored Material');
+ const reader=new EvidenceReader(f.node.store,f.node.sources,f.node.files,undefined,undefined,f.node.materials);
+ const anchors=f.node.materials.evidenceIds(material.ref);
+ const blocks=anchors.map(anchor=>String((f.node.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(anchor) as {block_id:string}).block_id));
+ assert.ok(blocks.includes('record-metadata'),'the attachment-only note keeps its metadata anchor');
+ const attachment=blocks.findIndex(blockId=>blockId.startsWith('record-attachment:')&&blockId.split(':').length===3);
+ assert.ok(attachment>=0,'processed attachment text is anchored on the note');
+ // materialView is the automatic card selector for discovery/search lists.
+ const view=(reader as unknown as {materialView(material:unknown,scope:unknown):{id:string;ocrText:string;provenance?:{uri?:string}}|undefined}).materialView(material,{});
+ assert.ok(view,'the attachment-only note has a Material card');
+ assert.equal(view!.provenance?.uri?.split('#')[1],'record-metadata','the note card shows its own metadata, not attachment text');
+ assert.match(view!.ocrText,/"captureId"/);assert.doesNotMatch(view!.ocrText,/idempotent/);
+ const agent=reader.agent({diagnostics:{measure:async(_source:string,_operation:string,run:()=>Promise<unknown>)=>run()} as never});
+ const expanded=await agent.evidence!({ids:[anchors[attachment]!]}) as {ocrText:string}[];
+ assert.match(expanded[0]!.ocrText,/Generated participant described testing idempotent writes/,'attachment text stays explicitly addressable');
+});

@@ -526,7 +526,7 @@ export class MaterialStore {
     const order=`ORDER BY CASE
       WHEN block_id IN ('source-record','record') OR block_id LIKE 'chunk:%' THEN 0
       WHEN block_id IN ('source-metadata','record-metadata') THEN 2
-      WHEN block_id LIKE 'attachment:%' OR block_id LIKE 'attachment/%' THEN 3
+      WHEN block_id LIKE 'attachment:%' OR block_id LIKE 'attachment/%' OR block_id LIKE 'record-attachment:%' THEN 3
       WHEN block_id LIKE '%:original' OR kind='asset' THEN 4
       ELSE 1 END, idx`;
     const rows=this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
