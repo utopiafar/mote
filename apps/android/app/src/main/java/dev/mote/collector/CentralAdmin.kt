@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.text.InputType
 import android.widget.*
+import dev.mote.collector.plugins.AdministrationOwner
+import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.PluginCenterPlugin
 import org.json.JSONArray
 import org.json.JSONObject
@@ -21,12 +23,15 @@ internal object CentralMemoryJobPresentation {
 }
 
 /** Management uses native controls and explicit endpoint contracts, never a web fallback. */
-internal class CentralAdmin(private val screens: CentralScreens) {
+internal class CentralAdmin(
+    private val screens: CentralScreens,
+    private val administration: AdministrationOwner = NativeAdministrationPlugin.owner(screens.ui),
+) {
     private val ui get() = screens.ui
     private val body get() = screens.body
     private val client get() = screens.client
     private fun enc(value: String) = CentralScreens.encode(value)
-    private val library = CentralLibrary(screens)
+    private val library = dev.mote.collector.plugins.NativeLibraryPlugin.owner(ui).library(screens)
     private val plugins = PluginCenterPlugin(screens) { extensions() }
     fun close() = plugins.close()
     fun clearPrivateState() = plugins.clearPrivateState()
@@ -398,7 +403,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
     private val operationStates = listOf("" to "全部", "waiting" to "等待处理", "running" to "运行中", "blocked" to "受阻", "failed" to "失败", "succeeded" to "完成", "cancelled" to "已取消", "stale" to "来源变化待重验", "skipped" to "未安排")
     private fun stateLabel(state: String) = MoteI18n.text(operationStates.firstOrNull { it.first == state }?.second ?: state)
     private fun operationState(row: JSONObject): String {
-        val label = CentralProcessingPresentation.stateKey(row.optString("state"), row.optString("waitingReason", row.optString("reason")), row.optBoolean("notScheduled"))
+        val label = administration.processing().stateKey(row.optString("state"), row.optString("waitingReason", row.optString("reason")), row.optBoolean("notScheduled"))
         return if (label != null) MoteI18n.text(label) else stateLabel(row.optString("state"))
     }
     private fun operationTitle(kind: String) = MoteI18n.text(mapOf("recording-sync" to "录音同步", "material-organizer" to "资料整理", "memory-provider-reconcile" to "记忆供应商核对", "file" to "文件处理", "capture" to "截图处理", "memory" to "记忆整理", "workflow" to "上下文处理", "import" to "资料导入", "query" to "问答", "insight" to "洞察", "embedding" to "检索向量计算", "material-index" to "资料检索索引")[kind] ?: "上下文处理")

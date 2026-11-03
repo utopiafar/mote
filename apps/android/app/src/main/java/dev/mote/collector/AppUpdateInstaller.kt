@@ -110,7 +110,7 @@ class AppUpdateResultReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 @Suppress("DEPRECATION") val confirmation = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) else intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                 store.state("awaiting_user")
-                if (confirmation != null) AppUpdateInstaller.confirmation(context, confirmation, id)
+                if (confirmation != null) dev.mote.collector.plugins.NativeSystemToolsPlugin.owner(context).confirmUpdate(context, confirmation, id)
             }
             PackageInstaller.STATUS_SUCCESS -> { store.state("installed"); store.prefs.edit().remove("sessionId").remove("sessionNonce").putBoolean("installRequestActive", false).commit() }
             else -> { store.state(if (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, 0) == PackageInstaller.STATUS_FAILURE_ABORTED) "cancelled" else "install_failed"); store.prefs.edit().remove("sessionId").remove("sessionNonce").putBoolean("installRequestActive", false).commit() }
