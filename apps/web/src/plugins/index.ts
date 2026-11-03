@@ -9,7 +9,7 @@ import { ask } from './ask';
 import { devices } from './devices';
 import { storage } from './storage';
 import { sources } from './sources';
-import { imports } from './imports';
+import { intake } from './intake';
 import { activity } from './activity';
 import { processing } from './processing';
 import { features } from './features';
@@ -41,7 +41,7 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   devices,
   storage,
   sources,
-  imports,
+  intake,
   activity,
   processing,
   features,

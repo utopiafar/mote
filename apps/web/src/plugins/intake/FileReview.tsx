@@ -1,8 +1,8 @@
 import {moteText,cjkLocale} from '@mote/shared/i18n';
 import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
-import {type Api,errorMessage} from './api';
-import {RecordingTools} from './RecordingTools';
-import {installRecordingStyles,recordingSpeaker} from './recording-presentation';
+import {type Api,errorMessage} from '../../api';
+import {RecordingTools} from '../../RecordingTools';
+import {installRecordingStyles,recordingSpeaker} from '../../recording-presentation';
 
 export async function downloadFileExport(api:Api,id:string){const response=await api.raw('/api/files/'+id+'/export'),url=URL.createObjectURL(await response.blob());try{const a=document.createElement('a');a.href=url;a.download='mote-recording-'+id+'.tar.gz';a.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),60000);}}
 

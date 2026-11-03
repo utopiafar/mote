@@ -9,7 +9,7 @@ import {Memories} from '../src/plugins/memory/index.js';
 import {MemoryIntegration} from '../src/MemoryIntegration.js';
 import { featuresReady } from '../src/features/bootstrap.js';
 import { FeaturePage } from '../src/features/runtime.js';
-import {Files,FileDetail} from '../src/Files.js';
+import {Files,FileDetail} from '../src/plugins/intake/Files.js';
 import {Sources} from '../src/Sources.js';
 import {ReferenceDetail} from '../src/plugins/reader/index.js';
 import {MaterialDetail,type Material} from '../src/Materials.js';

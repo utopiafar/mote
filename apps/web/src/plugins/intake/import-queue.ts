@@ -1,6 +1,6 @@
 import type {ImportJob} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {ApiError,errorMessage,type Api} from './api';
+import {ApiError,errorMessage,type Api} from '../../api';
 import {uploadImportFiles} from './import-upload-scheduler';
 
 export type ImportSource={kind:'files';files:readonly File[]}|{kind:'directory';path:string};
@@ -37,6 +37,8 @@ export class ImportQueue {
   private running=new Map<string,AbortController>();
   private listeners=new Set<()=>void>();
   private active=true;
+  private suspended=false;
+  private suspendedIds=new Set<string>();
   private generation=0;
   private wakeAt=0;
   private timer?:ReturnType<typeof setTimeout>;
@@ -46,9 +48,33 @@ export class ImportQueue {
   subscribe=(listener:()=>void)=>{this.listeners.add(listener);return ()=>{this.listeners.delete(listener);};};
   private publish(completed=false){this.snapshot={entries:this.tasks.map(task=>task.entry),completedVersion:this.snapshot.completedVersion+(completed?1:0)};for(const listener of this.listeners)listener();}
   private patch(task:Task,change:Partial<ImportQueueEntry>,completed=false){task.entry={...task.entry,...change};this.publish(completed);}
-  start(){this.active=true;this.pump();}
+  start(){this.active=true;this.suspended=false;this.resumeSuspended();this.pump();}
+  /** Plugin disable pauses every in-flight upload but keeps the retained
+   * batches, their files and their operation identities in memory. */
+  suspend(){
+    if(!this.active||this.suspended)return;
+    this.suspended=true;clearTimeout(this.timer);this.timer=undefined;this.wakeAt=0;
+    for(const task of this.tasks){
+      if(!['queued','uploading','waiting'].includes(task.entry.state))continue;
+      this.suspendedIds.add(task.entry.id);this.patch(task,{state:'paused'});
+      this.running.get(task.entry.id)?.abort();
+    }
+    this.running.clear();
+  }
+  /** Plugin activation resumes only the batches it paused; user-paused and
+   * failed batches keep requiring their explicit action. */
+  resume(){
+    if(!this.active)return;
+    this.suspended=false;this.resumeSuspended();this.pump();
+  }
+  private resumeSuspended(){
+    const ids=this.suspendedIds;this.suspendedIds=new Set();
+    let resumed=false;
+    for(const task of this.tasks)if(ids.has(task.entry.id)&&task.entry.state==='paused'){task.entry={...task.entry,state:'queued'};resumed=true;}
+    if(resumed)this.publish();
+  }
   /** Called by the connection owner on logout/node change, never on page navigation. */
-  close(){this.active=false;this.generation++;clearTimeout(this.timer);this.timer=undefined;this.wakeAt=0;for(const controller of this.running.values())controller.abort();this.running.clear();this.tasks=[];this.publish();}
+  close(){this.active=false;this.suspended=false;this.suspendedIds.clear();this.generation++;clearTimeout(this.timer);this.timer=undefined;this.wakeAt=0;for(const controller of this.running.values())controller.abort();this.running.clear();this.tasks=[];this.publish();}
   enqueue(input:ImportDraft):string{
     if(!this.active)throw Error(moteText('登录连接已结束，请重新登录后添加资料。'));
     const source:ImportSource=input.source.kind==='files'?{kind:'files',files:[...input.source.files]}:{kind:'directory',path:input.source.path.trim()};
@@ -59,9 +85,9 @@ export class ImportQueue {
     const entry:ImportQueueEntry={id:crypto.randomUUID(),name,createdAt:new Date().toISOString(),state:'queued',uploadedBytes:0,totalBytes:source.kind==='files'?source.files.reduce((n,file)=>n+file.size,0):0,source:source.kind==='files'?{kind:'files',files:source.files.map(file=>({name:file.webkitRelativePath||file.name,size:file.size}))}:{...source}};
     this.tasks.push({entry,draft,uploadIds:new WeakMap(),archived:new WeakMap()});this.publish();this.pump();return entry.id;
   }
-  pause(id:string){const task=this.tasks.find(task=>task.entry.id===id);if(!task||!['queued','uploading','waiting'].includes(task.entry.state))return;this.patch(task,{state:'paused'});this.running.get(id)?.abort();this.pump();}
-  retry(id:string){const task=this.tasks.find(task=>task.entry.id===id);if(!task||!['paused','failed'].includes(task.entry.state))return;this.patch(task,{state:'queued',failure:undefined});this.pump();}
-  discard(id:string){const task=this.tasks.find(task=>task.entry.id===id);if(!task||['creating','submitted'].includes(task.entry.state))return;this.running.get(id)?.abort();this.tasks=this.tasks.filter(value=>value!==task);this.publish();this.pump();}
+  pause(id:string){const task=this.tasks.find(task=>task.entry.id===id);if(!task||!['queued','uploading','waiting'].includes(task.entry.state))return;this.suspendedIds.delete(id);this.patch(task,{state:'paused'});this.running.get(id)?.abort();this.pump();}
+  retry(id:string){const task=this.tasks.find(task=>task.entry.id===id);if(!task||!['paused','failed'].includes(task.entry.state))return;this.suspendedIds.delete(id);this.patch(task,{state:'queued',failure:undefined});this.pump();}
+  discard(id:string){const task=this.tasks.find(task=>task.entry.id===id);if(!task||['creating','submitted'].includes(task.entry.state))return;this.suspendedIds.delete(id);this.running.get(id)?.abort();this.tasks=this.tasks.filter(value=>value!==task);this.publish();this.pump();}
   /** Editing starts a fresh request identity; retries keep the frozen original. */
   draft(id:string):ImportDraft|undefined{const task=this.tasks.find(task=>task.entry.id===id);return task?{...task.draft,source:task.draft.source.kind==='files'?{kind:'files',files:[...task.draft.source.files]}:{...task.draft.source}}:undefined;}
   acknowledge(ids:readonly string[]){
@@ -71,7 +97,7 @@ export class ImportQueue {
     if(remaining.length!==this.tasks.length){this.tasks=remaining;this.publish();}
   }
   private pump(){
-    if(!this.active)return;
+    if(!this.active||this.suspended)return;
     if(this.wakeAt>Date.now()){
       if(!this.timer&&this.tasks.some(task=>['queued','waiting'].includes(task.entry.state)))this.timer=setTimeout(()=>{this.timer=undefined;this.pump();},this.wakeAt-Date.now());
       return;
