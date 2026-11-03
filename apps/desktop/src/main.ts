@@ -1,5 +1,4 @@
 import '@mote/shared/i18n-all';
-import {canSendFromTray,showTraySendFailure} from './tray-send';
 import {describeBackupFile} from './queue-backup-identity';
 import {appearancePreference,resolveColorScheme,linearUiTheme,type AppearancePreference} from '@mote/shared';
 import { connectionToken, loginRequest, loginVerifier } from './login-session';
@@ -15,7 +14,7 @@ import { PermissionGuide } from './permission-guide';
 import { permissionKind, type SettingsWindow } from './permission-types';
 import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, shell, systemPreferences, Tray } from 'electron';
 import { DesktopPluginHost, electronIpcRouter, type PluginScopeHandle } from './plugin-host/desktop-host';
 import { NativeProviderRegistry } from './plugin-host/native-registry';
 import { registerBuiltinDesktopPlugins } from './plugins';
@@ -25,6 +24,7 @@ import { createChromePlugin, chromeManageCapability, chromeReadCapability, type 
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
 import { createCapturePlugin, createCaptureStages, captureReadCapability, captureWriteCapability, type CapturePlugin } from './plugins/capture';
 import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
+import { createSystemToolsPlugin, systemToolsManageCapability, systemToolsReadCapability } from './plugins/system-tools';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -39,15 +39,11 @@ import { join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { resolveProfile, profileDefaults, isDevelopmentProfile } from './profile';
 import { desktopSecretStorage } from './secret-storage';
-import { EventJournal, buildSupportBundle, failureCode, safeErrorName, type EventStage } from './support';
+import { failureCode, safeErrorName, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
 import { readFile, realpath, stat, writeFile, open, mkdir } from 'node:fs/promises';
 import { currentPlatform, type Collector } from './collector';
 import { ConfigStore, updateConfig, signedOutConfig } from './config';
-import { DesktopUpdater } from './updater';
-import { createUpdateNetwork } from './update-network';
-import { createChromiumUpdateFetch } from './electron-update-fetch';
-import { acknowledgeInstalledUpdate } from './update-install';
 import { QueueStorage } from './queue-storage';
 import { SettingsCoordinator } from './settings-coordinator';
 import { QueueImportFailure, DurableQueue } from './queue';
@@ -104,14 +100,40 @@ let collector: Collector;
 let capturePlugin: CapturePlugin | undefined;
 let sourcesPlugin: SourcesPlugin | undefined;
 let localSources: SourcesPlugin['manager'] | undefined;
-let updater: DesktopUpdater | undefined;
 const onboarding = new ConnectionOnboarding();
 let connectionState: ConnectionStatus = { state: 'unchecked', get message() { return moteText("连接尚未检查"); } };
 let quitting = false;
 let notesSettledForQuit = false;
 let settings: Config;
 let recoveryRequired: string | undefined;
-const events = new EventJournal(join(profile.dataDirectory, 'diagnostics'), () => Boolean(settings?.diagnosticsEnabled));
+let prepareForUpdateInstall: (() => Promise<void>) | undefined;
+let diagnosticsRecorder: DiagnosticsRecorder | undefined;
+const systemTools = createSystemToolsPlugin({
+  directory: profile.dataDirectory,
+  currentVersion: app.getVersion(),
+  arch: process.arch === 'arm64' ? 'arm64' : 'x64',
+  profile,
+  developmentBuild,
+  devDownloadsUrl: desktopDevDownloadsUrl,
+  diagnosticsEnabled: () => Boolean(settings?.diagnosticsEnabled),
+  status: () => clientStatus(),
+  chooseSupportPath: async () => {
+    const selected = await dialog.showSaveDialog(window!, { title: moteText("导出支持包（数值与固定事件，不含内容和令牌）"), defaultPath: `mote-support-${profile.name}.json`, filters: [{ name: 'JSON support bundle', extensions: ['json'] }] });
+    return selected.canceled ? undefined : selected.filePath;
+  },
+  sampleDiagnostics: async () => { await diagnosticsRecorder?.sample(); },
+  openExternal: url => shell.openExternal(url),
+  reveal: path => shell.showItemInFolder(path),
+  sendPending: async () => { await localSources?.sync(true); await collector.retry(); },
+  showMessage: options => dialog.showMessageBox(options),
+  beforeInstall: async () => { await prepareForUpdateInstall?.(); },
+  quit: () => app.quit(),
+  serialize,
+  background: (channel, label, operation) => backgroundJobs.run(channel, label, operation),
+  guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+  changed: () => { if (!quitting) updateUi(clientStatus()); },
+});
+const events = systemTools.events;
 let pendingNoteStatus = () => ({ count: 0, unbound: true, baseRecords: undefined as number | undefined });
 function includePreparedNote(status: Status): Status { const note = pendingNoteStatus(); return { ...status, sync: { ...status.sync, pendingRecords: (note.baseRecords ?? status.sync.pendingRecords) + note.count, localBacklogUnbound: (note.baseRecords ?? status.sync.pendingRecords) + note.count > 0 && note.unbound } }; }
 let storageStatus: () => Status['storage'] = () => undefined;
@@ -169,7 +191,7 @@ function updateUi(status: Status): void {
     { label: moteText("打开中央仓库"), click: () => showClientPage('central') },
     { label: moteText("设置…"), click: () => showClientPage('settings') },
     { label: status.running ? moteText("停止采集") : moteText("开始采集"), click: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); } },
-    { label: moteText("立即发送"), enabled: canSendFromTray(status), click: () => { void serialize(async()=>{await localSources?.sync(true);await collector.retry();}).catch(error=>showTraySendFailure(error,options=>dialog.showMessageBox(options))); } },
+    { label: moteText("立即发送"), enabled: systemTools.canSend(status), click: () => { void systemTools.sendNow(); } },
     { type: 'separator' },
     { label: moteText("退出 Mote（停止采集和上传）"), click: () => app.quit() },
   ]));
@@ -185,7 +207,7 @@ else {
     quitting = true; void events.record('APP', 'STOPPED'); capturePlugin?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void Promise.allSettled([controlChain, localSources?.close(), updater?.close(), chromePlugin?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
+    void Promise.allSettled([controlChain, localSources?.close(), systemTools.close(), chromePlugin?.close(), collector?.settleCapture(), pluginHost?.requestQuit()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
@@ -214,10 +236,11 @@ else {
       granted: kind => process.platform === 'darwin' && (kind === 'screen' ? systemPreferences.getMediaAccessStatus('screen') === 'granted' : kind === 'accessibility' ? systemPreferences.isTrustedAccessibilityClient(false) : false),
     });
     app.once('before-quit', () => permissionGuide.dispose());
-    const updateDirectory = join(dataDirectory, 'updates');
-    const updateSession = session.fromPartition('mote-public-updates', { cache: false });
-    updater = new DesktopUpdater({ directory: updateDirectory, helper: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'), bundlePath, currentVersion: app.getVersion(), arch: process.arch === 'arm64' ? 'arm64' : 'x64', profile: profile.name }, createUpdateNetwork(createChromiumUpdateFetch(options => net.request({ ...options, session: updateSession }))));
-    await updater.initialize();
+    await systemTools.initialize({
+      updatesDirectory: join(dataDirectory, 'updates'),
+      helperPath: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'),
+      bundlePath,
+    });
     sourcesPlugin = createSourcesPlugin({
       directory: join(dataDirectory, 'local-sources'),
       settings: () => settings,
@@ -246,6 +269,7 @@ else {
     localSources = sourcesPlugin.manager;
     await sourcesPlugin.initialize();
     const diagnostics = new DiagnosticsRecorder(join(dataDirectory, 'diagnostics'));
+    diagnosticsRecorder = diagnostics;
     const configureDiagnostics = async () => diagnostics.configure({ enabled: settings.diagnosticsEnabled, intervalMs: settings.diagnosticIntervalSeconds * 1000 }, async () => ({
       queueBytes: queue.stats().bytes, modelBytes: 0, ...await readPowerState(helperPath).catch(() => ({})),
     }));
@@ -281,6 +305,7 @@ else {
       event: (stage, code, details) => void events.record(stage, code, details),
     });
     await notes.initialize();
+    prepareForUpdateInstall = async () => { collector.stop(); await collector.settleCapture(); await notes.settle(); };
     pendingNoteStatus = () => ({ count: notes.hasPrepared() && !queue.contains(notes.get().id) ? 1 : 0, unbound: queue.binding.unbound() && (!localSources || localSources.nodeBinding.unbound()) && (!notes.hasPrepared() || notes.hasUnboundPrepared()), baseRecords: queue.stats().depth + (localSources?.pendingStats().pendingRecords ?? 0) });
     const library = createLibraryWorkspacePlugin({
       settings: () => settings,
@@ -304,7 +329,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, systemToolsReadCapability, systemToolsManageCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -313,7 +338,7 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!, chromePlugin!, capturePlugin!]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!, chromePlugin!, capturePlugin!, systemTools]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
@@ -356,15 +381,14 @@ else {
     const operationLabels: Record<string, string> = {
       'mote:configure': "正在应用设置或迁移存储", 'mote:import-queue': "正在导入队列", 'mote:export-queue': "正在导出队列",
       'mote:installed-applications': "正在读取应用列表",
-      'mote:support-export': "正在导出支持包", 'mote:diagnostics-export': "正在导出诊断", 'mote:diagnostics-sample': "正在读取诊断",
+      'mote:diagnostics-export': "正在导出诊断", 'mote:diagnostics-sample': "正在读取诊断",
       'mote:connection-confirm': "正在连接中央节点", 'mote:connection-test': "正在测试连接",
-      'mote:update-download': "正在下载更新", 'mote:update-install': "正在准备安装更新", 'mote:update-check': "正在检查更新",
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:configure': 'CONFIG', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
+      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:configure': 'CONFIG', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
     ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
-        if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:connection-status', 'mote:update-status'].includes(channel)) throw new Error(recoveryRequired);
+        if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:connection-status'].includes(channel)) throw new Error(recoveryRequired);
         const startedAt = Date.now();
         if (stage) void events.record(stage, 'STARTED', {operation:channel});
         try { const label = operationLabels[channel]; const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args)); if (stage) void events.record(stage, 'OK', { elapsedMs: Date.now() - startedAt,operation:channel }); return result; }
@@ -447,15 +471,6 @@ else {
     });
     handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
     handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
-    const devUpdateStatus = () => ({...updater!.status(), manualDownload:true, state:'idle' as const, canInstall:false, availableVersion:undefined, notesUrl:desktopDevDownloadsUrl, message:moteText('查看版本说明与安装包'), installReason:''});
-    handle('mote:update-status', () => developmentBuild ? devUpdateStatus() : updater!.status());
-    handle('mote:update-channel', channel => updater!.setChannel(channel));
-    handle('mote:update-check', () => developmentBuild ? devUpdateStatus() : updater!.check());
-    handle('mote:update-download', () => updater!.download());
-    handle('mote:update-cancel', () => updater!.cancel());
-    handle('mote:update-install', () => serialize(() => updater!.install(async () => { collector.stop(); await collector.settleCapture(); await notes.settle(); }, () => app.quit())));
-    handle('mote:update-reveal', () => { const archive = updater!.archivePath(); if (archive) shell.showItemInFolder(archive); });
-    handle('mote:update-notes', async () => { const url = developmentBuild ? desktopDevDownloadsUrl : updater!.status().notesUrl; if (url) await shell.openExternal(url); });
     handle('mote:feedback', () => shell.openExternal(githubFeedbackUrl({
       version: app.getVersion(),
       platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
@@ -465,21 +480,10 @@ else {
     handle('mote:action-calendar-connect', () => serialize(() => nativeCalendarActions({...settings},helperPath,dataDirectory).connectAndDeliver(()=>settings.syncPaused===true)));
     handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
     handle('mote:storage-statistics',async()=>storageStatistics([dataDirectory,queue.directory]));
-    handle('mote:events-raw', async () => events.readRaw());
-    handle('mote:events-read', async () => events.read(true));
     handle('mote:diagnostics-export', async () => {
       const selected = await dialog.showSaveDialog(window!, { title: moteText("导出本机数值诊断（不含内容与令牌）"), defaultPath: 'mote-diagnostics.json', filters: [{ name: 'JSON diagnostics', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await diagnostics.sample(); await diagnostics.exportTo(selected.filePath); return { canceled: false };
-    });
-    handle('mote:support-export', async rawHours => {
-      const hours=rawHours===undefined?24:Number(rawHours);if(![1,24,168].includes(hours))throw new Error('Invalid log range');
-      const selected = await dialog.showSaveDialog(window!, { title: moteText("导出支持包（数值与固定事件，不含内容和令牌）"), defaultPath: `mote-support-${profile.name}.json`, filters: [{ name: 'JSON support bundle', extensions: ['json'] }] });
-      if (selected.canceled || !selected.filePath) return { canceled: true };
-      await diagnostics.sample();
-      const logs=await events.exportRange(Date.now()-hours*3600000);
-      await writeFile(selected.filePath, JSON.stringify({...buildSupportBundle(profile, app.getVersion(), clientStatus(), logs.events),...logs}, null, 2), { mode: 0o600 });
-      return { canceled: false };
     });
     handle('mote:central', async (page, evidenceId,conversationId) => {
       if (evidenceId !== undefined && typeof evidenceId !== 'string') throw new Error('Invalid evidence reference');
@@ -647,9 +651,7 @@ else {
     tray.on('click', showWindow);
     updateUi(clientStatus());
     await window.loadURL(pageUrl);
-    await acknowledgeInstalledUpdate({ argv: process.argv, directory: updateDirectory, bundlePath, version: app.getVersion(), profile: profile.name });
-    await updater.startupCompleted();
-    const receiptTimer = setTimeout(() => { void updater?.startupCompleted(); }, 2500); receiptTimer.unref();
+    await systemTools.acknowledgeStartup();
     capturePlugin!.initialize();
     if (app.getLoginItemSettings().wasOpenedAtLogin) window.hide();
   }).catch(async error => {
