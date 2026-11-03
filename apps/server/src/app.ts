@@ -137,7 +137,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
   const memoryAutomation=new MemoryAutomation(store);
   let memoryBindings:MemoryBindings|undefined;
-  const {materials,materialMemoryWork}=prepareMaterials({store,resources,memoryRecipeSettings,newInputAdmission:()=>memoryBindings?.accepting()??memoryAutomation.accepting()});
+  const {materials,materialMemoryWork}=await prepareMaterials({bootstrap,store,authorization:authorizationPlatform.commits,resources,memoryRecipeSettings,newInputAdmission:()=>memoryBindings?.accepting()??memoryAutomation.accepting()});
   // One service tree owns backend plugins. Each runtime installs into its own
   // managed scope below this root, so closing one cannot dispose a sibling.
   const backendContext=new Context();
