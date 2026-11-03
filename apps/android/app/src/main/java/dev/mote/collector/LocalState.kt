@@ -102,7 +102,7 @@ class LocalStateRepository private constructor(context: Context) {
                 }
                 mutable.value = next
                 // Notifications are a consumer even when no Activity is visible.
-                withContext(Dispatchers.Main) { runCatching { Notifications.showLocalState(app, next) } }
+                withContext(Dispatchers.Main) { runCatching { app.systemEntries().showLocalState(next) } }
             }
         }
     }

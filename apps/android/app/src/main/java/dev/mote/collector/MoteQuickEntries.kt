@@ -8,10 +8,13 @@ import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 import android.os.Bundle
+import android.view.View
+import dev.mote.collector.plugins.SystemEntriesPlugin
 
 /**
  * One definition for every system-level entry: launcher shortcuts, the capture notification and the widget.
  * Entries only open the app's own editor or Ask page; they never save, send or start capture by themselves.
+ * The system entries plugin decides whether they are offered at all.
  */
 internal enum class MoteQuickEntry(val id: String, val labelKey: String, val icon: Int) {
     RECORD("record", "记录", R.drawable.ic_entry_record),
@@ -21,8 +24,9 @@ internal enum class MoteQuickEntry(val id: String, val labelKey: String, val ico
 
     val label get() = MoteI18n.text(labelKey)
     fun intent(context: Context): Intent = Intent(context, QuickEntryActivity::class.java).setAction(ACTION).putExtra(EXTRA, id)
-    fun pendingIntent(context: Context): PendingIntent =
-        PendingIntent.getActivity(context, 200 + ordinal, intent(context), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    fun pendingIntent(context: Context): PendingIntent? =
+        if (!SystemEntriesPlugin.availability(context).active) null
+        else PendingIntent.getActivity(context, 200 + ordinal, intent(context), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     /** The in-app destination. A new task is required because entries start outside an activity. */
     fun destination(context: Context): Intent = when (this) {
@@ -44,8 +48,9 @@ internal enum class MoteQuickEntry(val id: String, val labelKey: String, val ico
 internal object MoteShortcuts {
     fun publish(context: Context) {
         val manager = context.getSystemService(ShortcutManager::class.java) ?: return
+        val availability = SystemEntriesPlugin.availability(context)
         runCatching {
-            manager.dynamicShortcuts = MoteQuickEntry.entries.map { entry ->
+            manager.dynamicShortcuts = SystemEntriesPlugin.quickEntries(availability).map { entry ->
                 ShortcutInfo.Builder(context, entry.id).setShortLabel(entry.label).setLongLabel(entry.label)
                     .setIcon(Icon.createWithResource(context, entry.icon)).setIntent(entry.intent(context)).build()
             }
@@ -60,6 +65,12 @@ internal object MoteShortcuts {
 class QuickEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val availability = SystemEntriesPlugin.availability(this)
+        if (!availability.active) {
+            android.widget.Toast.makeText(this, availability.reason ?: MoteI18n.text("快捷入口不可用"), android.widget.Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
         MoteQuickEntry.find(intent.getStringExtra(MoteQuickEntry.EXTRA)).takeIf { intent.action == MoteQuickEntry.ACTION }?.let { entry ->
             runCatching { getSystemService(ShortcutManager::class.java)?.reportShortcutUsed(entry.id) }
             startActivity(entry.destination(this))
@@ -79,6 +90,14 @@ class QuickEntryWidget : android.appwidget.AppWidgetProvider() {
         }
         private fun update(context: Context, manager: android.appwidget.AppWidgetManager, ids: IntArray) = manager.updateAppWidget(ids, views(context))
         internal fun views(context: Context) = android.widget.RemoteViews(context.packageName, R.layout.widget_quick_entries).apply {
+            val availability = SystemEntriesPlugin.availability(context)
+            if (!availability.active) {
+                setTextViewText(R.id.widget_ask, availability.reason ?: MoteI18n.text("快捷入口不可用"))
+                setContentDescription(R.id.widget_ask, availability.reason ?: MoteI18n.text("快捷入口不可用"))
+                listOf(R.id.widget_record, R.id.widget_photo, R.id.widget_audio).forEach { setViewVisibility(it, View.GONE) }
+                setOnClickPendingIntent(R.id.widget_ask, null)
+                return@apply
+            }
             setTextViewText(R.id.widget_ask, MoteI18n.text("问一问…"))
             setContentDescription(R.id.widget_ask, MoteQuickEntry.ASK.label)
             setOnClickPendingIntent(R.id.widget_ask, MoteQuickEntry.ASK.pendingIntent(context))
@@ -92,8 +111,9 @@ class QuickEntryWidget : android.appwidget.AppWidgetProvider() {
 /** Republishes the system surfaces after the app starts or its language changes. */
 internal object MoteSystemEntries {
     fun refresh(context: Context) {
+        val availability = SystemEntriesPlugin.availability(context)
         MoteShortcuts.publish(context)
         runCatching { QuickEntryWidget.refresh(context) }
-        runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, ScreenCaptureTileService::class.java)) }
+        if (availability.active) runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, ScreenCaptureTileService::class.java)) }
     }
 }

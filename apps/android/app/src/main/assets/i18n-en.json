@@ -10115,5 +10115,9 @@
   "正在启动": "Starting",
   "没有正在运行的版本": "No version is running",
   "阻塞原因": "Blockers",
-  "需要重新构建（requires-build）": "Rebuild required (requires-build)"
+  "需要重新构建（requires-build）": "Rebuild required (requires-build)",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "The system entries plugin is not loaded. Quick entries and notification actions are unavailable.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "The system entries plugin requires a rebuild. Quick entries and notification actions are unavailable.",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "The system entries plugin is disabled. Quick entries and notification actions are unavailable.",
+  "快捷入口不可用": "Quick entries unavailable"
 }

@@ -183,7 +183,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             } }
             return
         }
-        Notifications.show(this, LocalStateRepository.get(this).state.value.captureLabel)
+        systemEntries().show(LocalStateRepository.get(this).state.value.captureLabel)
         if (inFlight || android.os.SystemClock.elapsedRealtime() < nextCapture || pipeline!!.isBusy()) return
         nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
         val snapshot = windowSnapshot()
@@ -376,7 +376,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         configurationGeneration++; nextCapture = 0; inFlight = false
         pageMerge.reset()
         pipeline?.close(); pipeline = null
-        if (!ProjectionService.running) Notifications.clear(this)
+        if (!ProjectionService.running) systemEntries().clear()
     }
     override fun onDestroy() {
         destroyed = true
