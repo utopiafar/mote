@@ -150,12 +150,17 @@ export class SourceSync {
       // lost. With deletion tracking the retry must resolve that ambiguity so a
       // tombstone can chain from the real head. Without it, retrying would
       // publish a removed file as a lasting active revision, so withdraw.
-      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) {
-        // The absence is observed now; a managed flush may acknowledge this
-        // revision later, so remember to enqueue its deletion when that happens.
-        if (trackDeletions) { const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key]; if (known) knownChanges.set(key, { ...known, deletionPending: true }); }
-        deferred.push(queued); return true;
-      }
+      const markAbsent = () => {
+        // A managed flush may acknowledge this revision later, so remember to
+        // enqueue its deletion when that happens.
+        if (!trackDeletions) return;
+        const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key];
+        if (known) knownChanges.set(key, { ...known, deletionPending: true });
+      };
+      // An upload that is already in flight may still commit, even before its
+      // predecessor is persisted (capabilities/head lookup still running).
+      if (this.inflight.has(itemKey(queued))) { markAbsent(); return true; }
+      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) { markAbsent(); deferred.push(queued); return true; }
       const delivered = this.data.delivered?.[key];
       if (delivered !== queued.revision) {
         const known = knownChanges.get(key) ?? next.known[key];
@@ -222,7 +227,8 @@ export class SourceSync {
       if (head === undefined) continue; // Unknown delivery.
       if (head === item.revision) continue; // Committed with a lost ACK.
       const predecessor = this.data.predecessors?.[item.revision] ?? null;
-      if (head !== predecessor) continue; // Advanced or ambiguous head.
+      if (head !== predecessor) continue;
+      if (this.inflight.has(itemKey(item))) continue; // Advanced or ambiguous head.
       next.pendingRealtime = next.pendingRealtime.filter(queued => queued !== item);
       next.pendingHistory = next.pendingHistory.filter(queued => queued !== item);
       const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
@@ -283,6 +289,7 @@ export class SourceSync {
             // head is ambiguous and must not be rewound.
             const predecessor = this.data.predecessors?.[item.revision] ?? null;
             if (head.revision !== predecessor) continue;
+            if (this.inflight.has(itemKey(item))) continue;
             next.pendingRealtime = next.pendingRealtime.filter(queued => queued !== item);
             next.pendingHistory = next.pendingHistory.filter(queued => queued !== item);
             const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];

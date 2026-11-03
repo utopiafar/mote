@@ -443,6 +443,30 @@ describe('source revisions and durable acknowledgments', () => {
     // The following scan must not queue the same upload again.
     expect(await engine.stage(scan([{ ...fileItem, text: 'changed after return' }]), true)).toBe(0);
   });
+  it('keeps a first upload that is in flight before its predecessor is persisted', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let capabilityEntered = false, lostAck = true;
+    const wire = fileTransport(sent, () => (lostAck ? 1 : 0));
+    const gated = async (path: string, body: any) => {
+      if (path === '/api/file-sync/v1/capabilities') { capabilityEntered = true; await gate; }
+      return wire(path, body);
+    };
+    await engine.stage(scan([fileItem]), true);
+    const flushing = engine.flush(source, gated as any).catch(error => error);
+    while (!capabilityEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    // Absence arrives while capabilities (and therefore the predecessor write)
+    // are still pending: the selected upload must stay queued.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    expect(engine.status().pending).toBe(1);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+    // The acknowledgement then completes the promised deletion.
+    lostAck = false;
+    await engine.flush(source, wire);
+    expect(sent.at(-1)!.item.deleted).toBe(true);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
