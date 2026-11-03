@@ -10,38 +10,47 @@ import {SourceContextStore} from './source-context.js';
 const uuid=(text:string)=>{const h=createHash('sha256').update(text).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;};
 type Head={capture_id:string;observed_at:string;deleted:number};
 type Version={capture_id:string;hash:string};
+export type SourceRegistration=z.infer<typeof sourceConnectionSchema>;
 export class SourceStore {
   private pending=new Map<string,Promise<unknown>>();
   readonly capabilities=sourceCapabilities.clone();
   readonly contexts:SourceContextStore;
   constructor(public store:Store,public pipelines?:SourcePipelineRuntime,private readonly memoryInputs:MemoryInputAuthorization|undefined=pipelines?.memoryWork.inputs){this.contexts=new SourceContextStore(store);}
+  usesMemoryInputs(inputs:MemoryInputAuthorization){return this.memoryInputs===inputs;}
+  private control<T>(write:()=>T,authorize?:()=>void):T{
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{authorize?.();const result=write();authorize?.();if(own)db.exec('COMMIT');return result;}
+    catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+  }
   listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>this.present(JSON.parse(r.json)));}
   getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return this.present(JSON.parse(row.json));}
-  register(raw:unknown):SourceConnection {
+  register(raw:unknown,authorize?:(source:SourceRegistration)=>void):SourceConnection {
     const input=sourceConnectionSchema.parse(raw),row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.id) as {json:string}|undefined,existing=row?this.present(JSON.parse(row.json)):undefined;
+    return this.control(()=>{
     if(input.sourceContext)throw new StoreError('Source context is owner control plane metadata; use the source context API',403);
     if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
     const now=new Date().toISOString(),value={...input,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
+    },()=>authorize?.(input));
   }
-  updateContext(id:string,patch:{expectedVersion:number;description:string}){
+  updateContext(id:string,patch:{expectedVersion:number;description:string},authorize?:()=>void){
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{
-      const result=this.contexts.set(id,patch);
+      authorize?.();const result=this.contexts.set(id,patch);
       if(result.changed)(this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);
-      if(own)db.exec('COMMIT');return result.snapshot;
+      authorize?.();if(own)db.exec('COMMIT');return result.snapshot;
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null}):SourceConnection {
+  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null},authorize?:(source:SourceConnection)=>void):SourceConnection {
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch,...('ownerRelation' in patch?{ownerRelation:patch.ownerRelation??undefined,ownerRelationVersion:(existing.ownerRelationVersion??0)+(patch.ownerRelation!==(existing.ownerRelation??null)?1:0)||undefined}:{})});
     if(input.enabled&&!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
     if(growth>0)this.store.reserveMetadata(growth);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-    try{this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
+    try{authorize?.(existing);this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
       (this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);
-      if(own)db.exec('COMMIT');return this.present(value);
+      authorize?.(value);if(own)db.exec('COMMIT');return this.present(value);
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:{...this.capabilities.describe(value),...(value.kind==='coding-agent'?{codingEvidenceFieldsVersion:1 as const}:{})}}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
