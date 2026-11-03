@@ -23,7 +23,6 @@ const toolsFor=(input:QueryInput,snapshot=contextToolSnapshot(input)):CodexTool[
   }),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.id!=='document-import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
 };
 export const codexContextTools=toolsFor({question:''});
-const answerSchema={type:'object',properties:{answer:{type:'string'},citationIds:{type:'array',items:{type:'string'}}},required:['answer','citationIds'],additionalProperties:false};
 
 export function createCodexAgent(options:AgentOptions){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<AgentAnswer>>();
@@ -86,7 +85,7 @@ export function createCodexAgent(options:AgentOptions){
       };
       if(closed)throw new AgentProviderError();
       input.signal?.throwIfAborted();
-      const {system,prompt,metrics}=assembleHostContext(input,bridge.seedEvidence,options.maxTokens??65536,options.maxToolCalls,runTools);
+      const {system,prompt,metrics,outputSchema}=assembleHostContext(input,bridge.seedEvidence,options.maxTokens??65536,options.maxToolCalls,runTools);
       trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:runTools}});
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       session=new CodexSession(options,call,trace,input.onUsage,async(token,delivered)=>{
@@ -100,7 +99,7 @@ export function createCodexAgent(options:AgentOptions){
         const repair=repairAttempt?{repair:true,repairAttempt}:{};
         trace({type:'model.started',stage:'model',phase:'started',payload:{prompt,...repair}});
         const started=performance.now();
-        const text=await Promise.race([session!.run(prompt,answerSchema),bridge.failure]);
+        const text=await Promise.race([session!.run(prompt,outputSchema),bridge.failure]);
         assertCurrent();
         trace({type:'model.completed',stage:'model',phase:'completed',durationMs:performance.now()-started,payload:{response:text,...repair}});
         return {terminal:{kind:'completed'},candidate:{text}};
