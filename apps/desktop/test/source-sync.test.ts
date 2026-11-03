@@ -664,6 +664,45 @@ describe('source revisions and durable acknowledgments', () => {
     expect(deletion!.previousRevision).toBe(acknowledged.revision);
     expect(reopened.status().pending).toBe(0);
   });
+  it('keeps the file when it returns while the reconciliation head is pending', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let releaseCaps!: () => void; const capsGate = new Promise<void>(resolve => { releaseCaps = resolve; });
+    let capsEntered = false, preflightFailed = false;
+    const gatedCaps = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') { if (preflightFailed) return { manifestBatch: 200 }; preflightFailed = true; capsEntered = true; await capsGate; throw new Error('capabilities failed'); }
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), false);
+    const first = engine.flush(source, gatedCaps as any).catch(error => error);
+    while (!capsEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => null);
+    releaseCaps();
+    await first;
+    expect(engine.status().pending).toBe(1);
+    // The file returns while the reconciliation head request is pending.
+    let releaseHead!: () => void; const headGate = new Promise<void>(resolve => { releaseHead = resolve; });
+    let headEntered = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) { headEntered = true; await headGate; return { revision: null }; }
+      if (path === '/api/file-sync/v1/manifests') {
+        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+        return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
+      }
+      throw new Error('unexpected ' + path);
+    };
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!headEntered) await new Promise(resolve => setTimeout(resolve, 5));
+    expect(await engine.stage(scan([fileItem]), false)).toBe(0);
+    releaseHead();
+    await flushing;
+    expect(sent).toHaveLength(1);
+    expect(sent[0].item.deleted).toBe(false);
+    expect(engine.status().pending).toBe(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

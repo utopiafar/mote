@@ -376,9 +376,7 @@ export class SourceSync {
   private async reconcileAbsentInflight(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<void> {
     const candidates = this.pendingItems().filter(item => item.kind === 'file' && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight);
     if (!candidates.length) return;
-    const withdrawn: SourceItem[] = [];
-    const cleared = new Set<string>();
-    const specs: { item: SourceItem; delivered: string; known: Known }[] = [];
+    const withdrawKeys = new Set<string>(), cleared = new Map<string, string>();
     for (const item of candidates) {
       if (this.inflight.has(itemKey(item))) continue;
       let head: { revision?: string | null } | undefined;
@@ -388,30 +386,37 @@ export class SourceSync {
       const key = sourceHash(item.externalId);
       const delivered = this.data.delivered?.[key] ?? null;
       const predecessor = this.data.predecessors?.[item.revision] ?? delivered;
-      if (head.revision === item.revision) { cleared.add(key); continue; }
+      if (head.revision === item.revision) cleared.set(key, item.revision);
       // Only a head equal to the confirmed base proves the send never committed;
       // anything newer is ambiguous and keeps its marker for the next attempt.
-      if (head.revision !== predecessor) continue;
-      withdrawn.push(item);
-      const known = this.data.known[key];
-      if (known?.deletionPending && delivered && item.kind === 'file') specs.push({ item, delivered, known });
+      else if (head.revision === predecessor) withdrawKeys.add(itemKey(item));
     }
-    if (!withdrawn.length && !cleared.size) return;
+    if (!withdrawKeys.size && !cleared.size) return;
+    const removed: SourceItem[] = [];
     await this.mutate(async () => {
-      const next: State = { ...this.data, pendingRealtime: this.data.pendingRealtime.filter(item => !withdrawn.includes(item)), pendingHistory: this.data.pendingHistory.filter(item => !withdrawn.includes(item)) };
+      // A concurrent stage may have seen the file again while the head was in
+      // flight; only apply a decision that still matches the durable state.
+      const withdraw = (queued: SourceItem) => {
+        const key = sourceHash(queued.externalId), entry = this.data.known[key];
+        if (!withdrawKeys.has(itemKey(queued)) || entry?.absentWhileInflight !== true || entry?.revision !== queued.revision) return true;
+        removed.push(queued); return false;
+      };
+      const next: State = { ...this.data, pendingRealtime: this.data.pendingRealtime.filter(withdraw), pendingHistory: this.data.pendingHistory.filter(withdraw) };
       const known: Record<string, Known> = { ...next.known };
-      for (const spec of specs) {
-        const key = sourceHash(spec.item.externalId), deletedAt = new Date().toISOString(), revision = `deleted:${spec.delivered}`;
-        const tombstone = { ...spec.item, text: '', localOriginalBase64: undefined, localOriginal: undefined, deleted: true, revision, observedAt: deletedAt, metadata: { ...spec.item.metadata, version: 1 as const, file: { ...spec.item.metadata?.file, deletionObservedAt: deletedAt } } };
-        next.pendingRealtime.push(tombstone);
-        known[key] = { ...spec.known, contentHash: '', revision, item: tombstone, deletionPending: undefined, absentWhileInflight: undefined };
+      for (const item of removed) {
+        const key = sourceHash(item.externalId), entry = known[key], delivered = this.data.delivered?.[key] ?? null;
+        if (entry?.deletionPending && delivered) {
+          const deletedAt = new Date().toISOString(), revision = `deleted:${delivered}`;
+          const tombstone = { ...item, text: '', localOriginalBase64: undefined, localOriginal: undefined, deleted: true, revision, observedAt: deletedAt, metadata: { ...item.metadata, version: 1 as const, file: { ...item.metadata?.file, deletionObservedAt: deletedAt } } };
+          next.pendingRealtime.push(tombstone);
+          known[key] = { ...entry, contentHash: '', revision, item: tombstone, deletionPending: undefined, absentWhileInflight: undefined };
+        } else if (entry) known[key] = { ...entry, contentHash: '', discoveryHash: undefined, absentWhileInflight: undefined };
       }
-      for (const item of withdrawn) { const key = sourceHash(item.externalId); if (!specs.some(spec => spec.item === item) && known[key]) known[key] = { ...known[key], contentHash: '', discoveryHash: undefined, absentWhileInflight: undefined }; }
-      for (const key of cleared) if (known[key]) known[key] = { ...known[key], absentWhileInflight: undefined };
+      for (const [key, revision] of cleared) { const entry = known[key]; if (entry?.absentWhileInflight && entry.revision === revision) known[key] = { ...entry, absentWhileInflight: undefined }; }
       next.known = known;
-      await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...withdrawn.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: known[sourceHash(item.externalId)] })), ...[...cleared].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
+      await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...removed.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: known[sourceHash(item.externalId)] })), ...[...cleared.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
     });
-    await this.discardUnqueuedOriginals(withdrawn);
+    await this.discardUnqueuedOriginals(removed);
   }
 
   private takeBatches(queue: QueueName, deferred=new Set<string>()): SourceItem[][] {
