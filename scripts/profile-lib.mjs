@@ -19,7 +19,7 @@ export function profilePaths(profile = 'dev', home = join(repository, '.mote/pro
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(profile) || profile === 'legacy') throw Error('Profile must be a 1–32 character isolated name; legacy is not managed by this CLI');
   const directory = resolve(home, profile);
   const project = `mote-${profile}-${createHash('sha256').update(directory).digest('hex').slice(0, 10)}`;
-  return { profile, home: resolve(home), directory, configFile: join(directory, 'mote.yaml'), envFile: join(directory, 'mote.yaml'), legacyEnvFile: join(directory, 'mote.env'), metaFile: join(directory, 'profile.json'), processFile: join(directory, 'process.json'), project };
+  return { profile, home: resolve(home), directory, configFile: join(directory, 'mote.yaml'), legacyEnvFile: join(directory, 'mote.env'), metaFile: join(directory, 'profile.json'), processFile: join(directory, 'process.json'), project };
 }
 export async function atomicJson(path, value) {
   const temp = `${path}.${randomUUID()}.tmp`;
@@ -140,7 +140,7 @@ export async function loadProfile(paths) {
 }
 export function deploymentEnvironment(p) {
   const tunnel = validateTunnel(p.meta.tunnel), docker = p.meta.runtime === 'docker';
-  return { MOTE_RUNTIME: p.meta.runtime, MOTE_CONFIG_FILE: p.configFile ?? p.envFile, MOTE_STORAGE_KIND: docker ? 'docker-volume' : 'local-directory', MOTE_STORAGE_SOURCE: docker ? p.meta.volume : p.dataDir, MOTE_STORAGE_MOUNT: docker ? '/data' : '',
+  return { MOTE_RUNTIME: p.meta.runtime, MOTE_CONFIG_FILE: p.configFile, MOTE_STORAGE_KIND: docker ? 'docker-volume' : 'local-directory', MOTE_STORAGE_SOURCE: docker ? p.meta.volume : p.dataDir, MOTE_STORAGE_MOUNT: docker ? '/data' : '',
     ...Object.fromEntries(Object.entries(p.env).filter(([name]) => name.startsWith('MOTE_MEDIA_'))), MOTE_PUBLIC_URL: p.env.MOTE_PUBLIC_URL || '',
     MOTE_TUNNEL_ENABLED: tunnel.enabled ? '1' : '0', MOTE_TUNNEL_PROVIDER: tunnel.enabled ? 'cloudflare' : '', MOTE_TUNNEL_PROTOCOL: tunnel.enabled ? tunnel.protocol : '' };
 }
@@ -191,7 +191,7 @@ export function isolatedEnvironment(p, extra = {}) {
   const env = { ...process.env }, secretEnv = configSecretEnvironment(p.savedDocument ?? {}, env);
   for (const key of Object.keys(env)) if (key.startsWith('MOTE_') || key.startsWith('COMPOSE_') || key.startsWith('TUNNEL_') || key.startsWith('CLOUDFLARED_') || key === 'NO_AUTOUPDATE') delete env[key];
   const result = { ...env, ...secretEnv, NODE_USE_ENV_PROXY: '1', NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development',
-    MOTE_CONFIG_FILE: p.configFile ?? p.envFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN: p.env.MOTE_TOKEN, ...extra };
+    MOTE_CONFIG_FILE: p.configFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN: p.env.MOTE_TOKEN, ...extra };
   for (const name of ['HTTP_PROXY', 'HTTPS_PROXY']) {
     const lower = name.toLowerCase(), value = result[lower] || result[name];
     if (value !== undefined || result[lower] !== undefined) result[name] = result[lower] = value ?? '';

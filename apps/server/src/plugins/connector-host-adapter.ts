@@ -1,4 +1,5 @@
 import type {HostScope} from '@mote/plugin-host';
+import type {StateStore} from '@mote/plugin-api';
 import type {SourceCapabilityDescriptor} from '@mote/shared';
 import type {ConnectorContext} from '../connectors/types.js';
 import {ConnectorRegistry,connectorCleanupFailure,isConnectorCleanupFailure,type ConnectorHttpHost,type ConnectorInstance,type ConnectorManifest} from '../connectors/registry.js';
@@ -21,6 +22,8 @@ export interface ConnectorHostAdapterOptions {
   readonly dispatcher:DynamicHttpDispatcher;
   /** H05 fixes this to the actual installed instance scope. */
   readonly scopeFor:ConnectorScopeFactory;
+  /** Trusted persistent state binding for each installed instance scope. */
+  readonly stateFor?:(scope:HostScope)=>StateStore;
   readonly statusScope:HostScope;
   /** Trusted transport slot only; ordinary plugins get no raw context here. */
   readonly transport?:(instance:ConnectorInstance)=>void|Promise<void>;
@@ -117,6 +120,10 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
   const registry=new ConnectorRegistry(undefined,options.context,{
     http,scopeFor,statusScope:options.statusScope,manageCapabilities:false,
     ...(options.transport?{transport:options.transport}:{}),
+    ...(options.stateFor?{stateFor:(_manifest:ConnectorManifest,scope?:HostScope)=>{
+      if(!scope)throw Error('Connector state scope is unavailable');
+      return options.stateFor!(scope);
+    }}:{}),
   });
   const manifests=new Map(options.manifests.map(manifest=>[manifest.id,manifest])),retiring=new Set<Promise<void>>(),pendingHot=new Set<Promise<void>>(),hotById=new Map<string,Promise<void>>(),lateCleanupFailures:unknown[]=[];
   const scopeClosures=new WeakMap<ConnectorInstanceScope,Promise<void>>();

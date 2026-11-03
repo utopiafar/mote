@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -144,7 +144,7 @@ test('selected YAML ignores ordinary ambient environment variables and old envir
   assert.equal(result.status, 0, result.stderr);
   const config = JSON.parse(result.stdout);
   assert.equal(config.port, 48123); assert.equal(config.agentConcurrency, 6); assert.equal(config.model, 'file-model'); assert.equal(config.apiKey, '');
-  assert.equal(config.configuration.configFile, file); assert.equal(config.configuration.envFile, null);
+  assert.equal(config.configuration.configFile, file); assert.equal(Object.hasOwn(config.configuration, 'envFile'), false);
 });
 
 test('missing YAML and obsolete env syntax fail before creating storage', t => {
@@ -154,12 +154,14 @@ test('missing YAML and obsolete env syntax fail before creating storage', t => {
   assert.notEqual(readConfig({ MOTE_CONFIG_FILE: file }).status, 0); assert.equal(existsSync(vault), false);
 });
 
-test('an obsolete environment-file selector fails instead of silently choosing a different cwd profile', t => {
-  const { root, vault } = fixture(t), legacy = join(root, 'old-profile.env');
+test('an obsolete environment-file selector cannot override the selected YAML profile', t => {
+  const { root } = fixture(t), legacy = join(root, 'old-profile.env');
   writeFileSync(legacy, 'MOTE_DATA_DIR=./old-profile-data\n');
   const result = readConfig({ MOTE_ENV_FILE: legacy }, root);
-  assert.notEqual(result.status, 0); assert.match(result.stderr, /MOTE_ENV_FILE/); assert.match(result.stderr, /MOTE_CONFIG_FILE/);
-  assert.equal(existsSync(vault), false); assert.equal(existsSync(join(root, 'old-profile-data')), false);
+  assert.equal(result.status, 0, result.stderr);
+  const config = JSON.parse(result.stdout);
+  assert.equal(config.dataDir, join(realpathSync(root), 'vault'), 'The explicit YAML beside the working directory remains authoritative');
+  assert.equal(existsSync(join(root, 'old-profile-data')), false);
 });
 
 test('pure bootstrap loading neither creates the vault nor reads or generates its private credential', t => {

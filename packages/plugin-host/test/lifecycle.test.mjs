@@ -33,6 +33,27 @@ async function networkPlugin(host, name) {
   return {handle, binding, server, ticks: () => ticks};
 }
 
+test('the host injects instance-bound state and fails closed without a provider', async t => {
+  const observed = [], host = new PluginHost(hostId, undefined, undefined, {stateFor: scope => ({
+    stateIdentity: scope.identity.instanceId, get: async () => undefined, list: async () => [],
+    compareAndSet: async () => { throw Error('unused'); }, checkpoint: async () => ({digest: '', bytes: 0, records: 0}),
+  })});
+  t.after(() => host.close());
+  for (const name of ['state-one', 'state-two']) await host.install({identity: identity(name), contributions: [], factory: context => {
+    observed.push({instanceId: context.scope.identity.instanceId, stateIdentity: context.state.stateIdentity});
+    return lifecycle();
+  }});
+  assert.deepEqual(observed, [
+    {instanceId: 'state-one', stateIdentity: 'state-one'},
+    {instanceId: 'state-two', stateIdentity: 'state-two'},
+  ]);
+  const without = new PluginHost(hostId); t.after(() => without.close());
+  await without.install({identity: identity('state-missing'), contributions: [], factory: async context => {
+    await assert.rejects(context.state.get('key'), {code: 'dependency_unavailable'});
+    return lifecycle();
+  }});
+});
+
 test('two real plugins own independent listeners/timers and closing one leaves its sibling callable', {timeout: 5000}, async t => {
   const root = new Context(), host = new PluginHost(hostId, root);
   root.provide('fixtureUnrelated', {alive: true});

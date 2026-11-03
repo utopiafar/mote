@@ -5,6 +5,10 @@ This is a minimal repository-external Source connector. It imports only the publ
 registers one owner-only status route through the existing connector host. It does
 not scan a vault, read credentials or call a model.
 
+The host injects a bound `ctx.state`; the plugin keeps a generated launch counter
+there and never passes a package, installation or instance identity. The counter
+survives profile restart and disabling the connector.
+
 ## Create and run
 
 From a built Mote checkout, create an external project and install the packed SDK

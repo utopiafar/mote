@@ -1,5 +1,6 @@
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import type {HostScope} from '@mote/plugin-host';
+import type {StateStore} from '@mote/plugin-api';
 import type {StopReason} from '@mote/plugin-api/contracts';
 import {sourceKindSchema,type SourceCapabilityDescriptor} from '@mote/shared';
 import {z} from 'zod';
@@ -40,6 +41,8 @@ export interface ConnectorRegistryOptions {
   readonly http?:ConnectorHttpHost;
   /** Fixed by H05 to the actual installed instance scope, never consumer-selectable. */
   readonly scopeFor?:(manifest:ConnectorManifest)=>HostScope;
+  /** Trusted host binding: the state namespace comes from the instance scope. */
+  readonly stateFor?:(manifest:ConnectorManifest,scope?:HostScope)=>StateStore;
   readonly statusScope?:HostScope;
   /** Trusted transport mount only (for example the existing MCP Fastify transport). */
   readonly transport?:(instance:ConnectorInstance)=>void|Promise<void>;
@@ -115,6 +118,10 @@ export class ConnectorRegistry {
   }
   addManifest(value:unknown){this.register(value,true);}
   manifest(id:string){return this.manifests.find(manifest=>manifest.id===id);}
+  private instanceContext(manifest:ConnectorManifest,scope?:HostScope):ConnectorContext{
+    const state=this.options.stateFor?.(manifest,scope);
+    return state?{...this.context,state}:this.context;
+  }
 
   async loadModules(specifiers:readonly string[]){
     for(const specifier of specifiers){
@@ -140,7 +147,7 @@ export class ConnectorRegistry {
       for(const manifest of this.manifests){
         const scope=this.options.scopeFor?.(manifest);
         if(this.options.http&&!scope)throw Error('Connector scope is unavailable');
-        const instance=await manifest.create(this.context);
+        const instance=await manifest.create(this.instanceContext(manifest,scope));
         if(!instance||typeof instance!=='object')throw Error(`Connector ${manifest.id} did not create an instance`);
         const disposedLate=async()=>{
           try{await instance.close?.();}catch(cleanup){throw new AggregateError([Error('Connector registry is closed'),cleanup],'Connector late initialization and disposal failed');}
@@ -197,7 +204,7 @@ export class ConnectorRegistry {
     if(this.instances.some(entry=>entry.manifest.id===manifest.id))throw Error(`Connector ${manifest.id} is already started`);
     scope.assertCurrent();
     let instance:ConnectorInstance|undefined;
-    try{instance=await manifest.create(this.context);}catch(error){this.recordFailure(manifest,error);throw error;}
+    try{instance=await manifest.create(this.instanceContext(manifest,scope));}catch(error){this.recordFailure(manifest,error);throw error;}
     if(!instance||typeof instance!=='object'){this.recordFailure(manifest,Error('Invalid connector instance'),'failed');throw Error(`Connector ${manifest.id} did not create an instance`);}
     try{scope.assertCurrent();}catch(error){try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([error,cleanup]);}throw error;}
     if(this.closed){

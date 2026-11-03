@@ -52,7 +52,7 @@ test('an external project consumes the packed SDK tarball and browser bundle wit
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], external);
 
   writeFileSync(join(external, 'consumer.ts'), `
-import { packageManifestSchema, PLUGIN_SDK_VERSION } from '@mote/plugin-sdk';
+import { packageManifestSchema, PLUGIN_SDK_VERSION, StateError, type StateStore } from '@mote/plugin-sdk';
 import { planComposition } from '@mote/plugin-sdk/node';
 const manifest = packageManifestSchema.parse({
   schemaVersion: 1, id: 'external.fixture', name: 'External fixture', version: '1.0.0', runtime: 'worker',
@@ -61,7 +61,10 @@ const manifest = packageManifestSchema.parse({
   capabilities: [], configuration: [], dependencies: [], access: ['generated external fixture'],
 });
 const plan = planComposition({revision: 1, host: 'central', packages: [manifest]});
-if (!plan.ok || PLUGIN_SDK_VERSION !== '0.1.0') throw new Error('external SDK consumer failed');
+const state = undefined as StateStore | undefined;
+if (state) void state.get('host-bound-key');
+const stateError: StateError = new StateError('invalid_namespace');
+if (!plan.ok || PLUGIN_SDK_VERSION !== '0.1.0' || stateError.code !== 'invalid_namespace') throw new Error('external SDK consumer failed');
 console.log(plan.plan.contributions[0]?.address.contributionId);
 `);
   writeFileSync(join(external, 'tsconfig.json'), JSON.stringify({

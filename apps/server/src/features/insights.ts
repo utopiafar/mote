@@ -7,6 +7,7 @@ import { modelProfileIdSchema } from '../model-settings.js';
 import { scopeFields,validRange } from '../query-scope.js';
 import { StoreError } from '../store.js';
 import type {ServerFeatureScope} from '../feature-host.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** insights: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,agent,isClosing,diagnostics,insight,insightRequestSchema,insightRuns,modelSettings,store}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|"agent"|"isClosing"|"diagnostics"|"insight"|"insightRequestSchema"|"insightRuns"|"modelSettings"|"store">,scope?:ServerFeatureScope){
@@ -30,3 +31,11 @@ app.get('/api/insights',async req=>store.insights(req.query));
 // published table is authoritative; job receipts cannot restore deleted results.
 app.get('/api/insights/:runId',async req=>store.insight(z.string().min(1).max(128).refine(id=>!/[\u0000-\u001f\u007f]/.test(id)).parse((req.params as {runId:string}).runId)));
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.insights',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.insights'));
+    register(app,services,scope);
+  },
+};

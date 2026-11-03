@@ -53,16 +53,18 @@ class InstanceState implements StateStore {
     installInstanceStateSchema(store);
   }
 
-  get(key: string): Promise<StateRecord | undefined> {
+  get(key: string, ...namespace: never[]): Promise<StateRecord | undefined> {
     return this.admit(() => {
+      this.rejectNamespace(namespace);
       this.key(key);
       const row = this.row(key);
       return row ? this.record(row) : undefined;
     });
   }
 
-  list(prefix = '', limit = this.limits.listDefault): Promise<readonly StateRecord[]> {
+  list(prefix = '', limit = this.limits.listDefault, ...namespace: never[]): Promise<readonly StateRecord[]> {
     return this.admit(() => {
+      this.rejectNamespace(namespace);
       this.prefix(prefix);
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > this.limits.listMax) throw new StateError('invalid_limit');
       const rows = this.store.db.prepare(`SELECT key,json,bytes,revision,updated_at FROM plugin_instance_state
@@ -71,8 +73,9 @@ class InstanceState implements StateStore {
     });
   }
 
-  compareAndSet(key: string, expectedRevision: number | null, value: StateValue): Promise<StateRecord> {
+  compareAndSet(key: string, expectedRevision: number | null, value: StateValue, ...namespace: never[]): Promise<StateRecord> {
     return this.admit(() => {
+      this.rejectNamespace(namespace);
       this.key(key);
       if (expectedRevision !== null && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) throw new StateError('invalid_revision');
       const json = this.serialize(value);
@@ -80,8 +83,9 @@ class InstanceState implements StateStore {
     });
   }
 
-  checkpoint(): Promise<StateCheckpoint> {
+  checkpoint(...namespace: never[]): Promise<StateCheckpoint> {
     return this.admit(() => {
+      this.rejectNamespace(namespace);
       const rows = this.store.db.prepare(`SELECT key,json,bytes,revision,updated_at FROM plugin_instance_state
         WHERE package_id=? AND installation_id=? AND instance_id=? ORDER BY key`).all(...this.values()) as Row[];
       const digest = createHash('sha256').update(JSON.stringify({
@@ -172,6 +176,12 @@ class InstanceState implements StateStore {
     if (typeof json !== 'string') throw new StateError('invalid_value');
     if (Buffer.byteLength(json) > this.limits.valueBytes) throw new StateError('value_too_large');
     return json;
+  }
+
+  /** The methods expose no namespace parameter; reject JS callers that append one
+   * instead of silently ignoring an attempted namespace/instance override. */
+  private rejectNamespace(namespace: readonly unknown[]) {
+    if (namespace.length) throw new StateError('invalid_namespace');
   }
 
   private key(key: string) {
