@@ -167,7 +167,12 @@ export class SourceSync {
         if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: queued.revision });
         return true;
       }
-      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) { markAbsent(); deferred.push(queued); return true; }
+      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) {
+        markAbsent();
+        const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key];
+        if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: queued.revision });
+        deferred.push(queued); return true;
+      }
       const delivered = this.data.delivered?.[key];
       if (delivered !== queued.revision) {
         const known = knownChanges.get(key) ?? next.known[key];
@@ -238,7 +243,7 @@ export class SourceSync {
     if (resolveHead) for (const item of deferred) {
       if (this.inflight.has(itemKey(item))) continue; // A write may still commit.
       const head = await resolveHead(item);
-      if (head === undefined) continue; // Unknown delivery.
+      if (head === undefined) { const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key]; if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: item.revision }); continue; }
       if (head === item.revision) continue; // Committed with a lost ACK.
       const predecessor = this.data.predecessors?.[item.revision] ?? null;
       if (head !== predecessor) continue;
@@ -300,8 +305,16 @@ export class SourceSync {
             let head: { revision?: string | null } | undefined;
             try {
               head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined;
-            } catch { continue; } // Unknown delivery: keep the revision and its spool.
-            if (!head || !('revision' in head)) continue; // Malformed answer is not proof of absence.
+            } catch {
+              const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
+              if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: item.revision });
+              continue; // Unknown delivery: keep the revision, its spool and the marker.
+            }
+            if (!head || !('revision' in head)) {
+              const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
+              if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: item.revision });
+              continue;
+            }
             if (head.revision === item.revision) continue; // Committed with a lost ACK.
             // The recorded predecessor is the last revision the node confirmed.
             // If the head still equals it, this attempt never committed; a newer
