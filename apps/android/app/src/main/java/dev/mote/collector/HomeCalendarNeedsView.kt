@@ -36,7 +36,7 @@ internal object CalendarNeeds {
 }
 
 /** Reads existing suggestions only; it never confirms, dismisses or writes a calendar event. */
-internal class HomeCalendarNeedsView(private val activity: MoteActivity, private val open: () -> Unit) : LinearLayout(activity), HomeSection {
+internal class HomeCalendarNeedsView(private val activity: MoteActivity, private val open: () -> Unit, private val available: () -> Boolean = { true }) : LinearLayout(activity), HomeSection {
     private val task = UiTask(activity)
     private val gate = HomeReadGate()
     private var closed = false
@@ -49,6 +49,8 @@ internal class HomeCalendarNeedsView(private val activity: MoteActivity, private
     override fun close() { closed = true; pause(); clear(); task.close() }
     override fun refresh() {
         if (closed) return
+        // A stopped plugin publishes no calendar-needs block, including while the home stays open.
+        if (!available()) { active = false; gate.invalidate(); clear(); return }
         active = true
         val access = runCatching { CentralAccess.resolve(activity) }.getOrNull()
         // A resolution failure hides the section without dropping `denied`; the next resolved
