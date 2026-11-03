@@ -79,6 +79,32 @@ test('validatePackage accepts matching bytes and rejects a tampered ZIP', async 
   assert.ok(result.failures.some(failure => failure.code === 'digest_mismatch'));
 });
 
+test('validatePackage names a missing capability or dependency declaration and its fix', async t => {
+  const f = fixture();
+  t.after(() => rmSync(f.directory, {recursive: true, force: true}));
+  const omitted = {...manifest, contributions: [
+    {id: 'generated.pack.page', version: '1', surface: 'page' as const, runtime: 'host' as const, entry: 'page.html'},
+    {id: 'generated.pack.processor', version: '1', surface: 'processing' as const, runtime: 'worker' as const,
+      requires: [{kind: 'service' as const, id: 'generated.reader', version: '1'}], capabilities: ['retrieval']},
+  ]};
+  writeFileSync(join(f.directory, 'mote-plugin.json'), JSON.stringify(omitted));
+  const packed = await packPlugin({manifestPath: join(f.directory, 'mote-plugin.json'), payload: f.payload, out: f.out, manifestSchema: pluginManifestSchema, validateArchive: validatePluginArchive});
+  const result = await validatePackage({manifestPath: packed.manifestPath, zipPath: packed.zipPath, releaseContract: {pluginManifestSchema, validatePluginArchive}});
+  assert.equal(result.ok, false);
+  const dependency = result.failures.find(failure => failure.code === 'missing_dependency');
+  assert.ok(dependency, 'the omitted service requirement produces a missing-dependency diagnostic');
+  assert.equal(dependency.contributionId, 'generated.pack.processor');
+  assert.deepEqual(dependency.dependency, {kind: 'service', id: 'generated.reader', version: '1'});
+  assert.match(String(dependency.message), /"generated\.reader"/);
+  assert.match(String(dependency.remediation), /"generated\.reader"/);
+  const capability = result.failures.find(failure => failure.code === 'undeclared_capability');
+  assert.ok(capability, 'the omitted package-level capability produces an undeclared-capability diagnostic');
+  assert.equal(capability.capability, 'retrieval');
+  assert.equal(capability.contributionId, 'generated.pack.processor');
+  assert.match(String(capability.message), /retrieval/);
+  assert.match(String(capability.remediation), /"capabilities"/);
+});
+
 test('pack rejects an output tree inside the payload and an invalid calendar declaration', async t => {
   const f = fixture();
   t.after(() => rmSync(f.directory, {recursive: true, force: true}));
