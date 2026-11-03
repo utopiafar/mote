@@ -219,12 +219,13 @@ export class SourceSync {
         // The scan is already complete here. Withdraw absent files before the
         // pre-stage flush so a reconnect never uploads a file the owner removed.
         const withdrawn: SourceItem[] = [];
+        const knownChanges = new Map<string, Known>();
         await this.mutate(async () => {
-          const knownChanges = new Map<string, Known>();
           const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
           this.withdrawAbsent(scan, next, knownChanges, withdrawn);
           if (!withdrawn.length) return;
           await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...Array.from(knownChanges, ([key, value]) => ({ section: 'known' as const, key, value }))]);
+          for (const [key, value] of knownChanges) this.data.known[key] = value;
         });
         await this.discardUnqueuedOriginals(withdrawn);
         await prepare?.();

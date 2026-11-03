@@ -106,12 +106,13 @@ describe('source revisions and durable acknowledgments', () => {
   it('queues the same file again after it leaves and returns unconfirmed', async () => {
     const engine = await create(), saved: SourceItem[] = [];
     await engine.stage(scan([item]), false);
-    await engine.stage(scan([]), false);
+    // Withdrawal happens on the real reconnect path, then the same identity returns.
+    expect(await engine.syncScan(scan([]), false, source, transport(saved))).toEqual({ changes: 0, state: 'ready' });
     expect(engine.status().pending).toBe(0);
     expect(await engine.stage(scan([item]), false)).toBe(1);
-    expect(engine.status().pending).toBe(1);
-    await engine.flush(source, transport(saved));
+    await engine.syncScan(scan([item]), false, source, transport(saved));
     expect(saved).toHaveLength(1);
+    expect(engine.status().pending).toBe(0);
   });
   it('releases the spool of a withdrawn queued original', async () => {
     const engine = await create(), saved: SourceItem[] = [];
@@ -121,7 +122,7 @@ describe('source revisions and durable acknowledgments', () => {
     const staged: ScannedItem = { ...item, localOriginal: { directory: spool, sha256: 'a'.repeat(64), sizeBytes: 7, partBytes: 4 * 1024 * 1024 } };
     await engine.stage(scan([staged]), false);
     expect(engine.status().pending).toBe(1);
-    await engine.stage(scan([]), false);
+    await engine.syncScan(scan([]), false, source, transport(saved));
     expect(engine.status().pending).toBe(0);
     await expect(stat(spool)).rejects.toThrow();
     expect(saved).toHaveLength(0);
