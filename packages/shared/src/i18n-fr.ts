@@ -7208,6 +7208,7 @@ export const french: Readonly<Record<string, string>> = {
   "正在安装": "Installation en cours",
   "安装失败": "Échec de l'installation",
   "等待节点重启": "En attente du redémarrage du nœud",
+  "需要构建": "Nécessite une compilation",
   "运行中": "En cours d'exécution",
   "已停用": "Désactivé",
   "停用中": "Désactivation en cours",

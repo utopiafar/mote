@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.text.InputType
 import android.widget.*
+import dev.mote.collector.plugins.PluginCenterPlugin
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -26,7 +27,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
     private val client get() = screens.client
     private fun enc(value: String) = CentralScreens.encode(value)
     private val library = CentralLibrary(screens)
-    private val plugins = CentralPlugins(screens) { extensions() }
+    private val plugins = PluginCenterPlugin(screens) { extensions() }
     fun close() = plugins.close()
     fun clearPrivateState() = plugins.clearPrivateState()
     fun resume() = plugins.resume()
