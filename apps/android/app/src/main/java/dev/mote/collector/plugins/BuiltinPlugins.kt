@@ -6,6 +6,7 @@ package dev.mote.collector.plugins
 fun NativePluginRegistry.registerBuiltinPlugins(buildId: String) {
     CapturePlugin.register(this, buildId)
     registerDurableTransport(buildId)
+    SourceProviderPlugin.register(this, buildId)
     SystemEntriesPlugin.register(this, buildId)
     NotesPlugin.register(this, buildId)
     NativeLibraryPlugin.register(this, buildId)

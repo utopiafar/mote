@@ -137,7 +137,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             val itemHistory = transportPlugin.uploadSession(config, batchId, "capture").also { it.restore() }
             val transport = transportPlugin.captureTransport(queue, config, batchId)
             settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
-            if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
+            if (!inputData.getBoolean("continuation", false)) dev.mote.collector.plugins.SourceProviderPlugin.owner(applicationContext).enqueueUpload(config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")
             // The configured batch size is the number of records in one worker
             // operation. Compressed JSONL transport supports up to 500.

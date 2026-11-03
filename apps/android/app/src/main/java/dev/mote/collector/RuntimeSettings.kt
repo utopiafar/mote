@@ -153,7 +153,7 @@ object RuntimeSettings {
                     runCatching {
                         if (applied.isSuccess) current.getOrNull()?.let { config ->
                             UploadWorker.schedule(app, config)
-                            SourceWork.schedule(app)
+                            dev.mote.collector.plugins.SourceProviderPlugin.owner(app).schedule()
                         }
                     }.onFailure { settings.uploadStatus(MoteI18n.text("设置已保存，同步调度暂不可用：{0}", it.message ?: MoteI18n.text("请稍后重试"))) }
                 }

@@ -1309,7 +1309,7 @@ class MainActivity : MoteActivity() {
                 val c = Settings(app).read()
                 if (!c.hasSyncConnection()) false else {
                     c.validateConnection()
-                    if (app.localSources().sources().any { it.enabled }) SourceWork.schedule(app, true, syncExplicit = true)
+                    if (app.localSources().sources().any { it.enabled }) dev.mote.collector.plugins.SourceProviderPlugin.owner(app).schedule(manual = true, syncExplicit = true)
                     else UploadWorker.schedule(app, c, true)
                     true
                 }
