@@ -8,6 +8,7 @@ import { builtInSourceAdapters, SourceAdapterRegistry } from '../src/source-adap
 import { LocalSourceManager } from '../src/source-manager';
 import { sourceHash } from '../src/source-sync';
 import { DEFAULT_SOURCE_OPTIONS, type ScannedItem } from '../src/source-types';
+import { sourceAck } from './fixtures';
 
 let directory: string;
 const managers: LocalSourceManager[] = [];
@@ -15,13 +16,13 @@ const connection = { serverUrl: 'http://127.0.0.1:9', token: 'generated-managed-
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
 const response = (status: number, value: unknown) => new Response(JSON.stringify(value), { status });
 
-type Request = { path: string; method: string; url: URL };
+type Request = { path: string; method: string; url: URL; body: any };
 function transport(handler: (request: Request) => Promise<Response> | Response) {
   const requests: Request[] = [], unmatched: string[] = [];
   vi.stubGlobal('fetch', async (input: string | URL | globalThis.Request, init: RequestInit = {}) => {
     const url = new URL(String(input));
     expect(url.origin).toBe(connection.serverUrl);
-    const request = { url, path: url.pathname, method: init.method ?? 'GET' };
+    const request = { url, path: url.pathname, method: init.method ?? 'GET', body: init.body ? JSON.parse(await new Response(init.body).text()) : undefined };
     requests.push(request);
     return handler(request);
   });
@@ -164,5 +165,69 @@ it('keeps a real scanner spool across unknown heads and restart, then withdraws 
     expect(reopened.status()[0]!.pending).toBe(1); expect(await readFile(join(spool.directory, '0'))).toEqual(bytes); expect(wire.writes()).toHaveLength(0);
     headMode = 'null'; await expect(reopened.flushPending(new AbortController().signal)).resolves.toBeUndefined();
     expect(reopened.status()[0]!.pending).toBe(0); expect(existsSync(spool.directory)).toBe(false); expect(wire.writes()).toHaveLength(0); expect(wire.unmatched).toEqual([]);
+  } finally { release.resolve(); await flushing?.catch(() => {}); }
+});
+
+it('protects both attempted revisions of an absent identity across history, realtime and restart until heads recover', async () => {
+  let text: string | undefined = 'generated A';
+  const externalId = 'file:managed-two-revisions', scans: (string | undefined)[] = [];
+  const adapters = new SourceAdapterRegistry().register({
+    kind: 'local-files', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false,
+    validateConfiguration() {},
+    async scan() {
+      scans.push(text);
+      const items: ScannedItem[] = text === undefined ? [] : [{ externalId, title: 'generated', text, kind: 'file', layer: 'snapshot', deleted: false,
+        document: { fileIndex: { version: 1, fileId: externalId, contentVersion: sourceHash(text), mode: 'index', parser: 'generated-index', coverage: 'full', status: 'ready', totalCharacters: text.length, offset: 0, length: text.length, allowRead: false } } }];
+      return { version: 1, scan: { items, seen: items.map(item => item.externalId), complete: true, skipped: 0 } };
+    },
+  });
+  let sourceId = '', failWrites = true, headMode: 'error' | 'null' = 'error';
+  const attempts: { revision: string; text: string }[] = [], entered = deferred(), release = deferred();
+  let gateWrite = false;
+  const wire = transport(async request => {
+    if (request.method === 'POST' && request.path === '/api/sources') return response(200, { id: sourceId, enabled: true });
+    if (request.method === 'PATCH' && request.path === '/api/sources/' + sourceId) return response(200, { id: sourceId });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/recovery') return response(200, { items: [] });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/capabilities') return response(200, { manifestBatch: 200 });
+    if (request.method === 'GET' && request.path === '/api/file-sync/v1/head') {
+      expect(request.url.searchParams.get('sourceId')).toBe(sourceId); expect(request.url.searchParams.get('externalId')).toBe(externalId);
+      return headMode === 'error' ? response(503, { error: 'Generated unavailable head' }) : response(200, { revision: null });
+    }
+    if (request.method === 'POST' && request.path === '/api/file-sync/v1/manifests') {
+      expect(request.body.items).toHaveLength(1);
+      const item = request.body.items[0].item; attempts.push({ revision: item.revision, text: item.text });
+      if (gateWrite) { gateWrite = false; entered.resolve(); await release.promise; }
+      if (failWrites) return response(503, { error: 'Generated precommit failure' });
+      return response(200, { results: [{ externalId, revision: item.revision, state: 'accepted', ack: sourceAck(sourceId, item, 'file-revision') }] });
+    }
+    return wire.reject(request);
+  });
+  let flushing: Promise<void> | undefined;
+  try {
+    const app = await openManaged(adapters);
+    sourceId = await app.addAdapterSource({ kind: 'local-files', name: 'Generated two revisions' }, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: false, syncContinuously: true });
+    await app.sync(true);
+    await expect(app.flushPending(new AbortController().signal)).rejects.toMatchObject({ httpStatus: 503 });
+    expect(attempts.map(item => item.text)).toEqual(['generated A']);
+    text = 'generated B'; await app.sync(true);
+    expect(app.status()[0]).toMatchObject({ pending: 2, historyPending: 1, realtimePending: 1 });
+    // The second attempted revision is realtime; A remains in history. Hold
+    // its real write so the complete absence producer runs at a known point.
+    gateWrite = true; flushing = app.flushPending(new AbortController().signal); const failed = expect(flushing).rejects.toBeInstanceOf(Error); await entered.promise;
+    expect(attempts.map(item => item.text)).toEqual(['generated A', 'generated B']);
+    text = undefined; const beforeScan = scans.length; await app.sync(true);
+    expect(scans.length).toBe(beforeScan + 1); expect(scans.at(-1)).toBeUndefined();
+    expect(await markerCount(sourceId)).toBe(1); release.resolve(); await failed;
+    expect(app.status()[0]!.pending).toBe(2);
+    // All later writes would be accepted, making any blind publication visible.
+    failWrites = false;
+    const reopened = await restart(app, adapters);
+    expect(reopened.status()[0]!.pending).toBe(2); expect(await markerCount(sourceId)).toBe(1);
+    const start = wire.requests.length; let slices = 0;
+    await expect(reopened.flushPending(new AbortController().signal, async () => { slices++; })).resolves.toBeUndefined();
+    expect(attempts).toHaveLength(2); expect(reopened.status()[0]!.pending).toBe(2);
+    expect(slices).toBe(1); expect(wire.requests.slice(start).filter(request => request.path === '/api/file-sync/v1/head')).toHaveLength(2);
+    headMode = 'null'; await expect(reopened.flushPending(new AbortController().signal)).resolves.toBeUndefined();
+    expect(reopened.status()[0]!.pending).toBe(0); expect(attempts).toHaveLength(2); expect(wire.unmatched).toEqual([]);
   } finally { release.resolve(); await flushing?.catch(() => {}); }
 });

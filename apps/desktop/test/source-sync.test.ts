@@ -271,7 +271,7 @@ describe('source revisions and durable acknowledgments', () => {
     expect(engine.status().pending).toBe(0);
     expect(sent).toHaveLength(uploaded);
   });
-  it('keeps an attempted revision when the head answer is unknown or advanced', async () => {
+  it('does not publish an absent attempted revision when heads are unknown or advanced but writes recover', async () => {
     for (const mode of ['error', 'advanced'] as const) {
       const dir = await mkdtemp(join(tmpdir(), 'mote-ambig-'));
       const engine = new SourceSync(join(dir, 'state.json')); await engine.initialize();
@@ -285,17 +285,19 @@ describe('source revisions and durable acknowledgments', () => {
         }
         if (path === '/api/file-sync/v1/manifests') {
           sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
-          throw new Error('simulated ACK loss');
+          if (sent.length === 1) throw new Error('simulated ACK loss');
+          return { results: body.items.map((manifest: any) => ({ externalId: manifest.item.externalId, revision: manifest.item.revision, state: 'accepted', ack: sourceAck(source.id, manifest.item, 'file-revision') })) };
         }
-        if (path === '/api/file-sync/v1/revisions') throw new Error('simulated ACK loss');
         throw new Error('unexpected ' + path);
       };
       await engine.stage(scan([fileItem]), false);
       await expect(engine.flush(source, wire as any)).rejects.toThrow('ACK loss');
       const spool = join(dir, 'spool-ambig'); await mkdir(spool, { recursive: true }); await writeFile(join(spool, '0'), 'x');
-      // Ambiguous delivery is neither withdrawn nor rewound.
-      await expect(engine.syncScan(scan([]), true, source, wire as any)).rejects.toThrow();
+      // A recovered write path must not publish an absent, unresolved attempt.
+      await expect(engine.syncScan(scan([]), false, source, wire as any)).resolves.toEqual({ changes: 0, state: 'ready' });
+      expect(sent).toHaveLength(1);
       expect(engine.status().pending).toBe(1);
+      expect((sourceState(join(dir, 'state.json')) as any).known[sourceHash(fileItem.externalId)].absentWhileInflight).toBe(sent[0]!.item.revision);
       await rm(dir, { recursive: true, force: true });
     }
   });

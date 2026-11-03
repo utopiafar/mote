@@ -170,7 +170,9 @@ export class SourceSync {
       const knownAbsent = knownChanges.get(key) ?? next.known[key];
       // A preflight may end before its predecessor is journaled. After restart
       // the durable absence marker still requires resolution against the head.
-      if (knownAbsent?.absentWhileInflight === queued.revision || (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision))) {
+      // The marker witnesses absence of the identity, not just one revision:
+      // both lanes can retain attempts for the same file.
+      if (knownAbsent?.absentWhileInflight || (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision))) {
         markAbsent();
         const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key];
         if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: queued.revision });
@@ -331,7 +333,7 @@ export class SourceSync {
             if (known) knownChanges.set(key, { ...known, contentHash: '', discoveryHash: undefined });
             withdrawn.push(item);
           }
-          if (!withdrawn.length) return;
+          if (!withdrawn.length && !knownChanges.size) return;
           await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...Array.from(knownChanges, ([key, value]) => ({ section: 'known' as const, key, value }))]);
           for (const [key, value] of knownChanges) this.data.known[key] = value;
         });
@@ -406,9 +408,9 @@ export class SourceSync {
    * managed flush can publish an absent file, confirm the node head. */
   private async reconcileAbsentInflight(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<void> {
     this.unreconciledAbsent.clear();
-    const candidates = this.pendingItems().filter(item => item.kind === 'file' && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight === item.revision);
+    const candidates = this.pendingItems().filter(item => item.kind === 'file' && !item.deleted && this.data.known[sourceHash(item.externalId)]?.absentWhileInflight);
     if (!candidates.length) return;
-    const withdrawKeys = new Set<string>(), cleared = new Map<string, string>();
+    const withdrawKeys = new Set<string>();
     // Bound the reconciliation per call so a slice still reaches its uploads
     // when many candidates stay unresolved; the rest are retried next time.
     // Rotate the starting point so unresolved heads cannot starve later ones.
@@ -423,38 +425,43 @@ export class SourceSync {
       if (!head || !('revision' in head)) { this.unreconciledAbsent.add(itemKey(item)); continue; }
       const key = sourceHash(item.externalId);
       const delivered = this.data.delivered?.[key] ?? null;
-      const predecessor = this.data.predecessors?.[item.revision] ?? delivered;
-      if (head.revision === item.revision) cleared.set(key, item.revision);
+      const predecessor = Object.hasOwn(this.data.predecessors ?? {}, item.revision) ? this.data.predecessors![item.revision] : delivered;
+      // A confirmed duplicate may obtain its ACK, but keep the identity's
+      // absence evidence until other queued attempts have also been resolved.
+      if (head.revision === item.revision) continue;
       // Only a head equal to the confirmed base proves the send never committed;
       // anything newer is ambiguous and keeps its marker for the next attempt.
       else if (head.revision === predecessor) withdrawKeys.add(itemKey(item));
       else this.unreconciledAbsent.add(itemKey(item));
     }
     for (const item of ordered.slice(8)) this.unreconciledAbsent.add(itemKey(item));
-    if (!withdrawKeys.size && !cleared.size) return;
+    if (!withdrawKeys.size) return;
     const removed: SourceItem[] = [];
     await this.mutate(async () => {
       // A concurrent stage may have seen the file again while the head was in
       // flight; only apply a decision that still matches the durable state.
       const withdraw = (queued: SourceItem) => {
         const key = sourceHash(queued.externalId), entry = this.data.known[key];
-        if (!withdrawKeys.has(itemKey(queued)) || entry?.absentWhileInflight !== queued.revision) return true;
+        if (!withdrawKeys.has(itemKey(queued)) || !entry?.absentWhileInflight) return true;
         removed.push(queued); return false;
       };
       const next: State = { ...this.data, pendingRealtime: this.data.pendingRealtime.filter(withdraw), pendingHistory: this.data.pendingHistory.filter(withdraw) };
       const known: Record<string, Known> = { ...next.known };
-      for (const item of removed) {
+      const remaining = new Set([...next.pendingRealtime, ...next.pendingHistory].filter(item => item.kind === 'file' && !item.deleted).map(item => item.externalId));
+      const identities = new Map(removed.map(item => [sourceHash(item.externalId), item]));
+      for (const item of identities.values()) {
         const key = sourceHash(item.externalId), entry = known[key], delivered = this.data.delivered?.[key] ?? null;
-        if (entry?.deletionPending && delivered) {
+        if (entry && remaining.has(item.externalId)) {
+          known[key] = { ...entry, contentHash: '', discoveryHash: undefined };
+        } else if (entry?.deletionPending && delivered) {
           const deletedAt = new Date().toISOString(), revision = `deleted:${delivered}`;
           const tombstone = { ...item, text: '', localOriginalBase64: undefined, localOriginal: undefined, deleted: true, revision, observedAt: deletedAt, metadata: { ...item.metadata, version: 1 as const, file: { ...item.metadata?.file, deletionObservedAt: deletedAt } } };
           next.pendingRealtime.push(tombstone);
           known[key] = { ...entry, contentHash: '', revision, item: tombstone, deletionPending: undefined, absentWhileInflight: undefined };
         } else if (entry) known[key] = { ...entry, contentHash: '', discoveryHash: undefined, absentWhileInflight: undefined };
       }
-      for (const [key, revision] of cleared) { const entry = known[key]; if (entry?.absentWhileInflight === revision) known[key] = { ...entry, absentWhileInflight: undefined }; }
       next.known = known;
-      await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...removed.map(item => ({ section: 'known' as const, key: sourceHash(item.externalId), value: known[sourceHash(item.externalId)] })), ...[...cleared.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
+      await this.commit(next, this.limits.maxBytes, [...sourceStatePatch(this.data as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>), ...[...identities.keys()].map(key => ({ section: 'known' as const, key, value: known[key] }))]);
     });
     await this.discardUnqueuedOriginals(removed);
   }
