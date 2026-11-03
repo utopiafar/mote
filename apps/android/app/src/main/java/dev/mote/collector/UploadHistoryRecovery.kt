@@ -21,14 +21,12 @@ internal object UploadHistoryRecovery {
     fun restore(context: Context, queue: DurableQueue, settings: Settings): Boolean = try {
         ConnectionGuard.sync {
             val latest = settings.read()
-            val history = context.captureUploadHistory()
             UploadHistoryRetention.prune(context, UploadHistoryRetention.read(context))
             if (latest.hasSyncConnection()) {
-                val scope = CaptureUploadReceipt.scope(latest.server, settings.deviceId)
-                history.recoverInterrupted(scope, LoginProcess.id)
-                CaptureReceiptFinalizer(history).recover(queue, scope)
-                ItemUploadSession(context, latest, lane = "source").restore(false)
-                ItemUploadSession(context, latest, lane = "capture").restore(false)
+                val transport = dev.mote.collector.plugins.DurableTransportPlugin.get(context)
+                transport.recoverReceipts(queue, latest)
+                transport.uploadSession(latest, lane = "source").restore(false)
+                transport.uploadSession(latest, lane = "capture").restore(false)
             }
             available()
         } != null

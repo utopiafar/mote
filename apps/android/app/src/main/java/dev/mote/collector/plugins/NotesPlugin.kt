@@ -77,7 +77,7 @@ object NotesPlugin {
         return recordStores.computeIfAbsent(directory.absolutePath) {
             RecordDraftStore(directory, app.localContentCipher()) {
                 app.getSharedPreferences("mote", Context.MODE_PRIVATE).getInt("maxQueue", 256) * 1024L * 1024L -
-                    dev.mote.collector.QueueStorage(app).openQueue().stats().bytes -
+                    app.queue().stats().bytes -
                     File(app.filesDir, "record-pending").listFiles().orEmpty().sumOf { file -> file.length() }
             }
         }
