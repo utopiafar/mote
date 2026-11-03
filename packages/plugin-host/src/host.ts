@@ -1,4 +1,5 @@
 import {Context, type Fiber} from '@deepseek-ai/cordis';
+import type {StateStore} from '@mote/plugin-api';
 import {
   MAX_SNAPSHOT_CONTRIBUTIONS, hostIdentitySchema, scopeIdentitySchema, serviceRefSchema, serviceBindingSchema, pluginSnapshotSchema,
   type HostIdentity, type ScopeIdentity, type ServiceRef, type ServiceBinding, type ServiceContract, type ServiceLease,
@@ -14,8 +15,15 @@ export interface HostScope extends PluginScope {
 export interface HostPluginContext {
   readonly scope: HostScope;
   readonly services: ServiceResolver;
+  /** Bound to the host-resolved runtime identity; plugins never choose an instance ID. */
+  readonly state: StateStore;
   /** A declared contribution may publish several typed ports. Values remain in Cordis, never the snapshot. */
   provide<T>(contributionId: string, contract: ServiceContract<T>, value: T, revision?: number): ServiceBinding;
+}
+/** Trusted assembly input. The provider must bind its implementation to the scope
+ * identity and must not accept an instance ID from plugin code. */
+export interface HostPluginOptions {
+  readonly stateFor?: (scope: HostScope) => StateStore;
 }
 /** Executable input from a resolved activation plan, not another wire/package Manifest. */
 export interface PluginDefinition {
@@ -67,6 +75,11 @@ function closingTask(publish: (task: Promise<void>) => void, work: () => Promise
   void work().then(resolve, reject);
   return task;
 }
+/** Missing persistent state must fail closed instead of silently becoming process memory. */
+function unavailableState(): StateStore {
+  const unavailable = () => Promise.reject(new PluginHostError('dependency_unavailable'));
+  return Object.freeze({get: unavailable, list: unavailable, compareAndSet: unavailable, checkpoint: unavailable});
+}
 
 /** Cordis owns every actual service implementation. Maps here contain only activation/binding metadata. */
 export class PluginHost implements ServiceResolver {
@@ -77,7 +90,8 @@ export class PluginHost implements ServiceResolver {
   private readonly ports = new Map<string, PublishedPort>();
   private revision = 0;
   private closing?: Promise<void>;
-  constructor(identity: HostIdentity, context?: Context, private readonly onError: (error: unknown) => void = () => {}) {
+  constructor(identity: HostIdentity, context?: Context, private readonly onError: (error: unknown) => void = () => {},
+    private readonly options: HostPluginOptions = {}) {
     this.identity = Object.freeze(hostIdentitySchema.parse(identity));
     this.context = context ?? new Context();
     this.ownsRoot = !context;
@@ -139,7 +153,12 @@ export class PluginHost implements ServiceResolver {
       if (!resources.active) return Promise.reject(new PluginHostError('dependency_unavailable'));
       return this.acquirePort(contract, binding, signal, runtime);
     }};
+    let state: StateStore | undefined;
+    const bindState = () => state ??= this.options.stateFor ? this.options.stateFor(scope) : unavailableState();
     runtime.lifecycle = await factory(Object.freeze({scope, services,
+      // Resolve on first access so a foundation installed before storage can
+      // receive the context without eagerly binding an unavailable store.
+      get state() { return bindState(); },
       provide: <T>(id: string, contract: ServiceContract<T>, value: T, revision = 0) => {
         assertCurrent();
         const declaration = runtime.declarations.find(declaration => declaration.id === id), service = serviceRefSchema.parse(contract);

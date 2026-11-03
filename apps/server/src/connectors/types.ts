@@ -1,3 +1,4 @@
+import type {StateStore} from '@mote/plugin-api';
 import type {SourceStore} from '../sources.js';
 import type {Store} from '../store.js';
 
@@ -30,6 +31,9 @@ export interface ConnectorContext {
   files?: import('../files.js').FileStore;
   sources: SourceStore;
   store: Store;
+  /** Host-bound per-connector-instance state. The registry supplies it and the
+   * plugin never chooses a package, installation or instance identity. */
+  state?: StateStore;
   config: {dataDir: string;token: string;allowedOrigins: string[];connectors?: ConnectorConfig};
   ownerAuthorization?:(header:string|undefined)=>boolean;
   mcpAuthorization?:(header:string|undefined)=>{write:boolean;sourceIds?:string[];authorize:()=>void}|undefined;

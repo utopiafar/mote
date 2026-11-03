@@ -1,3 +1,7 @@
+import {randomUUID} from 'node:crypto';
+import {join} from 'node:path';
+import {PluginResourceScope,type HostScope} from '@mote/plugin-host';
+import type {StateStore} from '@mote/plugin-api';
 import {mcpContext,remoteMcpContext} from './mcp-context.js';
 import {larkContext} from './lark-context.js';
 import {gmailContext} from './gmail-context.js';
@@ -5,8 +9,8 @@ import {installRecordingMemory} from './recording-memory.js';
 import {recordingManifest,type RecordingProvider} from './recordings.js';
 import {createFeishuRecordings} from './lark-recordings.js';
 import {createDingtalkRecordings} from './dingtalk-recordings.js';
-import {join} from 'node:path';
 import {moteText} from '../i18n.js';
+import {createInstanceState} from '../plugins/instance-state.js';
 import {ConnectorRegistry,type ConnectorManifest,type OwnerRoute} from './registry.js';
 import {registerMcp,RemoteMcp} from './mcp.js';
 import {GoogleCalendarConnector,type GoogleDependencies} from './google.js';
@@ -92,12 +96,39 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
   }},
 ];}
 
+/** Host-bound state for deployment connector modules. The registry and this
+ * factory own the identity; connector code only receives the bound store. */
+function connectorState(store:ConnectorContext['store']){
+  const entries=new Map<string,{resources:PluginResourceScope;state:StateStore}>();
+  const stateFor=(manifest:ConnectorManifest):StateStore=>{
+    let entry=entries.get(manifest.id);
+    if(!entry){
+      const resources=new PluginResourceScope(undefined,`Connector ${manifest.id} state scope disposal failed`);
+      const identity={
+        host:{kind:'central' as const,id:'central-connectors'},
+        packageId:manifest.id,installationId:'central-connectors',instanceId:manifest.id,activationId:randomUUID(),
+      };
+      const scope:HostScope={
+        identity,signal:resources.signal,
+        assertCurrent:()=>resources.assertCurrent(),defer:dispose=>resources.defer(dispose),
+        run:work=>resources.run(work),every:(ms,work)=>resources.every(ms,work),retire:dispose=>resources.retire(dispose),
+      };
+      Object.freeze(scope);
+      entry={resources,state:createInstanceState(store,scope)};entries.set(manifest.id,entry);
+    }
+    return entry.state;
+  };
+  return {stateFor,close:async()=>{const current=[...entries.values()];entries.clear();for(const entry of current)await entry.resources.close();}};
+}
+
 /** Register built-ins plus trusted deployment modules before any route is mounted. */
 export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[]){
   const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
   const removeMemory=context.memoryStrategies?installRecordingMemory(context.memoryStrategies):undefined;
   if(removeMemory)app.addHook('onClose',async()=>removeMemory());
-  const registry=new ConnectorRegistry(app,ctx);
+  const state=connectorState(context.store);
+  app.addHook('onClose',()=>state.close());
+  const registry=new ConnectorRegistry(app,ctx,{stateFor:state.stateFor});
   for(const manifest of builtins(testing))registry.register(manifest);
   await registry.loadModules(ctx.config.connectors.modules??[]);
   for(const manifest of additionalManifests)registry.register(manifest);

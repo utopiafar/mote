@@ -12,6 +12,7 @@ export type StateValue =
 
 export type StateErrorCode =
   | 'invalid_key'
+  | 'invalid_namespace'
   | 'invalid_value'
   | 'invalid_revision'
   | 'invalid_limit'
@@ -69,6 +70,8 @@ export interface StateCheckpoint {
   readonly records: number;
 }
 
+/** Methods deliberately take no namespace or instance ID. The host binds them
+ * from the executing ScopeIdentity; a caller-supplied namespace is rejected. */
 export interface StateStore {
   get(key: string): Promise<StateRecord | undefined>;
   list(prefix?: string, limit?: number): Promise<readonly StateRecord[]>;

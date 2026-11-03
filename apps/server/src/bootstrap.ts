@@ -1,11 +1,12 @@
 import {randomUUID} from 'node:crypto';
-import {PluginHost,type HostPluginContext,type HostScope} from '@mote/plugin-host';
+import {PluginHost,PluginHostError,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {Config} from './config.js';
 import type {ConfigService} from './config-service.js';
 import type {Store} from './store.js';
 import type {createVaultPlatformAssembly} from './plugins/vault-platform.js';
+import {createInstanceState} from './plugins/instance-state.js';
 import type {ConfigurationPlatform} from './plugins/configuration-platform.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
 import type {ServerFeatureAdapter} from './features/index.js';
@@ -66,7 +67,15 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   if(selected.length!==kinds.length)invalid('Unknown foundation provider kind');
   const features=distribution.features.map(entry=>({descriptor:{...entry.descriptor},factory:entry.factory}));
   if(new Set(features.map(entry=>entry.descriptor.id)).size!==features.length)invalid('Duplicate feature contribution');
-  const host=new PluginHost({kind:'central',id:randomUUID()});
+  let stateStore:Store|undefined;
+  const host=new PluginHost({kind:'central',id:randomUUID()},undefined,undefined,{
+    // The vault store is created by the storage foundation. State is bound
+    // lazily on first plugin access, after that foundation has started.
+    stateFor:scope=>{
+      if(!stateStore)throw new PluginHostError('dependency_unavailable');
+      return createInstanceState(stateStore,scope);
+    },
+  });
   const leases:{release():Promise<void>}[]=[],bindings:ServiceBinding[]=[];
   const facts:{id:string;version:string}[]=[];
   async function install<K extends FoundationKind>(kind:K,current:FoundationInput):Promise<ServiceLease<FoundationValues[K]>>{
@@ -86,7 +95,8 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   try{
     const configuration=await install('configuration',input);
     const current={...input,config:configuration.value.config};
-    const storage=await install('storage',current),authorization=await install('authorization',current);
+    const storage=await install('storage',current);stateStore=storage.value.store;
+    const authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
     return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
       authorization:authorization.value,features:Object.freeze(features),get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),

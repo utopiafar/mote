@@ -16,42 +16,60 @@ const identity = (instanceId: string, activationId = randomUUID()): ScopeIdentit
   host: hostIdentity, packageId: 'generated.reading', installationId: 'generated-installation', instanceId, activationId,
 });
 
+const stateHost = (store: Store, limits: StateLimits = stateLimits) =>
+  new PluginHost(hostIdentity, undefined, undefined, {stateFor: scope => createInstanceState(store, scope, limits)});
+
 function fixture(t: {after: (work: () => unknown) => void}, options: {maxStorageBytes?: number} = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'mote-instance-state-'));
   const store = new Store(directory, options);
-  const host = new PluginHost(hostIdentity);
+  const host = stateHost(store);
   t.after(() => { try { store.close(); } finally { rmSync(directory, {recursive: true, force: true}); } });
   t.after(async () => { await host.close().catch(() => {}); });
   return {directory, store, host};
 }
 
-async function install(host: PluginHost, store: Store, instanceId: string, activationId = randomUUID(), limits?: StateLimits) {
+async function install(host: PluginHost, instanceId: string, activationId = randomUUID()) {
   let state!: StateStore;
   const handle = await host.install({
     identity: identity(instanceId, activationId), contributions: [],
-    factory: context => { state = createInstanceState(store, context.scope, limits); return lifecycle(); },
+    factory: context => { state = context.state; return lifecycle(); },
   });
   return {handle, state};
 }
 
 test('state is instance-scoped, activation is not persistent, and disable retains state', async t => {
   const {host, store} = fixture(t);
-  const a = await install(host, store, 'instance-a'), b = await install(host, store, 'instance-b');
+  const a = await install(host, 'instance-a'), b = await install(host, 'instance-b');
   await a.state.compareAndSet('review', null, {step: 1});
   await b.state.compareAndSet('review', null, {step: 2});
   assert.deepEqual((await a.state.get('review'))?.value, {step: 1});
   assert.deepEqual((await b.state.get('review'))?.value, {step: 2});
 
   await a.handle.close('disabled');
-  const resumed = await install(host, store, 'instance-a', randomUUID());
+  const resumed = await install(host, 'instance-a', randomUUID());
   assert.deepEqual((await resumed.state.get('review'))?.value, {step: 1});
   assert.equal((await resumed.state.compareAndSet('review', 1, {step: 3})).revision, 2);
   assert.deepEqual((await b.state.get('review'))?.value, {step: 2});
 });
 
+test('a caller-supplied namespace or instance identity is rejected', async t => {
+  const {host} = fixture(t);
+  const a = await install(host, 'instance-a'), b = await install(host, 'instance-b');
+  await a.state.compareAndSet('review', null, {step: 1});
+  const forged = {packageId: 'generated.reading', installationId: 'generated-installation', instanceId: 'instance-b'};
+  const invoke = (method: 'get' | 'list' | 'compareAndSet' | 'checkpoint', ...args: unknown[]) =>
+    (a.state as unknown as Record<string, (...input: unknown[]) => Promise<unknown>>)[method](...args, forged);
+  for (const [method, ...args] of [
+    ['get', 'review'], ['list', '', 10], ['compareAndSet', 'forged', null, 1], ['checkpoint'],
+  ] as const) await assert.rejects(invoke(method, ...args), (error: StateError) => error.code === 'invalid_namespace');
+  assert.equal(await b.state.get('review'), undefined);
+  assert.deepEqual((await a.state.get('review'))?.value, {step: 1});
+  assert.equal(await a.state.get('forged'), undefined);
+});
+
 test('compare-and-set admits exactly one writer, keeps revisions, and checkpoints only committed state', async t => {
   const {host, store} = fixture(t);
-  const a = await install(host, store, 'instance-a');
+  const a = await install(host, 'instance-a');
   await a.state.compareAndSet('review', null, {value: 1});
   const before = await a.state.checkpoint();
   const results = await Promise.allSettled([
@@ -77,7 +95,7 @@ test('compare-and-set admits exactly one writer, keeps revisions, and checkpoint
 
 test('keys, values and namespace accounting are bounded without partial writes', async t => {
   const {host, store} = fixture(t);
-  const a = await install(host, store, 'instance-a');
+  const a = await install(host, 'instance-a');
   await assert.rejects(a.state.compareAndSet('k'.repeat(stateLimits.keyBytes + 1), null, 1), (error: StateError) => error.code === 'invalid_key');
   await assert.rejects(a.state.compareAndSet('bad\0key', null, 1), (error: StateError) => error.code === 'invalid_key');
   await assert.rejects(a.state.compareAndSet('large', null, 'x'.repeat(stateLimits.valueBytes)), (error: StateError) => error.code === 'value_too_large');
@@ -100,13 +118,15 @@ test('keys, values and namespace accounting are bounded without partial writes',
   assert.equal(await a.state.get('bulk-16'), undefined);
   assert.equal((await a.state.checkpoint()).records, 17);
 
-  const strict = await install(host, store, 'instance-strict', randomUUID(), {...stateLimits, valueBytes: 8});
+  const strictHost = stateHost(store, {...stateLimits, valueBytes: 8});
+  t.after(() => strictHost.close().catch(() => {}));
+  const strict = await install(strictHost, 'instance-strict');
   await assert.rejects(strict.state.compareAndSet('k', null, '12345678'), (error: StateError) => error.code === 'value_too_large');
 });
 
 test('the existing metadata budget rejects an oversized state write and rolls it back', async t => {
   const {host, store} = fixture(t, {maxStorageBytes: 2048});
-  const a = await install(host, store, 'instance-a');
+  const a = await install(host, 'instance-a');
   await assert.rejects(a.state.compareAndSet('large', null, 'x'.repeat(4096)), (error: StateError) => error.code === 'limit_exceeded');
   assert.equal(await a.state.get('large'), undefined);
   assert.equal((await a.state.checkpoint()).records, 0);
@@ -122,9 +142,9 @@ test('the global reservation includes the full ledger row cost at the boundary',
   const fixed = Buffer.byteLength(scope.packageId) + Buffer.byteLength(scope.installationId) +
     Buffer.byteLength(scope.instanceId) + 24 + 32;
   const max = base + Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(value)) + fixed - 1;
-  const store = new Store(directory, {maxStorageBytes: max}), host = new PluginHost(hostIdentity);
+  const store = new Store(directory, {maxStorageBytes: max}), host = stateHost(store);
   t.after(async () => { await host.close().catch(() => {}); store.close(); rmSync(directory, {recursive: true, force: true}); });
-  const a = await install(host, store, 'instance-a');
+  const a = await install(host, 'instance-a');
   await assert.rejects(a.state.compareAndSet(key, null, value), (error: StateError) => error.code === 'limit_exceeded');
   assert.equal(await a.state.get(key), undefined);
   assert.equal((await a.state.checkpoint()).records, 0);
@@ -132,16 +152,16 @@ test('the global reservation includes the full ledger row cost at the boundary',
 
 test('restart and the existing whole-database backup retain current-format state', async t => {
   const {directory, host, store} = fixture(t);
-  const a = await install(host, store, 'instance-a');
+  const a = await install(host, 'instance-a');
   await a.state.compareAndSet('review', null, {step: 1});
   const checkpoint = await a.state.checkpoint();
   await a.handle.close('disabled');
   await host.close();
   store.close();
 
-  const reopened = new Store(directory), reopenedHost = new PluginHost(hostIdentity);
+  const reopened = new Store(directory), reopenedHost = stateHost(reopened);
   t.after(async () => { await reopenedHost.close().catch(() => {}); reopened.close(); });
-  const resumed = await install(reopenedHost, reopened, 'instance-a');
+  const resumed = await install(reopenedHost, 'instance-a');
   assert.deepEqual((await resumed.state.get('review'))?.value, {step: 1});
   assert.equal((await resumed.state.checkpoint()).digest, checkpoint.digest);
 
@@ -154,16 +174,16 @@ test('restart and the existing whole-database backup retain current-format state
   reopened.close();
   copyFileSync(join(backupDirectory, 'mote.sqlite'), join(restoreDirectory, 'mote.sqlite'));
 
-  const restored = new Store(restoreDirectory), restoredHost = new PluginHost(hostIdentity);
+  const restored = new Store(restoreDirectory), restoredHost = stateHost(restored);
   t.after(async () => { await restoredHost.close().catch(() => {}); restored.close(); });
-  const restoredState = await install(restoredHost, restored, 'instance-a');
+  const restoredState = await install(restoredHost, 'instance-a');
   assert.deepEqual((await restoredState.state.get('review'))?.value, {step: 1});
   assert.equal((await restoredState.state.checkpoint()).digest, checkpoint.digest);
 });
 
 test('quiesce rejects new admissions, stop rejects the old scope, and state is absent from host snapshots', async t => {
   const {host, store} = fixture(t);
-  const a = await install(host, store, 'instance-a');
+  const a = await install(host, 'instance-a');
   await a.state.compareAndSet('secret', null, 'private-value');
   assert.equal(JSON.stringify(host.snapshot()).includes('private-value'), false);
   assert.equal(JSON.stringify(host.snapshot()).includes('secret'), false);
