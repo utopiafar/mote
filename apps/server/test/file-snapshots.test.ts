@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
+import {FILE_PART_BYTES,sourceItemSchema,type FileRevision} from '@mote/shared';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
@@ -59,4 +59,21 @@ test('snapshot dialogue executes diarization, alignment and semantic turns with 
  const settings={...processing.view().settings,audioProcessor:'audio.local-dialogue',diarizationProcessor:'generated.snapshot-diarize',speakerCount:2,semanticTurns:true};processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'succeeded',JSON.stringify(files.detail(ack.id).job));assert.deepEqual([asr,diarize,turns],[1,1,1]);assert.deepEqual(files.chunks(ack.id).map(chunk=>chunk.fileEvidence?.speaker),['SPEAKER_0','SPEAKER_1']);
  const receipt=processing.explain(ack.id).snapshots[0] as any;assert.deepEqual(receipt.stagePins.map((pin:any)=>pin.name),['extract','diarize','align','turns']);assert.equal(store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(ack.id),undefined);assert.equal(files.detail(ack.id).hasOriginal,false);
+});
+
+test('processed snapshot metadata validates without granting any access to its text',async t=>{
+ const {files,store,sources,cleanup}=fixture(t),text='Generated '+'x'.repeat(632),ack=await upload(files,Buffer.from(text),false);
+ const processing=new FileProcessing(files);cleanup.push(()=>processing.close());await processing.tick();
+ const evidence=store.evidence([ack.id])[0],provenance=evidence.provenance!,index=provenance.document?.fileIndex!;
+ assert.equal(index.allowRead,false);assert.equal(index.status,'ready');assert.ok(index.length>0);assert.equal(evidence.ocrText,'');
+ const projection={externalId:provenance.externalId,revision:provenance.revision,observedAt:evidence.capturedAt,title:evidence.windowTitle,text:'',kind:'file',layer:'snapshot',mimeType:provenance.mimeType,deleted:false,document:provenance.document};
+ assert.doesNotThrow(()=>sourceItemSchema.parse(projection),'processed snapshot metadata projection must validate');
+ // Every other consistency rule survives.
+ assert.throws(()=>sourceItemSchema.parse({...projection,document:{...provenance.document,fileIndex:{...index,allowRead:true}}}),'allowRead=true keeps the length rule');
+ assert.throws(()=>sourceItemSchema.parse({...projection,text:'Generated text'}),'carried text keeps the length rule');
+ assert.throws(()=>sourceItemSchema.parse({...projection,layer:'original'}),'other layers keep the length rule');
+ assert.throws(()=>sourceItemSchema.parse({...projection,document:{...provenance.document,fileIndex:{...index,offset:1}}}),'out-of-bounds offsets stay rejected');
+ // The metadata projection grants no original read or byte access.
+ const requests=new FileEvidence(sources);await assert.rejects(requests.read(ack.id,0,10),{statusCode:409});
+ assert.throws(()=>[...files.bytes(ack.id)],{statusCode:404});
 });
