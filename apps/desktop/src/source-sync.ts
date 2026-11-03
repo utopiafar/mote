@@ -171,6 +171,14 @@ export class SourceSync {
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
+    // A file that left the folder before its first upload is gone for the owner;
+    // never flush the queued copy later. Only a complete scan proves absence.
+    if (scan.complete) {
+      const present = new Set(scan.seen);
+      const stillInFolder = (queued: SourceItem) => queued.kind !== 'file' || queued.deleted || present.has(queued.externalId);
+      next.pendingRealtime = next.pendingRealtime.filter(stillInFolder);
+      next.pendingHistory = next.pendingHistory.filter(stillInFolder);
+    }
     if (trackDeletions && scan.complete) {
       const seen = new Set(scan.seen);
       for (const previous of Object.values(this.data.known)) {

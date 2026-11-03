@@ -79,6 +79,20 @@ describe('source revisions and durable acknowledgments', () => {
     expect(await engine.stage(scan([], false), true)).toBe(0);
     expect(await engine.stage({ ...scan([]), seen: [item.externalId], scope: { start: '2026-09-01T00:00:00Z', end: '2026-12-01T00:00:00Z' } }, true)).toBe(0);
   });
+  it('withdraws a queued file that left the folder before it was uploaded', async () => {
+    const engine = await create(), saved: SourceItem[] = [];
+    await engine.stage(scan([item]), false);
+    expect(engine.status().pending).toBe(1);
+    // An incomplete scan cannot prove the file is gone; keep the queue intact.
+    await engine.stage(scan([], false), false);
+    expect(engine.status().pending).toBe(1);
+    await engine.stage(scan([]), false);
+    expect(engine.status().pending).toBe(0);
+    await engine.flush(source, transport(saved));
+    expect(saved).toHaveLength(0);
+    const reopened = await create();
+    expect(reopened.status().pending).toBe(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
