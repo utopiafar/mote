@@ -110,7 +110,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     const authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
     return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
-      authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
+      authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),host,get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
       /** Trusted build-only installation in the same host; no public service or second host. */
       async installObservabilityPlatform(options:ObservabilityPlatformOptions){
         if(observability)return observability;

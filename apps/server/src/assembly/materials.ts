@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {AsyncLocalStorage} from 'node:async_hooks';
 import type {Context} from '@deepseek-ai/cordis';
 import type {QueryInput} from '@mote/agent';
+import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {Config} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
@@ -16,14 +17,22 @@ import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
 import {modelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
-import {MaterialStore} from '../materials.js';
+import type {MaterialStore} from '../materials.js';
 import {MaterialMemoryWork} from '../material-memory-work.js';
 import {Indexer} from '../indexer.js';
 import {MaterialOrganizerRuntime} from '../material-organizers.js';
 import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
+import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
+import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
+
+export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement},
+]);
 
 export interface MaterialInputDependencies {
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly store:Store;
+  readonly authorization:CommitAuthorization;
   readonly resources:ServerResources;
   readonly memoryRecipeSettings:MemoryRecipeSettings;
   /** New-input admission reads the live Memory binding: the trusted root
@@ -31,11 +40,19 @@ export interface MaterialInputDependencies {
   readonly newInputAdmission:()=>boolean;
 }
 
-/** MaterialStore and the Memory-work admission inputs the sources domain
- * consumes; close order still follows acquisition order at the root. */
-export function prepareMaterials(dependencies:MaterialInputDependencies){
-  const materials=new MaterialStore(dependencies.store);
-  dependencies.resources.defer(()=>materials.index?.close());
+/** Install the repository owner, then lend its actual store to the remaining
+ * trusted consumers through the host's leased port. */
+export async function prepareMaterials(dependencies:MaterialInputDependencies){
+  const platform=createMaterialRepository(dependencies.store,dependencies.authorization);
+  let bindings:MaterialRepositoryBindings|undefined;
+  const handle=await dependencies.bootstrap.host.install({
+    identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.material-repository',installationId:'build:material-repository@1.0.0',instanceId:'materials',activationId:randomUUID()},
+    contributions:[materialRepositoryDeclaration],factory:createMaterialRepositoryFactory(platform,value=>{bindings=value;}),
+  });
+  dependencies.resources.defer(()=>handle.close('shutdown'));
+  const lease=await dependencies.bootstrap.host.acquire(centralServices.materialRepository,bindings!.repository);
+  dependencies.resources.defer(()=>lease.release());
+  const materials=lease.value as MaterialStore;
   const materialMemoryWork=new MaterialMemoryWork(dependencies.store,materials,Date.now,()=>true,dependencies.memoryRecipeSettings,dependencies.newInputAdmission);
   return Object.freeze({materials,materialMemoryWork});
 }
