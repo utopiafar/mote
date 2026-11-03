@@ -3,9 +3,9 @@ import { moteText } from '@mote/shared/i18n';
 import {useEffect,useId,useState} from 'react';
 import {ArrowLeft,ArrowRight,Clock3,Layers3,RefreshCw} from 'lucide-react';
 import type {CaptureSession} from '@mote/shared';
-import {type Api,type Device,dateTime,errorMessage,queryString} from './api';
-import {captureDateRange,localDateInput} from './capture-presentation';
-import {useResource} from './useResource';
+import {type Api,type Device,dateTime,errorMessage,queryString} from '../../api';
+import {captureDateRange,localDateInput} from '../../capture-presentation';
+import {useResource} from '../../useResource';
 
 type ImageRef={id:string;capturedAt:string;hasImage:boolean;appName:string};
 export function CaptureSessions({api,devices,onOpen,revision}:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number}){

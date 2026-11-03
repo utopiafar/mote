@@ -1,7 +1,7 @@
 import { ViewLifetime } from '@mote/shared/plugin-view-lifetime';
 import type { Api } from '../../api';
-import type { Memory } from '../../plugins/memory/Memories';
-import type { OwnerBrowsePage } from '../../owner-library-browse';
+import type { Memory } from '../memory/Memories';
+import type { OwnerBrowsePage } from '../library/owner-library-browse';
 import { resources, type Resource, type ResourceSnapshot } from '../../resource-cache';
 
 /** Search owns its query, pagination, filters and return ticket. Results stay

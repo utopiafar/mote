@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {JSDOM,ResourceLoader} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {InsightReport,reportDocument} from '../src/InsightReport.js';
+import {InsightReport,reportDocument} from '../src/plugins/discovery/InsightReport.js';
 import {MemoryProgress,type MemoryJob} from '../src/plugins/memory/index.js';
 import {SourceDocumentDetails} from '../src/plugins/reader/index.js';
 import {createApi,type Answer} from '../src/api.js';

@@ -5,7 +5,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {Conversations} from '../src/Conversations.js';
-import {Insights} from '../src/Insights.js';
+import {Insights} from '../src/plugins/discovery/Insights.js';
 import {Connections} from '../src/Connections.js';
 import {RuntimeSettings,ExecutionQueueOverview} from '../src/RuntimeSettings.js';
 import {ImageProgress} from '../src/ImageProgress.js';

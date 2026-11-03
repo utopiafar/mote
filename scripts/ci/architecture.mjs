@@ -240,7 +240,7 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
       const ownsAssembly=edge.from==='apps/web/src/main.tsx'||edge.from==='apps/web/src/boot.ts'&&edge.to==='apps/web/src/main.tsx';
       if(!ownsAssembly&&['apps/web/src/boot.ts','apps/web/src/main.tsx','apps/web/src/features/bootstrap.tsx','apps/web/src/features/bootstrap.ts'].includes(edge.to))rule='web-no-bootstrap-import';
     }
-    if(runtime&&edge.from==='apps/web/src/features/runtime.tsx'&&['apps/web/src/features/entries.ts','apps/web/src/features/collections.ts','apps/web/src/features/collections.tsx','apps/web/src/features/agent-view.tsx','apps/web/src/features/agent-view.ts'].includes(edge.to))rule='web-runtime-no-builtins';
+    if(runtime&&edge.from==='apps/web/src/features/runtime.tsx'&&['apps/web/src/features/entries.ts','apps/web/src/plugins/library/collections.tsx','apps/web/src/features/agent-view.tsx','apps/web/src/features/agent-view.ts'].includes(edge.to))rule='web-runtime-no-builtins';
     if(inside(edge.from,'apps/server/src/plugins')&&edge.to==='apps/server/src/store.ts'&&(edge.bindings?.whole||edge.bindings?.names.includes('Store')))rule='server-plugins-no-store';
     if(rule)issues.push({...edge,rule,...(rule==='server-plugins-no-store'?{symbol:edge.bindings?.whole?'*':'Store'}:{})});
   }

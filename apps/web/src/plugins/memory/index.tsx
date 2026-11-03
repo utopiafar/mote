@@ -1,4 +1,4 @@
-import {builtinCollections} from '../../features/collections';
+import {builtinCollections} from '../library/collections';
 import type {BuiltinWebPlugin} from '../types';
 
 /**

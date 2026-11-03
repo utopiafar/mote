@@ -3,7 +3,7 @@ import {moteText} from '@mote/shared/i18n';
 import {type Api,ApiError,dateTime,errorMessage} from '../../api';
 import {useResource} from '../../useResource';
 import {resources} from '../../resource-cache';
-import type {OwnerBrowsePage} from '../../owner-library-browse';
+import type {OwnerBrowsePage} from '../library/owner-library-browse';
 import type {Memory} from './Memories';
 import {currentIntegrationCandidate} from '../../MemoryIntegration';
 

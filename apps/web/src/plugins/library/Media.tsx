@@ -2,9 +2,9 @@ import {formatEvidenceRef} from '@mote/shared';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {ArrowRight,Headphones,Info,LoaderCircle,LockKeyhole} from 'lucide-react';
 import type {MediaMetadata,MediaSession} from '@mote/shared';
-import {type Api,type Range,type MediaActivity,queryString,dateTime,errorMessage} from './api';
-import {mediaStatus,playbackLabels,playbackTypeLabels,visibilityLabels,mediaDuration as duration} from './media-presentation';
-import {useResource} from './useResource';
+import {type Api,type Range,type MediaActivity,queryString,dateTime,errorMessage} from '../../api';
+import {mediaStatus,playbackLabels,playbackTypeLabels,visibilityLabels,mediaDuration as duration} from '../../media-presentation';
+import {useResource} from '../../useResource';
 
 export function MediaSnapshot({media,observedAt,screenLocked,collection,compact=false}: {
   media?:MediaMetadata;observedAt?:string;screenLocked?:boolean;collection?:string;compact?:boolean;

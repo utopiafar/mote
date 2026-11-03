@@ -216,7 +216,8 @@ test('a manifest custom page mounts into navigation and opens its declared bridg
   try {
     const markup = renderToStaticMarkup(page.render({} as never));
     assert.match(markup, /class="plugin-custom-page"/, 'navigation renders the host-owned CustomPluginPage');
-    assert.match(markup, /src="https:\/\/plugins.test\/generated\/page.html"/, 'the isolated entry URL is the resolved manifest entry');
+    assert.match(markup, /sandbox="allow-scripts"/, 'the entry runs in an opaque script-only sandbox');
+    assert.doesNotMatch(markup, /src=/, 'the load-owning effect binds the resolved entry only after its listener is installed');
   } finally {
     if (previous) Object.defineProperty(globalThis, 'window', previous);
     else Reflect.deleteProperty(globalThis, 'window');
