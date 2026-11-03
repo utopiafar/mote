@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {gunzipSync} from 'node:zlib';
-import {rawTranscriptFromTar} from '../src/RecordingTools';
+import {rawTranscriptFromTar} from '../src/plugins/sources/RecordingTools';
 import {buildApp} from '../../server/src/app.js';
 import {fileExportEntries,exportTar} from '../../server/src/file-export.js';
 import {sha256} from '../../server/src/store.js';
@@ -29,7 +29,7 @@ test('owner raw viewer reads the actual export by named entry and exact manifest
 });
 
 for(const change of ['owner','raw-pin','close'] as const)test('an in-flight raw export cannot cross '+change+' and keeps its exact readable original',async t=>{
- const React=await import('react'),{act}=React,{JSDOM}=await import('jsdom'),{RawRecording}=await import('../src/RecordingTools');const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true,url:'http://localhost/'}),previous=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value]of previous){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
+ const React=await import('react'),{act}=React,{JSDOM}=await import('jsdom'),{RawRecording}=await import('../src/plugins/sources/RecordingTools');const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true,url:'http://localhost/'}),previous=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value]of previous){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
  const captureId=randomUUID(),first=randomUUID(),second=randomUUID();let resolve!:(value:Response)=>void,oldSignal:AbortSignal|undefined,firstReads=0,currentPin=first;const pending=new Promise<Response>(accept=>resolve=accept);
  const archive=async(pin:string,rawText:string)=>new Response(await bytes(exportTar([{name:'manifest.json',bytes:Buffer.from(JSON.stringify({version:1,captureId,artifacts:[{id:pin,kind:'transcript'}]}))},{name:'原始转写.json',bytes:Buffer.from(JSON.stringify({...transcript,segments:[{...transcript.segments[0],text:rawText}]}))}])));
  const api={request:async()=>{firstReads++;return {artifacts:[{id:currentPin,kind:'transcript'}]};},raw:async(_path:string,init:RequestInit)=>{if(currentPin===second)return archive(second,'Generated current original');oldSignal=init.signal as AbortSignal;return pending;}} as any;

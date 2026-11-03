@@ -1,5 +1,5 @@
 import {OriginalNoteRow,type OwnerBrowseEntry,type OwnerBrowsePage} from './owner-library-browse';
-import {ActionResults} from '../../ActionResults';
+import {ActionResults} from '../work/ActionResults';
 import {NoteOrigin,NoteAttachments} from '../../NoteOrigin';
 import {StructuredObservation} from '../../StructuredObservation';
 import {libraryMaterialTypes,type LibraryMaterialType,type LibraryTypeDescriptor,type LibrarySourceFacet} from '@mote/shared';
@@ -13,7 +13,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { type Api, type Capture, ApiError, dateTime, duration, errorMessage } from '../../api';
 import { evidencePresentation, ocrPresentation } from '../../capture-presentation';
 import { EvidenceState } from '../../EvidenceState';
-import { FileDetail } from '../../Files';
+import { FileDetail } from '../intake';
 import { type Material } from '../../Materials';
 import { MediaSnapshot } from './Media';
 import { activityExplanation, Metadata, sourceLabels } from '../../Metadata';
