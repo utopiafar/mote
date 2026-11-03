@@ -267,6 +267,34 @@ describe('source revisions and durable acknowledgments', () => {
     expect(engine.status().pending).toBe(0);
     expect(sent).toHaveLength(uploaded);
   });
+  it('keeps an attempted revision when the head answer is unknown or advanced', async () => {
+    for (const mode of ['error', 'advanced'] as const) {
+      const dir = await mkdtemp(join(tmpdir(), 'mote-ambig-'));
+      const engine = new SourceSync(join(dir, 'state.json')); await engine.initialize();
+      const sent: { item: SourceItem; previousRevision: string | null }[] = [];
+      const wire = async (path: string, body: any) => {
+        if (path === '/api/sources') return { ...source, enabled: true };
+        if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+        if (path.startsWith('/api/file-sync/v1/head')) {
+          if (mode === 'error') throw new Error('head unavailable');
+          return { revision: 'later-revision' };
+        }
+        if (path === '/api/file-sync/v1/manifests') {
+          sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+          throw new Error('simulated ACK loss');
+        }
+        if (path === '/api/file-sync/v1/revisions') throw new Error('simulated ACK loss');
+        throw new Error('unexpected ' + path);
+      };
+      await engine.stage(scan([fileItem]), false);
+      await expect(engine.flush(source, wire as any)).rejects.toThrow('ACK loss');
+      const spool = join(dir, 'spool-ambig'); await mkdir(spool, { recursive: true }); await writeFile(join(spool, '0'), 'x');
+      // Ambiguous delivery is neither withdrawn nor rewound.
+      await expect(engine.syncScan(scan([]), true, source, wire as any)).rejects.toThrow();
+      expect(engine.status().pending).toBe(1);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

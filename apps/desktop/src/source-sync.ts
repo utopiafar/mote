@@ -243,8 +243,15 @@ export class SourceSync {
           // revision against the node's head before trusting it as committed;
           // otherwise an absent file would be uploaded after its removal.
           for (const item of deferred) {
-            const head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined;
-            if (head?.revision === item.revision) continue;
+            let head: { revision?: string | null } | undefined;
+            try {
+              head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined;
+            } catch { continue; } // Unknown delivery: keep the revision and its spool.
+            if (!head || !('revision' in head)) continue; // Malformed answer is not proof of absence.
+            if (head.revision === item.revision) continue; // Committed with a lost ACK.
+            // Only an explicit "no revision" proves the send never committed. A
+            // different revision may be a later head we must not rewind.
+            if (head.revision !== null) continue;
             next.pendingRealtime = next.pendingRealtime.filter(queued => queued !== item);
             next.pendingHistory = next.pendingHistory.filter(queued => queued !== item);
             const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
