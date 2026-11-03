@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {AttributionEditor,AttributionSummary} from '../src/AttributionContext.js';
 import {MaterialDetail,type Material} from '../src/Materials.js';
-import {MemoryRecipeSelection} from '../src/MemoryRecipeSelection.js';
+import {MemoryRecipeSelection} from '../src/plugins/memory/index.js';
 import type {Api} from '../src/api.js';
 configureLocale(()=> 'zh-CN');
 async function fixture(t:any){

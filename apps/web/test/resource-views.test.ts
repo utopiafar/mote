@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {Memories} from '../src/Memories.js';
+import {Memories} from '../src/plugins/memory/index.js';
 import {MemoryIntegration} from '../src/MemoryIntegration.js';
 import { featuresReady } from '../src/features/bootstrap.js';
 import { FeaturePage } from '../src/features/runtime.js';

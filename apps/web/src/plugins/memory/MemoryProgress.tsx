@@ -1,12 +1,12 @@
-import {useResource} from './useResource';
-import {useOperationUpdates} from './useOperationUpdates';
-import {resources} from './resource-cache';
-import {failureMessage} from './failure-message';
+import {useResource} from '../../useResource';
+import {useOperationUpdates} from '../../useOperationUpdates';
+import {resources} from '../../resource-cache';
+import {failureMessage} from '../../failure-message';
 import { moteText } from '@mote/shared/i18n';
 import React,{useEffect} from 'react';
 import {CheckCircle2,CircleAlert,CirclePause,CircleX,Clock3,LoaderCircle,RefreshCw} from 'lucide-react';
-import {type Api, errorMessage,dateTime,duration} from './api';
-import {memoryRecipeKey,memoryRecipeLabel,type MemoryRecipeRef} from './memory-recipes';
+import {type Api, errorMessage,dateTime,duration} from '../../api';
+import {memoryRecipeKey,memoryRecipeLabel,type MemoryRecipeRef} from '../../memory-recipes';
 
 export type MemoryInputSummary={total:number;waiting:number;blocked:number;stale:number;completed:number};
 export type MemoryRecipeProgress={recipe:MemoryRecipeRef;inputs:MemoryInputSummary;completedBatches:number;failedBatches:number;invalidatedBatches?:number;reasons:{code:string;required?:string[];materialRef?:string}[]};
