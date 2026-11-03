@@ -174,3 +174,46 @@ test('conversation coverage repairs keep the unified envelope through invalid co
  }
  assert.equal(f.memories.list().length,0,'repair never publishes unreviewed candidates');
 });
+
+// Metering during a real background-model authorization wait. The admission
+// instance and the C06 ledger are the production ones; only the model call is
+// replaced by the test query callback.
+import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
+import {randomUUID} from 'node:crypto';
+const meteringConnection={id:'generated-metering-connection',fingerprint:'b'.repeat(64)};
+function metering(f:Awaited<ReturnType<typeof fixture>>,outcome:'wait'|'usage-wait'|'started-wait'){
+ const ledger=new UsageLedger(f.store),authorization=new BackgroundModelAuthorization(f.store,()=>[meteringConnection]);
+ if(outcome!=='wait')authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'authorize',connections:[meteringConnection],scope:{sourceIds:null,dataKinds:['text']}});
+ f.store.db.exec('BEGIN IMMEDIATE');authorization.receive(f.anchor,{sourceId:'fixture',dataKind:'text'});f.store.db.exec('COMMIT');
+ const query=async(input:QueryInput):Promise<QueryResult>=>{
+  authorization.automatic('conversation-work',[f.anchor],'semantic');
+  if(outcome==='usage-wait')input.onUsage?.({requests:1,reportedRequests:1,inputTokens:19,outputTokens:3,totalTokens:22});
+  if(outcome==='started-wait')input.onTrace?.({type:'model.started',stage:'model'} as never);
+  if(outcome!=='wait'){
+   authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
+   authorization.automatic('conversation-work-2',[f.anchor],'semantic');
+  }
+  throw new Error('Generated unmet model admission');
+ };
+ const processor=conversationUnderstandingProcessor({memories:f.memories,usage:ledger,resolveEvidence:f.resolveEvidence,selection:()=>config,query});
+ const rows=()=>f.store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String((row as {json:string}).json)) as {status:string;tokens?:{totalTokens:number}});
+ return {processor,rows,input:input(f.page())};
+}
+
+test('conversation metering: repeated authorization waits create no usage receipt',async t=>{
+ const f=await fixture(t),metered=metering(f,'wait');
+ for(let attempt=0;attempt<2;attempt++)await assert.rejects(metered.processor.process(metered.input as never));
+ assert.equal(metered.rows().length,0);
+});
+
+test('conversation metering: usage before a later admission wait keeps one failed partial receipt',async t=>{
+ const f=await fixture(t),metered=metering(f,'usage-wait');
+ await assert.rejects(metered.processor.process(metered.input as never));
+ const usage=metered.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens?.totalTokens,22);
+});
+
+test('conversation metering: a started call without a token sample survives a later admission wait',async t=>{
+ const f=await fixture(t),metered=metering(f,'started-wait');
+ await assert.rejects(metered.processor.process(metered.input as never));
+ const usage=metered.rows();assert.equal(usage.length,1);assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens,undefined);
+});

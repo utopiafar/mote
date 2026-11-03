@@ -12,7 +12,7 @@ import {semanticProcessor} from '../src/semantic-extraction.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 
 const connection={id:'generated-connection',fingerprint:'a'.repeat(64)};
-type Outcome='success'|'failure'|'cancel'|'usage-wait';
+type Outcome='success'|'failure'|'cancel'|'usage-wait'|'started-wait';
 
 async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{authorize:boolean;outcome:Outcome}){
   const directory=mkdtempSync(join(tmpdir(),'mote-usage-wait-')),store=new Store(directory),ledger=new UsageLedger(store),memories=new MemoryStore(store);
@@ -26,11 +26,12 @@ async function fixture(t:import('node:test').TestContext,{authorize,outcome}:{au
     const request=input as {onUsage?:(usage:{requests:number;reportedRequests:number;inputTokens:number;outputTokens:number;totalTokens:number})=>void};
     // Real durable admission: unapproved state throws the 60s pending failure.
     authorization.automatic('generated-work',['generated-original'],'semantic');
-    request.onUsage?.({requests:1,reportedRequests:1,inputTokens:5,outputTokens:2,totalTokens:7});
+    if(outcome==='started-wait')(input as {onTrace?:(event:unknown)=>void}).onTrace?.({type:'model.started',stage:'model'});
+    else request.onUsage?.({requests:1,reportedRequests:1,inputTokens:5,outputTokens:2,totalTokens:7});
     if(outcome==='failure')throw Error('Generated model failure');
     if(outcome==='cancel')throw new ProviderFailure({category:'blocked',code:'cancelled',executionStarted:true},'Generated cancellation');
-    if(outcome==='usage-wait'){
-      // A later call hits a real admission wait after the first call reported usage.
+    if(outcome==='usage-wait'||outcome==='started-wait'){
+      // A later call hits a real admission wait after the first call started work.
       authorization.command({revision:authorization.view().revision,operationId:randomUUID(),action:'pause'});
       authorization.automatic('generated-work-2',['generated-original'],'semantic');
     }
@@ -70,4 +71,10 @@ test('usage reported before a later admission wait is preserved as one failed re
   const f=await fixture(t,{authorize:true,outcome:'usage-wait'});
   await assert.rejects(f.processor.process(f.input as never));
   const usage=f.rows();assert.equal(usage.length,1,'reported tokens must not be discarded');assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens?.totalTokens,7);
+});
+
+test('a started call without a token sample is retained when a later admission wait follows',async t=>{
+  const f=await fixture(t,{authorize:true,outcome:'started-wait'});
+  await assert.rejects(f.processor.process(f.input as never));
+  const usage=f.rows();assert.equal(usage.length,1,'a started call must not be discarded');assert.equal(usage[0].status,'failed');assert.equal(usage[0].tokens,undefined);
 });

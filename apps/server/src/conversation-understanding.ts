@@ -139,7 +139,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
   const host={operationId:input.execution?.operationId??'conversation:'+material.id,jobId:input.execution?.jobId,requestId:randomUUID()};
   const preferredLanguage=languagePreference(input.config.language);
   const meter=options.usage.start(selected.provider,selected.model,'coding-conversation-understanding',{moduleId:'memories',agentId:'coding-conversation-understanding',skillId:null,...host});
-  let sampled=false;
+  let sampled=false,started=false;
   try{
    const result=await options.query({executionLane:'background',responseMode:'memory-extraction',processingMaterialInputs:materialInputs,modelProfileId:selected.profileId,modelOverride:selected.model,traceContext:host,
     contextTime:typeof input.config.contextTime==='string'?input.config.contextTime:undefined,
@@ -149,7 +149,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     evidenceIds:scope.records.map(record=>record.id),evidenceRanges:scope.ranges,
     question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+responsePrompt+(work?'\nThe host memoryWork contract supersedes the legacy eight-candidate ceiling. '+conversationMemoryInstruction(memoryWorkInstruction(work.members,work.maxCandidates,work.workContract)):''),
     validateOutput:result=>{try{parse(result);}catch(error){const detail=error instanceof MemoryOutputValidationError?conversationMemoryInstruction(error.repairInstruction):error instanceof z.ZodError?error.issues.slice(0,3).map(issue=>issue.path.join('.')+': '+issue.message).join('; '):error instanceof StoreError?error.message:'Invalid JSON object';return {code:'conversation_products',feedback:detail+' Return the complete unified object: summary, evidence, workRecords, events, memoryCandidates and actionCues.'+coverageInstruction+' Absent products use empty arrays; actionCues must be empty. Every claim must preserve attribution, status, basis, sourceTime and uncertainty, with exact cited original quotes inside the supplied ranges.'};}},
-    signal:input.signal,onUsage:usage=>{sampled=true;meter.update(usage);}});
+    signal:input.signal,onUsage:usage=>{sampled=true;meter.update(usage);},onTrace:event=>{if(event.type==='model.started')started=true;}});
    input.signal.throwIfAborted();const output=parse(result);
    if(options.selection(input.config).fingerprint!==selected.fingerprint)throw new StoreError('Model settings changed during conversation understanding',409);
    const usage=meter.finish('completed');
@@ -163,7 +163,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
   }catch(error){
    // Same admission-wait rule as segment understanding: no receipt while the
    // owner decision is pending.
-   if(!sampled&&error instanceof ProviderFailure&&error.details.admissionWaiting===true&&error.details.executionStarted===false)meter.discard();
+   if(!started&&!sampled&&error instanceof ProviderFailure&&error.details.admissionWaiting===true&&error.details.executionStarted===false)meter.discard();
    else meter.finish('failed');
    if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
  }};
