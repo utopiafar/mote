@@ -366,6 +366,20 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
     // The same file comes back unchanged before the retry is acknowledged.
     expect(await engine.stage(scan([fileItem]), true)).toBe(0);
+    // The cancellation is durable: a restart must not resurrect the tombstone.
+    const reopened = await create();
+    await reopened.flush(source, wire);
+    expect(sent.every(entry => !entry.item.deleted)).toBe(true);
+    expect(reopened.status().pending).toBe(0);
+  });
+  it('never marks a deletion from an incomplete scan', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    // An incomplete scan cannot prove absence, so no pending deletion is set.
+    await engine.stage(scan([], false), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
     await engine.flush(source, wire);
     expect(sent.every(entry => !entry.item.deleted)).toBe(true);
   });
