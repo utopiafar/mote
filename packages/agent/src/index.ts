@@ -20,7 +20,7 @@ import {displayTime} from './time.js';
 import {validateModelOptions} from './model-runtime.js';
 import {bundledSkills, SKILL_VERSION} from './skills.js';
 import {AgentYieldError} from './host-controls.js';
-import {AgentInputError, AgentNotConfiguredError, AgentResponseError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput} from './types.js';
+import {AgentInputError, AgentNotConfiguredError, AgentResponseError, reportProgress, reportTrace, type AgentOptions, type AgentAnswer, type QueryInput, type QueryRunLease} from './types.js';
 
 export {contextToolDefinitions} from './tool-contributions.js';
 export {ToolRegistry} from './tools/registry.js';
@@ -48,7 +48,11 @@ const fixedModelService: ServiceContract<DshModelAdapter> = {id: 'mote.runtime.d
 
 /** Public fixed-settings facade. All DSH execution uses the same official
  * runtime contribution and Host run session as explicitly selected profiles. */
-export function createAgent(original: AgentOptions) {
+export function createAgent(original: AgentOptions): {
+  readonly configured: boolean;
+  query(input: QueryInput, lease?: QueryRunLease): Promise<AgentAnswer>;
+  close(): Promise<void>;
+} {
   validateModelOptions(original);
   if (original.protocol === 'codex-app-server') return createCodexAgent(original);
   const options = {...original, headers: original.headers && {...original.headers}, extraBody: original.extraBody && structuredClone(original.extraBody)};
@@ -173,7 +177,10 @@ export function createAgent(original: AgentOptions) {
     }
   }
   return {configured,
-    query(input: QueryInput) { const task = execute(input); pending.add(task); void task.then(() => pending.delete(task), () => pending.delete(task)); return task; },
+    query(input: QueryInput, lease?: QueryRunLease) {
+      lease?.onFinalizer?.('host');
+      const task = execute(input); pending.add(task); void task.then(() => pending.delete(task), () => pending.delete(task)); return task;
+    },
     async close() {
       closed = true; for (const scope of scopes) scope.stop();
       await Promise.allSettled([...pending]);
