@@ -23,8 +23,10 @@ import {modelConfiguration} from '../model-configuration.js';
 import {requestLocale} from '../i18n.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from '../source-context-lineage.js';
 import type {ModelProcessingAuthority} from '../model-processing-authority.js';
-import {MediaAssets} from '../media-assets.js';
+import type {MediaAssets} from '../media-assets.js';
 import {MediaPreparation} from '../media-preparation.js';
+import type {CentralDomainPlugin} from '../bootstrap.js';
+import {createMediaAssetsService,mediaAssetsServiceContribution,mediaAssetsServiceDeclaration,mediaAssetsServiceReplacement} from '../plugins/media-assets-service.js';
 import {ProcessingRuntime} from '../processing-runtime.js';
 import {FileProcessing,type FileAnalysis,type TranscriptionProvider} from '../file-processing.js';
 import {ImageProcessing} from '../image-processing.js';
@@ -43,6 +45,12 @@ export type AdmittedUsageMeter=(...args:Parameters<UsageLedger['start']>)=>{
  * processing wiring in this assembly. */
 export type FileModelResolver=(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};
 
+/** Declared build-time domain plugins the media assembly wires; the
+ * distribution concatenates each domain's list into one selected table. */
+export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:mediaAssetsServiceContribution,declaration:mediaAssetsServiceDeclaration,replacement:mediaAssetsServiceReplacement},
+]);
+
 export interface MediaAssemblyDependencies {
   readonly config:Config;
   readonly store:Store;
@@ -55,8 +63,10 @@ export interface MediaAssemblyDependencies {
  * the configuration-change listener and close hooks. */
 export function assembleMedia(dependencies:MediaAssemblyDependencies){
   const {config,store,configService,resources}=dependencies;
-  const mediaAssets=new MediaAssets(config.media?.modelDirectory??join(store.directory,'media-models'));
-  resources.defer(()=>mediaAssets.close());
+  const mediaAssetsService=createMediaAssetsService({root:config.media?.modelDirectory??join(store.directory,'media-models')});
+  resources.defer(()=>mediaAssetsService.close());
+  mediaAssetsService.prepare();mediaAssetsService.start();
+  const mediaAssets=mediaAssetsService.assetsForAssembly;
   const mediaPreparation=new MediaPreparation({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets});
   const mediaConfigurationIdentity=()=>{const document=configService.document();return JSON.stringify([document.media,(document.server as {runtime?:string})?.runtime]);};
   const initialMediaConfiguration=mediaConfigurationIdentity();

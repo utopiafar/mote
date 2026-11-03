@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
 import {assembleContext,buildContextEnvelope} from '../dist/task-context.js';
-import {compactSeedEvidence} from '../dist/evidence-context.js';
-import {compactMemoryTaskContext,compactMemoryReadCatalog,restoreMemoryCoverageKeys} from '../dist/memory-context.js';
+import {compactSeedEvidence,compactMemoryTaskContext,compactMemoryReadCatalog,restoreMemoryCoverageKeys} from '../dist/tasks/evidence-rules.js';
 import {startBridge} from '../dist/bridge.js';
 
 const canon=value=>JSON.parse(JSON.stringify(value));
