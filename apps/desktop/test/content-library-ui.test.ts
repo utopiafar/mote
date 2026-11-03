@@ -18,7 +18,7 @@ let dialog:HTMLDialogElement;
 const flush=()=>new Promise<void>(resolve=>setImmediate(resolve));
 const el=(id:string)=>document.getElementById(id)!;
 beforeEach(()=>{
-  dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'));vi.stubGlobal('document',dom.window.document);
+  dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'),{pretendToBeVisual:true});vi.stubGlobal('document',dom.window.document);
   dialog=el('content-detail-dialog') as HTMLDialogElement;
   dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
   page={items:[item],total:1};
@@ -239,6 +239,24 @@ it('reads local and central once for a search while the hidden Home is not refre
   expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
   expect(vi.mocked(api.localContent).mock.calls.at(-1)).toEqual([0,'generated query']);
   expect(vi.mocked(api.centralContent).mock.calls.at(-1)).toEqual([undefined,'generated query']);
+});
+
+it('stops reading while the window is hidden and catches up once after it returns',async()=>{
+  document.querySelector<HTMLElement>('[data-page=records]')!.hidden=false;
+  await flush();
+  const before={local:vi.mocked(api.localContent).mock.calls.length,central:vi.mocked(api.centralContent).mock.calls.length};
+  const hidden=vi.spyOn(document,'hidden','get').mockReturnValue(true);
+  document.dispatchEvent(new dom.window.Event('visibilitychange'));
+  await library.refresh();await library.refreshHome();await flush();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central);
+  hidden.mockReturnValue(false);
+  document.dispatchEvent(new dom.window.Event('visibilitychange'));await flush();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+1);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
+  await flush();
+  expect(vi.mocked(api.localContent).mock.calls.length).toBe(before.local+1);
+  expect(vi.mocked(api.centralContent).mock.calls.length).toBe(before.central+1);
 });
 
 it('defers the Home read while hidden and catches up once the overview is visible again',async()=>{
