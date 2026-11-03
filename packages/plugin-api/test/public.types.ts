@@ -1,6 +1,6 @@
 import {
   serviceContract, type ServiceContract, type ServiceResolver, type PluginFactory,
-  type PluginSnapshot, type PluginFailure, type Cancellation,
+  type PluginContext, type PluginSnapshot, type PluginFailure, type Cancellation,
 } from '../src/index.js';
 
 // Port shapes reflect actual baseline boundaries. They are type examples, not implemented consumers/T3.
@@ -25,9 +25,13 @@ void readExample;
 
 const factory: PluginFactory = context => {
   context.scope.defer(async () => {});
+  void context.state.get('host-bound-key');
   return {prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}};
 };
 void factory;
+declare const pluginContext: PluginContext;
+// @ts-expect-error The host binds the namespace; callers cannot pass an instance ID.
+void pluginContext.state.get('host-bound-key', {packageId: 'forged', installationId: 'forged', instanceId: 'forged'});
 declare const dto: PluginSnapshot;
 // @ts-expect-error Node/local service values are absent from the wire snapshot.
 dto.contributions[0]!.value;

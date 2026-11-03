@@ -1,3 +1,4 @@
+import type {StateStore} from '../state.js';
 import type {ScopeIdentity} from './identity.js';
 import type {ServiceResolver} from './services.js';
 
@@ -12,7 +13,12 @@ export interface PluginScope {
   /** Track resources immediately when acquired, including before prepare/start completes. */
   defer(dispose: () => Awaitable<void>): void;
 }
-export interface PluginContext { readonly scope: PluginScope; readonly services: ServiceResolver }
+export interface PluginContext {
+  readonly scope: PluginScope;
+  readonly services: ServiceResolver;
+  /** Host-bound instance state. The host supplies the namespace identity; callers never pass one. */
+  readonly state: StateStore;
+}
 /** Host stages contributions until start succeeds. Factory failure also disposes acquired scope resources. */
 export type PluginFactory = (context: PluginContext) => Awaitable<PluginLifecycle>;
 export interface PluginLifecycle {
