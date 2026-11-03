@@ -383,6 +383,47 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.flush(source, wire);
     expect(sent.every(entry => !entry.item.deleted)).toBe(true);
   });
+  it('withdraws a precommit update on the managed path when the head is its predecessor', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let attempts = 0;
+    const wire = fileTransport(sent, () => (++attempts === 2 ? 1 : 0), true);
+    await engine.stage(scan([fileItem]), false);
+    await engine.flush(source, wire);
+    const acknowledged = sent.at(-1)!.item;
+    await engine.stage(scan([{ ...fileItem, text: 'update B' }]), false);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    const uploaded = sent.length;
+    // Managed stage: the head still equals the acknowledged predecessor A.
+    await engine.stage(scan([]), false, undefined, 'all', 'realtime', false, async () => acknowledged.revision);
+    expect(engine.status().pending).toBe(0);
+    await engine.flush(source, wire);
+    expect(sent).toHaveLength(uploaded);
+  });
+  it('keeps recovery state while an upload is still in flight', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered = false;
+    const wire = async (path: string, body: any) => {
+      if (path === '/api/sources') return { ...source, enabled: true };
+      if (path === '/api/file-sync/v1/capabilities') return { manifestBatch: 200 };
+      if (path.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      if (path === '/api/file-sync/v1/manifests') {
+        entered = true; await gate;
+        sent.push(...body.items.map((manifest: any) => ({ item: manifest.item, previousRevision: manifest.previousRevision ?? null })));
+        throw new Error('ACK loss');
+      }
+      throw new Error('unexpected ' + path);
+    };
+    await engine.stage(scan([fileItem]), true);
+    const flushing = engine.flush(source, wire as any).catch(error => error);
+    while (!entered) await new Promise(resolve => setTimeout(resolve, 5));
+    // Absence scan while the commit request may still land.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => null);
+    expect(engine.status().pending).toBe(1);
+    release();
+    await flushing;
+    expect(engine.status().pending).toBe(1);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

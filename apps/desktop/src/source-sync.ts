@@ -59,6 +59,7 @@ export class SourceSync {
   private mutate<T>(operation:()=>Promise<T>):Promise<T>{const next=this.writes.then(operation,operation);this.writes=next.catch(()=>undefined);return next;}
   private scheduler=new PriorityScheduler(16*1024*1024);
   private manifestBatch?:boolean;
+  private inflight=new Set<string>();
   private knownItems=0;
   private pendingContentRevision=0;
   private data: State = { version: DESKTOP_STORAGE_VERSION, ingressVersion:2, adapterVersion:1, known: {}, pendingRealtime: [], pendingHistory: [] };
@@ -216,8 +217,12 @@ export class SourceSync {
     // Managed scans have no syncScan pass; resolve an attempted revision against
     // the node head before treating it as still deliverable.
     if (resolveHead) for (const item of deferred) {
+      if (this.inflight.has(itemKey(item))) continue; // A write may still commit.
       const head = await resolveHead(item);
-      if (head !== null) continue;
+      if (head === undefined) continue; // Unknown delivery.
+      if (head === item.revision) continue; // Committed with a lost ACK.
+      const predecessor = this.data.predecessors?.[item.revision] ?? null;
+      if (head !== predecessor) continue; // Advanced or ambiguous head.
       next.pendingRealtime = next.pendingRealtime.filter(queued => queued !== item);
       next.pendingHistory = next.pendingHistory.filter(queued => queued !== item);
       const key = sourceHash(item.externalId), known = knownChanges.get(key) ?? next.known[key];
@@ -266,6 +271,7 @@ export class SourceSync {
           // revision against the node's head before trusting it as committed;
           // otherwise an absent file would be uploaded after its removal.
           for (const item of deferred) {
+            if (this.inflight.has(itemKey(item))) continue;
             let head: { revision?: string | null } | undefined;
             try {
               head = await request(`/api/file-sync/v1/head?sourceId=${encodeURIComponent(source.id)}&externalId=${encodeURIComponent(item.externalId)}`, undefined, 'GET', signal) as { revision?: string | null } | undefined;
@@ -314,7 +320,7 @@ export class SourceSync {
       const batches = this.takeBatches(queue,deferred);
       let bytes=0;
       const measured:SourceRequest=(path,body,method,signal)=>{const pending=request(path,body,method,signal);bytes+=requestBytes(body);return pending;};
-      const outcomes = await Promise.all(batches.map(async batch => { try { observer?.attempt(source,batch); return { batch, result: await this.sendBatch(source, batch, measured, signal, observer) }; } catch (error) { observer?.failed(source,batch,error); return { batch, error }; } }));
+      const outcomes = await Promise.all(batches.map(async batch => { const keys=batch.map(itemKey); for(const key of keys)this.inflight.add(key); try { observer?.attempt(source,batch); return { batch, result: await this.sendBatch(source, batch, measured, signal, observer) }; } catch (error) { observer?.failed(source,batch,error); return { batch, error }; } finally { for(const key of keys)this.inflight.delete(key); } }));
       let failure: unknown;
       for (const outcome of outcomes) {
         if ('error' in outcome) { if(!failure||failure instanceof UploadSliceYield)failure=outcome.error;continue; }
