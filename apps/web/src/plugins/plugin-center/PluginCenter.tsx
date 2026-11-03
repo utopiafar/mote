@@ -1,26 +1,26 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Check,ChevronRight,Package,RefreshCw,Settings2,ShieldCheck,X} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
-import type {MemoryBindingView,MemoryPlanView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
-import {ApiError,errorMessage,type Api} from './api';
-import {FeatureInventory} from './FeatureInventory';
-import {PluginInstanceSurface} from './features/runtime';
-import {containDialogFocus} from './dialog-focus';
-import {resources} from './resource-cache';
-import {operationFeed} from './operation-feed';
-import {useForegroundResources} from './useForegroundResources';
-import {confirmNavigation,useUnsavedChanges} from './unsaved';
-import {useResource} from './useResource';
-import {capabilityLabel,memoryAdmissionLabel,moduleLabel,packageStateLabel,preparationLabel,preparationPhaseLabel,preparationFailureLabel} from './plugin-center-presentation';
-import {useHashChoice} from './useHashChoice';
-import {pluginTabFromHash} from './route-query';
-import type {Page} from './navigation';
+import type {MemoryBindingView,MemoryPlanView,PluginBuildView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
+import {ApiError,errorMessage,type Api} from '../../api';
+import {FeatureInventory} from '../../FeatureInventory';
+import {PluginInstanceSurface} from '../../features/runtime';
+import {containDialogFocus} from '../../dialog-focus';
+import {resources} from '../../resource-cache';
+import {operationFeed} from '../../operation-feed';
+import {useForegroundResources} from '../../useForegroundResources';
+import {confirmNavigation,useUnsavedChanges} from '../../unsaved';
+import {useResource} from '../../useResource';
+import {blockerLabel,buildObservedLabel,buildSelectionLabel,capabilityLabel,hasRequiresBuild,instanceObservedLabel,memoryAdmissionLabel,moduleLabel,packageObservedLabel,packageStateLabel,preparationLabel,preparationPhaseLabel,preparationFailureLabel} from './plugin-center-presentation';
+import {useHashChoice} from '../../useHashChoice';
+import {pluginTabFromHash} from '../../route-query';
+import type {Page} from '../../navigation';
 import {PluginConfiguration} from './PluginConfiguration';
 import {PluginQuickAdd} from './PluginQuickAdd';
-import {MemorySettings} from './MemorySettings';
-import {clearQuickAdd} from './plugin-quick-add';
+import {MemorySettings} from '../../MemorySettings';
+import {clearQuickAdd} from '../../plugin-quick-add';
 
-const pluginsPath='/api/plugins',bindingPath='/api/memory-spaces/default/binding';
+const pluginsPath='/api/plugins',buildsPath='/api/plugin-builds',bindingPath='/api/memory-spaces/default/binding';
 const deniedBindingApis=new WeakSet<Api>();
 type Intent={path:string;method:string;body:Record<string,unknown>;after?:(value:unknown)=>void};
 type Dialog={kind:'install';preview:PluginReleasePreview}|{kind:'configure';package:PluginPackageView;instance?:PluginInstanceView}|{kind:'prepare';plan:MemoryPlanView}|{kind:'stop'}|{kind:'uninstall';package:PluginPackageView};
@@ -37,15 +37,40 @@ function Modal({title,close,opener,children,busy}:{title:string;close:()=>void;o
 }
 
 function Capabilities({items}:{items:PluginReleasePreview['capabilities']}){
- return <ul className="plugin-capabilities">{items.map(item=><li key={item.id}><span>{item.id}</span><span className={'badge '+(item.state==='verified'?'green':'muted')}>{capabilityLabel(item.state)}</span>{item.reason&&<small>{item.reason}</small>}</li>)}</ul>;
+ const requiresBuild=items.some(item=>Boolean(item.reason&&hasRequiresBuild([item.reason])));
+ return <>{<ul className="plugin-capabilities">{items.map(item=><li key={item.id}><span>{item.id}</span><span className={'badge '+(item.state==='verified'?'green':'muted')}>{capabilityLabel(item.state)}</span>{item.reason&&<small>{blockerLabel(item.reason)}</small>}</li>)}</ul>}{requiresBuild&&<p className="notice" role="status">{moteText('需要重新构建（requires-build）')}</p>}</>;
+}
+
+function BuildStatus({builds}:{builds:PluginBuildView[]}){
+ const visible=builds.filter(build=>!build.retired);
+ if(!visible.length)return null;
+ return <section className="panel plugin-builds" aria-label={moteText('插件构建')}>
+  <div className="section-heading"><div><h2>{moteText('插件构建')}</h2><p>{moteText('构建版本与配置实例分开；候选失败时仍显示实际运行的版本。')}</p></div></div>
+  <div className="plugin-build-list">{visible.map(build=>{
+   const running=build.active??undefined,candidate=build.desired,requiresBuild=hasRequiresBuild(build.blockers);
+   const differs=Boolean(candidate&&running&&(candidate.packageId!==running.packageId||candidate.version!==running.version||candidate.configurationRevision!==running.configurationRevision));
+   const failed=build.observed==='blocked'||Boolean(differs&&build.blockers.length);
+   return <article className="plugin-build" key={build.id} data-build-id={build.id}>
+    <div className="section-heading"><div><h3>{build.id}</h3><small>{build.packageId} · {moteText('配置版本 {0}',build.revision)}</small></div><span className={'badge '+(build.observed==='active'?'green':'muted')}>{buildObservedLabel(build.observed)}</span></div>
+    <dl className="plugin-facts">
+     <div><dt>{moteText('候选版本')}</dt><dd>{candidate?buildSelectionLabel(candidate):moteText('已选择停用')}</dd></div>
+     <div><dt>{moteText('当前版本')}</dt><dd>{running?buildSelectionLabel(running):moteText('没有正在运行的版本')}</dd></div>
+     {build.blockers.length>0&&<div><dt>{moteText('阻塞原因')}</dt><dd>{build.blockers.map(blockerLabel).join(' · ')}</dd></div>}
+    </dl>
+    {failed&&<p className="notice" role="alert">{moteText('候选版本未生效：{0}',build.blockers.map(blockerLabel).join(' · ')||buildObservedLabel(build.observed))}{running&&' · '+moteText('仍在运行的版本：{0}',buildSelectionLabel(running))}</p>}
+    {build.restartRequired&&<p className="notice">{moteText('等待节点重启')}{running&&' · '+moteText('仍在运行的版本：{0}',buildSelectionLabel(running))}</p>}
+    {requiresBuild&&<p className="notice" role="status">{moteText('需要重新构建（requires-build）')}</p>}
+   </article>;
+  })}</div>
+ </section>;
 }
 
 export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=>void;viewScope?:string}){
- const pluginResource=useResource<PluginCenterView>(api,pluginsPath,3000),bindingResource=useResource<MemoryBindingView>(api,bindingPath,3000);
+ const pluginResource=useResource<PluginCenterView>(api,pluginsPath,3000),buildResource=useResource<PluginBuildView[]>(api,buildsPath,3000),bindingResource=useResource<MemoryBindingView>(api,bindingPath,3000);
  const authorization=useResource<{authorization:{revision:number;state:'unapproved'|'enabled'|'paused'|'stopped'}}>(api,'/api/model-authorization',3000);
- useForegroundResources(api,[pluginsPath,bindingPath,'/api/model-authorization']);
+ useForegroundResources(api,[pluginsPath,buildsPath,bindingPath,'/api/model-authorization']);
  useEffect(()=>operationFeed(api).subscribe(()=>{}),[api]);
- const view=pluginResource.data,binding=bindingResource.data;
+ const view=pluginResource.data,builds=buildResource.data??[],binding=bindingResource.data;
  const [bindingDenied,setBindingDenied]=useState<Api|undefined>(()=>deniedBindingApis.has(api)?api:undefined);
  const [tab,setTab]=useHashChoice('tab',pluginTabFromHash),[selected,setSelected]=useState<string>(),[dialog,setDialog]=useState<Dialog>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[retry,setRetry]=useState<Intent>();
  const [repository,setRepository]=useState(''),[tag,setTag]=useState(''),[scope,setScope]=useState('default'),[fee,setFee]=useState(false),[showInventory,setShowInventory]=useState(false),[rhythmOpened,setRhythmOpened]=useState(false);
@@ -67,15 +92,23 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
  const latestInstance=dialog?.kind==='configure'&&dialog.instance?view?.instances.find(instance=>instance.id===dialog.instance!.id):undefined;
  function open(next:Dialog,event?:HTMLElement){if(!confirmNavigation())return;opener.current=event??document.activeElement as HTMLElement;setDialog(next);setScope('default');setFee(false);setError('');setNotice('');setRetry(undefined);}
  function close(){if(!busy&&confirmNavigation())setDialog(undefined);}
- function refresh(){resources(api).invalidate(key=>key===pluginsPath||key.startsWith('/api/plugin-instances')||key.startsWith('/api/memory-spaces')||key.startsWith('/api/operations'));}
+ function refresh(){resources(api).invalidate(key=>key===pluginsPath||key===buildsPath||key.startsWith('/api/plugin-builds')||key.startsWith('/api/plugin-instances')||key.startsWith('/api/memory-spaces')||key.startsWith('/api/operations'));}
  async function execute(intent:Intent){
   if(busyRef.current)return;const owner=api,signal=new AbortController();controller.current?.abort();controller.current=signal;busyRef.current=true;setBusy(true);setError('');setNotice('');setRetry(undefined);
   try{const value=await owner.request(intent.path,{method:intent.method,body:JSON.stringify(intent.body),signal:signal.signal});if(identity.current!==owner||signal.signal.aborted)return;refresh();setNotice(moteText('请求已登记，运行状态以中央节点返回为准。'));intent.after?.(value);}
   catch(cause){if(identity.current!==owner||signal.signal.aborted)return;setError(errorMessage(cause));if(!(cause instanceof ApiError&&[401,403,404,409,410,422].includes(cause.status)))setRetry(intent);refresh();}
   finally{if(identity.current===owner&&!signal.signal.aborted){busyRef.current=false;setBusy(false);}}
  }
+ function operationId(path:string,method:string,body:Record<string,unknown>){
+  if(retry&&retry.path===path&&retry.method===method){
+   const {operationId:priorOperationId,...prior}=retry.body;
+   if(JSON.stringify(prior)===JSON.stringify(body))return String(priorOperationId);
+  }
+  return crypto.randomUUID();
+ }
  function command(path:string,expectedRevision:number,body:Record<string,unknown>={},after?:(value:unknown)=>void,method='POST'){
-  void execute({path,method,body:{...body,expectedRevision,operationId:crypto.randomUUID()},after});
+  const commandBody={...body,expectedRevision};
+  void execute({path,method,body:{...commandBody,operationId:operationId(path,method,commandBody)},after});
  }
  async function resolve(){
   if(!installReady||!repository.trim()||busyRef.current)return;const owner=api,signal=new AbortController();controller.current?.abort();controller.current=signal;busyRef.current=true;setBusy(true);setError('');setNotice('');setRetry(undefined);opener.current=document.activeElement as HTMLElement;
@@ -95,21 +128,24 @@ export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=
   </nav>
   {error&&<div className="notice error" role="alert">{error}{retry&&<button className="text-button" disabled={busy} onClick={()=>void execute(retry)}>{moteText('重试同一请求')}</button>}</div>}
   {pluginResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(pluginResource.error)}<button className="text-button" onClick={pluginResource.refresh}>{moteText('重试')}</button></p>}
+  {buildResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(buildResource.error)}<button className="text-button" onClick={buildResource.refresh}>{moteText('重试')}</button></p>}
   {bindingResource.error!==undefined&&<p className="notice error" role="alert">{errorMessage(bindingResource.error)}<button className="text-button" onClick={bindingResource.refresh}>{moteText('重试')}</button></p>}
   {pluginResource.loading&&!view&&<p role="status">{moteText('正在读取…')}</p>}
   {tab==='discover'&&!installReady&&bindingResource.loading&&view&&<p role="status">{moteText('正在读取…')}</p>}
+  <BuildStatus builds={builds}/>
   {tab==='installed'&&<>
    {view&&<div className={"provider-workspace plugin-workspace"+(currentPackage?" has-package":"")}><aside hidden={Boolean(currentPackage)} className="panel provider-sidebar"><div className="section-heading"><h2>{moteText('已安装')}</h2><span className="badge muted">{view.packages.length}</span></div>
 
     {!view.packages.length&&<p className="plugin-empty">{moteText('还没有安装外部插件。')}<button className="text-button" onClick={()=>setTab('discover')}>{moteText('从 GitHub 添加')}</button></p>}
-    <div className="provider-list">{view.packages.map(item=><button key={item.id} className="provider-card" aria-pressed={currentPackage?.id===item.id} disabled={busy} onClick={()=>{if(confirmNavigation())setSelected(item.id);}}><span className="provider-card-icon"><Package size={18}/></span><span><strong>{item.name}</strong><small>{item.version} · {packageStateLabel(item.state)}</small><small>{packageStateLabel(item.observed)}</small></span></button>)}</div>
+    <div className="provider-list">{view.packages.map(item=><button key={item.id} className="provider-card" aria-pressed={currentPackage?.id===item.id} disabled={busy} onClick={()=>{if(confirmNavigation())setSelected(item.id);}}><span className="provider-card-icon"><Package size={18}/></span><span><strong>{item.name}</strong><small>{item.version} · {packageStateLabel(item.state)}</small><small>{packageObservedLabel(item.observed)}</small></span></button>)}</div>
    </aside><div hidden={!currentPackage} className="provider-detail">{currentPackage&&<section className="panel plugin-package-detail"><div className="section-heading"><div><p>{currentPackage.version} · {currentPackage.runtime==='worker'?moteText('中央 Worker'):moteText('独立服务')}</p></div><span className="badge muted">{packageStateLabel(currentPackage.state)}</span></div>
     <dl className="plugin-facts"><div><dt>{moteText('来源')}</dt><dd>{currentPackage.source.repository}</dd></div><div><dt>{moteText('固定版本')}</dt><dd>{currentPackage.source.tag} · {currentPackage.source.commit}</dd></div><div><dt>{moteText('完整性摘要')}</dt><dd>{currentPackage.source.digest}</dd></div></dl>
-    {currentPackage.issues.map((issue,index)=><p className="notice" key={index}>{issue}</p>)}
+    {currentPackage.issues.map((issue,index)=><p className="notice" key={index}>{blockerLabel(issue)}</p>)}
+    {hasRequiresBuild(currentPackage.issues)&&<p className="notice" role="status">{moteText('需要重新构建（requires-build）')}</p>}
     {currentPackage.allowedActions.includes('uninstall')&&<button className="button subtle" disabled={busy} onClick={event=>open({kind:'uninstall',package:currentPackage},event.currentTarget)}>{moteText('卸载安装包')}</button>}
     {currentPackage.state==='restart-required'&&<p className="notice">{moteText('此包需要节点重启。当前页面不会重启服务器。')}</p>}
     <div className="section-heading"><h3>{moteText('配置实例')}</h3>{currentPackage.allowedActions.includes('configure')&&<button className="button subtle" disabled={busy} onClick={event=>open({kind:'configure',package:currentPackage},event.currentTarget)}><Settings2 size={15}/>{moteText('新增实例')}</button>}</div>
-    {view.instances.filter(instance=>instance.packageId===currentPackage.id).map(instance=><article className="plugin-instance" key={instance.id}><div className="section-heading"><div><h3>{instance.name}</h3><p>{instance.scope} · {moteText('配置版本 {0}',instance.revision)}</p></div><span className={'badge '+(instance.observed==='enabled'?'green':'muted')}>{packageStateLabel(instance.observed)}</span></div><p>{instance.desired?moteText('已选择启用'):moteText('已选择停用')}{binding?.activePlan.instanceId===instance.id?' · '+moteText('当前记忆方案'):''}</p><Capabilities items={instance.capabilities}/>{instance.issues.map((issue,index)=><p className="notice" key={index}>{issue}</p>)}<div className="plugin-actions">
+    {view.instances.filter(instance=>instance.packageId===currentPackage.id).map(instance=><article className="plugin-instance" key={instance.id}><div className="section-heading"><div><h3>{instance.name}</h3><p>{instance.scope} · {moteText('配置版本 {0}',instance.revision)}</p></div><span className={'badge '+(instance.observed==='enabled'?'green':'muted')}>{instanceObservedLabel(instance)}</span></div><dl className="plugin-facts"><div><dt>{moteText('状态')}</dt><dd>{instance.desired?moteText('已选择启用'):moteText('已选择停用')} · {instanceObservedLabel(instance)}{binding?.activePlan.instanceId===instance.id?' · '+moteText('当前记忆方案'):''}</dd></div>{instance.issues.length>0&&<div><dt>{moteText('阻塞原因')}</dt><dd>{instance.issues.map(blockerLabel).join(' · ')}</dd></div>}</dl>{hasRequiresBuild(instance.issues)&&<p className="notice" role="status">{moteText('需要重新构建（requires-build）')}</p>}<Capabilities items={instance.capabilities}/>{instance.issues.filter(issue=>!hasRequiresBuild([issue])).map((issue,index)=><p className="notice" key={index}>{blockerLabel(issue)}</p>)}<div className="plugin-actions">
      {instance.allowedActions.includes('configure')&&<button className="button subtle" disabled={busy} onClick={event=>open({kind:'configure',package:currentPackage,instance},event.currentTarget)}>{moteText('配置')}</button>}
      <PluginInstanceSurface instance={instance} busy={busy} command={command} stateLabel={packageStateLabel} labels={{scope:moteText('范围'),state:moteText('状态'),check:moteText('核验能力'),enable:moteText('启用'),disable:moteText('停用')}}/>
      <button className="text-button" onClick={()=>setTab('memory')}>{moteText('查看记忆方案')}<ChevronRight size={14}/></button>

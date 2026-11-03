@@ -1,10 +1,10 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import type {MemoryBindingView,PluginCenterView,PluginInstanceView,PluginReleasePreview} from '@mote/shared';
-import {ApiError,errorMessage,type Api} from './api';
+import {ApiError,errorMessage,type Api} from '../../api';
 import {PluginConfiguration} from './PluginConfiguration';
-import {confirmNavigation} from './unsaved';
-import {clearQuickAdd,quickConfiguration,quickPackage,quickRecipes,readQuickAdd,saveQuickAdd,type QuickAdd,type QuickIntent,type QuickRecipe} from './plugin-quick-add';
+import {confirmNavigation} from '../../unsaved';
+import {clearQuickAdd,quickConfiguration,quickPackage,quickRecipes,readQuickAdd,saveQuickAdd,type QuickAdd,type QuickIntent,type QuickRecipe} from '../../plugin-quick-add';
 
 /** A guided consumer of the existing owner controls. It never enables a plugin,
  * changes a binding or treats a declaration as verified runtime capability. */

@@ -12,13 +12,14 @@ export interface BuiltinPluginContext {
   readonly appVersion: string;
   readonly mainWindow: BrowserWindow;
   readonly mainSenderId: number;
+  readonly pageUrl: string;
   /** The main window's exact trusted() check, reused for custom page IPC. */
   readonly trustedMain: (event: IpcMainInvokeEvent) => void;
 }
 
 export interface BuiltinDesktopPlugin {
   readonly id: string;
-  register(context: BuiltinPluginContext): void;
+  register(context: BuiltinPluginContext): void | Promise<void>;
 }
 
 export const builtinDesktopPlugins: readonly BuiltinDesktopPlugin[] = [
@@ -26,6 +27,9 @@ export const builtinDesktopPlugins: readonly BuiltinDesktopPlugin[] = [
   customPageGuardPlugin,
 ];
 
-export function registerBuiltinDesktopPlugins(context: BuiltinPluginContext): void {
-  for (const plugin of builtinDesktopPlugins) plugin.register(context);
+export async function registerBuiltinDesktopPlugins(
+  context: BuiltinPluginContext,
+  additional: readonly BuiltinDesktopPlugin[] = [],
+): Promise<void> {
+  for (const plugin of [...builtinDesktopPlugins, ...additional]) await plugin.register(context);
 }

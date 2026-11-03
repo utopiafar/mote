@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {type Api,errorMessage} from './api';
-import {ArchivedFileButton} from './ArchivedFileButton';
+import {type Api,errorMessage} from '../../api';
+import {ArchivedFileButton} from '../../ArchivedFileButton';
 /** Audio is fetched only after an explicit owner playback request. */
 export function ArchivedAudio({api,id,name,mimeType}:{api:Api;id:string;name:string;mimeType:string}){
  const [url,setUrl]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),objectUrl=useRef(''),scope=useRef(new AbortController());
