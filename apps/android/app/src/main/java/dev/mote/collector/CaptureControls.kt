@@ -42,7 +42,7 @@ internal object CaptureControls {
         RuntimeSettings.cancelProjectionConsentRequest()
         // Joining a stop under way still reports only after that stop and this status are saved.
         RuntimeSettings.stop(app) { result ->
-            Notifications.showEvents(app, null)
+            app.systemEntries().showEvents(null)
             if (result.isFailure) { finished(result); return@stop }
             worker.execute {
                 runCatching {

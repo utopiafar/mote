@@ -1,7 +1,7 @@
-import type {Answer} from './api';
+import type {Answer} from '../../api';
 import {moteText} from '@mote/shared/i18n';
-import designTokens from '../../../packages/shared/design-tokens.json';
-import lightTokens from '../../../packages/shared/design-tokens.light.json';
+import designTokens from '../../../../../packages/shared/design-tokens.json';
+import lightTokens from '../../../../../packages/shared/design-tokens.light.json';
 import {reportSizeScript} from './report-sizing';
 
 // This document contains only the report. The authenticated application's state and
