@@ -21,12 +21,14 @@ import {MaterialMemoryWork} from '../material-memory-work.js';
 import {MaterialOrganizerRuntime} from '../material-organizers.js';
 import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
+import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
 import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
 import {createMaterialRetrievalIndex,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,materialRetrievalIndexReplacement} from '../plugins/material-retrieval-index.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement},
   {contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement},
+  {contribution:materialContextContribution,declaration:materialContextDeclaration,replacement:materialContextReplacement},
 ]);
 
 export interface MaterialInputDependencies {
@@ -100,7 +102,16 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
     sourceItemRecipes:materialOrganizer.sourceItemRecipes,materialMemoryReady:ref=>materialMemoryWork.readyForMemory(ref),sourceContexts});
   resources.defer(()=>evidenceContext.dispose());
   const contextTrees=evidenceContext.assembly.contextTrees,evidenceReader=evidenceContext.assembly.reader;
+  const materialContext=createMaterialContext({materials,organizer:materialOrganizer,reader:evidenceReader});
+  resources.defer(()=>materialContext.close());
+  materialContext.prepare();materialContext.start();
   resources.beforeClose(()=>dependencies.disableCatalogChanges());
   backendContext.provide('moteContextTrees',contextTrees);
-  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts});
+  // The pre-H14 feature bridge mounts these before listen; each route table
+  // dispatches against this activation instead of installing a second handler.
+  backendContext.provide('moteDomainRoutes',Object.freeze({
+    'mote.materials':Object.freeze({mount:(app:Parameters<typeof materialContext.routes>[0])=>materialContext.routes(app)}),
+    'mote.context':Object.freeze({mount:(app:Parameters<typeof evidenceContext.routes>[0])=>evidenceContext.routes(app)}),
+  }));
+  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext});
 }
