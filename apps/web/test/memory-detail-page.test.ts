@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
-import {MemoryDetailPage} from '../src/Memories';
+import {MemoryDetailPage} from '../src/plugins/memory/index';
 import {ApiError,type Api} from '../src/api';
 import {confirmNavigation} from '../src/unsaved';
 import {resources} from '../src/resource-cache';

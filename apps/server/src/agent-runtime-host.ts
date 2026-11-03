@@ -8,6 +8,7 @@ import type {BackgroundModelAuthorization,ModelConnection} from './background-mo
 import type {ConcurrencyGate} from './concurrency.js';
 import {moteText} from './i18n.js';
 import {createModelAgent,type ModelAgentFactory,type ModelAgentIdentity} from './model-agent.js';
+import {createAgentModelHost} from './agent-model-host.js';
 import {agentModelConnection} from './model-authorization-host.js';
 import type {ProviderAdmission} from './provider-admission.js';
 import type {QueryAgent,QueryRunLease} from './query-agent.js';
@@ -61,7 +62,7 @@ export class AgentRuntimeHost {
 
   private async create(settings:ModelSettings,reader:ContextReader,identity:ModelAgentIdentity){
     const d=this.dependencies,connection=agentModelConnection(identity,settings);
-    const host={runModel:d.runModelFor(settings,connection),authorizeModelRequest:()=>{d.authorization.assertCurrent(connection);return d.authorizeModelRequest();}};
+    const host=createAgentModelHost(settings,connection,d);
     const inner=await (d.createModelAgent?d.createModelAgent(settings,reader,host,identity):createModelAgent(settings,reader,d.codex,host.runModel,host.authorizeModelRequest));
     if(this.closed){
       const primary=new StoreError('Agent runtime host is closed',503);
