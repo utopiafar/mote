@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { NoteOutbox, type NoteStorage } from '../src/notes-state.js';
+import { NoteOutbox, type NoteStorage } from '../src/plugins/notes/notes-state.js';
 class MemoryStorage implements NoteStorage {
   entries = new Map<string, string>();
   get length() { return this.entries.size; }

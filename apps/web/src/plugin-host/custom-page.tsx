@@ -40,6 +40,9 @@ export interface CustomPageProps {
   readonly visible?: () => boolean;
   readonly declared?: readonly string[];
   readonly invoke?: BridgeInvoker;
+  /** Reports the one live channel to the host mount owner: the bridge on
+   * issuance and null when navigation, revocation or unmount closes it. */
+  readonly onBridgeChange?: (bridge: CustomPageBridge | null) => void;
   readonly onNavigated?: () => void;
   readonly onRejected?: (reason: string) => void;
 }
@@ -78,6 +81,7 @@ export function CustomPluginPage(props: CustomPageProps) {
       alive = false;
       bridgeRef.current?.revoke();
       bridgeRef.current = null;
+      props.onBridgeChange?.(null);
       channel?.port1.close(); channel?.port2.close(); channel = null;
       navigatedRef.current = true;
       props.onNavigated?.();
@@ -106,6 +110,7 @@ export function CustomPluginPage(props: CustomPageProps) {
       channel.port1.onmessage = event => { void bridge.accept(event); };
       channel.port1.start();
       bridgeRef.current = bridge;
+      props.onBridgeChange?.(bridge);
       // The handshake carries the bound identity AND granted epoch —
       // the page constructs every request solely from what it receives.
       frame.contentWindow?.postMessage(
@@ -125,7 +130,11 @@ export function CustomPluginPage(props: CustomPageProps) {
         frame.src = bound.toString();
       })
       .catch(() => { if (alive && frameRef.current === frame && !navigatedRef.current) frame.src = props.entryUrl!; });
-    return () => { alive = false; offRevoked(); frame.removeEventListener('load', onLoad); bridgeRef.current?.revoke(); bridgeRef.current = null; channel?.port1.close(); channel?.port2.close(); };
+    return () => {
+      alive = false; offRevoked(); frame.removeEventListener('load', onLoad);
+      bridgeRef.current?.revoke(); bridgeRef.current = null; props.onBridgeChange?.(null);
+      channel?.port1.close(); channel?.port2.close();
+    };
   }, [props.instanceId, props.nonce, props.documentKey, props.entryUrl]);
 
   useEffect(() => { if (props.visible && bridgeRef.current) props.visible() ? bridgeRef.current.show() : bridgeRef.current.hide(); }, [props.visible && props.visible()]);

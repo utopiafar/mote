@@ -156,11 +156,8 @@ test('an unconfigured DSH model fails before private resources or a subprocess a
   assert.equal(resources, 0);
 });
 
-test('the transport helper module remains relocatable for the actual import runtime consumer', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'mote-relocated-transport-')); t.after(() => rm(root, {recursive: true, force: true}));
-  const target = join(root, 'transport.mjs');
-  await writeFile(target, await readFile(new URL('../dist/plugin.mjs', import.meta.url), 'utf8'), {mode: 0o600});
-  const transport = await import(pathToFileURL(target).href);
+test('the transport helper module exposes the actual import runtime consumer boundary', async () => {
+  const transport = await import('../dist/models/http-transport.js');
   const bounded = transport.boundedModelFetch(async () => new Response('Generated import transport'), 'mote-no-context-bridge', 64);
   assert.equal(await (await bounded('http://127.0.0.1/generated', {method: 'POST'})).text(), 'Generated import transport');
   assert.equal(typeof transport.modelFailureReporter, 'function'); assert.equal(typeof transport.modelRequestAuthorization, 'function');

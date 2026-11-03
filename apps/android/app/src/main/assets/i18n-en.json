@@ -10105,5 +10105,15 @@
   "等你补充": "Needs your input",
   "暂停全部采集": "Pause all collection",
   "暂停屏幕采集": "Pause screen capture",
-  "索引处理完成": "Index processing complete"
+  "索引处理完成": "Index processing complete",
+  "仍在运行的版本：{0}": "Still running: {0}",
+  "候选版本": "Candidate version",
+  "候选版本未生效：{0}": "The candidate version did not take effect: {0}",
+  "插件中心暂时不可用；请重新加载或返回设置。": "The plugin center is temporarily unavailable. Reload the page or return to Settings.",
+  "插件构建": "Plugin builds",
+  "构建版本与配置实例分开；候选失败时仍显示实际运行的版本。": "Build versions and configured instances are separate; a failed candidate still shows the version that is actually running.",
+  "正在启动": "Starting",
+  "没有正在运行的版本": "No version is running",
+  "阻塞原因": "Blockers",
+  "需要重新构建（requires-build）": "Rebuild required (requires-build)"
 }

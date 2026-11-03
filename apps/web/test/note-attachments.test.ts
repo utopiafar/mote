@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
-import {uploadNoteAttachment} from '../src/note-attachments.js';
+import {uploadNoteAttachment} from '../src/plugins/notes/note-attachments.js';
 import type {Api} from '../src/api.js';
 const hash=(body:ArrayBuffer)=>createHash('sha256').update(new Uint8Array(body)).digest('hex');
 function fixture(){let manifest:any,id=randomUUID(),lost=false,badPart=false,badCommit=false,committed=false;const parts=new Map<number,ArrayBuffer>(),sent:number[]=[];

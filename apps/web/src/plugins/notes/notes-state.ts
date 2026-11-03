@@ -11,7 +11,7 @@ export interface NoteStorage {
 export interface NoteDraft { text: string; mood: string; description?: string; attachments?: string[] }
 interface StoredDraft extends NoteDraft { prepared?: NoteInput }
 type SubmissionIdentity = Omit<NoteInput, 'text' | 'mood'>;
-export interface QueuedNote { note: NoteInput; error?: string; blocked?: boolean }
+export interface QueuedNote { note: NoteInput; error?: string; blocked?: boolean; unknown?: boolean }
 const MAX_QUEUED_BYTES = 2_000_000;
 const description=(draft:NoteDraft)=>{
   if(draft.description!==undefined&&(typeof draft.description!=='string'||draft.description.length>12000))throw new Error('Invalid record description');
@@ -79,7 +79,7 @@ export class NoteOutbox {
         const note = noteSchema.parse(item.note);
         if(note.client!=="web")throw new Error("Unsupported note identity");
         if (key !== `${this.prefix}event:${note.id}`) throw new Error('Mismatched event ID');
-        items.push({ note, ...(typeof item.error === 'string' ? { error: item.error } : {}), ...(item.blocked === true ? { blocked: true } : {}) });
+        items.push({ note, ...(typeof item.error === 'string' ? { error: item.error } : {}), ...(item.blocked === true ? { blocked: true } : {}), ...(item.unknown === true ? { unknown: true } : {}) });
       } catch { throw new Error(moteText("本机待同步随手记存在损坏记录；原数据已保留，不能覆盖。")); }
     }
     return items.sort((a, b) => a.note.capturedAt.localeCompare(b.note.capturedAt) || a.note.id.localeCompare(b.note.id));
@@ -97,10 +97,10 @@ export class NoteOutbox {
     if (items.length >= 100 || new TextEncoder().encode(JSON.stringify([...items, { note: normalized }])).length > MAX_QUEUED_BYTES) throw new Error(moteText("本机随手记待同步空间已满，请先同步或导出待传内容。"));
     this.storage.setItem(key, JSON.stringify({ note: normalized }));
   }
-  mark(id: string, error: string, blocked: boolean): void {
+  mark(id: string, error: string, blocked: boolean, unknown = false): void {
     const key = `${this.prefix}event:${id}`;
     const previous = this.storage.getItem(key);
-    if (previous) this.storage.setItem(key, JSON.stringify({ note: JSON.parse(previous).note, error, blocked }));
+    if (previous) this.storage.setItem(key, JSON.stringify({ note: JSON.parse(previous).note, error, blocked, ...(unknown ? { unknown: true } : {}) }));
   }
   acknowledge(id: string, result: { id?: string }): void {
     if (result.id !== id) throw new Error(moteText("中央节点确认的随手记 ID 不匹配；本机记录已保留。"));

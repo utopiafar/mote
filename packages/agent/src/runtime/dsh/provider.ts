@@ -9,9 +9,9 @@ import type {Cancellation, ScopeIdentity, ServiceBinding} from '@mote/plugin-api
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {ProviderFailure} from '@mote/shared';
 import {AgentNotConfiguredError, AgentProviderError, AgentResponseError, AgentTimeoutError, type AgentOptions} from '../../types.js';
-import {observeModelTransport} from '../../model-transport-observer.js';
+import {observeModelTransport} from '../../models/http-transport.js';
 import {observeHarness} from '../../usage.js';
-import {modelConnection, validateModelOptions} from '../../model-runtime.js';
+import {modelConnection, validateModelOptions} from '../../models/provider-registry.js';
 import {runtimeService, type RuntimeProvider, type RuntimeHandle, type RuntimeRunRequest, type RuntimeOutcome, type RuntimeAttempt} from '../contracts.js';
 import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
 import {createHostRunSession, type HostSessionAssembly} from '../../host/run-session.js';
