@@ -1,6 +1,5 @@
 import '@mote/shared/i18n-all';
 import {canSendFromTray,showTraySendFailure} from './tray-send';
-import {describeBackupFile} from './queue-backup-identity';
 import {appearancePreference,resolveColorScheme,linearUiTheme,type AppearancePreference} from '@mote/shared';
 import { connectionToken, loginRequest, loginVerifier } from './login-session';
 import { SyncHistory } from './sync-history';
@@ -12,7 +11,6 @@ import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
 import { PermissionGuide } from './permission-guide';
 import { permissionKind, type SettingsWindow } from './permission-types';
-import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences, Tray } from 'electron';
 import { DesktopPluginHost, electronIpcRouter, type PluginScopeHandle } from './plugin-host/desktop-host';
@@ -25,6 +23,7 @@ import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, typ
 import { createCapturePlugin, createCaptureStages, captureReadCapability, captureWriteCapability, type CapturePlugin } from './plugins/capture';
 import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
 import { createWorkHistoryWorkspacePlugin, workHistoryReadCapability } from './plugins/work-history-workspace';
+import { createLocalStorageBackupPlugin, localStorageBackupCapability } from './plugins/local-storage-backup';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -47,11 +46,9 @@ import { DesktopUpdater } from './updater';
 import { createUpdateNetwork } from './update-network';
 import { createChromiumUpdateFetch } from './electron-update-fetch';
 import { acknowledgeInstalledUpdate } from './update-install';
-import { QueueStorage } from './queue-storage';
 import { SettingsCoordinator } from './settings-coordinator';
-import { QueueImportFailure, DurableQueue } from './queue';
+import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
-import {ensureStorageFormat} from './storage-format';
 import type { Config, ConfigUpdate, Status } from './contracts';
 
 const defaultDataDirectory = app.getPath('userData');
@@ -191,13 +188,36 @@ else {
   void app.whenReady().then(async () => {
     await mkdir(profile.dataDirectory, { recursive: true, mode: 0o700 });
     const dataDirectory = await realpath(profile.dataDirectory);
-    await ensureStorageFormat(dataDirectory,['config.json','queue','notes','local-sources','content-key.json']);
+    const localStorageBackup = createLocalStorageBackupPlugin({
+      directory: dataDirectory, profileName: profile.name, deviceId: () => settings.deviceId,
+      protectedRoots: [dataDirectory, ...await Promise.all([defaultDataDirectory, `${defaultDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))],
+      queue: () => queue,
+      chooseExport: async () => {
+        const selected = await dialog.showSaveDialog(window!, { title: moteText("导出已脱敏待上传队列（包含个人资料）"), defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
+        return selected.canceled ? undefined : selected.filePath || undefined;
+      },
+      chooseImport: async () => {
+        const selected = await dialog.showOpenDialog(window!, { title: moteText("导入 Mote 电脑端队列备份"), properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
+        return selected.canceled ? undefined : selected.filePaths[0];
+      },
+      chooseStorage: async () => {
+        const selected = await dialog.showOpenDialog(window!, { title: moteText("选择本机截图保存位置"), buttonLabel: moteText("选择位置"), properties: ['openDirectory', 'createDirectory'] });
+        return selected.canceled ? undefined : selected.filePaths[0];
+      },
+      storageSelected: directory => { pendingStorageDirectory = directory; },
+      openPath: path => shell.openPath(path), upload: () => collector.upload(), serialize, events,
+      background: (channel, label, operation) => backgroundJobs.run(channel, label, operation),
+      progress: (channel, value) => backgroundJobs.progress(channel, value),
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+      changed: () => { if (!quitting) updateUi(clientStatus()); },
+    });
+    await localStorageBackup.initialize();
     const secrets = desktopSecretStorage(profile, developmentBuild, () => safeStorage);
     const store = new ConfigStore(dataDirectory, secrets, () => profileDefaults(profile, {}, developmentBuild), () => profileDefaults(profile, process.env, developmentBuild));
     settings = await store.load();
     await store.save(settings); // Persist stable device identity before the first observation.
     void events.record('APP', 'STARTED');
-    const storage = new QueueStorage(dataDirectory, profile.name, settings.deviceId, [dataDirectory, ...await Promise.all([defaultDataDirectory, `${defaultDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))]);
+    const storage = localStorageBackup.storage;
     const queue = new DurableQueue(await storage.open(settings.captureStorageDirectory), settings, createCaptureStages());
     queue.setStorageGuard(async () => { if (recoveryRequired) throw new Error(recoveryRequired); await storage.assertOwned(queue.directory); });
     await queue.initialize();
@@ -310,7 +330,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, workHistoryReadCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, workHistoryReadCapability, localStorageBackupCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -319,7 +339,7 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!, localStorageBackup]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
@@ -360,14 +380,14 @@ else {
     });
     // Retain authored keys: a renderer locale change does not restart the main process.
     const operationLabels: Record<string, string> = {
-      'mote:configure': "正在应用设置或迁移存储", 'mote:import-queue': "正在导入队列", 'mote:export-queue': "正在导出队列",
+      'mote:configure': "正在应用设置或迁移存储",
       'mote:installed-applications': "正在读取应用列表",
       'mote:support-export': "正在导出支持包", 'mote:diagnostics-export': "正在导出诊断", 'mote:diagnostics-sample': "正在读取诊断",
       'mote:connection-confirm': "正在连接中央节点", 'mote:connection-test': "正在测试连接",
       'mote:update-download': "正在下载更新", 'mote:update-install': "正在准备安装更新", 'mote:update-check': "正在检查更新",
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:configure': 'CONFIG', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
+      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:configure': 'CONFIG', 'mote:support-export': 'SUPPORT' } as Record<string, EventStage>)[channel];
     ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
         if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:connection-status', 'mote:update-status'].includes(channel)) throw new Error(recoveryRequired);
@@ -438,7 +458,6 @@ else {
       return clientStatus();
     }));
     handle('mote:get-status', () => clientStatus());
-    handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
     handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
     const devUpdateStatus = () => ({...updater!.status(), manualDownload:true, state:'idle' as const, canInstall:false, availableVersion:undefined, notesUrl:desktopDevDownloadsUrl, message:moteText('查看版本说明与安装包'), installReason:''});
     handle('mote:update-status', () => developmentBuild ? devUpdateStatus() : updater!.status());
@@ -486,15 +505,6 @@ else {
       if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.setContentSize(quickNoteWindow.getContentSize()[0], expanded ? 594 : 466);
     });
     handle('mote:storage-restart', () => { app.relaunch(); app.quit(); });
-    handle('mote:storage-choose', () => serialize(async () => {
-      const selected = await dialog.showOpenDialog(window!, { title: moteText("选择本机截图保存位置"), buttonLabel: moteText("选择位置"), properties: ['openDirectory', 'createDirectory'] });
-      if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
-      pendingStorageDirectory = await storage.candidate(selected.filePaths[0], queue.directory);
-      return { canceled: false, directory: pendingStorageDirectory };
-    }));
-    handle('mote:storage-open', async () => {
-      await storage.assertOwned(queue.directory); const error = await shell.openPath(queue.directory); if (error) throw new Error(moteText("无法打开截图目录，请检查磁盘是否已连接"));
-    });
     handle('mote:configure', input => serialize(async () => {
       const confirmedInitial = (input as ConfigUpdate).confirmLocalBacklog === true && unboundBacklog();
       let updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (notes.hasPrepared() ? 1 : 0), confirmedInitial);
@@ -612,30 +622,6 @@ else {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
-    handle('mote:export-queue', async () => {
-      const selected = await dialog.showSaveDialog(window!, { title: moteText("导出已脱敏待上传队列（包含个人资料）"), defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
-      if (selected.canceled || !selected.filePath) return { canceled: true };
-      const selectedFile=await describeBackupFile(selected.filePath);
-      backgroundJobs.progress('mote:export-queue',{message:moteText('正在导出队列'),file:{name:selectedFile.name,path:selectedFile.path}});updateUi(clientStatus());
-      await queue.exportArchiveFile(selected.filePath, value => backgroundJobs.progress('mote:export-queue', value));
-      return { canceled: false, path: selected.filePath, file:await describeBackupFile(selected.filePath) };
-    });
-    handle('mote:import-queue', () => serialize(async () => {
-      const selected = await dialog.showOpenDialog(window!, { title: moteText("导入 Mote 电脑端队列备份"), properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
-      if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
-      const path = selected.filePaths[0];
-      const file=await describeBackupFile(path);
-      backgroundJobs.progress('mote:import-queue',{message:moteText('正在校验备份'),file});updateUi(clientStatus());
-      try {
-        const imported = await queue.importArchiveFile(path, value => backgroundJobs.progress('mote:import-queue', value));
-        updateUi(clientStatus()); void collector.upload();
-        return { canceled: false, state:'imported', imported, file };
-      } catch(error) {
-        updateUi(clientStatus());
-        if(error instanceof QueueImportFailure)return {canceled:false,state:'incomplete',...error.report,error:error.message,file};
-        throw error;
-      }
-    }));
     tray = new Tray(trayIcon());
     tray.on('click', showWindow);
     updateUi(clientStatus());

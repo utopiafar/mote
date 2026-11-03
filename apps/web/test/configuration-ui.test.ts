@@ -1,4 +1,4 @@
-import {ActionCapabilitySettings} from '../src/ActionCapabilitySettings.js';
+import {ActionCapabilitySettings} from '../src/plugins/work/ActionCapabilitySettings.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React, {act} from 'react';
@@ -9,7 +9,7 @@ import {RuntimeSettings} from '../src/RuntimeSettings.js';
 import {MemorySettings} from '../src/MemorySettings.js';
 import {ContentStorage} from '../src/ContentStorage.js';
 import {PerceptionSettings} from '../src/PerceptionSettings.js';
-import {Actions} from '../src/Actions.js';
+import {Actions} from '../src/plugins/work/Actions.js';
 import {ApiError, type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 import {configureLocale} from '@mote/shared/i18n';

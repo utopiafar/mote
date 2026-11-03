@@ -4,7 +4,7 @@ import type {ModelSettingsView} from '@mote/shared/models';
 import {ApiError,type Api,errorMessage} from './api';
 import {useResource} from './useResource';
 import {useForegroundResources} from './useForegroundResources';
-import {RecordingTools} from './RecordingTools';
+import {RecordingTools} from './plugins/sources/RecordingTools';
 import {ModelAuthorizationSettings} from './ModelAuthorizationSettings';
 import type {FileSettingsView} from './processing-settings-view';
 import {automaticProcessingPlan,processingConnectionKey,type ProcessingAuthority,type ProcessingConnection,type ProcessingGrant,type ProcessingKind} from './automatic-processing-plan';

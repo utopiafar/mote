@@ -8,19 +8,17 @@ import { search } from './search';
 import { ask } from './ask';
 import { devices } from './devices';
 import { storage } from './storage';
-import { sources } from './sources';
-import { imports } from './imports';
-import { activity } from './activity';
+import { connections, sources } from './sources';
+import { intake } from './intake';
+import { work } from './work';
 import { processing } from './processing';
 import { features } from './features';
 import { usage } from './usage';
 import { discovery } from './discovery';
-import { actions } from './actions';
 import { models } from './models';
 import { coding } from './coding';
 import { library } from './library';
 import { reader } from './reader';
-import { connections } from './connections';
 import { diagnostics } from './diagnostics';
 import { savedRecordViews } from './saved-record-views';
 import { sourceMaterialViewsPlugin } from './source-material';
@@ -41,13 +39,12 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   devices,
   storage,
   sources,
-  imports,
-  activity,
+  intake,
+  work,
   processing,
   features,
   usage,
   discovery,
-  actions,
   models,
   coding,
   library,
