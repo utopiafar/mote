@@ -6,6 +6,7 @@ import type { CaptureIntakeAuthority,CaptureRouteContext } from '../plugins/capt
 import type { CaptureIntake } from '../plugins/central-contracts.js';
 import type { NotesSourceAssembly } from '../plugins/notes-source.js';
 import { StoreError } from '../store.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** C10A/C10 trusted assembly supplies the same C04 platform, request pin and
  * the lifecycle-guarded published capture port; none is minted here. */
@@ -31,3 +32,11 @@ app.get('/api/notes',async req=>{
   });
 app.delete('/api/notes/:id',async req=>{const {id}=req.params as {id:string};if(notesSource)return notesSource.delete(id);const record=store.evidence([id])[0];if(record&&record.source!=='note')throw new StoreError('Note not found',404);return store.delete(id);});
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.notes',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.notes'));
+    register(app,services);
+  },
+};

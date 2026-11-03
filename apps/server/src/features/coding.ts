@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { FastifyInstance } from 'fastify';
 import type { FeatureServices } from '../feature-services.js';
+import type {ServerFeatureAdapter} from './index.js';
 
 /** coding: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{sourcePipelines,sources,store}:Pick<FeatureServices,"sourcePipelines"|"sources"|"store">){
@@ -26,3 +27,11 @@ app.get('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.param
 app.delete('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.forget(sourceId);});
 app.put('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.configure(sourceId,req.body);});
 }
+
+export const adapter:ServerFeatureAdapter={
+  descriptor:{id:'mote.coding',version:'1',surface:'data',runtime:'host'},
+  factory:(app,scope,services)=>{
+    scope.retire(()=>services.agentFeatures.dispose('mote.coding'));
+    register(app,services);
+  },
+};
