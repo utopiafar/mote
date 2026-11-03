@@ -18,7 +18,7 @@ test('real isolated central update and rollback preserve credentials, generated 
     const originalVersion = await profileVersion(p), parts = originalVersion.split('.').map(Number), version = `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
     p.meta.tunnel = { enabled: false, provider: 'cloudflare', protocol: 'http2', image: 'cloudflare/cloudflared:2026.9.1' }; await atomicJson(p.metaFile, p.meta);
     await mkdir(join(p.directory, 'secrets'), { mode: 0o700 }); const tunnelSecret = join(p.directory, 'secrets/cloudflared-token'); await writeFile(tunnelSecret, 'synthetic-offline-tunnel-token'.repeat(2), { mode: 0o600 });
-    const envBefore = await readFile(p.envFile), tunnelBefore = await readFile(tunnelSecret), tunnel = structuredClone(p.meta.tunnel);
+    const envBefore = await readFile(p.configFile), tunnelBefore = await readFile(tunnelSecret), tunnel = structuredClone(p.meta.tunnel);
     await mkdir(join(p.dataDir, 'connectors'), { recursive: true, mode: 0o700 });
     const credentials = { version: 1, tokens: { refresh_token: 'synthetic-inert-refresh-token' }, calendars: [], checkpoints: { fixture: { syncToken: 'synthetic-checkpoint' } } };
     await writeFile(join(p.dataDir, 'connectors/google-calendar.json'), JSON.stringify(credentials), { mode: 0o600 });
@@ -40,7 +40,7 @@ test('real isolated central update and rollback preserve credentials, generated 
     } });
     await withProfileLock(p, () => changeProfileDeployment(p, { prepared }));
     assert.equal(await profileVersion(p), version); assert.equal((await request(p, `/api/notes/${saved.id}`)).ocrText, saved.text); assert.deepEqual(await request(p, `/api/captures/${screen.id}/image`, { binary: true }), image);
-    assert.deepEqual(await readFile(p.envFile), envBefore); assert.deepEqual(await readFile(tunnelSecret), tunnelBefore); assert.deepEqual(p.meta.tunnel, tunnel);
+    assert.deepEqual(await readFile(p.configFile), envBefore); assert.deepEqual(await readFile(tunnelSecret), tunnelBefore); assert.deepEqual(p.meta.tunnel, tunnel);
     assert.deepEqual(JSON.parse(await readFile(join(p.dataDir, 'connectors/google-calendar.json'), 'utf8')), credentials);
     assert.deepEqual(await readFile(join(p.dataDir, 'content-key')), contentKey);
     assert.equal((await request(p,'/api/connections/self',{token:paired.token})).credential.id,paired.credentialId,'Client credentials survive upgrade unchanged');
@@ -62,7 +62,7 @@ test('real isolated central update and rollback preserve credentials, generated 
     assert.deepEqual(await readFile(join(p.dataDir, 'content-key')), contentKey);
     assert.equal((await lstat(join(p.dataDir, 'content-key'))).mode & 0o777, 0o600);
     assert.ok((await request(p, '/api/sources')).items.some(item => item.id === source.id));
-    assert.deepEqual(await readFile(p.envFile), envBefore); assert.deepEqual(await readFile(tunnelSecret), tunnelBefore); assert.deepEqual(p.meta.tunnel, tunnel);
+    assert.deepEqual(await readFile(p.configFile), envBefore); assert.deepEqual(await readFile(tunnelSecret), tunnelBefore); assert.deepEqual(p.meta.tunnel, tunnel);
     const retained = JSON.parse(await readFile(join(p.dataDir, 'connectors/google-calendar.json'), 'utf8')); assert.deepEqual(retained.tokens, credentials.tokens); assert.deepEqual(retained.checkpoints, {});
     assert.equal((await lstat(join(p.dataDir, 'connectors/google-calendar.json'))).mode & 0o777, 0o600); assert.ok(rollback.preservedData);
     await request(p,'/api/connections/self',{token:paired.token,status:401});

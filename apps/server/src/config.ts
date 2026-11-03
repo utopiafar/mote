@@ -100,8 +100,6 @@ export const mediaConfigSchema = z.object({
 }).strict();
 
 export interface ConfigurationContext {
-  /** Compatibility projection; environment files are no longer read. */
-  envFile: string | null;
   configFile: string | null;
   /** Internal original document, including unexpanded credential references. Never return in an API. */
   document?: ConfigDocument;
@@ -255,7 +253,6 @@ export function resolveConfigDocument(document: ConfigDocument, env: NodeJS.Proc
 /** The YAML document is the only source of ordinary server settings. */
 export interface ConfigLoadOptions { initializeCredentials?: boolean; resolvedDocument?: boolean }
 export function configFromFile(file?: string, options: ConfigLoadOptions = {}): LoadedConfig {
-  if (file === undefined && !process.env.MOTE_CONFIG_FILE && process.env.MOTE_ENV_FILE !== undefined) throw new ConfigError('MOTE_ENV_FILE', 'Legacy environment-file selection is unsupported; select mote.yaml with MOTE_CONFIG_FILE');
   const selected = file ?? (process.env.MOTE_CONFIG_FILE || resolve(process.cwd(), 'mote.yaml'));
   return configFromDocument(readConfigDocument(selected), selected, undefined, options);
 }
@@ -282,7 +279,7 @@ export function configFromDocument(document: ConfigDocument, file: string, priva
   if (initializeCredentials && !privateCredential) mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   if (initializeCredentials && !token) { token = randomBytes(32).toString('hex'); writeFileSync(tokenPath, token + '\n', { mode: 0o600, flag: 'wx' }); }
   const configuration: ConfigurationContext = {
-    configFile, envFile: null, baseDir, hostConfigFile: server.hostConfigFile || null, runtime: server.runtime,
+    configFile, baseDir, hostConfigFile: server.hostConfigFile || null, runtime: server.runtime,
     publicUrl: server.publicUrl || null, storageKind: storage.kind === 'unknown' && server.runtime === 'native' ? 'local-directory' : storage.kind,
     storageSource: storage.source || null, storageMount: storage.mount || null, tunnelEnabled: server.tunnelEnabled, tunnelProvider: server.tunnelProvider || null, tunnelProtocol: server.tunnelProtocol,
     sources: Object.fromEntries(configDocumentDomains().map(domain => [domain.id, 'config-file'])) as Record<string, ConfigurationSource>,
@@ -305,9 +302,6 @@ export function configFromDocument(document: ConfigDocument, file: string, priva
     media: { ...media, modelDirectory: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : join(dataDir, 'media-models') },
   };
 }
-/** Legacy function name retained for callers; ordinary environment settings are not read. */
-export const configFromEnv = configFromFile;
-
 /** Synthetic/programmatic callers seed the same document without reading deployment files. */
 export function documentFromConfig(config: Config): ConfigDocument {
   const models = defaultModelDomain(), defaults = models.deployment;

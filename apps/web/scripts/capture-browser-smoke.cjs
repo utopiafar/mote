@@ -27,10 +27,10 @@ async function finish(code) {
 (async () => {
   await app.whenReady();
   const port=await freePort(),url=`http://127.0.0.1:${port}`,token=randomBytes(32).toString('hex');
-  const config=join(fixture,'mote.env');
-  writeFileSync(config,`MOTE_PROFILE=test\nMOTE_HOST=127.0.0.1\nMOTE_PORT=${port}\nMOTE_DATA_DIR=./data\nMOTE_TOKEN=${token}\n`,{mode:0o600});
+  const config=join(fixture,'mote.yaml');
+  writeFileSync(config,`version: 1\nrevision: 0\nserver:\n  profile: "test"\n  host: "127.0.0.1"\n  port: ${port}\n  token: ${JSON.stringify(token)}\nstorage:\n  dataDir: "./data"\n`,{mode:0o600});
   const env={...process.env};for(const key of Object.keys(env))if(key.startsWith('MOTE_'))delete env[key];
-  server=spawn('node',[join(repository,'apps/server/dist/index.js')],{cwd:repository,env:{...env,MOTE_ENV_FILE:config},stdio:['ignore','ignore','pipe']});
+  server=spawn('node',[join(repository,'apps/server/dist/index.js')],{cwd:repository,env:{...env,MOTE_CONFIG_FILE:config},stdio:['ignore','ignore','pipe']});
   let serverError='';server.stderr.on('data',chunk=>{serverError+=chunk;});
   await until(async()=>{if(server.exitCode!==null)throw Error(serverError.slice(0,300));try{return(await fetch(url+'/api/health')).ok;}catch{return false;}},'fixture node');
   const base=new Date();base.setDate(base.getDate()-1);base.setHours(12,0,0,0);
