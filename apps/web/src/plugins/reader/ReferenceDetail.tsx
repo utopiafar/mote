@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage,ApiError} from '../../api';
-import {AnswerMarkdown} from '../../AnswerMarkdown';
+import {AnswerMarkdown} from '../ask/AnswerMarkdown';
 import {MaterialDetail,type Material} from '../../Materials';
 import {useResource} from '../../useResource';
 type ReadItem={id:string;ref:string;title?:string;kind:string;text:string;status?:string;applicability?:string;textRange:{offset:number;total:number;nextOffset:number|null};evidenceRefs?:string[];evidenceCount?:number;evidenceRefsTruncated?:boolean;expansion?:{kind:'search';scope:Record<string,string>;refs:string[]}};

@@ -33,7 +33,7 @@ useEffect,
 useRef,
 useState
 } from "react";
-import { AnswerMarkdown } from "./AnswerMarkdown";
+import { AnswerMarkdown } from "./plugins/ask/AnswerMarkdown";
 import { EvidenceState,EvidenceProcessingHelp } from './EvidenceState';
 import { ReferenceDetail } from './plugins/reader';
 import { TurnUsage } from './Usage';

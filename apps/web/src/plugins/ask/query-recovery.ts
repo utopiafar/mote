@@ -1,4 +1,4 @@
-import type {Api} from './api';
+import type {Api} from '../../api';
 import type {ChatAttachment} from './chat-drafts';
 import type {QueryRun} from './QueryProgress';
 interface QueryIdentity {

@@ -3,8 +3,8 @@ import {useMemo} from 'react';
 import { moteText } from '@mote/shared/i18n';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {remarkCjkStrong} from './remark-cjk-strong';
-import type { Answer } from './api';
+import {remarkCjkStrong} from '../../remark-cjk-strong';
+import type { Answer } from '../../api';
 
 interface MarkdownNode { type:string; value?:string; url?:string; children?:MarkdownNode[] }
 const citationHref = (id:string) => '#mote-evidence/' + encodeURIComponent(id);
