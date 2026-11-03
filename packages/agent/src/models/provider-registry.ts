@@ -1,5 +1,5 @@
 import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,type ModelProtocol} from '@mote/shared/models';
-import {AgentConfigurationError, type AgentOptions} from './types.js';
+import {AgentConfigurationError, type AgentOptions} from '../types.js';
 
 const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'codex-app-server'];
 const defaults: Record<ModelProtocol, string> = {
