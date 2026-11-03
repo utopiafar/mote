@@ -1,7 +1,9 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {timingSafeEqual,createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
-import {captureSchema,sourceItemSchema,type CaptureInput} from '@mote/shared';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
+import {z} from 'zod';
+import {MOTE_PROTOCOL_RANGE,captureSchema,sourceItemSchema,type CaptureInput} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
@@ -11,7 +13,9 @@ import type {FileStore} from '../files.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {ConnectorConfig} from '../connectors/types.js';
-import {Connections,ConnectionError,type ConnectionCredential} from '../connections.js';
+import {moteText} from '../i18n.js';
+import {INGRESS_PROTOCOL_VERSION} from '../ingress.js';
+import {Connections,ConnectionError,type ConnectionCredential,type ConnectionRouteContext} from '../connections.js';
 import {LoginHandoffs} from '../login-handoffs.js';
 import {IngressService} from '../ingress.js';
 import {assertExternalCaptures,assertCaptureAttachments} from '../capture-admission.js';
@@ -75,6 +79,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
   let phase:'created'|'prepared'|'bound'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let control:BackgroundModelAuthorization|undefined,host:ModelAuthorizationHost|undefined,connections:Connections|undefined,handoffs:LoginHandoffs|undefined;
   let repositories:AuthorizationRepositories|undefined,ingress:IngressService|undefined,closing:Promise<void>|undefined;
+  let routesInstalled=false;
   const disposers:(()=>void)[]=[],pending=new Set<Promise<unknown>>();
   const requestRegistry=new WeakMap<object,RequestState>(),commitRegistry=new WeakMap<object,Admission>();
   const liveAdmissions=new Set<Admission>();
@@ -207,6 +212,53 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     if(input.signal){const revoke=()=>releaseRequest(reference!);input.signal.addEventListener('abort',revoke,{once:true});entry.controller.signal.addEventListener('abort',()=>input.signal!.removeEventListener('abort',revoke),{once:true});}
     try{assertRequest(reference);return reference;}catch(error){releaseRequest(reference);throw error;}
   }
+  /** The single HTTP contribution for credentials and login handoffs. It is mounted
+   * once by the pre-H14 feature bridge; every handler dispatches against this
+   * platform's current activation instead of installing a second route table. */
+  function connectionRoutes(app:FastifyInstance,context:ConnectionRouteContext){
+    if(routesInstalled)throw denied('connection_routes_installed',409);
+    if(phase!=='bound'&&phase!=='prepared'&&phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);
+    routesInstalled=true;
+    const fixed=()=>{
+      if(!connections||!handoffs)throw denied('authorization_unavailable',503);
+      return {connections,handoffs};
+    };
+    const readable=()=>{if(phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);return fixed();};
+    const writable=()=>{if(phase!=='active')throw denied('authorization_unavailable',503);return fixed();};
+    const authorize=(request:FastifyRequest)=>()=>{const credential=context.identity(request);if(credential)connections!.assertActive(credential);};
+    app.post('/api/login/ticket',{bodyLimit:8192},request=>{
+      const {handoffs}=writable(),{expiresAt}=z.object({expiresAt:z.number().int().positive().optional()}).strict().parse(request.body??{});
+      const credential=context.identity(request),deadline=credential?.expiresAt?Date.parse(credential.expiresAt):undefined;
+      return handoffs.ticket(request.headers.authorization!.slice(7),authorize(request),deadline&&expiresAt?Math.min(deadline,expiresAt):deadline??expiresAt);
+    });
+    app.post('/api/login/exchange',{bodyLimit:8192},request=>writable().handoffs.exchange(request.body));
+    app.post('/api/login/requests',{bodyLimit:8192},request=>writable().handoffs.create(request.body));
+    app.get('/api/login/requests/:id',request=>readable().handoffs.detail((request.params as {id:string}).id));
+    app.post('/api/login/requests/:id/approve',{bodyLimit:8192},request=>writable().handoffs.approve((request.params as {id:string}).id,authorize(request)));
+    app.post('/api/login/poll',{bodyLimit:8192},request=>writable().handoffs.poll(request.body));
+    app.post('/api/login/ack',{bodyLimit:8192},request=>writable().handoffs.poll(request.body,true));
+    app.post('/api/login/session',{bodyLimit:8192},async request=>{
+      const {connections}=writable(),{serverUrl,deviceId,deviceName,platform,durationMs}=z.object({serverUrl:z.string(),deviceId:z.string(),deviceName:z.string(),platform:z.enum(['android','macos','windows','linux','other']),durationMs:z.number().optional()}).strict().parse(request.body);
+      const grant=await connections.session(serverUrl,deviceName,{deviceId,deviceName,platform},durationMs);
+      try{authorize(request)();}catch(error){await connections.revoke(grant.credentialId);throw error;}return grant;
+    });
+    app.post('/api/login/logout',request=>{const {connections}=writable(),credential=context.identity(request);return credential?connections.revoke(credential.id):{revoked:false};});
+    app.post('/api/connections/invitations',{bodyLimit:8192},request=>writable().connections.invite(request.body));
+    app.post('/api/connections/collector-invitations',{bodyLimit:8192},request=>writable().connections.invite(request.body,'collector'));
+    app.post('/api/connections/invitations/revoke',{bodyLimit:8192},request=>writable().connections.cancelInvitation(request.body));
+    app.post('/api/connections/redeem',{bodyLimit:8192},request=>writable().connections.redeem(request.body));
+    app.get('/api/connections',()=>readable().connections.inventory(configuration()));
+    app.delete('/api/connections/:id',request=>writable().connections.revoke((request.params as {id:string}).id));
+    app.post('/api/connections/mcp',{bodyLimit:8192},request=>writable().connections.mintMcp(request.body,configuration()));
+    app.get('/api/connections/self',request=>{
+      const {connections}=readable(),credential=context.identity(request);
+      if(credential)connections.assertActive(credential);
+      const owner=!credential||connections.isOwner(credential);
+      // Current native clients require explicit protocol metadata.
+      const protocol={protocol:MOTE_PROTOCOL_RANGE};
+      return {credential:credential?{id:credential.id,scope:owner?'owner':credential.scope,label:credential.label,serverUrl:credential.serverUrl,...(credential.deviceId?{deviceId:credential.deviceId,deviceName:credential.deviceName,platform:credential.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:context.serverVersion,profile:context.profile??'default',...protocol},capabilities:{ingest:owner||credential?.scope==='collector',ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||credential?.scope==='collector',archiveRead:owner||credential?.scope==='mcp-read'}};
+    });
+  }
   function refreshFences(){
     for(const [request,value] of liveRequests)try{
       assertRequest(request);
@@ -252,6 +304,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
       repositories=value;ingress=value.ingress??new IngressService(store,value.sources,value.files);
       host=new ModelAuthorizationHost(control!,store,value.materials,value.files);
       connections=dependencies.connections??new Connections(store,value.sources,{clock:now});handoffs=new LoginHandoffs(connections,now);
+      connections.bindRoutes(connectionRoutes);
       disposers.push(connections.onChange(refreshFences));
       if(value.memoryInputs){
         const inputs=value.memoryInputs,previous=inputs.onOriginalInput,observer:NonNullable<MemoryInputAuthorization['onOriginalInput']>=(input,automatic)=>{previous?.(input,automatic);host!.source(input,automatic);};
