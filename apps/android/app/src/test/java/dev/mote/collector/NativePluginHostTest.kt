@@ -36,6 +36,17 @@ class NativePluginHostTest {
         assertNull("nothing fake-installed for a missing provider", host.scope("absent"))
     }
 
+    @Test fun `builtin providers register in the APK registry with their OS grants`() {
+        val registry = NativePluginRegistry().apply { registerBuiltinPlugins("test-build") }
+        assertEquals(
+            listOf("mote.capture.projection", "mote.capture.accessibility", "mote.durable-upload", "mote.quick-note"),
+            registry.list().map { it.capability },
+        )
+        assertEquals(listOf("projection"), registry.provider("mote.capture.projection", "1")?.osGrants)
+        assertEquals(listOf("accessibility"), registry.provider("mote.capture.accessibility", "1")?.osGrants)
+        assertTrue(registry.list().all { it.buildId == "test-build" })
+    }
+
     @Test fun `half-initialized scope rolls back registrations while durable jobs and siblings survive`() {
         val host = NativePluginHost(NativePluginRegistry())
         val ok = (host.createScope(descriptor("ok")) as PluginResult.Ok).value
