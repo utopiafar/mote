@@ -467,6 +467,43 @@ describe('source revisions and durable acknowledgments', () => {
     await engine.flush(source, wire);
     expect(sent.at(-1)!.item.deleted).toBe(true);
   });
+  it('defers a deletion until a history-queue update is acknowledged', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let failOnce = false;
+    const wire = fileTransport(sent, () => (failOnce ? ((failOnce = false), 1) : 0));
+    await engine.stage(scan([fileItem]), true);
+    await engine.flush(source, wire);
+    failOnce = true;
+    await engine.stage(scan([{ ...fileItem, text: 'history update B' }]), true, undefined, 'all', 'history');
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    const update = sent.at(-1)!.item;
+    // Managed absence: the head already holds B, so no tombstone may chain from A.
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => update.revision);
+    const before = sent.length;
+    await engine.flush(source, wire);
+    expect(engine.status().pending).toBe(0);
+    const tombstone = sent.slice(before).find(entry => entry.item.deleted);
+    expect(tombstone).toBeDefined();
+    expect(tombstone!.previousRevision).toBe(update.revision);
+  });
+  it('keeps the staged revision when a changed file returns and cancels deletion', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    const changed = { ...fileItem, text: 'changed content after return' };
+    expect(await engine.stage(scan([changed]), true)).toBe(1);
+    await engine.flush(source, wire);
+    const uploaded = sent.at(-1)!.item;
+    // Restart keeps B as the known revision; another identical scan queues nothing.
+    const reopened = await create();
+    expect(await reopened.stage(scan([changed]), true)).toBe(0);
+    const state = sourceState(join(directory, 'state.json')) as any;
+    const knownEntry = Object.values(state.known as Record<string, any>).find(value => value.item.externalId === changed.externalId);
+    expect(knownEntry?.revision).toBe(uploaded.revision);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {

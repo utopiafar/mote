@@ -247,6 +247,11 @@ export class SourceSync {
         // rule so an offline calendar removal still queues its tombstone.
         const tombstoneBase = item.kind === 'file' ? this.data.delivered?.[key] : previous.contentHash;
         if (!tombstoneBase || item.deleted || seen.has(item.externalId)) continue;
+        // An outstanding (unacknowledged) revision may be queued in either lane.
+        // Staging a tombstone now would chain from the older acknowledged head and
+        // lose the deletion intent; the acknowledgement queues it instead.
+        const outstanding = item.kind === 'file' && this.pendingItems().some(queued => queued.externalId === item.externalId && queued.revision !== tombstoneBase);
+        if (outstanding) continue;
         if (scan.scope && (!item.calendar || item.calendar.start >= scan.scope.end || item.calendar.end < scan.scope.start)) continue;
         stage({ ...item, localOriginalBase64: undefined, localOriginal:undefined, text: '', deleted: true, syncQueue: 'realtime', ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }
