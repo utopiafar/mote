@@ -22,6 +22,27 @@ test('create copies the source template without scanning a vault or configuring 
   } finally { rmSync(directory, {recursive: true, force: true}); }
 });
 
+test('create copies each runnable template and rejects an unknown template', () => {
+  const expected = {
+    connector: ['source.mjs', 'seed.mjs', 'package.json', 'README.md'],
+    worker: ['main.mjs', 'mote-plugin.json', 'scripts/pack.mjs', 'package.json', 'README.md'],
+    domain: ['plugin.mjs', 'domain.mjs', 'port.mjs', 'source.mjs', 'seed.mjs', 'mote-plugin.json', 'web/index.html', 'scripts/pack.mjs', 'package.json', 'README.md'],
+  };
+  const directory = mkdtempSync(join(tmpdir(), 'mote-plugin-templates-'));
+  try {
+    for (const [template, files] of Object.entries(expected)) {
+      const target = join(directory, template);
+      const created = JSON.parse(run(['create', target, '--template', template]));
+      assert.equal(created.template, template);
+      for (const file of files) assert.ok(readFileSync(join(target, file)), `${template}/${file}`);
+      for (const file of files.filter(name => name.endsWith('.mjs') || name === 'package.json'))
+        assert.doesNotMatch(readFileSync(join(target, file), 'utf8'), /apps\/|apps\\|@mote\/shared/, `${template}/${file} imports only the public SDK`);
+    }
+    assert.throws(() => run(['create', join(directory, 'bad'), '--template', 'bogus']), /Unknown template/);
+    assert.throws(() => readFileSync(join(directory, 'bad', 'package.json'), 'utf8'), /ENOENT/, 'a rejected template leaves no project behind');
+  } finally { rmSync(directory, {recursive: true, force: true}); }
+});
+
 test('an existing non-plugin-dev profile is rejected without changing its configuration', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-plugin-ordinary-'));
   try {
