@@ -49,7 +49,7 @@ import { featuresReady, featureScopes } from './features/bootstrap';
 import { attachBootstrapLifetime } from './plugin-host/bootstrap';
 import { webFeatures } from './features/registry';
 import { PresentationSurface } from './presentation';
-import { GlobalRetrieval } from './GlobalRetrieval';
+import { GlobalRetrieval } from './plugins/search';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { pageLabels,readPage,routes,type Page } from './navigation';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';

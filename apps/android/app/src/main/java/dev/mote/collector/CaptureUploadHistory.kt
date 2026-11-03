@@ -125,7 +125,5 @@ internal object UploadHistoryRetention {
     }
 }
 
-internal fun Context.captureUploadHistory(): CaptureUploadHistory {
-    LocalDataFormat.requireCurrent(this)
-    return CaptureUploadHistory(File(noBackupFilesDir, "upload-history/received.sqlite"), secretBox())
-}
+internal fun Context.captureUploadHistory(): CaptureUploadHistory =
+    dev.mote.collector.plugins.DurableTransportPlugin.get(this).captureHistory()

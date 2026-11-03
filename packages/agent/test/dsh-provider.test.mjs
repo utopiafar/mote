@@ -206,8 +206,9 @@ test('Host image payload keeps private preparation tokens and pixels out of mode
   assert.throws(() => contextToolPayload({image: {mimeType: 'image/png', data: 'generated-base64'}}), {reason: 'tools_unverified'});
 });
 
-// Manually selected A05 journey: real SDK child, generated data and loopback only.
-async function selectedJourney(t, mode = 'success') {
+// Real A05-style journey fixture: real SDK child, generated data and loopback only.
+// Individual cases opt into manual selection when they need a complete model journey.
+async function selectedJourney(t, mode = 'success', options = {}) {
   const root = await mkdtemp(join(tmpdir(), 'mote-a05-journey-')), tracePath = join(root, 'child.jsonl');
   t.after(() => rm(root, {recursive: true, force: true}));
   const nativeRoot = join(root, 'native');
@@ -225,6 +226,7 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
   const reader = {search: async () => { reads++; return [record]; }, timeline: async () => ({items: [record], nextCursor: null}), evidence: async () => { reads++; return [record]; }, activity: async () => ({captures: 0}), devices: async () => []};
   const server = createServer(async (req, res) => {
     let raw = ''; for await (const part of req) raw += part; requests.push(JSON.parse(raw));
+    await options.beforeResponse?.(requests.length);
     writeMessagesResponse(res, {stage: requests.length - 1, model: 'generated', ...(requests.length === 1 ? {tool: {name: 'search_context', args: {query: 'generated observatory'}}} : {}), text: JSON.stringify({answer: `The generated observatory review finished on Sunday. [${record.id}]`, citationIds: [record.id]}), reasoning: true});
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -239,7 +241,7 @@ ${mode === 'extra_write' ? "ctx.tools.register({name:'write_file',description:'G
   await host.install({identity: foundationIdentity, contributions: [modelContract, hostOutputService], factory(ctx) { return {prepare() {}, start() { modelBinding = ctx.provide(modelContract.id, modelContract, model); outputBinding = ctx.provide(hostOutputService.id, hostOutputService, createHostOutputProvider()); }, quiesce() {}, stop() {}, dispose() {}}; }});
   const runtime = await host.acquire(runtimeService, runtimeBinding), modelLease = await host.acquire(modelContract, modelBinding), output = await host.acquire(hostOutputService, outputBinding);
   const selection = resolveRunSelection({revision: 1, profile: {id: 'generated-dsh', name: 'Generated DSH', revision: 1, runtimeProviderId: DSH_RUNTIME_ID, providerRef: {service: runtimeService, revision: runtimeBinding.revision, provider: {instance: {packageId: runtimeIdentity.packageId, installationId: runtimeIdentity.installationId, instanceId: runtimeIdentity.instanceId}, contributionId: runtimeBinding.provider.contributionId}}, assembly: {packages: [nativeRef], hooks: []}, allowedHostCapabilities: ['tools', 'images', 'hostDelegation']}, providers: [{id: DSH_RUNTIME_ID, binding: runtimeBinding, capabilities: runtime.value.capabilities, availability: {state: 'active'}}], installedModules: [nativeRef], model: {profile: {id: 'generated-model', name: 'Generated model', settings: {...model, provider: 'custom', reasoningEffort: 'off', headers: {}, extraBody: {}, allowUnauthenticatedLocal: true, agentTimeoutMs: null, modelRequestTimeoutMs: 10000}}, profileRevision: 1, modelRevision: 1, connectionFingerprint: 'd'.repeat(64), capabilities: {tools: true, images: false}}, requirements: {taskKind: 'query', capabilities: ['tools']}});
-  const input = pinContextTools({question: 'Summarize the generated observatory review', skill: 'memory-extraction', validateOutput(answer) { validations++; assert.equal(answer.citations[0].id, record.id); }}, reader);
+  const input = pinContextTools({question: 'Summarize the generated observatory review', skill: 'memory-extraction', ...(options.signal ? {signal: options.signal} : {}), validateOutput(answer) { validations++; assert.equal(answer.citations[0].id, record.id); }}, reader);
   const bridge = await startBridge(reader, input); let bridgeClosing;
   const closeBridge = () => bridgeClosing ??= bridge.close(); t.after(closeBridge);
   const definitions = contextToolDefinitions(input).filter(([name]) => taskTools(input).includes(name)).map(([name, description, fields]) => ({name, description, inputSchema: {...parameterSchemaSpecToJsonSchema(fields), additionalProperties: false}, version: '1', fingerprint: input.contextCapabilitySnapshot.find(tool => tool.name === name)?.fingerprint ?? 'e'.repeat(64)}));
@@ -276,6 +278,40 @@ test('selected A05 journey: generated original reaches the real DSH child and on
   assert.equal(childEvents[0].home, join(f.resources[0].root, 'home'));
   assert.throws(() => process.kill(childEvents[0].pid, 0), {code: 'ESRCH'});
   await assert.rejects(access(f.resources[0].root), {code: 'ENOENT'});
+});
+
+test('selected A05 journey: cancellation releases the Host barrier and closes the real DSH child before a late model response', {timeout: 30000}, async t => {
+  const controller = new AbortController(), reason = new DOMException('Generated DSH cancellation', 'AbortError');
+  let requestSeen, releaseResponse;
+  const seen = new Promise(resolve => { requestSeen = resolve; }), held = new Promise(resolve => { releaseResponse = resolve; });
+  const f = await selectedJourney(t, 'success', {signal: controller.signal, async beforeResponse(count) {
+    if (count === 1) { requestSeen(); await held; }
+  }});
+  const session = await f.prepare(), execution = session.execute().then(() => undefined, error => error);
+  try {
+    await seen;
+    controller.abort(reason);
+    const rejected = await execution;
+    assert.equal(rejected, reason);
+    const late = {id: 'generated-late-attempt', index: 0};
+    assert.throws(() => session.port.emit({type: 'usage', usage: {requests: 1, reportedRequests: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15}}, late));
+    assert.throws(() => session.port.emit({type: 'progress', progress: {stage: 'model'}}, late));
+    await assert.rejects(session.port.tools.deliver(late, {callId: 'generated-late', name: 'search_context', arguments: {query: 'generated late'}}, async () => { throw Error('Late DSH tool delivery must not send'); }));
+    releaseResponse();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.validations, 0, 'the cancelled DSH run committed no product answer');
+    assert.equal(f.events.filter(({event}) => event.type === 'attempt.terminal').length, 0, 'no late runtime terminal was observed');
+    assert.deepEqual(f.events.at(-1).event.terminal, {kind: 'cancelled', cause: 'cancelled'});
+    assert.deepEqual(f.resources.map(event => event.type), ['created', 'closed']);
+    const child = JSON.parse((await readFile(f.tracePath, 'utf8')).trim().split('\n')[0]);
+    assert.notEqual(child.pid, process.pid);
+    assert.throws(() => process.kill(child.pid, 0), {code: 'ESRCH'}, 'the DSH child process exited');
+    await assert.rejects(access(f.resources[0].root), {code: 'ENOENT'});
+  } finally {
+    releaseResponse();
+    try { await session.close(); }
+    catch (error) { if (error !== reason) throw error; }
+  }
 });
 
 test('selected A05 journey: an actual native write schema blocks Provider prepare before model traffic', {skip: !manualJourneys, timeout: 15000}, async t => {
