@@ -590,7 +590,7 @@ class MainActivity : MoteActivity() {
         val kind = MoteI18n.text(if (note) "随手记" else "采集记录")
         val provenance = if (title == kind) timestamp else "$kind · $timestamp"
         addContentRow(parent, title, NativeRecordPreview.text(item), "library-record:" + item.getString("id"), if (note) "notes" else "capture", listOf(provenance, location).filter(String::isNotBlank).joinToString(" · ")) {
-            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", LibraryCaptureProjection.version(item)).putExtra("recordObservationCount", LibraryCaptureProjection.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
+            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", dev.mote.collector.plugins.NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", dev.mote.collector.plugins.NativeLibraryPlugin.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
         }
     }
 

@@ -7,6 +7,24 @@ import java.time.Instant
 
 internal object LibraryLocalSources {
     data class Page(val items: List<JSONObject>, val cursor: Pair<String, String>?)
+    data class Pinned(val item: JSONObject, val content: String)
+
+    /** One exact local version by source identity. A newer or missing revision
+     * never falls back to another body. Reference retention stays metadata-only. */
+    fun pinned(context: Context, sourceId: String, external: String, revision: String): Pinned {
+        val sources = context.localSources()
+        val source = sources.sources().firstOrNull { it.id == sourceId }
+            ?: error(MoteI18n.text("此版本已变化，请返回资料列表重新选择。"))
+        val state = sources.state(source.id)
+        val current = state.optJSONObject("current")?.optJSONObject(external)?.optJSONObject("body")
+        val pending = state.optJSONArray("pending") ?: JSONArray()
+        val item = (listOfNotNull(current) + (0 until pending.length()).map { pending.getJSONObject(it) })
+            .firstOrNull { it.optString("externalId") == external && it.optString("revision") == revision }
+            ?: error(MoteI18n.text("此版本已变化，请返回资料列表重新选择。"))
+        val content = if (item.optString("layer") == "reference") "" else item.optString("text")
+        return Pinned(JSONObject(item.toString()).put("sourceDescription", source.description), content)
+    }
+
     fun page(context: Context, after: String, before: String, cursor: Pair<String, String>?, kind: String, sourceId: String, limit: Int = 20): Page {
         val sources = context.localSources()
         val candidates = sources.sources().filter { sourceId.isBlank() || it.id == sourceId }.flatMap { source ->
