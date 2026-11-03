@@ -1,4 +1,3 @@
-import type {MoteSkillId} from './skills.js';
 import type {ContextRange,ContextRecord} from './context-contracts.js';
 import type {AgentAnswer} from './types.js';
 
@@ -10,7 +9,7 @@ export interface QueryRequest {
   taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;ownerClarificationReply?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
-  skill?: Exclude<MoteSkillId,'document-import'>;
+  skill?: string;
   /** User-selected starting originals for an open query; never an authorization grant. */
   anchorEvidenceIds?: string[];
   /** Owner-selected pinned Material entrypoint. It grants no additional reads. */
@@ -39,6 +38,9 @@ export interface QueryRequest {
 export interface QueryExecutionContext {
   /** Internal adapter selection for the trusted benchmark arm. */
   hostContextToolMode?:'all-native'|'catalog';
+  /** Host-local task contributions and exact selection; never parsed from model or query text. */
+  taskRegistry?:import('./tasks/registry.js').TaskRegistry;
+  taskSelection?:import('./tasks/descriptor.js').TaskSelection;
   /** Immutable host manifest receipts for a durable query, never read grants. */
   contextCapabilitySnapshot?:readonly {name:string;version:string;fingerprint:string}[];
   /** Revalidate the task's frozen input at each model admission and send. */
