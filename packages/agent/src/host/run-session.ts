@@ -11,6 +11,7 @@ import {assembleContext, taskTools} from '../task-context.js';
 import {contextToolDefinitions} from '../tool-contributions.js';
 import type {ContextRecord} from '../context-contracts.js';
 import {hostOutputPolicy, snapshotHostEvidence} from './output.js';
+import {createRuntimeUsageEvents} from './runtime-events.js';
 import {hostOutputService} from './run-contracts.js';
 import type {HostEvidenceSnapshot, HostOutputDecision, HostRunDependencies, HostRunEvent, HostRunSession} from './run-contracts.js';
 
@@ -139,7 +140,9 @@ class ManagedHostRunSession implements HostRunSession {
   private cancellationTask?: Promise<void>;
   private deadlineTimer?: ReturnType<typeof setTimeout>;
   private abortListener: () => void;
+  private readonly usageEvents: ReturnType<typeof createRuntimeUsageEvents>;
   constructor(readonly dependencies: HostRunDependencies, private assembly: HostSessionAssembly) {
+    this.usageEvents = createRuntimeUsageEvents(({attemptId, usage}) => this.observe({identity: dependencies.identity, attemptId, event: {type: 'usage', usage}}));
     // Required providers can stop independently of the consumer scope. Relay
     // their revocation until each lease is intentionally released; release()
     // itself aborts the lease signal and must not cancel a successful run.
@@ -210,7 +213,8 @@ class ManagedHostRunSession implements HostRunSession {
           if (event.type !== 'progress' && event.type !== 'usage') throw new RuntimeContractError();
           if (!attempt) throw new RuntimeContractError();
           this.assertAttempt(attempt);
-          this.observe({identity: dependencies.identity, attemptId: attempt.id, event});
+          if (event.type === 'usage') this.usageEvents.emit(attempt.id, event.usage);
+          else this.observe({identity: dependencies.identity, attemptId: attempt.id, event});
         }
       },
     };
@@ -292,7 +296,7 @@ class ManagedHostRunSession implements HostRunSession {
       reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.completed', stage: 'model', phase: 'completed', durationMs: performance.now() - started, payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...repair}});
       this.observe({identity: this.dependencies.identity, attemptId: attempt.id, event: {type: 'attempt.terminal', terminal: outcome.terminal}});
       return outcome;
-    } finally { this.runtimeWork = undefined; this.attempt = undefined; if (this.phase === 'running') this.phase = 'idle'; }
+    } finally { this.usageEvents.forget(attempt.id); this.runtimeWork = undefined; this.attempt = undefined; if (this.phase === 'running') this.phase = 'idle'; }
   }
   execute(): Promise<AgentAnswer> { return this.execution ??= this.executeOnce(); }
   private async executeOnce(): Promise<AgentAnswer> {
