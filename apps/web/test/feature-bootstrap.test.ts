@@ -7,7 +7,7 @@ import type {Api} from '../src/api.js';
 
 test('view imports leave the host empty until application bootstrap; repeated startup preserves registrations', async () => {
   const runtime = await import('../src/features/runtime.js');
-  await import('../src/Archive.js');
+  await import('../src/plugins/library/Archive.js');
   await import('../src/Materials.js');
   await import('../src/FeatureInventory.js');
   assert.deepEqual(webFeatures.registry.inventory().features, [], 'a detail helper must not start unrelated builtin features');

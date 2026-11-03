@@ -2,7 +2,7 @@ import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
-import {LibraryMaterialRow} from '../src/LibraryBrowse';
+import {LibraryMaterialRow} from '../src/plugins/library/LibraryBrowse';
 import {HomeMaterialRow,type RecentMaterial} from '../src/HomeMaterialRow';
 import {type Api,ApiError} from '../src/api';
 const capture='11111111-1111-4111-8111-111111111111';

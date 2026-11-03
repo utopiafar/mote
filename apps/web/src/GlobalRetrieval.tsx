@@ -3,7 +3,7 @@ import {moteText} from '@mote/shared/i18n';
 import {type Api,ApiError,dateTime,errorMessage} from './api';
 import {useResource} from './useResource';
 import {openQuestionDraft} from './open-question-draft';
-import {OriginalNoteRow,type OwnerBrowsePage} from './owner-library-browse';
+import {OriginalNoteRow,type OwnerBrowsePage} from './plugins/library/owner-library-browse';
 import {useDiscoveryState} from './DiscoveryLink';
 import {featureRequirementsAvailable,sourceItemKinds} from '@mote/shared';
 import {MemoryDetailPage,type Memory} from './Memories';
@@ -11,7 +11,7 @@ import {ChevronRight} from 'lucide-react';
 import {useWorkspaceStyle} from './workspace-final-style';
 import {materialTextExcerpt} from './material-preview-text';
 import type {Material} from './Materials';
-import {LibraryBrowseLayout,LibraryMaterialRow} from './LibraryBrowse';
+import {LibraryBrowseLayout,LibraryMaterialRow} from './plugins/library/LibraryBrowse';
 export function GlobalRetrieval({onPage}:{onPage:(page:string)=>void}) {
  const [query,setQuery]=useState('');
  const input=useRef<HTMLInputElement>(null);

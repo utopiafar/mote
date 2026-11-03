@@ -1,5 +1,5 @@
 import {FirstUseHome,FirstDataFailure,type FirstDeviceData} from './FirstUseHome';
-import {OriginalNoteRow,type OwnerBrowsePage} from './owner-library-browse';
+import {OriginalNoteRow,type OwnerBrowsePage} from './plugins/library/owner-library-browse';
 import {useEffect,useState} from 'react';
 import {featureRequirementsAvailable} from '@mote/shared';
 import {DiscoveryLink,DiscoveryProvider,useDiscoveryState} from './DiscoveryLink';
