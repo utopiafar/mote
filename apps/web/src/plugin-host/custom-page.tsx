@@ -1,8 +1,9 @@
 /** Custom plugin page loader.
  *
- * Web fail-closed default: renders a trusted package entry inside an
- * opaque-origin sandboxed iframe and issues NO channel — the open web
- * has no pre-commit revocation boundary for opaque frames.
+ * Every entry runs in an opaque-origin sandbox. Browser pages receive one
+ * MessagePort only after their first entry load; the port carries the same
+ * nonce-bound RPC envelope as Desktop and dies on navigation or unmount.
+ * No host API object or connection credential is exposed to the frame.
  *
  * Desktop trusted-guard path (frozen contract with the Electron main
  * process): when the host supplies `window.mote.customPagePrepare` and
@@ -52,7 +53,9 @@ export function CustomPluginPage(props: CustomPageProps) {
   const bridgeRef = useRef<CustomPageBridge | null>(null);
   const navigatedRef = useRef(false);
   const mote = (window as unknown as {mote?: CustomPageMoteApi}).mote;
-  const guarded = Boolean(mote?.customPagePrepare && mote?.customPageClaim && mote?.onCustomPageRevoked && props.entryUrl && props.instanceId && props.nonce && props.documentKey && props.declared?.length && props.invoke && props.visible);
+  const bridged = Boolean(props.entryUrl && props.instanceId && props.nonce && props.documentKey && props.declared?.length && props.invoke && props.visible);
+  const guarded = Boolean(mote?.customPagePrepare && mote?.customPageClaim && mote?.onCustomPageRevoked && bridged);
+  const browser = bridged && !guarded;
 
   useEffect(() => {
     if (!guarded) return;
@@ -137,13 +140,67 @@ export function CustomPluginPage(props: CustomPageProps) {
     };
   }, [props.instanceId, props.nonce, props.documentKey, props.entryUrl]);
 
+  useEffect(() => {
+    if (!browser) return;
+    const frame = frameRef.current;
+    if (!frame || navigatedRef.current) return;
+    let channel: MessageChannel | null = null;
+    let alive = true;
+    let loads = 0;
+    const closeChannel = () => {
+      alive = false;
+      bridgeRef.current?.revoke();
+      bridgeRef.current = null;
+      props.onBridgeChange?.(null);
+      channel?.port1.close(); channel?.port2.close(); channel = null;
+    };
+    const onLoad = () => {
+      if (!alive || navigatedRef.current || frameRef.current !== frame) return;
+      loads++;
+      if (loads > 1) {
+        closeChannel();
+        navigatedRef.current = true;
+        props.onNavigated?.();
+        return;
+      }
+      const source = frame.contentWindow;
+      if (!source) return;
+      // WindowProxy survives navigation, but its Location object does not.
+      // Retaining this exact object fences a transferred old port as soon as
+      // the replacement document commits, even before its load event.
+      const documentLocation = source.location;
+      const issued = new MessageChannel();
+      channel = issued;
+      const bridge = new CustomPageBridge({
+        instanceId: props.instanceId!, nonce: props.nonce!, documentKey: props.documentKey!,
+        generation: () => 1, visible: props.visible!,
+        documentAlive: () => alive && frame.contentWindow === source && source.location === documentLocation,
+        declared: props.declared!, invoke: props.invoke!,
+        post: envelope => issued.port1.postMessage(envelope),
+        onRejected: props.onRejected,
+      });
+      issued.port1.onmessage = event => { if (channel === issued) void bridge.accept(event); };
+      issued.port1.start();
+      bridgeRef.current = bridge;
+      props.onBridgeChange?.(bridge);
+      source.postMessage(
+        {contractVersion: bridgeContractVersion, nonce: props.nonce, documentKey: props.documentKey, instanceId: props.instanceId, generation: 1, kind: 'channel'}, '*', [issued.port2]);
+    };
+    frame.addEventListener('load', onLoad);
+    frame.src = props.entryUrl!;
+    return () => {
+      frame.removeEventListener('load', onLoad);
+      closeChannel();
+    };
+  }, [props.instanceId, props.nonce, props.documentKey, props.entryUrl]);
+
   useEffect(() => { if (props.visible && bridgeRef.current) props.visible() ? bridgeRef.current.show() : bridgeRef.current.hide(); }, [props.visible && props.visible()]);
 
-  // Opaque origin, script-only sandbox, no same-origin or top escape.
-  // Guarded mode binds the src only after prepare resolves; unguarded
-  // mode renders the entry directly with zero RPC (the #453 default).
+  // Opaque origin, script-only sandbox, no same-origin or top escape. RPC
+  // modes bind src from their load-owning effect; render-only entries load
+  // directly and never receive a port.
   return <iframe ref={frameRef} className="plugin-custom-page" title={props.title}
     sandbox="allow-scripts" referrerPolicy="no-referrer"
-    {...(guarded ? {} : props.entryUrl ? {src: props.entryUrl} : {srcDoc: props.entryHtml ?? ''})}/>;
+    {...(guarded || browser ? {} : props.entryUrl ? {src: props.entryUrl} : {srcDoc: props.entryHtml ?? ''})}/>;
 }
 export {CustomPageBridge, bridgeContractVersion};
