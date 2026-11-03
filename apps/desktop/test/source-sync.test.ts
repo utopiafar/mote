@@ -428,6 +428,21 @@ describe('source revisions and durable acknowledgments', () => {
     await flushing;
     expect(engine.status().pending).toBe(1);
   });
+  it('keeps the new revision when a changed file returns and clears the pending deletion', async () => {
+    const engine = await create(), sent: { item: SourceItem; previousRevision: string | null }[] = [];
+    let firstFailure = true;
+    const wire = fileTransport(sent, () => { if (firstFailure) { firstFailure = false; return 1; } return 0; });
+    await engine.stage(scan([fileItem]), true);
+    await expect(engine.flush(source, wire)).rejects.toThrow('ACK loss');
+    await engine.stage(scan([]), true, undefined, 'all', 'realtime', false, async () => sent.at(-1)!.item.revision);
+    // The file returns with changed content: it must queue the new revision
+    // without losing it to the stale known record.
+    expect(await engine.stage(scan([{ ...fileItem, text: 'changed after return' }]), true)).toBe(1);
+    await engine.flush(source, wire);
+    expect(sent.every(entry => !entry.item.deleted)).toBe(true);
+    // The following scan must not queue the same upload again.
+    expect(await engine.stage(scan([{ ...fileItem, text: 'changed after return' }]), true)).toBe(0);
+  });
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
