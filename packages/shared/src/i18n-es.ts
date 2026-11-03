@@ -10116,5 +10116,9 @@ export const spanish: Readonly<Record<string, string>> = {
   "正在启动": "Iniciando",
   "没有正在运行的版本": "Ninguna versión está en ejecución",
   "阻塞原因": "Bloqueos",
-  "需要重新构建（requires-build）": "Se requiere recompilar (requires-build)"
+  "需要重新构建（requires-build）": "Se requiere recompilar (requires-build)",
+  "快捷入口不可用": "Accesos rápidos no disponibles",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "El complemento de accesos del sistema está detenido; los accesos rápidos y las acciones de notificación no están disponibles.",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "El complemento de accesos del sistema no está cargado; los accesos rápidos y las acciones de notificación no están disponibles.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "El complemento de accesos del sistema necesita recompilarse; los accesos rápidos y las acciones de notificación no están disponibles."
 };
