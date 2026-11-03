@@ -10104,5 +10104,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "{0} 起": "Desde {0}",
   "等你补充": "Pendiente de tus datos",
   "暂停全部采集": "Pausar toda la captura",
-  "暂停屏幕采集": "Pausar captura de pantalla"
+  "暂停屏幕采集": "Pausar captura de pantalla",
+  "索引处理完成": "Procesamiento del índice completado"
 };

@@ -16,7 +16,7 @@ test('snapshot metadata describes central text retention and partial coverage wi
  const document={fileIndex:{version:1 as const,fileId:evidenceId,contentVersion:'generated',mode:'index' as const,coverage:'lightweight' as const,parser:'generated-central-processor',status:'ready' as const,totalCharacters:120000,offset:0,length:100000,allowRead:true}};
  const html=renderToStaticMarkup(React.createElement(SourceDocumentDetails,{api:{} as any,document}));
  assert.match(html,/部分索引就绪/);assert.match(html,/100000 \/ 120000/);assert.match(html,/允许中央保留提取出的完整正文，设备离线仍可查阅/);assert.doesNotMatch(html,/需要设备在线|轻量索引/);
- const full=renderToStaticMarkup(React.createElement(SourceDocumentDetails,{api:{} as any,document:{fileIndex:{...document.fileIndex,coverage:'full',length:120000}}}));assert.match(full,/全文索引就绪/);
+ const full=renderToStaticMarkup(React.createElement(SourceDocumentDetails,{api:{} as any,document:{fileIndex:{...document.fileIndex,coverage:'full',length:120000}}}));assert.match(full,/索引处理完成/);
 });
 const answer:Answer={runId:'fixture-run',answer:`合成资料中的项目进展 [${evidenceId}]`,citations:[{id:evidenceId,appName:'合成笔记',capturedAt:'2026-09-15T02:00:00Z',excerpt:'项目在等待一次合成评审'}],trace:[],artifact:{id:'fixture-report',title:'项目进展',html:'<h1>合成报告</h1><style>h1{color:green}</style><p>等待评审。</p>',createdAt:'2026-09-15T03:00:00Z',skillId:'insight',skillVersion:'1'}};
 
