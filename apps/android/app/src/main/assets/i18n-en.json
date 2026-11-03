@@ -6709,6 +6709,8 @@
   "客户端登录": "Client login",
   "允许「{0}」登录并使用所有中央功能。": "Allow “{0}” to sign in and use all central features.",
   "继续登录客户端": "Continue client login",
+  "拒绝这次登录": "Reject this login",
+  "已拒绝这次客户端登录。": "This client login was rejected.",
   "客户端已登录，可返回客户端继续。": "The client is signed in. Return to the client to continue.",
   "请升级中央节点后再登录。": "Upgrade the central node before signing in.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Login credentials are securely saved. All central features share this login.",

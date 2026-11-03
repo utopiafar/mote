@@ -1,21 +1,16 @@
 import '@mote/shared/i18n-all';
-import {describeBackupFile} from './queue-backup-identity';
 import {appearancePreference,resolveColorScheme,linearUiTheme,type AppearancePreference} from '@mote/shared';
 import { connectionToken, loginRequest, loginVerifier } from './login-session';
-import { SyncHistory, type SyncHistoryQuery, type SyncHistoryContentQuery } from './sync-history';
+import { SyncHistory } from './sync-history';
 import { randomUUID } from 'node:crypto';
-import { syncContent } from './sync-content';
-import { ConnectionController } from './connection-controller';
 import {storageStatistics} from '@mote/shared/storage-statistics';
-import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, locales, type LanguagePreference } from '@mote/shared/i18n';
+import { moteText } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
-import { PermissionGuide } from './permission-guide';
-import { permissionKind, type SettingsWindow } from './permission-types';
-import {previewWork} from './background';
+import { type SettingsWindow } from './permission-types';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, shell, systemPreferences, Tray } from 'electron';
-import { DesktopPluginHost, electronIpcRouter, type PluginScopeHandle } from './plugin-host/desktop-host';
+import { DesktopPluginHost, electronIpcRouter } from './plugin-host/desktop-host';
 import { NativeProviderRegistry } from './plugin-host/native-registry';
 import { registerBuiltinDesktopPlugins } from './plugins';
 import { createNotesPlugin, notesReadCapability, notesWriteCapability } from './plugins/notes';
@@ -24,32 +19,31 @@ import { createChromePlugin, chromeManageCapability, chromeReadCapability, type 
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
 import { createCapturePlugin, createCaptureStages, captureReadCapability, captureWriteCapability, type CapturePlugin } from './plugins/capture';
 import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
+import { createDeviceSettingsPlugin, deviceSettingsReadCapability, deviceSettingsWriteCapability } from './plugins/device-settings';
+import { createWorkHistoryWorkspacePlugin, workHistoryReadCapability } from './plugins/work-history-workspace';
+import { createLocalStorageBackupPlugin, localStorageBackupCapability } from './plugins/local-storage-backup';
 import { createSystemToolsPlugin, systemToolsManageCapability, systemToolsReadCapability } from './plugins/system-tools';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
 import { readPowerState, recognizeInvitationQr, runHelper, readInstalledApplications } from './native';
-import { ConnectionOnboarding, ConnectionError, testConnection, type ConnectionStatus } from './connection';
+import { ConnectionError, testConnection } from './connection';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { openCentralBrowser,validateCentralWorkId } from './central-browser';
 import { showCentral as navigateCentral, prepareBrowserSession, pollBrowserLogin, type BrowserLogin } from './central-navigation';
-import {centralWorkActivity} from './work-activity';
 import { join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { resolveProfile, profileDefaults, isDevelopmentProfile } from './profile';
 import { desktopSecretStorage } from './secret-storage';
 import { failureCode, safeErrorName, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
-import { readFile, realpath, stat, writeFile, open, mkdir } from 'node:fs/promises';
+import { readFile, realpath, stat, writeFile, mkdir } from 'node:fs/promises';
 import { currentPlatform, type Collector } from './collector';
-import { ConfigStore, updateConfig, signedOutConfig } from './config';
-import { QueueStorage } from './queue-storage';
-import { SettingsCoordinator } from './settings-coordinator';
-import { QueueImportFailure, DurableQueue } from './queue';
+import { signedOutConfig } from './config';
+import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
-import {ensureStorageFormat} from './storage-format';
-import type { Config, ConfigUpdate, Status } from './contracts';
+import type { Config, Status } from './contracts';
 
 const defaultDataDirectory = app.getPath('userData');
 const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
@@ -68,11 +62,16 @@ try { preferredAppearance=appearancePreference(JSON.parse(readFileSync(appearanc
 nativeTheme.themeSource=preferredAppearance==='auto'?'system':preferredAppearance;
 function appearanceState(){return {preference:preferredAppearance,scheme:resolveColorScheme(preferredAppearance,nativeTheme.shouldUseDarkColors)};}
 function appearanceBackground(){return linearUiTheme.schemes![appearanceState().scheme].background;}
-const languageFile = join(profile.dataDirectory, 'language.json');
-let preferredLanguage: LanguagePreference = 'system';
-try { preferredLanguage = languagePreference(JSON.parse(readFileSync(languageFile, 'utf8'))); } catch { /* Missing or invalid preference follows the system. */ }
-configureLocale(() => preferredLanguage === 'system' ? negotiateLocale(app.getPreferredSystemLanguages()) : preferredLanguage);
-function languageState() { return { preference: preferredLanguage, locale: getLocale() }; }
+const secrets = desktopSecretStorage(profile, developmentBuild, () => safeStorage);
+const deviceSettings = createDeviceSettingsPlugin({
+  directory: profile.dataDirectory,
+  secrets,
+  defaults: () => profileDefaults(profile, {}, developmentBuild),
+  bootstrap: () => profileDefaults(profile, process.env, developmentBuild),
+  defaultProfile: profile.defaultProfile,
+  platform: currentPlatform,
+  systemLanguages: () => app.getPreferredSystemLanguages(),
+});
 function refreshApplicationMenu() {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'Mote', submenu: [
@@ -100,8 +99,6 @@ let collector: Collector;
 let capturePlugin: CapturePlugin | undefined;
 let sourcesPlugin: SourcesPlugin | undefined;
 let localSources: SourcesPlugin['manager'] | undefined;
-const onboarding = new ConnectionOnboarding();
-let connectionState: ConnectionStatus = { state: 'unchecked', get message() { return moteText("连接尚未检查"); } };
 let quitting = false;
 let notesSettledForQuit = false;
 let settings: Config;
@@ -214,13 +211,35 @@ else {
   void app.whenReady().then(async () => {
     await mkdir(profile.dataDirectory, { recursive: true, mode: 0o700 });
     const dataDirectory = await realpath(profile.dataDirectory);
-    await ensureStorageFormat(dataDirectory,['config.json','queue','notes','local-sources','content-key.json']);
-    const secrets = desktopSecretStorage(profile, developmentBuild, () => safeStorage);
-    const store = new ConfigStore(dataDirectory, secrets, () => profileDefaults(profile, {}, developmentBuild), () => profileDefaults(profile, process.env, developmentBuild));
-    settings = await store.load();
-    await store.save(settings); // Persist stable device identity before the first observation.
+    const localStorageBackup = createLocalStorageBackupPlugin({
+      directory: dataDirectory, profileName: profile.name, deviceId: () => settings.deviceId,
+      protectedRoots: [dataDirectory, ...await Promise.all([defaultDataDirectory, `${defaultDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))],
+      queue: () => queue,
+      chooseExport: async () => {
+        const selected = await dialog.showSaveDialog(window!, { title: moteText("导出已脱敏待上传队列（包含个人资料）"), defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
+        return selected.canceled ? undefined : selected.filePath || undefined;
+      },
+      chooseImport: async () => {
+        const selected = await dialog.showOpenDialog(window!, { title: moteText("导入 Mote 电脑端队列备份"), properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
+        return selected.canceled ? undefined : selected.filePaths[0];
+      },
+      chooseStorage: async () => {
+        const selected = await dialog.showOpenDialog(window!, { title: moteText("选择本机截图保存位置"), buttonLabel: moteText("选择位置"), properties: ['openDirectory', 'createDirectory'] });
+        return selected.canceled ? undefined : selected.filePaths[0];
+      },
+      storageSelected: directory => { pendingStorageDirectory = directory; },
+      openPath: path => shell.openPath(path), upload: () => collector.upload(), serialize, events,
+      background: (channel, label, operation) => backgroundJobs.run(channel, label, operation),
+      progress: (channel, value) => backgroundJobs.progress(channel, value),
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+      changed: () => { if (!quitting) updateUi(clientStatus()); },
+    });
+    await localStorageBackup.initialize();
+    await deviceSettings.initialize(dataDirectory);
+    settings = deviceSettings.settings();
+    const store = deviceSettings.store;
     void events.record('APP', 'STARTED');
-    const storage = new QueueStorage(dataDirectory, profile.name, settings.deviceId, [dataDirectory, ...await Promise.all([defaultDataDirectory, `${defaultDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))]);
+    const storage = localStorageBackup.storage;
     const queue = new DurableQueue(await storage.open(settings.captureStorageDirectory), settings, createCaptureStages());
     queue.setStorageGuard(async () => { if (recoveryRequired) throw new Error(recoveryRequired); await storage.assertOwned(queue.directory); });
     await queue.initialize();
@@ -230,12 +249,6 @@ else {
 
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
     const bundlePath = app.isPackaged ? await realpath(resolve(process.resourcesPath, '../..')) : undefined;
-    const permissionGuide = new PermissionGuide({
-      appPath: bundlePath, owner: () => window,
-      settingsWindow: () => runHelper(helperPath, 'permission-settings-window') as Promise<SettingsWindow>,
-      granted: kind => process.platform === 'darwin' && (kind === 'screen' ? systemPreferences.getMediaAccessStatus('screen') === 'granted' : kind === 'accessibility' ? systemPreferences.isTrustedAccessibilityClient(false) : false),
-    });
-    app.once('before-quit', () => permissionGuide.dispose());
     await systemTools.initialize({
       updatesDirectory: join(dataDirectory, 'updates'),
       helperPath: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'),
@@ -305,6 +318,43 @@ else {
       event: (stage, code, details) => void events.record(stage, code, details),
     });
     await notes.initialize();
+    deviceSettings.attach({
+      collector, sources: localSources!, queue, notes,
+      authorizeCalendar: () => sourcesPlugin!.authorizeCalendar(),
+      isCalendarPermissionError: error => sourcesPlugin!.isCalendarPermissionError(error),
+      loginItems: {set: openAtLogin => app.setLoginItemSettings({openAtLogin}), get: () => app.getLoginItemSettings().openAtLogin},
+      running: () => clientStatus().running, quitting: () => quitting,
+      recoveryRequired: () => recoveryRequired, requireRecovery: message => requireRecovery(message),
+      configureDiagnostics,
+      relocate: updated => queue.relocate(updated.captureStorageDirectory || storage.defaultDirectory, storage, () => store.save(updated), async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory, value => backgroundJobs.progress('mote:configure', value)),
+      clearStorageSelection: () => { pendingStorageDirectory = undefined; },
+      pendingStorageDirectory: () => pendingStorageDirectory,
+      status: clientStatus, serialize,
+      background: (channel, label, operation) => backgroundJobs.run(channel, label, operation),
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+      changed: () => { if (!quitting) updateUi(clientStatus()); },
+      events, onSettings: value => { settings = value; },
+      applicationPath: bundlePath ?? app.getPath('exe'),
+      canDrag: process.platform === 'darwin' && Boolean(bundlePath),
+      bundleId: () => bundlePath ? promisify(execFile)('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(bundlePath, 'Contents', 'Info.plist')]).then(result => result.stdout.trim()).catch(() => 'unknown') : Promise.resolve('unpackaged'),
+      mediaAccessStatus: () => systemPreferences.getMediaAccessStatus('screen'),
+      accessibilityGranted: () => systemPreferences.isTrustedAccessibilityClient(false),
+      calendarStatus: () => runHelper(helperPath, 'calendar-status').then(value => (value as {status: string}).status).catch(() => 'unknown'),
+      openExternal: url => shell.openExternal(url),
+      restart: () => { app.relaunch(); app.quit(); },
+      owner: () => window,
+      guideAppPath: bundlePath,
+      settingsWindow: () => runHelper(helperPath, 'permission-settings-window') as Promise<SettingsWindow>,
+      granted: kind => process.platform === 'darwin' && (kind === 'screen' ? systemPreferences.getMediaAccessStatus('screen') === 'granted' : kind === 'accessibility' ? systemPreferences.isTrustedAccessibilityClient(false) : false),
+      chooseInvitation: async kind => {
+        const selected = await dialog.showOpenDialog(window!, { title: kind === 'qr' ? moteText("选择中央连接二维码图片") : moteText("选择中央连接邀请 JSON"), properties: ['openFile'], filters: [{ name: kind === 'qr' ? 'QR image' : 'Mote connection JSON', extensions: kind === 'qr' ? ['png', 'jpg', 'jpeg'] : ['json', 'txt'] }] });
+        return selected.canceled ? undefined : selected.filePaths[0];
+      },
+      recognizeQr: bytes => recognizeInvitationQr(helperPath, bytes),
+      settleNotes: () => notes.settle(),
+      onLanguageChanged: () => { refreshApplicationMenu(); updateUi(clientStatus()); },
+      reloadWindows: () => { window?.webContents.reload(); if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.webContents.reload(); },
+    });
     prepareForUpdateInstall = async () => { collector.stop(); await collector.settleCapture(); await notes.settle(); };
     pendingNoteStatus = () => ({ count: notes.hasPrepared() && !queue.contains(notes.get().id) ? 1 : 0, unbound: queue.binding.unbound() && (!localSources || localSources.nodeBinding.unbound()) && (!notes.hasPrepared() || notes.hasUnboundPrepared()), baseRecords: queue.stats().depth + (localSources?.pendingStats().pendingRecords ?? 0) });
     const library = createLibraryWorkspacePlugin({
@@ -312,6 +362,13 @@ else {
       queue,
       sources: () => localSources!,
       syncHistory,
+      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
+    });
+    const workHistory = createWorkHistoryWorkspacePlugin({
+      settings: () => settings,
+      history: syncHistory,
+      queue,
+      sources: () => localSources!,
       guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
     });
     pluginHost = new DesktopPluginHost({ router: electronIpcRouter(ipcMain, () => pluginHost!.windowFacts), native: new NativeProviderRegistry('mac') });
@@ -329,7 +386,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, systemToolsReadCapability, systemToolsManageCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -338,13 +395,13 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, sourcesPlugin!, chromePlugin!, capturePlugin!, systemTools]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, deviceSettings, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!, localStorageBackup, systemTools]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
       quickNoteWindow=noteWindow;
       const noteSenderId = noteWindow.webContents.id;
-      host.registerWindow(noteSenderId, 'quick-note', [notesReadCapability, notesWriteCapability]);
+      host.registerWindow(noteSenderId, 'quick-note', [notesReadCapability, notesWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability]);
       noteWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
       noteWindow.webContents.on('will-navigate',event=>event.preventDefault());
       noteWindow.webContents.on('will-attach-webview',event=>event.preventDefault());
@@ -361,31 +418,13 @@ else {
       preferredAppearance=raw;nativeTheme.themeSource=raw==='auto'?'system':raw;
       broadcastAppearance();return appearanceState();
     });
-      const shellScope = host.createScope({ instanceId: 'desktop-shell', capabilities: ['shell.language'] });
-      await host.startPlugin(shellScope, (scope: PluginScopeHandle) => {
-        scope.registerIpc({ channel: 'mote:language', capability: 'shell.language', windowRoles: ['main', 'quick-note'], roleFrameUrls: { main: [pageUrl], 'quick-note': [pageUrl + '#quick-note'] } }, () => languageState());
-      });
-    ipcMain.handle('mote:set-language', async (event, raw: unknown) => {
-      trusted(event);
-      if (raw !== 'system' && !(locales as readonly string[]).includes(String(raw))) throw new Error('Invalid language');
-      await notes.settle();
-      const next = languagePreference(raw);
-      writeFileSync(languageFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
-      renameSync(languageFile + '.tmp', languageFile);
-      preferredLanguage = next; refreshApplicationMenu(); updateUi(clientStatus());
-      // Renderer navigation is blocked; only this trusted IPC may reload its fixed page.
-      setTimeout(() => {window?.webContents.reload();if(quickNoteWindow&&!quickNoteWindow.isDestroyed())quickNoteWindow.webContents.reload();}, 20);
-      return languageState();
-    });
     // Retain authored keys: a renderer locale change does not restart the main process.
     const operationLabels: Record<string, string> = {
-      'mote:configure': "正在应用设置或迁移存储", 'mote:import-queue': "正在导入队列", 'mote:export-queue': "正在导出队列",
       'mote:installed-applications': "正在读取应用列表",
       'mote:diagnostics-export': "正在导出诊断", 'mote:diagnostics-sample': "正在读取诊断",
-      'mote:connection-confirm': "正在连接中央节点", 'mote:connection-test': "正在测试连接",
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      const stage: EventStage | undefined = ({ 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:configure': 'CONFIG', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
+      const stage: EventStage | undefined = ({} as Record<string, EventStage>)[channel];
     ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
         if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:connection-status'].includes(channel)) throw new Error(recoveryRequired);
@@ -397,79 +436,7 @@ else {
       });
     };
     const requireRecovery = (message: string): void => { recoveryRequired = message; collector.requireRecovery(message); void localSources!.close(); };
-    const settingsCoordinator = new SettingsCoordinator({
-      settings: () => settings, installSettings: value => { settings = value; },
-      store, collector, sources: localSources, queue, notes,
-      defaultProfile: profile.defaultProfile,
-      loginItems: { set: openAtLogin => app.setLoginItemSettings({ openAtLogin }), get: () => app.getLoginItemSettings().openAtLogin },
-      running: () => clientStatus().running, quitting: () => quitting,
-      recoveryRequired: () => recoveryRequired, requireRecovery, configureDiagnostics,
-      relocate: updated => queue.relocate(updated.captureStorageDirectory || storage.defaultDirectory, storage, () => store.save(updated), async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory, value => backgroundJobs.progress('mote:configure', value)),
-      clearStorageSelection: () => { pendingStorageDirectory = undefined; },
-      connectionStatus: value => { connectionState = value; },
-    });
-    const unboundBacklog = () => settingsCoordinator.unboundBacklog();
-    const pausedSettings = <T>(operation: () => Promise<T>) => settingsCoordinator.paused(operation);
-    const connectionChange = <T>(operation: () => Promise<T>, sameNodeInvitation = false, confirmedInitial = false) => settingsCoordinator.connectionChange(operation, sameNodeInvitation, confirmedInitial);
-    const applySettings = (updated: Config) => settingsCoordinator.apply(updated);
-    const commitConnection = (updated: Config, sameNodeInvitation = false, confirmedInitial = false) => settingsCoordinator.commitConnection(updated, sameNodeInvitation, confirmedInitial);
-    const readSelectedInvitation = async (path: string, maximum: number): Promise<Buffer> => {
-      const file = await open(path, 'r');
-      try { const buffer = Buffer.alloc(maximum + 1); const read = await file.read(buffer, 0, buffer.length, 0); if (read.bytesRead > maximum) throw new Error(moteText("连接邀请文件超过大小限制")); return buffer.subarray(0, read.bytesRead); }
-      finally { await file.close(); }
-    };
-    handle('mote:connection-status', () => ({...connectionState, message: statusMessage(connectionState.message)}));
-    handle('mote:connection-preview', input => onboarding.preview(input));
-    handle('mote:connection-cancel', () => onboarding.clear());
-    handle('mote:connection-import', kind => serialize(async () => {
-      if (kind !== 'json' && kind !== 'qr') throw new Error(moteText("邀请导入方式无效"));
-      onboarding.clear();
-      if (kind === 'qr' && process.platform !== 'darwin') throw new Error(moteText("二维码图片导入暂仅支持 macOS，请使用 JSON 或连接链接"));
-      const selected = await dialog.showOpenDialog(window!, { title: kind === 'qr' ? moteText("选择中央连接二维码图片") : moteText("选择中央连接邀请 JSON"), properties: ['openFile'], filters: [{ name: kind === 'qr' ? 'QR image' : 'Mote connection JSON', extensions: kind === 'qr' ? ['png', 'jpg', 'jpeg'] : ['json', 'txt'] }] });
-      if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
-      try {
-        const bytes = await readSelectedInvitation(selected.filePaths[0], kind === 'qr' ? 8 * 1024 * 1024 : 8192);
-        const input = kind === 'qr' ? await recognizeInvitationQr(helperPath, bytes) : new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-        return { canceled: false, preview: onboarding.preview(input) };
-      } catch { throw new Error(moteText("无法读取有效邀请，请检查 JSON/二维码格式、有效期和文件大小；原连接未变动")); }
-    }));
-    const connectionController = new ConnectionController({
-      settings: () => settings, status: () => connectionState, installStatus: value => { connectionState = value; },
-      secretStorageAvailable: () => secrets.available(), platform: currentPlatform,
-      coordinator: settingsCoordinator, onboarding,
-    });
-    handle('mote:connection-confirm', (id, origin, deviceName) => serialize(async () => { await connectionController.confirm(id, origin, deviceName); return clientStatus(); }));
-    handle('mote:connection-test', () => connectionController.test());
-    handle('mote:sync-paused', paused => serialize(async () => {
-      if(typeof paused!=='boolean')throw new Error('Invalid paused sync setting');
-      const previous=settings,updated=updateConfig(settings,{...settings,syncPaused:paused});
-      if(paused){await collector.setSyncPaused(true);await localSources!.setSyncPaused(true);}
-      try {
-        await store.save(updated);settings=updated;
-        // A resume takes effect only after it is durable; scans and sampling never stop.
-        await localSources!.setSyncPaused(paused);await collector.setSyncPaused(paused);
-      }catch(error){
-        const persisted=await store.load().catch(()=>undefined);
-        if(!persisted||JSON.stringify(persisted)===JSON.stringify(updated)){requireRecovery(moteText("设置提交需要恢复；已停止采集与上传并保留数据，请重新打开 Mote。"));throw error;}
-        await collector.setSyncPaused(Boolean(previous.syncPaused));await localSources!.setSyncPaused(Boolean(previous.syncPaused));throw error;
-      }
-      return clientStatus();
-    }));
     handle('mote:get-status', () => clientStatus());
-    const browseWithConnection = async <T>(operation: (config: Config) => Promise<T>): Promise<T> => {
-      const requested = settings; const result = await operation(requested);
-      if (settings !== requested) throw new Error(moteText("连接已改变，请刷新采集记录")); return result;
-    };
-    handle('mote:work-activity',input=>browseWithConnection(config=>centralWorkActivity(config,input as import('./work-activity').WorkActivityQuery|undefined)));
-    handle('mote:sync-history', input => syncHistory.page(settings,input as SyncHistoryQuery));
-    handle('mote:sync-history-contents', input => syncHistory.contents(settings,input as SyncHistoryContentQuery));
-    handle('mote:sync-history-content', (runId,key,offset,includeImage) => browseWithConnection(config => { if(typeof runId!=='string'||typeof key!=='string')throw Error('Invalid sync content reference'); return syncContent(syncHistory,queue,localSources!,config,runId,key,offset as number|undefined,includeImage===undefined?true:includeImage===true); }));
-    handle('mote:sync-history-pending', () => {
-      const pending=queue.historyPending();
-      const rows=localSources!.status();
-      return [...pending,...(['file','calendar','coding'] as const).map(source=>{const sources=rows.filter(r=>source==='file'?r.source.kind==='local-files':source==='calendar'?r.source.kind==='local-calendar':r.source.kind.startsWith('coding-'));return {source,pending:sources.reduce((sum,r)=>sum+r.pending+(r.blocked??0),0),review:0,blocked:sources.reduce((sum,r)=>sum+(r.blocked??0),0),retrying:sources.reduce((sum,r)=>sum+(r.state==='error'?r.pending:0),0)};})];
-    });
-    handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
     handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
     handle('mote:feedback', () => shell.openExternal(githubFeedbackUrl({
       version: app.getVersion(),
@@ -497,39 +464,12 @@ else {
       if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.setContentSize(quickNoteWindow.getContentSize()[0], expanded ? 594 : 466);
     });
     handle('mote:storage-restart', () => { app.relaunch(); app.quit(); });
-    handle('mote:storage-choose', () => serialize(async () => {
-      const selected = await dialog.showOpenDialog(window!, { title: moteText("选择本机截图保存位置"), buttonLabel: moteText("选择位置"), properties: ['openDirectory', 'createDirectory'] });
-      if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
-      pendingStorageDirectory = await storage.candidate(selected.filePaths[0], queue.directory);
-      return { canceled: false, directory: pendingStorageDirectory };
-    }));
-    handle('mote:storage-open', async () => {
-      await storage.assertOwned(queue.directory); const error = await shell.openPath(queue.directory); if (error) throw new Error(moteText("无法打开截图目录，请检查磁盘是否已连接"));
-    });
-    handle('mote:configure', input => serialize(async () => {
-      const confirmedInitial = (input as ConfigUpdate).confirmLocalBacklog === true && unboundBacklog();
-      let updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (notes.hasPrepared() ? 1 : 0), confirmedInitial);
-      if (!profile.defaultProfile && updated.openAtLogin) throw new Error(moteText("命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数"));
-      const relocating = updated.captureStorageDirectory !== settings.captureStorageDirectory;
-      const changingConnection = updated.serverUrl !== settings.serverUrl || updated.token !== settings.token;
-      if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== pendingStorageDirectory) throw new Error(moteText("请通过本机文件夹选择器选择截图位置，再保存设置"));
-      if (relocating && changingConnection) throw new Error(moteText("请先保存截图位置，再单独保存节点连接；每次切换均会自动应用"));
-      if(changingConnection&&updated.token){
-        const identity=await testConnection(updated,fetch,false);
-        if(!identity.capabilities.archiveRead)throw Error(moteText('请升级中央节点后再登录。'));
-        if(identity.credential.id==='owner'||identity.credential.deviceId!==updated.deviceId){const grant=await loginRequest(updated,'/api/login/session',{serverUrl:updated.serverUrl,deviceId:updated.deviceId,deviceName:updated.deviceName,platform:currentPlatform,durationMs:30*86400000},updated.token);updated={...updated,token:grant.token,authExpiresAt:grant.expiresAt};}
-        updated={...updated,credentialScope:'owner',authSignedOut:false,authSessionOnly:false};
-      }
-      if (changingConnection) await connectionChange(() => commitConnection(updated, false, confirmedInitial), false, confirmedInitial);
-      else await pausedSettings(() => applySettings(updated));
-      updateUi(clientStatus()); return clientStatus();
-    }));
     let loginGeneration=0;
     const endLogin=()=>serialize(async()=>{
       loginGeneration++;
       const previous=settings, token=connectionToken(previous);
       // Locally sign out even when the node is offline; never fall back to another credential.
-      await pausedSettings(()=>applySettings(signedOutConfig(previous)));
+      await deviceSettings.paused(()=>deviceSettings.apply(signedOutConfig(previous)));
       if(token)await loginRequest(previous,'/api/login/logout',{},token).catch(()=>{});
       updateUi(clientStatus());
     });
@@ -547,7 +487,7 @@ else {
         await serialize(()=>{
           // Check after waiting for other settings/logout operations as well as network I/O.
           if(settings!==requested||expectedGeneration!==loginGeneration)throw Error(moteText('登录会话已变更，请重新打开中央页面。'));
-          return connectionChange(()=>commitConnection({...requested,token:credential,credentialScope:'owner',authSignedOut:false,authSessionOnly:durationMs===0,authExpiresAt:expiresAt},true,true),true,true);
+          return deviceSettings.connectionChange(()=>deviceSettings.commitConnection({...requested,token:credential,credentialScope:'owner',authSignedOut:false,authSessionOnly:durationMs===0,authExpiresAt:expiresAt},true,true),true,true);
         });
       } catch(error) {
         if(minted)await loginRequest(requested,'/api/login/logout',{},credential).catch(()=>{});
@@ -587,66 +527,11 @@ else {
       guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
     });
     await askPlugin.register({host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain});
-    handle('mote:permission-status', async () => ({
-      appPath: bundlePath ?? app.getPath('exe'),
-      canDrag: process.platform === 'darwin' && Boolean(bundlePath),
-      bundleId: bundlePath ? await promisify(execFile)('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(bundlePath, 'Contents', 'Info.plist')]).then(result => result.stdout.trim()).catch(() => 'unknown') : 'unpackaged',
-      screen: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
-      accessibility: process.platform === 'darwin' ? (systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied') : 'unsupported',
-      calendar: process.platform === 'darwin' ? await runHelper(helperPath, 'calendar-status').then(value => (value as {status: string}).status).catch(() => 'unknown') : 'unsupported',
-    }));
-    let permissionSettingsGeneration = 0;
-    const openPermissionSettings = async (raw: unknown) => {
-      const kind = permissionKind(raw);
-      const generation = ++permissionSettingsGeneration;
-      const panes = { screen: 'Privacy_ScreenCapture', accessibility: 'Privacy_Accessibility', calendar: 'Privacy_Calendars', files: 'Privacy_AllFiles' };
-      permissionGuide.close();
-      if (process.platform === 'darwin') {
-        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?' + panes[kind]);
-        if (kind !== 'calendar' && generation === permissionSettingsGeneration) await permissionGuide.open(kind);
-      }
-    };
-    handle('mote:permission-settings', openPermissionSettings);
-    handle('mote:permission-request', async raw => {
-      const kind = permissionKind(raw);
-      if (kind === 'calendar' && process.platform === 'darwin') {
-        const generation = ++permissionSettingsGeneration;
-        permissionGuide.close();
-        try { await sourcesPlugin!.authorizeCalendar(); }
-        catch (error) { if (!sourcesPlugin!.isCalendarPermissionError(error)) throw error; if (generation === permissionSettingsGeneration) await openPermissionSettings(kind); }
-      } else await openPermissionSettings(kind);
-    });
-    handle('mote:permission-restart', () => { app.relaunch(); app.quit(); });
-    handle('mote:permissions', async () => { if (process.platform === 'darwin') { await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
     handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
     handle('mote:export-metadata', async () => {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
-    handle('mote:export-queue', async () => {
-      const selected = await dialog.showSaveDialog(window!, { title: moteText("导出已脱敏待上传队列（包含个人资料）"), defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
-      if (selected.canceled || !selected.filePath) return { canceled: true };
-      const selectedFile=await describeBackupFile(selected.filePath);
-      backgroundJobs.progress('mote:export-queue',{message:moteText('正在导出队列'),file:{name:selectedFile.name,path:selectedFile.path}});updateUi(clientStatus());
-      await queue.exportArchiveFile(selected.filePath, value => backgroundJobs.progress('mote:export-queue', value));
-      return { canceled: false, path: selected.filePath, file:await describeBackupFile(selected.filePath) };
-    });
-    handle('mote:import-queue', () => serialize(async () => {
-      const selected = await dialog.showOpenDialog(window!, { title: moteText("导入 Mote 电脑端队列备份"), properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
-      if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
-      const path = selected.filePaths[0];
-      const file=await describeBackupFile(path);
-      backgroundJobs.progress('mote:import-queue',{message:moteText('正在校验备份'),file});updateUi(clientStatus());
-      try {
-        const imported = await queue.importArchiveFile(path, value => backgroundJobs.progress('mote:import-queue', value));
-        updateUi(clientStatus()); void collector.upload();
-        return { canceled: false, state:'imported', imported, file };
-      } catch(error) {
-        updateUi(clientStatus());
-        if(error instanceof QueueImportFailure)return {canceled:false,state:'incomplete',...error.report,error:error.message,file};
-        throw error;
-      }
-    }));
     tray = new Tray(trayIcon());
     tray.on('click', showWindow);
     updateUi(clientStatus());
