@@ -1,5 +1,5 @@
 import {FirstUseHome,FirstDataFailure} from './FirstUseHome';
-import {OriginalNoteRow} from './owner-library-browse';
+import {OriginalNoteRow} from './plugins/library/owner-library-browse';
 import {useState,useSyncExternalStore} from 'react';
 import {featureRequirementsAvailable} from '@mote/shared';
 import {DiscoveryLink,DiscoveryProvider} from './DiscoveryLink';
