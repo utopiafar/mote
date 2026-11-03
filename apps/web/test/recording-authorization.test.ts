@@ -5,8 +5,8 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {randomUUID} from 'node:crypto';
 import {configureLocale} from '@mote/shared/i18n';
-import {RecordingAuthorization} from '../src/RecordingAuthorization.js';
-import {ProviderAuthorization} from '../src/ProviderAuthorization.js';
+import {RecordingAuthorization} from '../src/plugins/sources/RecordingAuthorization.js';
+import {ProviderAuthorization} from '../src/plugins/agent-access/ProviderAuthorization.js';
 import type {Api} from '../src/api.js';
 configureLocale(()=> 'zh-CN');
 async function fixture(t:import('node:test').TestContext){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,value] of before)if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);});return {root,document:dom.window.document};}

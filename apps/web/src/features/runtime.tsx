@@ -1,7 +1,7 @@
 import {featureRequirementsAvailable,type FeatureInventory} from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import React,{ useSyncExternalStore } from 'react';
-import { AnswerMarkdown } from '../AnswerMarkdown';
+import { AnswerMarkdown } from '../plugins/ask/AnswerMarkdown';
 import { useResource } from '../useResource';
 import {webFeatures} from './registry';
 import {ErrorNotice,Spinner} from '../shell-components';

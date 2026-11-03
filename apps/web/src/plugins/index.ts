@@ -1,26 +1,23 @@
 import type { WebContribution } from '../features/host';
 import type { BuiltinWebPlugin } from './types';
-import { agentView } from './agent-view';
+import { agentAccess } from './agent-access';
 import { notes } from './notes';
 import { system } from './system';
 import { home } from './home';
 import { search } from './search';
 import { ask } from './ask';
 import { devices } from './devices';
-import { storage } from './storage';
-import { sources } from './sources';
-import { imports } from './imports';
-import { activity } from './activity';
+import { storage, usage } from './maintenance';
+import { connections, sources } from './sources';
+import { intake } from './intake';
+import { work } from './work';
 import { processing } from './processing';
 import { features } from './features';
-import { usage } from './usage';
 import { discovery } from './discovery';
-import { actions } from './actions';
 import { models } from './models';
 import { coding } from './coding';
 import { library } from './library';
 import { reader } from './reader';
-import { connections } from './connections';
 import { diagnostics } from './diagnostics';
 import { savedRecordViews } from './saved-record-views';
 import { sourceMaterialViewsPlugin } from './source-material';
@@ -32,7 +29,7 @@ export type { BuiltinWebPlugin } from './types';
  * before the registry was split per plugin, so contribution ordering does not
  * change when a plugin file is replaced. */
 export const builtinPlugins: readonly BuiltinWebPlugin[] = [
-  agentView,
+  agentAccess,
   notes,
   system,
   home,
@@ -41,13 +38,12 @@ export const builtinPlugins: readonly BuiltinWebPlugin[] = [
   devices,
   storage,
   sources,
-  imports,
-  activity,
+  intake,
+  work,
   processing,
   features,
   usage,
   discovery,
-  actions,
   models,
   coding,
   library,

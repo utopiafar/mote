@@ -10,67 +10,8 @@ import android.os.Handler
 import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import java.util.concurrent.Executors
+import dev.mote.collector.plugins.CapturePlugin
 import java.util.concurrent.atomic.AtomicBoolean
-
-/**
- * Pauses shared by the home, the status panel, the notification and Quick Settings. Screen capture, all capture and
- * sending stay independent. Nothing here starts capture: resuming returns to the app's preview and system consent.
- */
-internal object CaptureControls {
-    private val worker = Executors.newSingleThreadExecutor()
-    private val main = Handler(Looper.getMainLooper())
-    /** A temporary privacy pause of screen capture only; other sources and sending continue. */
-    fun pauseScreen(context: Context, finished: (Result<Boolean>) -> Unit = {}) {
-        val app = context.applicationContext
-        worker.execute {
-            val current = runCatching { Settings(app).let { it to it.read() } }
-            main.post {
-                val (settings, config) = current.getOrElse { finished(Result.failure(it)); return@post }
-                if (!settings.enabled || !config.screenCollectionEnabled || RuntimeSettings.stopping) { finished(Result.success(false)); return@post }
-                settings.screenPaused(System.currentTimeMillis())
-                RuntimeSettings.apply(app, config.copy(screenCollectionEnabled = false), expected = config) { result ->
-                    if (result.isFailure) settings.screenPaused(null)
-                    finished(result.map { true })
-                }
-            }
-        }
-    }
-    /** Stops every capture source for the panel and the notification; records and sending are kept. */
-    fun stopAll(context: Context, finished: (Result<Unit>) -> Unit = {}) {
-        val app = context.applicationContext
-        RuntimeSettings.cancelProjectionConsentRequest()
-        // Joining a stop under way still reports only after that stop and this status are saved.
-        RuntimeSettings.stop(app) { result ->
-            app.systemEntries().showEvents(null)
-            if (result.isFailure) { finished(result); return@stop }
-            worker.execute {
-                runCatching {
-                    val settings = Settings(app)
-                    if (!settings.enabled) { settings.status("paused", MoteI18n.text("你已停止采集，已有记录保留，同步按所选策略运行")); UploadWorker.schedule(app, settings.read()) }
-                }
-                main.post { finished(result) }
-            }
-        }
-    }
-    /** Sending pause keeps local saving and capture running. */
-    fun setSendingPaused(context: Context, paused: Boolean, finished: (Result<Unit>) -> Unit = {}) {
-        val app = context.applicationContext
-        worker.execute { val result = runCatching { SendPauseControl.set(app, paused) }; main.post { finished(result) } }
-    }
-    /** Read off the main thread: active means screen capture is selected and capture is on. */
-    fun screenState(context: Context, done: (active: Boolean, paused: Boolean, live: Boolean) -> Unit) {
-        val app = context.applicationContext
-        worker.execute {
-            val read = runCatching {
-                val settings = Settings(app); val config = settings.read()
-                val live = config.screenCollectionEnabled && if (config.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected
-                Triple(settings.enabled && config.screenCollectionEnabled, settings.screenPausedAt() != null && !config.screenCollectionEnabled, live)
-            }.getOrDefault(Triple(false, false, false))
-            main.post { done(read.first, read.second, read.third) }
-        }
-    }
-}
 
 /**
  * Keeps a notification action's broadcast, and so the process, until its work is saved. Work past the broadcast limit is
@@ -88,7 +29,7 @@ internal fun BroadcastReceiver.holdUntilDone(work: (done: () -> Unit) -> Unit) {
 
 /** The notification action. Like the stop action, it runs only on the owner's tap. */
 class PauseScreenReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = holdUntilDone { done -> CaptureControls.pauseScreen(context) { done() } }
+    override fun onReceive(context: Context, intent: Intent) = holdUntilDone { done -> CapturePlugin.controls().pauseScreen(context) { done() } }
 }
 
 /** Quick Settings pauses screen capture in one tap. Starting or resuming opens the app instead. */
@@ -97,12 +38,12 @@ class ScreenCaptureTileService : TileService() {
     override fun onClick() {
         super.onClick()
         // Decide from the saved state at click time; the tile may not have been listening before this click.
-        CaptureControls.screenState(this) { capturing, _, _ ->
-            if (capturing) CaptureControls.pauseScreen(this) { refresh() } else if (isLocked) unlockAndRun { openStatus() } else openStatus()
+        CapturePlugin.controls().screenState(this) { capturing, _, _ ->
+            if (capturing) CapturePlugin.controls().pauseScreen(this) { refresh() } else if (isLocked) unlockAndRun { openStatus() } else openStatus()
         }
     }
     private fun refresh() {
-        CaptureControls.screenState(this) { capturing, paused, live ->
+        CapturePlugin.controls().screenState(this) { capturing, paused, live ->
             val tile = qsTile ?: return@screenState
             tile.state = if (capturing) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             tile.label = MoteI18n.text("屏幕采集")

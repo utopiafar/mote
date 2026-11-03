@@ -46,6 +46,16 @@ test('browser approval issues one full client grant and only the generating clie
  assert.deepEqual(f.handoffs.poll({id,verifier},true),{acknowledged:true});assert.throws(()=>f.handoffs.poll({id,verifier}));
  f.advance(30*86400000);assert.equal(f.connections.authenticate('Bearer '+grant.token),undefined);
 });
+test('rejecting one pending request leaves another request and its later grant untouched',async t=>{
+ const f=await fixture(t),first=f.handoffs.create(input),second=f.handoffs.create({...input,deviceId:'generated-other',deviceName:'Generated Other'});
+ assert.deepEqual(f.handoffs.reject(first.id,()=>{}),{rejected:true});
+ assert.throws(()=>f.handoffs.detail(first.id),{code:'login_expired'});
+ assert.throws(()=>f.handoffs.poll({id:first.id,verifier}),{code:'login_expired'});
+ assert.equal(f.handoffs.detail(second.id).deviceName,'Generated Other');
+ await f.handoffs.approve(second.id,()=>{});
+ assert.equal((f.handoffs.poll({id:second.id,verifier}) as any).ready,true);
+ assert.throws(()=>f.handoffs.reject(second.id,()=>{}),{code:'login_already_approved'});
+});
 test('failed or revoked approvals cannot publish a usable grant; pending requests expire and remain restart local',async t=>{
  const f=await fixture(t),{id}=f.handoffs.create(input);let checks=0;
  await assert.rejects(f.handoffs.approve(id,()=>{if(++checks===2)throw Error('Generated revoked parent');}));

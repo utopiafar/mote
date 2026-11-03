@@ -1,9 +1,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ARCHIVE_RECENCY_INSTRUCTIONS,buildContextEnvelope,taskTools} from '../dist/task-context.js';
+import {buildContextEnvelope,taskTools} from '../dist/task-context.js';
+import {ARCHIVE_RECENCY_INSTRUCTIONS,compactMemoryTaskContext,restoreMemoryCoverageKeys} from '../dist/tasks/evidence-rules.js';
 import {pinContextTools,registeredContextToolDefinitions} from '../dist/tool-contributions.js';
 import {dispatchTools} from '../dist/task-context.js';
-import {systemInstructions} from '../dist/instructions.js';
+import {SYSTEM_PROMPT,systemInstructions} from '../dist/instructions.js';
+import {prepareTaskContext} from '../dist/tasks/context-assembly.js';
+import {assembleHostContext,createHostRunSession} from '../dist/host/run-session.js';
+import {createHostOutputProvider} from '../dist/host/output.js';
+import {ActiveExecutionBudget} from '../dist/active-budget.js';
 
 test('proposal lifecycle has one instruction contract while the envelope supplies only host state',()=>{
  const input={question:'Generated plan',hostRetrieval:'none',hostControlChannel:{phase:'proposal',definitions:[],execute:async()=>({data:{}})}};
@@ -171,7 +176,6 @@ test('large Memory catalogs and review drafts share exact declaration and source
 });
 
 test('coverage aliases round-trip only exact identities from this call, including reviewer drafts and context references',async()=>{
- const {compactMemoryTaskContext,restoreMemoryCoverageKeys}=await import('../dist/memory-context.js');
  const keys=['a'.repeat(64),'b'.repeat(64),'c'.repeat(64)];
  const work={members:[{key:keys[0],id:'target'}],contextMembers:[{key:keys[1],id:'context'}],authorizedMembers:[{key:keys[2],id:'unread'}],history:[{targets:[{key:keys[0],contextRefs:[keys[1]]}],contextMembers:[]}],instruction:'Generated'};
  const draft={memories:[{statement:'member_0 remains literal prose',evidence:[{id:'target',quote:'member_0'}]}],coverage:[{key:keys[0],contextRefs:[keys[1],'material:unchanged'],state:'needs_context',candidateIndexes:[]}],capacity:{saturated:false}};
@@ -248,4 +252,57 @@ test('record references remain unread starting points while ordinary discovery c
  const result=parseAnswer(JSON.stringify({answer:'The related original gives 16:10.',citationIds:[other.id]}),bridge.records);assert.equal(result.citations[0].id,other.id);assert.match(result.citations[0].excerpt,/16:10/);
  assert.equal((await call('search_context',{query:'blue observatory',deviceId:'different-device'})).status,400,'a reference record cannot override the explicit device restriction');
  assert.equal((await call('search_context',{query:'blue observatory',after:'2026-11-01T00:00:00Z'})).status,400,'a reference record cannot widen the explicit time restriction');
+});
+
+test('query and working packs keep host grants bounded and unknown source protocols conservative',async t=>{
+ const working={question:'Generated working compaction',skill:'working-memory'},preparedWorking=prepareTaskContext(working);
+ assert.equal(preparedWorking.id,'working');assert.equal(preparedWorking.version,'1');assert.deepEqual(preparedWorking.profile,{output:'answer',retrieval:'none'});
+ assert.deepEqual(taskTools(working),[]);assert.deepEqual(dispatchTools(working),[]);
+ const selected={question:'Generated selected original',evidenceIds:[record.id]},preparedSelected=prepareTaskContext(selected);
+ assert.equal(preparedSelected.id,'selected-answer');assert.equal(preparedSelected.version,'1');assert.deepEqual(preparedSelected.profile,{output:'answer',retrieval:'evidence'});
+ assert.deepEqual(taskTools(selected),['evidence']);
+ const {call}=await fixture(t,selected);
+ assert.equal((await call('search_context',{query:'generated archive'})).status,400,'selected answer never exposes archive discovery');
+ assert.notEqual((await call('evidence',{ids:['different-generated-original']})).status,200,'selected answer never widens the host evidence grant');
+ assert.equal(systemInstructions({question:'Generated bounded',evidenceIds:[record.id]},[{...record,sourceType:'generated-unknown-protocol'}]),SYSTEM_PROMPT.replace(ARCHIVE_RECENCY_INSTRUCTIONS+'\n',''),'unknown source protocols keep the conservative complete rules');
+});
+
+function runtimeFixture(engine,query,assembled){
+ const requests=[],controller=new AbortController(),scopeIdentity={packageId:'generated',installationId:'generated',instanceId:'generated',activationId:'generated',host:{kind:'central',id:'generated'}};
+ const binding=service=>({service:{id:service,apiVersion:'1'},provider:{scope:scopeIdentity,contributionId:service},revision:1});
+ const lease=(service,value)=>({binding:binding(service),value,signal:controller.signal,assertCurrent(){controller.signal.throwIfAborted();},async release(){}});
+ const model={modelId:'generated-model',modelRevision:1,profileId:'generated-model-profile',profileRevision:1,transport:'generated'};
+ const runtime=lease('mote.agent.runtime',{capabilities:{},async prepare(_profile,_model,host){
+  host.emit({type:'tools.ready',tools:[]},null);
+  return {async run(request){requests.push(request);return {terminal:{kind:'completed'},candidate:{text:JSON.stringify({answer:'Generated answer',citationIds:[]})}};},async repair(request){return this.run(request);},async cancel(){},async close(){}};
+ }});
+ const profile={binding:runtime.binding,runtimeId:engine,profileId:'generated-runtime-profile',profileRevision:7,assemblyFingerprint:'a'.repeat(64),taskKind:'query',configuration:{}};
+ const dependencies={scope:{identity:scopeIdentity,signal:controller.signal,assertCurrent(){controller.signal.throwIfAborted();},defer(){}},identity:{runId:`generated-${engine}`,runtime:{id:engine,revision:1,profileId:profile.profileId,profileRevision:7,assemblyFingerprint:profile.assemblyFingerprint},model},input:query,profile,runtime,model:{...lease('generated.model',{}),selection:model},output:lease('mote.agent.host-output',createHostOutputProvider()),tools:{definitions:[],bindings:[],assertCurrent(){}},budget:{activeTimeoutMs:null},activeBudget:new ActiveExecutionBudget(null),commitFence:{assertCurrent(){}}};
+ const evidence={records:new Map(),deliveredRanges:[],imageReadReceipts:[],sourceContextDependencies:[],evidenceDependencies:{version:1,complete:true,ids:[]},trace:[],deliveredCharacters:0};
+ return {requests,create:()=>createHostRunSession(dependencies,{systemPrompt:assembled.system,prompt:assembled.prompt,outputSchema:assembled.outputSchema,contextUsage:{...assembled.metrics,toolResults:0},evidence:()=>evidence,async readTool(){throw new Error('No tool expected');},async close(){}})};
+}
+
+test('real query input and seed reach both runtime prompts with one selected scope and language',async t=>{
+ const seed={...record,sourceType:'note',provenance:{sourceId:'generated-source',uri:'material:generated#0'}};
+ const common={question:'Generated scope check',language:'en-US',after:'2026-01-01T00:00:00Z',before:'2026-02-01T00:00:00Z',deviceId:'generated-device',timeZone:'Asia/Shanghai'};
+ const cases=[
+  {...common,taskId:'answer',system:/Research the user's requested points with read-only evidence/},
+  {...common,evidenceIds:[seed.id],evidenceRanges:[{id:seed.id,offset:0,length:seed.ocrText.length}],taskId:'selected-answer',system:/Restricted extraction sessions use only host-authorized original evidence/},
+ ];
+ for(const expected of cases){
+  const input={...expected};delete input.taskId;delete input.system;
+  const assembled=assembleHostContext(input,[seed],1024),envelope=JSON.parse(assembled.prompt);
+  assert.equal(envelope.taskId,expected.taskId);assert.equal(envelope.language,'en-US');
+  assert.deepEqual(envelope.selectedTimeRange,{after:common.after,before:common.before});assert.equal(envelope.selectedDeviceId,'generated-device');assert.equal(envelope.timeZone,'Asia/Shanghai');
+  assert.equal(envelope.untrustedEvidence[0].id,seed.id);assert.match(assembled.system,expected.system);
+  for(const engine of ['dsh-fixture','codex-fixture']){
+   const fixture=runtimeFixture(engine,input,assembled),session=await fixture.create();
+   try{
+    const answer=await session.execute();assert.equal(answer.answer,'Generated answer');
+    assert.equal(fixture.requests.length,1);assert.equal(fixture.requests[0].prompt,assembled.prompt);assert.deepEqual(fixture.requests[0].outputSchema,assembled.outputSchema);
+    const received=JSON.parse(fixture.requests[0].prompt);
+    assert.equal(received.language,envelope.language);assert.deepEqual(received.selectedTimeRange,envelope.selectedTimeRange);assert.equal(received.selectedDeviceId,envelope.selectedDeviceId);assert.equal(received.taskId,envelope.taskId);
+   }finally{await session.close();}
+  }
+ }
 });

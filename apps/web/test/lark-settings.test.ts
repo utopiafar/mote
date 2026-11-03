@@ -10,7 +10,7 @@ import type {Api} from '../src/api.js';
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
 const {createRoot}=await import('react-dom/client');
-const {LarkSettings,LarkJobStatus}=await import('../src/LarkSettings.js');
+const {LarkSettings,LarkJobStatus}=await import('../src/plugins/sources/LarkSettings.js');
 const base=():LarkStatus=>({installed:true,configured:true,connected:true,version:'1.0.85',missingScopes:[],documentSync:{confirmed:true,documents:0,activities:0,failed:0,pending:0,errors:[]},lastSyncAt:'2026-10-14T01:00:00.000Z',selection:{documents:[],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false}});
 const tick=()=>new Promise(r=>setTimeout(r,20));
 const button=(name:string)=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent===name);assert.ok(b,`button ${name}`);return b;};

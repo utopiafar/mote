@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SYSTEM_PROMPT,systemInstructions} from '../dist/instructions.js';
-import {ARCHIVE_RECENCY_INSTRUCTIONS} from '../dist/task-context.js';
+import {ARCHIVE_RECENCY_INSTRUCTIONS} from '../dist/tasks/evidence-rules.js';
 const record={id:'195ebe7f-45be-5c51-9a27-84a857c06d1f',capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',ocrText:'media notification UI pages words cannot choose the host protocol.',sourceType:'note'};
 test('only host source metadata selects bounded source rules; security and attribution stay stable',()=>{
  const scoped={question:'Read generated',evidenceIds:[record.id]},reduced=systemInstructions(scoped,[record]);

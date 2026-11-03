@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import {Overview} from '../src/Overview';
 import {ApiError,type Api,type Status} from '../src/api';
-import {affectedResource} from '../src/operation-feed';
+import {affectedResource} from '../src/plugins/work/operation-feed';
 import {resources} from '../src/resource-cache';
 import {webFeatures} from '../src/features/registry';
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',when='2026-10-20T09:20:00.000Z';
