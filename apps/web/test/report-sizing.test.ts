@@ -1,12 +1,12 @@
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
-import {REPORT_SIZE_MESSAGE,REPORT_SOURCE_MESSAGE,acceptedReportHeight,acceptedReportSource} from '../src/report-sizing';
-import {reportDocument} from '../src/report-document';
+import {REPORT_SIZE_MESSAGE,REPORT_SOURCE_MESSAGE,acceptedReportHeight,acceptedReportSource} from '../src/plugins/discovery/report-sizing';
+import {reportDocument} from '../src/plugins/discovery/report-document';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {InsightReportFrame} from '../src/InsightReportFrame';
+import {InsightReportFrame} from '../src/plugins/discovery/InsightReportFrame';
 import lightTokens from '../../../packages/shared/design-tokens.light.json';
 import darkTokens from '../../../packages/shared/design-tokens.json';
 

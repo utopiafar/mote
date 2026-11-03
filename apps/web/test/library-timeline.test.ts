@@ -5,7 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import type {CaptureTimelineGroup,CaptureTimelineMember,CaptureTimelinePage} from '@mote/shared';
-import {LibraryTimeline} from '../src/LibraryTimeline.js';
+import {LibraryTimeline} from '../src/plugins/library/LibraryTimeline.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 import {affectedResource,OperationFeed} from '../src/operation-feed.js';
@@ -78,7 +78,7 @@ test('wrong group identity or revision never publishes members; denied top-level
 
 test('real Central grouping reaches the exact original and returning keeps the opened member page',async t=>{
  const {root,d,w}=await fixture(t);
- const {buildApp}=await import('../../server/src/app.js'),{Archive}=await import('../src/Archive.js'),{featuresReady}=await import('../src/features/bootstrap.js');await featuresReady;
+ const {buildApp}=await import('../../server/src/app.js'),{Archive}=await import('../src/plugins/library/Archive.js'),{featuresReady}=await import('../src/features/bootstrap.js');await featuresReady;
  const {mkdtempSync,rmSync}=await import('node:fs'),{join}=await import('node:path'),{tmpdir}=await import('node:os');
  const directory=mkdtempSync(join(tmpdir(),'mote-timeline-consumer-')),token='generated-timeline-consumer-owner-123456';
  const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:3_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No models in timeline consumer regression');},close:async()=>{}}});

@@ -66,7 +66,7 @@ object MoteI18n {
         require(value == "system" || value in supported)
         check(context.getSharedPreferences("mote.language", Context.MODE_PRIVATE).edit().putString("language", value).commit())
         selected = value
-        Notifications.create(context)
+        context.systemEntries().create()
     }
     fun wrap(context: Context): Context {
         val config = Configuration(context.resources.configuration)
