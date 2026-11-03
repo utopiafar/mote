@@ -138,6 +138,7 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
   const guardedMeter=(meter:ReturnType<UsageLedger['start']>)=>Object.freeze({
     update:(tokens:TokenUsage)=>{current();meter.update(tokens);},
     finish:(status:'completed'|'failed')=>{current();return meter.finish(status);},
+    discard:()=>{current();meter.discard();},
   });
   const usagePort:UsageRecording=Object.freeze({
     start:(...args)=>{current();if(!ledger)throw unavailable();return guardedMeter(ledger.start(...args));},

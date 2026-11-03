@@ -33,6 +33,9 @@ export class UsageLedger {
     return {
       update:(tokens:TokenUsage)=>{receipt.tokens=structuredClone(tokens);receipt.durationMs=Date.now()-started;receipt.estimatedCost=estimateCost(tokens,price);this.save(receipt);},
       finish:(status:'completed'|'failed')=>{receipt.status=status;receipt.durationMs=Date.now()-started;this.save(receipt);return structuredClone(receipt);},
+      /** Remove a receipt that never began a model operation. Admission waits and
+       * pre-start refusals must not leave a running row or a failed usage entry. */
+      discard:()=>{if(receipt.status==='running')this.store.db.prepare('DELETE FROM model_usage WHERE id=?').run(receipt.id);},
     };
   }
   /** Fold every durable fragment receipt, including yielded coordinators,
