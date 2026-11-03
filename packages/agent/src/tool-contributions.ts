@@ -1,7 +1,7 @@
 import {ContextToolError} from './tool-errors.js';
 import {hostControlDefinitions} from './host-controls.js';
-import {ToolRegistry,type ToolSnapshot} from './tools/registry.js';
-import {createOfficialReadPacks,installReadPacks,type DerivedNavigationInputs,type ReadPackRegistration} from './tools/official-read-packs.js';
+import {createRegisteredReadPacks,installReadPacks,ToolRegistry,type ReadPackRegistration,type ToolSnapshot} from './tools/registry.js';
+import type {DerivedNavigationInputs} from './tools/official-read-packs.js';
 import type {ContextReader,QueryInput} from './types.js';
 
 type Definition=[string,string,Record<string,Record<string,unknown>>];
@@ -22,7 +22,7 @@ function enabled(input:QueryInput,name:string){
  * reader operations which are unavailable cannot be advertised as tools. */
 function standalonePacks(input:QueryInput,reader?:ContextReader):readonly ReadPackRegistration[]{
   const signal=input.signal??new AbortController().signal;
-  const descriptors=createOfficialReadPacks(readPackFacts(input)).filter(descriptor=>descriptor.requires.every(permission=>
+  const descriptors=createRegisteredReadPacks(readPackFacts(input)).filter(descriptor=>descriptor.requires.every(permission=>
     permission==='progress'||permission==='actionCatalog'?permission==='progress'||Boolean(input.actionCatalog):!reader||typeof reader[permission]==='function'));
   return [{descriptors,lifecycle:{signal,assertCurrent(){signal.throwIfAborted();input.assertContextAuthority?.();}}}];
 }

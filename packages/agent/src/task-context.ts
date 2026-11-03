@@ -4,6 +4,9 @@ import {compactSeedEvidence} from './evidence-context.js';
 import {contextToolDefinitions,registeredContextToolDefinitions,imageToolAvailable} from './tool-contributions.js';
 import {skillContent} from './skills.js';
 import {displayTime} from './time.js';
+// Register the official descriptor factory before this module publishes the
+// default task tools; the Host contribution assembly consumes only the registry.
+import './tools/official-read-packs.js';
 
 /** Host-selected task definitions, never inferred from natural-language keywords. */
 export const TASK_PROFILES = {
