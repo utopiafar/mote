@@ -11,7 +11,7 @@ import {failureMessage} from './failure-message';
 import {ModelSelector} from './ModelSelector';
 import { moteText } from '@mote/shared/i18n';
 import {QueryProgress,type QueryRun} from './QueryProgress';
-import {uploadChatImage} from './note-attachments';
+import {uploadChatImage} from './plugins/notes/note-attachments';
 import React,{useCallback,useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode} from 'react';
 import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
 import {ApiError,dateTime, type Answer, type Api, type Device, type Range} from './api';

@@ -2,9 +2,9 @@ import React,{useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import type {PluginConfigurationField,PluginInstanceView,PluginPackageView} from '@mote/shared';
 import type {ModelSettingsView} from '@mote/shared/models';
-import {errorMessage,type Api} from './api';
-import {useUnsavedChanges} from './unsaved';
-import {useResource} from './useResource';
+import {errorMessage,type Api} from '../../api';
+import {useUnsavedChanges} from '../../unsaved';
+import {useResource} from '../../useResource';
 import {configurationValid} from './plugin-center-presentation';
 
 export function PluginConfiguration({api,item,instance,busy,onSave,guided=false}:{api:Api;item:PluginPackageView;instance?:PluginInstanceView;busy:boolean;guided?:boolean;onSave:(body:Record<string,unknown>)=>void}){

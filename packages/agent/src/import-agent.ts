@@ -1,4 +1,4 @@
-import {observeModelTransport} from './model-transport-observer.js';
+import {observeModelTransport} from './models/http-transport.js';
 import {ActiveExecutionBudget,DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active-budget.js';
 import {ProviderFailure,type ImportHostMedia,type ImportReviewDecision,type TokenUsage} from '@mote/shared';
 import {observeHarness} from './usage.js';
@@ -6,12 +6,11 @@ import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {createCodexImportAgent} from './codex-import.js';
 import {DeepSeekHarness,RequestTimeoutError,type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
-import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {bundledSkills,skillContent} from './skills.js';
-import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './model-runtime.js';
+import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './models/provider-registry.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
 export type ImportAgentInput={language?:import('@mote/shared/i18n').Locale;workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
@@ -37,11 +36,7 @@ export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLau
     const budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);
     try{
       transportObserver=await observeModelTransport(options.authorizeModelRequest);
-      const transportPath=join(root,'transport.mjs');
-      await writeFile(transportPath,readFileSync(new URL('./plugin.mjs',import.meta.url),'utf8')
-        .replace('from "./context-tools.js"',`from ${JSON.stringify(new URL('./context-tools.js',import.meta.url).href)}`)
-        .replace('from "@deepseek-ai/dsh-tools"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tools'))}`)
-        .replace('from "@deepseek-ai/dsh-tool-skill"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))}`),{mode:0o600});
+      const transportPath=new URL('./models/http-transport.js',import.meta.url).href;
       const plugin=join(root,'import-plugin.mjs');
       await writeFile(plugin,`import {boundedModelFetch,modelFailureReporter} from ${JSON.stringify(transportPath)};
 import {apply as applySkillTool} from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))};

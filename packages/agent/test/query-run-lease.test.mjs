@@ -55,6 +55,7 @@ test('a mutating and throwing public Host observer cannot change the run, finali
               runtimeRuns++;
               host.emit({type: 'progress', progress: {stage: 'model', message: 'Generated runtime progress'}}, request.attempt);
               host.emit({type: 'usage', usage: {inputTokens: 900, outputTokens: 100, totalTokens: 1000, requests: 1, reportedRequests: 1}}, request.attempt);
+              host.emit({type: 'usage', usage: {inputTokens: 900, outputTokens: 100, totalTokens: 1000, requests: 1, reportedRequests: 1}}, request.attempt);
               return {terminal: {kind: 'completed'}, candidate: {text: JSON.stringify({answer: 'Generated accepted answer.', citationIds: []})}};
             }),
             async repair() { throw new Error('Unexpected repair'); },

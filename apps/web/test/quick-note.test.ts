@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import React,{act,useCallback,useState} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
-import {Notes} from '../src/Notes';
-import {QuickNoteDialog} from '../src/QuickNoteDialog';
+import {Notes} from '../src/plugins/notes/Notes';
+import {QuickNoteDialog} from '../src/plugins/notes/QuickNoteDialog';
 import {QuickNoteContext} from '../src/quick-note-context';
-import {NoteOutbox} from '../src/notes-state';
+import {NoteOutbox} from '../src/plugins/notes/notes-state';
 import {ApiError,type Api} from '../src/api';
 
 async function fixture(t:TestContext,request:Api['request']){

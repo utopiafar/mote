@@ -7,7 +7,7 @@ import { configureLocale, getLocale } from '@mote/shared/i18n';
 import type { CaptureSession, WorkActivity } from '@mote/shared';
 import { CaptureSessions } from '../src/CaptureSessions.js';
 import { LibraryMaterials } from '../src/LibraryBrowse.js';
-import { Notes } from '../src/Notes.js';
+import { Notes } from '../src/plugins/notes/Notes.js';
 import { WorkIssueNotice } from '../src/WorkIssueNotice.js';
 import { ApiError } from '../src/api.js';
 import { featuresReady } from '../src/features/bootstrap.js';

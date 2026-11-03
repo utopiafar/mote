@@ -15,7 +15,7 @@ import {registerPluginControlHttp} from '../src/plugins/plugin-control-http.js';
 import {projectFeatureInventory, type HostContributionDescriptor} from '../src/feature-inventory.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {packageStateLabel} from '../../../apps/web/src/plugin-center-presentation.js';
+import {packageStateLabel} from '../../../apps/web/src/plugins/plugin-center/plugin-center-presentation.js';
 
 const read = serviceContract<{read(): number}>('fixture.read', '1');
 const selection = (packageId: string) => ({packageId, version: '1.0.0', configurationRevision: 0});

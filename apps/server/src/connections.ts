@@ -2,6 +2,7 @@ import { moteText } from './i18n.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {z} from 'zod';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
 import {PrivateFile} from './connectors/private-file.js';
 import type {Store} from './store.js';
@@ -42,6 +43,14 @@ const collectorRoutes=new Set([
   'POST /api/file-sync/v1/uploads/:id/commit','PUT /api/file-sync/v1/uploads/:id/parts/:part',
   'PUT /api/file-sync/v1/revisions',
 ]);
+/** Trusted authorization assembly supplies the transport context; callers cannot
+ * select a route verifier, issuer or repository through it. */
+export interface ConnectionRouteContext {
+  readonly serverVersion:string;
+  readonly profile?:string;
+  readonly identity:(request:FastifyRequest)=>ConnectionCredential|undefined;
+}
+export type ConnectionRoutes=(app:FastifyInstance,context:ConnectionRouteContext)=>void;
 export class Connections {
   private credentials:ConnectionCredential[]=[];
   private invitations=new Map<string,InvitationRecord>();
@@ -50,6 +59,7 @@ export class Connections {
   private readonly changed=new Set<()=>void>();
   private file:ConnectionFile;
   private clock:()=>number;
+  private routeContribution:ConnectionRoutes|undefined;
   constructor(private store:Store,private sources:SourceStore,options?:{file?:ConnectionFile;clock?:()=>number}){
     this.file=options?.file??new PrivateFile<Saved>(join(store.directory,'connectors'),'client-connections.json');this.clock=options?.clock??Date.now;
   }
@@ -152,5 +162,18 @@ export class Connections {
   }
   /** Trusted authorization assembly observes durable credential changes, never token values. */
   onChange(listener:()=>void){this.changed.add(listener);return ()=>{this.changed.delete(listener);};}
+  /** Trusted authorization assembly provides the single HTTP contribution. The
+   * contribution itself dispatches against the platform's current activation. */
+  bindRoutes(routes:ConnectionRoutes){
+    if(this.closed)throw new ConnectionError('connection_closed',503,'Authorization platform is unavailable');
+    if(this.routeContribution)throw new ConnectionError('connection_routes_installed',409,'Connection routes are already installed');
+    this.routeContribution=routes;
+  }
+  /** Mount the contributed route table once, before the host starts listening. */
+  routes(app:FastifyInstance,context:ConnectionRouteContext){
+    const routes=this.routeContribution;
+    if(!routes)throw new ConnectionError('connection_routes_unavailable',503,'Authorization platform is unavailable');
+    routes(app,context);
+  }
   async close(){this.closed=true;this.invitations.clear();for(const listener of this.changed)listener();await this.sequence.catch(()=>{});this.changed.clear();}
 }
