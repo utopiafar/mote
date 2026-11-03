@@ -1,6 +1,7 @@
 package dev.mote.collector
 
 import android.app.Application
+import dev.mote.collector.plugins.CapturePlugin
 import dev.mote.collector.plugins.DurableTransportPlugin
 import dev.mote.collector.plugins.NativePluginHost
 import dev.mote.collector.plugins.NativePluginRegistry
@@ -34,6 +35,7 @@ class MoteApplication : Application() {
             QueueStorage.recoveryFailure = error.message ?: MoteI18n.text("本机存储恢复失败")
             return
         }
+        runCatching { CapturePlugin.start(pluginHost) }
         HttpJson.onUnauthorized = { url, token -> Settings(this).rejectCredential(url, token) }
         HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
         HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }

@@ -9,7 +9,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {bundledSkills,skillContent} from './skills.js';
+import {ImportTaskContractError,importSkillDescriptor,importTaskDescriptor,resolveImportRecordsPath} from './tasks/import.js';
 import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './models/provider-registry.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
@@ -50,7 +50,7 @@ export function apply(ctx){
       await writeFile(patch,JSON.stringify([
         ...harnessPrivacyEntries(),
         {id:'mcp-resources',disabled:true},
-        {id:'system-prompt',config:{includeHarnessIdentity:false,includeRuntimeContext:false,personaPrefix:skillContent('document-import')}},
+        {id:'system-prompt',config:{includeHarnessIdentity:false,includeRuntimeContext:false,personaPrefix:importSkillDescriptor.content}},
         ...modelRuntimeEntries({...options,model:options.model}),
         {id:'sdk-jsonrpc-server',inject:['sdkAppStartup','loader','moteImportReady']},
         {insert:[{id:'mote-skills',name:import.meta.resolve('@deepseek-ai/dsh-skill')},{id:'mote-fs-provider',name:import.meta.resolve('@deepseek-ai/dsh-fs-local')},{id:'mote-files',name:import.meta.resolve('@deepseek-ai/dsh-tool-fs')},{id:'mote-import',name:plugin}]},
@@ -62,7 +62,7 @@ export function apply(ctx){
         env:{PATH:process.env.PATH,TMPDIR:tmpdir(),HOME:join(root,'home'),DEEPSEEK_API_KEY:options.apiKey||'mote-local-no-auth',DEEPSEEK_BASE_URL:connection.baseUrl,MOTE_MODEL_API_KEY:options.apiKey||'mote-local-no-auth',
           MOTE_MODEL_OBSERVER:JSON.stringify(transportObserver.configuration),
           MOTE_MODEL_TRANSPORT:JSON.stringify({baseUrl:connection.baseUrl,protocol:connection.protocol,reasoningEffort:connection.effort,provider:options.provider,headers:options.headers,extraBody:options.extraBody}),
-          MOTE_SKILLS:JSON.stringify(bundledSkills.filter(s=>s.id==='document-import'))}});
+          MOTE_SKILLS:JSON.stringify([importSkillDescriptor])}});
       active.add(harness);
       const observeUsage=observeHarness({question:'',onUsage},runId,connection.protocol!=='deepseek');
       const runOptions={sessionId:runId,onNotification:(notification:HarnessNotification)=>{
@@ -77,10 +77,12 @@ export function apply(ctx){
         if(text.length>64000)throw new AgentResponseError('Import analysis response exceeds its limit');
         let value:unknown;try{value=JSON.parse(text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw new AgentResponseError('Import analysis did not return valid JSON');}
         if(!value||typeof value!=='object'||typeof (value as ImportAgentResult).summary!=='string')throw new AgentResponseError('Import analysis is missing its preview summary');
-        return value as ImportAgentResult;
+        const result=value as ImportAgentResult;
+        try{resolveImportRecordsPath(input.workspace,result.recordsPath);}catch(error){if(error instanceof ImportTaskContractError)throw new AgentResponseError(error.message);throw error;}
+        return result;
       };
       const readAnswer=async()=>{
-        let result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>budget.run(()=>harness!.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),runOptions)),modelAdmission.signal);
+        let result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>budget.run(()=>harness!.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:importSkillDescriptor.id,taskId:importTaskDescriptor.id,taskVersion:importTaskDescriptor.version,importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),runOptions)),modelAdmission.signal);
         checkResult(result);
         for(let repair=0;;repair++){
           try{return parseResult(result.finalResponse);}catch(error){

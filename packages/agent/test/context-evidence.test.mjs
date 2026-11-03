@@ -8,7 +8,7 @@ import {createAgent,parseAnswer} from '../dist/index.js';
 import {startBridge} from '../dist/bridge.js';
 import {buildContextEnvelope,taskTools} from '../dist/task-context.js';
 import {contextToolDefinitions} from '../dist/tool-contributions.js';
-import {restoreMemoryCoverageKeys} from '../dist/memory-context.js';
+import {restoreMemoryCoverageKeys} from '../dist/tasks/evidence-rules.js';
 
 const id='11111111-1111-4111-8111-111111111111',continuationId='22222222-2222-4222-8222-222222222222',declarationId='33333333-3333-4333-8333-333333333333';
 const text='Generated diary. I am reviewing 2024 photographs. My friend said: “I will buy a bicycle.” I later repaired my own bicycle. 🌱 End.';

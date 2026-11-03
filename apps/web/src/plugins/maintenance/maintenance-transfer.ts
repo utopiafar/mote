@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {commonFailureMessage,httpStatusMessage} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {ApiError,errorMessage,type Api} from './api';
+import {ApiError,errorMessage,type Api} from '../../api';
 
 export function useMaintenanceTransfer(api:Api,refresh?:()=>void){
  const active=useRef({api,alive:true,busy:false});
