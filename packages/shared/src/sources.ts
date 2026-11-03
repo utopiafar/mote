@@ -144,7 +144,15 @@ export const sourceItemSchema=z.object({
   metadata:sourceMetadataSchema.optional(),
   document:documentSchema.optional(),
 }).strict().superRefine((v,ctx)=>{
-  if(v.document?.fileIndex){const i=v.document.fileIndex;if(v.kind!=='file'||i.offset+i.length>i.totalCharacters||(!v.deleted&&i.mode==='index'&&i.length!==v.text.length)||i.coverage==='full'&&(i.offset!==0||i.length!==i.totalCharacters)||i.mode==='catalog'&&(i.allowRead||v.text))ctx.addIssue({code:'custom',message:'Invalid file index coverage'});}
+  if(v.document?.fileIndex){const i=v.document.fileIndex;
+    // A ready snapshot SourceItem with empty text is a processed-metadata
+    // projection: SourceStore never loads snapshot_text into this DTO, so both
+    // allowRead values can have empty parent text. index.length/coverage describe
+    // the Central parser's UTF-16 output extent/completeness, not text carried by
+    // this DTO and not read permission. Only this projection is exempt from the
+    // length===text.length rule; every access, size, coverage and catalog rule stays.
+    const processedSnapshotMetadata=v.layer==='snapshot'&&i.mode==='index'&&i.status==='ready'&&v.text.length===0;
+    if(v.kind!=='file'||i.offset+i.length>i.totalCharacters||(!v.deleted&&i.mode==='index'&&i.length!==v.text.length&&!processedSnapshotMetadata)||i.coverage==='full'&&(i.offset!==0||i.length!==i.totalCharacters)||i.mode==='catalog'&&(i.allowRead||v.text))ctx.addIssue({code:'custom',message:'Invalid file index coverage'});}
   if(v.document?.activity&&v.kind!=='event')ctx.addIssue({code:'custom',message:'Document activities require separate event items'});
   if(v.document?.activity&&v.document.coding)ctx.addIssue({code:'custom',message:'Document activities cannot be Coding evidence'});
   if(v.kind==='calendar'&&!v.calendar&&!v.deleted)ctx.addIssue({code:'custom',message:'Calendar items require event times'});

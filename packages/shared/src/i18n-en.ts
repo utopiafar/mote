@@ -10104,5 +10104,6 @@ export const english: Readonly<Record<string, string>> = {
   "{0} 起": "Since {0}",
   "等你补充": "Needs your input",
   "暂停全部采集": "Pause all collection",
-  "暂停屏幕采集": "Pause screen capture"
+  "暂停屏幕采集": "Pause screen capture",
+  "索引处理完成": "Index processing complete"
 };

@@ -8,6 +8,7 @@ import {useResource} from './useResource';
 import {resources} from './resource-cache';
 import {useOperationUpdates} from './useOperationUpdates';
 import { getLocale, moteText, cjkLocale } from '@mote/shared/i18n';
+import {fileIndexCoverageLabel} from './file-index-presentation';
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {type Api,type Capture,bytes,dateTime,errorMessage} from './api';
 import {archivePageWithdrawn,currentArchivePages,mergeArchivePage,reconcileArchivePages,type ArchivePage,type ArchivePages} from './archive-pages';
@@ -136,4 +137,4 @@ function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs
  {error&&<p role="alert" className="error-banner">{error}</p>}</section>;
 }
 
-function fileAvailability(file:FileRow):string {const index=file.item.document?.fileIndex;return file.hasOriginal?moteText("原件已归档"):index?.status==='blocked'?moteText("隐私规则无法应用，输入未上传"):index?.status==='pending'?moteText("中央索引待处理，原件不归档"):index?.coverage==='full'?moteText("全文索引就绪"):index?.coverage==='lightweight'?moteText("部分索引就绪"):moteText("已登记目录");}
+function fileAvailability(file:FileRow):string {const index=file.item.document?.fileIndex;return file.hasOriginal?moteText("原件已归档"):index?.status==='blocked'?moteText("隐私规则无法应用，输入未上传"):index?.status==='pending'?moteText("中央索引待处理，原件不归档"):fileIndexCoverageLabel(index?.coverage);}
