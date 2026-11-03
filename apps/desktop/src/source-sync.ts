@@ -167,7 +167,10 @@ export class SourceSync {
         if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: queued.revision });
         return true;
       }
-      if (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision)) {
+      const knownAbsent = knownChanges.get(key) ?? next.known[key];
+      // A preflight may end before its predecessor is journaled. After restart
+      // the durable absence marker still requires resolution against the head.
+      if (knownAbsent?.absentWhileInflight === queued.revision || (this.data.predecessors && Object.hasOwn(this.data.predecessors, queued.revision))) {
         markAbsent();
         const key = sourceHash(queued.externalId), known = knownChanges.get(key) ?? next.known[key];
         if (known) knownChanges.set(key, { ...(knownChanges.get(key) ?? known), absentWhileInflight: queued.revision });
