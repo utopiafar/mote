@@ -126,7 +126,7 @@ class SyncQueueActivity : MoteActivity() {
         actionTask.start(MoteI18n.text("正在提交同步任务…"), { sendStatus.text = it }, {
             ConnectionGuard.sync {
                 val config = Settings(applicationContext).read(); config.validateConnection()
-                if (localSources().sources().any { it.enabled }) SourceWork.schedule(applicationContext, true, syncExplicit = true)
+                if (localSources().sources().any { it.enabled }) dev.mote.collector.plugins.SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
                 else UploadWorker.schedule(applicationContext, config, true)
             } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
         }) { outcome ->

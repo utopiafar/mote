@@ -215,7 +215,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         } }) { result ->
             val (row,memory,projected)=result.getOrElse { error->if(memoryFailure!=null)memoryFailure(error) else ui.requestFailure(error);return@work }
             if (memory != null && accept != null && !accept(memory)) return@work
-            if (CentralCaptureReader.supports(row.optString("source"))) {
+            if (dev.mote.collector.plugins.NativeLibraryPlugin.owner(ui).supportsCapture(row.optString("source"))) {
                 check(row.getString("id") == id)
                 ui.openCaptureReader(api.server,row,conversationId,returnScroll,workMemory)
                 return@work
@@ -449,7 +449,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             }
         }
     }
-    private val topics by lazy { CentralMemoryTopics(screens, { target, management ->
+    private val topics by lazy { dev.mote.collector.plugins.NativeLibraryPlugin.owner(ui).topics(screens, { target, management ->
         if (management) ui.button(MoteI18n.text("记忆设置"), parent = target) { CentralAdmin(screens).memorySettings() }
         else {
             memoryDeletionNotice?.takeIf { it.first === client }?.let { ui.text(it.second, parent = target) }
