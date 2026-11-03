@@ -1,7 +1,7 @@
 import {FILE_PART_BYTES} from '@mote/shared';
 import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from '@mote/shared/collector-receipt';
-import {uploadFilePart,uploadHash,type PartReceipt} from './upload-part';
-import type {Api} from './api';
+import {uploadFilePart,uploadHash,type PartReceipt} from '../../upload-part';
+import type {Api} from '../../api';
 /** Attachment transport ends at durable receipt; ordinary central processors own OCR/ASR. */
 async function uploadAttachment(api:Api,file:File,deviceId:string,sourcePrefix:string,sourceName:string,signal?:AbortSignal):Promise<string>{
   const request=async<T>(path:string,init:RequestInit)=>{signal?.throwIfAborted();const result=await api.request<T>(path,{...init,headers:{...INGRESS_VERSION_HEADERS,...init.headers},signal});signal?.throwIfAborted();return result;};
