@@ -12,6 +12,7 @@ import {c10IntegrationDeclaration} from './plugins/c10-integration.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
 import type {ServerFeatureAdapter} from './features/index.js';
 import {defaultDistribution} from './distribution/default.js';
+import {featureInventory,type HostContributionDescriptor} from './feature-inventory.js';
 
 /** Assembly-private bridge for the existing product, not a plugin SDK service
  * bag. C02/C04 replace the storage/authorization adapters with domain ports. */
@@ -79,6 +80,10 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   const plugins=distribution.plugins.map(entry=>({...entry,contribution:{...entry.contribution}}));
   if(new Set(plugins.map(entry=>entry.contribution.id)).size!==plugins.length)invalid('Duplicate domain plugin contribution');
   for(const plugin of plugins)if(plugin.contribution.id!==plugin.declaration.id||!plugin.replacement)invalid('Invalid domain plugin descriptor');
+  const contributions=Object.freeze([
+    ...selected.map(provider=>({...provider.contribution,featureVersion:provider.version})),
+    ...plugins.map(plugin=>({...plugin.contribution,featureVersion:plugin.contribution.version})),
+  ]);
   let stateStore:Store|undefined;
   const host=new PluginHost({kind:'central',id:randomUUID()},undefined,undefined,{
     // The vault store is created by the storage foundation. State is bound
@@ -112,6 +117,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
     return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
       authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),host,get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
+      featureInventory:(extra:readonly HostContributionDescriptor[]=[])=>featureInventory(host.snapshot(),[...contributions,...extra]),
       /** Trusted build-only installation in the same host; no public service or second host. */
       async installObservabilityPlatform(options:ObservabilityPlatformOptions){
         if(observability)return observability;

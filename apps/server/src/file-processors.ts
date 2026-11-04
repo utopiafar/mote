@@ -107,16 +107,60 @@ export class ProcessorRegistry {
   });}
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteFileProcessors:ProcessorRegistry;}}
-function builtin(processor:FileProcessor):Plugin {
-  builtinProcessors.add(processor);
-  return {name:'mote-'+processor.id,inject:['moteFileProcessors'],apply(ctx:Context){ctx.effect(()=>ctx.moteFileProcessors.register(processor));}};
+function builtin(processor:FileProcessor){builtinProcessors.add(processor);return processor;}
+/** Host-authored processors are one declarative contribution, not constructor
+ * side effects. Duplicate IDs reject the complete set without replacing an
+ * already installed processor. */
+export interface FileProcessorContribution {readonly id:string;readonly processors:readonly FileProcessor[]}
+export function installFileProcessorContributions(registry:ProcessorRegistry,contributions:readonly FileProcessorContribution[]):()=>void {
+  const dispose:(()=>void)[]=[];
+  try{
+    for(const contribution of contributions){
+      if(!contribution.id)throw new Error('Invalid file processor contribution');
+      for(const processor of contribution.processors)dispose.push(registry.register(processor));
+    }
+  }catch(error){
+    for(const remove of dispose.reverse()){try{remove();}catch{}}
+    throw error;
+  }
+  const installed=dispose.reverse();
+  return ()=>{for(const remove of installed){try{remove();}catch{}}};
+}
+function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
+  const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'4':'3',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
+    ...(localOnly?{dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
+    parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'speakerMin',label:'说话人数下限',type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:'仅在已知范围时填写；与准确人数互斥'},{key:'speakerMax',label:'说话人数上限',type:'number',nullable:true,default:null,min:1,max:16,integer:true},{key:'semanticTurns',label:"使用所选语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
+    process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})});
+  const processors=[
+    audio('audio.http'),
+    audio('audio.local-dialogue',true),
+    builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}),
+    builtin({id:'document.generic',version:'1',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}),
+    builtin({id:'image.http',version:'2',name:"图片文字提取接口",stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
+      if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
+      const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
+      input.signal.throwIfAborted();input.authorizeModel?.();
+      const value=isLoopback(input.settings.imageEndpoint)?await postLocalProcessor(input.settings.imageEndpoint,headers,input.readOriginal(),input.signal,false,input.request,input.authorizeModel):await readProcessorJson(await fetch(input.settings.imageEndpoint,{method:'POST',headers,body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit));
+      const transcript=transcriptSchema.parse(value);if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
+    }}),
+  ];
+  for(const alternative of [false,true])processors.push(builtin({id:alternative?'audio.diarize-wespeaker':'audio.diarize',version:alternative?'1':'3',name:alternative?'本地说话人分离 · WeSpeaker 中文':'本地说话人分离',stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:alternative?'speaker-wespeaker':'dialogue',awaitResponseOnCancel:true,dependencies:alternative?{settings:['endpoint','apiKey','speakerCount','speakerMin','speakerMax'],parameters:['speakerCount','speakerMin','speakerMax']}:{settings:['endpoint','apiKey','speakerCount'],parameters:['speakerCount']},async process(input){
+    if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
+    const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
+    if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);
+    if(!alternative&&input.settings.speakerMin!==null)throw new StoreError('Speaker range requires the WeSpeaker plugin',409);
+    const headers={...(alternative?{'X-Mote-Speaker-Model':'wespeaker-zh',...(input.settings.speakerMin!==null?{'X-Mote-Speaker-Min':String(input.settings.speakerMin),'X-Mote-Speaker-Max':String(input.settings.speakerMax)}:{})}:{}),'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Offline':'1','X-Mote-Max-Audio-Ms':String(input.maxAudioMs),'X-Mote-Processing-Timeout-Ms':String(input.settings.timeoutMs),'X-Mote-Speaker-Count':String(input.settings.speakerCount??0),...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
+    return diarizationSchema.parse(await postLocalProcessor(endpoint.toString(),headers,input.readOriginal(),input.signal,true,input.request,input.authorizeModel));
+  }}));
+  return processors;
 }
 /** File processing plugins live in the shared backend context when mounted by the server. */
 export class FileProcessorRuntime {
   readonly context:Context;readonly registry=new ProcessorRegistry();readonly ready:Promise<void>;private readonly pluginScope:BackendPluginScope;
   readonly intake=new ImportIntakeRegistry();readonly recipes=new FileRecipeRegistry();readonly outputs=new FileOutputRegistry();
   readonly imageRecipes=new ImageRecipeRegistry();readonly imageInputs=new ImageInputRegistry();
-  constructor(provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,root?:Context){
+  private removeContributions:(()=>void)|undefined;
+  constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,root?:Context,options:{builtinContributions?:boolean}={}){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteFileProcessors',this.registry);
     this.pluginScope.provide('moteImportIntake',this.intake);
@@ -125,33 +169,12 @@ export class FileProcessorRuntime {
     this.pluginScope.provide('moteImageRecipes',this.imageRecipes);
     this.pluginScope.provide('moteImageInputs',this.imageInputs);
     if(contextProcessors&&!root)this.pluginScope.provide('moteContextProcessors',contextProcessors);
-    const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'4':'3',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
-      ...(localOnly?{dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
-      parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'speakerMin',label:'说话人数下限',type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:'仅在已知范围时填写；与准确人数互斥'},{key:'speakerMax',label:'说话人数上限',type:'number',nullable:true,default:null,min:1,max:16,integer:true},{key:'semanticTurns',label:"使用所选语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
-      process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})});
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{
       try{
-        await pluginScope.install({name:'mote-file-capabilities',apply:ctx=>{ctx.effect(()=>installImportIntake(this.intake));ctx.effect(()=>installFileRecipes(this.recipes,this.outputs));ctx.effect(()=>installImageRecipes(this.imageRecipes));}});
-        await pluginScope.install(audio('audio.http'));
-        await pluginScope.install(audio('audio.local-dialogue',true));
-        await pluginScope.install(builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
-        await pluginScope.install(builtin({id:'document.generic',version:'1',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
-        await pluginScope.install(builtin({id:'image.http',version:'2',name:"图片文字提取接口",stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
-          if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
-          const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
-          input.signal.throwIfAborted();input.authorizeModel?.();
-          const value=isLoopback(input.settings.imageEndpoint)?await postLocalProcessor(input.settings.imageEndpoint,headers,input.readOriginal(),input.signal,false,input.request,input.authorizeModel):await readProcessorJson(await fetch(input.settings.imageEndpoint,{method:'POST',headers,body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit));
-          const transcript=transcriptSchema.parse(value);if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
-        }}));
-        for(const alternative of [false,true])await pluginScope.install(builtin({id:alternative?'audio.diarize-wespeaker':'audio.diarize',version:alternative?'1':'3',name:alternative?'本地说话人分离 · WeSpeaker 中文':'本地说话人分离',stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:alternative?'speaker-wespeaker':'dialogue',awaitResponseOnCancel:true,dependencies:alternative?{settings:['endpoint','apiKey','speakerCount','speakerMin','speakerMax'],parameters:['speakerCount','speakerMin','speakerMax']}:{settings:['endpoint','apiKey','speakerCount'],parameters:['speakerCount']},async process(input){
-          if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
-          const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
-          if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);
-          if(!alternative&&input.settings.speakerMin!==null)throw new StoreError('Speaker range requires the WeSpeaker plugin',409);
-          const headers={...(alternative?{'X-Mote-Speaker-Model':'wespeaker-zh',...(input.settings.speakerMin!==null?{'X-Mote-Speaker-Min':String(input.settings.speakerMin),'X-Mote-Speaker-Max':String(input.settings.speakerMax)}:{})}:{}),'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Offline':'1','X-Mote-Max-Audio-Ms':String(input.maxAudioMs),'X-Mote-Processing-Timeout-Ms':String(input.settings.timeoutMs),'X-Mote-Speaker-Count':String(input.settings.speakerCount??0),...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
-          return diarizationSchema.parse(await postLocalProcessor(endpoint.toString(),headers,input.readOriginal(),input.signal,true,input.request,input.authorizeModel));
-        }}));
+        // A host activation may own these contributions itself; the standalone
+        // runtime keeps installing them for tests and embedded use.
+        if(options.builtinContributions!==false)await pluginScope.install({name:'mote-file-capabilities',apply:ctx=>{ctx.effect(()=>this.installContributions());}});
         for(const plugin of plugins)await pluginScope.install(plugin);
         for(const specifier of modules){
           // Only deployment configuration selects executable plugin modules. HTTP callers cannot install code.
@@ -163,5 +186,23 @@ export class FileProcessorRuntime {
     // Initialization is explicitly awaited by the central app and by tick().
     void this.ready.catch(()=>{});
   }
-  async close(){await this.ready.catch(()=>{});await this.pluginScope.close();}
+  /** Install built-in processors, file recipes and image recipes as one
+   * activation-owned contribution. Re-enabling installs exactly one copy. */
+  installContributions(contributions:readonly FileProcessorContribution[]=[]){
+    if(this.removeContributions)throw new Error('File processing contributions are already installed');
+    const dispose:(()=>void)[]=[];
+    try{
+      dispose.push(installImportIntake(this.intake));
+      dispose.push(installFileProcessorContributions(this.registry,[{id:'mote.builtin-file-processors',processors:builtinFileProcessors(this.provider)},...contributions]));
+      dispose.push(installFileRecipes(this.recipes,this.outputs));
+      dispose.push(installImageRecipes(this.imageRecipes));
+    }catch(error){
+      for(const remove of dispose.reverse()){try{remove();}catch{}}
+      throw error;
+    }
+    this.removeContributions=()=>{for(const remove of dispose.reverse()){try{remove();}catch{}}};
+    return ()=>this.uninstallContributions();
+  }
+  uninstallContributions(){const remove=this.removeContributions;this.removeContributions=undefined;remove?.();}
+  async close(){await this.ready.catch(()=>{});this.uninstallContributions();await this.pluginScope.close();}
 }

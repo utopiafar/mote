@@ -10,7 +10,7 @@ import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline,type MemoryPipelineQuery,type ConversationPreparation} from '../src/memory-pipeline.js';
 import {reviewMemory} from '../src/memory-review.js';
-import {createAgent} from '@mote/agent';
+import {buildContextEnvelope,createAgent,prepareTaskContext} from '@mote/agent';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
 function members(input:MemoryPipelineQuery){return (input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members;}
@@ -70,6 +70,47 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  assert.ok(calls[0].request.length+calls[0].work.instruction.length+calls[0].work.package.instruction.length+calls[0].interpretations.length>20000,'putting the complete task in question reproduces the former adapter limit');
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,20);
  assert.ok(done.batches[0].coverage!.every(member=>member.state==='no_candidates'));
+});
+
+test('a real Central Memory input enters the Memory pack and the runtime keeps its exact host coverage contract',async t=>{
+ const f=await fixture(t,2),executable=join(f.directory,'generated-memory-pack-codex.mjs'),delivered=join(f.directory,'memory-pack-context.ndjson');
+ writeFileSync(join(f.directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'synthetic-unused-key'}),{mode:0o600});
+ writeFileSync(executable,`#!${process.execPath}
+import readline from 'node:readline';
+import {appendFileSync} from 'node:fs';
+const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+let context;
+readline.createInterface({input:process.stdin}).on('line',line=>{
+ const m=JSON.parse(line);
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-memory-pack',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='turn/start'){
+  const incoming=JSON.parse(m.params.input[0].text);context??=incoming;
+  const work=context.untrustedTaskContext.memoryWork;
+  appendFileSync(${JSON.stringify(delivered)},JSON.stringify({request:context.request,taskId:context.taskId,taskProfile:context.taskProfile,requiredSkill:context.requiredSkill,procedure:context.procedure,work,evidenceIds:context.untrustedEvidence.map(record=>record.id),authorizedContextRanges:context.authorizedContextRanges})+'\\n');
+  const value={memories:[],coverage:work.members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))};
+  send({id:m.id,result:{turn:{id:'generated-turn'}}});
+  send({method:'item/completed',params:{threadId:'generated-memory-pack',item:{id:'generated-answer',type:'agentMessage',text:JSON.stringify({answer:JSON.stringify(value),citationIds:[]})}}});
+  send({method:'turn/completed',params:{threadId:'generated-memory-pack',turn:{status:'completed'}}});
+ }
+});
+`,{mode:0o700});chmodSync(executable,0o700);
+ const agent=createAgent({reader:{search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async({ids})=>f.memories.readEvidence(ids),devices:async()=>[],activity:async()=>({})},protocol:'codex-app-server',model:'generated-only',codex:{executable,home:f.directory},agentTimeoutMs:10000});t.after(()=>agent.close());
+ let seen:MemoryPipelineQuery|undefined;f.setGenerate(input=>{seen=input;return agent.query(input);});
+ const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'completed');assert.ok(seen);
+ const prepared=prepareTaskContext(seen),envelope=buildContextEnvelope(seen,f.memories.readEvidence(seen.evidenceIds));
+ assert.equal(prepared.id,'extraction');assert.equal(prepared.version,'1');assert.deepEqual(prepared.profile,{output:'memory-extraction',retrieval:'evidence'});
+ assert.equal(prepared.responseMode,'memory-extraction');assert.equal(prepared.skill?.id,'memory-strategy');assert.equal(prepared.skill?.version,'1.0.0');
+ assert.equal(envelope.untrustedEvidence.length,seen.evidenceIds.length,'the pack adds no original target');
+ const call=JSON.parse(readFileSync(delivered,'utf8').trim());
+ assert.equal(call.request,seen.question);assert.equal(call.taskId,'extraction');assert.deepEqual(call.taskProfile,{output:'memory-extraction',retrieval:'evidence'});
+ assert.equal(call.requiredSkill,'memory-strategy');assert.equal(call.procedure,prepared.skill.content);
+ assert.equal(call.work.members.length,members(seen).length);assert.deepEqual(call.work.members.map((member:{key:string})=>member.key),['member_0','member_1']);
+ assert.deepEqual(new Set(call.evidenceIds),new Set(seen.evidenceIds));assert.deepEqual(call.authorizedContextRanges.ranges.map((range:{memberRef?:string})=>range.memberRef),['member_0','member_1'],'the read catalog reuses exact target identities without adding targets');
+ assert.deepEqual(done.batches[0].coverage!.map(member=>member.key),members(seen).map(member=>member.key),'the host validator restores and consumes the exact canonical target keys');
+ assert.ok(done.batches[0].coverage!.every(member=>member.state==='no_candidates'&&member.memoryIds.length===0));
+ assert.equal(f.reviews.length,1,'the pack cannot bypass independent review');assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);
 });
 
 test('a work package independently reviews every zero-candidate input and checkpoints exact ranges',async t=>{

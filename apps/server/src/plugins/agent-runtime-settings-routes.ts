@@ -1,9 +1,9 @@
 import type {FastifyInstance} from 'fastify';
 import {MODEL_FEATURES,type ModelFeature,type ModelSettingsView} from '@mote/shared/models';
 import type {ConfigServiceView} from '@mote/shared';
-import type {AgentRuntimeRegistry,AgentRuntimeRegistryStatus} from './agent-runtime-registry.js';
-import type {ConfigService} from './config-service.js';
-import type {ModelSettingsStore} from './model-settings.js';
+import type {AgentRuntimeRegistry,AgentRuntimeRegistryStatus} from '../agent-runtime-registry.js';
+import type {ConfigService} from '../config-service.js';
+import type {ModelSettingsStore} from '../model-settings.js';
 
 export interface AgentRuntimeSettingsView {
   readonly revision:number;

@@ -197,7 +197,13 @@ export class MemoryPipeline {
   }
 
   private closed=false;
+  private quiescing=false;
   private closing?:Promise<void>;
+  /** Stop admitting new jobs while accepted runs keep their fixed pins. */
+  quiesce(){if(!this.closed)this.quiescing=true;}
+  /** Re-open admission on the same durable pipeline after a quiesce. */
+  start(){if(this.closed)throw new StoreError('Memory pipeline is closed',503);this.quiescing=false;}
+  private assertAdmission(){if(this.closed)throw new StoreError('Memory pipeline is closed',503);if(this.quiescing)throw new StoreError('Memory pipeline is not accepting new work',503);}
   private batchBudget(){
     const value=typeof this.options.batchCharacters==='function'?this.options.batchCharacters():this.options.batchCharacters??12000;
     if(!Number.isSafeInteger(value)||value<256||value>12000)throw new StoreError('Memory batch budget must be 256–12000 characters');
@@ -401,7 +407,7 @@ export class MemoryPipeline {
     return this.create({evidenceIds:[...new Set(ranges.map(r=>r.id))],evidenceRanges:ranges,artifactRefs:artifacts.map(a=>({id:a!.id,revision:a!.revision})),importJobId,batchCharacters});
   }
   create(raw:{manualPlans?:ManualMemoryInputPlanRequest[];automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage;contextTime?:string;recipes?:MemoryStrategyRef[];artifactRefs?:{id:string;revision:string}[];evidenceRanges?:EvidenceRange[];contextEvidenceRanges?:EvidenceRange[];modelProfileId?:string;modelOverride?:string;evidenceIds:string[];importJobId?:string;originKey?:string;timeZone?:string;batchCharacters?:number}):MemoryJobDetail {
-    if(this.closed)throw new StoreError('Memory pipeline is closed',503);
+    this.assertAdmission();
     const input=z.object({manualPlans:z.array(manualMemoryInputPlanSchema).min(1).max(2000).optional(),automaticGrant:automaticMemoryGrantSchema.optional(),automaticGrants:z.array(automaticMemoryGrantSchema).min(1).max(8).optional(),workPackage:memoryWorkPackageSchema.optional(),contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(10).refine(values=>new Set(values.map(v=>v.id+'@'+v.version)).size===values.length,'Duplicate Memory recipe').optional(),artifactRefs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)})).max(2000).optional(),evidenceRanges:z.array(z.object({id:z.string().uuid(),offset:z.number().int().min(0),length:z.number().int().min(1).max(12000)})).max(10000).optional(),contextEvidenceRanges:z.array(z.object({id:z.string().uuid(),offset:z.number().int().min(0),length:z.number().int().min(1).max(12000)})).max(10000).optional(),modelProfileId:modelProfileIdSchema.optional(),modelOverride:z.string().trim().min(1).max(512).refine(v=>!/[\u0000-\u001f\u007f]/.test(v)).optional(),originKey:z.string().max(200).optional(),batchCharacters:z.number().int().min(256).max(12000).optional(),evidenceIds:z.array(z.string().uuid()).max(20000),importJobId:z.string().max(200).optional(),timeZone:z.string().max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Invalid time zone').optional()}).strict().parse(raw);
     if(input.contextEvidenceRanges&&(input.manualPlans||input.automaticGrant||input.automaticGrants||!input.evidenceRanges?.length||input.contextEvidenceRanges.some(range=>!input.evidenceIds.includes(range.id))))throw new StoreError('Context-only reads require an explicit manual target selection within the selected originals');
     if(input.manualPlans)return this.createManual(input);
@@ -703,7 +709,7 @@ export class MemoryPipeline {
     }
   }
   run(id:string):Promise<MemoryJobDetail> {
-    if(this.closed)return Promise.reject(new StoreError('Memory pipeline is closed',503));
+    try{this.assertAdmission();}catch(error){return Promise.reject(error);}
     const existing=this.active.get(id);if(existing)return existing;
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{
@@ -732,6 +738,7 @@ export class MemoryPipeline {
   /** Admission is synchronous so HTTP can reject a stale/cancelled/cooling-down
    * retry before returning 202. The accepted execution remains asynchronous. */
   acceptRetry(id:string,ownerAction:boolean):{job:MemoryJobDetail;completion:Promise<MemoryJobDetail>} {
+    this.assertAdmission();
     let job=this.storedJob(id);
     this.assertRetryWindow(job);
     if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
@@ -1098,7 +1105,7 @@ export class MemoryPipeline {
   }
   close(){return this.closing??=this.dispose();}
   private async dispose(){
-    this.closed=true;this.nativeRuntime.stop();
+    this.closed=true;this.quiescing=true;this.nativeRuntime.stop();
     try{
       if(this.owned)await this.engine.close();else if(!this.engine.closed){for(const id of this.active.keys())for(const step of this.steps(id))this.engine.cancel(step);}
       this.settle();await Promise.allSettled([...this.active.values()]);

@@ -122,6 +122,13 @@ export class BackgroundModelAuthorization {
     return [...new Set(identities.flatMap(identity=>this.roots(identity)))].filter(root=>Boolean(this.store.db.prepare('SELECT 1 FROM background_model_receipts WHERE identity=? AND epoch=? AND authorized=1').get(root,state.epoch))&&!this.store.db.prepare('SELECT 1 FROM background_model_trigger_claims WHERE original=? AND purpose=?').get(root,purpose)).sort();
   }
   automaticTriggers(id:string,purpose:AutomaticModelPurpose):readonly string[]|undefined{const work=this.saved(id);if(!work)return;if(work.kind!=='automatic'||work.purpose!==purpose)throw new StoreError('Model operation has a different purpose',409);return [...work.roots];}
+  /** Final product commits recheck the host-owned job without relying on the
+   * request-local async authority that admitted the model fragment. */
+  workState(id:string):'missing'|'current'|'revoked'{
+    if(this.closed)return 'revoked';
+    const work=this.saved(id);if(!work)return 'missing';
+    try{this.assert(work);return 'current';}catch{return 'revoked';}
+  }
   private save(work:Work){const json=JSON.stringify(work);this.store.reserveMetadata(Buffer.byteLength(json+work.id)+128);this.store.db.prepare('INSERT INTO background_model_work VALUES(?,?)').run(work.id,json);return work;}
   private saved(id:string):Work|undefined{if(this.closed)throw pending();const row=this.store.db.prepare('SELECT json FROM background_model_work WHERE id=?').get(id);return row?JSON.parse(String(row.json)):undefined;}
   private assert(work:Work,connection?:ModelConnection){

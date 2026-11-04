@@ -8,7 +8,7 @@ const root=mkdtempSync(join(tmpdir(),'mote-calendar-browser-')),repo=resolve(__d
 app.setPath('userData',join(root,'browser'));app.on('window-all-closed',()=>{});
 const id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',evidenceId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const plugin={packageId:'fixture.calendar',releaseDigest:'a'.repeat(64),instanceId:'fixture-instance',instanceRevision:1,capabilityDigest:'b'.repeat(64)};
-let inventory={providers:[],declarations:[],sources:[],drafts:[],grants:[]},actions=[],writes=[],failSave=false,failRead=false;
+let inventory={providers:[],declarations:[],sources:[],drafts:[],grants:[],deviceCapabilities:[]},actions=[],writes=[],failSave=false,failRead=false;
 let server,window;const errors=[];
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function js(code){return window.webContents.executeJavaScript(code);}
@@ -40,7 +40,7 @@ async function run(){
  });}}],server:{host:'127.0.0.1',port:0},logLevel:'error'});await server.listen();
  window=new BrowserWindow({width:1200,height:1100,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false}});window.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message);});
  const url=server.resolvedUrls.local[0]+'test/fixtures/calendar-ui.html';await window.loadURL(url);await until("document.querySelector('.actions-primary-tabs')",'actions workspace');await openSettings();await until("document.body.textContent.includes('暂无已连接的可写日历。')",'empty inventory');assert.equal(writes.length,0);
- inventory={...inventory,providers:[{identity:plugin,name:'Generated calendar plugin'}],declarations:[{capability:{id:'calendar.manage',version:1},deviceId:'fixture-device',connectionActive:true,permission:'granted',revision:1,calendars:[{id:'fixture-calendar',title:'Generated calendar'}]}],sources:[{sourceId:'fixture-source',kind:'custom',deviceId:'fixture-input',platform:'import',name:'Generated input source'}]};
+ inventory={...inventory,providers:[{identity:plugin,name:'Generated calendar plugin'}],declarations:[{capability:{id:'calendar.manage',version:1},deviceId:'fixture-device',connectionActive:true,permission:'granted',revision:1,calendars:[{id:'fixture-calendar',title:'Generated calendar'}]}],deviceCapabilities:[{id:'calendar.manage',version:1,installed:true,grant:'granted',available:true,authorized:false,waitingDevice:false,devices:[{deviceId:'fixture-device',revision:1,connectionActive:true,grant:'granted',available:true,authorized:false,waitingDevice:false}]}],sources:[{sourceId:'fixture-source',kind:'custom',deviceId:'fixture-input',platform:'import',name:'Generated input source'}]};
  await openSettings();await refresh();await until("document.querySelector('select option[value*=fixture-calendar]')",'loaded calendar');
  await js("(()=>{const s=document.querySelector('.action-settings select');s.value=s.options[1].value;s.dispatchEvent(new Event('change',{bubbles:true}));[...document.querySelectorAll('label')].find(l=>l.textContent.includes('Generated input source')).querySelector('input').click();})()");
  await closeSettings();await js("document.getElementById('fixture-navigation').click()");await js("document.getElementById('fixture-navigation').click()");await openSettings();assert.ok(await js("document.querySelector('.action-settings select').value.includes('fixture-calendar')"),'unsaved scope survives navigation return');

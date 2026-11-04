@@ -58,14 +58,14 @@ export class FileProcessing {
   private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
   private unregister:Array<()=>Promise<void>>=[];
-  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginContext?:Context;plugins?:Plugin[];modules?:string[];analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
+  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginContext?:Context;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
     this.media=mediaRuntimeSettings(options.media);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS media_model_intents(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,phase TEXT NOT NULL,intent_id TEXT NOT NULL,PRIMARY KEY(capture_id,phase))');
     this.processorAdmission=new ProcessorAdmission(files.store);
     this.mediaCalls=new MediaExecutionCalls(files.store);
     installEvidenceDependencies(files.store);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS file_diarization_overrides(capture_id TEXT PRIMARY KEY REFERENCES file_versions(capture_id) ON DELETE CASCADE,json TEXT NOT NULL)');
-    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginContext);
+    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginContext,{builtinContributions:options.builtinContributions});
     const initial=options.configService?.current<ProcessingConfiguration>('processing')??options.configuration??defaultProcessingConfiguration(this.media);
     this.saved={revision:options.configService?String(options.configService.revision):'initial',...processingConfigurationSchema.parse(initial)};
     this.publishImagePolicy();
@@ -101,6 +101,9 @@ export class FileProcessing {
       project:step=>this.project(step,phase),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):new ExecutionFailure('permanent','step_failed'),
     }));
   }
+  /** Install the activation-owned file capabilities before configuration validation. */
+  installContributions(contributions?:readonly import('./file-processors.js').FileProcessorContribution[]){return this.runtime.installContributions(contributions);}
+  uninstallContributions(){this.runtime.uninstallContributions();}
   /** Validate installed-processor contracts before the application serves requests. */
   async initializeConfiguration(){await this.runtime.ready;parseFilePolicy(this.saved.policy,this.saved.policy,this.runtime.registry,{preserveCredentials:false,applyParameterDefaults:false});}
   private log(event:string,id?:string,fields:EventFields={},level:'debug'|'info'|'warn'|'error'='info') {

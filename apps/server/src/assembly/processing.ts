@@ -1,7 +1,6 @@
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {Context} from '@deepseek-ai/cordis';
-import type {FastifyInstance} from 'fastify';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
 import type {CaptureRecord,TokenUsage,UsageReceipt} from '@mote/shared';
@@ -179,7 +178,6 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
     contributions:[processingServicesDeclaration],factory:createProcessingServicesFactory(platform,value=>{started=value;}),
   });
   resources.defer(()=>handle.close('shutdown'));
-  contributeDomainRoutes(backendContext,{'mote.processing':Object.freeze({mount:(app:FastifyInstance)=>platform.routes(app)})});
   const {workflows,processing}=started!;
   const featureServices=Object.freeze({processing,workflows}) satisfies Partial<FeatureServices>;
   return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices,processingServices:platform});
