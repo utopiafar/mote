@@ -1,10 +1,10 @@
-import {invalidateConfiguration} from './configuration-cache';
-import {useResource} from './useResource';
+import {invalidateConfiguration} from '../../configuration-cache';
+import {useResource} from '../../useResource';
 import {moteText} from '@mote/shared/i18n';
 import {useEffect, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
 import {ArrowLeft, ChevronRight, Copy, Plus, LockKeyhole, Server, Trash2} from 'lucide-react';
 import {DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUEST_TIMEOUT_MS, MODEL_FEATURE_LABELS, type ModelFeature, type ModelSettingsView, type ModelTestResult} from '@mote/shared/models';
-import {type Api, ApiError, errorMessage} from './api';
+import {type Api, ApiError, errorMessage} from '../../api';
 import {ModelSettingsEditor} from './ModelSettingsEditor';
 import {createModelDraft, modelSettingsRequest} from './model-settings-form';
 

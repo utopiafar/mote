@@ -4,7 +4,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {ModelStartGuide} from '../src/ModelStartGuide.js';
+import {ModelStartGuide} from '../src/plugins/models-processing/ModelStartGuide.js';
 import {webFeatures} from '../src/features/registry.js';
 
 async function fixture(t:any){

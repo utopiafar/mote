@@ -54,7 +54,7 @@ const lanes=WORKFLOW_LANES;
 export class ProcessingRuntime {
   readonly registry=new ContextProcessorRegistry();readonly consumers=new MaterialConsumerRegistry();
   consumerAllowed:(sourceId:string,bindingId:string)=>boolean=()=>false;readonly context:Context;private readonly pluginScope:BackendPluginScope;
-  readonly ready:Promise<void>;readonly engine:ExecutionEngine;private owned:boolean;private stopping=false;private closing?:Promise<void>;
+  readonly ready:Promise<void>;readonly engine:ExecutionEngine;private owned:boolean;private stopping=false;private accepting=true;private closing?:Promise<void>;
   // Logical execution cancellation can finish before an async plugin returns.
   private tasks=new Set<Promise<unknown>>();
   private unregister:Array<()=>Promise<void>>=[];private policy:WorkflowConfiguration;private policyEpoch=Object.fromEntries(WORKFLOW_LANES.map(lane=>[lane,0])) as Record<ProcessingLane,number>;
@@ -99,6 +99,7 @@ export class ProcessingRuntime {
     this.ready=(async()=>{for(const plugin of plugins)await pluginScope.install(plugin);})();void this.ready.catch(()=>{});
   }
   enqueue(raw:ProcessingStep[],parentGrant?:ParentGrant,consumerGrant?:ConsumerGrant){
+    this.assertAccepting();
     const steps=z.array(stepSchema).min(1).max(32).parse(raw),names=new Set(steps.map(s=>s.name));
     if(names.size!==steps.length)throw new StoreError('Duplicate workflow step',409);
     const visiting=new Set<string>(),visited=new Set<string>(),ordered:typeof steps=[];
@@ -145,12 +146,18 @@ export class ProcessingRuntime {
     }
   }
   settings(){return structuredClone(this.policy);}
+  /** Stop admitting new jobs without fencing already accepted commits. */
+  quiesce(){this.accepting=false;}
+  /** Re-open admission after a stopped activation over the same durable rows. */
+  resume(){if(this.stopping||this.closing)throw new StoreError('Processing runtime is closed',503);this.accepting=true;}
+  private assertAccepting(){if(this.stopping||this.closing||!this.accepting)throw new StoreError('Processing runtime is unavailable',503);}
   /** Standalone generated fixtures have explicit in-memory policy only. */
   configure(input:unknown){
     if(this.configService)throw new StoreError('Use the configuration transaction to save workflow settings',409);
     const value=workflowConfigurationSchema.parse(input),previous=this.settings();this.policy=value;this.completePolicy(value,previous);return this.settings();
   }
   async save(input:unknown){
+    this.assertAccepting();
     const parsed=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),settings:workflowConfigurationSchema}).strict().parse(input);
     if(this.configService)await this.configService.replace('workflows',parsed.settings,parsed.revision);
     else {const previous=this.settings();this.policy=parsed.settings;this.completePolicy(parsed.settings,previous);}
@@ -175,14 +182,14 @@ export class ProcessingRuntime {
         allowedActions:[...(['failed','blocked','cancelled'].includes(state)?['retry-step' as const]:[]),...(!['succeeded','cancelled'].includes(state)?['cancel' as const]:[])]};
     });
     return {...(this.configService?{revision:this.configService.revision}:{}),jobs,limit,nextCursor:rows.length>limit?Number(rows[limit-1].rowid):null,settings:this.settings(),processors:this.registry.list(),consumers:this.consumers.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
-  retry(id:string){this.job(id);const state=this.engine.get(id)?.state;if(!state||!['failed','blocked','cancelled'].includes(state))throw new StoreError('Workflow step cannot be retried in its current state',409);this.engine.retry(id,true);}
+  retry(id:string){this.assertAccepting();this.job(id);const state=this.engine.get(id)?.state;if(!state||!['failed','blocked','cancelled'].includes(state))throw new StoreError('Workflow step cannot be retried in its current state',409);this.engine.retry(id,true);}
   cancel(id:string){this.job(id);const state=this.engine.get(id)?.state;if(!state||state==='succeeded'||state==='cancelled')throw new StoreError('Workflow step cannot be cancelled in its current state',409);this.engine.cancel(id);}
   private job(id:string):Job{const row=this.store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(id);if(!row)throw new StoreError('Workflow step unavailable',404);return JSON.parse(String(row.json));}
   private project(step:ExecutionStep){
     this.store.db.prepare('UPDATE processing_jobs SET state=?,attempts=?,available_at=?,lease_until=0,fence=NULL,error=? WHERE id=?').run(step.state,step.attempts,step.availableAt,step.error??null,step.id);
   }
   /** All execution ownership is in the shared engine, including dependency admission. */
-  async tick(){if(this.stopping)return;await this.ready;const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE (kind LIKE 'context-dag.%' OR kind='material-consumer.plan') AND (state='waiting' OR (state='running' AND lease_until<=?)) ORDER BY rowid LIMIT 1000").all(this.now()).map(row=>String(row.id));await this.engine.drain(ids);}
+  async tick(){if(this.stopping||!this.accepting)return;await this.ready;const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE (kind LIKE 'context-dag.%' OR kind='material-consumer.plan') AND (state='waiting' OR (state='running' AND lease_until<=?)) ORDER BY rowid LIMIT 1000").all(this.now()).map(row=>String(row.id));await this.engine.drain(ids);}
   private attributionFingerprint(id:string){
     const record=this.store.evidence([id])[0],context=record&&this.materials?.contextForEvidence(record);
     return fingerprint(context&&(context.basis!=='default'||context.correction||context.sourceDeclaration||context.materialDeclarations||context.declarations||context.ownerStatements||context.importDeclarations||context.importStatements||context.sourceContextDeclarations?.length||context.sourceContextStatements?.length||context.recordContextDeclarations?.length||context.recordContextStatements?.length)?context:null);

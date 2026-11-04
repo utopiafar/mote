@@ -1,5 +1,7 @@
 import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
 import type {Context} from '@deepseek-ai/cordis';
+import type {FastifyInstance} from 'fastify';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
 import type {CaptureRecord,TokenUsage,UsageReceipt} from '@mote/shared';
@@ -27,10 +29,11 @@ import {assertSourceContextDependencies,combineSourceContextDependencies} from '
 import type {ModelProcessingAuthority} from '../model-processing-authority.js';
 import type {MediaAssets} from '../media-assets.js';
 import {MediaPreparation} from '../media-preparation.js';
-import type {CentralDomainPlugin} from '../bootstrap.js';
+import type {CentralDomainPlugin,bootstrapCentral} from '../bootstrap.js';
 import {createMediaAssetsService,mediaAssetsServiceContribution,mediaAssetsServiceDeclaration,mediaAssetsServiceReplacement} from '../plugins/media-assets-service.js';
-import {ProcessingRuntime} from '../processing-runtime.js';
-import {FileProcessing,type FileAnalysis,type TranscriptionProvider} from '../file-processing.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
+import {createProcessingServices,createProcessingServicesFactory,processingServicesContribution,processingServicesDeclaration,processingServicesReplacement,type ProcessingServicesStarted} from '../plugins/processing-services.js';
+import type {FileAnalysis,FileProcessing,TranscriptionProvider} from '../file-processing.js';
 import {ImageProcessing} from '../image-processing.js';
 import {imageUnderstanding} from '../image-understanding.js';
 
@@ -47,9 +50,10 @@ export type AdmittedUsageMeter=(...args:Parameters<UsageLedger['start']>)=>{
  * processing wiring in this assembly. */
 export type FileModelResolver=(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};
 
-/** Declared build-time domain plugins the media assembly wires; the
- * distribution concatenates each domain's list into one selected table. */
+/** Declared build-time domain plugins the media and processing assembly wires;
+ * the distribution concatenates each domain's list into one selected table. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:processingServicesContribution,declaration:processingServicesDeclaration,replacement:processingServicesReplacement},
   {contribution:mediaAssetsServiceContribution,declaration:mediaAssetsServiceDeclaration,replacement:mediaAssetsServiceReplacement},
 ]);
 
@@ -80,6 +84,7 @@ export function assembleMedia(dependencies:MediaAssemblyDependencies){
 }
 
 export interface ProcessingAssemblyDependencies {
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly store:Store;
   readonly config:Config;
   readonly configService:ConfigService;
@@ -103,10 +108,7 @@ export interface ProcessingAssemblyDependencies {
 /** ProcessingRuntime, the media work authority and FileProcessing, plus their
  * close hooks. */
 export async function assembleProcessing(dependencies:ProcessingAssemblyDependencies){
-  const {store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage}=dependencies;
-  const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext,configService);
-  resources.defer(()=>workflows.close());
-  sourcePipelines.setProductConsumer(workflows);workflows.consumerAllowed=(sourceId,bindingId)=>sourcePipelines.options(sourceId).consumers.includes(bindingId);
+  const {bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage}=dependencies;
   const mediaModelAuthority:ModelProcessingAuthority=async(request,signal,task)=>{
     const original=captureModelIdentity(request.captureId);
     const execute=async(authorizedSignal:AbortSignal)=>{
@@ -159,14 +161,24 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
       return {...result,...(pins.length?{sourceContextDependencies:pins}:{}),usage:meter.completed()};}
     catch(error){meter.failed(error);throw error;}finally{await model?.close();}
   };
-  const processing:FileProcessing=new FileProcessing(files,dependencies.transcriptionProvider,undefined,{modelAuthority:mediaModelAuthority,configService,executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets,media:config.media,contextForEvidence:record=>materials.contextForEvidence(record)});
-  const previousSourceContextChanged=materials.onSourceContextChanged;
-  materials.onSourceContextChanged=id=>{previousSourceContextChanged?.(id);processing.invalidateSourceContext(id);};
-  resources.defer(()=>processing.settle());
-  resources.defer(()=>processing.close());
-  await processing.initializeConfiguration();
+  const semanticFingerprint=()=>{const selected=modelSettings.select('memory');return modelConfiguration(selected.id,selected.settings,modelSettings.view().revision).fingerprint;};
+  const platform=createProcessingServices({
+    store,files,configService,diagnostics,executor,backendContext,materials,sourcePipelines,mediaAssets,
+    ...(dependencies.transcriptionProvider?{transcriptionProvider:dependencies.transcriptionProvider}:{}),
+    modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],
+    ...(config.media?{media:config.media}:{}),modelAuthority:mediaModelAuthority,analyze:analyzeFile,analysisSnapshot:resolveFileModel,
+    analysisRevision:()=>modelSettings.view().revision,semanticFingerprint,
+  });
+  let started:ProcessingServicesStarted|undefined;
+  const handle=await bootstrap.host.install({
+    identity:{host:bootstrap.snapshot().host,packageId:'mote.processing-services',installationId:'build:processing-services@1.0.0',instanceId:'processing',activationId:randomUUID()},
+    contributions:[processingServicesDeclaration],factory:createProcessingServicesFactory(platform,value=>{started=value;}),
+  });
+  resources.defer(()=>handle.close('shutdown'));
+  contributeDomainRoutes(backendContext,{'mote.processing':Object.freeze({mount:(app:FastifyInstance)=>platform.routes(app)})});
+  const {workflows,processing}=started!;
   const featureServices=Object.freeze({processing,workflows}) satisfies Partial<FeatureServices>;
-  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices});
+  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices,processingServices:platform});
 }
 
 export interface PerceptionAssemblyDependencies {
