@@ -5,7 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {Actions} from '../src/plugins/work/Actions.js';
-import {Processing} from '../src/Processing.js';
+import {Processing} from '../src/plugins/models-processing/Processing.js';
 import {affectedResource} from '../src/plugins/work/operation-feed.js';
 import type {Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
