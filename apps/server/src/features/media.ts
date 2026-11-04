@@ -3,10 +3,13 @@ import {z} from 'zod';
 import {ConnectionError} from '../connections.js';
 import type {FeatureServices} from '../feature-services.js';
 import {moteText} from '../i18n.js';
+import {registerProcessingRoutes} from '../processing-routes.js';
 import type {MediaReadinessPort} from '../plugins/ocr-asr-readiness.js';
 
-/** C18B's activation-gated media transport. The preparation routes moved here
- * from mote.processing; media statistics retain their collector device fence. */
+/** C18B's activation-gated media transport. Preparation routes are mounted by
+ * the readiness domain contribution; perception/image routes stay on this
+ * feature so cancel and retry remain available after processing became a
+ * domain-route contribution. */
 export function register(app:FastifyInstance,{connections,credential,mediaRange,store,mediaPreparation}:Pick<FeatureServices,'connections'|'credential'|'mediaRange'|'store'>&{mediaPreparation:()=>MediaReadinessPort}){
   app.addHook('onRequest',async()=>{mediaPreparation().assertCurrent();});
   const roleOf=(params:unknown)=>z.object({role:z.enum(['ocr','dialogue','speaker-wespeaker'])}).strict().parse(params).role;
@@ -20,12 +23,11 @@ export function register(app:FastifyInstance,{connections,credential,mediaRange,
   });
 }
 
-/** The remaining bridge owns only Agent-tool lifetime; every HTTP handler is
- * supplied by the C18B domain route contribution. */
 export const adapter:import('./index.js').ServerFeatureAdapter={
   descriptor:{id:'mote.media',version:'1',surface:'data',runtime:'host'},
   factory:(app,scope,services,host)=>{
     scope.retire(()=>services.agentFeatures.dispose('mote.media'));
     host.mountDomainRoutes('mote.media',app,services);
+    registerProcessingRoutes(app,{withOwnerBatch:services.withMediaOwnerBatch,withOwnerIntent:services.withMediaOwnerIntent,perception:services.perception,mediaAssets:services.mediaAssets,media:services.config.media});
   },
 };
