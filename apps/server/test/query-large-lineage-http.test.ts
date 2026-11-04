@@ -35,7 +35,7 @@ for(const mutation of ['lease-renewal','delete-during-validation','delete-during
   dependencies.push(id,...node.materials.evidenceIds(material.ref));
  }
  assert.equal(dependencies.length,8193);
- const saved=node.featureServices.conversations.append(undefined,{question:'Generated previous overview'},{answer:'Generated previous overview.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:dependencies}});
+ const saved=node.conversations.append(undefined,{question:'Generated previous overview'},{answer:'Generated previous overview.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:dependencies}});
  const reader=node.featureServices.evidenceReader,validate=reader.contextDependenciesAllowed.bind(reader);let metadataChecks=0;
  reader.contextDependenciesAllowed=(ids,policy)=>{metadataChecks++;const allowed=validate(ids,policy);
   if(mutation==='delete-during-validation'&&ids.length===256&&!deleted){deleted=true;setImmediate(()=>node.store.delete(victim));}

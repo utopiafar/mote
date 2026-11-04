@@ -39,7 +39,7 @@ try {
   await central.store.ingest({id: evidenceId, deviceId: 'generated-home-device', deviceName: 'Generated home device',
     platform: 'import', source: 'note', capturedAt: '2026-11-04T04:00:00Z', durationMs: 0,
     ocrText: 'Generated home evidence'});
-  const history = central.featureServices.conversations.append(undefined, {
+  const history = central.conversations.append(undefined, {
     question: 'Generated home question', evidenceIds: [evidenceId],
   }, {
     answer: 'Generated home answer',

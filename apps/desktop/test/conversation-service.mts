@@ -17,7 +17,7 @@ node.app.addHook('onRequest',async(request,reply)=>{
  if(request.url==='/fixture/fail-next-page'&&request.method==='POST'){if(request.headers.authorization!=='Bearer '+token)return reply.code(403).send({});failNextPage=true;return reply.send({ok:true});}
  if(failNextPage&&request.url.startsWith('/api/conversations/')&&request.url.includes('cursor=')){failNextPage=false;return reply.code(503).send({error:'Generated temporary read failure'});}
 });
-const conversations=node.featureServices.conversations;
+const conversations=node.conversations;
 let conversation:ReturnType<typeof conversations.get>|undefined;
 for(let index=1;index<=45;index++){
  const saved=conversations.append(conversation,{question:'Generated question '+index},result('Generated answer '+index));

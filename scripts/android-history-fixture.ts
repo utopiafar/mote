@@ -19,7 +19,7 @@ async function reset(){
  const suffix=randomUUID();active={sourceId:'generated-history-'+suffix,evidenceId:'',conversationId:'',title:'Generated history '+suffix,workTitle:'Generated history work '+suffix,answer:'Generated latest retained answer '+suffix,olderAnswer:'Generated older retained answer '+suffix,excerpt:'Generated immutable historical evidence '+suffix,olderExcerpt:'Generated older excerpt '+suffix};
  node.sources.register({id:active.sourceId,name:'Generated historical source',kind:'custom',deviceId:'generated-history-phone',platform:'import'});
  active.evidenceId=(await node.sources.upsert(active.sourceId,item('1'))).id;
- const conversations=node.featureServices.conversations;
+ const conversations=node.conversations;
  active.conversationId=conversations.append(undefined,{question:active.title},result(active.olderAnswer,active.olderExcerpt)).conversationId;
  // Preserve the prior real pagination scale: the older dependent turn is outside
  // the initial twenty-turn page, with unrelated generated turns in between.

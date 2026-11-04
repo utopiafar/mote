@@ -34,7 +34,7 @@ for(const kind of ['anchor','strict','plain']){
  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated '+kind,...scope}});assert.equal(response.statusCode,200,response.body);
  ids[kind]=response.json().conversationId;
  assert.ok(ids[kind],response.body);
- if(kind==='anchor')for(let i=1;i<21;i++)node.featureServices.conversations.append(node.featureServices.conversations.get(ids[kind]),{question:'Generated anchor older '+i,...scope},answer());
+ if(kind==='anchor')for(let i=1;i<21;i++)node.conversations.append(node.conversations.get(ids[kind]),{question:'Generated anchor older '+i,...scope},answer());
 }
 await node.app.listen({host:'127.0.0.1',port:0});
 const address=node.app.server.address();if(!address||typeof address==='string')throw Error('Missing address');

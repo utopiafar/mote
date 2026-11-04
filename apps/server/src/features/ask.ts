@@ -8,7 +8,7 @@ import type {ServerFeatureScope} from '../feature-host.js';
 import type {ServerFeatureAdapter} from './index.js';
 
 /** ask: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,modelSettings,agent,conversations,queryRuns,queryWithAttachmentsSchema}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|'modelSettings'|"agent"|"conversations"|"queryRuns"|"queryWithAttachmentsSchema">,scope?:ServerFeatureScope){
+export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,modelSettings,agent,queryRuns,queryWithAttachmentsSchema}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|'modelSettings'|"agent"|"queryRuns"|"queryWithAttachmentsSchema">,scope?:ServerFeatureScope){
 scope?.defer(()=>queryRuns.stop());
 // A one-turn model choice is explicit owner intent. Snapshot its exact resolved
 // connection as well as the defaults; never add it to background approval.
@@ -16,10 +16,6 @@ const queryConnections=(input:{modelProfileId?:string;modelOverride?:string})=>{
   const profile=modelSettings.select('chat',input.modelProfileId);
   return [...availableModelConnections(),agentModelConnection({kind:'profile',id:profile.id},{...profile.settings,model:input.modelOverride??profile.settings.model})];
 };
-app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
-app.get('/api/conversations/:id',async req=>conversations.page(z.object({id:z.string().uuid()}).parse(req.params).id,z.object({limit:z.coerce.number().int().min(1).max(50).default(20),cursor:z.string().optional()}).parse(req.query)));
-app.get('/api/conversations/:id/references/:evidenceId',async req=>{const {id,evidenceId}=z.object({id:z.string().uuid(),evidenceId:z.string().uuid()}).parse(req.params);return conversations.referenceAvailability(id,evidenceId);});
-app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));
 app.post('/api/query',async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const id=randomUUID(),input=queryWithAttachmentsSchema.parse(req.body);return modelAuthorizationHost.manual('owner-query:'+id,queryConnections(input),()=>queryRuns.perform(id,input));});
 app.post('/api/query-runs/:id/cancel',async req=>queryRuns.cancel(z.object({id:z.string().uuid()}).parse(req.params).id));
 app.get('/api/query-runs',async()=>({items:queryRuns.list()}));
@@ -33,8 +29,9 @@ app.post('/api/query-runs',async(req,reply)=>{
 
 export const adapter:ServerFeatureAdapter={
   descriptor:{id:'mote.ask',version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,services)=>{
+  factory:(app,scope,services,host)=>{
     scope.retire(()=>services.agentFeatures.dispose('mote.ask'));
+    host.mountDomainRoutes('mote.ask',app);
     register(app,services,scope);
   },
 };

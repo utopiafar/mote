@@ -120,7 +120,7 @@ test('a real query run enters the Ask plugin with progress, its final answer and
 test('a real per-turn save keeps the server note receipt and the exact turn relationship',async t=>{
   const {node,token}=await fixture(t),citation=randomUUID();
   await node.store.ingest(capture(citation));
-  const saved=node.featureServices.conversations.append(undefined,{question:'Generated saved question'},{
+  const saved=node.conversations.append(undefined,{question:'Generated saved question'},{
     answer:'Generated saved answer ['+citation+']',citations:[{id:citation,capturedAt:when,appName:'Generated Ask source',excerpt:'Generated Ask citation source.'}],
     trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[citation]},
   });
