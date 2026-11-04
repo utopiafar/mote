@@ -15,6 +15,7 @@ import {MaterialNoteDeletion} from '../material-note-deletion.js';
 import {closeSourcePlatforms} from '../platform-close-order.js';
 import {registerFileRoutes} from '../file-routes.js';
 import {createSourceRuntime,createSourceRuntimeFactory,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
+import {codingSourceContribution,codingSourceDeclaration,codingSourceReplacement,createCodingSourceFactory,createCodingSourceRoutes} from '../coding-source-plugin.js';
 import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSourceReplacement} from '../plugins/files-source.js';
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
 import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSourceReplacement} from '../plugins/notes-source.js';
@@ -25,6 +26,7 @@ import {devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacem
  * distribution concatenates each domain's list into one selected table. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:sourceRuntimeContribution,declaration:sourceRuntimeDeclaration,replacement:sourceRuntimeReplacement},
+  {contribution:codingSourceContribution,declaration:codingSourceDeclaration,replacement:codingSourceReplacement},
   {contribution:filesSourceContribution,declaration:filesSourceDeclaration,replacement:filesSourceReplacement},
   {contribution:captureIntakeContribution,declaration:captureIntakeDeclaration,replacement:captureIntakeReplacement},
   {contribution:c10IntegrationContribution,declaration:c10IntegrationDeclaration,replacement:c10IntegrationReplacement},
@@ -53,6 +55,10 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   resources.defer(()=>sourceRuntimeOwner.close('disabled'));
   const sourcePipelines=sourceRuntime.runtimeForAssembly;
   const sources=new SourceStore(store,sourcePipelines);
+  const codingRoutes=createCodingSourceRoutes(sourcePipelines);
+  const codingSourceOwner=await bootstrap.host.install({identity:{packageId:'mote.coding-source',installationId:'build:coding-source@1.0.0',instanceId:'coding-source',activationId:randomUUID(),host:bootstrap.snapshot().host},
+    contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime:sourcePipelines,sources,store},codingRoutes)});
+  resources.defer(()=>codingSourceOwner.close('disabled'));
   let filesForAccess:FileStore|undefined;
   const filesPlatform=createFilesSource({store,sources,archivedFiles:bootstrap.vault.archivedFiles,registerRoutes:registerFileRoutes,rawAccess:{
     mayReadFileVersion:(_sourceId,id)=>{try{const current=filesForAccess;if(!current)return false;const version=current.version(id);return Boolean(version.object_hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&!store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted);}catch{return false;}},

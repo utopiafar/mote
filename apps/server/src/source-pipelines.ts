@@ -42,14 +42,18 @@ export interface SourcePipeline {
 }
 export class SourcePipelineRegistry {
   private entries=new Map<string,SourcePipeline>();
+  private admissions=new Map<string,boolean>();
   readonly epochs=new InstallationEpochs();
   private declaredKinds=new Set<string>();
   register(pipeline:SourcePipeline){
     if(!/^[a-z0-9.-]+$/.test(pipeline.id)||!pipeline.version||this.entries.has(pipeline.id)||!pipeline.sourceKinds.length||pipeline.modelInput!=='material'||!['records','archive'].includes(pipeline.storage)||!['none','material'].includes(pipeline.index)||pipeline.storage==='archive'&&!pipeline.recipe)throw Error('Invalid source pipeline');
     if([...this.entries.values()].some(p=>(p.priority??0)===(pipeline.priority??0)&&p.sourceKinds.some(kind=>pipeline.sourceKinds.includes(kind))))throw Error('Ambiguous source pipeline');
     pipeline.sourceKinds.forEach(kind=>this.declaredKinds.add(kind));
-    const revoke=this.epochs.install(pipeline.id);this.entries.set(pipeline.id,pipeline);return ()=>{revoke();if(this.entries.get(pipeline.id)===pipeline)this.entries.delete(pipeline.id);};
+    const revoke=this.epochs.install(pipeline.id);this.entries.set(pipeline.id,pipeline);this.admissions.set(pipeline.id,true);return ()=>{revoke();if(this.entries.get(pipeline.id)===pipeline){this.entries.delete(pipeline.id);this.admissions.delete(pipeline.id);}};
   }
+  start(id:string){if(this.entries.has(id))this.admissions.set(id,true);}
+  quiesce(id:string){if(this.entries.has(id))this.admissions.set(id,false);}
+  accepting(id:string){return this.admissions.get(id)===true;}
   declared(kind:string){return this.declaredKinds.has(kind);}
   get(id:string){return this.entries.get(id);}
   forKind(kind:string){return [...this.entries.values()].filter(p=>p.sourceKinds.includes(kind)).sort((a,b)=>(b.priority??0)-(a.priority??0))[0];}
@@ -210,7 +214,11 @@ export class SourcePipelineRuntime {
     const input=this.input(step),state=step.state==='waiting'||step.state==='running'?'pending':step.state==='succeeded'?'complete':step.state==='stale'||step.state==='cancelled'?'blocked':step.state;
     this.store.db.prepare("UPDATE source_pipeline_work SET state=?,error=?,updated_at=? WHERE id=? AND generation=? AND state!='complete'").run(state,step.error??null,Date.now(),input.workId,input.generation);
   }
-  select(source:SourceConnection){this.assertAccepting();return this.selected(source);}
+  select(source:SourceConnection){
+    this.assertAccepting();const pipeline=this.selected(source);
+    if(pipeline&&!this.registry.accepting(pipeline.id))throw new StoreError('Source pipeline unavailable',409);
+    return pipeline;
+  }
   /** Resolve existing policy for ongoing readers; this does not admit intake. */
   selectionForRead(source:SourceConnection){return this.selected(source);}
   private selected(source:SourceConnection){
@@ -324,6 +332,11 @@ export class SourcePipelineRuntime {
     await this.materials.index?.tick();
     return rows.length;
   }
+  async drainPipeline(id:string){
+    if(this.stopped||!this.accepting)return;
+    const rows=this.store.db.prepare('SELECT id,generation FROM source_pipeline_work WHERE pipeline_id=?').all(id) as {id:string;generation:number}[];
+    await this.engine.drain(rows.map(row=>stepId(row.id,row.generation)));
+  }
   // Preserve organization pins without letting Memory recipe selection
   // govern receipt authorization or current execution.
   private storedOptions(sourceId:string){const row=this.store.db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(sourceId);return configuration.parse(row?JSON.parse(String(row.json)):{});}
@@ -341,6 +354,7 @@ export class SourcePipelineRuntime {
       this.recipeFor(selected,source);
       this.store.db.prepare('INSERT INTO source_pipeline_bindings(source_id,pipeline_id,storage) VALUES(?,?,?) ON CONFLICT(source_id) DO UPDATE SET pipeline_id=excluded.pipeline_id,storage=excluded.storage').run(sourceId,selected.id,selected.storage);
     }else if(source)selected=this.select(source);
+    if(value.pipelineId&&selected&&!this.registry.accepting(selected.id))throw new StoreError('Source pipeline unavailable',409);
     const recipe=selected&&source?this.recipeFor(selected,source):undefined;
     const metadata=recipe?this.recipeMetadata(recipe,sourceId,value):undefined;
     const previous=db.prepare('SELECT * FROM source_pipeline_work WHERE source_id=?').all(sourceId) as WorkRow[];
