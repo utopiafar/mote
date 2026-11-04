@@ -1,16 +1,17 @@
 import type {ContextRecord,QueryInput} from './types.js';
-import {ARCHIVE_RECENCY_INSTRUCTIONS,compactMemoryTaskContext,compactMemoryReadCatalog,compactSeedEvidence} from './tasks/evidence-rules.js';
+import {ARCHIVE_RECENCY_INSTRUCTIONS,compactSeedEvidence} from './tasks/evidence-rules.js';
+import {compactMemoryTaskContext,compactMemoryReadCatalog} from './tasks/memory-context.js';
 import {contextToolDefinitions,registeredContextToolDefinitions,imageToolAvailable} from './tool-contributions.js';
 import './skills.js';
 import {displayTime} from './time.js';
-import {TASK_DESCRIPTOR_API_VERSION,TASK_OUTPUT_SCHEMA,type TaskDescriptor,type TaskProfile} from './tasks/descriptor.js';
-import {defaultTaskRegistry} from './tasks/registry.js';
+import type {TaskProfile} from './tasks/descriptor.js';
 import {prepareTaskContext} from './tasks/context-assembly.js';
 import {ASK_TASK_PROFILE,SELECTED_ANSWER_TASK_PROFILE,installQueryTaskPack} from './tasks/query.js';
 import {WORKING_TASK_PROFILE,installWorkingTaskPack} from './tasks/working.js';
 import {CALENDAR_TASK_PROFILE} from './tasks/calendar.js';
 import {INSIGHT_TASK_PROFILE} from './tasks/insight.js';
 import {IMPORT_TASK_PROFILE} from './tasks/import.js';
+import {MEMORY_TASK_PROFILE} from './tasks/memory.js';
 // Register the official descriptor factory before this module publishes the
 // default task tools; the Host contribution assembly consumes only the registry.
 import './tools/official-read-packs.js';
@@ -19,20 +20,17 @@ import './tools/official-read-packs.js';
 export const TASK_PROFILES = {
   answer:ASK_TASK_PROFILE,
   insight:INSIGHT_TASK_PROFILE,
-  extraction:{output:'memory-extraction',retrieval:'evidence'},
+  extraction:MEMORY_TASK_PROFILE,
   selectedAnswer:SELECTED_ANSWER_TASK_PROFILE,
   calendar:CALENDAR_TASK_PROFILE,
   import:IMPORT_TASK_PROFILE,
   working:WORKING_TASK_PROFILE,
 } as const satisfies Record<string,TaskProfile>;
-const task=(id:string,profile:TaskProfile,priority:number,select:(input:QueryInput)=>boolean):TaskDescriptor=>({apiVersion:TASK_DESCRIPTOR_API_VERSION,id,version:'1',profile,outputSchema:TASK_OUTPUT_SCHEMA,priority,select});
-// skills.ts installs the Insight, Calendar and Import task packs; query and
-// working own their task identities. Install them before publishing the rest.
+// skills.ts installs the Memory, Coding, Insight, Calendar and Import packs;
+// query and working own their task identities. Install them before publishing
+// the rest.
 installQueryTaskPack();
 installWorkingTaskPack();
-defaultTaskRegistry.register({tasks:[
-  task('extraction',TASK_PROFILES.extraction,30,input=>input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'),
-]});
 export function taskProfile(input:QueryInput){return prepareTaskContext(input).profile;}
 export function taskTools(input:QueryInput):string[]{
   const profile=taskProfile(input);
