@@ -12,7 +12,7 @@ import type {ExecutionEngine} from '../execution-engine.js';
 import type {ConcurrencyGate} from '../concurrency.js';
 import type {ProviderAdmission} from '../provider-admission.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {agentModelConnection} from '../model-authorization-host.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
 import type {ArchivedFileStore} from '../archived-files.js';
@@ -39,7 +39,7 @@ export interface ImportsAssemblyDependencies {
   readonly processing:Pick<FileProcessing,'runtime'>;
   readonly files:FileStore;
   readonly config:Pick<Config,'importPythonPacks'>;
-  readonly agent:ReloadableAgent;
+  readonly agent:AgentRuntimeRegistry;
   readonly modelSettings:ModelSettingsStore;
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly authorizeModelRequest:NonNullable<AgentOptions['authorizeModelRequest']>;

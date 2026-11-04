@@ -11,7 +11,7 @@ import type {ServerDiagnostics} from '../diagnostics.js';
 import type {InsightRuns} from '../insight-runs.js';
 import type {InsightResult} from '../insights.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelProfileIdSchema,type ModelSettingsStore} from '../model-settings.js';
 import {insightRequestSchema} from '../query-request.js';
 import {scopeFields,validRange,type QueryScope} from '../query-scope.js';
@@ -37,7 +37,7 @@ export interface InsightServicesDependencies {
   readonly query:(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId?:string,snapshot?:InsightSnapshot)=>Promise<InsightResult>;
   readonly modelAuthorization:Pick<ModelAuthorizationHost,'manual'>;
   readonly availableModelConnections:()=>ModelConnection[];
-  readonly agent:Pick<ReloadableAgent,'configuredFor'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configuredFor'>;
   readonly modelSettings:Pick<ModelSettingsStore,'select'>;
   readonly isClosing:()=>boolean;
   readonly diagnostics:Pick<ServerDiagnostics,'run'>;

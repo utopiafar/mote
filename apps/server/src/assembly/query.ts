@@ -21,7 +21,7 @@ import type {UsageLedger} from '../usage.js';
 import type {ModelSettingsStore} from '../model-settings.js';
 import type {ExecutionSettings} from '../execution-settings.js';
 import {modelConfiguration} from '../model-configuration.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import type {BackgroundModelAuthorization,AutomaticModelPurpose} from '../background-model-authorization.js';
 import {sourceModelIdentity,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {EvidenceReader} from '../evidence-reader.js';
@@ -93,7 +93,7 @@ export interface QueryRuntimeDependencies {
   readonly executor:Pick<ExecutionEngine,'get'>;
   readonly agentGate:Pick<ConcurrencyGate,'snapshot'>;
   readonly modelSettings:ModelSettingsStore;
-  readonly agent:Pick<ReloadableAgent,'configured'|'query'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configured'|'query'>;
   readonly observabilityAssembly:Pick<ObservabilityAssembly,'admittedUsage'>;
   readonly admittedUsageFactory:QueryUsageFactory;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
@@ -287,7 +287,7 @@ export interface DelegationAssemblyDependencies {
   readonly working:Pick<WorkingMemory,'prepare'>;
   readonly lifecycleSettings:()=>LifecycleSettings;
   readonly archiveReader:ContextReader;
-  readonly agent:Pick<ReloadableAgent,'configured'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
   readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;

@@ -11,7 +11,7 @@ import type {MaterialStore} from '../materials.js';
 import type {Operations} from '../operations.js';
 import type {DelegationRuntime} from '../delegation-runtime.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelConfiguration} from '../model-configuration.js';
 import type {ProcessingRuntime} from '../processing-runtime.js';
 import type {EvidenceReader} from '../evidence-reader.js';
@@ -78,7 +78,7 @@ export interface ActionsAssemblyDependencies {
   readonly sources:SourceStore;
   readonly connections:Connections;
   readonly pluginCenter:Pick<PluginCenter,'actionProviders'>;
-  readonly agent:Pick<ReloadableAgent,'configured'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
   readonly executor:ExecutionEngine;
   readonly configService:ConfigService;
   readonly semanticArtifacts:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
@@ -112,7 +112,7 @@ export interface ActivityAssemblyDependencies {
   readonly executor:ExecutionEngine;
   readonly configService:ConfigService;
   readonly modelSettings:ModelSettingsStore;
-  readonly agent:Pick<ReloadableAgent,'configuredFor'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configuredFor'>;
   readonly workflows:Pick<ProcessingRuntime,'settings'>;
   readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
   readonly backendContext:Context;
