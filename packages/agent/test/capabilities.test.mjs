@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 import {contextToolDefinitions} from '../dist/tool-contributions.js';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
-import {codexContextTools} from '../dist/codex-agent.js';
+import {codexContextTools} from '../dist/runtime/codex/tools.js';
 function contributionHost(){
  const entries=[];return {register(descriptor){const controller=new AbortController(),entry={descriptors:[descriptor],lifecycle:{signal:controller.signal,assertCurrent(){controller.signal.throwIfAborted();}}};entries.push(entry);return ()=>controller.abort(Error('Generated owner unloaded'));},snapshot:()=>entries.filter(entry=>!entry.lifecycle.signal.aborted)};
 }

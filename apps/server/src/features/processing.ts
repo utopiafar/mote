@@ -5,17 +5,18 @@ import { Operations,registerOperations } from '../operations.js';
 import { registerProcessingRoutes } from '../processing-routes.js';
 import type {ServerFeatureAdapter} from './index.js';
 
-/** processing: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,config,credential,mediaAssets,mediaPreparation,perception,semanticSelection,store,workflows}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|'config'|'credential'|'mediaAssets'|'mediaPreparation'|'perception'|'semanticSelection'|'store'|'workflows'>,scope?:ServerFeatureScope){
- scope?.defer(()=>workflows.close());
+/** processing: owns perception/media transport while the processing-services
+ * plugin contributes the job receipt and command table. */
+export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,config,credential,mediaAssets,mediaPreparation,perception,store}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|'config'|'credential'|'mediaAssets'|'mediaPreparation'|'perception'|'store'>,scope?:ServerFeatureScope){
 registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
-registerProcessingRoutes(app,{withOwnerBatch:withMediaOwnerBatch,withOwnerIntent:withMediaOwnerIntent,store,workflows,perception,mediaAssets,mediaPreparation,media:config.media,semanticFingerprint:()=>semanticSelection().fingerprint});
+registerProcessingRoutes(app,{withOwnerBatch:withMediaOwnerBatch,withOwnerIntent:withMediaOwnerIntent,perception,mediaAssets,mediaPreparation,media:config.media});
 }
 
 export const adapter:ServerFeatureAdapter={
   descriptor:{id:'mote.processing',version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,services)=>{
+  factory:(app,scope,services,host)=>{
     scope.retire(()=>services.agentFeatures.dispose('mote.processing'));
+    host.mountDomainRoutes('mote.processing',app);
     register(app,services,scope);
   },
 };
