@@ -12,6 +12,7 @@ import {plugins as processingPlugins} from '../assembly/processing.js';
 import {plugins as activityPlugins} from '../assembly/activity.js';
 import {plugins as memoryPlugins} from '../assembly/memory.js';
 import {plugins as queryPlugins} from '../assembly/query.js';
+import {plugins as agentPlugins} from '../assembly/agent.js';
 import {plugins as workPlugins} from '../assembly/work.js';
 import type {CentralDistribution,FoundationKind,FoundationProvider} from '../bootstrap.js';
 
@@ -53,4 +54,4 @@ export const authorizationProvider:FoundationProvider<'authorization'>=Object.fr
     return {validOwnerBearer(authorization){if(typeof authorization!=='string')return false;const supplied=Buffer.from(authorization);return supplied.length===expected.length&&timingSafeEqual(supplied,expected);}};
   }});
 export const defaultDistribution:CentralDistribution=Object.freeze({foundations:Object.freeze([configurationProvider,storageProvider,authorizationProvider]),features:serverFeatureAdapters,
-  plugins:Object.freeze([...platformPlugins,...sourcePlugins,...materialPlugins,...processingPlugins,...activityPlugins,...memoryPlugins,...queryPlugins,...workPlugins])});
+  plugins:Object.freeze([...platformPlugins,...sourcePlugins,...materialPlugins,...processingPlugins,...activityPlugins,...memoryPlugins,...queryPlugins,...agentPlugins,...workPlugins])});

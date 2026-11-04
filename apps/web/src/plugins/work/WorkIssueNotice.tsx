@@ -4,7 +4,7 @@ import type { Api } from '../../api';
 import { errorMessage } from '../../api';
 import { failureMessage } from '../../failure-message';
 import { useResource } from '../../useResource';
-import { modelSetupHref } from '../../ModelStartGuide';
+import { modelSetupHref } from '../models-processing/ModelStartGuide';
 const hints: Record<string, {
     text: string;
     category?: 'providers' | 'model' | 'images' | 'file-processing';

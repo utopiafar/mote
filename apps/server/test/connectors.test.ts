@@ -23,7 +23,7 @@ import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {SourceStore} from '../src/sources.js';
 import {registerConnectors} from '../src/connectors/index.js';
-import {recordingManifest,type RecordingProvider} from '../src/connectors/recordings.js';
+import {recordingManifest,type RecordingProvider} from '../src/plugins/recording-sources.js';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
 import {connectorRegistryHost} from './fixtures/connector-host.js';
 import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';

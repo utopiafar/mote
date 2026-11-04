@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type {ModelSettingsView} from '@mote/shared/models';
-import {createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation} from '../src/model-settings-form.js';
+import {createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation} from '../src/plugins/models-processing/model-settings-form.js';
 
 const snapshot: ModelSettingsView = {
   version: 1, revision: 3, source: 'saved',

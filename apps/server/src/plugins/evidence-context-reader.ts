@@ -13,7 +13,7 @@ import type {SourceItemRecipeCatalog} from '../source-item-recipe.js';
 import type {SourceContextStore} from '../source-context.js';
 import type {MemoryBindings} from '../memory-bindings.js';
 import {createContextTrees,registerContextTreeRoutes,type ContextTreeRegistry} from '../context-trees.js';
-import {createContextQuery} from '../context-query-composition.js';
+import {createContextQuery} from './query-context.js';
 import {registerContextRoutes} from '../context-routes.js';
 import {navigationScopeSchema} from '../context-navigation.js';
 import {registerEvidenceRoutes} from '../evidence-routes.js';

@@ -25,16 +25,18 @@ import type {BackgroundModelAuthorization} from '../background-model-authorizati
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelConfiguration} from '../model-configuration.js';
-import {createQueryPreparation,type SavedQuery} from '../query-preparation.js';
+import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
 import {queryWithAttachmentsSchema} from '../query-request.js';
 import type {QueryScope} from '../query-scope.js';
 import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityCheckpoint} from '../query-quality-experiment.js';
 import {assertSourceContextDependencies} from '../source-context-lineage.js';
 import {safeError} from '../diagnostics.js';
+import type {QueryRuntime} from './query-runtime.js';
 import {moteText} from '../i18n.js';
 import type {UsageLedger} from '../usage.js';
 
-/** C27 owns the durable delegation journal and its replayable Ask receipts. */
+/** C27 owns the durable delegation journal and the replayable Ask receipts
+ * that the admitted query runtime prepares and commits. */
 export const queryRunsContribution={
   id:'query-runs',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'},{kind:'host',id:'mote.owner-authorization',version:'1.0.0'}],
@@ -62,7 +64,8 @@ export interface QueryRunDependencies {
   readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
-  readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
+  /** Resolved from the already-active admitted query runtime. */
+  readonly queryRuntime:()=>QueryRuntime;
   readonly qualityStrategy?:QueryQualityStrategy;
   readonly semanticContextTime?:()=>string;
   readonly usageLedger:UsageLedger;
@@ -105,8 +108,8 @@ function delegationOptions(dependencies:QueryRunDependencies){
 
 /** Callbacks captured by one DelegatedQueryRuns generation. A stopped
  * activation never installs another runtime's callbacks as its own. */
-function createRunCallbacks(dependencies:QueryRunDependencies,runtime:DelegationRuntime):ConstructorParameters<typeof DelegatedQueryRuns>[2]{
-  const {store,files,conversations,executor,modelSettings,working,lifecycleSettings,archiveReader,agent,modelEvidenceAuthority,queryAgent,qualityStrategy,semanticContextTime,usageLedger,sourceContexts,assertModelEvidence,evidenceReader,modelAuthorizationHost}=dependencies;
+function createRunCallbacks(dependencies:QueryRunDependencies,runtime:DelegationRuntime,queryRuntime:QueryRuntime):ConstructorParameters<typeof DelegatedQueryRuns>[2]{
+  const {store,files,conversations,executor,modelSettings,working,lifecycleSettings,archiveReader,agent,modelEvidenceAuthority,qualityStrategy,semanticContextTime,usageLedger,sourceContexts,assertModelEvidence,evidenceReader,modelAuthorizationHost}=dependencies;
   const pinnedConfigurationCurrent=(prepared:QueryInput,fingerprint:string)=>{
     const profile=modelSettings.select('chat',prepared.modelProfileId),model=prepared.modelOverride??profile.settings.model;
     return modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint===fingerprint;
@@ -116,7 +119,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
     if(states.includes('revoked'))throw new ExecutionFailure('stale','ask_revoked');
   };
   const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,archiveReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
-    query:input=>queryAgent(input,'query','conversations'),qualityStrategy});
+    query:input=>queryRuntime.queryAgent(input,'query','conversations'),qualityStrategy});
   function qualityCheckpoint(input:QueryInput):QueryQualityCheckpoint|undefined{
     if(!qualityStrategy||!input.hostControlChannel)return;
     const work=runtime.get(input.traceContext!.operationId!),stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
@@ -159,7 +162,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       return selected;
     },
     prepare:prepareDelegatedQuery.prepare,
-    query:(input:QueryInput)=>runQueryQualityExperiment(input,qualityStrategy??'base',(next,stage)=>queryAgent({...next,traceContext:{...next.traceContext,phase:'quality.'+stage}},'query',stage==='base'?'conversations':'query.'+stage),qualityCheckpoint(input)),
+    query:(input:QueryInput)=>runQueryQualityExperiment(input,qualityStrategy??'base',(next,stage)=>queryRuntime.queryAgent({...next,traceContext:{...next.traceContext,phase:'quality.'+stage}},'query',stage==='base'?'conversations':'query.'+stage),qualityCheckpoint(input)),
     operationUsage:(operationId:string,createdAt:string,finishedAt:string)=>usageLedger.operation(operationId,createdAt,finishedAt),
     pinnedConfigurationCurrent,
     assertModelWork,
@@ -195,7 +198,7 @@ export function createQueryRunsPlatform(dependencies:QueryRunDependencies):Query
   };
   const open=async():Promise<Generation>=>{
     const runtime=new DelegationRuntime(dependencies.store,dependencies.executor,delegationOptions(dependencies));
-    try{return {runtime,runs:new DelegatedQueryRuns(dependencies.store,runtime,createRunCallbacks(dependencies,runtime))};}
+    try{return {runtime,runs:new DelegatedQueryRuns(dependencies.store,runtime,createRunCallbacks(dependencies,runtime,dependencies.queryRuntime()))};}
     catch(error){
       try{await runtime.close();}catch(cleanup){throw new AggregateError([error,cleanup],'Query runs preparation and disposal failed',{cause:error});}
       throw error;

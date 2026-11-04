@@ -1,10 +1,10 @@
 import {useEffect, useRef, useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import type {ModelSettingsView} from '@mote/shared/models';
-import {ApiError, type Api, errorMessage} from './api';
-import {invalidateConfiguration} from './configuration-cache';
-import {useResource} from './useResource';
-import {useUnsavedChanges} from './unsaved';
+import {ApiError, type Api, errorMessage} from '../../api';
+import {invalidateConfiguration} from '../../configuration-cache';
+import {useResource} from '../../useResource';
+import {useUnsavedChanges} from '../../unsaved';
 
 type Settings = {enabled: boolean; modelProfileId: string | null};
 type View = {revision: number; settings: Settings; configured: boolean; counts: Record<string, number>};

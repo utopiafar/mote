@@ -1,12 +1,12 @@
 import {z} from 'zod';
-import {actionPluginIdentitySchema,actionSourceIdentitySchema} from '@mote/shared';
+import {actionPluginIdentitySchema,actionSourceIdentitySchema,deviceCapabilityProjectionSchema} from '@mote/shared';
 import React,{useEffect,useRef,useState} from 'react';
-import type {ActionCapabilityDraft,ActionDeviceCapability,ActionGrant,ActionPluginProvider} from '@mote/shared';
+import type {ActionCapabilityDraft,ActionDeviceCapability,ActionGrant,ActionPluginProvider,DeviceCapabilityProjection} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {createApi,errorMessage} from '../../api';
 import {useResource} from '../../useResource';
 import {useUnsavedChanges} from '../../unsaved';
-type Inventory={providers:ActionPluginProvider[];grants:(ActionGrant&{available:boolean})[];declarations:ActionDeviceCapability[];drafts:ActionCapabilityDraft[];sources:(ActionCapabilityDraft['inputs']['sources'][number]&{name:string})[]};
+type Inventory={providers:ActionPluginProvider[];grants:(ActionGrant&{available:boolean})[];declarations:ActionDeviceCapability[];deviceCapabilities:DeviceCapabilityProjection[];drafts:ActionCapabilityDraft[];sources:(ActionCapabilityDraft['inputs']['sources'][number]&{name:string})[]};
 // Validate the fields rendered/selected here. A malformed response is an error,
 // never an empty inventory or permission to submit a partial grant.
 const capabilityView=z.object({id:z.string(),version:z.number().int().positive()});
@@ -19,6 +19,7 @@ const inventoryView=z.object({
  declarations:z.array(z.object({capability:capabilityView,deviceId:z.string(),connectionActive:z.boolean(),permission:z.enum(['granted','required','unavailable']),revision:z.number().int().positive(),calendars:z.array(z.object({id:z.string(),title:z.string()}))})),
  sources:z.array(actionSourceIdentitySchema.extend({name:z.string()})),drafts:z.array(draftView),
  grants:z.array(draftView.omit({state:true}).extend({plugin:actionPluginIdentitySchema,state:z.enum(['active','revoked']),available:z.boolean()})),
+ deviceCapabilities:z.array(deviceCapabilityProjectionSchema),
 });
 const pendingCommands=new WeakMap<object,Map<string,unknown>>();
 const scopes=new WeakMap<object,number>();let nextScope=0;
@@ -59,6 +60,7 @@ function ScopedSettings({api}:{api:ReturnType<typeof createApi>}){
  {read.loading&&!data&&<p role="status">{moteText('正在读取…')}</p>}{(!!error||read.error!==undefined||malformed)&&<p role="alert">{error||(read.error!==undefined?errorMessage(read.error):moteText('中央响应格式无效，请刷新后重试。'))}</p>}
  <button className="button" disabled={busy} onClick={()=>read.refresh()}>{moteText('刷新')}</button>
  {data&&<><p>{moteText('先在设备连接日历，并在插件中心安装、检查和启用声明日历能力的插件。安装和升级不会自动授予执行权限。')}</p>
+ {data.deviceCapabilities.length>0&&<details className="action-capability-projection"><summary>{moteText('已注册能力')}</summary>{data.deviceCapabilities.map(capability=><article key={capability.id+'@'+capability.version}><h4>{capability.id}@{capability.version}</h4><dl><div><dt>{moteText('已安装')}</dt><dd>{moteText(capability.installed?'已安装':'未安装')}</dd></div><div><dt>{moteText('已允许')}</dt><dd>{moteText(capability.grant==='unavailable'||capability.grant==='required'?'未允许':'已允许')}</dd></div><div><dt>{moteText('已连接')}</dt><dd>{moteText(capability.available?'已连接':'不可用')}</dd></div><div><dt>{moteText('已授权')}</dt><dd>{moteText(capability.authorized?'已授权':'尚未授权')}</dd></div></dl>{capability.waitingDevice&&<p role="status">{moteText('等待设备连接')}</p>}{capability.devices.map(device=><p key={device.deviceId}>{device.deviceId} · {moteText(device.available?'已连接':'不可用')}{device.waitingDevice?' · '+moteText('等待设备连接'):''}</p>)}</article>)}</details>}
  {outdated&&<p role="status">{moteText('日历能力或范围已变化，请在设备重新连接日历，再保存和确认新的范围。')}</p>}
  {!data.providers.length&&<p role="status">{moteText('暂无已检查并启用的日历能力插件。')}</p>}{!choices.length&&<p role="status">{moteText('暂无已连接的可写日历。')}</p>}
  <fieldset disabled={busy}><label>{moteText('选择设备和日历')}<select value={target} onChange={e=>{change();setTarget(e.target.value);}}><option value="">{moteText('请选择目标日历')}</option>{choices.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}</select></label>

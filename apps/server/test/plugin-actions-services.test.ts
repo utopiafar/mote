@@ -122,14 +122,21 @@ test('a revoked grant rejects the queued proposal while the lost in-flight ACK r
 
 test('actions services lifecycle fences writes, recovers routes on re-enable and preserves the durable profile across restart',async t=>{
   const f=await fixture(t),s=f.state,services=platform(s),handle=await install(s.host,services),app=routed(t,services);
-  const owner={authorization:'Bearer '+ownerToken},todo={id:randomUUID(),title:'Generated lifecycle task'};
+  const owner={authorization:'Bearer '+ownerToken},todo={id:randomUUID(),title:'Generated lifecycle task'},device=await pair(s);
   assert.equal((await app.inject({method:'POST',url:'/api/todos',headers:owner,payload:todo})).statusCode,201);
+  const declared=await app.inject({method:'POST',url:'/api/device-action-capabilities',headers:device.device,payload:{...command(0),deviceId:'generated-device',capability:{id:'calendar.manage',version:1},permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar'}]}});
+  assert.equal(declared.statusCode,200,declared.body);
+  const projection=async()=> (await app.inject({url:'/api/device-action-capabilities',headers:device.device})).json().projection;
+  assert.equal((await projection()).available,true);assert.equal((await projection()).authorized,false);
 
   await handle.quiesce('upgrade');
   assert.equal((await app.inject({method:'POST',url:'/api/todos',headers:owner,payload:{id:randomUUID(),title:'Rejected while quiescing'}})).statusCode,503,'quiesce rejects new writes');
   assert.equal((await app.inject({url:'/api/todos',headers:owner})).statusCode,200,'accepted reads stay available while draining');
+  assert.equal((await app.inject({method:'POST',url:'/api/device-action-capabilities',headers:device.device,payload:{...command(1),deviceId:'generated-device',capability:{id:'calendar.manage',version:1},permission:'required',calendars:[]}})).statusCode,503,'quiesce rejects new device declarations');
+  assert.equal((await projection()).available,true,'accepted projection reads stay available while draining');
   await handle.close('disabled');
   assert.equal((await app.inject({url:'/api/todos',headers:owner})).statusCode,503);
+  assert.equal((await app.inject({url:'/api/device-action-capabilities',headers:device.device})).statusCode,503);
   assert.throws(()=>services.actionsForAssembly,{statusCode:503});
 
   // Re-enable installs a new activation against the same profile without a
@@ -137,6 +144,8 @@ test('actions services lifecycle fences writes, recovers routes on re-enable and
   const revived=platform(s),revivedHandle=await install(s.host,revived),next=routed(t,revived);
   const page=(await next.inject({url:'/api/todos',headers:owner})).json();
   assert.equal(page.items[0].id,todo.id);assert.equal(page.items[0].title,todo.title);
+  const recovered=(await next.inject({url:'/api/device-action-capabilities',headers:device.device})).json();
+  assert.equal(recovered.declaration.revision,1);assert.equal(recovered.projection.available,true);assert.equal(recovered.projection.authorized,false);
   assert.equal((await next.inject({method:'POST',url:'/api/todos',headers:owner,payload:{id:randomUUID(),title:'Generated re-enabled task'}})).statusCode,201);
   revived.actionsForAssembly.configure({enabled:true,timeZone:'UTC',reviewDeviceIds:[]});
   const action=await propose(s,revived);assert.equal(action.status,'proposed');
