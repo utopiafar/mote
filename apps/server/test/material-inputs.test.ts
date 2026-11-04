@@ -63,7 +63,7 @@ test('empty append no-op compares real members and dependency revisions after a 
 });
 
 test('recipe requirement changes need a new identity and cannot substitute for an old pin',()=>{
-  const strategies=new MemoryStrategies(),recipe={id:'fixture.required',version:'1',extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'},requires:['source-body']};
+  const strategies=new MemoryStrategies(),recipe={id:'fixture.required',version:'1',workContract:'range-evaluation@1' as const,extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.personal-review',version:'5'},requires:['source-body']};
   assert.throws(()=>strategies.registerRecipe({...recipe,requires:['source-body','source-body']}),/Duplicate/);
   const stop=strategies.registerRecipe(recipe),pin=strategies.resolve(recipe).binding;assert.deepEqual(pin.requires,['source-body']);stop();
   assert.throws(()=>strategies.registerRecipe({...recipe,requires:['extracted-text']}),/new version/);
@@ -71,7 +71,7 @@ test('recipe requirement changes need a new identity and cannot substitute for a
 });
 
 test('a manual composition retains default dependencies without blocking an independent body recipe',async t=>{
-  const {store,materials,draft}=fixture(t),strategies=new MemoryStrategies(),recipe={id:'fixture.body',version:'1',extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'},requires:['body']};
+  const {store,materials,draft}=fixture(t),strategies=new MemoryStrategies(),recipe={id:'fixture.body',version:'1',workContract:'range-evaluation@1' as const,extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.personal-review',version:'5'},requires:['body']};
   strategies.registerRecipe(recipe);
   const initial={...draft,blocks:[draft.blocks[0]],coverage:{state:'complete' as const},artifacts:[{key:'body',state:'ready' as const,blockIds:['body']},{key:'summary',state:'ready' as const,blockIds:[]}]};
   const first=materials.publish(initial),body=materials.input(first.ref,['body'])!;
@@ -81,7 +81,7 @@ test('a manual composition retains default dependencies without blocking an inde
     materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>Boolean(materials.input(ref,required??['material'])?.ready)},models:{configured:()=>true,model:()=> 'fixture'},phases:{
     query:async input=>{calls.push((input.processingMaterialInputs??[]).flatMap(pin=>pin.required));return {answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-independent-body'};},review:async(_input,result)=>result}});
   try{
-    const job=pipeline.create({evidenceIds:body.evidenceIds,recipes:[{id:recipe.id,version:recipe.version},{id:'mote.personal-memory',version:'2'}]});
+    const job=pipeline.create({evidenceIds:body.evidenceIds,recipes:[{id:recipe.id,version:recipe.version},{id:'mote.personal-memory',version:'5'}]});
     assert.deepEqual(job.materialInputs!.map(pin=>pin.required),[['body'],['material']]);
     const revised=materials.publish({...initial,coverage:{state:'partial'},artifacts:[initial.artifacts[0],{...initial.artifacts[1],state:'failed',reason:'Generated failure'}]},{expectedRevision:first.revision});
     assert.equal(materials.input(revised.ref,['body'])!.fingerprint,body.fingerprint);
@@ -95,7 +95,7 @@ test('a manual composition retains default dependencies without blocking an inde
 });
 
 test('body feedback retains its recipe pin when the same originals also belong to an unavailable whole-material recipe',async t=>{
-  const {store,materials,draft}=fixture(t),strategies=new MemoryStrategies(),recipe={id:'fixture.body-feedback',version:'1',extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'},requires:['body']};
+  const {store,materials,draft}=fixture(t),strategies=new MemoryStrategies(),recipe={id:'fixture.body-feedback',version:'1',workContract:'range-evaluation@1' as const,extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.personal-review',version:'5'},requires:['body']};
   strategies.registerRecipe(recipe);
   const blocks=[{...draft.blocks[0],id:'target',text:'Generated target refers to an earlier body entry. '.padEnd(240,'x')},{...draft.blocks[0],id:'background',text:'Generated earlier body entry resolves the target reference. '.padEnd(240,'x')}];
   const initial={...draft,blocks,coverage:{state:'complete' as const},artifacts:[{key:'body',state:'ready' as const,blockIds:blocks.map(block=>block.id)},{key:'summary',state:'ready' as const,blockIds:[]}]};
@@ -109,7 +109,7 @@ test('body feedback retains its recipe pin when the same originals also belong t
     const work=input.taskContext!.memoryWork as {members:MemoryWorkMember[];contextMembers?:MemoryWorkMember[]};
     assert.equal(work.members.length,1);
     const needs=work.members[0].id===targetId&&!work.contextMembers?.some(member=>member.id===backgroundId);
-    return {runId,trace:[],citations:[],answer:JSON.stringify({memories:[],coverage:work.members.map(member=>({key:member.key,state:needs?'needs_context':'no_candidates',candidateIndexes:[],...(needs?{reason:'The generated target needs the separately selected earlier body entry.',contextRefs:[backgroundId]}:{})})),capacity:{saturated:false}})};
+    return {runId,trace:[],citations:[],answer:JSON.stringify({memories:[],coverage:work.members.map(member=>({key:member.key,state:needs?'needs_context':'no_candidates',candidateIndexes:[],...(needs?{reason:'The generated target needs the separately selected earlier body entry.',contextRefs:[backgroundId]}:{})}))})};
   };
   const pipeline=fixtureMemoryPipeline({store,memories,strategies,batchCharacters:256,admission:{
     materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>Boolean(materials.input(ref,required??['material'])?.ready)},models:{configured:()=>true,model:()=> 'fixture'},phases:{
@@ -123,7 +123,7 @@ test('body feedback retains its recipe pin when the same originals also belong t
     return {workId:'generated-body-feedback',groups:[{id:'generated-body-context-child',goal:'Inspect the unfinished generated target with its earlier body entry',memberKeys:request.targets.map(member=>member.key),contextKeys:[context.key],instruction:'Use only the selected body originals to resolve the generated reference.'}]};
   });
   try{
-    const job=pipeline.create({evidenceIds:body.evidenceIds,recipes:[{id:recipe.id,version:recipe.version},{id:'mote.personal-memory',version:'2'}],workPackage:{id:'generated-body-package',goal:'Inspect both generated body originals',instruction:'Preserve each selected recipe and the independent range coverage.'}});
+    const job=pipeline.create({evidenceIds:body.evidenceIds,recipes:[{id:recipe.id,version:recipe.version},{id:'mote.personal-memory',version:'5'}],workPackage:{id:'generated-body-package',goal:'Inspect both generated body originals',instruction:'Preserve each selected recipe and the independent range coverage.'}});
     assert.deepEqual(job.materialInputs!.map(pin=>pin.required),[['body'],['material']]);
     const bodyBackground=job.batches.find(batch=>batch.strategy?.recipe.id===recipe.id&&batch.coverage?.[0].id===backgroundId)!;
     const wholeBackground=job.batches.find(batch=>batch.strategy?.recipe.id==='mote.personal-memory'&&batch.coverage?.[0].id===backgroundId)!;

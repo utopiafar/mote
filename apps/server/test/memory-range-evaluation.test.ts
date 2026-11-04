@@ -179,17 +179,6 @@ test('a pinned policy reviewer receives host repair after an inner validation fa
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
 });
 
-for(const unbound of [false,true])test(`a saved legacy ${unbound?'unbound':'pinned-policy'} task repairs independent review without introducing a target coverage contract`,async t=>{
- const quote='Generated legacy original.',f=await fixture(t,[quote],12000,!unbound);let attempts=0;
- f.setGenerate(async()=>({runId:'generated-legacy-draft',trace:[],citations:[{id:f.ids[0],capturedAt:at,appName:'Generated',excerpt:quote}],answer:JSON.stringify({memories:[{title:'Generated legacy selection',statement:`Generated legacy selection [${f.ids[0]}]`,uncertainty:'Generated only',admission:{layer:'memory',reason:'Generated fixture decision',scope:'Generated only',attribution:'user'},evidenceIds:[f.ids[0]],evidence:[{id:f.ids[0],quote}]}]})}));
- f.setReview(async(input,draft)=>{assert.equal(input.taskContext?.memoryWork,undefined);assert.equal(JSON.parse(draft.answer).coverage,undefined);
-  if(++attempts===1)throw new MemoryOutputValidationError('quote_not_found','Generated legacy reviewer validation failure');
-  assert.ok(input.memoryReviewRepair);assert.match(input.question,/Host review repair:/);assert.ok(input.question.includes(input.memoryReviewRepair));return {...draft,runId:'generated-legacy-repaired-review'};
- });
- const job=f.create({workPackage:undefined,...(unbound?{}:{recipes:[{id:'mote.personal-memory',version:'2'}]})});assert.equal(job.workContract,undefined);await f.restart();assert.equal(f.extracts.length+f.reviews.length,0,'restart does not execute old work implicitly');
- const done=await f.pipeline.run(job.id);assert.equal(done.status,'completed');assert.equal(done.batches[0].strategy?.workContract,undefined);assert.equal(f.extracts.length,1);assert.equal(f.reviews.length,2);assert.equal(done.memoryIds.length,1);assert.equal(done.batches[0].coverage,undefined);if(unbound){assert.equal(done.batches[0].strategy,undefined);assert.equal(f.pipeline.create({evidenceIds:f.ids}).workContract,contract,'only a new reviewed unbound job receives the new contract');}
-});
-
 test('raw extraction and independent review repairs retain exact scope within the existing Agent question budget',async t=>{
  const quote='Generated owner choice: retain explicit transaction boundaries.',f=await fixture(t,[quote]);let generation=0,reviewAttempt=0;
  f.setGenerate(async input=>{assert.ok(input.question.length<=20000);const draft=result(input,[{member:work(input).members[0],quote}]);if(++generation===1){const value=JSON.parse(draft.answer);value.memories[0].admission.attribution='generated-invalid-enum';return {...draft,answer:JSON.stringify(value)};}assert.match(input.question,/Host validation rejected the previous output/);return draft;});
@@ -242,17 +231,6 @@ test('an oversized adapter answer is rejected rather than trimmed into apparent 
 test('actual oversized response fails once with no partial proposal or checkpoint',async t=>{
  const f=await fixture(t,['Generated large original.'.padEnd(8192,'.')]);f.setGenerate(async()=>{throw new AgentResponseError('Generated actual transport response capacity','response_too_large');});
  const failed=await f.pipeline.run(f.create().id);assert.equal(failed.status,'failed');assert.equal(failed.batches.length,1);assert.equal(f.extracts.length,1);assert.equal(f.reviews.length,0);assert.equal(failed.batches[0].errorCode,'model_output_capacity');assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
-});
-
-test('absent saved work contract and pinned old recipes retain legacy capacity behavior without implicit replay',async t=>{
- const lines=facts(8),f=await fixture(t,[lines.join('\n')]);
- f.setGenerate(async input=>{assert.equal(work(input).workContract,undefined);return result(input,lines.map((quote,index)=>({member:work(input).members[0],quote,index})));});
- const job=f.create({recipes:[{id:'mote.personal-memory',version:'2'}]});
- const failed=await f.pipeline.run(job.id);assert.equal(failed.status,'failed');assert.equal(failed.batches[0].errorCode,'memory_capacity_saturated');
- const calls=f.extracts.length+f.reviews.length,oldBinding=failed.batches[0].strategy;
- await f.restart();assert.equal(f.pipeline.get(job.id).status,'failed');assert.equal(f.extracts.length+f.reviews.length,calls);assert.deepEqual(f.pipeline.get(job.id).batches[0].strategy,oldBinding);
- assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
- assert.equal(f.pipeline.strategies.resolve({id:'mote.personal-memory',version:'5'}).binding.workContract,contract);
 });
 
 for(const explicitRecipe of [false,true])test(`public source and Memory job API complete 40 selected results and retain the new frozen policy through app restart${explicitRecipe?' with personal-v5 selection':' with omitted recipes'}`,async t=>{

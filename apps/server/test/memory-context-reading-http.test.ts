@@ -78,7 +78,7 @@ async function fixture(t:TestContext,scenario:Scenario){
     const prefix={quote:header,offset:0},event={quote:repair,offset:256};
     if(scenario==='unread-quote'&&input.traceContext?.phase==='extract'){
      const invalid=claim('Unread diary context','The owner repaired a blue bicycle in 2024',[prefix,event]);
-     const answer=JSON.stringify({memories:[invalid],coverage:[{key:member.key,state:'checked',candidateIndexes:[0]}],capacity:{saturated:false}});
+     const answer=JSON.stringify({memories:[invalid],coverage:[{key:member.key,state:'checked',candidateIndexes:[0]}]});
      const result=parseAnswer(JSON.stringify({answer,citationIds:[member.id]}),bridge.records);
      const failure=await input.validateOutput!({...result,trace:bridge.trace,runId:randomUUID(),evidenceReadRanges:bridge.deliveredRanges});
      assert.ok(failure,'authorization alone never proves original text was delivered');assert.match(failure.code,/quote|scope/);rejections.push(failure);
@@ -86,7 +86,7 @@ async function fixture(t:TestContext,scenario:Scenario){
     await read(0,header.length);await read(480,cat.length);
     if(scenario==='context-only-candidate'&&input.traceContext?.phase==='extract'){
      const invalid=claim('Context-only diary header','The owner recorded a diary on 2025-02-03',[prefix]);
-     const answer=JSON.stringify({memories:[invalid],coverage:[{key:member.key,state:'checked',candidateIndexes:[0]}],capacity:{saturated:false}});
+     const answer=JSON.stringify({memories:[invalid],coverage:[{key:member.key,state:'checked',candidateIndexes:[0]}]});
      const result=parseAnswer(JSON.stringify({answer,citationIds:[member.id]}),bridge.records);
      const failure=await input.validateOutput!({...result,trace:bridge.trace,runId:randomUUID(),evidenceReadRanges:bridge.deliveredRanges});
      assert.ok(failure,'reading context cannot produce a separate card unrelated to this target');assert.match(failure.feedback,/exact supporting quote wholly within a listed target range/);assert.match(failure.feedback,/context-only claim/);rejections.push(failure);
@@ -102,7 +102,7 @@ async function fixture(t:TestContext,scenario:Scenario){
      corrected=true;const material=node.materials.get(materialRef)!;node.materials.correctContext(material.id,material.revision,'third_party');
     }
    }
-   const answer=JSON.stringify({memories,coverage:members.map(targetMember=>({key:targetMember.key,state:memories.length&&targetMember.key===member.key?'checked':'no_candidates',candidateIndexes:targetMember.key===member.key?memories.map((_memory,index)=>index):[]})),capacity:{saturated:false}});
+   const answer=JSON.stringify({memories,coverage:members.map(targetMember=>({key:targetMember.key,state:memories.length&&targetMember.key===member.key?'checked':'no_candidates',candidateIndexes:targetMember.key===member.key?memories.map((_memory,index)=>index):[]}))});
    const result=parseAnswer(JSON.stringify({answer,citationIds:[...new Set(memories.flatMap(memory=>memory.evidenceIds))]}),bridge.records);
    call.readRanges=bridge.deliveredRanges;
    return {...result,trace:bridge.trace,runId:randomUUID(),evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies};
@@ -122,7 +122,7 @@ async function fixture(t:TestContext,scenario:Scenario){
  otherCaptureId=node.store.evidence(imported.captureIds).find(record=>record.provenance?.externalId==='generated-unselected')!.id;
  const source=await api('GET',`/api/materials/${material.id}/read?offset=0&length=1024`);assert.equal(source.statusCode,200,source.body);assert.equal(source.json().text,diary);assert.equal(source.json().material.attributionContext.importStatements[0].instruction,instruction);
  const selected=[...node.materials.input(material.ref,['source-body'])!.evidenceIds,...(['cross-original-context','review-only-context','unused-context-correction','unused-context-deletion'].includes(scenario)?[otherId]:[])];
- const start=await api('POST','/api/memory-jobs',{evidenceIds:selected,recipes:[{id:'mote.personal-memory',version:'3'}]});assert.equal(start.statusCode,202,start.body);
+ const start=await api('POST','/api/memory-jobs',{evidenceIds:selected,recipes:[{id:'mote.personal-memory',version:'5'}]});assert.equal(start.statusCode,202,start.body);
  const done=await until(async()=>(await api('GET','/api/memory-jobs/'+start.json().id)).json(),job=>['completed','failed','cancelled'].includes(job.status));
  return {node,api,done,calls,rejections,material,selected,spyFailures,otherId,otherCaptureId};
 }
@@ -200,30 +200,4 @@ for(const scenario of ['unused-context-correction','unused-context-deletion'] as
  const middle=f.calls.filter(call=>call.target.length===1&&call.target[0].offset===256&&call.target[0].length===256);assert.deepEqual(middle.map(call=>call.phase),['extract']);
  for(const call of middle){assert.ok(!call.seedIds.includes(f.otherId));assert.ok(!call.readRanges.some(range=>range.id===f.otherId));assert.ok(!call.contextReads.some(range=>range.id===f.otherId));}
  assert.ok(f.done.batches.filter((batch:{errorCode?:string})=>batch.errorCode==='context_evidence_restricted').every((batch:{attempts:number})=>batch.attempts===1),'metadata revocation is not a provider retry');
-});
-
-test('a persisted legacy job resumes its private draft after restart without granting broader context or extracting again',async t=>{
- const dataDir=mkdtempSync(join(tmpdir(),'mote-legacy-context-draft-'));let store=new Store(dataDir),sources=new SourceStore(store),memories=new MemoryStore(store),extracts=0,reviews=0,failReview=true;
- sources.register({id:'generated-legacy',name:'Generated legacy diary',kind:'custom',deviceId:'generated',platform:'import'});
- const source=await sources.upsert('generated-legacy',{externalId:'entry',revision:'1',kind:'file',layer:'original',observedAt:'2025-02-03T12:45:27Z',text:repair});
- const options=()=>({store,memories,requireAdmission:true,models:{model:()=> 'generated',configured:()=>true},phases:{query:async(input:QueryInput):Promise<QueryResult>=>{
-  extracts++;assert.equal(input.evidenceReadRanges,undefined,'legacy execution keeps its original restricted read contract');
-  const member=(input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members[0];
-  return {answer:JSON.stringify({memories:[{title:'Generated legacy repair',statement:`The narrator reported repairing a blue bicycle [${member.id}]`,uncertainty:'The generated legacy source only.',admission:{layer:'observation',reason:'A generated concrete event',scope:'This source only',attribution:'observed'},evidenceIds:[member.id],evidence:[{id:member.id,quote:repair,offset:0}]}],coverage:[{key:member.key,state:'checked',candidateIndexes:[0]}],capacity:{saturated:false}}),citations:[{id:member.id,capturedAt:'2025-02-03T12:45:27Z',appName:'Generated',excerpt:repair}],trace:[],runId:'generated-legacy-extraction-'+extracts};
- },review:async(input:QueryInput,draft:QueryResult)=>reviewMemory(input,draft,async reviewed=>{
-  reviews++;assert.equal(reviewed.evidenceReadRanges,undefined);
-  if(failReview)throw new ProviderFailure({category:'permanent',code:'provider_timeout',retryAfterMs:0});
-  return {...draft,runId:'generated-legacy-review-'+reviews};
- })}});
- let pipeline=new MemoryPipeline(options());
- t.after(async()=>{await pipeline.close();store.close();rmSync(dataDir,{recursive:true,force:true});});
- const job=pipeline.create({evidenceIds:[source.id],workPackage:{id:'generated-existing-job',goal:'Inspect the supplied generated original',instruction:'Preserve source attribution and uncertainty'}});
- const stored=JSON.parse(String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id)!.json));delete stored.contextReadVersion;delete stored.workContract;
- store.db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(JSON.stringify(stored),job.id);
- const failed=await pipeline.run(job.id);assert.equal(failed.status,'failed');assert.equal(extracts,1);assert.equal(reviews,1);
- const before=store.db.prepare('SELECT input_hash,json FROM memory_extraction_drafts WHERE batch_id=?').get(failed.batches[0].id)!;assert.ok(before);
- await pipeline.close();store.close();store=new Store(dataDir);sources=new SourceStore(store);memories=new MemoryStore(store);pipeline=new MemoryPipeline(options());failReview=false;
- const restored=store.db.prepare('SELECT input_hash,json FROM memory_extraction_drafts WHERE batch_id=?').get(failed.batches[0].id)!;assert.equal(restored.input_hash,before.input_hash);assert.equal(restored.json,before.json);
- const completed=await pipeline.retry(job.id);assert.equal(completed.status,'completed');assert.equal(extracts,1,'a restart resumes review using the existing private generation');assert.equal(reviews,2);
- assert.equal(completed.contextReadVersion,undefined);assert.equal(memories.get(completed.memoryIds[0]).reviewReceipt?.draftRunId,'generated-legacy-extraction-1');
 });

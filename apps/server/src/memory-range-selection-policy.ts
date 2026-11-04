@@ -1,7 +1,7 @@
 import {SOURCE_TIME_INSTRUCTIONS} from '@mote/agent';
 import {CONTEXT_READING_PERSONAL_POLICY} from './bounded-personal-memory-policy.js';
-import {codingMemoryReviewStrategyV2} from './coding-memory-review-policy.js';
-import {dailyEventExtractionStrategy,dailyEventReviewStrategy} from './daily-event-memory-policy.js';
+import {CODING_MEMORY_REVIEW_POLICY} from './coding-memory-review-policy.js';
+import {DAILY_EVENT_EXTRACTION_PROMPT,DAILY_EVENT_REVIEW_POLICY} from './daily-event-memory-policy.js';
 import {MEMORY_EXTRACTION_PROMPT} from './memory.js';
 import type {MemoryExtractionStrategy,MemoryReviewStrategy} from './memory-strategy-contract.js';
 
@@ -33,8 +33,8 @@ export const rangeSelectionContextExtractionStrategy:MemoryExtractionStrategy={
   .replace('If no supported memory exists, return an empty list.','After full range assessment, return an empty list when no additional memory is selected under the supplied policy.')+'\n'+selectionPolicy,
 };
 export const rangeSelectionCodingReviewStrategy:MemoryReviewStrategy={
- ...codingMemoryReviewStrategyV2,version:'3',
- policy:codingMemoryReviewStrategyV2.policy.replace('Empty output is appropriate only when the originals do not support a useful Coding product; it is not a substitute for preserving a supported positive.','Empty output is appropriate only after assessing the full ranges and selecting no additional useful Coding product; it is not a substitute for preserving meaningful supported positive context.')+'\n'+selectionPolicy,
+ id:'mote.coding-review',version:'3',input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],
+ policy:CODING_MEMORY_REVIEW_POLICY.replace('Empty output is appropriate only when the originals do not support a useful Coding product; it is not a substitute for preserving a supported positive.','Empty output is appropriate only after assessing the full ranges and selecting no additional useful Coding product; it is not a substitute for preserving meaningful supported positive context.')+'\n'+selectionPolicy,
 };
 
 function dailySelectionPolicy(policy:string){return policy
@@ -42,8 +42,10 @@ function dailySelectionPolicy(policy:string){return policy
  .replace('Read every authorized input: a distinct identifiable display/browse/plan/action is a positive event; zero is valid for empty, unreadable or non-event content, not as a substitute for reviewing ordinary events. If the supplied scope exceeds the output capacity, declare saturation/incomplete coverage through the supplied work contract and leave the exact target unfinished; never silently drop events to fit or assume automatic subdivision.','Assess every authorized target range and select useful identifiable display/browse/plan/action events. Zero is valid after full assessment and no additional event selection; unreadable or unassessed targets remain incomplete. Deliberate event selection does not promise every event appears in Memory. Never label unread input or truncated output as complete evaluation.')
  .replace('Restore supported ordinary events omitted by the draft.','Correct the draft selection and preserve consequential supported details within selected events.')+'\n'+selectionPolicy;}
 export const rangeSelectionDailyExtractionStrategy:MemoryExtractionStrategy={
- ...dailyEventExtractionStrategy,version:'2',prompt:dailySelectionPolicy(dailyEventExtractionStrategy.prompt),
+ id:'mote.daily-event-extraction',version:'2',input:'memory-evidence@1',output:'memory-candidates@1',permissions:['evidence.read'],
+ prompt:dailySelectionPolicy(DAILY_EVENT_EXTRACTION_PROMPT),
 };
 export const rangeSelectionDailyReviewStrategy:MemoryReviewStrategy={
- ...dailyEventReviewStrategy,version:'2',policy:dailySelectionPolicy(dailyEventReviewStrategy.policy),
+ id:'mote.daily-event-review',version:'2',input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],
+ policy:dailySelectionPolicy(DAILY_EVENT_REVIEW_POLICY),
 };

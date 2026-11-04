@@ -61,7 +61,7 @@ try{
  evidenceId=materials.input(material.ref,['source-body'])!.evidenceIds[0];
  const readEvidence=(ids:string[])=>[...vault.evidence(ids),...materials.evidence(ids)].map(record=>({...record,attributionContext:materials.contextForEvidence(record)}));
  const memories=new MemoryStore(vault,readEvidence,id=>vault.isCurrentEvidence(id)||materials.isCurrentEvidence(id)),strategies=new MemoryStrategies();
- report.strategy=strategies.resolve({id:'mote.personal-memory',version:'4'}).binding;
+ report.strategy=strategies.resolve({id:'mote.personal-memory',version:'5'}).binding;
  assert.equal(readEvidence([evidenceId])[0].attributionContext.importStatements?.[0].instruction,importInstruction);
  const sourceSnapshot=()=>sha256(JSON.stringify({capture:vault.evidence([captureId]),source:sources.getSource(sourceId),material:materials.get(material.id),evidence:materials.evidence([evidenceId]),declarations:attribution.export()}));
  report.originalSnapshotBefore=sourceSnapshot();report.fixture={materialRef:material.ref,evidenceId,captureId,recordedAt,observedAt,diaryHash:sha256(diary),bodyCharacters:diary.length};
@@ -78,7 +78,7 @@ try{
  };
  pipeline=new MemoryPipeline({store:vault,memories,strategies,concurrency:()=>1,requireAdmission:true,admission:{materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:()=>['source-body'],materialAllowedForMemory:ref=>Boolean(materials.input(ref,['source-body'])?.ready)},models:{configured:()=>true,model:()=>model},phases:{query,
   review:(input,draft,strategy)=>reviewMemory(input,draft,query,{strategy})}});
- const job=pipeline.create({evidenceIds:[evidenceId],recipes:[{id:'mote.personal-memory',version:'4'}],batchCharacters:512,timeZone:'Asia/Shanghai',contextTime:observedAt,workPackage:{id:randomUUID(),goal:'Independently inspect each generated diary target range',instruction:'Preserve each original narrator, temporal frame, quoted participant, action status and uncertainty; only target ranges are completion targets.'}});
+ const job=pipeline.create({evidenceIds:[evidenceId],recipes:[{id:'mote.personal-memory',version:'5'}],batchCharacters:512,timeZone:'Asia/Shanghai',contextTime:observedAt,workPackage:{id:randomUUID(),goal:'Independently inspect each generated diary target range',instruction:'Preserve each original narrator, temporal frame, quoted participant, action status and uncertainty; only target ranges are completion targets.'}});
  assert.equal(job.totalBatches,2);assert.equal(job.contextReadVersion,1);
  report.status='running';await save();progress('live-launch',{directory,batches:job.totalBatches,maximumQueries,maximumModelTurns,reasoningEffort});
  const done=await pipeline.run(job.id);report.job=done;report.memories=done.memoryIds.map(id=>memories.get(id));

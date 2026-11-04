@@ -278,7 +278,7 @@ test('production image intake enters the existing automatic Memory pipeline once
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  // This regression isolates the existing zero-outcome personal strategy. Daily
  // event behavior has a separate screenshot+field intake journey.
- node.memoryRecipeSettings.configure({scope:'capture',recipes:[{id:'mote.personal-memory',version:'2'}]});
+ node.memoryRecipeSettings.configure({scope:'capture',recipes:[{id:'mote.personal-memory',version:'5'}]});
  // A deliberate zero selection is valid after inspecting sufficient OCR. Pure
  // image targets without OCR require their own pixel assessment in the visual
  // Memory journey regression, rather than accepting interpretation text.

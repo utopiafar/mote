@@ -230,7 +230,7 @@ test('partial binding rejects a foreign-vault Connections without taking ownersh
 
 test('two selected recipe scopes independently consume the same original through real Memory jobs',async t=>{
   const f=await fixture(t,true),p=f.platform,control=p.assembly.modelAuthorization;
-  f.recipes!.configure({sourceId:'generated-source-a',recipes:[{id:'mote.personal-memory',version:'2'},{id:'mote.coding-memory',version:'2'}]});
+  f.recipes!.configure({sourceId:'generated-source-a',recipes:[{id:'mote.personal-memory',version:'5'},{id:'mote.coding-memory',version:'3'}]});
   control.command({action:'authorize',revision:0,operationId:randomUUID(),connections:[f.model],scope:{sourceIds:['generated-source-a'],dataKinds:['text']}});
   const request=p.bindRequest({authorization:'Bearer '+ownerToken,method:'PUT',route:'/api/sources/:id/items',params:{id:'generated-source-a'}}),raw=item();
   const receipt=await p.withSource(request,'generated-source-a',raw,()=>p.sourceIntake.sourceItem('generated-source-a',raw,p.commits.capture()));p.releaseRequest(request);

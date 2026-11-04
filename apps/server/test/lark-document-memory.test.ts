@@ -34,21 +34,6 @@ test('Feishu defaults copy current defaults once, retain source overrides and ne
   settings.configure({scope:'lark-docs',recipes:[personal]});assert.deepEqual(settings.selection('lark').map(b=>({id:b.recipe.id,version:b.recipe.version})),[personal]);
 });
 
-test('new Feishu category inherits accepted legacy recipe scopes without creating new authorization or overriding owner exclusions',t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-lark-memory-legacy-')),store=new Store(dir),strategies=new MemoryStrategies();
-  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
-  let settings=new MemoryRecipeSettings(store,strategies);
-  const sources=new SourceStore(store);sources.register({id:'legacy-lark',name:'Generated Feishu',kind:'lark-docs',deviceId:'generated',platform:'import'});
-  const old=strategies.resolve({id:personal.id,version:'2'}).binding;
-  store.db.prepare("DELETE FROM memory_recipe_settings WHERE id='lark-docs-default'").run();
-  store.db.prepare('INSERT INTO memory_recipe_legacy_scopes VALUES(?,?)').run('default',memoryRecipeScope(old));
-  settings=new MemoryRecipeSettings(store,strategies);
-  assert.equal(settings.enabled('legacy-lark',old),true);
-  assert.equal(store.db.prepare("SELECT count(*) n FROM sqlite_master WHERE name='memory_input_authorizations'").get()?.n,0,'copying old scope eligibility never creates paid receipts');
-  settings.configure({scope:'lark-docs',recipes:[personal]});assert.equal(settings.enabled('legacy-lark',old),false);
-  settings.configure({sourceId:'legacy-lark',recipes:[personal]});assert.equal(settings.enabled('legacy-lark',old),false);
-});
-
 test('full custom general selections retain all nine bindings when capture and Feishu defaults append the daily recipe',t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-lark-memory-capacity-')),store=new Store(dir),strategies=new MemoryStrategies();
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});

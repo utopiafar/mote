@@ -20,10 +20,10 @@ async function fixture(t:any){
  const artifact=publish();
  const pipeline=fixtureMemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'generated-model'},phases:{review:async(input,draft)=>{calls++;return reviewMemory(input,draft,async()=>({...draft,runId:randomUUID()}));},query:async input=>{
   calls++;const work=(input.taskContext as any)?.memoryWork,members=work?.members??[];
-  return {answer:JSON.stringify({memories:[{title:'Generated preference',statement:`Prefers a blue bowl [${first.id}]`,uncertainty:'Generated only',evidenceIds:[first.id]}],coverage:members.map((member:any)=>({key:member.key,state:'checked',candidateIndexes:[0]})),capacity:{saturated:false}}),citations:[{id:first.id,capturedAt:'2026-10-01T00:00:00Z',appName:'Generated',excerpt:'I prefer a blue bowl.'}],trace:[],runId:randomUUID()};
+  return {answer:JSON.stringify({memories:[{title:'Generated preference',statement:`Prefers a blue bowl [${first.id}]`,uncertainty:'Generated only',evidenceIds:[first.id]}],coverage:members.map((member:any)=>({key:member.key,state:'checked',candidateIndexes:[0]}))}),citations:[{id:first.id,capturedAt:'2026-10-01T00:00:00Z',appName:'Generated',excerpt:'I prefer a blue bowl.'}],trace:[],runId:randomUUID()};
  }}});
  let pipelineClosed=false;t.after(async()=>{if(!pipelineClosed)await pipeline.close();store.close();await rm(directory,{recursive:true,force:true});});
- const job=pipeline.create({evidenceIds:[first.id],artifactRefs:[{id,revision:artifact.revision}],recipes:[{id:'mote.personal-memory',version:'2'}],workPackage:{id:'generated-package',goal:'Inspect the generated original',instruction:'Preserve original provenance'}});
+ const job=pipeline.create({evidenceIds:[first.id],artifactRefs:[{id,revision:artifact.revision}],recipes:[{id:'mote.personal-memory',version:'5'}],workPackage:{id:'generated-package',goal:'Inspect the generated original',instruction:'Preserve original provenance'}});
  const done=await pipeline.run(job.id);assert.equal(done.status,'completed',JSON.stringify(done.priorValidationFailure??{errorCode:done.errorCode}));assert.equal(done.memoryIds.length,1);
  const memory=memories.publish(done.memoryIds[0]);assert.equal(store.db.prepare('SELECT COUNT(*) n FROM memory_artifact_dependencies WHERE memory_id=?').get(memory.id)!.n,1);
  

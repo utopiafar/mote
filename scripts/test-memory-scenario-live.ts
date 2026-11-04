@@ -314,7 +314,7 @@ async function recoveryPrecheck(){
     integrationSelection=String(db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value);assert.equal(JSON.parse(integrationSelection).binding.recipe.version,'1','Source default selection must remain the old recipe');
     const eligible=parents.filter((parent:any)=>!parent.supersededBy&&parent.admission?.layer==='memory');assert.deepEqual([...oldState.active.ids].sort(),eligible.map((parent:any)=>parent.id).sort());assert.deepEqual(checkpoint.inputs.map((input:any)=>input.id).sort(),[...oldState.active.ids].sort());
     for(const input of checkpoint.inputs)assert.equal(input.hash,sha256(JSON.stringify(parents.find((parent:any)=>parent.id===input.id))),'Integration parent hash changed');
-    for(const job of source.jobs){assert.deepEqual(job.configuration,checkpoint.model.configuration);assert.deepEqual(job.recipes,[{id:'mote.personal-memory',version:'2'}]);for(const batch of job.batches)assert.equal(batch.strategy.recipe.id,'mote.personal-memory');}
+    for(const job of source.jobs){assert.deepEqual(job.configuration,checkpoint.model.configuration);assert.deepEqual(job.recipes,[{id:'mote.personal-memory',version:'5'}]);for(const batch of job.batches)assert.equal(batch.strategy.recipe.id,'mote.personal-memory');}
     assert.equal(checkpoint.model.model,preflight?'scenario-preflight-stub':fixture.model.model);jobSnapshot=extractionSnapshot(db);receipts=db.prepare('SELECT json FROM model_usage ORDER BY id').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt);
   }finally{db.close();}
   recoverySource={vault,reportPath:sourceReport,hashes,records:source.records,jobs:source.jobs,parents:source.beforeIntegration,checkpoint,oldState,integrationSelection:integrationSelection!,jobSnapshot:jobSnapshot!,receipts:receipts!};
@@ -347,7 +347,7 @@ async function recoverGeneration(){
 }
 async function generate(){
   stage='extraction';for(const id of fixture.extractionOrder){const record=report.records.find((r:any)=>r.id===id);
-    const job=await request('POST','/api/memory-jobs',{evidenceIds:record.evidenceIds,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime:fixture.contextTime,timeZone:fixture.timeZone});
+    const job=await request('POST','/api/memory-jobs',{evidenceIds:record.evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}],contextTime:fixture.contextTime,timeZone:fixture.timeZone});
     const done=await node!.memoryPipeline.run(job.id);report.jobs.push(done);await save();assert.equal(done.status,'completed',JSON.stringify(done));
   }
   await integrate(preflight&&preflightVariant==='failed-integration-review'?{id:defaultMemoryIntegrationRecipe.id,version:'1'}:defaultMemoryIntegrationRecipe);

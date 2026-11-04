@@ -22,7 +22,7 @@ import {requestMemoryIntegration} from '../apps/server/src/memory-integration.js
 const base='/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27';
 const corpus=join(base,'heldout-corpus-v2'),evaluation=join(base,'heldout-eval-v2-1');
 const freezes={corpus:'367c19ff948908151d4ae1fcd55e8f194bf314de4a02f3824d7c246ff6697e8c',evaluation:'c8fa7c2439da14d540a0877804da8c6fe6e1e5ae7cebe8ff65b3f8f95fc06f24'};
-const recipes=[{id:'mote.personal-memory',version:'2'},{id:'mote.coding-memory',version:'2'}];
+const recipes=[{id:'mote.personal-memory',version:'5'},{id:'mote.coding-memory',version:'3'}];
 const token=randomBytes(32).toString('hex');
 type Node=Awaited<ReturnType<typeof buildApp>>;
 type Summary=Record<string,any>;

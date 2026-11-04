@@ -1,4 +1,4 @@
-import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
+import {fixtureMemoryPipeline,fixtureMemoryResult} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -20,12 +20,12 @@ for(const phase of ['queued','running'] as const)test(`manual archive selection 
  const held=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
  t.after(async()=>{release();await pipeline?.close();await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
  await runtime.ready;const sources=new SourceStore(store,runtime),reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,runtime),strategies=new MemoryStrategies();
- const recipe={id:'fixture.coding-input',version:'1'};strategies.registerRecipe({...recipe,requires:['conversation'],extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.coding-review',version:'2'}});
+ const recipe={id:'fixture.coding-input',version:'1'};strategies.registerRecipe({...recipe,workContract:'range-evaluation@1',requires:['conversation'],extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.coding-review',version:'3'}});
  sources.register({id:'generated-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'fixture',platform:'macos'});
  const event=(index:number)=>({externalId:'event-'+index,revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'snapshot',text:'Generated observation '+index,document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'fixture-session',projectKey:'fixture-project',eventId:String(index),role:'user',attribution:'human',part:0,parts:1}}});
  await sources.upsert('generated-coding',event(1));await runtime.tick();const material=materials.list().items[0],calls:MemoryPipelineQuery[]=[];
  const query=async(input:MemoryPipelineQuery)=>{calls.push(input);entered();if(phase==='running')await held;return {answer:'{"memories":[]}',citations:[],trace:[],runId:'fixture'};};
- pipeline=fixtureMemoryPipeline({store,memories:reader.memories,strategies,admission:{materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>reader.materialAllowedForMemory(ref,undefined,required),materialPlanAllowed:id=>reader.materialPlanAllowed(id),materialSourceCurrent:(pin,id)=>reader.materialSourceCurrent(pin,id)},models:{configured:()=>true,model:()=> 'fixture'},phases:{query,review:(input,result)=>reviewMemory(input,result,query)}});
+ pipeline=fixtureMemoryPipeline({store,memories:reader.memories,strategies,admission:{materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>reader.materialAllowedForMemory(ref,undefined,required),materialPlanAllowed:id=>reader.materialPlanAllowed(id),materialSourceCurrent:(pin,id)=>reader.materialSourceCurrent(pin,id)},models:{configured:()=>true,model:()=> 'fixture'},phases:{query,review:(input,result)=>reviewMemory(input,result,async request=>fixtureMemoryResult(reader.memories,await query(request as MemoryPipelineQuery),request.evidenceRanges,request))}});
  const selected=reader.memoryPlanSelection({},[strategies.resolve(recipe).binding]);assert.equal(selected.manualPlans[0].sourcePin.kind,'archive-group');
  const job=pipeline.create({recipes:[recipe],evidenceIds:selected.evidenceIds,manualPlans:selected.manualPlans});
  if(phase==='queued')pipeline.pause(job.id);else {void pipeline.run(job.id);await started;}

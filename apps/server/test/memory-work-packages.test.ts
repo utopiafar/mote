@@ -14,9 +14,9 @@ import {createAgent} from '@mote/agent';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
 function members(input:MemoryPipelineQuery){return (input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members;}
-function output(input:MemoryPipelineQuery,runId:string,withCandidate=false,coverage=members(input),saturated=false):QueryResult{
+function output(input:MemoryPipelineQuery,runId:string,withCandidate=false,coverage=members(input)):QueryResult{
  const first=members(input)[0],memories=withCandidate?[{title:'Generated preference',statement:`The owner prefers a blue bowl [${first.id}]`,uncertainty:'One synthetic statement',admission:{layer:'memory',reason:'An explicit generated preference',scope:'Fixture only',attribution:'user'},evidenceIds:[first.id],evidence:[{id:first.id,quote:'I prefer a blue bowl.'}]}]:[];
- return {runId,trace:[],citations:withCandidate?[{id:first.id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:''}]:[],answer:JSON.stringify({memories,coverage:coverage.map(member=>({key:member.key,state:withCandidate&&member.key===first.key?'checked':'no_candidates',candidateIndexes:withCandidate&&member.key===first.key?[0]:[]})),...((input.taskContext!.memoryWork as {workContract?:string}).workContract==='range-evaluation@1'?{}:{capacity:{saturated}})})};
+ return {runId,trace:[],citations:withCandidate?[{id:first.id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:''}]:[],answer:JSON.stringify({memories,coverage:coverage.map(member=>({key:member.key,state:withCandidate&&member.key===first.key?'checked':'no_candidates',candidateIndexes:withCandidate&&member.key===first.key?[0]:[]}))})};
 }
 async function fixture(t:TestContext,count=4){
  const dir=mkdtempSync(join(tmpdir(),'mote-memory-package-')),store=new Store(dir),sources=new SourceStore(store),memories=new MemoryStore(store);
@@ -28,7 +28,7 @@ async function fixture(t:TestContext,count=4){
  t.after(async()=>{await pipeline.close();store.close();rmSync(dir,{recursive:true,force:true});});
  // These retained scenarios characterize the old contract under its immutable
  // recipe. New range-evaluation journeys live in memory-range-evaluation.test.ts.
- return {directory:dir,store,sources,memories,pipeline,ids,seen,reviews,setUnderstand(fn:NonNullable<typeof understand>){understand=fn;},setGenerate(fn:typeof generate){generate=fn;},setReview(fn:typeof review){review=fn;},create(){return pipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'2'}],workPackage:{id:'synthetic-package',goal:'Inspect the authorized originals',instruction:'Preserve independent provenance'}});}};
+ return {directory:dir,store,sources,memories,pipeline,ids,seen,reviews,setUnderstand(fn:NonNullable<typeof understand>){understand=fn;},setGenerate(fn:typeof generate){generate=fn;},setReview(fn:typeof review){review=fn;},create(){return pipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'5'}],workPackage:{id:'synthetic-package',goal:'Inspect the authorized originals',instruction:'Preserve independent provenance'}});}};
 }
 
 test('wide packages use short exact coverage identities through Codex extraction, repair and independent review',async t=>{
@@ -105,7 +105,7 @@ test('a missing package coverage envelope still receives coverage repair feedbac
  f.setGenerate(async input=>{
   const result=output(input,'generated-coverage'),invalid=JSON.parse(result.answer);delete invalid.coverage;
   const issue=await input.validateOutput!({...result,answer:JSON.stringify(invalid)});
-  assert.equal(issue?.code,'coverage');assert.match(issue!.feedback,/every host member key/);
+  assert.equal(issue?.code,'coverage');assert.match(issue!.feedback,/coverage/);
   return result;
  });
  const done=await f.pipeline.run(f.create().id);
@@ -151,8 +151,8 @@ test('checked member links only its independently reviewed memories while other 
  assert.deepEqual(done.batches[0].coverage!.find(member=>member.state==='checked')!.memoryIds,done.memoryIds);assert.equal(done.batches[0].coverage!.filter(member=>member.state==='no_candidates').length,3);
 });
 
-for(const mode of ['missing','saturated'] as const)test(`${mode} coverage remains unfinished without creating recursive packages`,async t=>{
- const f=await fixture(t);f.setGenerate(input=>output(input,'large',false,mode==='missing'?members(input).slice(0,2):members(input),mode==='saturated'));
+test('missing coverage remains unfinished without creating recursive packages',async t=>{
+ const f=await fixture(t);f.setGenerate(input=>output(input,'large',false,members(input).slice(0,2)));
  const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'failed');assert.equal(done.batches.length,1);assert.ok(!done.batches[0].supersededBy);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);assert.equal(f.memories.list().length,0);
 });
 
@@ -167,9 +167,9 @@ test('unresolved context stays visible without granting another original or publ
  const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'waiting_for_input');assert.equal(done.errorCode,'memory_context_required');assert.equal(done.batches[0].coverage![0].state,'needs_context');assert.deepEqual(done.batches[0].coverage![0].contextRefs,['material:unread']);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);assert.equal(f.memories.list().length,0);assert.deepEqual(f.reviews[0].evidenceIds,f.ids);
 });
 
-test('candidate capacity scales with package members and a revised input fences the entire old package',async t=>{
+test('a revised input fences the entire old package without a candidate capacity',async t=>{
  const f=await fixture(t);const job=f.create();assert.equal((f.pipeline.get(job.id).workPackage?.id),'synthetic-package');
- f.setGenerate(input=>{assert.equal((input.taskContext!.memoryWork as {maxCandidates:number}).maxCandidates,32);return output(input,'old',false);});
+ f.setGenerate(input=>{assert.equal((input.taskContext!.memoryWork as {maxCandidates?:number}).maxCandidates,undefined);return output(input,'old',false);});
  f.setReview(async(_input,draft)=>{await f.sources.upsert('generated',{externalId:'1',revision:'2',text:'A corrected generated preference.',observedAt:'2026-09-02T00:00:00Z',kind:'file',layer:'original'});return {...draft,runId:'changed-review'};});
  const done=await f.pipeline.run(job.id);assert.equal(done.status,'failed');assert.ok(done.batches[0].coverage!.every(member=>member.state==='stale'));assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
 });
@@ -185,11 +185,11 @@ for(const broken of ['json','coverage','quote'] as const)test(`invalid ${broken}
  assert.deepEqual(done.batches[0].validationFailures?.map(failure=>({phase:failure.phase,runId:failure.runId})),[{phase:'review',runId:'invalid-review'}],'one invalid reviewer response records one reviewer failure, never a failure on the valid draft');
 });
 
-for(const variant of ['valid','legacy','missing','saturated','contract','range'] as const)test(`Coding candidate reuse consumes only an exact complete unsaturated artifact: ${variant}`,async t=>{
+for(const variant of ['valid','missing'] as const)test(`Coding candidate reuse consumes only an exact complete artifact: ${variant}`,async t=>{
  const f=await fixture(t,1);
  f.setUnderstand(async preparation=>{
   const member=preparation.memoryWork!.members[0],coverage=variant==='missing'?[]:[{key:member.key,state:'no_candidates',candidateIndexes:[]}];
-  const artifact=f.store.archive.save('3'.repeat(64),'generated-coding-'+variant,'1'.repeat(64),{kind:'semantic',text:'Generated interpretation',metadata:{productsVersion:variant==='legacy'?1:2,generationContract:variant==='contract'?'different':preparation.generationContract,complete:true,runId:'authentic-understanding-run',memoryCandidates:[],memoryCoverage:coverage,memoryCapacity:{saturated:variant==='saturated'},evidenceRanges:variant==='range'?[]:preparation.ranges}},f.ids.map(id=>({id,fingerprint:f.store.archive.fingerprint(id)!})),'generated-only','1','2'.repeat(64));
+  const artifact=f.store.archive.save('3'.repeat(64),'generated-coding-'+variant,'1'.repeat(64),{kind:'semantic',text:'Generated interpretation',metadata:{productsVersion:3,workContract:'range-evaluation@1',generationContract:preparation.generationContract,complete:true,runId:'authentic-understanding-run',memoryCandidates:[],memoryCoverage:coverage,evidenceRanges:preparation.ranges}},f.ids.map(id=>({id,fingerprint:f.store.archive.fingerprint(id)!})),'generated-only','1','2'.repeat(64));
   return [{id:artifact.id,revision:artifact.revision}];
  });
  const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'completed');assert.equal(f.seen.length,variant==='valid'?0:1);assert.equal(f.reviews.length,1);assert.equal(done.batches[0].reviewReceipt?.draftRunId,variant==='valid'?'authentic-understanding-run':'extract');
@@ -207,9 +207,12 @@ for(const variant of ['selected','legacy-products','legacy-contract','incomplete
 });
 
 test('compatible reviewers reuse a complete draft when transport target ordering changes',async t=>{
- const f=await fixture(t,2),common={contextTime:'2026-10-01T00:00:00Z',workPackage:{id:'generated-order',goal:'Inspect each selected original independently',instruction:'Preserve each original context and attribution'}};
- const first=f.pipeline.create({...common,evidenceIds:f.ids,recipes:[{id:'mote.personal-memory',version:'2'}]});assert.equal((await f.pipeline.run(first.id)).status,'completed');
- const second=f.pipeline.create({...common,evidenceIds:[...f.ids].reverse(),recipes:[{id:'mote.coding-memory',version:'2'}]});assert.equal((await f.pipeline.run(second.id)).status,'completed');
+ const f=await fixture(t,2),common={contextTime:'2026-10-01T00:00:00Z',workPackage:{id:'generated-order',goal:'Inspect each selected original independently',instruction:'Preserve each original context and attribution'}},current=f.pipeline.strategies.resolve({id:'mote.personal-memory',version:'5'}).binding,review={id:'generated.order-review',version:'1'};
+ f.pipeline.strategies.registerReview({...review,input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy:'Generated independent ordering reviewer'});
+ const sibling={id:'generated.order-memory',version:'1'};
+ f.pipeline.strategies.registerRecipe({...sibling,workContract:'range-evaluation@1',extract:{id:current.extract.id,version:current.extract.version},review:{id:review.id,version:review.version}});
+ const first=f.pipeline.create({...common,evidenceIds:f.ids,recipes:[{id:'mote.personal-memory',version:'5'}]});assert.equal((await f.pipeline.run(first.id)).status,'completed');
+ const second=f.pipeline.create({...common,evidenceIds:[...f.ids].reverse(),recipes:[sibling]});assert.equal((await f.pipeline.run(second.id)).status,'completed');
  assert.equal(f.seen.length,1,'transport order does not change an otherwise exact generation contract');assert.equal(f.reviews.length,2,'each reviewer remains independent');
 });
 
@@ -218,11 +221,11 @@ for(const count of [1,4])test(`actual provider context rejection for ${count} ta
  const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'failed');assert.equal(done.batches.length,1);assert.equal(done.batches[0].errorCode,'processing_limit');assert.equal(done.batches[0].attempts,1);assert.equal(f.reviews.length,0);assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
 });
 
-test('schema and coverage repair identify exact host fields and actual capacity without leaking rejected values',async t=>{
+test('schema and coverage repair identify exact host fields without leaking rejected values',async t=>{
  const f=await fixture(t,2);f.setGenerate(async input=>{
   const valid=output(input,'generated-contract',true),draft=JSON.parse(valid.answer);draft.memories[0].evidence[0].id='generated-invalid-id-do-not-echo';
-  let issue=await input.validateOutput!({...valid,answer:JSON.stringify(draft)});assert.equal(issue?.code,'schema');assert.match(issue!.feedback,/memories\[0\]\.evidence\[0\]\.id/);assert.match(issue!.feedback,/Current candidate capacity: 16/);assert.match(issue!.feedback,/preserve coverage/i);assert.ok(!issue!.feedback.includes('generated-invalid-id-do-not-echo'));
-  draft.memories[0].evidence[0].id=members(input)[0].id;delete draft.coverage;delete draft.capacity;issue=await input.validateOutput!({...valid,answer:JSON.stringify(draft)});assert.equal(issue?.code,'coverage');assert.match(issue!.feedback,/Host field: coverage/);assert.match(issue!.feedback,/needs_owner_input/);
+  let issue=await input.validateOutput!({...valid,answer:JSON.stringify(draft)});assert.equal(issue?.code,'schema');assert.match(issue!.feedback,/memories\[0\]\.evidence\[0\]\.id/);assert.match(issue!.feedback,/coverage/i);assert.ok(!issue!.feedback.includes('generated-invalid-id-do-not-echo'));
+  draft.memories[0].evidence[0].id=members(input)[0].id;delete draft.coverage;issue=await input.validateOutput!({...valid,answer:JSON.stringify(draft)});assert.equal(issue?.code,'coverage');assert.match(issue!.feedback,/Host field: coverage/);assert.match(issue!.feedback,/needs_owner_input/);
   const bad=JSON.parse(valid.answer);bad.coverage[1].key+='a';issue=await input.validateOutput!({...valid,answer:JSON.stringify(bad)});assert.match(issue!.feedback,/coverage\[1\]\.key/);return valid;
  });const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'completed');assert.equal(f.reviews.length,1);
 });

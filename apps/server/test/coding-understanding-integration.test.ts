@@ -57,7 +57,7 @@ async function supplied(input:QueryInput,reader:ContextReader){
  const records=await reader.evidence({ids:input.evidenceIds!});assert.equal(records.length,input.evidenceIds!.length,'material input admission must permit exactly the supplied originals');
  assert.ok(records.every(record=>!record.ocrText.includes(toolSecret)));return records;
 }
-function manualJob(node:Node,ids:string[],workPackage:MemoryWorkPackage={id:'generated-explicit-coding',goal:'Inspect every selected Coding range',instruction:'Preserve original attribution and each target context'}){return node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime,timeZone:'Asia/Shanghai',batchCharacters:12000,workPackage});}
+function manualJob(node:Node,ids:string[],workPackage:MemoryWorkPackage={id:'generated-explicit-coding',goal:'Inspect every selected Coding range',instruction:'Preserve original attribution and each target context'}){return node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'5'}],contextTime,timeZone:'Asia/Shanghai',batchCharacters:12000,workPackage});}
 function preparationConfig(node:Node){const rows=node.store.db.prepare("SELECT json FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").all();assert.ok(rows.length);return rows.map(row=>{const config=JSON.parse(String(row.json)).config;assert.ok(JSON.stringify(config).length<=16000,'host transport keeps its existing bound');assert.equal(config.memoryWork,undefined,'private work metadata resolves through the host');assert.equal(config.candidatePolicy,undefined,'model policy is not copied into transport config');assert.equal(config.memoryPreparation,true);assert.match(config.generationContract,/^[a-f0-9]{64}$/);return config;});}
 
 test('large Coding work metadata resolves from a generation handle while transport retains its existing bound',{timeout:15000},async t=>{
@@ -80,7 +80,7 @@ test('clean Coding material runs one authorized understanding and reuses its can
  const node=await appFixture(t,async(input,reader)=>{
   calls.push(input);const records=await supplied(input,reader),id=records[0].id;
   input.onUsage?.(isUnderstanding(input)?tokens(101,17):tokens(51,9));
-  if(isUnderstanding(input)){understanding++;return response(id,owner,products(id,true));}
+  if(isUnderstanding(input)){understanding++;const work=input.taskContext?.memoryWork as {workContract?:string;maxCandidates?:number}|undefined;assert.equal(work?.workContract,'range-evaluation@1');assert.equal(work?.maxCandidates,undefined);return response(id,owner,products(id,true));}
   if(input.traceContext?.phase==='review'){
    review++;assert.ok(input.taskContext?.untrustedMemoryDraft);assert.equal(input.contextTime,contextTime);
    assert.ok(String(JSON.stringify(input.taskContext.untrustedMemoryDraft)).includes('concise written decisions'));
@@ -89,7 +89,7 @@ test('clean Coding material runs one authorized understanding and reuses its can
   extraction++;throw Error('Candidate reuse must avoid a second extraction model call');
  });
  const fixture=await receive(node),job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,fixture.ids).id));
- assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,1);assert.equal(understanding,1);assert.equal(review,1);assert.equal(extraction,0);
+ assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,1);assert.equal(understanding,1);assert.equal(review,1);assert.equal(extraction,0);assert.ok(job.batches.every(batch=>batch.strategy?.workContract==='range-evaluation@1'));
  const card=node.memories.get(job.memoryIds[0]);assert.equal(card.status,'published');assert.equal(card.reviewReceipt?.decision,'independent');assert.equal(card.reviewReceipt?.contextTime,contextTime);
  const artifact=node.store.archive.page({kind:'semantic'}).items[0];assert.ok(artifact);const full=node.store.archive.get(artifact.id)!;
  assert.equal(full.processor,'mote.coding-conversation-understanding');assert.equal(full.metadata.materialRef,fixture.material.ref);assert.ok(full.text.includes('device validation remains unknown'));

@@ -1,4 +1,4 @@
-import {memoryWorkCoverageSchema,memoryWorkCoverageFor,memoryWorkCapacitySchema,assertMemoryWorkAnswerSize} from './memory-work-contract.js';
+import {memoryRangeEvaluationCoverageSchema,assertMemoryWorkAnswerSize} from './memory-work-contract.js';
 import type {MemoryWorkContract} from './memory-strategy-contract.js';
 import {MemoryDeletions} from './memory-deletions.js';
 import {PERSONAL_CONTEXT_POLICY} from './memory-policy.js';
@@ -44,7 +44,7 @@ function reference(record:MemoryRecord,span?:{offset?:number;length?:number;quot
     ...(d?.fileIndex?{fileIndex:d.fileIndex}:{}),...span,contentHash:memoryEvidenceFingerprint(record)};
 }
 export type PreparedMemoryExtraction={at:string;resultHash:string;items:Memory[];changed:Memory[];expected:Record<string,string|null>;deletionSnapshot:string};
-export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:PreparedMemoryExtraction;at?:string;maxCandidates?:number;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
+export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:PreparedMemoryExtraction;at?:string;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
 const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
   readonly deletions:MemoryDeletions;
@@ -167,16 +167,14 @@ export class MemoryStore {
   }
   extract(result:QueryResult,model:string,options:MemoryExtractOptions={}) {
     if(options.prepared)this.assertPrepared(options.prepared,result);
-    assertMemoryWorkAnswerSize(result.answer,options.workContract);
+    assertMemoryWorkAnswerSize(result.answer);
     let input:unknown;try{input=JSON.parse(result.answer);}catch{throw new MemoryOutputValidationError('json','Model returned an invalid memory format; no memories were saved');}
-    const selected=options.workContract==='range-evaluation@1',maxCandidates=selected?undefined:Math.min(32,Math.max(1,options.maxCandidates??8));
     const claims=z.array(claimSchema);
     const citationIds=z.array(z.string().uuid());
-    const parsed=z.object({memories:maxCandidates===undefined?claims:claims.max(maxCandidates),citationIds:(selected?citationIds:citationIds.max(960)).optional(),...(selected?{coverage:memoryWorkCoverageFor(options.workContract)}:options.maxCandidates?{coverage:memoryWorkCoverageSchema,capacity:memoryWorkCapacitySchema}:{})}).strict().safeParse(input);
-    if(parsed.success&&!selected&&!options.maxCandidates&&options.profile==='coding'&&parsed.data.memories.length>3)throw new MemoryOutputValidationError('schema','Coding extraction allows at most three durable memories');
+    const parsed=z.object({memories:claims,citationIds:citationIds.optional(),...(options.workContract?{coverage:memoryRangeEvaluationCoverageSchema}:{})}).strict().safeParse(input);
     if(!parsed.success){
       const codingIssue=parsed.error.issues.find(issue=>issue.path[2]==='coding'||issue.code==='unrecognized_keys'&&issue.keys.includes('applicability'));
-      throw new MemoryOutputValidationError(codingIssue?'coding_contract':'schema','Model returned an invalid memory structure; no memories were saved',{fieldPath:validationLocation((codingIssue??parsed.error.issues[0]).path),problem:validationProblem(codingIssue??parsed.error.issues[0]),workContract:options.workContract,maxCandidates:options.profile==='coding'&&!options.maxCandidates&&!selected?3:maxCandidates,...(typeof (codingIssue??parsed.error.issues[0]).path[1]==='number'?{candidateIndex:Number((codingIssue??parsed.error.issues[0]).path[1])}:{})});
+      throw new MemoryOutputValidationError(codingIssue?'coding_contract':'schema','Model returned an invalid memory structure; no memories were saved',{fieldPath:validationLocation((codingIssue??parsed.error.issues[0]).path),problem:validationProblem(codingIssue??parsed.error.issues[0]),workContract:options.workContract,...(typeof (codingIssue??parsed.error.issues[0]).path[1]==='number'?{candidateIndex:Number((codingIssue??parsed.error.issues[0]).path[1])}:{})});
     }
     const allowed=new Set(result.citations.map(c=>c.id)),now=options.prepared?.at??options.at??new Date().toISOString(),items:Memory[]=[];
     if(parsed.data.citationIds){const repeated=new Set(parsed.data.citationIds);if(repeated.size!==allowed.size||[...repeated].some(id=>!allowed.has(id)))throw new MemoryOutputValidationError('citations','Repeated memory citation envelope does not match verified evidence');}

@@ -191,7 +191,7 @@ test('an owner reply rolled back inside its real reply transaction leaves no tra
  await node.materialOrganizer.tick();await node.sourcePipelines.tick();
  const material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId==='dialogue');
  assert.ok(material);
- const start=await api('POST','/api/memory-jobs',{evidenceIds:node.materials.evidenceIds(material.ref),recipes:[{id:'mote.personal-memory',version:'2'}]});
+ const start=await api('POST','/api/memory-jobs',{evidenceIds:node.materials.evidenceIds(material.ref),recipes:[{id:'mote.personal-memory',version:'5'}]});
  assert.equal(start.statusCode,202,start.body);
  const job=await node.memoryPipeline.run(start.json().id);
  assert.equal(job.status,'waiting_for_input');assert.equal(job.errorCode,'memory_owner_input_required');
@@ -256,7 +256,7 @@ test('overlapping owner replies preserve the first committed batch transition wh
  }
  await node.materialOrganizer.tick();await node.sourcePipelines.tick();
  const materials=node.materials.list({sourceId:'generated-dialogues'}).items;assert.equal(materials.length,2);
- const start=await api('POST','/api/memory-jobs',{evidenceIds:materials.flatMap(material=>node.materials.evidenceIds(material.ref)),recipes:[{id:'mote.personal-memory',version:'2'}]});
+ const start=await api('POST','/api/memory-jobs',{evidenceIds:materials.flatMap(material=>node.materials.evidenceIds(material.ref)),recipes:[{id:'mote.personal-memory',version:'5'}]});
  assert.equal(start.statusCode,202,start.body);
  const job=await node.memoryPipeline.run(start.json().id);assert.equal(job.status,'waiting_for_input');assert.equal(job.batches.length,1);
  const questions=(await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id))).json().items;
@@ -658,7 +658,7 @@ test('Memory count migration separates invalidated batches without changing sche
  await sources.upsert('generated',item('a','Generated changed evidence','2'));
  await pipeline.close();
  const batch=JSON.parse(String(store.db.prepare('SELECT json FROM memory_batches WHERE job_id=?').get(job.id)!.json));
- const clone={...batch,id:crypto.randomUUID(),index:1,status:'failed',errorCode:'memory_capacity_saturated',attempts:2};
+ const clone={...batch,id:crypto.randomUUID(),index:1,status:'failed',errorCode:'memory_evaluation_incomplete',attempts:2};
  store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(clone.id,job.id,1,JSON.stringify(clone));
  const batchRows=()=>store.db.prepare('SELECT id,json FROM memory_batches ORDER BY id').all().map(row=>({id:row.id,body:JSON.parse(String(row.json))}));
  const before=batchRows(),jobBefore=JSON.parse(String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id)!.json));
@@ -668,7 +668,7 @@ test('Memory count migration separates invalidated batches without changing sche
  store.db.prepare('INSERT INTO memory_job_counts VALUES(?,2,0,2,0,0,3)').run(job.id);
  pipeline=fixtureMemoryPipeline(options);t.after(()=>pipeline.close());
  const mixed=pipeline.get(job.id),summary=pipeline.page().items.find(row=>row.id===job.id)!;
- assert.equal(mixed.status,'failed');assert.equal(mixed.outcome,'processing_failed');assert.equal(mixed.failedBatches,1);assert.equal(mixed.invalidatedBatches,1);assert.equal(mixed.errorCode,'memory_capacity_saturated');assert.equal(mixed.execution?.status,'failed');
+ assert.equal(mixed.status,'failed');assert.equal(mixed.outcome,'processing_failed');assert.equal(mixed.failedBatches,1);assert.equal(mixed.invalidatedBatches,1);assert.equal(mixed.errorCode,'memory_evaluation_incomplete');assert.equal(mixed.execution?.status,'failed');
  assert.equal(summary.failedBatches,1);assert.equal(summary.invalidatedBatches,1);assert.equal(summary.outcome,mixed.outcome);assert.equal(summary.execution?.status,'failed');assert.equal(summary.errorCode,mixed.errorCode);
  assert.deepEqual(batchRows(),before);assert.deepEqual(JSON.parse(String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id)!.json)),jobBefore);assert.equal(calls,1);
  await pipeline.close();pipeline=fixtureMemoryPipeline(options);assert.equal(pipeline.get(job.id).invalidatedBatches,1);assert.equal(calls,1,'repeat restart does not replay');

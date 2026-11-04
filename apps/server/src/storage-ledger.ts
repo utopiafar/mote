@@ -53,9 +53,6 @@ export class StorageLedger {
     expressions.source_context_declarations='length(CAST(json AS BLOB))+length(CAST(source_id AS BLOB))+256';
     expressions.record_context_declarations='length(CAST(json AS BLOB))+length(CAST(capture_id AS BLOB))+256';
     expressions.capture_import_declarations='256';
-    expressions.memory_recipe_default_upgrades='length(CAST(id AS BLOB))+128';
-    expressions.memory_recipe_legacy_scopes='length(CAST(setting_id AS BLOB))+length(CAST(scope AS BLOB))+128';
-    expressions.memory_recipe_legacy_exclusions='length(CAST(source_id AS BLOB))+128';
     expressions.memory_integration_deliveries='length(CAST(json AS BLOB))+length(CAST(operation_id AS BLOB))+length(CAST(inputs_hash AS BLOB))+coalesce(length(CAST(step_id AS BLOB)),0)+128';
     expressions.memory_deletion_dependencies='length(CAST(deletion_id AS BLOB))+length(CAST(evidence_id AS BLOB))+length(CAST(origin_keys AS BLOB))+length(CAST(lineage_keys AS BLOB))+128';
     expressions.delegation_artifacts='length(CAST(json AS BLOB))+length(CAST(metadata AS BLOB))+256';

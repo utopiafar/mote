@@ -54,7 +54,7 @@ for(const mutation of ['none','explicit-cancel','recipe-revoke','delete-current'
  const cards=(await f.api('GET','/api/work-activity')).json().items.filter((item:any)=>item.kind==='memory');assert.equal(cards.length,1,'the current continuation belongs to its original Activity goal');const card=cards[0];assert.equal(card.progress.total,2);assert.equal(card.progress.needsInput,1);assert.equal(card.progress.completed,1);assert.ok(card.technical.operationIds.includes(answered.json().continuationId));
  const detail=(await f.api('GET','/api/work-activity/'+encodeURIComponent(card.id))).json();assert.deepEqual(detail.progress,card.progress);assert.equal(detail.technical.operationIds.length,2);assert.ok(detail.branches.some((branch:any)=>branch.operationId===answered.json().continuationId));assert.equal(card.artifacts[0].count,1);assert.equal(detail.artifacts[0].count,1,'current reviewed continuation memories remain in their original goal');
  if(mutation==='explicit-cancel')assert.equal((await f.api('POST','/api/memory-jobs/'+f.job.id+'/cancel')).statusCode,200);
- if(mutation==='recipe-revoke')assert.equal((await f.api('PUT','/api/memory-recipe-settings',{sourceId:'generated-auto',recipes:[{id:'mote.daily-event-memory',version:'1'}]})).statusCode,200);
+ if(mutation==='recipe-revoke')assert.equal((await f.api('PUT','/api/memory-recipe-settings',{sourceId:'generated-auto',recipes:[{id:'mote.daily-event-memory',version:'2'}]})).statusCode,200);
  if(mutation==='delete-current'){
   const dependency=f.node.store.db.prepare('SELECT evidence_id FROM owner_question_dependencies WHERE question_id=?').get(second.id);assert.ok(dependency);f.node.store.delete(String(dependency.evidence_id));
  }

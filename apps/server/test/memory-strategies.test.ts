@@ -11,7 +11,6 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryStrategies} from '../src/memory-strategies.js';
-import {personalMemoryReviewStrategyV2} from '../src/personal-memory-review-policy.js';
 import type {MemoryStrategyRef} from '../src/memory-strategy-contract.js';
 
 const ref=(id:string,version='1'):MemoryStrategyRef=>({id:'fixture.'+id,version});
@@ -20,7 +19,7 @@ const original='I felt proud of finishing the prototype. I fixed duplicate write
 const understanding=(input:QueryInput)=>input.question.includes('FINAL UNIFIED RESPONSE CONTRACT:\nInterpret every supplied part');
 const extraction={...ref('extract'),input:'memory-evidence@1',output:'memory-candidates@1',permissions:['evidence.read'],prompt:'GENERATED_EXTRACTION_1'};
 const review=(id:string,policy:string)=>({...ref(id),input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy});
-const recipe=(id:string,extract:string,reviewId:string)=>({...ref(id),extract:ref(extract),review:ref(reviewId)});
+const recipe=(id:string,extract:string,reviewId:string)=>({...ref(id),workContract:'range-evaluation@1' as const,extract:ref(extract),review:ref(reviewId)});
 
 async function fixture(t:any){
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-strategies-')),modulePath=join(directory,'generated-strategies.mjs');
@@ -44,7 +43,7 @@ async function fixture(t:any){
     if(input.traceContext?.phase==='review'){
       control.duringReview?.();
       if(control.failCoding&&input.question.includes('GENERATED_CODING'))throw Error('Generated reviewer failure');
-      memories=input.question.includes('GENERATED_REJECT')?[]:(input.question.includes('GENERATED_PERSONAL')||input.question.includes('This strategy admits only personal-domain')||input.question.startsWith(personalMemoryReviewStrategyV2.policy))?[candidates[0]]:[candidates[1]];
+      memories=input.question.includes('GENERATED_REJECT')?[]:(input.question.includes('GENERATED_PERSONAL')||input.question.includes('This strategy admits only personal-domain')||input.question.includes('This recipe admits only domain=personal'))?[candidates[0]]:[candidates[1]];
       if(input.question.includes('GENERATED_INVALID'))memories=[{...candidates[1],evidence:[{id,quote:'This quote never occurred.'}]}];
     }
     const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?record.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):record.ocrText.slice(0,120);
@@ -62,7 +61,7 @@ async function fixture(t:any){
     return {id:ack.id,evidenceIds:node.materials.evidenceIds(material.ref),material};
   };
   const run=async(evidenceIds:string[],ids:string[])=>{
-    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload:{contextTime,evidenceIds,recipes:ids.map(id=>id.startsWith('mote.')?{id,version:'2'}:ref(id))}});
+    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload:{contextTime,evidenceIds,recipes:ids.map(id=>id==='mote.personal-memory'?{id,version:'5'}:id==='mote.coding-memory'?{id,version:'3'}:ref(id))}});
     assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);
   };
   return {get node(){return node;},calls,control,add,run,async restart(changed=false){let selectedModule=modulePath;if(changed){selectedModule=join(directory,'changed-strategies.mjs');writeFileSync(selectedModule,readFileSync(modulePath,'utf8').replace('GENERATED_EXTRACTION_1','Changed generation'));}await node.configService.update('connectors',{modules:[selectedModule]},node.configService.revision);await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();await disable();},count:(phase:string)=>calls.filter(c=>(c.traceContext?.phase??'extract')===phase).length};
@@ -91,11 +90,12 @@ test('installed recipes compose independent products, replace either strategy, a
   assert.equal(codingProducts.length,1);assert.equal(codingProducts[0].domain,'coding','one strategy refusing input does not veto another');
   const builtin=await f.run(source.evidenceIds,['mote.personal-memory','mote.coding-memory']);
   assert.equal(builtin.status,'completed');assert.deepEqual(builtin.memoryIds.map(id=>f.node.memories.get(id).domain).sort(),['coding','personal']);
-  assert.equal(f.count('extract'),4);assert.equal(f.count('review'),8);
-  const personalBinding=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'2'}).binding;
-  const codingBinding=f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'2'}).binding;
-  assert.equal(personalBinding.review.version,'2');assert.equal(codingBinding.review.version,'2');
-  assert.deepEqual(codingBinding.extract,personalBinding.extract,'current personal and Coding recipes share extraction with independent review');
+  assert.equal(f.count('extract'),5);assert.equal(f.count('review'),8);
+  const personalBinding=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'5'}).binding;
+  const codingBinding=f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'3'}).binding;
+  assert.equal(personalBinding.review.version,'5');assert.equal(codingBinding.review.version,'3');
+  assert.equal(personalBinding.workContract,'range-evaluation@1');assert.equal(codingBinding.workContract,'range-evaluation@1');
+  assert.notEqual(codingBinding.extract.id,personalBinding.extract.id,'current personal and Coding recipes keep independent extraction');
   for(const id of ['mote.personal-memory','mote.coding-memory'])assert.throws(()=>f.node.memoryStrategies.resolve({id,version:'1'}),/not installed/);
   const beforeReplay=f.calls.length,replayed=await f.run(source.evidenceIds,['mote.personal-memory','mote.coding-memory']);
   assert.equal(replayed.status,'completed');assert.equal(replayed.batches.length,0);assert.equal(f.calls.length,beforeReplay);

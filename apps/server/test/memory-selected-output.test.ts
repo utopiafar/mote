@@ -24,7 +24,7 @@ test('owner-selected OCR and composed originals reach manual Memory without adop
  const material=node.materials.publish(draft);
  node.sourcePipelines.memoryWork.observe(material.id,['source-body','attachment/generated/understanding'],{inputKey:raw,change:'rebuild',automatic:false});
  const body=node.materials.input(material.ref,['source-body'])!.evidenceIds[0],ocr=node.materials.input(material.ref,['attachment/generated/text'])!.evidenceIds[0],vision=node.materials.input(material.ref,['attachment/generated/understanding'])!.evidenceIds[0];
- const recipe={id:'mote.personal-memory',version:'2'},headers={authorization:'Bearer '+token};
+ const recipe={id:'mote.personal-memory',version:'5'},headers={authorization:'Bearer '+token};
  const grants=node.store.db.prepare('SELECT source_id,input_key,scope,job_id FROM memory_input_authorizations ORDER BY rowid').all();
  for(const ids of [[ocr],[body],[body,ocr,vision]]){
   const before=calls.length,response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{recipes:[recipe],evidenceIds:ids}});
@@ -36,7 +36,7 @@ test('owner-selected OCR and composed originals reach manual Memory without adop
  }
  assert.deepEqual(node.store.db.prepare('SELECT source_id,input_key,scope,job_id FROM memory_input_authorizations ORDER BY rowid').all(),grants,'manual selection neither renews nor consumes automatic receipts');
  const explicit={id:'generated.body-policy',version:'1'};
- node.memoryPipeline.strategies.registerRecipe({...explicit,requires:['source-body'],extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'}});
+ node.memoryPipeline.strategies.registerRecipe({...explicit,workContract:'range-evaluation@1',requires:['source-body'],extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.personal-review',version:'5'}});
  const restricted=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{recipes:[explicit],evidenceIds:[body,ocr]}});
  assert.equal(restricted.statusCode,202,restricted.body);
  assert.deepEqual((await node.memoryPipeline.run(restricted.json().id)).evidenceIds,[body],'explicit recipe requirements retain their own policy');

@@ -110,7 +110,7 @@ test('recording v3 carries scoped owner prose and full-range selection through f
  const f=await fixture(t);await f.connect();const status=await f.request('GET'),sourceId=status.sourceId;
  const description='Generated recordings are my spoken diary; quoted people and navigation announcements are not my own experiences.';
  const updated=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+sourceId+'/context',headers:{authorization:'Bearer '+f.config.token},payload:{expectedVersion:0,description}});assert.equal(updated.statusCode,200,updated.body);
- assert.equal(f.node.memoryStrategies.resolve({id:'mote.recording-memory',version:'1'}).binding.extract.version,'1');assert.equal(f.node.memoryStrategies.resolve({id:'mote.recording-memory',version:'2'}).binding.extract.version,'2');assert.equal(recordingMemoryRecipe.version,'3');assert.equal(f.node.memoryStrategies.resolve(recordingMemoryRecipe).binding.workContract,'range-evaluation@1');
+ assert.equal(recordingMemoryRecipe.version,'3');assert.equal(f.node.memoryStrategies.resolve(recordingMemoryRecipe).binding.workContract,'range-evaluation@1');assert.throws(()=>f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'1'}),/not installed/);assert.throws(()=>f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'2'}),/not installed/);
  await f.flush();await f.memory();const jobs=f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id));
  assert.ok(jobs.length>0);assert.ok(jobs.every(j=>j.status==='completed'&&j.recipes?.every(r=>r.id===recordingMemoryRecipe.id&&r.version==='3')));
  assert.ok(f.models.some(input=>input.taskContext?.untrustedMemoryDraft),'independent reviewer sees the actual recording work');
@@ -119,8 +119,8 @@ test('recording v3 carries scoped owner prose and full-range selection through f
   for(const member of members){assert.equal(member.attributionContext?.ownerRelation,'unknown');assert.equal(member.attributionContext?.basis,'default');assert.equal(member.attributionContext?.sourceContextStatements?.[0].description,description);}
   assert.match(input.question,/sourceContextStatements/);assert.match(input.question,/not a veto/);assert.match(input.question,/background\/navigation/);assert.match(input.question,/source creation\/start timestamp/);assert.equal((input.taskContext?.memoryWork as {workContract?:string})?.workContract,'range-evaluation@1');assert.doesNotMatch(input.question,/propose at most 8/);
  }
- const recipe3=f.node.memoryStrategies.resolve(recordingMemoryRecipe).binding,recipe1=f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'1'}).binding,recipe2=f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'2'}).binding;
- await f.restart();assert.deepEqual(f.node.memoryStrategies.resolve(recordingMemoryRecipe).binding,recipe3);assert.deepEqual(f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'1'}).binding,recipe1);assert.deepEqual(f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'2'}).binding,recipe2);
+ const recipe3=f.node.memoryStrategies.resolve(recordingMemoryRecipe).binding;
+ await f.restart();assert.deepEqual(f.node.memoryStrategies.resolve(recordingMemoryRecipe).binding,recipe3);
  assert.equal((await f.request('GET')).selection.autoSync,false);
 });
 

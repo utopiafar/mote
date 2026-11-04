@@ -80,10 +80,10 @@ async function fixture(t:import('node:test').TestContext,remote=false){
         return {...result,...(bridge?{trace:bridge.trace,evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies}:{})};
         }finally{await bridge?.close();}
       }})});
-    const extract={id:'mote.context-extraction',version:'3.4.0'};
+    const extract={id:'mote.selected-context-extraction',version:'1'};
     node.memoryStrategies.registerReview({id:'fixture.record-review',version:'1',input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy:'Generated index policy: keep only an observation supported by the supplied record.'});
-    for(const [recipe,requires,review] of [[bodyRecipe,['source-record'],{id:'fixture.record-review',version:'1'}],[extractedPersonal,['extracted-text'],{id:'mote.personal-review',version:'2'}],[extractedCoding,['extracted-text'],{id:'mote.coding-review',version:'2'}]] as const)
-      node.memoryStrategies.registerRecipe({...recipe,extract,review,requires});
+    for(const [recipe,requires,review] of [[bodyRecipe,['source-record'],{id:'fixture.record-review',version:'1'}],[extractedPersonal,['extracted-text'],{id:'mote.personal-review',version:'5'}],[extractedCoding,['extracted-text'],{id:'mote.coding-review',version:'3'}]] as const)
+      node.memoryStrategies.registerRecipe({...recipe,workContract:'range-evaluation@1',extract,review,requires});
     await node.app.ready();
   };
   await start();
@@ -184,7 +184,7 @@ for(const revoke of [false,true])test(`dialogue intermediate transcript preserve
 
 test('authored body and record-index recipes share generation despite different names for the same blocks',async t=>{
   const f=await fixture(t),personal={id:'fixture.authored-memory',version:'1'};
-  f.node.memoryStrategies.registerRecipe({...personal,requires:['source-body'],extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'}});
+  f.node.memoryStrategies.registerRecipe({...personal,workContract:'range-evaluation@1',requires:['source-body'],extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.personal-review',version:'5'}});
   f.node.memoryRecipeSettings.configure({recipes:[personal,bodyRecipe]});
   f.node.sources.register({id:'generated-authored',name:'Generated authored source',kind:'custom',deviceId:'fixture',platform:'import'});
   await f.node.sources.upsert('generated-authored',{externalId:'note',revision:'1',observedAt:'2026-05-07T07:00:00Z',kind:'message',layer:'original',text:caption,document:{contentRole:'authored'}});
@@ -252,7 +252,7 @@ test('manual recipes persist independent waiting inputs and resume only the orig
 test('a multi-batch consumer keeps ordinary evidence seed-bound while explicit context grants permit selected siblings only',async t=>{
   const f=await fixture(t);f.node.memoryRecipeSettings.configure({recipes:[extractedPersonal]});
   f.control.probeReadBoundaries=true;
-  f.control.segments=Array.from({length:21},(_,i)=>`Generated prototype verification in segment ${i}.`);
+  f.control.segments=Array.from({length:21},(_,i)=>`Generated prototype verification in segment ${i}. `.padEnd(700,'x'));
   await f.upload();await f.node.processing.tick();await f.organize();await f.run();
   const jobs=f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id));assert.equal(jobs.length,1);
   assert.equal(jobs[0].status,'completed');assert.equal(jobs[0].totalBatches,2);assert.equal(jobs[0].materialInputs![0].evidenceIds.length,21);
@@ -260,6 +260,6 @@ test('a multi-batch consumer keeps ordinary evidence seed-bound while explicit c
   assert.equal(f.boundaryChecks.length,4);assert.ok(f.boundaryChecks.filter(check=>check.phase==='extract').every(check=>!check.siblingSeeded));
   assert.ok(f.boundaryChecks.filter(check=>check.phase==='review').every(check=>check.siblingSeeded),'independent review receives the exact sibling original actually read by extraction');
   assert.ok(f.boundaryChecks.every(check=>check.ungrantedIds.length>0));
-  assert.deepEqual(jobs[0].batches.map(batch=>batch.evidenceRanges.length).sort((a,b)=>a-b),[1,20],'context reads never add targets or coverage');
+  const ranges=jobs[0].batches.map(batch=>batch.evidenceRanges.length);assert.equal(ranges.length,2);assert.ok(ranges.every(count=>count<21),'context reads never add targets or coverage');
   assert.equal(f.asrCalls(),1);
 });

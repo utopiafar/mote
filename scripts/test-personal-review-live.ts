@@ -11,8 +11,7 @@ import {SourceStore} from '../apps/server/src/sources.js';
 import {MemoryStore,MemoryOutputValidationError} from '../apps/server/src/memory.js';
 import {reviewMemory,memoryReviewReceipt} from '../apps/server/src/memory-review.js';
 import {MemoryReviewCache} from '../apps/server/src/memory-review-cache.js';
-import {personalMemoryReviewStrategyV2} from '../apps/server/src/personal-memory-review-policy.js';
-import {codingMemoryReviewStrategyV2} from '../apps/server/src/coding-memory-review-policy.js';
+import {rangeSelectionPersonalReviewStrategy,rangeSelectionCodingReviewStrategy} from '../apps/server/src/memory-range-selection-policy.js';
 import {personalReviewCases} from './fixtures/personal-review-cases.js';
 import {codingReviewCases} from './fixtures/coding-review-cases.js';
 
@@ -20,14 +19,14 @@ assert.ok(process.env.MOTE_REVIEW_FIXTURE_OUTPUT,'Set a new MOTE_REVIEW_FIXTURE_
 const selection=process.env.MOTE_REVIEW_FIXTURE_STRATEGY??'personal-v2';
 assert.ok(selection==='personal-v2'||selection==='coding-v2','Select a known generated regression explicitly');
 const coding=selection==='coding-v2',cases=coding?codingReviewCases:personalReviewCases;
-const strategy=coding?codingMemoryReviewStrategyV2:personalMemoryReviewStrategyV2;
+const strategy=coding?rangeSelectionCodingReviewStrategy:rangeSelectionPersonalReviewStrategy;
 const directory=resolve(process.env.MOTE_REVIEW_FIXTURE_OUTPUT),part=relative(repositoryRoot,directory);
 assert.ok(part==='..'||part.startsWith('../'));await mkdir(directory,{mode:0o700});
 const store=new Store(join(directory,'vault')),sources=new SourceStore(store),memories=new MemoryStore(store),cache=new MemoryReviewCache();
 const agent=createAgent({provider:'codex',protocol:'codex-app-server',model:'gpt-6-sol',reasoningEffort:'max',agentTimeoutMs:300000,codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME},reader:{search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async({ids})=>store.evidence(ids),activity:async()=>({}),devices:async()=>[]}});
 const report:Record<string,any>={startedAt:new Date().toISOString(),status:'running',semanticQualityAccepted:false,heldOut:false,personalDataUsed:false,generatedDraft:true,extractionTested:false,model:'gpt-6-sol',reasoningEffort:'max',maximumModelCalls:1,maximumDurationMs:300000,strategy,cases:[],calls:[],traces:[]};
 report.fixtureSha256=sha256(await readFile(join(repositoryRoot,`scripts/fixtures/${coding?'coding':'personal'}-review-cases.ts`)));
-report.codeHashes=Object.fromEntries(await Promise.all(['scripts/test-personal-review-live.ts',`apps/server/src/${coding?'coding':'personal'}-memory-review-policy.ts`,'apps/server/src/memory-review.ts','packages/agent/dist/task-context.js','packages/agent/dist/instructions.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
+report.codeHashes=Object.fromEntries(await Promise.all(['scripts/test-personal-review-live.ts',`apps/server/src/${coding?'coding-memory-review-policy':'memory-range-selection-policy'}.ts`,'apps/server/src/memory-review.ts','packages/agent/dist/task-context.js','packages/agent/dist/instructions.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 async function save(){await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
 try{
   sources.register({id:'generated-review',name:`Generated ${coding?'coding':'personal'} review regression`,kind:'custom',deviceId:'generated',platform:'import'});

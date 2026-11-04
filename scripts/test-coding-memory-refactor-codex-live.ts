@@ -47,7 +47,7 @@ try{
  const lifecycle=node.lifecycle.settings();for(const key of ['working','consolidation','insights'] as const)lifecycle[key].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings:lifecycle});
  base=await node.app.listen({host:'127.0.0.1',port:0});
  await request('POST','/api/sources',{id:sourceId,name:'Generated Coding refactor journey',kind:'coding-agent',deviceId:'generated-coding-device',platform:'macos',retention:'archive'});
- await request('PUT','/api/memory-recipe-settings',{sourceId,recipes:[{id:'mote.coding-memory',version:'2'}]});
+ await request('PUT','/api/memory-recipe-settings',{sourceId,recipes:[{id:'mote.coding-memory',version:'3'}]});
  // Fixture-only settling configuration; actual 5-second workers still own all
  // publication, readiness, receipt admission and model scheduling.
  node.sourcePipelines.configure(sourceId,{settleSeconds:0});
