@@ -31,7 +31,7 @@ test('fresh app installs current defaults and intake projections before receivin
  assert.equal(node.processing.imageDefault().profile.processorId,'image.http');assert.equal(node.lifecycle.settings().extraction.enabled,true);
  await assert.rejects(async()=>await node.lifecycle.save({revision:node.configService.revision,settings:{...node.lifecycle.settings(),extraction:{...node.lifecycle.settings().extraction,enabled:false}}}));
  assert.throws(()=>node.sourcePipelines.configure('generated',{memory:false}));
- assert.throws(()=>node.featureServices.queryRuns.start(randomUUID(),{}),{statusCode:400});
+ assert.throws(()=>node.queryRuns.start(randomUUID(),{}),{statusCode:400});
  assert.equal(node.store.db.prepare("SELECT count(*) n FROM settings WHERE key IN ('model-budgets','image-policy-migrated')").get()!.n,0);
  assert.equal(node.store.db.prepare("SELECT count(*) n FROM sqlite_master WHERE name LIKE 'model_budget_%' OR name='processing_usage'").get()!.n,0);
  const bytes=await (await import('sharp')).default({create:{width:16,height:16,channels:3,background:'#6699cc'}}).png().toBuffer(),id=randomUUID();
@@ -46,12 +46,12 @@ test('current HTTP query timeout and cancellation fence uncooperative late answe
  const node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{signals.push(input.signal!);await held;return result();}}});
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const expired=randomUUID(),cancelled=randomUUID(),headers={authorization:'Bearer generated-mvp-owner'};
- await withFixtureOwnerModelWork(node,async()=>node.featureServices.queryRuns.start(expired,{question:'Generated deadline'},{timeoutMs:5000}));await until(()=>signals.length>0);await until(()=>node.featureServices.queryRuns.get(expired).status!=='running');
- assert.equal(node.featureServices.queryRuns.get(expired).error?.code,'timeout');
+ await withFixtureOwnerModelWork(node,async()=>node.queryRuns.start(expired,{question:'Generated deadline'},{timeoutMs:5000}));await until(()=>signals.length>0);await until(()=>node.queryRuns.get(expired).status!=='running');
+ assert.equal(node.queryRuns.get(expired).error?.code,'timeout');
  const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:cancelled,input:{question:'Generated cancel'}}});assert.equal(accepted.statusCode,202,accepted.body);
  assert.equal((await node.app.inject({method:'POST',url:'/api/query-runs/'+cancelled+'/cancel',headers})).json().status,'cancelled');
  release();await new Promise(resolve=>setTimeout(resolve,50));
- for(const id of [expired,cancelled])assert.equal(node.featureServices.queryRuns.get(id).turnId,undefined);
+ for(const id of [expired,cancelled])assert.equal(node.queryRuns.get(id).turnId,undefined);
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversation_turns').get()!.n,0);assert.ok(signals[0].aborted);
 });
 
@@ -63,7 +63,7 @@ test('current backup restores a durable query and never repeats its completed an
  await node.app.close();execFileSync(process.execPath,['--import','tsx',fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',source,'--out',backup],{stdio:'pipe'});
  await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process')},backup);
  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{calls++;return result();}};
- node=await buildApp(config(target),{agent,backgroundWorker:false});await until(()=>node.featureServices.queryRuns.get(id).status==='completed');
- const receipt=node.featureServices.queryRuns.get(id);assert.ok(receipt.turnId);assert.equal(calls,1);await node.app.close();
- node=await buildApp(config(target),{agent,backgroundWorker:false});assert.equal(node.featureServices.queryRuns.get(id).turnId,receipt.turnId);assert.equal(calls,1);
+ node=await buildApp(config(target),{agent,backgroundWorker:false});await until(()=>node.queryRuns.get(id).status==='completed');
+ const receipt=node.queryRuns.get(id);assert.ok(receipt.turnId);assert.equal(calls,1);await node.app.close();
+ node=await buildApp(config(target),{agent,backgroundWorker:false});assert.equal(node.queryRuns.get(id).turnId,receipt.turnId);assert.equal(calls,1);
 });

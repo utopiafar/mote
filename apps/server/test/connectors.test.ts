@@ -333,7 +333,11 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   const names=(await reader.listTools()).tools.map(tool=>tool.name);
   assert.ok(names.includes('mote_timeline'));assert.ok(names.includes('mote_media_activity'));assert.ok(names.includes('mote_memories'));assert.ok(names.includes('mote_history'));assert.ok(!names.includes('mote_put_item'));
   assert.deepEqual((await writer.listTools()).tools.map(tool=>tool.name),['mote_put_item']);
+  const otherBefore=JSON.stringify(sources.getSource('other'));
   const refused=await writer.callTool({name:'mote_put_item',arguments:{sourceId:'other',item:item()}});assert.equal(refused.isError,true);assert.equal(sources.listItems({sourceId:'other'}).items.length,0);
+  assert.equal(jsonResult(refused).error,'mcp_write_scope_denied');
+  assert.equal(JSON.stringify(sources.getSource('other')),otherBefore,'a denied write leaves the target source untouched');
+  assert.equal((store.db.prepare('SELECT COUNT(*) AS count FROM memories').get() as {count:number}).count,0,'a denied write admits no Memory');
   const event={...item('x'.repeat(14000)),metadata:{version:1,file:{sizeBytes:14000,createdAt:'2026-09-01T00:00:00Z'}}};
   const written=jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:event}}));assert.equal(written.duplicate,false);
   assert.equal(jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:event}})).duplicate,true);
@@ -373,6 +377,32 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   assert.equal((await reader.callTool({name:'mote_media_activity',arguments:{source:'screen'}})).isError,true);
   assert.equal((await writer.callTool({name:'mote_media_activity',arguments:{}})).isError,true,'Write-only MCP credentials cannot read private media');
   assert.equal((await reader.readResource({uri:'mote://sources'})).contents[0].mimeType,'application/json');
+});
+
+test('stopping the MCP transport closes its session, restart reuses the mounted route and other HTTP sources stay available',async t=>{
+  const {ctx,sources}=await fixture(t),app=Fastify();
+  const sibling:ConnectorManifest={apiVersion:1,id:'fixture-http-source',sourceKinds:[],create:()=>({configure:host=>{host.ownerRoute({method:'GET',path:'/api/connectors/fixture-http-source',handler:()=>({available:true})});}})};
+  const connectors=await registerConnectors(app,ctx,undefined,[sibling]);
+  await app.listen({host:'127.0.0.1',port:0});
+  const endpoint=new URL('/mcp',app.listeningOrigin),clients:Client[]=[];
+  const connect=async()=>{const client=new Client({name:'synthetic-mcp-lifecycle',version:'1'});clients.push(client);await client.connect(new StreamableHTTPClientTransport(endpoint,{requestInit:{headers:{Authorization:`Bearer ${readToken}`}}}));return client;};
+  t.after(async()=>{await Promise.allSettled(clients.map(client=>client.close()));await connectors.close();await app.close();});
+  const record=await sources.upsert('allowed',item('Generated MCP lifecycle evidence'));
+  const reader=await connect();
+  const evidence=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:fixtureCaptureRefs([record.id])}}));
+  assert.equal(evidence[0].text,'Generated MCP lifecycle evidence');
+  const names=(await reader.listTools()).tools.map(tool=>tool.name);
+  assert.ok(names.includes('mote_evidence'));
+  assert.ok(!names.includes('mote_put_item')&&names.every(name=>!name.startsWith('mote_control')),'a read credential exposes no control or write capability');
+  await connectors.stop('mcp');
+  const denied={method:'POST' as const,url:'/mcp',headers:{authorization:`Bearer ${readToken}`,'content-type':'application/json',accept:'application/json, text/event-stream'},payload:{jsonrpc:'2.0',id:99,method:'tools/list',params:{}}};
+  assert.equal((await app.inject(denied)).statusCode,503,'a stopped transport rejects admission instead of replaying the old session');
+  await assert.rejects(reader.listTools(),'the stopped session is closed');
+  assert.deepEqual((await app.inject({url:'/api/connectors/fixture-http-source',headers:{authorization:`Bearer ${owner}`}})).json(),{available:true},'stopping MCP leaves another HTTP source available');
+  await connectors.restart('mcp');
+  const restarted=await connect();
+  const restored=jsonResult(await restarted.callTool({name:'mote_evidence',arguments:{ids:fixtureCaptureRefs([record.id])}}));
+  assert.equal(restored[0].text,'Generated MCP lifecycle evidence','restart restores reads without re-registering the route');
 });
 
 test('remote MCP uses official HTTP SDK, selected resources, explicit readonly tools and restoration revisions',async t=>{
@@ -434,6 +464,52 @@ test('remote MCP reconciles complete resource membership across shrink, empty, f
   parts=[];await remote.import(input);assert.equal(sources.listItems({sourceId:'manifest'}).items.length,0);
   assert.deepEqual(await remote.import(input),{imported:0,duplicates:0});
   parts=['Generated restored'];await remote.import(input);assert.deepEqual(sources.listItems({sourceId:'manifest'}).items.map(item=>item.text),parts);
+});
+
+test('remote MCP import closes a disconnected session without replaying an unknown submission and only an explicit restart retries',async t=>{
+  const {ctx,sources}=await fixture(t);ctx.config.connectors!.allowLocalMcp=true;
+  sources.register({id:'remote-disconnect',name:'Generated disconnect source',kind:'mcp',deviceId:'remote-disconnect',platform:'import'});
+  let reads=0,mode:'ok'|'drop'|'hang'='drop';
+  let started!:()=>void,start=new Promise<void>(resolve=>started=resolve);
+  let closed!:()=>void,closedSignal=new Promise<void>(resolve=>closed=resolve);
+  const remoteApp=Fastify();
+  remoteApp.all('/mcp',async(req,reply)=>{
+    if(req.method!=='POST')return reply.code(405).send();
+    const server=new McpServer({name:'generated-remote-disconnect',version:'1'});
+    server.registerResource('document','fixture://document',{},async()=>{
+      reads++;started();
+      if(mode==='ok')return {contents:[{uri:'fixture://document',text:'Generated imported after explicit retry',mimeType:'text/plain'}]};
+      const socket=req.raw.socket,sessionClosed=new Promise<void>(resolve=>{if(!socket||socket.destroyed)resolve();else socket.once('close',resolve);});
+      if(mode==='drop'){reply.raw.destroy();await sessionClosed;closed();throw Error('Generated remote disconnect');}
+      await sessionClosed;closed();
+      throw Error('Generated remote session closed');
+    });
+    const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
+    await server.connect(transport);reply.hijack();
+    try{await transport.handleRequest(req.raw,reply.raw,req.body);}catch{}finally{await server.close();}
+  });
+  await remoteApp.listen({host:'127.0.0.1',port:0});
+  const remote=new RemoteMcp(remoteMcpContext(ctx));t.after(async()=>{await remote.close();await remoteApp.close();});
+  const input={url:remoteApp.listeningOrigin+'/mcp',sourceId:'remote-disconnect',resourceUris:['fixture://document']};
+  await assert.rejects(remote.import(input),(error:any)=>error.code==='mcp_network_error'&&error.statusCode===502);
+  await closedSignal;
+  assert.equal(reads,1,'a disconnected read result is unknown and must not be retried');
+  assert.equal(sources.listItems({sourceId:'remote-disconnect'}).items.length,0);
+  assert.equal(sources.getSource('remote-disconnect').status?.state,'error');
+  await new Promise(resolve=>setTimeout(resolve,50));assert.equal(reads,1,'the failed import stays single-shot');
+  mode='hang';reads=0;start=new Promise<void>(resolve=>started=resolve);closedSignal=new Promise<void>(resolve=>closed=resolve);
+  const pending=remote.import(input);
+  await start;
+  await remote.close();
+  await assert.rejects(pending,(error:any)=>error.code==='mcp_import_failed'&&error.statusCode===502);
+  await closedSignal;
+  assert.equal(reads,1,'stopping the client mid-import closes the session without a blind replay');
+  assert.equal(sources.listItems({sourceId:'remote-disconnect'}).items.length,0,'an abandoned import commits no source item');
+  mode='ok';reads=0;
+  const restarted=new RemoteMcp(remoteMcpContext(ctx));t.after(async()=>{await restarted.close();});
+  assert.deepEqual(await restarted.import(input),{imported:1,duplicates:0},'only an explicit retry after restart resumes the import');
+  assert.deepEqual(sources.listItems({sourceId:'remote-disconnect'}).items.map(item=>item.text),['Generated imported after explicit retry']);
+  assert.equal(sources.getSource('remote-disconnect').status?.state,'idle');
 });
 
 test('remote fetch denies private/default targets, credentials, metadata IPs and redirects',async t=>{
