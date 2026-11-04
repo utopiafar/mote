@@ -1,27 +1,23 @@
 import {observeModelTransport} from './models/http-transport.js';
 import {ActiveExecutionBudget,DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active-budget.js';
-import {ProviderFailure,type ImportHostMedia,type ImportReviewDecision,type TokenUsage} from '@mote/shared';
+import {ProviderFailure,type TokenUsage} from '@mote/shared';
 import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
-import {createCodexImportAgent} from './codex-import.js';
+import {codexImportCapabilityDescriptor} from './codex-import.js';
 import {DeepSeekHarness,RequestTimeoutError,type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {ImportTaskContractError,importSkillDescriptor,importTaskDescriptor,resolveImportRecordsPath} from './tasks/import.js';
+import {IMPORT_CAPABILITY_API_VERSION,ImportCapabilityRegistry,defineImportCapabilityDescriptor,importRepairPrompt,importRequestPayload,parseImportPreview,type ImportAgentInput,type ImportAgentLaunch,type ImportAgentObserver,type ImportAgentResult,type ImportCapability} from './runtime/import-capability.js';
+import {importSkillDescriptor} from './tasks/import.js';
 import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './models/provider-registry.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
-export type ImportAgentInput={language?:import('@mote/shared/i18n').Locale;workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
-export type ImportAgentResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
-export type ImportAgentObserver=(notification:HarnessNotification)=>void;
-export type ImportAgentLaunch=(input:{workspace:string;runtimeRoot:string})=>Promise<{dshBin:string}>;
+export type {ImportAgentInput,ImportAgentLaunch,ImportAgentObserver,ImportAgentResult,ImportCapability} from './runtime/import-capability.js';
 
-/** Dedicated import runtime. Native shell/file capabilities never enter query sessions. */
-export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch){
-  validateModelOptions(options);
-  if(options.protocol==='codex-app-server')return createCodexImportAgent(options);
+/** HTTP transports execute the same writable Import capability as Codex. */
+function createDshImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch):ImportCapability {
   options={...options,headers:options.headers&&{...options.headers},extraBody:options.extraBody&&structuredClone(options.extraBody)};
   const connection=modelConnection(options),active=new Set<DeepSeekHarness>(),pending=new Set<Promise<ImportAgentResult>>();
   let closed=false;
@@ -73,22 +69,15 @@ export function apply(ctx){
         const end=[...result.events].reverse().find(e=>e.type==='turn/end');
         if((end?.data as {reason?:{kind?:string}})?.reason?.kind==='error')throw new AgentProviderError();
       };
-      const parseResult=(text:string):ImportAgentResult=>{
-        if(text.length>64000)throw new AgentResponseError('Import analysis response exceeds its limit');
-        let value:unknown;try{value=JSON.parse(text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw new AgentResponseError('Import analysis did not return valid JSON');}
-        if(!value||typeof value!=='object'||typeof (value as ImportAgentResult).summary!=='string')throw new AgentResponseError('Import analysis is missing its preview summary');
-        const result=value as ImportAgentResult;
-        try{resolveImportRecordsPath(input.workspace,result.recordsPath);}catch(error){if(error instanceof ImportTaskContractError)throw new AgentResponseError(error.message);throw error;}
-        return result;
-      };
+      const parseResult=(text:string):ImportAgentResult=>parseImportPreview(text,input.workspace);
       const readAnswer=async()=>{
-        let result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>budget.run(()=>harness!.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:importSkillDescriptor.id,taskId:importTaskDescriptor.id,taskVersion:importTaskDescriptor.version,importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),runOptions)),modelAdmission.signal);
+        let result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>budget.run(()=>harness!.run(importRequestPayload(input),runOptions)),modelAdmission.signal);
         checkResult(result);
         for(let repair=0;;repair++){
           try{return parseResult(result.finalResponse);}catch(error){
             if(!(error instanceof AgentResponseError)||repair>=MAX_OUTPUT_REPAIRS)throw error;
             // Bounded corrections in the same session, inside the original total deadline.
-            result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>budget.run(()=>harness!.run(JSON.stringify({instruction:'Your final import response could not be accepted. Using only the analysis already completed in this session, return ONLY one JSON object with summary (a string in the selected language), optional recordsPath (a string), optional warnings (an array of strings), and optional reviewDecision ({confidence:"high"|"low"|"unknown",ambiguous:boolean,reason:string}). Report high only when the mapping has no unresolved ambiguity. Do not include Markdown fences or any text outside JSON. Do not repeat analysis, run tools, rewrite files, or claim an artifact exists unless it was actually produced. Preserve any reported limitations. The host independently validates the manifest and decides whether review is required.',validationError:error.message}),runOptions)),modelAdmission.signal);
+            result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>budget.run(()=>harness!.run(importRepairPrompt(error.message),runOptions)),modelAdmission.signal);
             checkResult(result);
           }
         }
@@ -113,4 +102,23 @@ export function apply(ctx){
       if(cleanup.some(result=>result.status==='rejected'))throw new AgentProviderError();
     },
   };
+}
+
+export const dshImportCapabilityDescriptor=defineImportCapabilityDescriptor({
+  apiVersion:IMPORT_CAPABILITY_API_VERSION,
+  id:'dsh-import',
+  version:'1.0.0',
+  protocols:['deepseek','openai-completions','openai-responses','anthropic-messages','google-generative-ai'],
+  create:(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch)=>createDshImportAgent(options,prepareLaunch),
+});
+
+const defaultCapabilities=new ImportCapabilityRegistry();
+defaultCapabilities.register(dshImportCapabilityDescriptor);
+defaultCapabilities.register(codexImportCapabilityDescriptor);
+
+/** Fixed-settings facade. Host transport configuration selects the registered
+ * implementation; captured content and model output never choose a capability. */
+export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch):ImportCapability {
+  validateModelOptions(options);
+  return defaultCapabilities.create(options,prepareLaunch);
 }

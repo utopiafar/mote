@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {DeepSeekHarness,RequestTimeoutError} from '@deepseek-ai/dsh-sdk-client';
 import {createImportAgent} from '../dist/import-agent.js';
-import {AgentTimeoutError,AgentResponseError,AgentProviderError} from '../dist/index.js';
+import {AgentTimeoutError,AgentResponseError,AgentProviderError,ImportCapabilityError,ImportCapabilityRegistry} from '../dist/index.js';
+import {parseImportPreview} from '../dist/runtime/import-capability.js';
 
 const options={model:'synthetic-model',apiKey:'synthetic-test-key',baseUrl:'http://127.0.0.1:9/v1'};
 const input={workspace:process.cwd(),inputPaths:[],hostMedia:[{path:'inputs/photo.png',relativePath:'photo.png',mimeType:'image/png',contentAvailable:false,processing:'after_confirmation'}],instruction:'Generated lifecycle fixture',helperPath:'generated-only',manifestSchema:{}};
@@ -83,6 +84,28 @@ test('optional import launch hook receives the isolated root and only forwards i
   t.mock.method(DeepSeekHarness.prototype,'close',async()=>{});
   const agent=createImportAgent(options,async paths=>{launched=paths;return {dshBin:paths.runtimeRoot+'/generated-launch.mjs',extraEnvironment:{IGNORED:'generated'}};});t.after(()=>agent.close());
   await agent.prepare(input);assert.equal(launched.workspace,input.workspace);assert.match(launched.runtimeRoot,/mote-import-agent-/);
+});
+
+test('import transports share one bounded preview contract',()=>{
+  const fixture=()=>JSON.stringify({summary:'Generated preview',recordsPath:null,warnings:['Generated warning'],reviewDecision:null});
+  assert.deepEqual(parseImportPreview(fixture(),process.cwd()),{summary:'Generated preview',warnings:['Generated warning']});
+  assert.throws(()=>parseImportPreview(JSON.stringify({summary:'Generated',recordsPath:'../outside.jsonl'}),process.cwd()),AgentResponseError);
+  assert.throws(()=>parseImportPreview(JSON.stringify({summary:'Generated',unexpected:true}),process.cwd()),AgentResponseError);
+  assert.throws(()=>parseImportPreview(JSON.stringify({summary:'Generated',reviewDecision:{confidence:'certain',ambiguous:true}}),process.cwd()),AgentResponseError);
+});
+
+test('import capability registry selects an implementation only from explicit protocol configuration and retires it',async()=>{
+  const registry=new ImportCapabilityRegistry();let disposed=0,created=[];
+  const remove=registry.register({apiVersion:'1',id:'generated-import',version:'1.0.0',protocols:['generated-transport'],
+    create:options=>{created.push(options.protocol);return {prepare:async()=>({summary:'Generated preview'}),close:async()=>{}};},
+    dispose:()=>{disposed++;}});
+  const capability=registry.create({protocol:'generated-transport',model:'generated-model'});
+  assert.equal(typeof capability.prepare,'function');assert.deepEqual(created,['generated-transport']);
+  const create=()=>({prepare:async()=>({summary:'Generated preview'}),close:async()=>{}});
+  assert.throws(()=>registry.register({apiVersion:'1',id:'generated-import',version:'1.0.0',protocols:['other-transport'],create}),error=>error instanceof ImportCapabilityError&&error.code==='duplicate_import_capability');
+  assert.throws(()=>registry.register({apiVersion:'1',id:'other-import',version:'1.0.0',protocols:['generated-transport'],create}),error=>error instanceof ImportCapabilityError&&error.code==='duplicate_import_capability');
+  assert.throws(()=>registry.descriptor('generated-missing'),error=>error instanceof ImportCapabilityError&&error.code==='unknown_import_capability');
+  await remove();assert.equal(disposed,1);assert.throws(()=>registry.descriptor('generated-transport'),error=>error instanceof ImportCapabilityError&&error.code==='unknown_import_capability');
 });
 
 test('import usage includes the formatting repair and stays outside model input',async t=>{

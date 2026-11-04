@@ -34,6 +34,7 @@ export {buildContextEnvelope, taskTools} from './task-context.js';
 export {parseAnswer} from './answer-parser.js';
 export {skillCatalog, SKILL_VERSION} from './skills.js';
 export {createImportAgent, type ImportAgentInput} from './import-agent.js';
+export {IMPORT_CAPABILITY_API_VERSION,ImportCapabilityError,ImportCapabilityRegistry,defineImportCapabilityDescriptor,type ImportAgentLaunch,type ImportAgentObserver,type ImportAgentResult,type ImportCapability,type ImportCapabilityDescriptor} from './runtime/import-capability.js';
 export * from './types.js';
 export {AgentYieldError, hostControlDefinitions, hostControlInstructions, type HostControlChannel, type HostControlDefinition, type HostControlResult} from './host-controls.js';
 export {
