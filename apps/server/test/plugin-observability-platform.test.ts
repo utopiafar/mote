@@ -15,11 +15,9 @@ import {ServerDiagnostics,safeError} from '../src/diagnostics.js';
 import {centralServices} from '../src/plugins/central-contracts.js';
 import {
   createObservabilityPlatform,createObservabilityPlatformFactory,observabilityPlatformContribution,
-  observabilityPlatformDeclaration,observabilityPlatformReplacement,
+  observabilityPlatformDeclaration,observabilityPlatformReplacement,type ObservabilityRouteViews,
 } from '../src/plugins/observability-platform.js';
-import {register as registerUsage} from '../src/features/usage.js';
-import {register as registerDiagnostics} from '../src/features/diagnostics.js';
-import {registerBootstrapHealth,registerSystemUpdate,registerSystemView} from '../src/features/system.js';
+import {registerBootstrapHealth} from '../src/features/system.js';
 import type {ReleaseCheck} from '../src/updates.js';
 
 const secret='GENERATED_OBSERVABILITY_PRIVATE_BODY_AND_TOKEN';
@@ -41,6 +39,16 @@ function fixture(t:import('node:test').TestContext,checkRelease:ReleaseCheck = a
   return {directory,logs,store,platform,owner};
 }
 const today=()=>new Date().toISOString().slice(0,10);
+function routeViews(overrides:{status?:unknown;updates?:unknown;buildInfo?:unknown;diagnostics?:Record<string,unknown>}={}):ObservabilityRouteViews{
+  return {
+    system:{
+      status:()=>overrides.status??{generated:'status'},
+      updates:()=>overrides.updates??{items:[],next:null},
+      buildInfo:()=>overrides.buildInfo??{serverVersion:'0.4.0',webVersion:'0.4.0',consistent:true},
+    },
+    diagnostics:()=>({execution:{},services:{},queue:{},storage:{},...overrides.diagnostics}),
+  };
+}
 
 test('restart contribution publishes only the frozen usage port and releases its writer on host close',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-observability-host-')),store=new Store(directory),logs=join(directory,'logs');
@@ -127,8 +135,7 @@ test('real SQLite execution writes one admitted receipt and keeps diagnostic, do
 
   const app=Fastify();
   app.setErrorHandler((error,_request,reply)=>{const failure=safeError(error);reply.code(failure.status).send({error:failure.category,message:failure.message,requestId:'generated'});});
-  registerUsage(app,{usageLedger:assembly.usage});
-  registerDiagnostics(app,{diagnostics,diagnosticSnapshot:()=>({version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot()})});
+  f.platform.routes(app,f.owner.scope,routeViews());
   const day=today(),usage=await app.inject(`/api/usage?from=${day}&to=${day}&timeZone=UTC&agentId=generated-agent&moduleId=generated-module`);
   assert.equal(usage.statusCode,200,usage.body);const summary=usage.json();
   assert.equal(summary.itemsTotal,1);assert.equal(summary.items[0].attribution.jobId,domainJobId);assert.equal(summary.items[0].attribution.operationId,operationId);assert.equal(summary.items[0].status,'completed');
@@ -166,18 +173,41 @@ test('sanitized reads stay flat, a write failure is visible, and disposal still 
   const reopened=new ServerDiagnostics({directory:f.logs});try{await reopened.init();assert.equal(reopened.snapshot().writeFailures,0,'the failed writer still released its log lock');}finally{await reopened.close();}
 });
 
-test('minimal health, composition view and update service remain separable route contributions',async t=>{
+test('minimal health stays a host primitive while system, update, usage and diagnostics are platform route contributions',async t=>{
   const f=await fixture(t);await f.platform.prepare();await f.platform.start();
-  const assembly=f.platform.forAssembly(f.owner.scope),app=Fastify();
+  const app=Fastify();
   registerBootstrapHealth(app,{serverVersion:'0.4.0'} as never);
-  registerSystemUpdate(app,{softwareUpdate:assembly.softwareUpdate});
-  registerSystemView(app,{serverVersion:'0.4.0',webVersion:'0.4.0'} as never);
+  f.platform.routes(app,f.owner.scope,routeViews({status:{generated:'status'},updates:{items:[],next:null}}));
   const health=await app.inject('/api/health');assert.deepEqual(health.json(),{ok:true,version:'0.4.0',protocol:health.json().protocol});
+  assert.deepEqual((await app.inject('/api/status')).json(),{generated:'status'});
+  assert.deepEqual((await app.inject('/api/updates?cursor=0&limit=10')).json(),{items:[],next:null});
   const update=await app.inject('/api/software-update');assert.equal(update.statusCode,200);assert.equal(update.json().currentVersion,'0.4.0');assert.equal(update.json().state,'idle');
   assert.deepEqual((await app.inject('/api/build-info')).json(),{serverVersion:'0.4.0',webVersion:'0.4.0',consistent:true});
+  const diagnostics=await app.inject('/api/diagnostics');assert.equal(diagnostics.statusCode,200);assert.equal(diagnostics.json().scope,'central-safe-diagnostics');
   const isolated=Fastify();registerBootstrapHealth(isolated,{serverVersion:'0.4.0'} as never);
   assert.equal((await isolated.inject('/api/status')).statusCode,404,'health bootstrap exposes no business view');
   await app.close();await isolated.close();
+});
+
+test('mounted observability routes fail closed without an active activation and the diagnostics snapshot omits sensitive data',async t=>{
+  const secret='GENERATED_OBSERVABILITY_SNAPSHOT_SECRET_TOKEN';
+  const f=await fixture(t);await f.platform.prepare();await f.platform.start();
+  const app=Fastify();
+  f.platform.routes(app,f.owner.scope,routeViews({diagnostics:{queue:{index:{textReady:1}}}}));
+  const snapshot=await app.inject('/api/diagnostics');
+  assert.equal(snapshot.statusCode,200,snapshot.body);
+  assert.equal(snapshot.json().version,1);assert.equal(snapshot.json().scope,'central-safe-diagnostics');
+  assert.equal(snapshot.json().queue.index.textReady,1);
+  assert.ok(!snapshot.body.includes(secret));
+  f.platform.quiesce('restart');
+  assert.equal((await app.inject('/api/diagnostics')).statusCode,200,'accepted read work drains while quiescing');
+  assert.equal((await app.inject({method:'PUT',url:'/api/usage/prices',payload:{provider:'fixture',model:'fixture-model',currency:'USD',input:1,output:1,cacheRead:1,cacheWrite:1}})).statusCode,503,'quiescing rejects new writes');
+  await f.platform.stop('shutdown');
+  assert.equal((await app.inject('/api/diagnostics')).statusCode,503);
+  assert.equal((await app.inject('/api/status')).statusCode,503);
+  assert.equal((await app.inject(`/api/usage?from=${today()}&to=${today()}&timeZone=UTC`)).statusCode,503);
+  assert.throws(()=>f.platform.routes(Fastify(),f.owner.scope,routeViews()),{statusCode:503},'routes mount only once');
+  await app.close();
 });
 
 test('closing the update service aborts an in-flight check before disposal returns',async t=>{

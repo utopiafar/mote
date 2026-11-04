@@ -22,9 +22,7 @@ import {adapter as ownerQuestionsAdapter} from './owner-questions.js';
 import {adapter as memoryAdapter} from './memory.js';
 import {adapter as importsAdapter} from './imports.js';
 import {adapter as askAdapter} from './ask.js';
-import {adapter as usageAdapter} from './usage.js';
 import {adapter as insightsAdapter} from './insights.js';
-import {adapter as diagnosticsAdapter} from './diagnostics.js';
 import {adapter as agentViewAdapter} from './agent-view.js';
 import {adapter as featuresAdapter} from './features.js';
 
@@ -56,9 +54,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   memoryAdapter,
   importsAdapter,
   askAdapter,
-  usageAdapter,
   insightsAdapter,
-  diagnosticsAdapter,
   agentViewAdapter,
   featuresAdapter,
 ]);
