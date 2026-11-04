@@ -29,6 +29,7 @@ import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-pub
 import type {MemoryAutomation} from '../memory-automation.js';
 import type {MemoryTopicsHost} from '../memory-topics-host.js';
 import type {AutomaticTopics} from '../automatic-topics.js';
+import type {OwnerQuestions} from '../owner-questions.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
  * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
@@ -141,6 +142,9 @@ export interface MemoryTopics {
   trees: AutomaticTopics['trees'];
   state: AutomaticTopics['state'];
 }
+/** C26C's durable ledger and provider registry. Explanations and continuation
+ * writes stay with their installed providers; this port never interprets text. */
+export type OwnerQuestionsPort = Pick<OwnerQuestions, 'register' | 'create' | 'get' | 'page' | 'reply' | 'obsolete'>;
 
 /** Separate tokens deliberately keep owner mutation, model disclosure and retained-reader
  * lifetimes out of each other's read capability. Actual grant/cleanup behavior is not here. */
@@ -183,6 +187,7 @@ export const centralServices = {
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
   memoryTopics: serviceContract<MemoryTopics>('mote.central.memory-topics', '1'),
+  ownerQuestions: serviceContract<OwnerQuestionsPort>('mote.central.owner-questions', '1'),
   mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
 } as const;
 export type CentralService = keyof typeof centralServices;
@@ -241,7 +246,7 @@ export const centralServiceOwners = {
   configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', mediaAssetsRead:'media',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {

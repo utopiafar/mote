@@ -153,7 +153,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Bindings are built by memoryRuntime below, but their disposer keeps its
   // original slot: released after active queries, connectors and the agent.
   resources.defer(()=>bindings.current?.close());
-  const {ownerQuestions}=workInputs({store,backendContext});
   const archivedFiles=bootstrap.vault.archivedFiles;
   const contentStorage=bootstrap.vault.attachContent(files,configService,enabled=>{config.contentEncryptionEnabled=enabled;});
   const connections=authorizationPlatform.assembly.connections!;
@@ -171,6 +170,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const credential=(req:FastifyRequest)=>{const c=connectionIdentity(req);return c&&!connections.isOwner(c)?c:undefined;};
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
+  const {ownerQuestions}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
   const modelEvidenceAuthority=createModelEvidenceAuthority({resolveLineage:value=>resolveDependencies(store,value),
     assertImageGrants:(materialInputs,images)=>assertMemoryImageGrants(store,materialInputs,images),reader:evidenceReader,conversations,sourceContexts,
