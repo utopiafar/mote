@@ -12,15 +12,23 @@ import type {QueryResult,UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import {agentDeadline} from '../src/agent-deadline.js';
 import type {Config} from '../src/config.js';
+import {hostRun} from './fixtures/host-run.js';
 
 async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<QueryResult>){
   const directory=mkdtempSync(join(tmpdir(),'mote-host-deadline-'));
   const config:Config={dataDir:directory,dataKey:undefined,token:'generated-host-deadline-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000};
   // The generated Agent owns its actual execution budget after host admission.
   // The real host propagates its typed failure and owns the usage receipt.
-  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
+  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
     const call=agentDeadline(input.signal,config.agentTimeoutMs!);
-    try{const result=await query({...input,signal:call.signal});call.signal?.throwIfAborted();return result;}finally{call.dispose();}
+    try{
+      const result=await query({...input,signal:call.signal});
+      call.signal?.throwIfAborted();hostRun(input);return result;
+    }catch(error){
+      hostRun(input,{terminal:call.signal?.aborted?'cancelled':'failed'});
+      throw error;
+    }finally{call.dispose();}
   }}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   return {...node,headers:{authorization:'Bearer '+config.token},receipts:()=>node.store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt)};

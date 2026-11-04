@@ -30,8 +30,7 @@ import {sourceModelIdentity} from '../model-authorization-host.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 import type {SourceContextStore} from '../source-context.js';
-import type {ObservabilityAssembly,AdmittedUsageMeter as ObservabilityUsageMeter} from './observability-platform.js';
-import type {AdmittedUsageMeter} from '../assembly/processing.js';
+import type {ObservabilityAssembly} from './observability-platform.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
 
 /** C27 owns admitted model runs and the insight entry. Routes and preparation
@@ -48,10 +47,6 @@ export const queryRuntimeReplacement='hot' as const;
  * evidence revisions and execution fences through this borrowed repository. */
 export type QueryRuntimeStore=ConstructorParameters<typeof DelegationRuntime>[0];
 
-/** The query metering factory app.ts wires over the shared admitted-usage
- * meter; the optional route delegates host-run accounting to the Host meter. */
-export type QueryUsageFactory=(route?:{mode:()=>AgentRunFinalizer|undefined;host?:()=>ObservabilityUsageMeter|undefined})=>AdmittedUsageMeter;
-
 export interface QueryRuntimeDependencies {
   readonly store:QueryRuntimeStore;
   readonly lifecycle:ServerLifecycle;
@@ -63,7 +58,6 @@ export interface QueryRuntimeDependencies {
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'|'query'>;
   readonly observabilityAssembly:Pick<ObservabilityAssembly,'admittedUsage'>;
-  readonly admittedUsageFactory:QueryUsageFactory;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly sourceContexts:SourceContextStore;
@@ -82,7 +76,7 @@ export interface QueryRuntime {
  * accounting, trace/usage observation and the insight entry. Preparation and
  * receipts enter through the same plugin activation. */
 export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryRuntime {
-  const {store,lifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,admittedUsageFactory,assertModelEvidence,sourceContexts}=dependencies;
+  const {store,lifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,assertModelEvidence,sourceContexts}=dependencies;
   const {contextDependencies,sourceContextDependencies,pinProcessingEvidence}=dependencies.modelEvidenceAuthority;
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   const activeQueries=new Set<Promise<QueryResult>>();
@@ -134,19 +128,17 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     const usageAttribution={agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()};
     // Trusted per-query run accounting. Only app callbacks mutate this state and
     // none of them throw: observation isolation must not govern execution.
-    const runState:{mode?:AgentRunFinalizer;runId?:string;hostEvents:boolean;hostTerminal:boolean;violation?:string}={hostEvents:false,hostTerminal:false};
-    // The Host path owns usage through one C06 receipt; capture its terminal
-    // receipt so the response reports the finalized sample without a second
-    // finalize. Constructing this meter writes nothing until a model starts.
+    const runState:{mode?:AgentRunFinalizer;runId?:string;hostTerminal:boolean;violation?:string}={hostTerminal:false};
+    // The Host run session owns usage through one C06 receipt; capture its
+    // terminal receipt so the response reports the finalized sample without a
+    // second finalize. Constructing this meter writes nothing until a model starts.
     const hostMeterBase=usageOwner==='query'?observabilityAssembly.admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
     let hostReceipt:import('@mote/shared').UsageReceipt|undefined;
     const hostMeter=hostMeterBase&&{...hostMeterBase,complete:()=>hostReceipt=hostMeterBase.complete(),fail:()=>hostReceipt=hostMeterBase.fail()};
-    const meter=usageOwner==='query'?admittedUsageFactory({mode:()=>runState.mode,host:()=>hostMeterBase})(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
     let hostObserver:ReturnType<typeof createHostRunUsageObserver>|undefined;
     // Latch violations always reject. A missing Host terminal is only a success
-    // gap: the leaf reports host before any Host session exists, so an early
-    // failure or pre-cancel must keep its original error instead of being
-    // rewritten into a terminal gap.
+    // gap: an early failure or pre-cancel must keep its original error instead
+    // of being rewritten into a terminal gap.
     const runViolation=()=>runState.violation?new StoreError('Agent run accounting contradiction',409):undefined;
     const runSuccessGap=()=>runState.mode==='host'&&!runState.hostTerminal?new StoreError('Agent run terminal is missing',409):undefined;
     const runLease:QueryRunLease={onFinalizer:mode=>{
@@ -169,23 +161,27 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
         disclosedSourcePins=next;observed.contextSourceContextDependencies=next;
         input.onSourceContextDependencies?.(pins);
       },
-      onProgress:(event:AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,
-      onUsage:(tokens:import('@mote/shared').TokenUsage)=>{if(runState.mode!=='host')meter?.update(tokens);input.onUsage?.(tokens);},
+      onProgress:(event:AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},
+      onTrace:(event:AgentTraceEvent)=>{
+        // The Host session owns the actual model-start boundary; an attempt that
+        // fails before reporting usage still owns its one failed receipt.
+        if(event.type==='model.started')hostMeter?.modelStarted();
+        trace(event);
+      },
+      onUsage:(tokens:import('@mote/shared').TokenUsage)=>{input.onUsage?.(tokens);},
       onHostRunEvent:(envelope)=>{
-        // Bind only after the chosen leaf declared host and only from the first
-        // trusted Host identity; never infer the mode from an event.
-        if(runState.mode!=='host'){runState.violation??='host_event_without_host_mode';return;}
+        // Bind from the first trusted Host identity only; never infer it from
+        // an event. Every runtime now meters through its Host run session.
         const identity=envelope?.identity;
         const runId=identity&&typeof identity==='object'&&typeof identity.runId==='string'?identity.runId:undefined;
         if(!runId){runState.violation??='invalid_host_identity';return;}
         if(runState.runId===undefined)runState.runId=runId;
         else if(runState.runId!==runId){runState.violation??='run_identity_contradiction';return;}
-        runState.hostEvents=true;
         if(envelope.event.type==='run.terminal')runState.hostTerminal=true;
         if(hostMeter)(hostObserver??=createHostRunUsageObserver({runId,meter:hostMeter,diagnostics}))(envelope);
       }};
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
-    const promise=diagnostics.measure('agent',operation,()=>(meter?meter.run(()=>agent.query(observed,runLease)):agent.query(observed,runLease)).then(result=>{
+    const promise=diagnostics.measure('agent',operation,()=>agent.query(observed,runLease).then(result=>{
       taskSignal?.throwIfAborted();
       assertModelEvidence(observed);
       if(observed.executionLane==='interactive'&&observed.evidenceIds&&result.citations.some(citation=>![...observed.evidenceIds!,...(observed.directImages?.map(image=>image.id)??[])].includes(citation.id)))throw contextFailure('context_evidence_restricted');
@@ -211,26 +207,21 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       // A contradiction or a Host success without its terminal latches before
       // any success finalize or product commit.
       const accounting=runViolation()??runSuccessGap();
-      if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
+      if(accounting)throw accounting;
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
-      const completedUsage=runState.mode==='host'?hostReceipt:meter?.completed();
+      const completedUsage=runState.mode==='host'?hostReceipt:undefined;
       return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
     }).catch(error=>{
-      // The Host path finalizes only through its observer's run terminal; the
-      // legacy path keeps its existing finalizers. A latched contradiction
-      // replaces the outcome after the legacy finalizer has settled its row.
+      // The Host run session finalizes only through its observer's run terminal.
+      // A latched contradiction replaces the outcome after the Host has settled.
       if(error instanceof AgentYieldError){
-        // Accounting is decided before the yield finalizer: a contradiction
-        // must fail the started legacy receipt rather than complete it.
         const accounting=runViolation();
-        if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
+        if(accounting)throw accounting;
         const gap=runSuccessGap();
-        if(gap){if(runState.mode!=='host')meter?.failed(gap);throw gap;}
-        if(runState.mode!=='host')meter?.completed();
+        if(gap)throw gap;
         trace({type:'query.yielded',status:'waiting'});throw error;
       }
       const wait=error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited')?{code:error.details.code,retryAfterMs:error.details.retryAfterMs}:error instanceof ExecutionFailure&&error.category==='waiting'?{code:error.code,retryAfterMs:error.retryAfterMs}:undefined;
-      if(runState.mode!=='host')meter?.failed(error);
       const accounting=runViolation();
       if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId});

@@ -58,7 +58,7 @@ export function createCodexRuntimeProvider() {
   const handles = new Set<RuntimeHandle>(), preparations = new Set<Promise<RuntimeHandle>>(), abortPreparations = new Set<() => void>();
   let closing: Promise<void> | undefined;
   const provider: RuntimeProvider<RuntimeProfileConfiguration, CodexModelAdapter> = {
-    capabilities: Object.freeze({modelTransports: ['codex-app-server'], taskKinds: ['query'], tools: true, images: true, importWorkspace: false, hostDelegation: true, recovery: 'same-process', replacement: 'restart'}),
+    capabilities: Object.freeze({modelTransports: ['codex-app-server'], taskKinds: ['query'], tools: true, images: true, importWorkspace: false, hostDelegation: true, nativeDelegation: false, recovery: 'same-process', replacement: 'restart'}),
     prepare(profile, model, host) {
       if (!accepting || stopped) return Promise.reject(new AgentProviderError({category: 'blocked', code: 'runtime_unavailable', executionStarted: false}));
       const preparing = (async (): Promise<RuntimeHandle> => {

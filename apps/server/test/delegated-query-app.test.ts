@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {AgentYieldError,originalEvidenceReceipt,parseAnswer,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
+import type {ModelAgentFactory} from '../src/model-agent.js';
 import type {Config} from '../src/config.js';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 
@@ -25,8 +26,12 @@ function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
 
 for(const restart of [false,true])test(`full app delegation ${restart?'resumes after restart without repeating a successful child':'yields its only slot and saves an answer citing the original receipt'}`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-delegated-query-app-')),id=randomUUID();
- let node:Awaited<ReturnType<typeof buildApp>>,childCalls=0,active=0,maxActive=0,coordinatorCalls=0,heldResume=false,readCalls=0;
- const observed:QueryInput[]=[],order:string[]=[];
+ let node:Awaited<ReturnType<typeof buildApp>>,childCalls=0,active=0,maxActive=0,coordinatorCalls=0,heldResume=false,readCalls=0,initialFingerprint:string|undefined;
+ const observed:QueryInput[]=[],order:string[]=[],queryPins:{profileId?:string;model?:string}[]=[];
+ const fixtureFactory=(holdResume:boolean):ModelAgentFactory=>async(settings,_reader,_host,identity)=>{
+  const agent=fixtureAgent(holdResume),profileId=identity?.id;
+  return {...agent,query:async input=>{queryPins.push({profileId,model:settings.model});return agent.query(input);}};
+ };
  const fixtureAgent=(holdResume:boolean):QueryAgent=>({configured:true,close:async()=>{},query:async input=>{
   active++;maxActive=Math.max(maxActive,active);observed.push(input);
   try{
@@ -61,7 +66,8 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
    }finally{await bridge.close();}
   }finally{active--;}
  }});
- node=await buildApp(config(directory),{agent:fixtureAgent(restart),backgroundWorker:false});
+ node=await buildApp(config(directory),{createModelAgent:fixtureFactory(restart),backgroundWorker:false});
+ const pinnedProfile=node.modelSettings.select('chat').id,pinnedModel=node.modelSettings.select('chat').settings.model;
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.store.ingest(original);
  // Admit through owner HTTP, then pump from an ordinary worker context.
@@ -71,10 +77,14 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
  void node.executor.tick();
  if(restart){
   await until(()=>heldResume?true:undefined);assert.equal(childCalls,1);assert.equal(node.delegation.artifactMetadata('query:'+id).length,1);
-  await node.app.close();node=await buildApp(config(directory),{agent:fixtureAgent(false),backgroundWorker:false});
+  const pinned=node.delegation.journal.payload<{prepared?:{modelProfileId?:string;modelOverride?:string};configurationFingerprint?:string}>('query:'+id);assert.equal(pinned.prepared?.modelProfileId,pinnedProfile);assert.equal(pinned.prepared?.modelOverride,pinnedModel);assert.match(pinned.configurationFingerprint??'',/^[a-f0-9]{64}$/);initialFingerprint=pinned.configurationFingerprint;
+  await node.app.close();node=await buildApp(config(directory),{createModelAgent:fixtureFactory(false),backgroundWorker:false});
+  const restored=node.delegation.journal.payload<{prepared?:{modelProfileId?:string;modelOverride?:string};configurationFingerprint?:string}>('query:'+id);assert.equal(restored.prepared?.modelProfileId,pinnedProfile);assert.equal(restored.prepared?.modelOverride,pinnedModel);assert.equal(restored.configurationFingerprint,initialFingerprint,'the restart rehydrates the accepted model pin');
  }
  const run=await until(()=>{const receipt=node.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;},()=>snapshot(node,id));
  assert.equal(childCalls,1);assert.equal(maxActive,1);assert.equal(readCalls,1);assert.equal(coordinatorCalls,restart?3:2);assert.deepEqual(order.slice(0,3),['coordinator','child','coordinator']);
+ assert.ok(queryPins.length>=2&&queryPins.every(pin=>pin.profileId===pinnedProfile&&pin.model===pinnedModel),'every parent and child fragment keeps the accepted runtime and model pin '+JSON.stringify({pinnedProfile,pinnedModel,queryPins}));
+ if(restart)assert.equal(node.delegation.journal.payload<{configurationFingerprint?:string}>('query:'+id).configurationFingerprint,initialFingerprint);
  const conversation=(await node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.equal(conversation.turnCount,1);assert.equal(conversation.turns[0].result.citations[0].id,original.id);assert.equal(conversation.turns[0].result.citations[0].excerpt,original.ocrText);
  const work=node.delegation.get('query:'+id);assert.equal(work.status,'succeeded');assert.equal(work.units.length,1);assert.equal(work.units[0].attempts,1);assert.equal(work.events.filter(event=>event.type==='branch.completed').length,1);
  assert.ok(!JSON.stringify(run).includes('Generated child inspected'));assert.ok(!JSON.stringify(run).includes('Check the generated local archive choice'));

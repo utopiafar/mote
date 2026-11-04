@@ -187,6 +187,9 @@ test('developer content controls require owner auth and return background progre
   assert.equal((await app.inject({method:'PUT',url:'/api/content-storage',headers:collectorHeaders,payload:{enabled:true}})).statusCode,403);
   for(const url of ['/api/content-storage/decrypt','/api/content-storage/decrypt/cancel'])assert.equal((await app.inject({method:'POST',url,headers:collectorHeaders,payload:{}})).statusCode,403);
   assert.equal((await app.inject({url:'/api/content-storage',headers})).json().enabled,false);
+  const statistics=await app.inject({url:'/api/storage-statistics',headers});assert.equal(statistics.statusCode,200);
+  const logical=statistics.json().logical;assert.ok(Array.isArray(logical.plugins)&&logical.plugins.length>0,'storage statistics attribute logical bytes to their owning plugin');
+  assert.ok(logical.plugins.every((group:{plugin:string;bytes:number;tables:{name:string;bytes:number}[]})=>typeof group.plugin==='string'&&group.tables.every(table=>typeof table.name==='string')));
   let revision=(await app.inject({url:'/api/content-storage',headers})).json().revision;
   const enabled=await app.inject({method:'PUT',url:'/api/content-storage',headers,payload:{enabled:true,revision}});assert.equal(enabled.statusCode,200,enabled.body);assert.equal(enabled.json().enabled,true);revision=enabled.json().revision;
   assert.equal((await app.inject({method:'POST',url:'/api/content-storage/decrypt',headers,payload:{}})).statusCode,409);

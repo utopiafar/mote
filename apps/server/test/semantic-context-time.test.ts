@@ -19,6 +19,7 @@ import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {Store} from '../src/store.js';
 import {ConfigService} from '../src/config-service.js';
 import {lifecycleSettingsSchema,defaultLifecycleSettings} from '../src/memory-configuration.js';
+import {hostRun} from './fixtures/host-run.js';
 
 // Mechanical, independently generated text fixtures; all model calls are local stubs.
 const early='2001-01-02T03:04:05+08:00',later='2001-02-02T03:04:05+08:00',expiry='2001-03-01T00:00:00Z';
@@ -33,7 +34,15 @@ const realTime=(value:string|undefined,start:number)=>{assert.ok(value);assert.o
 async function disabled(node:Node){const s=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...s,consolidation:{...s.consolidation,enabled:false},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}}});}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,clock?:()=>string){
   const directory=mkdtempSync(join(tmpdir(),'mote-semantic-clock-'));
-  const node=await buildApp(config(directory),{backgroundWorker:false,semanticContextTime:clock,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{const topic=fixtureTopicResult(input);if(topic)return topic;const result=await query(input,reader);return input.responseMode==='memory-extraction'?fixtureMemoryWorkResult(input,result):result;}})});
+  const node=await buildApp(config(directory),{backgroundWorker:false,semanticContextTime:clock,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
+    try{
+      const topic=fixtureTopicResult(input);
+      const result=topic??await query(input,reader);
+      hostRun(input);
+      return input.responseMode==='memory-extraction'&&!topic?fixtureMemoryWorkResult(input,result):result;
+    }catch(error){hostRun(input,{terminal:'failed'});throw error;}
+  }})});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   await disabled(node);await node.app.ready();await authorizeFixtureModels(node);return {node,directory};
 }

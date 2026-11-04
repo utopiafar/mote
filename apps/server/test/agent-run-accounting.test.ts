@@ -31,16 +31,15 @@ const terminalEvent=(runId:string):HostEvent=>({identity:identity(runId),attempt
 /** A generated leaf that emulates the production declaration contract: it
  * reports its own finalizer once, before any await, and never lets the
  * composites decide the mode. */
-function leaf(behaviour:{mode:'host'|'legacy';hostEvents?:boolean;runIds?:string[];terminal?:boolean;legacyUsage?:boolean}):QueryAgent{
+function leaf(behaviour:{hostEvents?:boolean;runIds?:string[];terminal?:boolean}):QueryAgent{
   return {configured:true,close:async()=>{},query:async(input,lease)=>{
-    lease?.onFinalizer?.(behaviour.mode);
+    lease?.onFinalizer?.('host');
     if(behaviour.hostEvents){
       const ids=behaviour.runIds??['generated-run'];
       input.onHostRunEvent?.(usageEvent(ids[0]));
       for(const id of ids.slice(1))input.onHostRunEvent?.(usageEvent(id));
       if(behaviour.terminal!==false)input.onHostRunEvent?.(terminalEvent(ids[0]));
     }
-    if(behaviour.legacyUsage)input.onUsage?.({requests:1,reportedRequests:1,inputTokens:20,outputTokens:6,totalTokens:26,cacheReadTokens:0,cacheWriteTokens:0});
     return answer();
   }};
 }
@@ -53,7 +52,7 @@ async function app(t:import('node:test').TestContext,agent:QueryAgent){
 const receipts=(node:Awaited<ReturnType<typeof buildApp>>)=>(node.store.db.prepare('SELECT json FROM model_usage ORDER BY created_at,id').all() as {json:string}[]).map(row=>JSON.parse(row.json) as {status:string;tokens?:{inputTokens:number}});
 
 test('a Host leaf finalizes once through the observer and reports the captured receipt',async t=>{
-  const node=await app(t,leaf({mode:'host',hostEvents:true}));
+  const node=await app(t,leaf({hostEvents:true}));
   const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated Host question'}});
   assert.equal(response.statusCode,200,response.body);
   assert.equal(response.json().answer,'Generated accounting answer');
@@ -64,34 +63,26 @@ test('a Host leaf finalizes once through the observer and reports the captured r
   assert.equal(response.json().usage?.status,'completed','the response carries the captured Host receipt');
 });
 
-test('a legacy leaf keeps the existing onUsage and finalizer chain',async t=>{
-  const node=await app(t,leaf({mode:'legacy',legacyUsage:true}));
+test('caller-supplied usage samples no longer create a legacy receipt',async t=>{
+  const node=await app(t,{configured:true,close:async()=>{},query:async input=>{
+    input.onUsage?.({requests:1,reportedRequests:1,inputTokens:20,outputTokens:6,totalTokens:26,cacheReadTokens:0,cacheWriteTokens:0});
+    return answer();
+  }});
   const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated legacy question'}});
   assert.equal(response.statusCode,200,response.body);
-  const rows=receipts(node);
-  assert.equal(rows.length,1);
-  assert.equal(rows[0].status,'completed');
-  assert.equal(rows[0].tokens?.inputTokens,20);
-});
-
-test('a Host event on a non-host mode is rejected instead of finalized as success',async t=>{
-  const node=await app(t,leaf({mode:'legacy',hostEvents:true}));
-  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated contradiction question'}});
-  assert.notEqual(response.statusCode,200,response.body);
-  const rows=receipts(node);
-  assert.equal(rows.length,1,'the legacy owner still records its started attempt');
-  assert.equal(rows[0].status,'failed','a contradiction must never finalize as completed success');
+  assert.equal(response.json().usage,undefined,'no Host run session means no reported receipt');
+  assert.equal(receipts(node).length,0,'onUsage alone must not write model_usage');
 });
 
 test('a second run id in one query is rejected and cannot finalize as success',async t=>{
-  const node=await app(t,leaf({mode:'host',hostEvents:true,runIds:['generated-run-a','generated-run-b']}));
+  const node=await app(t,leaf({hostEvents:true,runIds:['generated-run-a','generated-run-b']}));
   const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated second identity question'}});
   assert.notEqual(response.statusCode,200,response.body);
   assert.equal(receipts(node).length,1,'the first identity still owns the one receipt');
 });
 
 test('a Host path that settles without a run terminal is rejected, not reported as success',async t=>{
-  const node=await app(t,leaf({mode:'host',hostEvents:true,terminal:false}));
+  const node=await app(t,leaf({hostEvents:true,terminal:false}));
   const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated missing terminal question'}});
   assert.notEqual(response.statusCode,200,response.body);
   const rows=receipts(node);
@@ -200,7 +191,7 @@ const realHostLeaf=(failure:Error,seen:HostEvent[]=[]):ModelAgentFactory=>async(
   const identity=(id:string):ScopeIdentity=>({packageId:'generated',installationId:'generated-install',instanceId:id,activationId:randomUUID(),host:hostIdentity});
   const scope=Object.assign(resources,{identity:identity('consumer')});
   let port:HostRunPort|undefined;
-  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:false,images:false,importWorkspace:false,hostDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,value){
+  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:false,images:false,importWorkspace:false,hostDelegation:false,nativeDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,value){
     port=value;value.emit({type:'tools.ready',tools:[]},null);
     return {run:request=>value.runModel(request.attempt,async()=>{throw failure;}),repair:async()=>{throw Error('Generated repair is unreachable');},async cancel(){},async close(){}};
   }};
@@ -240,17 +231,14 @@ test('a real Host session finalizes one failed receipt through its own terminal,
   assert.equal(seen.filter(event=>event.event.type==='usage').length,0,'no usage event was emitted');
 });
 
-test('a legacy yield carrying an unexpected Host event rejects and fails its started receipt',async t=>{
-  const yielding:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{
-    lease?.onFinalizer?.('legacy');
-    input.onUsage?.({requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0});
-    input.onHostRunEvent?.(usageEvent('generated-yield-run'));
+test('a Host yield without its run terminal rejects instead of completing',async t=>{
+  const yielding:QueryAgent={configured:true,close:async()=>{},query:async(_input,lease)=>{
+    lease?.onFinalizer?.('host');
     throw new AgentYieldError();
   }};
   const node=await app(t,yielding);
-  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated yield contradiction question'}});
-  assert.notEqual(response.statusCode,200,response.body);
-  const rows=receipts(node);
-  assert.equal(rows.length,1);
-  assert.equal(rows[0].status,'failed','the legacy receipt must be failed, never completed, on a contradiction');
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated yield question'}});
+  assert.equal(response.statusCode,409,response.body);
+  assert.equal(response.json().error,'conflict');
+  assert.equal(receipts(node).length,0,'no Host session means no receipt');
 });

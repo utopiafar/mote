@@ -39,11 +39,13 @@ export const configurationProvider:FoundationProvider<'configuration'>=Object.fr
     return {config,service,platform};
   }});
 export const storageProvider:FoundationProvider<'storage'>=Object.freeze<FoundationProvider<'storage'>>({kind:'storage',id:'mote.vault-platform',version:'1.0.0',contribution:contribution('storage'),
-  async create(context,{config,store:supplied,backgroundWorker}){
+  async create(context,{config,store:supplied,backgroundWorker,configService}){
     // C02's trusted assembly bridge owns the actual resources. Its raw access is
     // private to this transitional root, never a published scoped write service.
     const assembly=createVaultPlatformAssembly({dataDir:config.dataDir,dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,
-      embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(backgroundWorker)},supplied?{store:supplied}:{});
+      embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(backgroundWorker)},{
+      ...(supplied?{store:supplied}:{}),...(configService?{configService}:{}),onContentEncryptionApplied:enabled=>{config.contentEncryptionEnabled=enabled;},
+    });
     context.scope.defer(()=>assembly.close());
     await assembly.prepare();
     return {store:assembly.store,assembly};

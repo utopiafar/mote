@@ -33,6 +33,12 @@ export class MemoryBindings {
       CREATE TABLE IF NOT EXISTS memory_preparation(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_binding_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_provider_receipts(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
+    store.registerStorage('memory-control',{
+      memory_plan_binding:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+      memory_preparation:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+      memory_binding_commands:'length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+128',
+      memory_provider_receipts:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+    });
     store.db.prepare('INSERT OR IGNORE INTO memory_plan_binding VALUES(1,?)').run(JSON.stringify({planId:builtin.id,generation:1} satisfies Binding));
     plugins.references=id=>{const current=this.binding(),preparation=this.preparation();return [...(current.namespace?.instanceId===id?['Current Memory binding retains this instance for reads']:[]),...(preparation&&!['applied','cancelled'].includes(preparation.view.state)&&(preparation.target.namespace?.instanceId===id||preparation.source.namespace?.instanceId===id)?['A Memory preparation retains this instance']:[]),...((this.readers.get(id)??0)>0?['Existing queries retain a read snapshot']:[])];};
     this.dispose=executor.register({kind:'memory.prepare',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.orchestration,maxAttempts:1,
