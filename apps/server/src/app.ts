@@ -152,7 +152,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // its original slot: released after active queries, connectors and the agent.
   resources.defer(()=>memoryBindingControl.close());
   const archivedFiles=bootstrap.vault.archivedFiles;
-  const contentStorage=bootstrap.vault.attachContent(files,configService,enabled=>{config.contentEncryptionEnabled=enabled;});
   const connections=authorizationPlatform.assembly.connections!;
   const pins=new WeakMap<FastifyRequest,RequestAuthority>();
   let liveRequestPins=0;
@@ -474,7 +473,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     connectionIdentity,credential,assertRequestActive,sourceOwner,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},
     notesCapture:{authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake},
     agentFeatures,archiveReader,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,
-    archivedFiles,contentStorage,maintenanceWorker,store,modelSettings,connections,modelAuthorizationHost,
+    archivedFiles,maintenanceWorker,store,modelSettings,connections,modelAuthorizationHost,
     jobId,insightRequestSchema,mediaRange,reviewExtraction,semanticSelection,
   });
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));

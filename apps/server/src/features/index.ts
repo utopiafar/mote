@@ -6,7 +6,6 @@ import {adapter as activityAdapter} from './activity.js';
 import {adapter as filesAdapter} from './files.js';
 import {adapter as connectionsAdapter} from './connections.js';
 import {adapter as systemAdapter} from './system.js';
-import {adapter as storageAdapter} from './storage.js';
 import {adapter as captureAdapter} from './capture.js';
 import {adapter as contextAdapter} from './context.js';
 import {adapter as materialsAdapter} from './materials.js';
@@ -37,7 +36,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   domainRouteContribution('mote.actions'),
   connectionsAdapter,
   systemAdapter,
-  storageAdapter,
+  domainRouteContribution('mote.storage'),
   captureAdapter,
   contextAdapter,
   materialsAdapter,

@@ -111,7 +111,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   }
   try{
     const configuration=await install('configuration',input);
-    const current={...input,config:configuration.value.config};
+    const current={...input,config:configuration.value.config,configService:configuration.value.service};
     const storage=await install('storage',current);stateStore=storage.value.store;
     const authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;

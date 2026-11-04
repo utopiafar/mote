@@ -1,6 +1,7 @@
 import type {PluginLifecycle,PluginScope} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {HostPluginContext} from '@mote/plugin-host';
+import {join} from 'node:path';
 import {Store,StoreError} from '../store.js';
 import {SourceStore} from '../sources.js';
 import {FileStore} from '../files.js';
@@ -9,6 +10,8 @@ import {ArchivedFileStore} from '../archived-files.js';
 import {ContentStorageService} from '../content-storage.js';
 import type {ConfigService} from '../config-service.js';
 import {MaintenanceWorker} from '../maintenance.js';
+import {contributeDomainRoutes} from './domain-routes.js';
+import {vaultStorageRoutes} from './vault-storage-routes.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization,type VaultTransactions,type MaterialRepositoryRead,type MaterialPublication,type ArchivedContentRead} from './central-contracts.js';
 
 /** Private host configuration, never a Manifest configuration value or a wire DTO. */
@@ -51,13 +54,15 @@ export const vaultPlatformReplacement='restart' as const;
 export interface VaultPlatform extends PluginLifecycle {
   /** Trusted domain-factory wiring only. Caller-supplied scopes are not a public capability. */
   repositoriesForAssembly(scope:PluginScope):VaultRepositoryAccess;
+  /** Vault-owned content-encryption/decryption control; never a second instance. */
+  readonly contentStorage:ContentStorageService;
   close():Promise<void>;
 }
 
 /** Trusted H05 bootstrap bridge only. Not a published service, SDK, ordinary plugin
  * capability or replacement for domain authorization. It preserves the current legacy
  * composition until domain factories replace it. Caller-supplied Store is borrowed. */
-export function createVaultPlatformAssembly(options:VaultPlatformOptions,dependencies:{store?:Store}={}){
+export function createVaultPlatformAssembly(options:VaultPlatformOptions,dependencies:{store?:Store;configService?:ConfigService;onContentEncryptionApplied?:(enabled:boolean)=>void}={}){
   const config={...options},borrowed=dependencies.store;
   if(!config.dataDir||config.maxStorageBytes!==undefined&&(!Number.isSafeInteger(config.maxStorageBytes)||config.maxStorageBytes<0))throw new StoreError('Invalid vault configuration');
   let store:Store|undefined,archivedFiles:ArchivedFileStore|undefined,content:ContentStorageService|undefined,maintenance:MaintenanceWorker|undefined;
@@ -80,15 +85,16 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
       if(phase!=='created')throw new StoreError('Vault assembly is unavailable',503);
       try{
         store=borrowed??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:config.embeddingEnabled,maintenance:config.maintenance});
-        archivedFiles=new ArchivedFileStore(store);phase='prepared';
+        archivedFiles=new ArchivedFileStore(store);
+        // Content conversion walks only the two fixed managed object roots; the
+        // vault owns the service, so no feature adapter constructs it later.
+        content=new ContentStorageService(store,{objects:join(store.directory,'files','objects'),uploads:join(store.directory,'files','uploads')},archivedFiles,dependencies.configService,enabled=>{maintenance?.configureContentEncryption(enabled);dependencies.onContentEncryptionApplied?.(enabled);});
+        phase='prepared';
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Vault assembly preparation and cleanup failed',{cause:error});}throw error;}
     },
     get store(){assertPrepared();return store!;},
     get archivedFiles(){assertPrepared();return archivedFiles!;},
-    attachContent(files:FileStore,configService?:ConfigService,onApplied?:(enabled:boolean)=>void){
-      assertPrepared();if(content||accessorsClosing)throw new StoreError('Vault content assembly is already bound',409);
-      content=new ContentStorageService(store!,files,archivedFiles!,configService,enabled=>{maintenance?.configureContentEncryption(enabled);onApplied?.(enabled);});return content;
-    },
+    get contentStorage(){assertPrepared();return content!;},
     startMaintenance(){
       assertPrepared();if(accessorsClosing)throw new StoreError('Vault assembly is stopping',503);
       if(config.maintenance&&!maintenance)maintenance=new MaintenanceWorker({...config});return maintenance;
@@ -206,9 +212,9 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
       try{
         await assembly.prepare();
         if(phase!=='created')throw unavailable();
-        store=assembly.store;originals=assembly.archivedFiles;
+        store=assembly.store;originals=assembly.archivedFiles;content=assembly.contentStorage;
         sources=new SourceStore(store);files=new FileStore(store,sources);
-        materials=new MaterialStore(store);content=assembly.attachContent(files);
+        materials=new MaterialStore(store);
         phase='prepared';
       }catch(error){
         try{await dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Vault preparation and disposal failed',{cause:error});}
@@ -222,6 +228,7 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
     },
     quiesce(){if(phase==='active')phase='quiescing';},
     async stop(){if(phase!=='disposed')phase='stopped';await dispose();},dispose,close:dispose,repositoriesForAssembly:acquire,
+    get contentStorage(){if(phase==='created'||phase==='disposed')throw unavailable();return assembly.contentStorage;},
   });
 }
 
@@ -231,9 +238,16 @@ export function createVaultPlatform(options:VaultPlatformOptions,authorization:C
 export function createVaultPlatformFactory(options:VaultPlatformOptions,authorization:CommitAuthorization){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createVaultPlatform(options,authorization);context.scope.defer(()=>platform.close());
-    return {...platform,start:async()=>{
-      await platform.start();const access=platform.repositoriesForAssembly(context.scope);
-      context.provide(vaultPlatformContribution.id,centralServices.contentRead,Object.freeze({get:access.originals.get,read:access.originals.read,listForCapture:access.originals.listForCapture}));
-    }};
+    return {
+      prepare:()=>platform.prepare(),
+      quiesce:(reason)=>platform.quiesce(reason),stop:(reason)=>platform.stop(reason),dispose:()=>platform.dispose(),
+      start:async()=>{
+        await platform.start();const access=platform.repositoriesForAssembly(context.scope);
+        // The vault owns the storage transport; the mounted table resolves the
+        // current activation instead of installing a second copy on re-enable.
+        contributeDomainRoutes(context.scope.cordis,{'mote.storage':vaultStorageRoutes(()=>platform.contentStorage)});
+        context.provide(vaultPlatformContribution.id,centralServices.contentRead,Object.freeze({get:access.originals.get,read:access.originals.read,listForCapture:access.originals.listForCapture}));
+      },
+    };
   };
 }

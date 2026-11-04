@@ -2,10 +2,7 @@ import { moteText } from './i18n.js';
 import {join} from 'node:path';
 import {readdirSync} from 'node:fs';
 import {setImmediate} from 'node:timers/promises';
-import type {FastifyInstance} from 'fastify';
-import {z} from 'zod';
 import {Store,StoreError,sha256} from './store.js';
-import type {FileStore} from './files.js';
 import type {ArchivedFileStore} from './archived-files.js';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {ConfigService,type PreparedConfigChange} from './config-service.js';
@@ -21,7 +18,7 @@ export class ContentStorageService {
   private progress:Progress={state:'idle',total:0,processed:0,converted:0,skipped:0,failed:0};
   private stopped=false;
   private work?:Promise<void>;
-  constructor(private store:Store,private files:FileStore,private archived:ArchivedFileStore,private configService?:ConfigService,private onEncryptionApplied?:(enabled:boolean)=>void){
+  constructor(private store:Store,private files:{readonly objects:string;readonly uploads:string},private archived:ArchivedFileStore,private configService?:ConfigService,private onEncryptionApplied?:(enabled:boolean)=>void){
     configService?.setHandler<{contentEncryptionEnabled:boolean}>('storage',(next,previous)=>this.prepare(next.contentEncryptionEnabled,previous.contentEncryptionEnabled));
   }
   snapshot(){return {enabled:this.store.contentEncryption.enabled,keyConfigured:Boolean(this.store.key),job:{...this.progress},...(this.configService?{revision:this.configService.revision}:{})};}
@@ -109,10 +106,4 @@ export class ContentStorageService {
     if(!this.stopped&&this.progress.failed===0)this.store.contentEncryption.finishDecryption();
     this.progress.state=this.stopped?'cancelled':'completed';
   }
-}
-export function registerContentStorage(app:FastifyInstance,service:ContentStorageService){
-  app.get('/api/content-storage',async()=>service.snapshot());
-  app.put('/api/content-storage',async req=>service.save(z.object({enabled:z.boolean(),revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)}).strict().parse(req.body)));
-  app.post('/api/content-storage/decrypt',async(req,reply)=>{z.object({}).strict().parse(req.body??{});return reply.code(202).send(service.start());});
-  app.post('/api/content-storage/decrypt/cancel',async()=>service.cancel());
 }
