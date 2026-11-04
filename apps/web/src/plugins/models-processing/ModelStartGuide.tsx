@@ -1,8 +1,8 @@
 import {moteText} from '@mote/shared/i18n';
 import {useSyncExternalStore} from 'react';
-import {webFeatures} from './features/registry';
-import {validatedReturnTarget} from './route-query';
-import {useHashChoice} from './useHashChoice';
+import {webFeatures} from '../../features/registry';
+import {validatedReturnTarget} from '../../route-query';
+import {useHashChoice} from '../../useHashChoice';
 const readReturn=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('returnTo');
 export function modelSetupHref(category:'providers'|'model',returnTo?:string){
  const query=new URLSearchParams({category});

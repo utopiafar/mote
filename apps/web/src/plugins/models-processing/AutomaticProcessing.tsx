@@ -1,12 +1,12 @@
 import {useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import type {ModelSettingsView} from '@mote/shared/models';
-import {ApiError,type Api,errorMessage} from './api';
-import {useResource} from './useResource';
-import {useForegroundResources} from './useForegroundResources';
-import {RecordingTools} from './plugins/sources/RecordingTools';
+import {ApiError,type Api,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {useForegroundResources} from '../../useForegroundResources';
+import {RecordingTools} from '../sources/RecordingTools';
 import {ModelAuthorizationSettings} from './ModelAuthorizationSettings';
-import type {FileSettingsView} from './processing-settings-view';
+import type {FileSettingsView} from '../../processing-settings-view';
 import {automaticProcessingPlan,processingConnectionKey,type ProcessingAuthority,type ProcessingConnection,type ProcessingGrant,type ProcessingKind} from './automatic-processing-plan';
 
 const path='/api/model-authorization';

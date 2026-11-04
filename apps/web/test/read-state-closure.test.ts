@@ -231,7 +231,7 @@ test('configuration views share reads and discard revoked deployment details',as
  revoked=true;await act(async()=>resources(api).invalidate(path=>path==='/api/configuration'));assert.doesNotMatch(d.body.textContent!,/PRIVATE FIXTURE DIRECTORY/);assert.match(d.body.textContent!,/generated configuration revoked/);
 });
 test('model assignment refresh preserves owner choices and their original revision until save',async t=>{
- const {ModelAssignments}=await import('../src/ModelAssignments.js'),{MODEL_FEATURES}=await import('@mote/shared/models'),{root,d}=await fixture(t);let revision=1,revoked=false;const writes:any[]=[];
+ const {ModelAssignments}=await import('../src/plugins/models-processing/ModelAssignments.js'),{MODEL_FEATURES}=await import('@mote/shared/models'),{root,d}=await fixture(t);let revision=1,revoked=false;const writes:any[]=[];
  const view=()=>({revision,profiles:[{id:'a',name:'A',settings:{model:'a'}},{id:'b',name:'B',settings:{model:'b'}}],defaults:Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,'a'])),defaultModels:{}});
  const api={request:async(path:string,init?:RequestInit)=>{if(revoked)throw new ApiError('generated models revoked',403);if(init?.method==='PUT'){writes.push(JSON.parse(String(init.body)));throw new ApiError('generated conflict',409);}return view();}} as Api;
  await act(async()=>root.render(React.createElement(ModelAssignments,{api,revision:1,onApplied:()=>{},onManage:()=>{}})));
