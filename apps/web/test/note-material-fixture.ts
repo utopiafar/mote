@@ -20,10 +20,10 @@ export async function noteMaterialFixture(directory:string,webRoot?:string,prepa
  const shared=await note('Generated personal addition, preserved independently.',{ownerDescription:'Generated saved-Q&A description.',noteOrigin:{kind:'conversation',conversationId:randomUUID(),messageIds:[randomUUID()],text:quoted}});
  const citedAnswer='## Generated heading\n\n**Generated answer** ['+short.id+']';
  const result={runId:randomUUID(),answer:citedAnswer,citations:[{id:short.id,appName:'Generated source',capturedAt:at,excerpt:literal}],trace:[],evidenceDependencies:{version:1 as const,complete:true,ids:[short.id]}};
- const exactTurn=node.featureServices.conversations.append(undefined,{question:'Generated saved question?'},result),exactSnapshot='Generated saved question?\n\n'+citedAnswer;
+ const exactTurn=node.conversations.append(undefined,{question:'Generated saved question?'},result),exactSnapshot='Generated saved question?\n\n'+citedAnswer;
  const exact=await note('Generated exact Android addition.',{ownerDescription:'Generated exact separate description.',noteOrigin:{kind:'conversation',conversationId:exactTurn.conversationId,messageIds:[exactTurn.turnId],text:exactSnapshot}});
  const longQuestion='Generated long question?',longPrefix='## Generated long answer\n\n'+('x'.repeat(3910))+'\n\n```\n**Literal code** ['+short.id+']\n```\n\nVerified citation ['+short.id+']\n\n',unicodePad=11999-longQuestion.length-2-longPrefix.length,longAnswer=longPrefix+('x'.repeat(unicodePad))+'😀'+('x'.repeat(100000-longQuestion.length-2-longPrefix.length-unicodePad-2)),longSnapshot=longQuestion+'\n\n'+longAnswer;
- const longTurn=node.featureServices.conversations.append(undefined,{question:longQuestion},{runId:randomUUID(),answer:longAnswer,citations:[{id:short.id,appName:'Generated source',capturedAt:at,excerpt:literal}],trace:[],evidenceDependencies:{version:1,complete:true,ids:[short.id]}});
+ const longTurn=node.conversations.append(undefined,{question:longQuestion},{runId:randomUUID(),answer:longAnswer,citations:[{id:short.id,appName:'Generated source',capturedAt:at,excerpt:literal}],trace:[],evidenceDependencies:{version:1,complete:true,ids:[short.id]}});
  const longQuote=await note('Generated long quote addition.',{noteOrigin:{kind:'conversation',conversationId:longTurn.conversationId,messageIds:[longTurn.turnId],text:longSnapshot}});
  const long=await note('Generated long original: '+('完整正文😀\n'.repeat(1200))+' END OF GENERATED ORIGINAL.');
  // Controlled host publication tests bounded /read, not an authored-organizer block-order claim.

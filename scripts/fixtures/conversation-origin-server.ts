@@ -7,8 +7,8 @@ node.app.addHook('onRequest',async(req,reply)=>{if(req.url==='/fixture/deny-orig
 const sourceId=randomUUID(),at='2026-10-26T00:00:00Z',sourceText='Generated source: Alex said the blue meeting is tentative, not confirmed.';
 const added=await node.app.inject({method:'POST',url:'/api/notes',headers:{authorization:'Bearer '+token},payload:{id:sourceId,deviceId:'generated-j5-source',deviceName:'Generated source author',platform:'import',capturedAt:at,text:sourceText}});if(added.statusCode!==201)throw Error(added.body);
 const question='What does Alex say about the blue meeting?',answer='AI suggestion: ask Alex before treating the blue meeting as confirmed. [1]';
-const saved=node.featureServices.conversations.append(undefined,{question},{answer,citations:[{id:sourceId,appName:'Generated source',capturedAt:at,excerpt:sourceText}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[sourceId]}});
+const saved=node.conversations.append(undefined,{question},{answer,citations:[{id:sourceId,appName:'Generated source',capturedAt:at,excerpt:sourceText}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[sourceId]}});
 // Push the saved source outside the initial 20-turn page.
-for(let index=0;index<24;index++)node.featureServices.conversations.append(node.featureServices.conversations.get(saved.conversationId),{question:'Generated later question '+index},{answer:'Generated later answer',citations:[],trace:[],runId:randomUUID()});
+for(let index=0;index<24;index++)node.conversations.append(node.conversations.get(saved.conversationId),{question:'Generated later question '+index},{answer:'Generated later answer',citations:[],trace:[],runId:randomUUID()});
 await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(process.env.MOTE_J5_CONNECTION!,JSON.stringify({url:node.app.listeningOrigin,token,sourceId,sourceText,question,answer,conversationId:saved.conversationId,messageId:saved.turnId,pid:process.pid}),{mode:0o600});
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});process.exit(0);});

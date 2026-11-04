@@ -16,7 +16,7 @@ const cfg=(dataDir:string):Config=>({dataDir,token:'generated-model-authority-ow
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-authority-usecase-')),node=await buildApp(cfg(directory),{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const authority=createModelEvidenceAuthority({resolveLineage:value=>resolveDependencies(node.store,value),assertImageGrants:(inputs,images)=>assertMemoryImageGrants(node.store,inputs,images),reader:node.featureServices.evidenceReader,conversations:node.featureServices.conversations,sourceContexts:new SourceContextStore(node.store),authorization:node.modelAuthorization,host:node.modelAuthorizationHost,readEvidence:ids=>node.memories.readEvidence(ids)});
+ const authority=createModelEvidenceAuthority({resolveLineage:value=>resolveDependencies(node.store,value),assertImageGrants:(inputs,images)=>assertMemoryImageGrants(node.store,inputs,images),reader:node.featureServices.evidenceReader,conversations:node.conversations,sourceContexts:new SourceContextStore(node.store),authorization:node.modelAuthorization,host:node.modelAuthorizationHost,readEvidence:ids=>node.memories.readEvidence(ids)});
  const add=async()=>{const id=randomUUID();await node.store.ingest({id,deviceId:'generated',deviceName:'Generated fixture',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated authority corpus '+id});return id;};
  return {node,authority,add};
 }

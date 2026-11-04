@@ -1,4 +1,9 @@
 import {randomUUID} from 'node:crypto';
+import type {Context} from '@deepseek-ai/cordis';
+import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
+import {centralServices} from '../plugins/central-contracts.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
+import {createConversations,createConversationsFactory,createConversationRoutes,conversationsContribution,conversationsDeclaration,conversationsReplacement,type ConversationsBindings} from '../plugins/conversations.js';
 import {AgentNotConfiguredError,AgentYieldError,type AgentProgress,type AgentTraceEvent,type ContextReader,type QueryInput} from '@mote/agent';
 import {ProviderFailure,formatEvidenceRef,type InsightSnapshot,type QueryResult} from '@mote/shared';
 import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
@@ -23,7 +28,7 @@ import type {EvidenceReader} from '../evidence-reader.js';
 import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import type {SourceContextStore} from '../source-context.js';
 import type {FileStore} from '../files.js';
-import type {Conversations} from '../conversations.js';
+import type {ConversationRepository as Conversations} from '../plugins/central-contracts.js';
 import type {WorkingMemory} from '../working-memory.js';
 import {freezeSemanticContextTime,type LifecycleSettings} from '../memory-lifecycle.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
@@ -45,6 +50,34 @@ import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityChe
 import type {ObservabilityAssembly} from '../plugins/observability-platform.js';
 import type {AdmittedUsageMeter as ObservabilityUsageMeter} from '../plugins/observability-platform.js';
 import type {AdmittedUsageMeter} from './processing.js';
+
+export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:conversationsContribution,declaration:conversationsDeclaration,replacement:conversationsReplacement},
+]);
+
+export interface ConversationInputDependencies {
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
+  readonly store:Store;
+  readonly resources:ServerResources;
+  readonly backendContext:Context;
+  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'conversation'>;
+}
+
+/** Install the conversation owner and lend its gated repository to the remaining
+ * query, Memory and evidence-authority consumers through one host lease. */
+export async function prepareConversations(dependencies:ConversationInputDependencies){
+  const platform=createConversations(dependencies.store,dependencies.modelAuthorizationHost),routes=createConversationRoutes();
+  let bindings:ConversationsBindings|undefined;
+  const handle=await dependencies.bootstrap.host.install({
+    identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.conversations',installationId:'build:conversations@1.0.0',instanceId:'query',activationId:randomUUID()},
+    contributions:[conversationsDeclaration],factory:createConversationsFactory(platform,value=>{bindings=value;routes.activate(platform.conversations);}),
+  });
+  dependencies.resources.defer(()=>handle.close('shutdown'));
+  const lease=await dependencies.bootstrap.host.acquire(centralServices.conversations,bindings!.conversations);
+  dependencies.resources.defer(()=>lease.release());
+  contributeDomainRoutes(dependencies.backendContext,{'mote.ask':routes});
+  return Object.freeze({conversations:lease.value});
+}
 
 /** The query metering factory app.ts wires over the shared admitted-usage
  * meter; the optional route delegates host-run accounting to the Host meter. */

@@ -36,12 +36,12 @@ async function fixture(t:TestContext){
 test('deleting the current complete note body anchor deletes that same original and preserves the recorded conversation',async t=>{
  const f=await fixture(t),n=await f.note(),other=await f.note();
  const read=await f.get('/api/capture-browser/'+n.anchor);assert.equal(read.statusCode,200);assert.equal(read.json().ocrText,n.text);assert.deepEqual(read.json().deletion,{available:true,kind:'capture'});assert.equal(JSON.stringify(read.json().deletion).includes(n.id),false);
- const conversation=f.featureServices.conversations.append(undefined,{question:'Generated original question'},{answer:'Generated preserved answer',citations:[{id:n.anchor,capturedAt:'2026-10-29T01:00:00Z',appName:'Generated',excerpt:n.text}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[n.id,n.anchor]}});
+ const conversation=f.conversations.append(undefined,{question:'Generated original question'},{answer:'Generated preserved answer',citations:[{id:n.anchor,capturedAt:'2026-10-29T01:00:00Z',appName:'Generated',excerpt:n.text}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[n.id,n.anchor]}});
  assert.equal((await f.app.inject({method:'DELETE',url:'/api/captures/'+n.anchor})).statusCode,401);
  const removed=await f.remove(n.anchor);assert.equal(removed.statusCode,200,removed.body);assert.deepEqual(removed.json(),{deleted:1});
  for(const id of [n.id,n.anchor])assert.equal((await f.get('/api/capture-browser/'+id)).statusCode,404);
  assert.equal((await f.get('/api/materials/'+n.material.id)).statusCode,404);assert.equal((await f.get('/api/capture-browser/'+other.id)).statusCode,200);
- const turn=f.featureServices.conversations.get(conversation.conversationId).turns[0];assert.equal(turn.question,'Generated original question');assert.equal(turn.result!.answer,'Generated preserved answer');assert.equal(turn.evidenceDeleted,undefined);assert.equal(turn.evidenceUnavailable,true);
+ const turn=f.conversations.get(conversation.conversationId).turns[0];assert.equal(turn.question,'Generated original question');assert.equal(turn.result!.answer,'Generated preserved answer');assert.equal(turn.evidenceDeleted,undefined);assert.equal(turn.evidenceUnavailable,true);
  assert.deepEqual((await f.remove(n.id)).json(),{deleted:0});assert.deepEqual((await f.remove(randomUUID())).json(),{deleted:0});
 });
 

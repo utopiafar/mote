@@ -20,6 +20,7 @@ import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
 import {createMaterialMemoryIntake,createMaterialMemoryIntakeFactory,materialMemoryIntakeContribution,materialMemoryIntakeDeclaration,materialMemoryIntakeReplacement,type MaterialMemoryIntakeBindings} from '../plugins/material-memory-intake.js';
 import {createMaterialOrganizerService,materialOrganizerServiceContribution,materialOrganizerServiceDeclaration,materialOrganizerServiceReplacement} from '../plugins/material-organizer-service.js';
@@ -126,9 +127,9 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
   backendContext.provide('moteContextTrees',contextTrees);
   // The pre-H14 feature bridge mounts these before listen; each route table
   // dispatches against this activation instead of installing a second handler.
-  backendContext.provide('moteDomainRoutes',Object.freeze({
+  contributeDomainRoutes(backendContext,{
     'mote.materials':Object.freeze({mount:(app:Parameters<typeof materialContext.routes>[0])=>materialContext.routes(app)}),
     'mote.context':Object.freeze({mount:(app:Parameters<typeof evidenceContext.routes>[0])=>evidenceContext.routes(app)}),
-  }));
+  });
   return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext});
 }

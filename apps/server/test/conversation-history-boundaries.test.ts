@@ -46,7 +46,7 @@ for(const mutation of ['revise','delete'] as const)test(`late compaction cannot 
   return reply('Generated late summary which must never commit.');
  });
  await assert.rejects(pending,/Conversation changed/);
- const current=node.featureServices.conversations.get(conversationId);assert.equal(node.working.get(current),undefined);
+ const current=node.conversations.get(conversationId);assert.equal(node.working.get(current),undefined);
  if(mutation==='delete'){assert.equal(current.turns[0].evidenceUnavailable,true);assert.equal(current.turns[0].evidenceDeleted,undefined);assert.match(JSON.stringify(current),/preserved initial proposal/);}
  else{assert.equal(current.turns[0].evidenceStale,true);assert.equal(current.turns[0].result!.answer,'Generated preserved initial proposal.');}
 });
@@ -60,7 +60,7 @@ test('historical permission receipts never exempt newly disclosed restricted res
  ids=[original];const first=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated initial request'}});assert.equal(first.statusCode,200,first.body);
  node.store.invalidateMemoryEvidence(original);node.store.delete(restricted);ids=[restricted];
  const next=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:first.json().conversationId,question:'Generated follow-up'}});assert.equal(next.statusCode,409,next.body);assert.equal(calls,2,'the new result is rejected after model execution');
- const history=node.featureServices.conversations.get(first.json().conversationId);assert.ok(history.turns.filter(turn=>turn.result).every(turn=>turn.result!.runId===first.json().runId),'restricted new prose never publishes');
+ const history=node.conversations.get(first.json().conversationId);assert.ok(history.turns.filter(turn=>turn.result).every(turn=>turn.result!.runId===first.json().runId),'restricted new prose never publishes');
 });
 
 test('pagination-only recording reimports preserve old answer and original version dependencies',async t=>{
@@ -73,15 +73,15 @@ test('pagination-only recording reimports preserve old answer and original versi
  const firstExport=transcript(4),nextExport=transcript(2);assert.deepEqual(nextExport.transcript,firstExport.transcript);
  const first=await node.files.transcriptRevision(sourceId,metadata,firstExport.rawText,firstExport.transcript!,()=>{});ids=[first.id,...node.files.chunks(first.id).map(chunk=>chunk.id)];
  const saved=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated recording question'}});assert.equal(saved.statusCode,200,saved.body);const conversationId=saved.json().conversationId;
- const before=node.featureServices.conversations.get(conversationId).turns[0];
+ const before=node.conversations.get(conversationId).turns[0];
  await node.files.transcriptRevision(sourceId,{...metadata,observedAt:'2026-10-02T00:00:00Z'},nextExport.rawText,nextExport.transcript!,()=>{});
- const after=node.featureServices.conversations.get(conversationId).turns[0];assert.equal(after.evidenceDeleted,undefined);assert.deepEqual(after.result,before.result);assert.ok(after.result!.evidenceDependencies!.ids.includes(first.id),'old locators are not retargeted by a transport-only import');
+ const after=node.conversations.get(conversationId).turns[0];assert.equal(after.evidenceDeleted,undefined);assert.deepEqual(after.result,before.result);assert.ok(after.result!.evidenceDependencies!.ids.includes(first.id),'old locators are not retargeted by a transport-only import');
 });
 
 for(const nested of [false,true])test(`legacy history receipt backfill rolls back both the turn and quota metadata on failure (${nested?'nested':'standalone'})`,async t=>{
  const dir=await mkdtemp(join(tmpdir(),'mote-history-backfill-')),node=await buildApp(config(dir),{backgroundWorker:false});
  t.after(async()=>{await node.app.close();await rm(dir,{recursive:true,force:true});});
- const saved=node.featureServices.conversations.append(undefined,{question:'Generated legacy request'},{answer:'Generated legacy answer.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}}),db=node.store.db;
+ const saved=node.conversations.append(undefined,{question:'Generated legacy request'},{answer:'Generated legacy answer.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}}),db=node.store.db;
  db.prepare("UPDATE conversation_turns SET json=json_remove(json,'$.historyEvidenceDependencies') WHERE conversation_id=?").run(saved.conversationId);
  db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',(SELECT sum(length(CAST(json AS BLOB))) FROM conversation_turns WHERE conversation_id=?)) WHERE id=?").run(saved.conversationId,saved.conversationId);
  const before=db.prepare('SELECT json FROM conversation_turns WHERE id=?').get(saved.turnId)!.json;
@@ -91,7 +91,7 @@ for(const nested of [false,true])test(`legacy history receipt backfill rolls bac
  assert.equal(db.isTransaction,nested,'migration failure preserves the caller transaction boundary');
  assert.equal(db.prepare('SELECT json FROM conversation_turns WHERE id=?').get(saved.turnId)!.json,before,'failed migration cannot commit a receipt without its quota metadata');
  db.exec('DROP TRIGGER generated_backfill_failure');new Conversations(node.store);
- assert.ok(node.featureServices.conversations.get(saved.conversationId).turns[0].historyEvidenceDependencies);
+ assert.ok(node.conversations.get(saved.conversationId).turns[0].historyEvidenceDependencies);
  assert.equal(db.prepare("SELECT json_extract(json,'$.bytes') n FROM conversations WHERE id=?").get(saved.conversationId)!.n,db.prepare('SELECT sum(length(CAST(json AS BLOB))) n FROM conversation_turns WHERE conversation_id=?').get(saved.conversationId)!.n);
  if(nested)db.exec('COMMIT');
 });
