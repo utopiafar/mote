@@ -45,6 +45,17 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_erases(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_evidence_revocations(id TEXT PRIMARY KEY,generation INTEGER NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL);');
     installMemoryPublicationRetirement(store);
+    // This plugin owns the publication journals and their retained retirement;
+    // the vault ledger keeps no domain table names.
+    store.registerStorage('memory-publication',{
+      memory_publications:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
+      memory_publication_outputs:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+      memory_publication_dependencies:'length(CAST(operation_id AS BLOB))+length(CAST(kind AS BLOB))+length(CAST(dependency_id AS BLOB))+64',
+      memory_publication_retirements:'length(CAST(operation_id AS BLOB))+64',
+      memory_owner_mutations:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
+      memory_provider_erases:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
+      memory_provider_writes:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(parent_id AS BLOB))+length(CAST(state AS BLOB))+136',
+    });
     bindings.stageMigrationRecord=(namespace,memory,opId,assertAuthority)=>this.writeAtNamespace(opId,namespace,memory,opId,assertAuthority);
     bindings.migrationActivated=namespace=>{
       const keys=new Set(store.db.prepare('SELECT json FROM memories').all().map(row=>JSON.stringify(memoryProviderKey(JSON.parse(String(row.json))))));

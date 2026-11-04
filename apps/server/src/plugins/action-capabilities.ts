@@ -12,7 +12,12 @@ export class ActionCapabilities {
   CREATE TABLE IF NOT EXISTS action_device_capabilities(device_id TEXT PRIMARY KEY,json TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS action_capability_grants(id TEXT PRIMARY KEY,json TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS action_capability_drafts(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS action_capability_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL);`);}
+  CREATE TABLE IF NOT EXISTS action_capability_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL);`);store.registerStorage('actions-services',{
+  action_device_capabilities:'length(CAST(json AS BLOB))+length(CAST(device_id AS BLOB))+128',
+  action_capability_grants:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+256',
+  action_capability_drafts:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+  action_capability_commands:'length(CAST(receipt AS BLOB))+length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+128',
+});}
  private active(connectionId:string){return this.connections.inventory().items.some(item=>item.id===connectionId&&!item.revokedAt&&(!item.expiresAt||Date.parse(item.expiresAt)>Date.now()));}
  private read<T>(table:'action_device_capabilities'|'action_capability_drafts'|'action_capability_grants',key:string):T|undefined{const row=this.store.db.prepare(`SELECT json FROM ${table} WHERE ${table==='action_device_capabilities'?'device_id':'id'}=?`).get(key);return row?JSON.parse(String(row.json)):undefined;}
  private command<T>(kind:string,input:{operationId:string;expectedRevision:number},work:()=>T):T{
