@@ -1,5 +1,14 @@
 import {codingProjectContext} from './coding-project.js';
-import type {Context} from '@deepseek-ai/cordis';
+import {z} from 'zod';
+import type {FastifyInstance} from 'fastify';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
+import type {ManifestContribution} from '@mote/plugin-api';
+import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import type {HostPluginContext} from '@mote/plugin-host';
+import {BackendPluginScope} from './backend-plugin-scope.js';
+import type {SourcePipelineRuntime} from './source-pipelines.js';
+import type {SourceStore} from './sources.js';
+import type {Store} from './store.js';
 import {codingConversationEvidence,codingDialogueText,CODING_DIALOGUE_SCHEMA_VERSION,sourceItemSchema,type SourceConnection,type SourceItem} from '@mote/shared';
 import {materialId,type CodingAppendBase,type MaterialAppendDraft,type MaterialDraft} from './materials.js';
 import {archiveHash} from './source-archive.js';
@@ -156,7 +165,7 @@ const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSna
 };
 
 /** The recipe selects trusted, versioned capabilities; its data never carries code. */
-export function codingSourcePlugin(ctx:Context){
+export function codingSourcePlugin(ctx:Context,options:{accepting?:boolean}={}){
   const recipes=ctx.moteSourceRecipes;
   ctx.effect(()=>ctx.moteMaterialCatalog.register({id:'mote.coding-session',kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,label:'Coding Agent 会话'}));
   ctx.effect(()=>recipes.registerRawWriter({id:'mote.source-archive-writer',version:'1',kind:'raw-writer'},(archive,source,items,groups)=>archive.receive(source.id,items,groups)));
@@ -186,4 +195,109 @@ export function codingSourcePlugin(ctx:Context){
   ctx.effect(()=>ctx.moteSourcePipelines.register({
     id:'mote.coding',featureId:'mote.coding',version:'8',recipe:{id:'mote.coding',version:'8'},reprocess:'manual',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memoryDependencies:['conversation'],
   }));
+  if(options.accepting===false)ctx.moteSourcePipelines.quiesce('mote.coding');
+}
+
+export const codingSourceContribution={
+  id:'coding-source',version:'1.0.0',surface:'data',runtime:'host',
+  requires:[{kind:'host',id:'mote.source-runtime',version:'1.0.0'}],provides:[],
+} as const satisfies ManifestContribution;
+export const codingSourceDeclaration={id:codingSourceContribution.id,apiVersion:'1'} as const;
+export const codingSourceReplacement='hot' as const;
+
+interface CodingSourceDependencies {
+  readonly runtime:SourcePipelineRuntime;
+  readonly sources:SourceStore;
+  readonly store:Store;
+}
+type CodingSourceActivation=CodingSourceDependencies;
+export interface CodingSourceOptions {readonly plugins?:readonly Plugin[];}
+export interface CodingSource extends PluginLifecycle {close():Promise<void>;}
+
+const routeContributions=new WeakMap<SourcePipelineRuntime,ReturnType<typeof createCodingSourceRoutes>>();
+export function codingSourceRoutesFor(runtime:SourcePipelineRuntime){return routeContributions.get(runtime);}
+
+/** The route table survives activation replacement and resolves the current
+ * coding-owned ports for every request. */
+export function createCodingSourceRoutes(runtime:SourcePipelineRuntime){
+  if(routeContributions.has(runtime))throw new StoreError('Coding source routes are already installed',409);
+  let current:CodingSourceActivation|undefined;
+  const mounted=new WeakSet<FastifyInstance>();
+  const active=()=>{if(!current)throw new StoreError('Coding source is unavailable',503);return current;};
+  const routes=Object.freeze({
+    activate(activation:CodingSourceActivation){
+      if(current&&current!==activation)throw new StoreError('Coding source is already active',409);
+      current=activation;
+    },
+    deactivate(activation:CodingSourceActivation){if(current===activation)current=undefined;},
+    mount(app:FastifyInstance){
+      if(mounted.has(app))throw new StoreError('Coding source routes are already installed',409);
+      mounted.add(app);
+      app.register(async child=>{
+        child.addHook('onRequest',async(_request,reply)=>{if(!current)return reply.code(503).send({error:'feature_unavailable'});});
+        child.get('/api/coding/uploads',async req=>{
+          const {runtime:sourcePipelines,sources,store}=active();
+          const {offset,limit}=z.object({offset:z.coerce.number().int().min(0).default(0),limit:z.coerce.number().int().min(1).max(50).default(20)}).strict().parse(req.query);
+          const all=sources.listSources().filter(source=>source.kind==='coding-agent');
+          const items=all.slice(offset,offset+limit).map(source=>({
+            source:{id:source.id,name:source.name,deviceId:source.deviceId,enabled:source.enabled,status:source.status},
+            received:store.db.prepare('SELECT count(*) AS events,max(observed_at) AS lastObservedAt FROM source_archive_heads WHERE source_id=?').get(source.id),
+            archiveBytes:Number(store.db.prepare('SELECT bytes FROM source_archive_sizes WHERE source_id=?').get(source.id)?.bytes??0),
+            work:store.db.prepare('SELECT state,count(*) AS count FROM source_pipeline_work WHERE source_id=? GROUP BY state').all(source.id),
+            materials:Number(store.db.prepare('SELECT count(*) AS n FROM material_heads WHERE source_id=? AND retired=0').get(source.id)?.n??0),
+            indexedMaterials:Number(store.db.prepare('SELECT count(*) AS n FROM material_searchable s JOIN material_heads h ON h.id=s.material_id WHERE h.source_id=? AND h.retired=0').get(source.id)?.n??0),
+            memory:store.db.prepare("SELECT coalesce(json_extract(j.json,'$.status'),CASE WHEN w.auto_authorized=0 THEN 'not_requested' WHEN w.error IS NOT NULL THEN 'blocked' ELSE 'waiting' END) AS state,count(*) AS count FROM material_memory_requests w JOIN material_heads h ON h.id=w.material_id LEFT JOIN memory_jobs j ON j.id=w.job_id WHERE h.source_id=? AND h.retired=0 GROUP BY state").all(source.id),
+            pipeline:(()=>{try{return sourcePipelines.select(source)?.id??null;}catch(error){if(error instanceof StoreError&&error.statusCode===409)return null;throw error;}})(),
+          }));
+          return {items,nextOffset:offset+limit<all.length?offset+limit:null};
+        });
+        child.get('/api/source-pipelines',async()=>active().runtime.status());
+        child.get('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};const activation=active();activation.sources.getSource(sourceId);return activation.runtime.options(sourceId);});
+        child.delete('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};const activation=active();activation.sources.getSource(sourceId);return activation.runtime.forget(sourceId);});
+        child.put('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};const activation=active();activation.sources.getSource(sourceId);return activation.runtime.configure(sourceId,req.body);});
+      });
+    },
+  });
+  routeContributions.set(runtime,routes);
+  return routes;
+}
+
+/** Owns only the coding recipe scope. The shared runtime, Store and source
+ * catalogue remain borrowed and continue serving other source kinds. */
+export function createCodingSource(dependencies:CodingSourceDependencies,routes:ReturnType<typeof createCodingSourceRoutes>,options:CodingSourceOptions={}):CodingSource{
+  let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'='created';
+  let scope:BackendPluginScope|undefined,activation:CodingSourceActivation|undefined,closing:Promise<void>|undefined;
+  const unavailable=()=>new StoreError('Coding source is unavailable',503);
+  const close=()=>closing??=(async()=>{
+    if(activation)routes.deactivate(activation);
+    activation=undefined;const owned=scope;scope=undefined;
+    try{await owned?.close();}finally{phase='stopped';}
+  })();
+  const quiesce=()=>{if(phase==='active'){phase='quiescing';dependencies.runtime.registry.quiesce('mote.coding');routes.deactivate(activation!);}};
+  return Object.freeze({
+    async prepare(){
+      if(phase!=='created')throw unavailable();phase='preparing';
+      try{
+        scope=new BackendPluginScope(dependencies.runtime.context);
+        await scope.install((ctx:Context)=>codingSourcePlugin(ctx,{accepting:false}));
+        for(const plugin of options.plugins??[])await scope.install(plugin);
+        activation={...dependencies};phase='prepared';
+      }catch(error){
+        try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Coding source preparation and disposal failed',{cause:error});}
+        throw error;
+      }
+    },
+    start(){if(phase!=='prepared'||!activation)throw unavailable();routes.activate(activation);dependencies.runtime.registry.start('mote.coding');phase='active';},
+    quiesce,
+    async stop(_reason?:StopReason){quiesce();await dependencies.runtime.drainPipeline('mote.coding');await close();},
+    dispose:close,close,
+  });
+}
+
+export function createCodingSourceFactory(dependencies:CodingSourceDependencies,routes:ReturnType<typeof createCodingSourceRoutes>,options:CodingSourceOptions={}){
+  return (context:HostPluginContext):PluginLifecycle=>{
+    const source=createCodingSource(dependencies,routes,options);
+    context.scope.defer(()=>source.close());
+    return {prepare:()=>source.prepare(),start:()=>source.start(),quiesce:(reason:StopReason)=>source.quiesce(reason),stop:(reason:StopReason)=>source.stop(reason),dispose:()=>source.dispose()};
+  };
 }
