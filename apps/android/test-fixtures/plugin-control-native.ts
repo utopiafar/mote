@@ -97,6 +97,12 @@ try {
   assert.equal(instanceView.configuration.endpoint, 'generated-reference');
   assert.equal(instanceView.observed, 'configured');
   assert.equal(inventory.catalog[0].repository, 'mem0ai/mem0');
+  const builds = await request('/api/plugin-builds');
+  const build = builds.find((value: {id: string}) => value.id === instance.id);
+  assert.ok(build, 'the real build response contains the configured worker instance');
+  assert.equal(build.runtime, 'worker');
+  assert.equal(build.packageId, packageId);
+  assert.equal(build.observed, 'stopped');
 
   if (interrupted) throw Error('Plugin control contract interrupted before Gradle started');
   const args = ['-p', 'apps/android', '--no-daemon', ':app:testDebugUnitTest', '--rerun',

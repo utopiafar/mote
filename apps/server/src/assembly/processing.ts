@@ -1,6 +1,6 @@
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {Context} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
 import type {CaptureRecord,TokenUsage,UsageReceipt} from '@mote/shared';
@@ -32,9 +32,8 @@ import {createMediaAssetsService,mediaAssetsServiceContribution,mediaAssetsServi
 import {createOcrAsrReadiness,createOcrAsrReadinessFactory,createOcrAsrReadinessRoutes,ocrAsrReadinessContribution,ocrAsrReadinessDeclaration,ocrAsrReadinessForAssembly,ocrAsrReadinessReplacement,registerOcrAsrReadinessForAssembly} from '../plugins/ocr-asr-readiness.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createProcessingServices,createProcessingServicesFactory,processingServicesContribution,processingServicesDeclaration,processingServicesReplacement,type ProcessingServicesStarted} from '../plugins/processing-services.js';
+import {createImageProcessingRoutes,createImageProcessingService,createImageProcessingServiceFactory,imageProcessingServiceContribution,imageProcessingServiceDeclaration,imageProcessingServiceForAssembly,imageProcessingServiceReplacement,registerImageProcessingServiceForAssembly} from '../plugins/image-processing-service.js';
 import type {FileAnalysis,FileProcessing,TranscriptionProvider} from '../file-processing.js';
-import {ImageProcessing} from '../image-processing.js';
-import {imageUnderstanding} from '../image-understanding.js';
 
 /** Admitted usage accounting shared with query/import metering: the ledger
  * receipt starts lazily inside the admitted task. */
@@ -55,6 +54,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:processingServicesContribution,declaration:processingServicesDeclaration,replacement:processingServicesReplacement},
   {contribution:mediaAssetsServiceContribution,declaration:mediaAssetsServiceDeclaration,replacement:mediaAssetsServiceReplacement},
   {contribution:ocrAsrReadinessContribution,declaration:ocrAsrReadinessDeclaration,replacement:ocrAsrReadinessReplacement},
+  {contribution:imageProcessingServiceContribution,declaration:imageProcessingServiceDeclaration,replacement:imageProcessingServiceReplacement},
 ]);
 
 export interface MediaAssemblyDependencies {
@@ -93,6 +93,7 @@ export interface ProcessingAssemblyDependencies {
   readonly files:FileStore;
   readonly sourceContexts:SourceContextStore;
   readonly mediaAssets:MediaAssets;
+  readonly plugins?:readonly Plugin[];
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
   readonly modelSettings:ModelSettingsStore;
@@ -168,7 +169,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   const platform=createProcessingServices({
     store,files,configService,diagnostics,executor,backendContext,materials,sourcePipelines,mediaAssets,
     ...(dependencies.transcriptionProvider?{transcriptionProvider:dependencies.transcriptionProvider}:{}),
-    modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],
+    ...(dependencies.plugins?.length?{plugins:dependencies.plugins}:{}),
     ...(config.media?{media:config.media}:{}),modelAuthority:mediaModelAuthority,analyze:analyzeFile,analysisSnapshot:resolveFileModel,
     analysisRevision:()=>modelSettings.view().revision,semanticFingerprint,
   });
@@ -179,8 +180,21 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   });
   resources.defer(()=>handle.close('shutdown'));
   const {workflows,processing}=started!;
+  const imageRoutes=createImageProcessingRoutes();
+  const imageService=createImageProcessingService({
+    store,processing,executor,configService,materials,mediaAssets,media:config.media,modelAuthority:mediaModelAuthority,
+    modelSettings,resolveFileModel,factory,admittedUsage,
+  });
+  const imageHandle=await bootstrap.host.install({
+    identity:{host:bootstrap.snapshot().host,packageId:'mote.image-processing',installationId:'build:image-processing@1.0.0',instanceId:'image-processing',activationId:randomUUID()},
+    contributions:[imageProcessingServiceDeclaration],
+    factory:createImageProcessingServiceFactory(imageService,()=>{imageRoutes.activate(imageService.port);},()=>{imageRoutes.deactivate();}),
+  });
+  resources.defer(()=>imageHandle.close('shutdown'));
+  contributeDomainRoutes(backendContext,{'mote.media':imageRoutes});
+  registerImageProcessingServiceForAssembly(imageService,processing);
   const featureServices=Object.freeze({processing,workflows}) satisfies Partial<FeatureServices>;
-  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices,processingServices:platform});
+  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices,processingServices:platform,imageProcessingService:imageService});
 }
 
 export interface PerceptionAssemblyDependencies {
@@ -200,17 +214,12 @@ export interface PerceptionAssemblyDependencies {
   readonly admittedUsage:AdmittedUsageMeter;
 }
 
-/** ImageProcessing and its understanding wiring, plus the close hook. */
+/** The image plugin owns construction and replacement. This bridge binds the
+ * agent registry assembled later and returns the existing perception handle. */
 export function assemblePerception(dependencies:PerceptionAssemblyDependencies){
-  const {store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage}=dependencies;
-  const perception=new ImageProcessing(store,processing,executor,{modelAuthority:mediaModelAuthority,configService,materials,mediaAssets,media:config.media,understanding:imageUnderstanding({factory,metered:async(settings,attribution,task)=>{
-    const meter=admittedUsage(settings.provider,settings.model,'image-understanding',{agentId:'image-understanding',moduleId:'images',skillId:null,...attribution});
-    return meter.run(async()=>{try{const output=await task(meter.update);meter.completed();return output;}catch(error){meter.failed(error);throw error;}});
-  },selection:service=>{
-    const selected=modelSettings.select('file'),resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service}),settings=resolved.settings,configuration=modelConfiguration(service?.id??selected.id,settings,modelSettings.view().revision);
-    return {identity:resolved.identity,fingerprint:configuration.fingerprint,configured:service?Boolean(service.apiKey||service.execution==='local'):agent.configuredFor(selected.id),settings,receipt:{profileId:service?.id??selected.id,provider:settings.provider,model:settings.model,revision:modelSettings.view().revision}};
-  }})});
-  resources.defer(()=>perception.close());
-  const featureServices=Object.freeze({perception}) satisfies Partial<FeatureServices>;
+  const service=imageProcessingServiceForAssembly(dependencies.processing);
+  service.bindAgent(id=>dependencies.agent.configuredFor(id));
+  const perception=service.perceptionForAssembly;
+  const featureServices=Object.freeze({}) satisfies Partial<FeatureServices>;
   return Object.freeze({perception,featureServices});
 }

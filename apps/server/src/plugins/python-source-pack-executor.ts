@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {z} from 'zod';
 import {importReviewDecisionSchema,sourceItemSchema} from '@mote/shared';
-import type {ImportPreparation,ImportPreparationResult} from './imports.js';
+import type {ImportPreparation,ImportPreparationResult} from '../imports.js';
 
 const MAX_PACK_BYTES=256*1024;
 const MAX_INPUT_BYTES=32*1024*1024;

@@ -85,16 +85,6 @@ const failureCode=(error:unknown,fallback:string)=>{
  * create/init failure owned by the install caller. */
 export const connectorCleanupFailure=(errors:readonly unknown[])=>Object.assign(new AggregateError(errors,'Connector cleanup failed'),{connectorCleanup:true as const});
 export const isConnectorCleanupFailure=(error:unknown)=>Boolean(error&&typeof error==='object'&&(error as {connectorCleanup?:unknown}).connectorCleanup===true);
-/** Trusted deployment modules are explicit code, never archive contents. */
-export async function loadConnectorModules(specifiers:readonly string[]):Promise<ConnectorManifest[]>{
-  const manifests:ConnectorManifest[]=[];
-  for(const specifier of specifiers){
-    if(typeof specifier!=='string'||!specifier||specifier.length>2000||/[\r\n\0]/.test(specifier)||/^[a-z][a-z0-9+.-]*:/i.test(specifier)&&!specifier.startsWith('file:'))throw Error('Invalid connector module specifier');
-    const exports=await import(specifier) as {default?:unknown;connector?:unknown};
-    manifests.push((exports.default??exports.connector) as ConnectorManifest);
-  }
-  return manifests;
-}
 
 /** A deployment scoped registry: plugins are explicit trusted code, archive contents are never loaded as code. */
 export class ConnectorRegistry {

@@ -1,8 +1,8 @@
-import type {Context} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import type {FastifyInstance} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
-import type {HostPluginContext} from '@mote/plugin-host';
+import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import type {HostPluginContext,HostScope} from '@mote/plugin-host';
 import type {ModelSettings} from '@mote/shared/models';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -51,7 +51,7 @@ export interface ProcessingServicesDependencies {
   readonly sourcePipelines:SourcePipelineRuntime;
   readonly mediaAssets:MediaAssets;
   readonly transcriptionProvider?:TranscriptionProvider;
-  readonly modules:readonly string[];
+  readonly plugins?:readonly Plugin[];
   readonly media?:Partial<MediaRuntimeSettings>;
   readonly modelAuthority:ModelProcessingAuthority;
   readonly analyze:FileAnalysis;
@@ -68,7 +68,7 @@ export interface ProcessingServices {
   readonly port:ProcessingServicesPort;
   readonly workflows:ProcessingRuntime;
   readonly processing:FileProcessing;
-  prepare(scope?:Pick<PluginScope,'defer'>):Promise<void>;
+  prepare(scope?:HostScope):Promise<void>;
   start():void;
   quiesce(reason?:StopReason):void;
   stop(reason?:StopReason):Promise<void>;
@@ -129,7 +129,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
   };
   const installContributions=()=>{
     if(contributionsInstalled)return;
-    processing!.installContributions(dependencies.contributions);
+    processing!.installContributions(dependencies.contributions,{imageRecipes:false});
     contributionsInstalled=true;
   };
   const removeContributions=()=>{
@@ -183,17 +183,17 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
     /** Construct this activation's domain objects and install its file
      * capabilities. A mid-prepare failure closes both partially constructed
      * owners and rolls back the contribution set. */
-    async prepare(scope?:Pick<PluginScope,'defer'>){
+    async prepare(scope?:HostScope){
       if(phase!=='created')throw unavailable();
       try{
-        workflows=new ProcessingRuntime(dependencies.store,[],{},Date.now,dependencies.executor,dependencies.materials,dependencies.backendContext,dependencies.configService);
+        workflows=new ProcessingRuntime(dependencies.store,[],{},Date.now,dependencies.executor,dependencies.materials,scope,dependencies.configService);
         dependencies.sourcePipelines.setProductConsumer(workflows);
         workflows.consumerAllowed=(sourceId,bindingId)=>dependencies.sourcePipelines.options(sourceId).consumers.includes(bindingId);
         processing=new FileProcessing(dependencies.files,dependencies.transcriptionProvider,undefined,{
           modelAuthority:dependencies.modelAuthority,configService:dependencies.configService,executor:dependencies.executor,
-          modules:[...dependencies.modules],builtinContributions:false,analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
+          ...(dependencies.plugins?.length?{plugins:[...dependencies.plugins]}:{}),builtinContributions:false,analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
           analysisRevision:dependencies.analysisRevision,diagnostics:dependencies.diagnostics,contextProcessors:workflows.registry,
-          pluginContext:dependencies.backendContext,mediaAssets:dependencies.mediaAssets,media:dependencies.media,
+          pluginScope:scope,mediaAssets:dependencies.mediaAssets,media:dependencies.media,
           contextForEvidence:record=>dependencies.materials.contextForEvidence(record),
         });
         installContributions();

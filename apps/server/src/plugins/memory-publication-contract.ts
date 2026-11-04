@@ -1,7 +1,7 @@
 import type {QueryResult} from '@mote/shared';
-import type {MemoryExtractOptions,PreparedMemoryExtraction} from './memory.js';
-import type {Memory} from './memory-schema.js';
-import type {MemoryProviderNamespace} from './memory-provider-contract.js';
+import type {MemoryExtractOptions,PreparedMemoryExtraction} from '../memory.js';
+import type {Memory} from '../memory-schema.js';
+import type {MemoryProviderNamespace} from '../memory-provider-contract.js';
 
 export type MemoryPublicationDependencies={evidenceIds?:readonly string[];memoryIds?:readonly string[]};
 export type MemoryPublicationReceipt={operationId:string;binding:{planId:string;generation:number;namespace?:MemoryProviderNamespace};prepared:PreparedMemoryExtraction;payloadHash:string};

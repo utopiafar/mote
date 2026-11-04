@@ -49,10 +49,9 @@ export class ImportUploads {
   this.store.db.prepare('DELETE FROM import_upload_parts WHERE upload_id=?').run(id);await rm(join(this.directory,id),{force:true,recursive:true});return file;
  }
 }
-export function registerImportUploads(app:FastifyInstance,store:Store,files:ArchivedFileStore){
+export function registerImportUploads(app:FastifyInstance,uploads:ImportUploads){
  // Feature routes are encapsulated: the sibling files parser is not inherited.
  app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:PART},(_req,body,done)=>done(null,body));
- const uploads=new ImportUploads(store,files);
  app.addHook('preClose',async()=>uploads.close());
  app.post('/api/import-uploads',{bodyLimit:4096},async req=>uploads.begin(req.body));
  app.put('/api/import-uploads/:id/parts/:part',{bodyLimit:PART},async req=>{const {id,part}=z.object({id:z.string().uuid(),part:z.coerce.number().int().nonnegative()}).parse(req.params);return uploads.part(id,part,req.body as Buffer);});

@@ -49,8 +49,6 @@ export const importPythonPackSchema = z.object({
   config: z.record(z.unknown()).refine(value => Buffer.byteLength(JSON.stringify(value)) <= 8192, 'Parser configuration exceeds 8 KiB').optional(),
 }).strict();
 export type ImportPythonPackConfig = z.infer<typeof importPythonPackSchema>;
-const modules = z.array(line(2000).refine(value => value.length > 0)).max(30);
-
 export const serverConfigSchema = z.object({
   host: line(255, 1).default('127.0.0.1'), port: z.number().int().min(0).max(65535).default(47832),
   profile: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/).default('default'),
@@ -74,7 +72,7 @@ export const diagnosticsConfigSchema = diagnosticsSettingsSchema.extend({
   maxFiles: z.number().int().min(1).max(10).default(3), maxEntries: z.number().int().min(100).max(5000).default(2000),
 }).strict();
 export const connectorsConfigSchema = z.object({
-  directory: line().default(''), modules: modules.refine(values => values.every(value => !/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('file:'))).default([]),
+  directory: line().default(''),
   mcpEnabled: z.boolean().default(false), mcpReadToken: line(8192).default(''), mcpWriteEnabled: z.boolean().default(false), mcpWriteToken: line(8192).default(''),
   mcpWriteSourceIds: z.array(z.string().regex(/^[a-zA-Z0-9_.:-]{1,128}$/)).default([]), allowLocalMcp: z.boolean().default(false),
   googleClientId: line().default(''), googleClientSecret: line(8192).default(''), googleRedirectUri: endpoint().default(''),
@@ -90,7 +88,7 @@ export const connectorsConfigSchema = z.object({
   }
 });
 export const pluginsConfigSchema = z.object({
-  backendModules: modules.default([]), fileProcessorModules: modules.default([]), configuration: z.record(z.unknown()).default({}),
+  configuration: z.record(z.unknown()).default({}),
   importPythonPacks: z.array(importPythonPackSchema).max(16).refine(value => new Set(value.map(pack => pack.id)).size === value.length).default([]),
 }).strict();
 export const updatesConfigSchema = z.object({ repository: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/).default('utopiafar/mote'), channel: z.enum(['stable', 'preview']).default('stable') }).strict();
@@ -121,10 +119,10 @@ interface LoadedConfig {
   connectors: z.infer<typeof connectorsConfigSchema>;
   diagnosticsEnabled: boolean; diagnosticsDebug: boolean; agentTraceEnabled: boolean; logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
   logDirectory: string; logMaxBytes: number; logMaxFiles: number; logMaxEntries: number;
-  fileProcessorModules: string[]; backendPluginModules: string[]; importPythonPacks: ImportPythonPackConfig[];
+  importPythonPacks: ImportPythonPackConfig[];
   updateRepository: string; updateChannel: 'stable' | 'preview'; media: MediaConfiguration; configuration: ConfigurationContext;
 }
-type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcurrency' | 'memoryConcurrency' | 'codexBin' | 'codexHome' | 'contentEncryptionEnabled' | 'fileProcessorModules' | 'backendPluginModules' | 'importPythonPacks' | 'modelProvider' | 'modelProtocol' | 'modelHeaders' | 'modelExtraBody' | 'updateRepository' | 'updateChannel' | 'connectors' | 'configuration' | 'modelReasoningEffort' | 'modelMaxTokens' | 'modelRequestTimeoutMs' | 'agentTimeoutMs' | 'profile' | 'tokenFromEnvironment' | 'diagnosticsEnabled' | 'diagnosticsDebug' | 'agentTraceEnabled' | 'logLevel' | 'logDirectory' | 'logMaxBytes' | 'logMaxFiles' | 'logMaxEntries' | 'media';
+type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcurrency' | 'memoryConcurrency' | 'codexBin' | 'codexHome' | 'contentEncryptionEnabled' | 'importPythonPacks' | 'modelProvider' | 'modelProtocol' | 'modelHeaders' | 'modelExtraBody' | 'updateRepository' | 'updateChannel' | 'connectors' | 'configuration' | 'modelReasoningEffort' | 'modelMaxTokens' | 'modelRequestTimeoutMs' | 'agentTimeoutMs' | 'profile' | 'tokenFromEnvironment' | 'diagnosticsEnabled' | 'diagnosticsDebug' | 'agentTraceEnabled' | 'logLevel' | 'logDirectory' | 'logMaxBytes' | 'logMaxFiles' | 'logMaxEntries' | 'media';
 /** Existing buildApp fixtures can still supply a Config without writing configuration files. */
 export type Config = Omit<LoadedConfig, OptionalFields> & Partial<Pick<LoadedConfig, OptionalFields>> & { configService?: ConfigService };
 
@@ -179,9 +177,9 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
       { path: 'embedding', effect: 'restart' }, { path: 'embedding.apiKey', sensitive: true }, { path: 'codex', effect: 'restart' },
     ]),
     definition('connectors', connectorsConfigSchema, false, [
-      { path: 'syncIntervalMs', effect: 'immediate' }, ...['directory', 'modules', 'mcpEnabled', 'mcpReadToken', 'mcpWriteEnabled', 'mcpWriteToken', 'mcpWriteSourceIds', 'allowLocalMcp', 'googleClientId', 'googleClientSecret', 'googleRedirectUri'].map(path => ({ path, effect: 'restart' as const, ...(['mcpReadToken', 'mcpWriteToken', 'googleClientId', 'googleClientSecret'].includes(path) ? { sensitive: true } : {}) })),
+      { path: 'syncIntervalMs', effect: 'immediate' }, ...['directory', 'mcpEnabled', 'mcpReadToken', 'mcpWriteEnabled', 'mcpWriteToken', 'mcpWriteSourceIds', 'allowLocalMcp', 'googleClientId', 'googleClientSecret', 'googleRedirectUri'].map(path => ({ path, effect: 'restart' as const, ...(['mcpReadToken', 'mcpWriteToken', 'googleClientId', 'googleClientSecret'].includes(path) ? { sensitive: true } : {}) })),
     ]),
-    definition('plugins', pluginsConfigSchema, false, [{ path: 'backendModules', effect: 'restart' }, { path: 'fileProcessorModules', effect: 'restart' }, { path: 'importPythonPacks', effect: 'restart' }, { path: 'configuration', sensitive: true }]), definition('updates', updatesConfigSchema, true),
+    definition('plugins', pluginsConfigSchema, false, [{ path: 'importPythonPacks', effect: 'restart' }, { path: 'configuration', sensitive: true }]), definition('updates', updatesConfigSchema, true),
     definition('media', mediaConfigSchema, true, [{ path: 'workerToken', sensitive: true }]),
     definition('processing', processingConfigurationSchema, false, [{ path: 'settings.apiKey', sensitive: true }, { path: 'settings.localWorkerApiKey', sensitive: true }, { path: 'policy.services.*.apiKey', sensitive: true }, { path: 'settings', effect: 'next-request' }, { path: 'policy', effect: 'next-request' }]),
     definition('perception', perceptionConfigurationSchema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'concurrency', effect: 'next-admission' }, { path: 'providerRevision', effect: 'next-request' }, { path: 'allowExternalProcessing', effect: 'next-request' }, { path: 'allowQueryImages', effect: 'next-request' }, { path: 'understandingEnabled', effect: 'next-request' }]),
@@ -297,7 +295,7 @@ export function configFromDocument(document: ConfigDocument, file: string, priva
     connectors: { ...connectors, directory: connectors.directory ? resolve(baseDir, connectors.directory) : join(dataDir, 'connectors') },
     diagnosticsEnabled: diagnostics.enabled, diagnosticsDebug: diagnostics.debug, agentTraceEnabled: diagnostics.traceEnabled,
     logLevel: diagnostics.level, logDirectory: diagnostics.directory ? resolve(baseDir, diagnostics.directory) : join(dataDir, 'logs'), logMaxBytes: diagnostics.maxBytes, logMaxFiles: diagnostics.maxFiles, logMaxEntries: diagnostics.maxEntries,
-    fileProcessorModules: plugins.fileProcessorModules, backendPluginModules: plugins.backendModules, importPythonPacks: plugins.importPythonPacks,
+    importPythonPacks: plugins.importPythonPacks,
     updateRepository: updates.repository, updateChannel: updates.channel,
     media: { ...media, modelDirectory: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : join(dataDir, 'media-models') },
   };
@@ -321,7 +319,7 @@ export function documentFromConfig(config: Config): ConfigDocument {
       headers: config.modelHeaders ?? {}, extraBody: config.modelExtraBody ?? {}, ...(config.modelProtocol === 'codex-app-server' ? { serviceTier: 'default' } : {}) },
       embedding: { model: config.embeddingModel, baseUrl: config.embeddingBaseUrl, apiKey: config.embeddingApiKey }, codex: { executable: config.codexBin, home: config.codexHome } }),
     connectors: connectorsConfigSchema.parse(config.connectors ?? {}),
-    plugins: pluginsConfigSchema.parse({ backendModules: config.backendPluginModules, fileProcessorModules: config.fileProcessorModules, importPythonPacks: config.importPythonPacks }),
+    plugins: pluginsConfigSchema.parse({ importPythonPacks: config.importPythonPacks }),
     updates: updatesConfigSchema.parse({ repository: config.updateRepository, channel: config.updateChannel }), media: mediaConfigSchema.parse(config.media ?? {}),
     processing: defaultProcessingConfiguration(config.media), perception: perceptionConfigurationSchema.parse({}), memory: lifecycleSettingsSchema.parse({}),
     actions: actionsRuntimeSettingsSchema.parse({}), activity: activityConfigurationSchema.parse({}), workflows: workflowConfigurationSchema.parse({}),

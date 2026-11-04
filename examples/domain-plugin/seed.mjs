@@ -20,18 +20,17 @@ const item = await request('/api/connectors/template-collection/items', {
   method: 'POST',
   body: JSON.stringify({text: `Generated collection item; SDK ${PLUGIN_SDK_VERSION}`}),
 });
-// Error branch: invalid input must fail through the real mount. The current
-// connector mount maps plugin failures to its generic operation error —
-// domain codes ride along in the dispatcher-mapped shape for hosts that
-// resolve them.
+// Error branch: invalid input must fail through the real mount. The dynamic
+// dispatcher preserves the domain's ConnectorError shape; it never turns this
+// into a silent success.
 const refused = await fetch(`${base}/api/connectors/template-collection/items`, {
   method: 'POST',
   headers,
   body: JSON.stringify({text: ''}),
 });
-if (refused.status !== 502) throw Error(`Invalid item returned HTTP ${refused.status}, expected the host's generic failure mapping`);
+if (refused.status !== 400) throw Error(`Invalid item returned HTTP ${refused.status}, expected the domain's invalid input status`);
 const refusedBody = await refused.json();
-if (refusedBody.error !== 'connector_operation_failed') throw Error(`Invalid item returned ${refusedBody.error}, expected connector_operation_failed`);
+if (refusedBody.error !== 'invalid_item_text') throw Error(`Invalid item returned ${refusedBody.error}, expected invalid_item_text`);
 const after = await request('/api/connectors/template-collection/state');
 console.log(JSON.stringify({
   sdkVersion: PLUGIN_SDK_VERSION,

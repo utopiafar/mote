@@ -55,13 +55,13 @@ flowchart LR
 
 当前公共证据投影是带位置的文字段，支持音频时间、文档定位、图像几何等已有字段。新增原生输出结构无需改导入和任务宿主；若新类型需要完全不同的检索表示，应增加对应的公共投影契约和消费方，不把任意 JSON 当成可检索完成。
 
-[完整插件示例](../examples/plugins/media-intake.mjs) 注册一个签名识别器、原生文字输出类型、提取提供方和两步规范化 DAG：
+[完整插件包示例](../examples/media-intake-plugin) 注册一个签名识别器、原生文字输出类型、提取提供方和两步规范化 DAG。`mote-plugin.json` 声明 processing 贡献，使用 `plugin-dev dev --plugin examples/media-intake-plugin` 在私有开发 profile 中安装：
 
 ```sh
-MOTE_BACKEND_PLUGINS='["/absolute/path/to/mote/examples/plugins/media-intake.mjs"]'
+node scripts/mote.mjs plugin-dev dev --plugin examples/media-intake-plugin --once
 ```
 
-示例选择的 MIME 为 `application/vnd.mote.text`，类型处理器为 `community.text-extract`。旧 `MOTE_FILE_PROCESSOR_PLUGINS` 仍可加载部署模块；新模块建议使用统一变量。`GET /api/import-capabilities` 列出接入能力，文件处理设置的 `capabilities` 列出配方、阶段和输出类型。文件处理解释接口返回实际配置回执。
+示例选择的 MIME 为 `application/vnd.mote.text`，类型处理器为 `community.text-extract`。主 YAML 不再接受代码模块列表；仓库外作者通过插件包声明贡献。`GET /api/import-capabilities` 列出接入能力，文件处理设置的 `capabilities` 列出配方、阶段和输出类型。文件处理解释接口返回实际配置回执。
 
 ## 恢复与验收边界
 

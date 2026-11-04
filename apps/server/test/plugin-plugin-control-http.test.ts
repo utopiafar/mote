@@ -90,7 +90,7 @@ test('build control HTTP keeps owner auth, CAS and real restart/blocked facts', 
   const view = selected.json();
   assert.equal(view.observed, 'restart_required');
   assert.equal(view.restartRequired, true);
-  assert.equal(view.allowedActions, undefined);
+  assert.deepEqual(view.allowedActions, [], 'native and worker builds share the same empty action projection when none apply');
   assert.equal(view.restartPlan, undefined);
   assert.equal(packageStateLabel('restart-required'), '等待节点重启');
 

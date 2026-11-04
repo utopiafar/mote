@@ -1,4 +1,4 @@
-import {InstallationEpochs} from './installation-epochs.js';
+import {PluginEpochs,type HostScope} from '@mote/plugin-host';
 import {z} from 'zod';
 import {
   freezeRecipe,parseRecipeDefinition,recipeFingerprint,recipeIdentifierSchema,
@@ -59,10 +59,11 @@ function bindings(recipe:RecipeDefinition):{path:string;kind:RecipeComponentKind
 
 /** Deployment scoped. Missing or upgraded components make existing recipes unavailable. */
 export class RecipeRegistry {
-  readonly epochs=new InstallationEpochs();
+  readonly epochs:PluginEpochs;
   private readonly components=new Map<string,RecipeComponentManifest>();
   private readonly recipes=new Map<string,InstalledRecipe>();
   private readonly identities=new Map<string,{definitionFingerprint:string;configFingerprint:string}>();
+  constructor(scope?:HostScope){this.epochs=new PluginEpochs(scope);}
 
   installComponent(component:RecipeComponentManifest):()=>void {
     recipeIdentifierSchema.parse(component.id);

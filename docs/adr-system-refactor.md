@@ -60,7 +60,7 @@ by endpoint identity; no new global provider concurrency gate is introduced.
 This narrows the planning responsibility in [proposal lifecycle](adr-memory-proposal-lifecycle.md)
 and extends [batch context](adr-memory-batch-context.md). It preserves [attribution](adr-material-attribution.md),
 [private lineage](adr-material-disclosure-lineage.md), [manual selected outputs](adr-manual-memory-selected-outputs.md)
-and the [epoch 4 baseline](adr-mvp-baseline.md). Optional workspace/semantic metadata
+and the [epoch 6 baseline](adr-mvp-baseline.md). Optional workspace/semantic metadata
 does not renew old grants; productsVersion 2 is reused only by its exact reader
 contract. No historical vault is migrated or reset by this change.
 

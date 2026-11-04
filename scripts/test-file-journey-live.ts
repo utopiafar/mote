@@ -6,6 +6,7 @@ import {createReadStream} from 'node:fs';
 import {mkdir,readFile,readdir,stat,writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {join,relative,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
 import {z} from 'zod';
 import sharp from 'sharp';
@@ -36,8 +37,8 @@ const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token,tok
   maxStorageBytes:2_000_000_000,maxExportBytes:200_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
   model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
-  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,
-  ...(values['processor-module']?{fileProcessorModules:[resolve(values['processor-module'])]}:{})};
+  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
+const processorPlugin=values['processor-module']?(await import(pathToFileURL(resolve(values['processor-module'])).href)).default:undefined;
 const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',personalDataUsed:manifest.personalDataUsed,
   browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,
   runtime:{python:resolve(values.python),asrModelRoot:values['asr-model-root']?resolve(values['asr-model-root']):undefined,ocrModelRoot:values['ocr-model-root']?resolve(values['ocr-model-root']):undefined},
@@ -85,7 +86,7 @@ try{
   }
   const ocr=hasImage?await worker('ocr-server.py',['--model-root',values['ocr-model-root']!],'ocr'):undefined;
   const asr=hasAudio?await worker('transcription-server.py',['--model',values['asr-model-root']!,'--segmentation-model',join(values['asr-model-root']!,'segmentation.onnx'),'--speaker-model',join(values['asr-model-root']!,'speaker.onnx')],'asr'):undefined;
-  node=await buildApp(config);const lifecycle=node.lifecycle.settings();
+  node=await buildApp(config,processorPlugin?{processingPlugins:[processorPlugin]}:undefined);const lifecycle=node.lifecycle.settings();
   for(const key of ['consolidation','insights','working'] as const)lifecycle[key].enabled=false;
   await node.lifecycle.save({revision:node.configService.revision,settings:lifecycle});await node.app.ready();
   if(hasAudio){const selected=node.processing.runtime.registry.get(audioProcessor);assert.ok(selected.localOnly&&selected.dialogue,'Select a local dialogue processor');report.audioProcessor=node.processing.runtime.registry.list().find(processor=>processor.id===audioProcessor);}

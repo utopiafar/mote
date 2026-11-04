@@ -204,6 +204,32 @@ test('version, revision, strict fields, types and bounded values validate before
   }
 });
 
+test('retired code module lists are unknown fields and never load code', t => {
+  const { root, file, write, vault } = fixture(t, 'config-code-modules');
+  const marker = join(root, 'generated-loaded.txt');
+  const moduleFile = join(root, 'generated-module.mjs');
+  writeFileSync(moduleFile, `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'loaded'); export default {};\n`);
+  for (const patch of [
+    { connectors: { modules: [moduleFile] } },
+    { plugins: { backendModules: [moduleFile] } },
+    { plugins: { fileProcessorModules: [moduleFile] } },
+  ]) {
+    write(patch);
+    const result = readConfig({ MOTE_CONFIG_FILE: file });
+    assert.notEqual(result.status, 0, JSON.stringify(patch));
+    assert.equal(existsSync(marker), false, 'configuration never imports a code module');
+    assert.equal(existsSync(vault), false);
+  }
+  write();
+  const config = configFromFile(file, { initializeCredentials: false });
+  assert.equal(Object.hasOwn(config, 'fileProcessorModules'), false);
+  assert.equal(Object.hasOwn(config, 'backendPluginModules'), false);
+  assert.equal(Object.hasOwn(config.connectors, 'modules'), false);
+  assert.equal(Object.hasOwn(config.configuration.document!.connectors as object, 'modules'), false);
+  assert.equal(Object.hasOwn(config.configuration.document!.plugins as object, 'backendModules'), false);
+  assert.equal(Object.hasOwn(config.configuration.document!.plugins as object, 'fileProcessorModules'), false);
+});
+
 test('URL and credential failures do not expose supplied values or create storage', t => {
   const { file, write, vault } = fixture(t);
   for (const patch of [
