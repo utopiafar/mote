@@ -1,26 +1,27 @@
 import {AgentNotConfiguredError,type ContextReader,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import type {Store} from './store.js';
-import {StoreError} from './store.js';
-import type {FileStore} from './files.js';
-import {fileAttachmentAvailable} from './file-attachments.js';
-import type {Conversations} from './conversations.js';
-import type {DelegationRuntime,DelegationWork} from './delegation-runtime.js';
-import type {ExecutionEngine} from './execution-engine.js';
-import type {WorkingMemory} from './working-memory.js';
-import type {LifecycleSettings} from './memory-lifecycle.js';
-import type {ModelSettingsStore} from './model-settings.js';
-import {modelConfiguration} from './model-configuration.js';
-import {memoryEvidenceFingerprint} from './memory.js';
-import {openingMemoryContext} from './opening-memory.js';
-import {queryWithAttachmentsSchema,insightSchema} from './query-request.js';
-import type {QueryScope} from './query-scope.js';
-import type {QueryQualityStage,QueryQualityStrategy} from './query-quality-experiment.js';
-import type {createModelEvidenceAuthority} from './model-evidence-authority.js';
+import {StoreError} from '../store.js';
+import type {FileStore} from '../files.js';
+import {fileAttachmentAvailable} from '../file-attachments.js';
+import type {Conversations} from '../conversations.js';
+import type {DelegationRuntime,DelegationWork} from '../delegation-runtime.js';
+import type {ExecutionEngine} from '../execution-engine.js';
+import type {WorkingMemory} from '../working-memory.js';
+import type {LifecycleSettings} from '../memory-lifecycle.js';
+import type {ModelSettingsStore} from '../model-settings.js';
+import {modelConfiguration} from '../model-configuration.js';
+import {memoryEvidenceFingerprint} from '../memory.js';
+import {openingMemoryContext} from '../opening-memory.js';
+import {queryWithAttachmentsSchema,insightSchema} from '../query-request.js';
+import type {QueryScope} from '../query-scope.js';
+import type {QueryQualityStage,QueryQualityStrategy} from '../query-quality-experiment.js';
+import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
+
+type QueryPreparationStore=ConstructorParameters<typeof DelegationRuntime>[0];
 
 export type SavedQuery={hostRequest:unknown;language?:QueryInput['language'];prepared?:QueryInput;configurationFingerprint?:string;qualityStrategy?:QueryQualityStrategy;qualityStages?:Partial<Record<QueryQualityStage,QueryResult>>};
 export interface QueryPreparationDependencies {
-  store:Store;
+  store:QueryPreparationStore;
   files:Pick<FileStore,'detail'|'version'>;
   conversations:Pick<Conversations,'get'|'context'|'historyContext'|'retiredSelection'>;
   delegation:Pick<DelegationRuntime,'journal'|'recordEvidence'>;

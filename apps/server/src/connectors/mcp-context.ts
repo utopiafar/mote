@@ -1,7 +1,7 @@
 import type {ContextReader} from '@mote/agent';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextQuery} from '../context-query.js';
-import {createContextQuery} from '../context-query-composition.js';
+import {createContextQuery} from '../plugins/query-context.js';
 import {ServerDiagnostics} from '../diagnostics.js';
 import type {SourceStore} from '../sources.js';
 import type {Store} from '../store.js';

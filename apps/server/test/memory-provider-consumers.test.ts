@@ -9,7 +9,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {Store,StoreError} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
-import {createContextQuery} from '../src/context-query-composition.js';
+import {createContextQuery} from '../src/plugins/query-context.js';
 import {registerContextRoutes} from '../src/context-routes.js';
 import {registerEvidenceRoutes} from '../src/evidence-routes.js';
 import {Mem0MemoryProvider} from '../src/mem0-memory-provider.js';
