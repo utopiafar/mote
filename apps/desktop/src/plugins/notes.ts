@@ -7,15 +7,12 @@ import type {NoteDraft} from '../contracts/note';
 import {NoteDraftStore} from '../note-draft';
 import type {DurableQueue} from '../queue';
 import {failureCode, safeErrorName, type EventCode, type SupportEvent} from '../support';
+import {desktopJobIds, notesChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 export const notesReadCapability = 'notes.read';
 export const notesWriteCapability = 'notes.write';
-export const notesChannels = {
-  draft: 'mote:note-draft',
-  update: 'mote:note-draft-update',
-  save: 'mote:note',
-} as const;
+export {notesChannels};
 
 export interface NotesPluginOptions {
   readonly directory: string;
@@ -103,7 +100,7 @@ export function createNotesPlugin(options: NotesPluginOptions): NotesPlugin {
           channel: notesChannels.save, capability: notesWriteCapability,
           windowRoles: ['main', 'quick-note'], callerCapability: notesWriteCapability, roleFrameUrls,
         }, (_view, args) => submit(args[0] as NoteDraft));
-        plugin.registerJob({id: 'notes-draft', durable: true, drain: settle});
+        plugin.registerJob({id: desktopJobIds.notesDraft, durable: true, drain: settle});
       });
       if (!outcome.started) throw outcome.error;
     },

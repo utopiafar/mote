@@ -4,12 +4,11 @@
 import type {Config} from '../contracts';
 import {AskController} from '../ask-controller';
 import type {BrowserLogin} from '../central-navigation';
+import {askWorkspaceChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 export const askCapability = 'ask.command';
-export const askWorkspaceChannels = {
-  request: 'mote:ask',
-} as const;
+export {askWorkspaceChannels};
 
 export interface AskWorkspaceOptions {
   readonly settings: () => Config;
