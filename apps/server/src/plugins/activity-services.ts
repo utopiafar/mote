@@ -4,6 +4,7 @@ import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {ActivityProjection,registerActivity,type ActivityDelegationReader} from '../activity.js';
 import {AutomaticActivity} from '../automatic-activity.js';
+import {registerOperations} from '../operations.js';
 import {StoreError} from '../store.js';
 import {registerAgentViewRoutes,type AgentViewRouteDependencies} from './agent-view-routes.js';
 import {centralServices} from './central-contracts.js';
@@ -155,6 +156,7 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
           if(phase!=='active')return reply.code(503).send({error:'feature_unavailable'});
         });
         registerActivity(child,prepared().projection,dependencies.isCollector);
+        registerOperations(child,dependencies.operations,dependencies.isCollector);
         child.get('/api/processing/activity',async()=>prepared().automatic.view());
         child.put('/api/processing/activity',async request=>prepared().automatic.save(request.body));
       });
