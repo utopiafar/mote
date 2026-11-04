@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
+import {Context} from '@deepseek-ai/cordis';
 import {PluginResourceScope,type HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import {installRecordingSources,recordingSourceManifests,type RecordingProvider} from '../plugins/recording-sources.js';
@@ -35,12 +36,14 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
  * callbacks, timers and host-bound state; closing one never touches siblings. */
 function connectorScope(packageId:string,instanceId:string,errorMessage:string):ConnectorInstanceScope&{resources:PluginResourceScope}{
   const resources=new PluginResourceScope(undefined,errorMessage);
+  const cordis=new Context();
+  resources.retire(()=>cordis.fiber.dispose());
   const identity={
     host:{kind:'central' as const,id:'central-connectors'},
     packageId,installationId:'central-connectors',instanceId,activationId:randomUUID(),
   };
   const scope:HostScope=Object.freeze({
-    identity,signal:resources.signal,
+    identity,signal:resources.signal,cordis,
     assertCurrent:()=>resources.assertCurrent(),defer:(dispose:()=>unknown|Promise<unknown>)=>resources.defer(dispose),
     run:<T>(work:(signal:AbortSignal)=>T|Promise<T>)=>resources.run(work),
     every:(ms:number,work:(signal:AbortSignal)=>unknown|Promise<unknown>)=>resources.every(ms,work),
