@@ -54,9 +54,19 @@ test('processing disables without admitting writes, drains accepted work and re-
   assert.equal(node.workflows.engine.get(id)?.state,'succeeded','accepted work commits during drain');
   assert.equal(node.processingServices.port.phase,'stopped');
   assert.equal((await node.app.inject({url:'/api/processing',headers})).statusCode,503);
+  assert.deepEqual(node.processing.runtime.registry.list(),[],'stopping withdraws the file processor contributions');
+  assert.deepEqual(node.processing.runtime.recipes.list(),{recipes:[],stages:[]},'stopping withdraws the file recipes');
+  assert.deepEqual(node.processing.runtime.imageRecipes.list(),{recipes:[],stages:[]},'stopping withdraws the image recipes');
   node.processingServices.start();
   assert.equal(registrations,0,'re-enable reuses the one activation handler set');
   assert.equal(node.processingServices.port.phase,'active');
+  assert.deepEqual(node.processing.runtime.registry.list().map(processor=>processor.id),['audio.http','audio.local-dialogue','text.utf8','document.generic','image.http','audio.diarize','audio.diarize-wespeaker'],'re-enable installs exactly one processor set');
+  assert.equal(node.processing.runtime.recipes.list().recipes.length,2,'re-enable installs each file recipe once');
+  assert.equal(node.processing.runtime.recipes.list().stages.length,4,'re-enable installs each file stage once');
+  assert.equal(node.processing.runtime.imageRecipes.list().recipes.length,1,'re-enable installs each image recipe once');
+  assert.equal(node.processing.runtime.imageRecipes.list().stages.length,2,'re-enable installs each image stage once');
+  node.processingServices.start();
+  assert.equal(node.processing.runtime.recipes.list().recipes.length,2,'an active start is idempotent');
   const reopened=await node.app.inject({url:'/api/processing',headers});
   assert.equal(reopened.statusCode,200,reopened.body);
   assert.ok((reopened.json() as {jobs:{id:string;state:string}[]}).jobs.some(job=>job.id===id&&job.state==='succeeded'));
@@ -128,6 +138,31 @@ test('a mid-prepare failure releases the borrowed engine handlers, vault transac
   }finally{
     store.db.exec=exec;globalThis.setInterval=originalSetInterval;globalThis.clearInterval=originalClearInterval;
     await platform.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});
+  }
+});
+
+test('a duplicate processor contribution fails prepare and leaves no partial capability behind',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-prc02-duplicate-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),engine=new ExecutionEngine(store),materials=new MaterialStore(store);
+  const duplicate={id:'text.utf8',version:'99',name:'Generated duplicate',stage:'extract' as const,mediaTypes:['text/'],process:async()=>({durationMs:0,segments:[]})};
+  const dependencies={
+    store,files,configService:undefined,diagnostics:undefined,executor:engine,backendContext:undefined,materials,
+    sourcePipelines:{setProductConsumer(){},options:()=>({consumers:[]})},mediaAssets:undefined,
+    modules:[],contributions:[{id:'generated.duplicate-processor',processors:[duplicate]}],modelAuthority:undefined,analyze:undefined,
+    analysisSnapshot:()=>({settings:fileProcessingSchema.parse({}),identity:{kind:'profile',id:'generated'}}),analysisRevision:()=>0,
+    semanticFingerprint:()=>'generated',
+  } as unknown as ProcessingServicesDependencies;
+  const failed=createProcessingServices(dependencies);
+  try{
+    await assert.rejects(failed.prepare(),/duplicate file processor/i);
+    assert.equal(failed.port.phase,'disposed');
+    assert.throws(()=>failed.processing,{statusCode:503});
+    const clean=createProcessingServices({...dependencies,contributions:[]});
+    await clean.prepare();
+    assert.equal(clean.processing.runtime.registry.get('text.utf8').version,'3','the built-in definition was never replaced');
+    assert.equal(clean.processing.runtime.recipes.list().recipes.length,2,'the failed contribution left no recipe behind');
+    await clean.close();
+  }finally{
+    await failed.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});
   }
 });
 
