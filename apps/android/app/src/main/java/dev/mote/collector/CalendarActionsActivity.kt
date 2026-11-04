@@ -15,6 +15,8 @@ import android.view.View
 import android.widget.*
 import dev.mote.collector.plugins.ManagedCalendarController
 import dev.mote.collector.plugins.ManagedCalendarPlugin
+import dev.mote.collector.plugins.PluginAvailability
+import dev.mote.collector.plugins.PluginCenterPresentation
 import org.json.JSONObject
 
 internal data class NativeTodoDraft(val origin:String,val generation:Long,val text:String)
@@ -68,6 +70,7 @@ class CalendarActionsActivity : MoteActivity() {
         }
         status = TextView(this); body.addView(status)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(list)
+        showAvailability()
         val tools=SecondaryUi.disclosure(body,MoteI18n.text("更多"),"calendar-tools")
         text(tools,MoteI18n.text("从资料中发现安排。范围授权内的日程交给指定设备，其余逐条确认；结果保留在行动历史。"))
         text(tools,MoteI18n.text("首次使用：在中央网页「行动」开启发现，并授权此设备查看跨来源的建议及原文片段。"))
@@ -112,7 +115,14 @@ class CalendarActionsActivity : MoteActivity() {
         } }, primary), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(MoteTheme.spaceInline) })
     }
     private fun calendarPermissions() = listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR).all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+    private fun showAvailability(): Boolean {
+        val state = ManagedCalendarPlugin.availability(applicationContext)
+        if (state == PluginAvailability.ACTIVE) return true
+        status.text = PluginCenterPresentation.availability(state)
+        return false
+    }
     private fun work(label: String, fn: ManagedCalendarController.(Long) -> JSONObject) {
+        if (!showAvailability()) return
         val expected=withdrawChangedCalendar();val epoch=calendarEpoch;val page=cursor
         task.start(label, { if(current(expected,epoch))status.text=it else withdrawChangedCalendar() }, {
             val client=ManagedCalendarPlugin.controller(applicationContext,foreground=true,sessionIdentity=expected)
