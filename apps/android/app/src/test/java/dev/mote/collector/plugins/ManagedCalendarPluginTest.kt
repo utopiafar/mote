@@ -41,7 +41,7 @@ class ManagedCalendarPluginTest {
             writes += path
             when (path) {
                 "/api/connections/self" -> JSONObject().put("credential", JSONObject().put("deviceId", "generated-device"))
-                "/api/device-action-capabilities" -> if (body == null) JSONObject().put("connectionId", "generated-connection").put("declaration", declaration ?: JSONObject.NULL) else {
+                "/api/device-action-capabilities" -> if (body == null) JSONObject().put("connectionId", "generated-connection").put("declaration", declaration ?: JSONObject.NULL).put("projection", JSONObject().put("id", "calendar.manage").put("version", 1).put("installed", true).put("grant", "unavailable").put("available", false).put("authorized", false).put("waitingDevice", true).put("devices", JSONArray())) else {
                     declaration = JSONObject(body.toString()).put("revision", 1).put("connectionId", "generated-connection").put("connectionActive", true)
                     declaration!!
                 }
@@ -65,7 +65,7 @@ class ManagedCalendarPluginTest {
         val transport: (String, JSONObject?) -> JSONObject = { path, body ->
             when (path) {
                 "/api/connections/self" -> JSONObject().put("credential", JSONObject().put("deviceId", "generated-device"))
-                "/api/device-action-capabilities" -> if (body == null) JSONObject().put("connectionId", "generated-connection").put("declaration", declaration ?: JSONObject.NULL) else {
+                "/api/device-action-capabilities" -> if (body == null) JSONObject().put("connectionId", "generated-connection").put("declaration", declaration ?: JSONObject.NULL).put("projection", JSONObject().put("id", "calendar.manage").put("version", 1).put("installed", true).put("grant", "unavailable").put("available", false).put("authorized", false).put("waitingDevice", true).put("devices", JSONArray())) else {
                     declaration = JSONObject(body.toString()).put("revision", 1).put("connectionId", "generated-connection").put("connectionActive", true)
                     declaration!!
                 }

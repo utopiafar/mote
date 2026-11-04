@@ -14,8 +14,8 @@ const identity={packageId:'generated.calendar',releaseDigest:'a'.repeat(64),inst
 const source={sourceId:'generated-source',kind:'capture',deviceId:'generated-device',platform:'macos'};
 const capability={id:'calendar.manage',version:1},target={deviceId:'generated-device',calendarId:'generated-calendar',declarationRevision:1};
 const draft=(patch:any={})=>({id:'61e38cca-8f55-4f2c-b450-c0dc0dc0dc01',revision:1,capability,target,inputs:{sources:[source],existingArchived:false,futureInputs:true},state:'draft',executionEnabled:false,createdAt:'2026-11-01T00:00:00Z',updatedAt:'2026-11-01T00:00:00Z',...patch});
-const inventory=(patch:any={})=>({providers:[{identity,name:'Generated calendar provider'}],declarations:[{capability,deviceId:target.deviceId,connectionActive:true,permission:'granted',revision:1,calendars:[{id:target.calendarId,title:'Generated calendar'}]}],sources:[{...source,name:'Generated source'}],drafts:[draft()],grants:[],...patch});
-const empty=()=>({providers:[],declarations:[],sources:[],drafts:[],grants:[]});
+const inventory=(patch:any={})=>({providers:[{identity,name:'Generated calendar provider'}],declarations:[{capability,deviceId:target.deviceId,connectionActive:true,permission:'granted',revision:1,calendars:[{id:target.calendarId,title:'Generated calendar'}]}],sources:[{...source,name:'Generated source'}],drafts:[draft()],grants:[],deviceCapabilities:[],...patch});
+const empty=()=>({providers:[],declarations:[],sources:[],drafts:[],grants:[],deviceCapabilities:[]});
 function client(read:(path:string,init?:RequestInit)=>unknown){const calls:{path:string;init?:RequestInit}[]=[];const api={request:async(path:string,init?:RequestInit)=>{calls.push({path,init});return read(path,init);}} as Api;return {api,calls,gets:()=>calls.filter(call=>!call.init?.method&&call.path==='/api/action-capabilities').length,feed:()=>calls.filter(call=>call.path.startsWith('/api/operations/changes')).length};}
 async function fixture(t:any){
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),w=dom.window,d=w.document;let hidden=false;
@@ -43,6 +43,16 @@ test('inventory keeps its 15s fallback with empty grants, pauses hidden60s, and 
  await act(async()=>{w.dispatchEvent(new w.Event('focus'));d.dispatchEvent(new w.Event('visibilitychange'));await turn();});assert.equal(remote.gets(),3);
  current=inventory({providers:[],declarations:[]});await advance(60000);assert.equal(remote.gets(),7);assert.match(d.body.textContent!,/暂无已检查并启用的日历能力插件/);assert.match(d.body.textContent!,/暂无已连接的可写日历/);assert.equal(remote.feed(),0);
  t.diagnostic('inventory initial1; visible15s+1; hidden60000ms timer0; foreground+1; visible60000ms+4; component feed GET0 throughout');
+});
+
+test('capability projection keeps installed, device grant, availability, owner authorization and waiting-device separate',async t=>{
+ const {d,render,advance}=await fixture(t);let current=inventory({deviceCapabilities:[{id:'calendar.manage',version:1,installed:true,grant:'required',available:false,authorized:true,waitingDevice:false,devices:[{deviceId:'generated-device',revision:1,connectionActive:true,grant:'required',available:false,authorized:true,waitingDevice:false}]}]});
+ const remote=client(()=>structuredClone(current));await render(remote.api);
+ const projection=d.querySelector('.action-capability-projection')!;const values=()=>[...projection.querySelectorAll('dd')].map(item=>item.textContent);
+ assert.deepEqual(values(),['已安装','未允许','不可用','已授权']);assert.doesNotMatch(projection.textContent!,/等待设备连接/);
+ current=inventory({deviceCapabilities:[{id:'calendar.manage',version:1,installed:true,grant:'unavailable',available:false,authorized:false,waitingDevice:true,devices:[{deviceId:'generated-device',revision:1,connectionActive:false,grant:'unavailable',available:false,authorized:false,waitingDevice:true}]}]});
+ await advance(15000);
+ assert.deepEqual(values(),['已安装','未允许','不可用','尚未授权']);assert.match(projection.textContent!,/等待设备连接/);
 });
 
 test('remote draft revocation cannot reuse local saved consent, and explicit current revision review is required',async t=>{

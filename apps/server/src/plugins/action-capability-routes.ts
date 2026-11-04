@@ -20,7 +20,7 @@ export function registerActionCapabilityRoutes(app:FastifyInstance,{capabilities
  });
  app.post('/api/managed-calendar/:id/cancel',{bodyLimit:4096},async request=>{owner(request);const {version}=z.object({version:z.number().int().positive()}).strict().parse(request.body);return managed.cancel(z.object({id:z.string().uuid()}).parse(request.params).id,version);});
  app.get('/api/action-capabilities',async request=>{owner(request);return capabilities.inventory();});
- app.get('/api/device-action-capabilities',async request=>{const current=device(request);return {connectionId:current.id,declaration:capabilities.declaration(current.deviceId!)??null};});
+ app.get('/api/device-action-capabilities',async request=>{const current=device(request);return {connectionId:current.id,declaration:capabilities.declaration(current.deviceId!)??null,projection:capabilities.deviceProjection(current.deviceId!)};});
  app.post('/api/device-action-capabilities',{bodyLimit:65536},async request=>capabilities.declare(request.body,device(request)));
  app.put('/api/action-capability-grants',{bodyLimit:65536},async request=>{owner(request);return capabilities.authorize(request.body);});
  app.post('/api/action-capability-grants/:id/revoke',{bodyLimit:4096},async request=>{owner(request);return capabilities.revokeGrant(z.object({id:z.string().uuid()}).parse(request.params).id,request.body);});
