@@ -5,7 +5,8 @@ import {scopeRecord} from './evidence-scope-record.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,attributionContextSchema,sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,sourceItemKinds,sourceTextFormat,decodeSourceText,type AttributionContext,type SourceContextDeclaration,type CaptureRecord} from '@mote/shared';
 import {ContextToolError,type ContextReader} from '@mote/agent';
 import {StoreError,type Store,type Range} from './store.js';
-import {MemoryStore,memoryEvidenceFingerprint} from './memory.js';
+import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
+import {openMemoryRecords} from './plugins/memory-record-repository.js';
 import type {SourceStore} from './sources.js';
 import type {FileStore} from './files.js';
 import type {Indexer} from './indexer.js';
@@ -77,7 +78,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must
     // not replace its identity when validating a durable dependency.
-    this.memories=new MemoryStore(store,ids=>{
+    this.memories=openMemoryRecords(store,ids=>{
       const records=[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])],contexts=materials?.contextsForEvidence(records);
       return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})}));
     },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
