@@ -33,10 +33,10 @@ test('default loader preserves the complete product, owner checks and original n
   assert.deepEqual(node.featureHost.registry.inventory().features.map(feature=>feature.id),[
     'mote.activity','mote.files','mote.actions','mote.connections','mote.system','mote.storage','mote.capture','mote.context','mote.materials',
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
-    'mote.imports','mote.ask','mote.usage','mote.insights','mote.diagnostics','mote.agent-view','mote.features',
+    'mote.imports','mote.ask','mote.insights','mote.agent-view','mote.features',
   ]);
-  assert.equal(node.bootstrap.snapshot().contributions.length,6);
-  assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'}]);
+  assert.equal(node.bootstrap.snapshot().contributions.length,9);
+  assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'},{id:'source-integration',version:'1.0.0'}]);
   assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
   assert.equal(node.configurationPlatform.configService,node.configService);
   assert.equal(node.configurationPlatform.modelSettings,node.modelSettings);

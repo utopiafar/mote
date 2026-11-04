@@ -30,11 +30,11 @@ test('strict selected history preserves its scope after partial and complete ord
  node.store.delete(a);ids([b]);
  const partial=await query({question:'Continue with the old selection',conversationId});assert.equal(partial.statusCode,200,partial.body);
  assert.deepEqual(seen.at(-1)!.evidenceIds,[b]);assert.deepEqual(seen.at(-1)!.historicalSelection,{evidenceIds:[a,b]});assert.match(JSON.stringify(seen.at(-1)!.conversation),/GENERATED SAVED ANSWER/);
- assert.deepEqual(node.featureServices.conversations.get(conversationId).scope.evidenceIds,[a,b]);
+ assert.deepEqual(node.conversations.get(conversationId).scope.evidenceIds,[a,b]);
  node.store.delete(b);ids([]);
  const complete=await query({question:'Explain the saved answer without originals',conversationId});assert.equal(complete.statusCode,200,complete.body);
  const input=seen.at(-1)!;assert.deepEqual(input.evidenceIds,[]);assert.equal(input.hostRetrieval,'none');assert.deepEqual(input.openingMemories,[]);assert.deepEqual(input.historicalSelection,{evidenceIds:[a,b]});
- assert.deepEqual(node.featureServices.conversations.get(conversationId).scope.evidenceIds,[a,b]);
+ assert.deepEqual(node.conversations.get(conversationId).scope.evidenceIds,[a,b]);
  for(const id of [a,b])assert.equal((await node.app.inject({url:`/api/conversations/${conversationId}/references/${id}`,headers})).json().available,false);
  const count=seen.length,missing=randomUUID();
  const unknown=await query({question:'Unknown identity is not retirement proof',conversationId,evidenceIds:[a,b,missing]});assert.equal(unknown.statusCode,409,unknown.body);assert.equal(seen.length,count);
@@ -46,7 +46,7 @@ test('strict selected history preserves its scope after partial and complete ord
 
 test('ordinary receipts are transactional, exact to turn and run, body-free, and survive SQLite backup',async t=>{
  const {node,add,query,ids}=await fixture(t),id=await add();ids([id]);
- const first=await query({question:'Generated receipt question'});assert.equal(first.statusCode,200,first.body);const conversationId=first.json().conversationId,db=node.store.db,conversations=node.featureServices.conversations;
+ const first=await query({question:'Generated receipt question'});assert.equal(first.statusCode,200,first.body);const conversationId=first.json().conversationId,db=node.store.db,conversations=node.conversations;
  const before=conversations.get(conversationId);db.exec("CREATE TRIGGER generated_delete_failure BEFORE DELETE ON captures BEGIN SELECT RAISE(ABORT,'generated deletion rollback'); END");
  assert.throws(()=>node.store.delete(id),/generated deletion rollback/);assert.deepEqual(conversations.get(conversationId),before);assert.equal(db.prepare('SELECT count(*) n FROM conversation_retired_roots').get()!.n,0);
  db.exec('DROP TRIGGER generated_delete_failure');node.store.delete(id);node.store.delete(id);
@@ -64,7 +64,7 @@ test('ordinary receipts are transactional, exact to turn and run, body-free, and
 
 test('mixed ordinary, missing, revoked and explicitly forgotten roots never become a partial history permission',async t=>{
  const {node,add,query,ids,seen}=await fixture(t),a=await add(),b=await add();ids([a,b]);
- const first=await query({question:'Generated mixed history'});assert.equal(first.statusCode,200,first.body);const conversationId=first.json().conversationId,conversations=node.featureServices.conversations;
+ const first=await query({question:'Generated mixed history'});assert.equal(first.statusCode,200,first.body);const conversationId=first.json().conversationId,conversations=node.conversations;
  node.store.delete(a);const current=conversations.get(conversationId),snapshot=conversations.historyContext(current),proofs=conversations.assertHistoryContext(snapshot),reader=node.featureServices.evidenceReader;
  assert.equal(reader.contextDependenciesAllowed(snapshot.evidenceDependencies.ids,undefined,true,proofs),true);
  assert.equal(reader.contextDependenciesAllowed(snapshot.evidenceDependencies.ids,new EvidenceExposurePolicy([{sourceKind:'note',allow:false}]),true,proofs),false,'current exposure restriction applies to the stored identity scope');
@@ -92,8 +92,8 @@ for(const removal of ['physical','tombstone'] as const)test(`a ${removal} deleti
  const first=await query({question:'Generated formal citation question'});assert.equal(first.statusCode,200,first.body);const conversationId=first.json().conversationId;
  if(removal==='physical')node.store.delete(original.id);else await node.sources.upsert(sourceId,{externalId,revision:'2',observedAt:'2026-10-02T00:00:00Z',text:'',deleted:true,kind:'message',layer:'snapshot'});
  await node.materialOrganizer.tick();ids([]);
- const saved=node.featureServices.conversations.get(conversationId);assert.equal(saved.turns[0].evidenceDeleted,undefined);assert.equal(saved.turns[0].evidenceUnavailable,true);
- for(const id of anchors)assert.equal(node.featureServices.conversations.referenceAvailability(conversationId,id).available,false);
+ const saved=node.conversations.get(conversationId);assert.equal(saved.turns[0].evidenceDeleted,undefined);assert.equal(saved.turns[0].evidenceUnavailable,true);
+ for(const id of anchors)assert.equal(node.conversations.referenceAvailability(conversationId,id).available,false);
  const next=await query({question:'Continue the saved formal discussion',conversationId});assert.equal(next.statusCode,200,next.body);
- node.materials.forget(material.id);assert.ok(node.featureServices.conversations.get(conversationId).turns.filter(turn=>turn.result).every(turn=>turn.evidenceDeleted));
+ node.materials.forget(material.id);assert.ok(node.conversations.get(conversationId).turns.filter(turn=>turn.result).every(turn=>turn.evidenceDeleted));
 });

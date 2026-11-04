@@ -701,7 +701,9 @@ type OrganizerResult={draft:MaterialDraft|undefined;calls:ReaderCall[];pinnedSou
 type OrganizerGroupRow={group_key:string;organizer_id:string;version:string;group_json:string;material_id:string;generation:number;checkpoint:number;active:number};
 const ORGANIZER_STEP='material.organizer';
 
-/** Cursors discover work; the shared execution engine alone commits materials. */
+/** Cursors discover work; the shared execution engine alone commits materials.
+ * Quiesce fences every accepted generation before draining so a deactivated
+ * organizer cannot publish an old result from a long-running backlog. */
 export class MaterialOrganizerRuntime {
   readonly registry:MaterialOrganizerRegistry;
   readonly executor:ExecutionEngine;
@@ -712,13 +714,15 @@ export class MaterialOrganizerRuntime {
   private readonly failures=new Map<string,unknown>();
   private running=false;
   private closed=false;
+  private accepting=true;
   private unregister:()=>Promise<void>;
-  constructor(private readonly store:Store,readonly materials:MaterialStore,additionalOrganizers:MaterialOrganizer[]=[],executor?:ExecutionEngine,private readonly memoryWork?:MaterialMemoryWork){
+  constructor(private readonly store:Store,readonly materials:MaterialStore,additionalOrganizers:MaterialOrganizer[]=[],executor?:ExecutionEngine,private readonly memoryWork?:Pick<MaterialMemoryWork,'observe'|'withdraw'>){
     new ArchivedFileStore(store);
     store.db.exec(`CREATE TABLE IF NOT EXISTS material_organizer_inputs(capture_id TEXT NOT NULL,organizer_id TEXT NOT NULL,group_json TEXT NOT NULL,material_id TEXT,PRIMARY KEY(capture_id,organizer_id));
       CREATE TABLE IF NOT EXISTS material_organizer_backfills(organizer_id TEXT PRIMARY KEY,version TEXT NOT NULL,cursor_rowid INTEGER NOT NULL DEFAULT 0,complete INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS material_organizer_groups(group_key TEXT PRIMARY KEY,organizer_id TEXT NOT NULL,version TEXT NOT NULL,group_json TEXT NOT NULL,material_id TEXT NOT NULL,generation INTEGER NOT NULL,checkpoint INTEGER NOT NULL,active INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS material_organizer_group_material ON material_organizer_groups(material_id,active);
+      CREATE TABLE IF NOT EXISTS material_organizer_digests(group_key TEXT PRIMARY KEY,generation INTEGER NOT NULL,digest TEXT NOT NULL);
       CREATE TRIGGER IF NOT EXISTS material_capture_json_change AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN
         INSERT INTO changes(id,operation,changed_at) VALUES(new.id,'upsert',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
       END;
@@ -809,18 +813,25 @@ export class MaterialOrganizerRuntime {
       }catch(error){this.failures.set(step.id,error);throw error;}},
       classify:error=>error instanceof ExecutionFailure?error:new ExecutionFailure('permanent','organizer_failed'),
     });
-    this.registry=new MaterialOrganizerRegistry(organizer=>{
-      const fresh=this.cursor()===0;
-      store.db.prepare(`INSERT INTO material_organizer_backfills(organizer_id,version,cursor_rowid,complete) VALUES(?,?,0,?)
-        ON CONFLICT(organizer_id) DO UPDATE SET version=excluded.version,
-          cursor_rowid=CASE WHEN version=excluded.version THEN cursor_rowid ELSE 0 END,
-          complete=CASE WHEN version=excluded.version THEN complete ELSE excluded.complete END`).run(organizer.id,organizer.version,fresh?1:0);
-      // Registration and startup only discover work. Terminal failures require
-      // explicit retry or a new source/component generation.
-    });
-    for(const organizer of [sourceItem,codingSession,uiPageObject,screenGroup,captureEvent,mediaIntervals,stateSeries,authored])this.registry.register(organizer);
-    for(const organizer of additionalOrganizers)this.registry.register(organizer);
-    this.reconcileOperationGenerations();
+    try{
+      this.registry=new MaterialOrganizerRegistry(organizer=>{
+        const fresh=this.cursor()===0;
+        store.db.prepare(`INSERT INTO material_organizer_backfills(organizer_id,version,cursor_rowid,complete) VALUES(?,?,0,?)
+          ON CONFLICT(organizer_id) DO UPDATE SET version=excluded.version,
+            cursor_rowid=CASE WHEN version=excluded.version THEN cursor_rowid ELSE 0 END,
+            complete=CASE WHEN version=excluded.version THEN complete ELSE excluded.complete END`).run(organizer.id,organizer.version,fresh?1:0);
+        // Registration and startup only discover work. Terminal failures require
+        // explicit retry or a new source/component generation.
+      });
+      for(const organizer of [sourceItem,codingSession,uiPageObject,screenGroup,captureEvent,mediaIntervals,stateSeries,authored])this.registry.register(organizer);
+      for(const organizer of additionalOrganizers)this.registry.register(organizer);
+      this.reconcileOperationGenerations();
+    }catch(error){
+      // A rejected plugin organizer must not leave this activation's handler or
+      // owned executor/index bound to an object that never became usable.
+      void this.close().catch(()=>{});
+      throw error;
+    }
   }
   /** Optional late OCR/vision cannot replace the frozen targets of already
    * admitted work or spend a consumed raw-input grant. A new revision or an
@@ -846,6 +857,48 @@ export class MaterialOrganizerRuntime {
     }catch(error){if(own)db.exec('ROLLBACK');throw error;}
   }
   private cursor(){return Number(this.store.db.prepare("SELECT value FROM settings WHERE key='material-organizer-cursor'").get()?.value??0);}
+  /** A fresh activation restores stale work once the change/backfill backlog is
+   * empty. Groups fenced by quiesce or a recipe epoch keep their exact inputs;
+   * a new generation revalidates them before anything can publish. */
+  private readonly repairedGenerations=new Set<string>();
+  private repairStale(){
+    const db=this.store.db;
+    if((db.prepare('SELECT COUNT(*) n FROM changes WHERE seq>?').get(this.cursor()) as {n:number}).n)return;
+    if(db.prepare('SELECT 1 FROM material_organizer_backfills WHERE complete=0 LIMIT 1').get())return;
+    const rows=db.prepare(`SELECT g.* FROM execution_steps e JOIN material_organizer_groups g ON e.operation_id='material-organizer:'||g.group_key
+      WHERE e.kind=? AND e.state='stale' AND g.active=1 AND json_extract(e.input,'$.generation')=g.generation
+      ORDER BY e.rowid DESC LIMIT 500`).all(ORGANIZER_STEP) as OrganizerGroupRow[];
+    if(!rows.length)return;
+    db.exec('BEGIN IMMEDIATE');
+    try{
+      for(const prior of rows){
+        const attempt=`${prior.group_key}:${prior.generation}`;
+        if(this.repairedGenerations.has(attempt))continue;
+        const step=this.executor.get(digest([ORGANIZER_STEP,prior.group_key,prior.generation]));
+        if(step?.state!=='stale')continue;
+        const organizer=this.registry.get(prior.organizer_id);
+        if(!organizer||organizer.version!==prior.version)continue;
+        const group=canonicalGroup(JSON.parse(prior.group_json) as Record<string,string>);
+        if(organizer.identity(group)!==prior.material_id)continue;
+        const mapped=db.prepare('SELECT capture_id FROM material_organizer_inputs WHERE organizer_id=? AND group_json=?').all(prior.organizer_id,prior.group_json) as {capture_id:string}[];
+        if(!mapped.some(row=>this.selectedFor(row.capture_id).some(value=>value.organizer.id===prior.organizer_id&&JSON.stringify(value.group)===prior.group_json)))continue;
+        let recipe:SourceItemRecipePin|undefined;
+        if(prior.organizer_id===sourceItem.id)try{recipe=this.sourceItemRecipes.resolveForSourceId(group.sourceId);}catch{continue;}
+        const sourceChanged=Boolean((step.input as OrganizerJobInput).sourceChanged),groupJson=JSON.stringify(group);
+        const input:OrganizerJobInput={groupKey:prior.group_key,organizerId:prior.organizer_id,version:prior.version,group,materialId:prior.material_id,
+          generation:prior.generation+1,checkpoint:prior.checkpoint,active:true,...(sourceChanged?{sourceChanged:true}:{}),...(recipe?{recipe}:{})};
+        const replayDigest=digest([prior.organizer_id,groupJson,prior.material_id,prior.version,true,prior.checkpoint,recipe??null,sourceChanged,
+          mapped.map(row=>row.capture_id).sort()]);
+        this.repairedGenerations.add(attempt);
+        this.repairedGenerations.add(`${prior.group_key}:${input.generation}`);
+        db.prepare('UPDATE material_organizer_groups SET generation=? WHERE group_key=?').run(input.generation,prior.group_key);
+        db.prepare(`INSERT INTO material_organizer_digests(group_key,generation,digest) VALUES(?,?,?)
+          ON CONFLICT(group_key) DO UPDATE SET generation=excluded.generation,digest=excluded.digest`).run(prior.group_key,input.generation,replayDigest);
+        this.executor.enqueue(`material-organizer:${prior.group_key}`,ORGANIZER_STEP,input,{id:digest([ORGANIZER_STEP,prior.group_key,input.generation]),generation:{slot:'organize',version:String(input.generation)}});
+      }
+      db.exec('COMMIT');
+    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+  }
   private selectedFor(captureId:string){
     const record=capture(this.store,captureId);
     if(!record||!current(this.store,record.id)||!fileAttachmentAvailable(this.store,record.id))return [];
@@ -878,6 +931,7 @@ export class MaterialOrganizerRuntime {
     return ids;
   }
   private valid(step:ExecutionStep){
+    if(!this.accepting)return false;
     const input=step.input as OrganizerJobInput,db=this.store.db;
     if(!input||!input.groupKey||!input.materialId||!Number.isSafeInteger(input.generation)||!Number.isSafeInteger(input.checkpoint))return false;
     const row=db.prepare('SELECT * FROM material_organizer_groups WHERE group_key=?').get(input.groupKey) as OrganizerGroupRow|undefined;
@@ -986,11 +1040,24 @@ export class MaterialOrganizerRuntime {
         if(priorMaterialId&&priorMaterialId!==materialId&&prior?.version===organizer?.version)throw Error('Material organizer identity changed without a version change');
         const groupJson=JSON.stringify(group),mapped=db.prepare('SELECT capture_id FROM material_organizer_inputs WHERE organizer_id=? AND group_json=?').all(organizerId,groupJson) as {capture_id:string}[];
         const active=Boolean(organizer&&mapped.some(row=>this.selectedFor(row.capture_id).some(value=>value.organizer.id===organizerId&&JSON.stringify(value.group)===groupJson)));
-        const version=organizer?.version??prior?.version??'retired',generation=(prior?.generation??0)+1;
+        const version=organizer?.version??prior?.version??'retired';
+        const recipe=active&&organizerId===sourceItem.id?this.sourceItemRecipes.resolveForSourceId(group.sourceId):undefined;
+        // A replayed change range or backfill page names the same inputs. Reuse
+        // its generation instead of organizing and notifying Memory again; a
+        // changed recipe epoch, membership, material identity or activity state
+        // produces a new digest and therefore a fresh generation.
+        const replayDigest=digest([organizerId,groupJson,materialId,version,active,checkpoint,recipe??null,sourceChanged?true:false,
+          mapped.map(row=>row.capture_id).sort()]);
+        const priorDigest=db.prepare('SELECT generation,digest FROM material_organizer_digests WHERE group_key=?').get(key) as {generation:number;digest:string}|undefined;
+        const priorStep=prior?this.executor.get(digest([ORGANIZER_STEP,key,prior.generation])):undefined;
+        const replay=Boolean(prior&&priorDigest?.generation===prior.generation&&priorDigest.digest===replayDigest&&
+          priorStep&&!['stale','cancelled'].includes(priorStep.state));
+        const generation=replay?prior!.generation:(prior?.generation??0)+1;
         db.prepare(`INSERT INTO material_organizer_groups(group_key,organizer_id,version,group_json,material_id,generation,checkpoint,active) VALUES(?,?,?,?,?,?,?,?)
           ON CONFLICT(group_key) DO UPDATE SET version=excluded.version,group_json=excluded.group_json,material_id=excluded.material_id,
             generation=excluded.generation,checkpoint=excluded.checkpoint,active=excluded.active`).run(key,organizerId,version,groupJson,materialId,generation,checkpoint,Number(active));
-        const recipe=active&&organizerId===sourceItem.id?this.sourceItemRecipes.resolveForSourceId(group.sourceId):undefined;
+        db.prepare(`INSERT INTO material_organizer_digests(group_key,generation,digest) VALUES(?,?,?)
+          ON CONFLICT(group_key) DO UPDATE SET generation=excluded.generation,digest=excluded.digest`).run(key,generation,replayDigest);
         const input:OrganizerJobInput={groupKey:key,organizerId,version,group,materialId,generation,checkpoint,active,sourceChanged,...(recipe?{recipe}:{})};
         prepared.push({key,input,id:digest([ORGANIZER_STEP,key,generation])});
       }
@@ -1006,9 +1073,18 @@ export class MaterialOrganizerRuntime {
       db.exec('COMMIT');return {count:changedIds.length,stepIds};
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
+  /** Fence every accepted generation while leaving readers and durable history. */
+  quiesce(){this.accepting=false;}
+  /** Drain work accepted before quiesce. Every still-running commit rechecks the
+   * fence, so a deactivated organizer settles as stale instead of publishing. */
+  async drainAccepted(){
+    const ids=(this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state IN ('waiting','running') ORDER BY rowid").all(ORGANIZER_STEP) as {id:string}[]).map(row=>row.id);
+    if(ids.length)await this.executor.drain(ids);
+  }
   async tick(limit=100){
-    if(this.closed||this.running)return 0;this.running=true;
+    if(this.closed||this.running||!this.accepting)return 0;this.running=true;
     try{
+      this.repairStale();
       const {count,stepIds}=this.discover(limit);
       const waiting=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state='waiting' AND available_at<=?").all(ORGANIZER_STEP,Date.now()) as {id:string}[];
       await this.executor.drain([...new Set([...stepIds,...waiting.map(row=>row.id)])]);
@@ -1018,8 +1094,13 @@ export class MaterialOrganizerRuntime {
       return count;
     }finally{this.running=false;}
   }
+  async stop(){
+    this.quiesce();
+    await this.drainAccepted();
+    await this.close();
+  }
   async close(){
-    if(this.closing)return this.closing;this.closed=true;
+    if(this.closing)return this.closing;this.closed=true;this.accepting=false;
     this.closing=(async()=>{try{await this.unregister();}finally{if(this.ownsExecutor){try{await this.ownedIndex?.close();}finally{await this.executor.close();}}}})();return this.closing;
   }
 

@@ -6,10 +6,8 @@ import { registerProcessingRoutes } from '../processing-routes.js';
 import type {ServerFeatureAdapter} from './index.js';
 
 /** processing: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,automaticActivity,config,credential,mediaAssets,mediaPreparation,perception,semanticSelection,store,workflows}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|"automaticActivity"|"config"|"credential"|"mediaAssets"|"mediaPreparation"|"perception"|"semanticSelection"|"store"|"workflows">,scope?:ServerFeatureScope){
- scope?.defer(()=>workflows.close());scope?.defer(()=>automaticActivity.close());scope?.every(5000,()=>automaticActivity.tick());
- app.get('/api/processing/activity',async()=>automaticActivity.view());
- app.put('/api/processing/activity',async req=>automaticActivity.save(req.body));
+export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,config,credential,mediaAssets,mediaPreparation,perception,semanticSelection,store,workflows}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|'config'|'credential'|'mediaAssets'|'mediaPreparation'|'perception'|'semanticSelection'|'store'|'workflows'>,scope?:ServerFeatureScope){
+ scope?.defer(()=>workflows.close());
 registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
 registerProcessingRoutes(app,{withOwnerBatch:withMediaOwnerBatch,withOwnerIntent:withMediaOwnerIntent,store,workflows,perception,mediaAssets,mediaPreparation,media:config.media,semanticFingerprint:()=>semanticSelection().fingerprint});
 }

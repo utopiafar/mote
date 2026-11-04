@@ -11,9 +11,10 @@ import {memoryBodyDigest} from './memory-provider-contract.js';
 import {sha256,type Store} from './store.js';
 import type {MemoryStore} from './memory.js';
 
-type Selection={profileId:string;model:string;connection:ModelConnection};
+export type MemoryTopicsSelection={profileId:string;model:string;connection:ModelConnection};
 type Pin={id:string;version:number;fingerprint:string;digest:string};
-type Input={parentId:string;selection:Selection;memories:Pin[]};
+type Input={parentId:string;selection:MemoryTopicsSelection;memories:Pin[]};
+export interface MemoryTopicsHostOptions {readonly store:Store;readonly memories:MemoryStore;readonly executor:ExecutionEngine;readonly control:BackgroundModelAuthorization;readonly host:ModelAuthorizationHost;readonly topics:AutomaticTopics;readonly assertReadable:(memories:Memory[])=>void;readonly select:(profileId?:string,model?:string)=>MemoryTopicsSelection;readonly query:(input:QueryInput)=>Promise<QueryResult>}
 const pin=(memory:Memory):Pin=>({id:memory.id,version:memory.version,fingerprint:memory.fingerprint,digest:memoryBodyDigest(memory)});
 const classifierId='mote.memory-topics';
 
@@ -22,7 +23,8 @@ const classifierId='mote.memory-topics';
 export class MemoryTopicsHost {
  private context=new AsyncLocalStorage<{input:Input;assert:()=>void}>();
  private disposers:Array<()=>void|Promise<void>>=[];
- constructor(private options:{store:Store;memories:MemoryStore;executor:ExecutionEngine;control:BackgroundModelAuthorization;host:ModelAuthorizationHost;topics:AutomaticTopics;assertReadable:(memories:Memory[])=>void;select:(profileId?:string,model?:string)=>Selection;query:(input:QueryInput)=>Promise<QueryResult>}){
+ private closing?:Promise<void>;
+ constructor(private options:MemoryTopicsHostOptions){
   const {topics,executor,control,host}=options;
   this.disposers.push(topics.register({id:classifierId,version:'1',classify:async({memories,signal})=>{
    const context=this.context.getStore();if(!context)throw new ExecutionFailure('blocked','topic_admission_missing');
@@ -62,5 +64,5 @@ export class MemoryTopicsHost {
    control.inheritStep(parent.id,id);
   }
  }
- async close(){for(const dispose of this.disposers.reverse())await dispose();}
+ close(){return this.closing??=(async()=>{for(const dispose of this.disposers.reverse())await dispose();})();}
 }

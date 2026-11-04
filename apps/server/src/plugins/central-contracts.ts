@@ -27,6 +27,10 @@ import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-publication-contract.js';
 import type {MemoryAutomation} from '../memory-automation.js';
+import type {Conversations} from '../conversations.js';
+import type {MemoryTopicsHost} from '../memory-topics-host.js';
+import type {AutomaticTopics} from '../automatic-topics.js';
+import type {MemoryBindings} from '../memory-bindings.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
  * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
@@ -124,11 +128,25 @@ export type PluginControlRead = Pick<PluginCenter, 'view' | 'instanceView'>;
 /** C21C's durable pause/freeze admission. Callbacks that project local stop/resume
  * work remain on the trusted assembly bridge, never this control port. */
 export type MemoryAdmission = Pick<MemoryAutomation, 'state' | 'view' | 'accepting' | 'command' | 'freeze' | 'release' | 'touch'>;
+/** C21D's binding state machine. The plugin owns the actual bindings and local
+ * control projections; the port exposes only the owner's commands and views. */
+export type MemoryBindingControl = Pick<MemoryBindings, 'view' | 'prepare' | 'action' | 'binding' | 'assertNewManualWork' | 'pendingTail'> & { accepting(): boolean };
 export type ProcessingSubmission = Pick<ProcessingRuntime, 'enqueue' | 'view' | 'retry' | 'cancel'>;
 export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'withdraw' | 'planningInput' | 'sourceRequirements' | 'authorized'>;
 /** Read-only managed-asset state. Installs, imports, cancellation and the
  * managed directory itself stay with the C18A owner, never the port. */
 export type MediaAssetsRead = Pick<MediaAssets, 'ready' | 'status' | 'statuses'>;
+export type ConversationRepository = Pick<Conversations, 'list' | 'get' | 'page' | 'referenceAvailability' | 'append' | 'appendFailure' | 'delete' | 'context' | 'historyContext' | 'assertHistoryContext' | 'retiredSelection'>;
+/** Durable topic work enqueued from a Memory publication plus the derived
+ * automatic-topic index the context catalog reads. Classification authority
+ * still comes from the model admission fence on every call. */
+export interface MemoryTopics {
+  enqueue: MemoryTopicsHost['enqueue'];
+  register: AutomaticTopics['register'];
+  classify: AutomaticTopics['classify'];
+  trees: AutomaticTopics['trees'];
+  state: AutomaticTopics['state'];
+}
 
 /** Separate tokens deliberately keep owner mutation, model disclosure and retained-reader
  * lifetimes out of each other's read capability. Actual grant/cleanup behavior is not here. */
@@ -161,6 +179,7 @@ export const centralServices = {
   usage: serviceContract<UsageRecording>('mote.central.usage-recording', '1'),
   pluginControlRead: serviceContract<PluginControlRead>('mote.central.plugin-control-read', '1'),
   memoryAdmission: serviceContract<MemoryAdmission>('mote.central.memory-admission', '1'),
+  memoryBindingControl: serviceContract<MemoryBindingControl>('mote.central.memory-binding-control', '1'),
   processing: serviceContract<ProcessingSubmission>('mote.central.processing-submission', '1'),
   memoryCandidates: serviceContract<MaterialMemoryCandidates>('mote.central.material-memory-candidates', '1'),
   memoryRead: serviceContract<MemoryRead>('mote.central.memory-read', '1'),
@@ -170,7 +189,9 @@ export const centralServices = {
   memoryInputSelection: serviceContract<MemoryInputSelection>('mote.central.memory-input-selection', '1'),
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
+  memoryTopics: serviceContract<MemoryTopics>('mote.central.memory-topics', '1'),
   mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
+  conversations: serviceContract<ConversationRepository>('mote.central.conversations', '1'),
 } as const;
 export type CentralService = keyof typeof centralServices;
 
@@ -207,7 +228,7 @@ export const centralMigrationSlices = {
   publication: {task:'C24', factory:'memory-publication', replacement:'hot', legacy:['memoryPublication'], objects:['MemoryPublication/poll','retirement/dependencies','submitted writes/erases/revocations/native cleanup references','EvidenceDeletion/export/provider backup'], consumers:['C10B','C19','C21D','C22','HOST']},
   actions: {task:'C25', factory:'actions-services', replacement:'hot', legacy:['actions'], objects:['Actions/handler','ActionCapabilities','ManagedCalendar/Todos','approval/grant/delivery/exact receipt'], consumers:['C26','AGENT','WEB','MAC','ANDROID']},
   activity: {task:'C26/C26A/C26B/C26C', factory:'insight-activity-services', replacement:'hot', legacy:['activity','automaticActivity','insight','insightRuns','insightRequestSchema','ownerQuestions'], objects:['ActivityProjection','AutomaticActivity/timer','InsightRuns/snapshots','OwnerQuestions','Agent view pagination'], consumers:['C22','AGENT','WEB','MAC','ANDROID']},
-  query: {task:'C27', factory:'query-domain-services', replacement:'hot', legacy:['conversations','delegation','queryRuns','queryWithAttachmentsSchema','jobId'], objects:['Conversations/retention','DelegationRuntime','DelegatedQueryRuns','query preparation/snapshot/commit/direct images'], consumers:['C22','C26','AGENT','WEB','MAC','ANDROID']},
+  query: {task:'C27', factory:'query-domain-services', replacement:'hot', legacy:['delegation','queryRuns','queryWithAttachmentsSchema','jobId'], objects:['Conversations/retention','DelegationRuntime','DelegatedQueryRuns','query preparation/snapshot/commit/direct images'], consumers:['C22','C26','AGENT','WEB','MAC','ANDROID']},
   agent: {task:'A01/A04/A08/A09/A10/A12/A14/A17', factory:'agent-contributions', replacement:'hot', legacy:['agent','agentFeatures','archiveReader','codex','queryAgent'], objects:['ReloadableAgent/runtime generations','Agent tool factories/reader adapter','model transport/admission callbacks','import Agent factory'], consumers:['C17','C19D','C20','C22','C26','C27']},
   host: {task:'H04/H05/H14', factory:'central-host', replacement:'restart', legacy:['isClosing'], objects:['Cordis/ServerResources/common host','Fastify/auth dispatch/static contribution','index.ts bootstrap/PID/runtime listener/signals'], consumers:['C02-C27','AGENT','WEB']},
 } as const satisfies Record<string, CentralMigrationSlice>;
@@ -225,10 +246,10 @@ export const centralServiceOwners = {
   materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
   retrievalIndex:'materials', materialIndex:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
-  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', processing:'processing',
+  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryBindingControl:'memoryControl', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication', mediaAssetsRead:'media',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', mediaAssetsRead:'media', conversations:'query',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {
@@ -261,7 +282,7 @@ export const centralFeatureMigrations = {
   'mote.owner-questions': {owners:['activity','memoryRuntime'], requires:['vault','requestAuthorization']},
   'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']},
   'mote.imports': {owners:['imports','files','agent'], requires:['execution','sourceIntake','contentRead','requestAuthorization']},
-  'mote.ask': {owners:['query','agent'], requires:['requestAuthorization','modelAdmission','captureRead','materialRead','memoryRead','memorySnapshots']},
+  'mote.ask': {owners:['query','agent'], requires:['conversations','requestAuthorization','modelAdmission','captureRead','materialRead','memoryRead','memorySnapshots']},
   'mote.usage': {owners:['observability'], requires:['usage','requestAuthorization']},
   'mote.insights': {owners:['activity','agent'], requires:['execution','materialRead','modelAdmission']},
   'mote.diagnostics': {owners:['observability'], requires:['execution','requestAuthorization']},

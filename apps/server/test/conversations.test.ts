@@ -133,6 +133,19 @@ test('ordinary capture deletion preserves submitted history but fences in-flight
   const erased=(await app.inject({url:`/api/conversations/${first.conversationId}`,headers})).json();assert.ok(erased.turns.filter((turn:any)=>turn.result).every((turn:any)=>turn.evidenceDeleted));assert.ok(!JSON.stringify(erased).includes('Generated derived sensitive sentinel'));
 });
 
+test('closing interrupts and drains an interactive query without committing a duplicate reply after restart',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-conversation-shutdown-'));let calls=0,started!:()=>void;
+  const began=new Promise<void>(resolve=>{started=resolve;});
+  let running=await buildApp(config(dir),{agent:agent(async input=>{calls++;started();await new Promise<void>(resolve=>input.signal!.addEventListener('abort',resolve,{once:true}));return answer('Generated interrupted reply must not persist');})});
+  t.after(async()=>{await running.app.close();rmSync(dir,{recursive:true,force:true});});
+  const pending=running.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated in-flight interactive question'}});
+  await began;const closing=running.app.close(),response=await pending;await closing;
+  assert.notEqual(response.statusCode,200);assert.equal(calls,1);
+  running=await buildApp(config(dir),{agent:agent(async()=>answer())});
+  const history=await running.app.inject({url:'/api/conversations',headers});
+  assert.equal(history.statusCode,200);assert.deepEqual(history.json().items,[]);assert.equal(calls,1);
+});
+
 test('conversation listing paginates deterministically and model context is bounded while full turns remain stored',t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-store-')),store=new Store(dir),conversations=new Conversations(store);
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});

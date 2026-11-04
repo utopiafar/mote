@@ -8,7 +8,7 @@ import type {ServerFeatureHost} from '../feature-host.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
-import type {AutomaticActivity} from '../automatic-activity.js';
+import type {ActivityServices} from '../plugins/activity-services.js';
 import type {MemoryPublication} from '../memory-publication.js';
 
 /** Shared shutdown latch. Admission paths poll it while handlers still run;
@@ -32,7 +32,7 @@ export interface ServerLifecycleHookDependencies {
   readonly executor:ExecutionEngine;
   readonly eventLoop:IntervalHistogram;
   readonly queryRuns:DelegatedQueryRuns;
-  readonly automaticActivity:AutomaticActivity;
+  readonly activityServices:ActivityServices;
   readonly memoryPublication:MemoryPublication;
   readonly resources:ServerResources;
   readonly diagnostics:ServerDiagnostics;
@@ -42,7 +42,7 @@ export interface ServerLifecycleHookDependencies {
  * quiesce platforms, interrupt polling and transports while handlers and
  * stores are still live, then release every registered resource. */
 export function installServerLifecycleHooks(app:FastifyInstance,dependencies:ServerLifecycleHookDependencies){
-  const {lifecycle,configurationPlatform,featureHost,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,automaticActivity,memoryPublication,resources,diagnostics}=dependencies;
+  const {lifecycle,configurationPlatform,featureHost,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,resources,diagnostics}=dependencies;
   app.addHook('preClose',async()=>{
     lifecycle.markClosing();
     // Stop watcher/subscriptions and join accepted configuration transactions
@@ -56,7 +56,7 @@ export function installServerLifecycleHooks(app:FastifyInstance,dependencies:Ser
     sourcePipelines.quiesce();
     executionPlatform.quiesce('shutdown');
     executor.bindObserver(undefined);eventLoop.disable();queryRuns.interrupt();
-    automaticActivity.stop();memoryPublication.stop();
+    activityServices.quiesce('shutdown');memoryPublication.stop();
     // Interrupt transports while handlers, checkpoints and storage remain live.
     await resources.stop();
     }finally{if(configDrainFailure)try{diagnostics.record('config.shutdown_drain_failed',{category:'internal'},'error');}catch{/* cleanup continues */}}

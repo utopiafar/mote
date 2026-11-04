@@ -60,9 +60,9 @@ for(const removal of ['tombstone','capture-delete'] as const)test(`ordinary revi
  await node.app.close();node=await buildApp(config(dir),{backgroundWorker:false,agent});
  const again=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'Continue after the original was deleted and Central restarted'}});assert.equal(again.statusCode,200,again.body);
  await withFixtureOwnerModelWork(node,()=>node.working.compact(conversationId,{...defaultLifecycleSettings,recentTurns:0},input=>node.featureServices.queryAgent(input)));
- assert.ok(node.working.get(node.featureServices.conversations.get(conversationId)));
+ assert.ok(node.working.get(node.conversations.get(conversationId)));
  node.store.invalidateConversationAnswers([original.id],true);
- const privateErasure=node.featureServices.conversations.get(conversationId);assert.ok(privateErasure.turns.filter(turn=>turn.result).every(turn=>turn.evidenceDeleted));
+ const privateErasure=node.conversations.get(conversationId);assert.ok(privateErasure.turns.filter(turn=>turn.result).every(turn=>turn.evidenceDeleted));
  assert.doesNotMatch(JSON.stringify(privateErasure),/paper glider|earlier second proposal/);
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversation_retired_roots WHERE id=?').get(original.id)!.n,0);
  const cleared=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'Continue after privacy erasure'}});assert.equal(cleared.statusCode,200,cleared.body);

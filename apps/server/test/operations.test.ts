@@ -12,6 +12,7 @@ import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {memorySchema} from '../src/memory-schema.js';
 import {registerMemoryRoutes} from '../src/memory-routes.js';
 import {ContextTreeRegistry} from '../src/context-trees.js';
+import {AutomaticTopics} from '../src/automatic-topics.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 const handler:ExecutionHandler={kind:'fixture',pool:'fixture',concurrency:()=>2,validate:()=>true,execute:async()=>null,commit:()=>{}};
@@ -132,7 +133,7 @@ test('catalog transitions publish context-trees change ids through the operation
  let cursor=0;const changed=async()=>{const page=(await app.inject({url:'/api/operations/changes?since='+cursor})).json() as {ids:string[];cursor:number};cursor=page.cursor;return page.ids;};
  const registry=new ContextTreeRegistry();
  const earlyDispose=registry.register({id:'fixture',version:'1',label:'Generated',nodes:[{id:'one',label:'One',select:{}}]});
- registry.initializeAutomatic(store,{memoryAsync:async()=>undefined,assertMemoryReadable:()=>{},memories});
+ registry.attachAutomatic(new AutomaticTopics(store,{memoryAsync:async()=>undefined,assertMemoryReadable:()=>{},memories}),{store});
  assert.equal((await changed()).some(id=>id.startsWith('context-trees:')),false,'construction-time contributions predate any reader');
  earlyDispose();assert.ok((await changed()).includes('context-trees:registry'),'disposing a pre-initialization contribution emits after binding');
  const dispose=registry.register({id:'plugin',version:'1',label:'Generated plugin tree',nodes:[{id:'one',label:'One',select:{}}]});

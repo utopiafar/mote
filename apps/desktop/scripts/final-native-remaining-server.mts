@@ -36,8 +36,8 @@ node.app.post('/__fixture/seed',async(req,reply)=>{
  node.sources.register({id:'generated-scope-source',name:'Generated scope source',kind:'custom',deviceId:'generated-scope-source',platform:'import'});
  const material=node.materials.publish({id:materialId('generated-scope-source','scope-original'),kind:'mote.file',schemaVersion:1,title:'Generated exact scope original',origin:{sourceId:'generated-scope-source',externalId:'scope-original',deviceId:'generated-scope-source',firstAt:at,lastAt:at},members:[{id,kind:'capture',ref:'capture:'+id}],blocks:[{id:'original',kind:'text',format:'plain',text,memberIds:[id]}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}},{expectedRevision:node.materials.revisionForWrite(materialId('generated-scope-source','scope-original'))});
  // This is an explicitly generated failed historical turn, never a fixture answer.
- const appended=node.featureServices.conversations.appendFailure(undefined,{question:'Generated scope navigation history',anchorMaterialRef:material.ref},{code:'cancelled',message:'Generated cancelled history; no model was called.'});
- const conversation=node.featureServices.conversations.get(appended.conversationId);
+ const appended=node.conversations.appendFailure(undefined,{question:'Generated scope navigation history',anchorMaterialRef:material.ref},{code:'cancelled',message:'Generated cancelled history; no model was called.'});
+ const conversation=node.conversations.get(appended.conversationId);
  seed={originalId:id,text,materialRef:material.ref,conversationId:conversation.id,title:conversation.title,turnId:conversation.turns[0].id};return seed;
 });
 node.app.get('/__fixture/counts',async(req,reply)=>req.headers.authorization==='Bearer '+token?{queryAdmissions,capturePosts,captures:node.store.db.prepare('SELECT count(*) AS n FROM captures').get()!.n}:reply.code(403).send({error:'forbidden'}));

@@ -63,7 +63,7 @@ if(['library','home-search-questions'].includes(process.argv[3]))for(let index=1
 }
 const citations=[{id:noteId,appName:'本轮生成资料',capturedAt:when,excerpt:'先把资料阅读和提问之间的路径走通。'}];
 runtime.store.saveInsight({runId:reportId,answer:'这次评审先看阅读与引用的完整路径。会前有两项准备，需要放在一起核对。',citations,trace:[],artifact:{id:randomUUID(),title:'周五评审前，有两项准备需要对齐',html:'<h1>本轮生成的资料回顾</h1><p>原始资料仍然可读。</p>',createdAt:when,skillId:'generated-fixture',skillVersion:'1'}},reportId);
-const conversation=runtime.featureServices.conversations.append(undefined,{question:'周五评审需要准备什么？'},{runId:randomUUID(),answer:'先核对资料阅读与引用路径。',citations,trace:[]});
+const conversation=runtime.conversations.append(undefined,{question:'周五评审需要准备什么？'},{runId:randomUUID(),answer:'先核对资料阅读与引用路径。',citations,trace:[]});
 const provider={id:'fixture.home-question',version:'1',installationEpoch:'generated-installation',validate:()=>true,answer:()=>({kind:'closed' as const,outcome:'Generated answer acknowledged'})};
 runtime.featureServices.ownerQuestions.register(provider);
 runtime.featureServices.ownerQuestions.create(provider,{key:'generated-home',operationId:'generated:home',workId:'generated-home',title:'请补充这份资料的背景',prompt:'这份记录来自哪个项目？',evidence:[{id:noteId,quote:'本轮生成的原始资料',offset:0}],choices:[],dependencyIds:[noteId],context:{generated:true}});
