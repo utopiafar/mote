@@ -41,7 +41,6 @@ import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
 import { assertCurrentDelegationSchema } from './delegation-runtime.js';
 import type {QueryQualityStrategy} from './query-quality-experiment.js';
-import { registerMemoryDelegation } from './memory-delegation.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { repositoryRoot,type Config } from './config.js';
 import {contributeDomainRoutes} from './plugins/domain-routes.js';
@@ -169,7 +168,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const credential=(req:FastifyRequest)=>{const c=connectionIdentity(req);return c&&!connections.isOwner(c)?c:undefined;};
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
-  const {featureServices:workInputFeatureServices}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
+  const {ownerQuestions,featureServices:workInputFeatureServices}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
   // The authorization platform's mote.models table; the feature bridge mounts
   // it once and each handler dispatches against the platform's current activation.
   contributeDomainRoutes(backendContext,{'mote.models':Object.freeze({mount:(app:FastifyInstance)=>authorizationPlatform.modelAuthorizationRoutes(app,{credential})})});
@@ -397,7 +396,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
   };
-  const {memoryBindings,memoryAdapters,memoryPublication,memoryPipeline,reviewExtraction,lifecycle,working,memoryIntegrationSettings,memoryTopics,featureServices:memoryRuntimeFeatureServices}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),lifecycle:{automatic:dependencies?.backgroundWorker!==false,whenReady:task=>{app.addHook('onReady',async()=>{task();});},semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),replacements:dependencies?.memoryExtensions},understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
+  const {memoryBindings,memoryAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryIntegrationSettings,memoryTopics,featureServices:memoryRuntimeFeatureServices}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),lifecycle:{automatic:dependencies?.backgroundWorker!==false,whenReady:task=>{app.addHook('onReady',async()=>{task();});},semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),replacements:dependencies?.memoryExtensions},understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
   memoryWorkingHost=working;memoryLifecycleHost=lifecycle;
 
   const {imports,importTasks,launchImport,launchOwnerImport,featureServices:importsFeatureServices}=assembleImports({app,store,resources,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
@@ -408,13 +407,11 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     lifecycleSettings:queryLifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryRuntime:()=>queryRuntimeServices.runtime,
     qualityStrategy:dependencies?.queryQualityExperiment,semanticContextTime:dependencies?.semanticContextTime,usageLedger,
     modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
-  const memoryDelegation=registerMemoryDelegation({runtime:delegation,pipeline:memoryPipeline,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
+  memoryPhasePipeline.attachDelegation({runtime:delegation,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
     const input=materialMemoryWork.planningInput(candidate);
     if(!input?.ready||input.fingerprint!==candidate.fingerprint||!materialMemoryWork.inputs.available(candidate.sourceId,candidate.inputKey,undefined,candidate.scope)||!sourcePipelines.memoryAllowed(candidate.sourceId))throw new StoreError('Memory sample authorization changed',409);
     const records=await archiveReader.evidence({ids:input.evidenceIds.slice(0,8)});return records.flatMap(record=>offset<record.ocrText.length?[originalEvidenceReceipt(record,offset,Math.min(length,record.ocrText.length-offset))]:[]);
   }});
-
-  resources.defer(()=>memoryDelegation.close());
 
   function diagnosticProjection() {
     const counts=store.indexCounts(),devices=store.devices(),storage=store.stats();
@@ -476,7 +473,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     queryAgent,insight,pluginCenter,withMediaOwnerBatch,withMediaOwnerIntent,parseCaptureBundle,
     connectionIdentity,credential,assertRequestActive,sourceOwner,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},
     notesCapture:{authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake},
-    agentFeatures,archiveReader,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,memoryDelegation,
+    agentFeatures,archiveReader,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,
     archivedFiles,contentStorage,maintenanceWorker,store,modelSettings,connections,modelAuthorizationHost,
     jobId,insightRequestSchema,mediaRange,reviewExtraction,semanticSelection,
   });

@@ -42,6 +42,7 @@ import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,mem
 import {createMemoryTopicsService,memoryTopicsServiceContribution,memoryTopicsServiceDeclaration,memoryTopicsServiceReplacement} from '../plugins/memory-topics-service.js';
 import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindingControlDeclaration,memoryBindingControlReplacement,type MemoryBindingControlPlatform} from '../plugins/memory-binding-control.js';
 import type {MemoryTopics} from '../plugins/central-contracts.js';
+import type {OwnerQuestions} from '../owner-questions.js';
 import type {FeatureServices} from '../feature-services.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
@@ -128,6 +129,8 @@ export interface MemoryRuntimeDependencies {
   readonly memoryRecipeSettings:MemoryRecipeSettings;
   readonly memoryStrategySettings:MemoryStrategySettingsPlatform;
   readonly memoryAutomation:MemoryAutomation;
+  /** Shared owner-question ledger; the phase plugin owns the Memory provider. */
+  readonly ownerQuestions:OwnerQuestions;
   readonly pluginCenter:PluginCenter;
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
@@ -157,7 +160,7 @@ export interface MemoryRuntimeDependencies {
  * the automatic topics host — the Memory runtime app.ts previously wired
  * inline. Memory objects keep their relative defer/beforeClose order. */
 export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
-  const {store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  const {store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
   // The plugin constructs the binding; its disposer is registered by app.ts at
   // the original shutdown slot. Runtime collaborators are resolved when the
   // binding and later control projections actually run.
@@ -190,7 +193,7 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
       // Include full original metadata (speaker, source, device, dates, version),
       // not just quote text. Credentials/config are hashed, never retained.
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
-    }}});
+    }},ownerQuestions,materials});
   memoryPhasePipeline.prepare();memoryPhasePipeline.start();
   resources.defer(()=>memoryPhasePipeline.close());
   const memoryPipeline=memoryPhasePipeline.pipeline,reviewExtraction=memoryPhasePipeline.review;
