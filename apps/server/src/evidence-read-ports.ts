@@ -2,6 +2,7 @@ import type {CaptureRecord, SourceContextDeclaration} from '@mote/shared';
 import type {Range, Store} from './store.js';
 import type {MaterialPage, MaterialReadPage} from './materials.js';
 import type {Memory} from './memory-schema.js';
+import type {MemoryProviderKey} from './memory-provider-contract.js';
 import type {MemoryStore} from './memory.js';
 import type {MemoryBindings} from './memory-bindings.js';
 import type {MemoryRecipeBinding} from './memory-strategy-contract.js';
@@ -60,6 +61,32 @@ export interface MemoryReadSnapshots {
   retainMemorySnapshot(context:object):MemoryReadSnapshot | undefined;
   memorySnapshot(context?:object):MemoryReadSnapshot | undefined;
   releaseMemorySnapshot(context:object):void;
+}
+
+export interface MemoryRecordHostState { status:Memory['status']; staleReason?:Memory['staleReason']; updatedAt?:string }
+/** C21B record reads over the canonical stored bodies and their read-only
+ * catalog projection. A record is not an evidence disclosure scope: Agent/MCP
+ * audiences keep using the scoped MemoryRead port above. */
+export interface MemoryRecordRead {
+  memoryRecord(id:string):Memory;
+  memoryRecordPage(args?:Parameters<MemoryStore['page']>[0]):ReturnType<MemoryStore['page']>;
+  memoryRecordCount():number;
+  memoryRecordText(id:string):string;
+}
+/** One immutable revision set plus the provider key, body digest and host state
+ * downstream Memory publication consumes. Release is idempotent. */
+export interface MemoryRecordSnapshot {
+  readonly retainedAt:string;
+  readonly ids:readonly string[];
+  readonly records:Readonly<Record<string,Memory>>;
+  readonly keys:Readonly<Record<string,MemoryProviderKey>>;
+  readonly digests:Readonly<Record<string,string>>;
+  readonly hostStates:Readonly<Record<string,MemoryRecordHostState>>;
+  release():void;
+}
+export interface MemoryRecordSnapshots {
+  retainMemoryRecordSnapshot(ids?:readonly string[]):MemoryRecordSnapshot;
+  releaseMemoryRecordSnapshot(snapshot:MemoryRecordSnapshot):void;
 }
 
 /** Selection validates a fixed host input; it does not grant model disclosure. */
