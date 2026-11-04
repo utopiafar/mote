@@ -9,6 +9,15 @@ import android.content.Context
 import android.content.Intent
 import dev.mote.collector.plugins.SystemEntriesPlugin
 
+/** The ongoing status notification only exists while a capture status is
+ * active. The local image count annotates an active status; on its own it
+ * neither publishes nor keeps the notification alive. */
+internal fun captureStatusText(screenStatus: String?, mediaStatus: String?, eventStatus: String?, imageLabel: String?): String? {
+    if (screenStatus == null && mediaStatus == null && eventStatus == null) return null
+    return listOfNotNull(screenStatus?.let { MoteI18n.text("屏幕：{0}", it) }, mediaStatus?.let { MoteI18n.text("媒体：{0}", it) }, eventStatus, imageLabel)
+        .joinToString("\n").ifBlank { null }
+}
+
 /** The capture status notification. The system entries plugin creates and owns
  * this publisher; when that scope is stopped no action is offered and the
  * reason stays visible. */
@@ -49,7 +58,7 @@ internal class Notifications(
         return build()
     }
 
-    private fun visibleText() = listOfNotNull(screenStatus?.let { MoteI18n.text("屏幕：{0}", it) }, mediaStatus?.let { MoteI18n.text("媒体：{0}", it) }, eventStatus, localState?.imageLabel()).joinToString("\n")
+    private fun visibleText() = captureStatusText(screenStatus, mediaStatus, eventStatus, localState?.imageLabel()).orEmpty()
 
     private fun publicationText(): String? {
         val text = visibleText().ifBlank { null } ?: return null
