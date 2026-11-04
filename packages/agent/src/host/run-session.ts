@@ -3,7 +3,7 @@ import {isDeepStrictEqual} from 'node:util';
 import type {Cancellation, ServiceLease} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {parseRuntimeOutcome, RuntimeContractError, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
-import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type QueryInput} from '../types.js';
+import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type AgentTraceEvent, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
 import {ContextToolError} from '../tool-errors.js';
 import {systemInstructions} from '../instructions.js';
@@ -113,6 +113,8 @@ export interface HostSessionAssembly {
   admit?<T>(task: () => Promise<T>, signal: AbortSignal): Promise<T>;
   close(): Promise<void>;
   observe?(event: HostRunEvent): void;
+  /** Provider protocol diagnostics are observations, never output authority. */
+  trace?(event: AgentTraceEvent): void;
   cleanupFailed?(errors: readonly unknown[]): void;
   readonly maxTokens?: number;
 }
@@ -191,6 +193,9 @@ class ManagedHostRunSession implements HostRunSession {
           }
         }
       })},
+      observe: event => this.lifecycle.commitEvent(() => {
+        try { this.assembly.trace?.({...event, runId: dependencies.identity.runId}); } catch { /* Diagnostics never change execution. */ }
+      }),
       assertCurrent: () => this.assertCurrent(),
       runModel: (attempt, task) => this.track(async () => {
         this.assertAttempt(attempt);

@@ -10,7 +10,7 @@ import {createServer} from 'node:http';
 import {zstdDecompressSync} from 'node:zlib';
 import {createAgent,AgentProviderError,AgentTimeoutError,defineToolDescriptor} from '../dist/index.js';
 import {CodexSession} from '../dist/codex-session.js';
-import {codexContextTools} from '../dist/codex-agent.js';
+import {codexContextTools} from '../dist/runtime/codex/tools.js';
 import {createImportAgent} from '../dist/import-agent.js';
 
 const savedEnvironment=new WeakMap();
@@ -305,10 +305,14 @@ test('Codex deadlines terminate the child',async t=>{
 test('Codex preserves host deadlines and cancellation before its own deadline',async t=>{
   await fake(t,'timeout');
   for(const timeout of [true,false]){
-    const controller=new AbortController(),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});
+    const controller=new AbortController(),traces=[],agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});
     try{
-      const pending=agent.query({question:'Generated cancellation fixture',signal:controller.signal,onProgress:event=>{if(event.stage==='model')controller.abort(new DOMException('Generated abort',timeout?'TimeoutError':'AbortError'));}});
-      await assert.rejects(pending,error=>timeout?error instanceof AgentTimeoutError:error instanceof AgentProviderError&&error.details.code==='cancelled');
+      const reason=timeout?new AgentTimeoutError():new DOMException('Generated abort','AbortError');
+      const pending=agent.query({question:'Generated cancellation fixture',signal:controller.signal,onTrace:event=>traces.push(event),onProgress:event=>{if(event.stage==='model')controller.abort(reason);}});
+      // The shared Host rethrows the caller's typed deadline exactly and reports
+      // an ordinary caller abort as an AbortError; neither publishes an answer.
+      await assert.rejects(pending,error=>timeout?error===reason:error instanceof DOMException&&error.name==='AbortError');
+      assert.equal(traces.some(event=>event.type==='run.completed'),false);
     }finally{await agent.close();}
   }
 });

@@ -151,34 +151,80 @@ function createMoteMcpWriter(ctx:McpWriteContext,track:<T>(work:Promise<T>)=>Pro
   })));
   return server;
 }
-export function registerMcp(app:FastifyInstance,ctx:McpContext) {
-  const active=new Set<McpServer>(),operations=new Set<Promise<unknown>>();let closed=false;
-  const authorized=new WeakMap<FastifyRequest,{write:boolean;issued:ReturnType<NonNullable<McpContext['authorizeCredential']>>}>();
-  const track=<T>(work:Promise<T>)=>{operations.add(work);void work.finally(()=>operations.delete(work)).catch(()=>{});return work;};
+interface McpActivation {
+  readonly context:McpContext;
+  closed:boolean;
+  readonly servers:Set<McpServer>;
+  readonly operations:Set<Promise<unknown>>;
+}
+export interface McpTransportBinding {close():Promise<void>}
+interface McpRouteMount {
+  bind(context:McpContext):McpTransportBinding;
+  close():Promise<void>;
+}
+/** The /mcp route belongs to the app, not to one connector activation: it is
+ * registered once before listen and dispatches to the currently bound
+ * activation. Stopping the transport closes that session and leaves the route
+ * answering 503; restarting binds a fresh activation without re-registering. */
+const transportMounts=new WeakMap<FastifyInstance,McpRouteMount>();
+function mountTransport(app:FastifyInstance):McpRouteMount {
+  let current:McpActivation|undefined,closed=false,closing:Promise<void>|undefined;
+  const admitted=new WeakMap<FastifyRequest,{activation:McpActivation;write:boolean;issued:ReturnType<NonNullable<McpContext['authorizeCredential']>>}>();
+  const closeActivation=async(activation:McpActivation)=>{
+    if(activation.closed)return;
+    activation.closed=true;if(current===activation)current=undefined;
+    await Promise.allSettled([...activation.servers].map(server=>server.close()));
+    await Promise.allSettled([...activation.operations]);
+  };
   app.all('/mcp',{onRequest:async(req,reply)=>{
+    const activation=current;
+    if(closed||!activation||activation.closed)return reply.code(503).send({error:'mcp_disabled'});
     // Reject unauthenticated uploads before Fastify allocates and parses their bodies.
-    const options=ctx.configuration();
-    if(closed||!options?.mcpEnabled)return reply.code(503).send({error:'mcp_disabled'});
-    const issued=ctx.authorizeCredential?.(req.headers.authorization);
+    const options=activation.context.configuration();
+    if(!options?.mcpEnabled)return reply.code(503).send({error:'mcp_disabled'});
+    const issued=activation.context.authorizeCredential?.(req.headers.authorization);
     const write=Boolean(issued?.write||(options.mcpWriteEnabled&&options.mcpWriteSourceIds?.length&&equalToken(req.headers.authorization,options.mcpWriteToken)));
     if(!issued&&!write&&!equalToken(req.headers.authorization,options.mcpReadToken))return reply.header('WWW-Authenticate','Bearer').code(401).send({error:'mcp_unauthorized'});
-    if(req.headers.origin&&!ctx.allowedOrigins.includes(req.headers.origin))return reply.code(403).send({error:'mcp_origin_denied'});
+    if(req.headers.origin&&!activation.context.allowedOrigins.includes(req.headers.origin))return reply.code(403).send({error:'mcp_origin_denied'});
     reply.header('Cache-Control','no-store');reply.raw.setHeader('Cache-Control','no-store');
     // Stateless JSON responses avoid persistent sessions carrying privilege between credentials.
     if(req.method!=='POST')return reply.code(405).header('Allow','POST').send({error:'method_not_allowed'});
-    authorized.set(req,{write,issued});
+    admitted.set(req,{activation,write,issued});
   }},async(req,reply)=>{
-    const options=ctx.configuration(),{write,issued}=authorized.get(req)!;
+    const {activation,write,issued}=admitted.get(req)!;
+    if(activation.closed)return reply.code(503).send({error:'mcp_disabled'});
+    const ctx=activation.context,options=ctx.configuration();
+    const track=<T>(work:Promise<T>)=>{activation.operations.add(work);void work.finally(()=>activation.operations.delete(work)).catch(()=>{});return work;};
     const server=write?createMoteMcpWriter({...ctx.write,sourceIds:issued?.write?issued.sourceIds:options.mcpWriteSourceIds},track,issued?.authorize):createMoteMcp(ctx.read,track,issued?.authorize),transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
-    active.add(server);
+    activation.servers.add(server);
     try {
       await server.connect(transport);
-      if(closed)throw new ConnectorError('connector_closed',503);
+      if(activation.closed)throw new ConnectorError('connector_closed',503);
       issued?.authorize();
       reply.hijack();await transport.handleRequest(req.raw,reply.raw,req.body);
-    }finally{active.delete(server);await server.close();}
+    }finally{activation.servers.delete(server);await server.close();}
   });
-  return {close:async()=>{closed=true;await Promise.allSettled([...active].map(server=>server.close()));await Promise.allSettled([...operations]);}};
+  const mount:McpRouteMount={
+    bind(context){
+      if(closed)throw new ConnectorError('connector_closed',503);
+      if(current&&!current.closed)throw new ConnectorError('mcp_transport_conflict',409);
+      const activation:McpActivation={context,closed:false,servers:new Set(),operations:new Set()};current=activation;
+      return Object.freeze({close:()=>closeActivation(activation)});
+    },
+    close(){
+      if(closing)return closing;
+      closed=true;const activation=current;current=undefined;
+      closing=(async()=>{if(activation)await closeActivation(activation);})();
+      return closing;
+    },
+  };
+  app.addHook('onClose',async()=>{await mount.close();});
+  return mount;
+}
+export function registerMcp(app:FastifyInstance,ctx:McpContext):McpTransportBinding {
+  let mount=transportMounts.get(app);
+  if(!mount){mount=mountTransport(app);transportMounts.set(app,mount);}
+  return mount.bind(ctx);
 }
 
 const targetSchema=z.object({url:z.string().max(2000),token:z.string().min(1).max(4096).refine(v=>!/[\r\n\0]/.test(v)).optional()});

@@ -7,7 +7,7 @@ import { registerMemoryRoutes } from '../memory-routes.js';
 import type {ServerFeatureAdapter} from './index.js';
 
 /** memory: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,ownerQuestions,materials,automaticMemoryScheduling,memoryDelegation,memoryIntegrationSettings,memoryRecipeSettings,sourcePipelines,agent,evidenceReader,files,lifecycle,memories,memoryPipeline,memoryPublication,modelSettings,queryAgent,reviewExtraction,store}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|"ownerQuestions"|"materials"|"automaticMemoryScheduling"|"memoryDelegation"|"memoryIntegrationSettings"|"memoryRecipeSettings"|"sourcePipelines"|"agent"|"evidenceReader"|"files"|"lifecycle"|"memories"|"memoryPipeline"|"memoryPublication"|"modelSettings"|"queryAgent"|"reviewExtraction"|"store">,scope?:ServerFeatureScope){
+export function register(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,ownerQuestions,materials,automaticMemoryScheduling,memoryDelegation,memoryStrategySettings,sourcePipelines,agent,evidenceReader,files,lifecycle,memories,memoryPipeline,memoryPublication,modelSettings,queryAgent,reviewExtraction,store}:Pick<FeatureServices,'modelAuthorizationHost'|'availableModelConnections'|"ownerQuestions"|"materials"|"automaticMemoryScheduling"|"memoryDelegation"|"memoryStrategySettings"|"sourcePipelines"|"agent"|"evidenceReader"|"files"|"lifecycle"|"memories"|"memoryPipeline"|"memoryPublication"|"modelSettings"|"queryAgent"|"reviewExtraction"|"store">,scope?:ServerFeatureScope){
  const disposeQuestions=installMemoryOwnerQuestions({questions:ownerQuestions,continuations:memoryPipeline.ownerContinuations,materials,store,query:input=>queryAgent(input,'query','memories')});scope?.defer(disposeQuestions);
  if(automaticMemoryScheduling)scope?.every(5000,async()=>{await sourcePipelines.drainMemory(memoryPipeline,agent.configured);
    await memoryPipeline.tickInputs();
@@ -17,7 +17,7 @@ export function register(app:FastifyInstance,{modelAuthorizationHost,availableMo
  // Recovery resumes persisted activation, including manual work. Unstarted
  // create-only jobs stay dormant regardless of model readiness at startup.
  app.addHook('onReady',async()=>{for(const id of recoverableMemoryJobs(store,lifecycle))void scope?.run(()=>memoryPipeline.run(id));});
-registerMemoryRoutes(app,{ownerPublication:memoryPublication,modelAuthorizationHost,availableModelConnections,memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query:input=>queryAgent(input,'query','memories'),reviewExtraction});
+registerMemoryRoutes(app,{ownerPublication:memoryPublication,modelAuthorizationHost,availableModelConnections,memoryIntegrationSettings:memoryStrategySettings.integration,memoryRecipeSettings:memoryStrategySettings.recipes,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query:input=>queryAgent(input,'query','memories'),reviewExtraction});
 }
 
 export const adapter:ServerFeatureAdapter={
