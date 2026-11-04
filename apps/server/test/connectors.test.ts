@@ -29,6 +29,7 @@ import {connectorRegistryHost} from './fixtures/connector-host.js';
 import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
 import {gmailScope} from '../src/connectors/gmail.js';
+import type {LarkRunner} from '../src/connectors/lark-cli.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
@@ -637,6 +638,64 @@ test('stopping the Google instance mid-poll drops late results, restart replays 
   assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:1,duplicates:0,calendars:1});
   assert.equal(sources.getItem(source.id,event.id)!.text,'Generated late page');
   assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:0,duplicates:1,calendars:1},'the replayed page dedupes instead of archiving twice');
+});
+
+test('cancelling or stopping the Lark instance mid-fetch drops late CLI results and restart resumes sync',async t=>{
+  const {ctx,sources}=await fixture(t),app=Fastify();
+  let gated=true,fetches=0,aborts=0;
+  const body=JSON.stringify({data:{document:{document_id:'GeneratedDoc123',revision_id:1,title:'Generated document',content:'Generated late body'}}});
+  const lark:LarkRunner=async(command,options={})=>{
+    switch(command.kind){
+      case 'version':return 'lark-cli version 1.0.85';
+      case 'status':return JSON.stringify({appId:'cli_generated',identities:{user:{available:true,openId:'generated-lark-owner',userName:'Generated owner',scope:'docx:document:readonly wiki:wiki:readonly search:docs:read drive:drive:readonly'}}});
+      case 'login':return JSON.stringify({verification_url:'https://accounts.feishu.cn/authorize?generated=fixture',device_code:'generated-device-code',expires_in:600});
+      case 'complete':return '{}';
+      case 'document':
+        fetches++;
+        if(gated)return new Promise<string>(resolve=>{
+          // The abort kills the child process, but a stale buffered result may
+          // still resolve the runner late; the connector fence must drop it.
+          options.signal?.addEventListener('abort',()=>{aborts++;setImmediate(()=>resolve(body));},{once:true});
+        });
+        return body;
+      default:return '{}';
+    }
+  };
+  const connectors=await registerConnectors(app,ctx,{lark});
+  t.after(async()=>{await connectors.close();await app.close();});
+  const headers={authorization:`Bearer ${owner}`};
+  const status=async()=>(await app.inject({method:'GET',url:'/api/connectors/lark',headers})).json();
+  const settle=async()=>{for(let i=0;i<300;i++){const view=await status();if(!['waiting','running'].includes(view.job?.state??''))return view;await new Promise(resolve=>setTimeout(resolve,2));}throw Error('Generated lark job did not settle');};
+  const fetchEntered=async(count:number)=>{for(let i=0;i<300&&fetches<count;i++)await new Promise(resolve=>setTimeout(resolve,2));assert.equal(fetches,count);};
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/lark/check',headers})).statusCode,200);
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/lark/login',headers})).statusCode,200);
+  assert.equal((await settle()).job?.state,'completed');
+  const selection={documents:['https://fixture.feishu.cn/docx/GeneratedDoc123'],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false};
+  assert.equal((await app.inject({method:'PUT',url:'/api/connectors/lark/selection',headers,payload:selection})).statusCode,200);
+  const source=sources.listSources().find(value=>value.kind==='lark-docs')!;
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  await fetchEntered(1);
+  await app.inject({method:'POST',url:'/api/connectors/lark/cancel',headers});
+  assert.equal((await settle()).job?.state,'cancelled');
+  assert.equal(aborts,1,'cancel must close the gated CLI child');
+  assert.equal(sources.listItems({sourceId:source.id}).items.length,0,'a CLI result arriving after cancel must not commit');
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  await fetchEntered(2);
+  await connectors.stop('lark');
+  assert.equal(aborts,2,'stopping the instance must close the gated CLI child');
+  assert.equal(sources.listItems({sourceId:source.id}).items.length,0,'a CLI result arriving after stop must not commit');
+  assert.equal((await app.inject({method:'GET',url:'/api/connectors/lark',headers})).statusCode,404);
+  gated=false;
+  await connectors.restart('lark');
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  const synced=await settle();
+  assert.equal(synced.job?.state,'completed');assert.equal(synced.job?.result?.imported,1);
+  const item=sources.getItem(source.id,'GeneratedDoc123')!;
+  assert.equal(item.text,'Generated late body');assert.equal(fetches,3);
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  assert.equal((await settle()).job?.result?.duplicates,1);
+  assert.equal(sources.getItem(source.id,'GeneratedDoc123')!.revision,item.revision,'an unchanged provider revision must not move the material revision');
+  assert.equal(sources.history(source.id,'GeneratedDoc123').length,1,'the replayed fetch dedupes instead of archiving twice');
 });
 
 test('Google real provider timestamps remain distinct from observation and metadata-only changes create revisions',async t=>{

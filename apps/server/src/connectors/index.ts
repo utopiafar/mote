@@ -3,7 +3,6 @@ import {join} from 'node:path';
 import {PluginResourceScope,type HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import {mcpContext,remoteMcpContext} from './mcp-context.js';
-import {larkContext} from './lark-context.js';
 import {gmailContext} from './gmail-context.js';
 import {installRecordingMemory} from './recording-memory.js';
 import {recordingManifest,type RecordingProvider} from './recordings.js';
@@ -13,15 +12,14 @@ import {moteText} from '../i18n.js';
 import {createInstanceState} from '../plugins/instance-state.js';
 import {createConnectorHostAdapter,type ConnectorHostAdapter,type ConnectorInstanceScope} from '../plugins/connector-host-adapter.js';
 import {createDynamicHttpDispatcher,type DynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
-import {loadConnectorModules,type ConnectorManifest,type OwnerRoute} from './registry.js';
+import {loadConnectorModules,type ConnectorManifest} from './registry.js';
 import {equalToken,registerMcp,RemoteMcp} from './mcp.js';
 import {googleCalendarManifest,type GoogleDependencies} from '../plugins/google-calendar-source.js';
 import {GmailConnector} from './gmail.js';
-import {LarkConnector} from './lark.js';
-import type {LarkRunner} from './lark-cli.js';
+import {larkManifest,type LarkRunner} from '../plugins/lark-source.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
 import type {FastifyInstance} from 'fastify';
-import {ZodError,z} from 'zod';
+import {ZodError} from 'zod';
 
 export type {ConnectorConfig,ConnectorContext} from './types.js';
 export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthCallback,ConnectorHttpHost,ConnectorRegistryOptions,ConnectorRouteHandle} from './registry.js';
@@ -59,28 +57,7 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
       close:()=>gmail.close(),
     };
   }},
-  {apiVersion:1,id:'lark',sourceKinds:['lark-docs','lark-calendar'],create:ctx=>{
-    const lark=new LarkConnector(larkContext(ctx),testing?.lark);
-    return {
-      init:()=>lark.init(),configureSyncInterval:interval=>lark.configureSyncInterval(interval),
-      configure:host=>{
-        const route=(method:'GET'|'POST'|'PUT'|'DELETE',path:`/api/connectors/${string}`,handler:OwnerRoute['handler'])=>host.ownerRoute({method,path,bodyLimit:16384,handler});
-        route('GET','/api/connectors/lark',()=>lark.status());
-        route('POST','/api/connectors/lark/check',()=>lark.refresh());
-        route('POST','/api/connectors/lark/install',()=>lark.startInstall());
-        route('POST','/api/connectors/lark/setup',()=>lark.startSetup());
-        route('POST','/api/connectors/lark/configure',req=>lark.configure(req.body));
-        route('POST','/api/connectors/lark/login',req=>lark.login(z.object({calendar:z.boolean().optional()}).strict().parse(req.body??{}).calendar??false));
-        route('POST','/api/connectors/lark/cancel',()=>lark.cancel());
-        route('GET','/api/connectors/lark/calendars',()=>lark.calendars());
-        route('PUT','/api/connectors/lark/selection',req=>lark.select(req.body));
-        route('POST','/api/connectors/lark/preview',()=>lark.startPreview());
-        route('POST','/api/connectors/lark/sync',req=>lark.startSync(z.object({document:z.string().trim().min(1).max(4000).optional()}).strict().parse(req.body??{}).document));
-        route('DELETE','/api/connectors/lark',()=>lark.disconnect());
-      },
-      close:()=>lark.close(),
-    };
-  }},
+  larkManifest(testing?.lark),
 ];}
 
 /** One host-owned install scope per connector. The scope owns routes, OAuth
