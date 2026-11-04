@@ -33,6 +33,7 @@ import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import {createExecutionPlatform} from '../src/plugins/execution-platform.js';
 import {createSourceRuntime,createSourceRuntimeFactory,sourceRuntimeDeclaration} from '../src/plugins/source-runtime.js';
+import {codingSourceDeclaration,createCodingSourceFactory,createCodingSourceRoutes} from '../src/coding-source-plugin.js';
 import {createCaptureIntake} from '../src/plugins/capture-intake.js';
 import {createC10Integration,createC10IntegrationFactory,c10IntegrationDeclaration,c10IntegrationContribution} from '../src/plugins/c10-integration.js';
 import type {RequestAuthority} from '../src/plugins/central-contracts.js';
@@ -49,6 +50,7 @@ async function fixture(t:TestContext){
   const host=new PluginHost({kind:'central',id:'generated-c10-host'}),runtimePlatform=createSourceRuntime({},{store,materials,memoryWork,execution});
   await host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(runtimePlatform)});
   const runtime=runtimePlatform.runtimeForAssembly;sources.pipelines=runtime;
+  await host.install({identity:identity(),contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime,sources,store},createCodingSourceRoutes(runtime))});
   const files=new FileStore(store,sources);
   const capture=createCaptureIntake({}, {store,sources,files,materials});await capture.prepare();authorization.bindRepositories({sources,files,materials,ingress:capture.ingress,memoryInputs:memoryWork.inputs,memoryWork});await authorization.start();capture.bindAuthorization(authorization);capture.start();
   const reader=new EvidenceReader(store,sources,files,undefined,undefined,materials,runtime),diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();

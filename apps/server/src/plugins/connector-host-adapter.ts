@@ -4,6 +4,7 @@ import type {SourceCapabilityDescriptor} from '@mote/shared';
 import type {ConnectorContext} from '../connectors/types.js';
 import {ConnectorRegistry,connectorCleanupFailure,isConnectorCleanupFailure,type ConnectorHttpHost,type ConnectorInstance,type ConnectorManifest} from '../connectors/registry.js';
 import type {DynamicHttpDispatcher} from './dynamic-http-dispatcher.js';
+import type {HostContributionDescriptor} from '../feature-inventory.js';
 
 /** H05-owned per-install scope. The factory is trusted assembly input, never a
  * consumer-selectable registration API. */
@@ -34,6 +35,8 @@ export interface ConnectorHostAdapterOptions {
 export interface ConnectorHostAdapter {
   start():Promise<void>;
   inventory():ReturnType<ConnectorRegistry['inventory']>;
+  /** Live connector capabilities, attributed to their installed instance. */
+  contributions():HostContributionDescriptor[];
   configureSyncInterval(intervalMs:number):void;
   /** Hot-install a new manifest after start; failure rolls back only it. */
   install(manifest:ConnectorManifest):Promise<void>;
@@ -235,6 +238,12 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
       return startTask;
     },
     inventory:()=>registry.inventory(),
+    contributions:():HostContributionDescriptor[]=>registry.inventory().map(connector=>({
+      id:'connector-instance:'+connector.id,version:connector.version,surface:'ingress',runtime:'host',
+      featureId:'mote.connector.'+connector.id,featureVersion:connector.version,self:false,
+      state:connector.active?'active':'unavailable',...(connector.active?{}:{reason:connector.state}),
+      components:[{id:'connector:'+connector.id,version:connector.version,surface:'ingress',state:connector.active?'active' as const:'unavailable' as const,...(connector.active?{}:{reason:connector.state})}],
+    })),
     configureSyncInterval:(intervalMs:number)=>registry.configureSyncInterval(intervalMs),
     async install(manifest:ConnectorManifest){
       if(!started||closed)throw Error('Connector host adapter is not active');

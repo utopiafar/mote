@@ -1,5 +1,5 @@
 import {spawn} from 'node:child_process';
-import {dwsRecordingAuthorization} from './recording-authorization.js';
+import {dwsRecordingAuthorization} from '../plugins/recording-authorization.js';
 import {cliReleases,managedCliBinary} from './cli-runtime.mjs';
 import {resolve} from 'node:path';
 import {mkdir} from 'node:fs/promises';

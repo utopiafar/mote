@@ -67,11 +67,17 @@ export class FileRecipeRegistry {
 }
 export function defaultFileRecipe(processor:{dialogue?:boolean;recipe?:ComponentRef}):ComponentRef{return processor.recipe??{id:processor.dialogue?'mote.audio-dialogue':'mote.file-extraction',version:processor.dialogue?'2':'1'};}
 export function installFileRecipes(recipes:FileRecipeRegistry,outputs:FileOutputRegistry){
-  const dispose=[outputs.register({...TRANSCRIPT_OUTPUT,kind:'text',parse:value=>transcriptSchema.parse(value),project:value=>value as Transcript})];
-  for(const name of ['extract','diarize','align','turns'] as const)dispose.push(recipes.registerStage({id:'mote.'+name,version:name==='align'?'2':'1',run:context=>context.builtin(name)}));
-  const stage=(name:string,dependsOn:string[]=[],enabled?:'semanticTurns'):FileRecipeStep=>({name,stage:{id:'mote.'+name,version:'1'},dependsOn,...(enabled?{enabled}:{})});
-  dispose.push(recipes.registerRecipe({id:'mote.file-extraction',version:'1',steps:[stage('extract')],output:'extract'}));
-  dispose.push(recipes.registerRecipe({id:'mote.audio-dialogue',version:'2',steps:[stage('extract'),stage('diarize',['extract']),{...stage('align',['extract','diarize']),stage:{id:'mote.align',version:'2'}},stage('turns',['align'],'semanticTurns')],output:'turns'}));
+  const dispose:(()=>void)[]=[];
+  try{
+    dispose.push(outputs.register({...TRANSCRIPT_OUTPUT,kind:'text',parse:value=>transcriptSchema.parse(value),project:value=>value as Transcript}));
+    for(const name of ['extract','diarize','align','turns'] as const)dispose.push(recipes.registerStage({id:'mote.'+name,version:name==='align'?'2':'1',run:context=>context.builtin(name)}));
+    const stage=(name:string,dependsOn:string[]=[],enabled?:'semanticTurns'):FileRecipeStep=>({name,stage:{id:'mote.'+name,version:'1'},dependsOn,...(enabled?{enabled}:{})});
+    dispose.push(recipes.registerRecipe({id:'mote.file-extraction',version:'1',steps:[stage('extract')],output:'extract'}));
+    dispose.push(recipes.registerRecipe({id:'mote.audio-dialogue',version:'2',steps:[stage('extract'),stage('diarize',['extract']),{...stage('align',['extract','diarize']),stage:{id:'mote.align',version:'2'}},stage('turns',['align'],'semanticTurns')],output:'turns'}));
+  }catch(error){
+    for(const stop of dispose.reverse()){try{stop();}catch{}}
+    throw error;
+  }
   return ()=>dispose.reverse().forEach(stop=>stop());
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteFileRecipes:FileRecipeRegistry;moteFileOutputs:FileOutputRegistry;}}

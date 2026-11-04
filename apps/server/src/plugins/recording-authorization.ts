@@ -1,8 +1,8 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {z} from 'zod';
 import type {RecordingAuthorizationStatus,RecordingEnvironment} from '@mote/shared';
-import {ConnectorError} from './types.js';
-import type {RecordingConnector,RecordingBindingGrant} from './recordings.js';
+import {ConnectorError} from '../connectors/types.js';
+import type {RecordingConnector,RecordingBindingGrant} from '../connectors/recordings.js';
 
 export type AuthorizationProgress={authorizationUrl:string;expiresAt?:string};
 export interface RecordingAuthorizationPort {
@@ -48,9 +48,11 @@ export class RecordingAuthorization {
  async close(){this.closed=true;await this.cancel();}
 }
 
-import {authorizationOutput} from './authorization-output.js';
-import {authorizationUrl,larkJson,LARK_VERSION,type LarkRunner} from './lark-cli.js';
-import {DWS_VERSION,type DwsRunner} from './dingtalk-recordings.js';
+import {authorizationOutput} from '../connectors/authorization-output.js';
+import {authorizationUrl,larkJson,LARK_VERSION,type LarkRunner} from '../connectors/lark-cli.js';
+import {cliReleases} from '../connectors/cli-runtime.mjs';
+import type {DwsRunner} from '../connectors/dingtalk-recordings.js';
+const DWS_VERSION=cliReleases.dingtalk.version;
 const recordingScopes=['minutes:minutes.basic:read','minutes:minutes.artifacts:read','minutes:minutes.media:export','minutes:minutes.search:read'];
 const configureSchema=z.object({appId:z.string().regex(/^cli_[A-Za-z0-9]+$/).max(100),secret:z.string().min(1).max(1000).refine(value=>!/[\r\n\0]/.test(value)),brand:z.enum(['feishu','lark'])}).strict();
 export function larkRecordingAuthorization(runner:LarkRunner):RecordingAuthorizationPort{return {

@@ -1,7 +1,6 @@
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {Context} from '@deepseek-ai/cordis';
-import type {FastifyInstance} from 'fastify';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
 import type {CaptureRecord,TokenUsage,UsageReceipt} from '@mote/shared';
@@ -31,7 +30,6 @@ import type {MediaAssets} from '../media-assets.js';
 import {MediaPreparation} from '../media-preparation.js';
 import type {CentralDomainPlugin,bootstrapCentral} from '../bootstrap.js';
 import {createMediaAssetsService,mediaAssetsServiceContribution,mediaAssetsServiceDeclaration,mediaAssetsServiceReplacement} from '../plugins/media-assets-service.js';
-import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createProcessingServices,createProcessingServicesFactory,processingServicesContribution,processingServicesDeclaration,processingServicesReplacement,type ProcessingServicesStarted} from '../plugins/processing-services.js';
 import type {FileAnalysis,FileProcessing,TranscriptionProvider} from '../file-processing.js';
 import {ImageProcessing} from '../image-processing.js';
@@ -175,7 +173,6 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
     contributions:[processingServicesDeclaration],factory:createProcessingServicesFactory(platform,value=>{started=value;}),
   });
   resources.defer(()=>handle.close('shutdown'));
-  contributeDomainRoutes(backendContext,{'mote.processing':Object.freeze({mount:(app:FastifyInstance)=>platform.routes(app)})});
   const {workflows,processing}=started!;
   const featureServices=Object.freeze({processing,workflows}) satisfies Partial<FeatureServices>;
   return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices,processingServices:platform});

@@ -5,7 +5,6 @@ import type {HostPluginContext} from '@mote/plugin-host';
 import {StoreError,type Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
-import {codingSourcePlugin} from '../coding-source-plugin.js';
 import {SourcePipelineRuntime} from '../source-pipelines.js';
 import {centralServices} from './central-contracts.js';
 import type {ExecutionPlatform} from './execution-platform.js';
@@ -26,9 +25,7 @@ export const sourceRuntimeReplacement='hot' as const;
 const unavailable=()=>new StoreError('Source runtime is unavailable',503);
 
 export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:SourceRuntimeDependencies){
-  // Recipe components and the default Coding recipe are owned by this plugin
-  // activation, never registered by the server assembly.
-  const plugins=[codingSourcePlugin,...(options.plugins??[])];
+  const plugins=[...(options.plugins??[])];
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let runtime:SourcePipelineRuntime|undefined,handlers:ReturnType<ExecutionPlatform['handlersForAssembly']>|undefined,closing:Promise<void>|undefined;
   function close(){
