@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import ts from 'typescript';
 import {
   serviceBindingSchema, serviceRefSchema, type ContributionIdentity, type ServiceBinding, type ServiceLease,
@@ -19,6 +19,7 @@ import type {registerEvidenceRoutes} from '../src/evidence-routes.js';
 import type {registerMemoryRoutes} from '../src/memory-routes.js';
 import type {MemoryOwnerPublication} from '../src/memory-publication-contract.js';
 import * as contractExports from '../src/plugins/central-contracts.js';
+import {featureServiceMembers} from '../src/feature-services.js';
 
 // These are T1 declaration/type checks. No provider/host or runtime authorization is implemented
 // by C01, and a successful preflight is not evidence of a real startup/HTTP/SQLite T3 journey.
@@ -61,7 +62,7 @@ test('every actually installed server feature has replaceable factory owners and
     installed.push(id.initializer.text);
   }
   assert.equal(imported.size, entries.elements.length, 'every imported adapter must be installed exactly once');
-  assert.equal(installed.length, 25);
+  assert.equal(installed.length, 23);
   assert.equal(new Set(installed).size, installed.length);
   assert.deepEqual(Object.keys(centralFeatureMigrations).sort(), installed.sort());
   for (const migration of Object.values(centralFeatureMigrations)) {
@@ -84,13 +85,45 @@ test('every actually installed server feature has replaceable factory owners and
 });
 
 test('every current FeatureServices member has one migration slice, including closures and scope resources', () => {
-  const file = source('../src/feature-services.ts');
-  const bag = file.statements.find(statement => ts.isInterfaceDeclaration(statement) && statement.name.text === 'FeatureServices');
-  assert.ok(bag && ts.isInterfaceDeclaration(bag));
-  const actual = bag.members.map(member => { assert.ok(member.name && ts.isIdentifier(member.name)); return member.name.text; }).sort();
   const assigned = Object.values(centralMigrationSlices).flatMap((slice: CentralMigrationSlice) => [...slice.legacy]);
   assert.equal(new Set(assigned).size, assigned.length, 'a legacy resource must not have duplicate closing owners');
-  assert.deepEqual(assigned.sort(), actual);
+  // Each slice is one file with its own interface and member-name constant. The
+  // bag is only the intersection of those interfaces, so a slice cannot silently
+  // borrow or duplicate a member from another owner.
+  const sliceFiles = readdirSync(new URL('../src/feature-services/', import.meta.url)).filter(file => file.endsWith('.ts')).sort();
+  const sliceNames = Object.keys(centralMigrationSlices).sort();
+  assert.deepEqual(sliceFiles.map(file => file.slice(0, -'.ts'.length)), sliceNames);
+  const declarations = (file: ts.SourceFile) => file.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : []);
+  const interfaces = new Map<string,string[]>();
+  for (const file of sliceFiles) {
+    const slice = file.slice(0, -'.ts'.length);
+    const module = source(`../src/feature-services/${file}`);
+    const declared = module.statements.filter((statement): statement is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(statement) && statement.name.text.endsWith('FeatureServices'));
+    assert.equal(declared.length, 1, `${file} must export exactly one slice interface`);
+    const members = declared[0]!.members.map(member => { assert.ok(member.name && ts.isIdentifier(member.name)); return member.name.text; }).sort();
+    const constants = declarations(module).filter(declaration => ts.isIdentifier(declaration.name) && declaration.name.text.endsWith('FeatureServiceMembers'));
+    assert.equal(constants.length, 1, `${file} must export exactly one member-name constant`);
+    let names = constants[0]!.initializer;
+    while (names && (ts.isAsExpression(names) || ts.isSatisfiesExpression(names))) names = names.expression;
+    assert.ok(names && ts.isArrayLiteralExpression(names), `${file} member-name constant must be an array literal`);
+    const constantMembers = names.elements.map(element => { assert.ok(ts.isStringLiteral(element)); return element.text; }).sort();
+    assert.deepEqual(constantMembers, members, `${file} member-name constant must list its interface members`);
+    assert.deepEqual(members, [...(centralMigrationSlices as Record<string,CentralMigrationSlice>)[slice]!.legacy].sort(), `${file} must own exactly its migration legacy resources`);
+    interfaces.set(declared[0]!.name.text, members);
+  }
+  const bag = source('../src/feature-services.ts');
+  const featureServices = bag.statements.find(statement => ts.isTypeAliasDeclaration(statement) && statement.name.text === 'FeatureServices');
+  assert.ok(featureServices && ts.isTypeAliasDeclaration(featureServices));
+  const intersection = ts.isIntersectionTypeNode(featureServices.type) ? featureServices.type.types : [featureServices.type];
+  const references = intersection.map(type => {
+    assert.ok(ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName));
+    return type.typeName.text;
+  });
+  assert.deepEqual(references.sort(), [...interfaces.keys()].sort(), 'FeatureServices must intersect every slice interface once');
+  assert.deepEqual(Object.keys(featureServiceMembers).sort(), sliceNames);
+  const runtimeMembers = Object.values(featureServiceMembers).flat();
+  assert.equal(new Set(runtimeMembers).size, runtimeMembers.length, 'a member must belong to exactly one slice');
+  assert.deepEqual([...runtimeMembers].sort(), assigned.sort());
 });
 
 const provider = (instanceId: string, activationId = 'activation-1', installationId = 'installation-1'): ContributionIdentity => ({

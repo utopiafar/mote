@@ -5,8 +5,8 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {QueryInput} from '@mote/agent';
 import type {ActionPluginProvider,QueryResult} from '@mote/shared';
 import {Actions,registerActions} from '../actions.js';
-import {ActionCapabilities} from '../action-capabilities.js';
-import {registerActionCapabilityRoutes} from '../action-capability-routes.js';
+import {ActionCapabilities} from './action-capabilities.js';
+import {registerActionCapabilityRoutes} from './action-capability-routes.js';
 import {ManagedCalendar} from '../managed-calendar.js';
 import {TodoStore,registerTodoRoutes} from '../todos.js';
 import {StoreError} from '../store.js';
@@ -48,9 +48,6 @@ export interface ActionsServicesDependencies {
     readonly connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
   };
 }
-
-/** The trusted feature-bridge surface: only the activation-guarded route table. */
-export interface ActionsServicesAssembly{routes(app:FastifyInstance):void}
 
 export function createActionsServices(deps:ActionsServicesDependencies){
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'='created';
@@ -122,7 +119,6 @@ export function createActionsServices(deps:ActionsServicesDependencies){
     dispose:close,close,routes,
     /** Trusted assembly bridge for `node.actions`; fenced once the activation ends. */
     get actionsForAssembly(){if(!actions||phase==='created'||phase==='stopped')throw unavailable();return actions;},
-    assemblyForRoutes():ActionsServicesAssembly{return Object.freeze({routes});},
   });
 }
 export type ActionsServices=ReturnType<typeof createActionsServices>;

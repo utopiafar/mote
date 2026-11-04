@@ -12,7 +12,7 @@ import type {ExecutionEngine} from '../execution-engine.js';
 import type {ConcurrencyGate} from '../concurrency.js';
 import type {ProviderAdmission} from '../provider-admission.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {agentModelConnection} from '../model-authorization-host.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
 import type {ArchivedFileStore} from '../archived-files.js';
@@ -26,6 +26,7 @@ import {prepareImportInput} from '../import-runtime.js';
 import {ImportStore,type ImportPreparation,type ImportPreparationResult} from '../imports.js';
 import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput} from '../python-source-pack-executor.js';
 import type {FileProcessing} from '../file-processing.js';
+import type {FeatureServices} from '../feature-services.js';
 
 export interface ImportsAssemblyDependencies {
   readonly app:FastifyInstance;
@@ -39,7 +40,7 @@ export interface ImportsAssemblyDependencies {
   readonly processing:Pick<FileProcessing,'runtime'>;
   readonly files:FileStore;
   readonly config:Pick<Config,'importPythonPacks'>;
-  readonly agent:ReloadableAgent;
+  readonly agent:AgentRuntimeRegistry;
   readonly modelSettings:ModelSettingsStore;
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly authorizeModelRequest:NonNullable<AgentOptions['authorizeModelRequest']>;
@@ -98,5 +99,5 @@ export function assembleImports(dependencies:ImportsAssemblyDependencies){
   app.addHook('onReady',async()=>{
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
-  return Object.freeze({imports,importTasks,launchImport,launchOwnerImport});
+  return Object.freeze({imports,importTasks,launchImport,launchOwnerImport,featureServices:Object.freeze({imports,importTasks,launchImport,launchOwnerImport}) satisfies Partial<FeatureServices>});
 }
