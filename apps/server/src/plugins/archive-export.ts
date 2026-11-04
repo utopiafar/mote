@@ -1,17 +1,19 @@
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
-import {Store,StoreError} from './store.js';
-import {ArchivedFileStore} from './archived-files.js';
-import {FileStore} from './files.js';
-import {exportTar} from './file-export.js';
-import type {MemoryBindings} from './memory-bindings.js';
-import {exportBoundMemories} from './memory-provider-backup.js';
+import {StoreError} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
+import type {ArchivedFileStore} from '../archived-files.js';
+import type {FileStore} from '../files.js';
+import {exportTar} from '../file-export.js';
+import type {MemoryBackup} from './memory-backup.js';
 
-/** Portable data export, deliberately excluding credentials, private settings and raw database pages. */
-export function registerArchiveExport(app:FastifyInstance,store:Store,files:FileStore,archivedFiles:ArchivedFileStore,maxBytes:number,memoryBindings?:MemoryBindings){
+/** Portable data export, deliberately excluding credentials, private settings and raw database pages.
+ * C24's backup contribution owns the Memory bodies; the storage feature mounts
+ * this transport with its current vault readers. */
+export function registerArchiveExport(app:FastifyInstance,store:Store,files:FileStore,archivedFiles:ArchivedFileStore,maxBytes:number,backup?:MemoryBackup){
   app.get('/api/export-bundle',async(req,reply)=>{
     const {mode}=z.object({mode:z.enum(['metadata','data']).default('metadata')}).strict().parse(req.query);
-    const memories=memoryBindings?await exportBoundMemories(memoryBindings):undefined;
+    const memories=backup?await backup.export():undefined;
     const jsonTables=['captures','devices','memories','insights','conversations','archived_files','source_connections','todos'] as const;
     const estimate=jsonTables.reduce((total,table)=>total+Number(store.db.prepare(`SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ${table}`).get()!.n),0);
     if(estimate>maxBytes)throw new StoreError('Metadata exceeds HTTP export limit; use offline backup',413);
