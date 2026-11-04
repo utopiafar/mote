@@ -1,6 +1,8 @@
 export interface PrivateProcessOptions {
   version?:string;
   directory?:string;
+  /** Reuse an existing data directory, for example a verified restored vault. */
+  dataDir?:string;
   healthTimeoutMs?:number;
   stopTimeoutMs?:number;
   entry?:string;
