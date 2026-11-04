@@ -85,7 +85,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   try{await adapter.start();}
   catch(error){try{await closeHost();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector host startup and disposal failed',{cause:error});}throw error;}
   return Object.freeze({
-    start:adapter.start,inventory:adapter.inventory,configureSyncInterval:adapter.configureSyncInterval,
+    start:adapter.start,inventory:adapter.inventory,contributions:adapter.contributions,configureSyncInterval:adapter.configureSyncInterval,
     install:adapter.install,restart:adapter.restart,stop:adapter.stop,close:closeHost,
   });
 }

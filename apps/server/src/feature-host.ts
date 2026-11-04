@@ -4,6 +4,7 @@ import type {FastifyInstance} from 'fastify';
 import {collectorIngressWrite} from './ingress.js';
 import {PluginResourceScope} from '@mote/plugin-host';
 import type {DomainRouteContribution} from './plugins/domain-routes.js';
+import type {HostContributionDescriptor} from './feature-inventory.js';
 
 export class ServerFeatureScope extends PluginResourceScope {
   constructor(onError:(error:unknown)=>void=()=>{}){super(onError,'Feature disposal failed',true);}
@@ -18,6 +19,18 @@ export class ServerFeatureHost {
   private scopes=new Set<ServerFeatureScope>();
   private closing?:Promise<void>;
   constructor(private root:Context,private app:FastifyInstance,private onError:(error:unknown)=>void=()=>{}){}
+  /** Project the live HTTP/Agent capability surface of installed features as
+   * contribution-owned components. The common host snapshot remains the
+   * authority for selected domain plugins; this host only reports what its
+   * own feature contributions actually registered. */
+  contributions():HostContributionDescriptor[]{
+    const inventory=this.registry.inventory();
+    return inventory.features.map(feature=>({
+      id:'feature:'+feature.id,version:feature.version,surface:'data',runtime:'host',
+      featureId:feature.id,featureVersion:feature.version,self:false,state:inventory.capabilities.some(capability=>capability.featureId===feature.id&&capability.state==='active')?'active':'unavailable',
+      components:inventory.capabilities.filter(capability=>capability.featureId===feature.id).map(({featureId:_featureId,state,reason,...component})=>({...component,state,...(reason?{reason}:{})})),
+    }));
+  }
   /** Mount a domain-owned route table inside this feature's child app. The
    * contribution resolves its current activation per request; the feature host
    * still owns route revocation and inventory registration. */
