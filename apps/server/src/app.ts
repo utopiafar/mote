@@ -15,6 +15,7 @@ import {workInputs,assembleInsightRuns,assembleActions,assembleActivity} from '.
 import {assembleImports} from './assembly/imports.js';
 import {assembleConnectors} from './assembly/connectors.js';
 import {createServerLifecycle,installServerLifecycleHooks} from './assembly/lifecycle.js';
+import {createC10Integration,createC10IntegrationFactory} from './plugins/c10-integration.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
 import {modelConnection,type ModelConnection} from './background-model-authorization.js';
 import {agentModelConnection,captureModelIdentity} from './model-authorization-host.js';
@@ -292,6 +293,12 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     },
     frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:moteText("请求格式无效。"),requestId});}});
   startupApp=app;
+  const sourceIntegrationFactory=createC10IntegrationFactory(()=>{
+    const platform=createC10Integration({store,runtime:sourcePipelines,memoryWork:materialMemoryWork,sources});
+    platform.bindRoutes({authorization:authorizationPlatform,capture:captureIntake,files,evidenceReader,memories:evidenceReader.memories});return platform;
+  },mount=>mount(app));
+  const startSourceIntegration=()=>bootstrap.installSourceIntegration(sourceIntegrationFactory);
+  const sourceIntegration=await startSourceIntegration();
   app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
@@ -468,7 +475,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,bootstrap,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();
