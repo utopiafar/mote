@@ -60,12 +60,6 @@ async function decide(evaluate: () => Promise<AgentAnswer>): Promise<HostOutputD
   }
 }
 
-/** Current entrypoints have a run ID but acquire plugin bindings in A05/A12.
- * They consume exactly the same output authority without inventing bindings. */
-export function evaluateHostCandidate(input: Omit<HostOutputInput, 'identity'> & {runId: string; includeReadRanges: boolean}): Promise<HostOutputDecision> {
-  return decide(() => buildHostOutput(input));
-}
-
 export function createHostOutputProvider(): HostOutputProvider {
   return Object.freeze({evaluate: (input: HostOutputInput) => decide(() => evaluateHostOutput(input))});
 }
