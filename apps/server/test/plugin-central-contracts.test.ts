@@ -45,10 +45,21 @@ test('every actually installed server feature has replaceable factory owners and
     }
   }
   const installed: string[] = [];
+  let importedInstalled = 0;
   for (const entry of entries.elements) {
-    assert.ok(ts.isIdentifier(entry), 'feature registry must aggregate imported adapters');
+    // ACT02+ may replace a fully-migrated adapter with domainRouteContribution('mote.x')
+    // so the registry still lists every installed feature id without a features/*.ts adapter.
+    if (ts.isCallExpression(entry)
+      && entry.expression.getText(file) === 'domainRouteContribution'
+      && entry.arguments.length === 1
+      && ts.isStringLiteral(entry.arguments[0])) {
+      installed.push(entry.arguments[0].text);
+      continue;
+    }
+    assert.ok(ts.isIdentifier(entry), 'feature registry must aggregate imported adapters or domainRouteContribution ids');
     const specifier = imported.get(entry.text);
     assert.ok(specifier, `missing imported adapter for ${entry.text}`);
+    importedInstalled += 1;
     const module = source(`../src/features/${specifier.slice(2).replace(/\.js$/, '.ts')}`);
     const adapter = module.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : [])
       .find(node => ts.isIdentifier(node.name) && node.name.text === 'adapter');
@@ -61,7 +72,7 @@ test('every actually installed server feature has replaceable factory owners and
     assert.ok(id && ts.isPropertyAssignment(id) && ts.isStringLiteral(id.initializer));
     installed.push(id.initializer.text);
   }
-  assert.equal(imported.size, entries.elements.length, 'every imported adapter must be installed exactly once');
+  assert.equal(imported.size, importedInstalled, 'every imported adapter must be installed exactly once');
   assert.equal(installed.length, 23);
   assert.equal(new Set(installed).size, installed.length);
   assert.deepEqual(Object.keys(centralFeatureMigrations).sort(), installed.sort());
