@@ -96,7 +96,7 @@ test('stopping a feature blocks admission but keeps resources until disposal',as
  await Promise.all([scope.close(),scope.close()]);assert.equal(disposed,1);
 });
 
-test('Ask, Insight and Import disposal cancels owned execution and fences uncooperative late results',async t=>{
+test('Ask plugin stop cancels owned execution while feature disposal and Insight/Import disposal fence their own late results',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-feature-stop-'));
  const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  let release!:()=>void,entered!:()=>void,importSignal:AbortSignal|undefined;
@@ -105,14 +105,17 @@ test('Ask, Insight and Import disposal cancels owned execution and fences uncoop
  const node=await buildApp(config,{agent:{configured:true,close:async()=>{},query:async input=>{querySignal=input.signal;await held;return {answer:'Generated late answer',citations:[],trace:[],runId:randomUUID()};}},prepareImport:async input=>{importSignal=input.signal;entered();await held;throw Error('Generated late parser failure');}});
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
  const queryId=randomUUID(),insightId=randomUUID();let insightSignal:AbortSignal|undefined;
- await withFixtureOwnerModelWork(node,async()=>node.featureServices.queryRuns.start(queryId,{question:'Generated disposal query'}));
+ await withFixtureOwnerModelWork(node,async()=>node.queryRuns.start(queryId,{question:'Generated disposal query'}));
  node.insightRuns.start(insightId,{},async(_observe,signal)=>{insightSignal=signal;await held;return {runId:randomUUID(),answer:'Generated late report',citations:[],trace:[]};});
  const imported=await node.imports.create({files:[{name:'generated.txt',dataBase64:Buffer.from('Generated input').toString('base64')}],instruction:'Generate a preview',processing:'preview'});
  const preparing=node.imports.prepare(imported.id);await started;await new Promise(resolve=>setImmediate(resolve));
  await Promise.all(['mote.ask','mote.insights','mote.imports'].map(feature=>node.featureHost.dispose(feature)));
+ // A feature bridge only revokes its HTTP contribution; the Ask plugin's durable receipt keeps running.
+ assert.equal(querySignal?.aborted,false);assert.equal(node.queryRuns.get(queryId).status,'running');
+ await node.queryRunServices.stop('disabled');
  assert.equal(querySignal?.aborted,true);assert.equal(insightSignal?.aborted,true);assert.equal(importSignal?.aborted,true);
- assert.equal(node.featureServices.queryRuns.get(queryId).status,'cancelled');assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
- assert.throws(()=>node.featureServices.queryRuns.start(randomUUID(),{question:'Generated closed query'}),{statusCode:503});
+ assert.equal(node.queryRuns.get(queryId).status,'cancelled');assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
+ assert.throws(()=>node.queryRuns.start(randomUUID(),{question:'Generated closed query'}),{statusCode:503});
  await assert.rejects(node.imports.prepare(imported.id),{statusCode:503});
  const headers={authorization:'Bearer '+config.token};
  for(const path of ['/api/query-runs','/api/insight-runs','/api/imports'])assert.equal((await node.app.inject({url:path,headers})).statusCode,503);
