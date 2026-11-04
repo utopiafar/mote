@@ -9,7 +9,7 @@ configureLocale(() => 'zh-CN');
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http://localhost/'});
 Object.assign(globalThis, {window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true});
 const {createRoot} = await import('react-dom/client');
-const {AutomaticActivitySettings} = await import('../src/AutomaticActivitySettings.js');
+const {AutomaticActivitySettings} = await import('../src/plugins/models-processing/AutomaticActivitySettings.js');
 const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 const path = '/api/processing/activity';
 const view = (revision = 1, enabled = false, modelProfileId: string | null = null) => ({revision, settings: {enabled, modelProfileId}, configured: !!modelProfileId, counts: {waiting: 2, running: 0, blocked: 0, failed: 0, succeeded: 3}});

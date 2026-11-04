@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {Sources} from '../src/plugins/sources/Sources.js';
 import {FileProcessingSettings} from '../src/FileProcessingSettings.js';
-import {ModelProfiles} from '../src/ModelProfiles.js';
+import {ModelProfiles} from '../src/plugins/models-processing/ModelProfiles.js';
 import {Diagnostics} from '../src/Diagnostics.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';

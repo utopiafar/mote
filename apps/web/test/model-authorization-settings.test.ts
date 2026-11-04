@@ -5,7 +5,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
-import {AutomaticProcessing} from '../src/AutomaticProcessing.js';
+import {AutomaticProcessing} from '../src/plugins/models-processing/AutomaticProcessing.js';
 import {createApi} from '../src/api.js';
 import {buildApp} from '../../server/src/app.js';
 import {defaultModelSettings} from '../../server/src/model-settings.js';
@@ -17,7 +17,7 @@ configureLocale(()=>'zh-CN');
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});
 const {createRoot}=await import('react-dom/client');
-const {ModelAuthorizationSettings}=await import('../src/ModelAuthorizationSettings.js');
+const {ModelAuthorizationSettings}=await import('../src/plugins/models-processing/ModelAuthorizationSettings.js');
 const path='/api/model-authorization',connection={id:'profile:fixture:generated-model',fingerprint:'a'.repeat(64)};
 const tick=()=>new Promise(resolve=>setTimeout(resolve,10));
 async function setup(t:any){
