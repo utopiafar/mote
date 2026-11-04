@@ -46,7 +46,7 @@ test('agent transcript can yield a task breadcrumb and personal memory without f
   const mixed={...draft,answer:JSON.stringify({memories:[...JSON.parse(draft.answer).memories,...JSON.parse(personal.answer).memories]})};
   let reviews=0;
   const pipeline=fixtureMemoryPipeline({store:f.store,memories:f.memories,requireAdmission:true,admission:{
-    materialAllowedForMemory:ref=>f.materials.get(ref)?.coverage.state==='complete'},models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>mixed,review:async(input,draft)=>reviewMemory(input,draft,async()=>{reviews++;return mixed;})}});
+    materialAllowedForMemory:ref=>f.materials.get(ref)?.coverage.state==='complete'},models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>mixed,review:async(input,draft)=>reviewMemory(input,draft,async reviewed=>{reviews++;return fixtureMemoryResult(f.memories,mixed,reviewed.evidenceRanges,reviewed);})}});
   t.after(()=>pipeline.close());
   const job=await pipeline.run(pipeline.create({evidenceIds:[id]}).id);
   assert.equal(job.status,'completed');assert.equal(reviews,1);

@@ -95,8 +95,8 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
     assert:assertRequest,release,credential:request=>assertRequest(request).credential,
     sourceOwner(request,id){const entry=assertRequest(request);if(entry.credential)activation.bindings.authorization.requests.assertOwnSource(entry.pin,id);},
     writable(request){writable(request);},
-    sourceItem(request,id,input){const {pin}=writable(request),fixed=activation.bindings;return track(fixed.authorization.withSource(pin,id,input,()=>fixed.capture.ports.sourceIntake.sourceItem(id,input,fixed.authorization.commits.capture())));},
-    sourceBatch(request,id,inputs){const {pin}=writable(request),fixed=activation.bindings;return track(fixed.authorization.withSource(pin,id,inputs,()=>fixed.capture.ports.sourceIntake.sourceBatch(id,inputs,fixed.authorization.commits.capture())));},
+    sourceItem(request,id,input){const {pin}=writable(request),fixed=activation.bindings;if(!sources.getSource(id).enabled)throw new StoreError('Source is paused',409);return track(fixed.authorization.withSource(pin,id,input,()=>fixed.capture.ports.sourceIntake.sourceItem(id,input,fixed.authorization.commits.capture())));},
+    sourceBatch(request,id,inputs){const {pin}=writable(request),fixed=activation.bindings;if(!sources.getSource(id).enabled)throw new StoreError('Source is paused',409);return track(fixed.authorization.withSource(pin,id,inputs,()=>fixed.capture.ports.sourceIntake.sourceBatch(id,inputs,fixed.authorization.commits.capture())));},
   };
   const platform=Object.freeze({
     /** The sole private root bridge for C10A/C04/C11/C12. Not a service value. */
