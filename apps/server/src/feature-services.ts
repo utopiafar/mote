@@ -10,7 +10,7 @@ import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import type {ConnectorRegistry} from './connectors/registry.js';
 import type {FileProcessing} from './file-processing.js';
 import type {ExecutionEngine} from './execution-engine.js';
-import type {Actions} from './actions.js';
+import type {ActionsServicesAssembly} from './plugins/actions-services.js';
 import type {ReloadableAgent} from './model-agent.js';
 import type {ArchivedFileStore} from './archived-files.js';
 import type {Config} from './config.js';
@@ -77,7 +77,7 @@ export interface FeatureServices {
   connectors:ConnectorRegistry;
   processing:FileProcessing;
   executor:ExecutionEngine;
-  actions:Actions;
+  actionsServices:ActionsServicesAssembly;
   agent:ReloadableAgent;
   archivedFiles:ArchivedFileStore;
   config:Config;

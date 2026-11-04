@@ -18,8 +18,18 @@ import type {EvidenceReader} from '../evidence-reader.js';
 import {requestLocale} from '../i18n.js';
 import {OwnerQuestions} from '../owner-questions.js';
 import {InsightRuns} from '../insight-runs.js';
-import {Actions} from '../actions.js';
+import type {Connections,ConnectionCredential} from '../connections.js';
+import type {PluginCenter} from '../plugin-center.js';
+import type {SourceStore} from '../sources.js';
+import type {CentralDomainPlugin} from '../bootstrap.js';
+import {actionsServicesContribution,actionsServicesDeclaration,actionsServicesReplacement,createActionsServices} from '../plugins/actions-services.js';
 import {createActivityServices} from '../plugins/activity-services.js';
+
+/** ACT01's declared build-time domain plugin. The pre-H14 feature bridge mounts
+ * the same route contribution until app.ts construction moves behind K04. */
+export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:actionsServicesContribution,declaration:actionsServicesDeclaration,replacement:actionsServicesReplacement},
+]);
 
 export interface WorkInputDependencies {
   readonly store:Store;
@@ -53,21 +63,32 @@ export interface ActionsAssemblyDependencies {
   readonly store:Store;
   readonly resources:ServerResources;
   readonly files:FileStore;
+  readonly sources:SourceStore;
+  readonly connections:Connections;
+  readonly pluginCenter:Pick<PluginCenter,'actionProviders'>;
   readonly agent:Pick<ReloadableAgent,'configured'>;
   readonly executor:ExecutionEngine;
   readonly configService:ConfigService;
   readonly semanticArtifacts:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
+  readonly credential:(request:FastifyRequest)=>ConnectionCredential|undefined;
+  readonly connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
   /** Late-bound: the admitted query path assembles after Actions; the callback
    * is only invoked by accepted work. */
   readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
 }
 
-/** Actions service plus its close hook. */
-export function assembleActions(dependencies:ActionsAssemblyDependencies){
-  const {store,files,resources,agent,executor,configService,semanticArtifacts,queryAgent}=dependencies;
-  const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured,{semanticArtifacts,executor,configService});
-  resources.defer(()=>actions.close());
-  return Object.freeze({actions});
+/** The actions-services plugin owns the domain objects, poll and route table;
+ * the assembly only binds its dependencies and lifecycle. */
+export async function assembleActions(dependencies:ActionsAssemblyDependencies){
+  const {store,files,resources,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent}=dependencies;
+  const services=createActionsServices({store,files,sources,connections,executor,configService,semanticArtifacts,
+    actionProviders:()=>pluginCenter.actionProviders(),
+    query:input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),
+    configured:()=>agent.configured,
+    authorization:{credential,connectionIdentity}});
+  resources.defer(()=>services.close());
+  await services.prepare();services.start();
+  return Object.freeze({actions:services.actionsForAssembly,actionsServices:services.assemblyForRoutes()});
 }
 
 export interface ActivityAssemblyDependencies {
