@@ -8,8 +8,12 @@ import {reviewMemory,type MemoryDraftOrigin} from '../memory-review.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
 import type {MemoryDeletions} from './memory-deletions.js';
 import type {MemoryReviewStrategy} from '../memory-strategy-contract.js';
+import type {MaterialStore} from '../materials.js';
+import {installMemoryOwnerQuestions} from '../memory-owner-questions.js';
+import {registerMemoryDelegation,type MemoryDelegationOptions} from '../memory-delegation.js';
+import type {MemoryOwnerContinuationPort,MemoryOwnerWorkView} from '../memory-owner-continuation.js';
 import {StoreError} from '../store.js';
-import {centralServices} from './central-contracts.js';
+import {centralServices,type OwnerQuestionsPort} from './central-contracts.js';
 
 /** C22A owns the durable extraction/review phases and the bounded independent
  * review cache. The pipeline is the only writer of phase checkpoints; review
@@ -42,8 +46,13 @@ export interface MemoryPhaseReviewDependencies {
 export interface MemoryPhasePipelineDependencies {
   readonly pipeline:MemoryPhasePipelineOptions;
   readonly review:MemoryPhaseReviewDependencies;
+  /** The shared owner-question ledger is read through its current port.
+   * Declarations remain a Material concern. */
+  readonly ownerQuestions?:OwnerQuestionsPort;
+  readonly materials?:MaterialStore;
 }
 export type MemoryPhaseReview=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>Promise<QueryResult>;
+export type MemoryPhaseDelegationDependencies=Omit<MemoryDelegationOptions,'pipeline'>;
 export interface MemoryPhasePipelineBindings { readonly phase:ServiceBinding }
 export interface MemoryPhasePipelinePort {
   readonly pipeline:MemoryPipeline;
@@ -55,22 +64,53 @@ export interface MemoryPhasePipelinePlatform extends PluginLifecycle {
   readonly port:MemoryPhasePipelinePort;
   readonly pipeline:MemoryPipeline;
   readonly reviews:MemoryReviewCache;
+  readonly ownerContinuations:MemoryOwnerContinuationPort;
   review:MemoryPhaseReview;
+  /** Delegation is registered by this scope once its coordinator runtime
+   * exists; product jobs stay owned by the same phase pipeline. */
+  attachDelegation(dependencies:MemoryPhaseDelegationDependencies):void;
   close():Promise<void>;
 }
 
 const unavailable=()=>new StoreError('Memory phase pipeline is unavailable',503);
 
-/** Prepare constructs the phase pipeline and its process-local review cache;
- * start admits jobs and new reviews; quiesce refuses new work while accepted
- * runs drain; stop drains/cancels the owned pipeline, clears the cache and
- * leaves durable native cleanup and phase checkpoints recoverable. */
+/** The owner-question provider's only continuation capability. It reads and
+ * writes the phase pipeline's durable job/range state but cannot admit work,
+ * retry, call a model or publish. */
+export function createMemoryOwnerContinuations(pipeline:MemoryPipeline):MemoryOwnerContinuationPort {
+  const view=(id:string):MemoryOwnerWorkView=>{
+    const job=pipeline.get(id);
+    return {id:job.id,status:job.status,batches:job.batches.map(({id,evidenceRanges})=>({id,evidenceRanges}))};
+  };
+  const continuations:MemoryOwnerContinuationPort={
+    read:view,
+    scope:(jobId,batchId,key)=>{
+      const {job,member,strategy}=pipeline.ownerQuestionScope(jobId,batchId,key),{id,modelProfileId,modelOverride,recipes,contextTime,timeZone,batchCharacters}=job;
+      return {job:{id,modelProfileId,modelOverride,recipes,contextTime,timeZone,batchCharacters},member,strategy};
+    },
+    assertCurrent:(jobId,ref,ids)=>pipeline.assertOwnerContinuationCurrent(jobId,ref,ids),
+    create:input=>view(pipeline.create(input).id),
+    link:(jobId,batchId,continuation,key)=>pipeline.continuedOwnerQuestion(jobId,batchId,continuation,key),
+    closeGap:(jobId,batchId,key)=>pipeline.closeOwnerQuestion(jobId,batchId,key),
+    dependencies:ids=>pipeline.evidenceDependencies(ids),
+    setQuestions:handler=>pipeline.setOwnerQuestionHandler(handler),
+  };
+  return Object.freeze(continuations);
+}
+
+/** Prepare constructs the phase pipeline, its process-local review cache and
+ * the owner-continuation port. Start admits jobs, new reviews and the shared
+ * owner-question provider; quiesce withdraws that provider before refusing new
+ * work while accepted runs drain; stop closes the attached delegation scope,
+ * drains/cancels the owned pipeline and leaves durable native cleanup and phase
+ * checkpoints recoverable. */
 export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDependencies):MemoryPhasePipelinePlatform {
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'='created';
-  let pipeline:MemoryPipeline|undefined,reviews:MemoryReviewCache|undefined,closing:Promise<void>|undefined;
+  let pipeline:MemoryPipeline|undefined,reviews:MemoryReviewCache|undefined,continuations:MemoryOwnerContinuationPort|undefined,closing:Promise<void>|undefined;
+  let disposeQuestions:(()=>void)|undefined,delegation:ReturnType<typeof registerMemoryDelegation>|undefined,delegationDependencies:MemoryPhaseDelegationDependencies|undefined;
   const readable=()=>{
-    if(!pipeline||!reviews||phase==='created'||phase==='stopped')throw unavailable();
-    return {pipeline,reviews};
+    if(!pipeline||!reviews||!continuations||phase==='created'||phase==='stopped')throw unavailable();
+    return {pipeline,reviews,continuations};
   };
   const active=()=>{
     if(phase!=='active')throw unavailable();
@@ -89,40 +129,70 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
     active();
     return runReview(input,result,strategy,draftOrigin);
   };
+  const registerDelegation=()=>{
+    if(delegation||!delegationDependencies||phase!=='active'||!pipeline)return;
+    delegation=registerMemoryDelegation({...delegationDependencies,pipeline});
+  };
   const close=()=>closing??=(async()=>{
-    const owned=pipeline;
+    const owned=pipeline,stoppingDelegation=delegation,withdrawQuestions=disposeQuestions;
+    const errors:unknown[]=[];
     phase='stopped';
-    pipeline=undefined;
+    pipeline=undefined;continuations=undefined;disposeQuestions=undefined;delegation=undefined;delegationDependencies=undefined;
     reviews?.clear();reviews=undefined;
-    if(owned)await owned.close();
+    try{withdrawQuestions?.();}catch(error){errors.push(error);}
+    if(stoppingDelegation)try{await stoppingDelegation.close();}catch(error){errors.push(error);}
+    if(owned)try{await owned.close();}catch(error){errors.push(error);}
+    if(errors.length)throw new AggregateError(errors,'Memory phase pipeline disposal failed');
   })().finally(()=>{closing=undefined;});
   const port:MemoryPhasePipelinePort=Object.freeze({get pipeline(){return readable().pipeline;},review});
   const platform:MemoryPhasePipelinePlatform=Object.freeze({
     port,
     get pipeline(){return readable().pipeline;},
     get reviews(){return readable().reviews;},
+    get ownerContinuations(){return readable().continuations;},
     review,
+    attachDelegation(value:MemoryPhaseDelegationDependencies){
+      if(delegationDependencies||delegation)throw unavailable();
+      delegationDependencies=value;
+      try{registerDelegation();}catch(error){delegationDependencies=undefined;throw error;}
+    },
     prepare(){
       if(phase!=='created'&&phase!=='stopped')throw unavailable();
       phase='preparing';
       try{
         const cache=new MemoryReviewCache();
         const owned=new MemoryPipeline({...dependencies.pipeline,phases:{...dependencies.pipeline.phases,review:runReview}});
-        reviews=cache;pipeline=owned;
+        reviews=cache;pipeline=owned;continuations=createMemoryOwnerContinuations(owned);
         phase='prepared';
       }catch(error){
-        reviews?.clear();reviews=undefined;pipeline=undefined;phase='stopped';
+        reviews?.clear();reviews=undefined;pipeline=undefined;continuations=undefined;phase='stopped';
         throw error;
       }
     },
     start(){
       if(phase!=='prepared'&&phase!=='quiescing')throw unavailable();
-      pipeline!.start();
-      phase='active';
+      const owned=readable().pipeline,current=readable().continuations;
+      owned.start();
+      try{
+        if(dependencies.ownerQuestions&&dependencies.materials)disposeQuestions=installMemoryOwnerQuestions({
+          questions:dependencies.ownerQuestions,continuations:current,
+          materials:dependencies.materials,store:dependencies.pipeline.store,query:dependencies.review.query,
+        });
+        phase='active';
+        registerDelegation();
+      }catch(error){
+        phase='quiescing';
+        disposeQuestions?.();disposeQuestions=undefined;
+        owned.quiesce();
+        throw error;
+      }
     },
     quiesce(_reason?:StopReason){
       if(phase!=='active')return;
       phase='quiescing';
+      // A withdrawn provider rejects a late reply before it can create a
+      // continuation; the accepted pipeline work keeps draining.
+      disposeQuestions?.();disposeQuestions=undefined;
       pipeline?.quiesce();
     },
     async stop(_reason?:StopReason){await close();},

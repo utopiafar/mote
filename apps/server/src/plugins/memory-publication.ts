@@ -12,7 +12,7 @@ import {memorySchema,type Memory} from '../memory-schema.js';
 import {randomUUID} from 'node:crypto';
 import {installMemoryPublicationRetirement,registerMemoryPublicationDependencies,memoryPublicationRetired} from './memory-private-storage.js';
 import {createEvidenceDeletion,type EvidenceDeletion,type EvidenceDeletionPorts} from './evidence-deletion.js';
-import {exportBoundMemories,type MemoryBackup} from './memory-backup.js';
+import {exportBoundMemories,type MemoryBackup,type MemoryBackupBindingPort} from './memory-backup.js';
 
 import type {MemoryPublicationReceipt,MemoryPublicationDependencies,MemoryStagePublication,MemoryOwnerPublication,MemoryOwnerDeletionResult} from './memory-publication-contract.js';
 import {centralServices} from './central-contracts.js';
@@ -37,7 +37,7 @@ export type MemoryPublicationRecordPort=Pick<MemoryStore,'prepareExtract'|'asser
  * binding port. The plugin stores the binding on its deletion ledger so a
  * deletion snapshot cannot silently move to another provider namespace. */
 export type MemoryPublicationBinding={planId:string;generation:number;namespace?:MemoryProviderNamespace};
-export interface MemoryPublicationBindingPort {
+export interface MemoryPublicationBindingPort extends MemoryBackupBindingPort {
   binding():MemoryPublicationBinding;
   provider(instanceId:string,namespace?:MemoryProviderNamespace):MemoryProvider;
   read(id:string,binding?:MemoryPublicationBinding,key?:MemoryProviderKey):Promise<Memory>;
