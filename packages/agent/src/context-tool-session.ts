@@ -5,9 +5,11 @@ import {attributionMetadata,attributionMetadataResponse} from './tools/result-me
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
-import {pinContextTools,contextToolSnapshot,releaseContextTools,hasPinnedContextTools} from './tool-contributions.js';
+import {pinContextTools,contextToolSnapshot,releaseContextTools,hasPinnedContextTools,CAPABILITY_TOOLS} from './tool-contributions.js';
 import type {HostSessionPort,HostReadOperation} from './tools/host-session.js';
 import {validateCapabilityArguments} from './capability-schema.js';
+import {normalizeOptionalToolArguments} from './tools/argument-normalization.js';
+import {toolInputSchema} from './tools/runtime-schema.js';
 import {rememberEvidence,evidenceLayers,copyEvidencePresentation,snapshotEvidenceLedger,restoreEvidenceLedger} from './evidence-ledger.js';
 import {projectEvidence as project} from './evidence-receipt.js';
 import {AgentYieldError,hostControlDefinitions} from './host-controls.js';
@@ -168,7 +170,11 @@ export async function createContextToolSession(
   const contributions=new Map(pinnedTools.entries.map(tool=>[tool.name,tool]));
   const specialCapabilities=new Map(pinnedTools.entries.filter(entry=>dispatchTools(bounds).includes(entry.name)&&entry.exposure==='catalog').map(entry=>[entry.name,entry]));
 
-  const controls=new Set(hostControlDefinitions(bounds.hostControlChannel).map(([name])=>name));
+  const controlDefinitions=hostControlDefinitions(bounds.hostControlChannel);
+  const controls=new Set(controlDefinitions.map(([name])=>name));
+  const argumentSchemas=new Map<string,Readonly<Record<string,unknown>>>();
+  for(const entry of pinnedTools.entries)argumentSchemas.set(entry.name,toolInputSchema(entry.fields));
+  for(const [name,,fields] of [...CAPABILITY_TOOLS,...controlDefinitions])argumentSchemas.set(name,toolInputSchema(fields));
 
 
   const remember=(record:ContextRecord)=>{rememberEvidence(state().records,record);execution.getStore()?.evidence.push(record);try{bounds.onEvidence?.([record]);}catch{/* Receipt observation cannot grant new reads. */}};
@@ -292,7 +298,7 @@ export async function createContextToolSession(
   const executeTool:BridgeToolHandler = async (request, res) => {
     let tool=request.tool,args:Record<string,unknown>={},metadataOnly=false,dispatchedViaCatalog=false,disclosureDependencies:unknown,disclosureSourceContextDependencies:unknown;
     try {
-      args = await request.readArguments();
+      args = normalizeOptionalToolArguments(argumentSchemas.get(tool), await request.readArguments());
 
       // Adapter-only receipt; absent from every model tool declaration. The
       // authenticated adapter strips the opaque token before returning a tool.
@@ -332,6 +338,7 @@ export async function createContextToolSession(
         if(!selected||!state().discoveredCapabilities.has(selected.name)||selected.version!==args.version)throw hostError('Discover this exact registered capability and version first');
         let decoded:unknown;try{decoded=JSON.parse(args.argumentsJson);}catch{throw hostError('Capability argumentsJson must be a JSON object');}
         if(!decoded||typeof decoded!=='object'||Array.isArray(decoded))throw hostError('Capability argumentsJson must be a JSON object');
+        decoded=normalizeOptionalToolArguments(argumentSchemas.get(selected.name),decoded as Record<string,unknown>);
         validateCapabilityArguments(selected.fields,decoded as Record<string,unknown>);
         tool=selected.name;args=decoded as Record<string,unknown>;dispatchedViaCatalog=true;
       }
