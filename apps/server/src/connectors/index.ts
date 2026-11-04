@@ -67,7 +67,8 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
   const removeMemory=installRecordingSources(context.memoryStrategies);
   if(removeMemory)app.addHook('onClose',async()=>removeMemory());
-  const manifests=[...builtins(testing),...await loadConnectorModules(ctx.config.connectors.modules??[]),...additionalManifests];
+  const modules=await loadConnectorModules(ctx.config.connectors.modules??[]);
+  const manifests=[...builtins(testing),...modules,...additionalManifests];
   const status=connectorScope('mote.connectors','status','Connector status scope disposal failed');
   app.addHook('onClose',()=>status.close());
   const states=new WeakMap<HostScope,StateStore>();
@@ -78,6 +79,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   dispatcher.attach(app);
   const adapter=createConnectorHostAdapter({
     manifests,context:ctx,dispatcher,statusScope:status.scope,
+    required:modules.map(manifest=>manifest.id),
     scopeFor:(manifest,instanceId)=>connectorScope(manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
     stateFor:scope=>{
       let state=states.get(scope);
