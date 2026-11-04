@@ -234,7 +234,8 @@ export function architectureViolations({nodes,browserEntries,unresolved=[]}){
     if(edge.specifier===null)rule='analyzable-module-reference';
     if(inside(edge.from,'packages/plugin-sdk/src')&&(inside(edge.to,'apps')||inside(edge.to,'packages/shared/src')||inside(edge.to,'packages/agent/src')||inside(edge.to,'packages/diagnostics/src')))rule='sdk-public-boundary';
     if(runtime&&inside(edge.from,'packages/agent/src')&&edge.to==='packages/agent/src/index.ts')rule='agent-no-assembly-import';
-    if(runtime&&inside(edge.from,'apps/server/src')&&['apps/server/src/index.ts','apps/server/src/app.ts'].includes(edge.to)&&!(edge.from==='apps/server/src/index.ts'&&edge.to==='apps/server/src/app.ts'))rule='server-no-assembly-import';
+    const serverAssemblyOwner=['apps/server/src/index.ts','apps/server/src/start-server.ts'].includes(edge.from);
+    if(runtime&&inside(edge.from,'apps/server/src')&&['apps/server/src/index.ts','apps/server/src/app.ts'].includes(edge.to)&&!(edge.to==='apps/server/src/app.ts'&&serverAssemblyOwner))rule='server-no-assembly-import';
     if(desktopContract(edge.from)&&inside(edge.to,'apps/desktop/src')&&!desktopContract(edge.to))rule='desktop-contract-leaf';
     if(runtime&&inside(edge.from,'apps/web/src')){
       const ownsAssembly=edge.from==='apps/web/src/main.tsx'||edge.from==='apps/web/src/boot.ts'&&edge.to==='apps/web/src/main.tsx';
