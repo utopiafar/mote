@@ -4,7 +4,6 @@ import type {ModelAuthorizationHost} from './model-authorization-host.js';
 import type {ConfigService} from './config-service.js';
 import type {MemoryPublication} from './memory-publication.js';
 import type {OwnerQuestions} from './owner-questions.js';
-import type {DelegationRuntime} from './delegation-runtime.js';
 import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import type {ConnectorHostAdapter} from './plugins/connector-host-adapter.js';
@@ -36,7 +35,6 @@ import type {MemoryPipeline} from './memory-pipeline.js';
 import type {ModelSettingsStore} from './model-settings.js';
 import type {ImageProcessing} from './image-processing.js';
 import type {ProviderAdmission} from './provider-admission.js';
-import type {DelegatedQueryRuns} from './delegated-query-runs.js';
 import type {ExecutionSettings} from './execution-settings.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {SourceStore} from './sources.js';
@@ -59,7 +57,7 @@ import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import type {modelConfiguration} from './model-configuration.js';
 import type {insightResult} from './insights.js';
 import type {QueryScope} from './query-scope.js';
-import type {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
+import type {insightRequestSchema} from './query-request.js';
 
 /** Feature entries receive a checked Pick of these domain-owned capabilities. */
 export interface RequestParser<T>{parse(input:unknown):T}
@@ -70,7 +68,6 @@ export interface FeatureServices {
   configService:ConfigService;
   memoryPublication:MemoryPublication;
   ownerQuestions:OwnerQuestions;
-  delegation:DelegationRuntime;
   memoryIntegrationSettings:MemoryIntegrationSettings;
   memoryRecipeSettings:MemoryRecipeSettings;
   connectors:ConnectorHostAdapter;
@@ -102,7 +99,6 @@ export interface FeatureServices {
   modelSettings:ModelSettingsStore;
   perception:ImageProcessing;
   providerAdmission:ProviderAdmission;
-  queryRuns:DelegatedQueryRuns;
   runtimeSettings:ExecutionSettings;
   sourcePipelines:SourcePipelineRuntime;
   sources:SourceStore;
@@ -139,7 +135,6 @@ export interface FeatureServices {
   mediaRange:RequestParser<NonNullable<Parameters<Store['mediaActivity']>[0]>>;
   parseCaptureBundle:(body:unknown)=>CaptureInput[];
   queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
-  queryWithAttachmentsSchema:typeof queryWithAttachmentsSchema;
   reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>ReturnType<typeof reviewMemory>;
   semanticSelection:()=>ReturnType<typeof modelConfiguration>&{configured:boolean};
   serverVersion:string;

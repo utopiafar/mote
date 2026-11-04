@@ -142,7 +142,7 @@ test('selected A06 journey: owner HTTP query traverses default Host and real DSH
   assert.equal(run.status,'completed',JSON.stringify(run));assert.ok(run.conversationId&&run.turnId);assert.ok(run.evidenceDependencies.complete);assert.ok(run.evidenceDependencies.ids.includes(id));
   const conversation=await (await fetch(url+'/api/conversations/'+run.conversationId,{headers:f.headers})).json() as any,turn=conversation.turns.find((turn:any)=>turn.id===run.turnId);
   assert.ok(turn,JSON.stringify(conversation));assert.equal(turn.result.answer,`${original} [${id}]`);assert.equal(turn.result.citations[0].id,id);assert.ok(turn.result.citations[0].excerpt.includes(original));assert.ok(turn.result.evidenceDependencies.ids.includes(id));
-  const saved=node.featureServices.delegation.journal.payload<any>('query:'+runId),models=node.modelSettings;
+  const saved=node.delegation.journal.payload<any>('query:'+runId),models=node.modelSettings;
   const selected=models.select('chat');assert.equal(saved.configurationFingerprint,modelConfiguration(selected.id,selected.settings,models.view().revision).fingerprint);
   assert.equal(turn.result.modelSelection.profileId,selected.id);assert.equal(turn.result.modelSelection.model,fixtureModel);
   assert.equal(requests.length,3);assert.ok(JSON.stringify(requests[2]).includes(original),'the actual tool delivery reaches the following model request');

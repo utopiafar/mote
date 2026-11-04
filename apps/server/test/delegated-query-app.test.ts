@@ -18,7 +18,7 @@ const plain=(answer='Generated answer'):QueryResult=>({answer,citations:[],trace
 async function until<T>(read:()=>T|undefined,describe?:()=>unknown):Promise<T>{for(let attempt=0;attempt<240;attempt++){const value=read();if(value!==undefined)return value;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Generated fixture did not settle'+(describe?': '+JSON.stringify(describe()):''));}
 
 function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
- const run=node.featureServices.queryRuns.get(id),work=node.featureServices.delegation.get('query:'+id);
+ const run=node.queryRuns.get(id),work=node.delegation.get('query:'+id);
  return {run:{status:run.status,error:run.error,execution:run.execution},work:{status:work.status,revision:work.revision,units:work.units.map(unit=>({status:unit.status,attempts:unit.attempts,error:unit.error}))},pool:node.executor.poolSnapshot('delegated-agents'),gate:node.featureServices.agentGate.snapshot(),steps:node.store.db.prepare('SELECT e.id,e.state,e.error,a.work_id FROM execution_steps e LEFT JOIN background_model_step_authority a ON a.step_id=e.id WHERE e.operation_id=?').all('query:'+id)};
 }
 
@@ -32,7 +32,7 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
   try{
    if(!input.hostControlChannel){
     // Finish the child after the parent's yielded fragment has really committed.
-   await until(()=>node.featureServices.delegation.get('query:'+id).status==='waiting'&&node.executor.get('query:'+id+':coordinator:1')?.state==='succeeded'?true:undefined,()=>snapshot(node,id));
+   await until(()=>node.delegation.get('query:'+id).status==='waiting'&&node.executor.get('query:'+id+':coordinator:1')?.state==='succeeded'?true:undefined,()=>snapshot(node,id));
     childCalls++;order.push('child');assert.equal(input.question,'Inspect the generated original');assert.equal(input.deviceId,scope.deviceId);assert.equal(input.after,scope.after);assert.equal(input.before,scope.before);
     assert.equal(input.conversation,undefined);assert.equal(input.taskContext,undefined);assert.equal(input.openingMemories,undefined);assert.equal(input.directImages,undefined);
     const records=await node.featureServices.archiveReader.evidence({ids:[original.id],deviceId:input.deviceId,after:input.after,before:input.before});assert.equal(records.length,1);
@@ -70,13 +70,13 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
  const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Research the generated project choice',...scope}}});scheduled.mock.restore();assert.equal(accepted.statusCode,202,accepted.body);
  void node.executor.tick();
  if(restart){
-  await until(()=>heldResume?true:undefined);assert.equal(childCalls,1);assert.equal(node.featureServices.delegation.artifactMetadata('query:'+id).length,1);
+  await until(()=>heldResume?true:undefined);assert.equal(childCalls,1);assert.equal(node.delegation.artifactMetadata('query:'+id).length,1);
   await node.app.close();node=await buildApp(config(directory),{agent:fixtureAgent(false),backgroundWorker:false});
  }
- const run=await until(()=>{const receipt=node.featureServices.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;},()=>snapshot(node,id));
+ const run=await until(()=>{const receipt=node.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;},()=>snapshot(node,id));
  assert.equal(childCalls,1);assert.equal(maxActive,1);assert.equal(readCalls,1);assert.equal(coordinatorCalls,restart?3:2);assert.deepEqual(order.slice(0,3),['coordinator','child','coordinator']);
  const conversation=(await node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.equal(conversation.turnCount,1);assert.equal(conversation.turns[0].result.citations[0].id,original.id);assert.equal(conversation.turns[0].result.citations[0].excerpt,original.ocrText);
- const work=node.featureServices.delegation.get('query:'+id);assert.equal(work.status,'succeeded');assert.equal(work.units.length,1);assert.equal(work.units[0].attempts,1);assert.equal(work.events.filter(event=>event.type==='branch.completed').length,1);
+ const work=node.delegation.get('query:'+id);assert.equal(work.status,'succeeded');assert.equal(work.units.length,1);assert.equal(work.units[0].attempts,1);assert.equal(work.events.filter(event=>event.type==='branch.completed').length,1);
  assert.ok(!JSON.stringify(run).includes('Generated child inspected'));assert.ok(!JSON.stringify(run).includes('Check the generated local archive choice'));
  const activity=(await node.app.inject({url:'/api/work-activity/'+encodeURIComponent('query:'+id),headers})).json();assert.equal(activity.state,'completed');assert.equal(activity.branches[0].state,'completed');assert.ok(activity.artifacts.some((artifact:{kind:string})=>artifact.kind==='answer'));assert.ok(activity.events.some((event:{type:string})=>event.type==='branch.completed'));
  assert.equal(observed.filter(input=>!input.hostControlChannel).length,1);
@@ -87,7 +87,7 @@ test('a retryable provider attempt never writes a failed conversation before the
  const node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{calls++;if(calls===1)throw new ProviderFailure({category:'transient',code:'provider_unavailable',retryAfterMs:1});return plain();}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const id=randomUUID(),response=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated retryable question'}}});assert.equal(response.statusCode,202,response.body);
- const receipt=await until(()=>{const run=node.featureServices.queryRuns.get(id);return run.status==='completed'?run:undefined;});assert.equal(calls,2);
+ const receipt=await until(()=>{const run=node.queryRuns.get(id);return run.status==='completed'?run:undefined;});assert.equal(calls,2);
  const conversation=(await node.app.inject({url:'/api/conversations/'+receipt.conversationId,headers})).json();assert.equal(conversation.turnCount,1);assert.equal(conversation.status,'completed');assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversation_turns').get()!.n,1);
 });
 
@@ -96,7 +96,7 @@ test('durable query metadata omits model-authored progress prose while retaining
  const node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{input.onProgress?.({stage:'model',message:secret,step:2});input.onProgress?.({stage:'tool',tool:'evidence',phase:'completed',count:1});return plain();}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const id=randomUUID(),accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated progress privacy question'}}});assert.equal(accepted.statusCode,202,accepted.body);
- const run=await until(()=>{const receipt=node.featureServices.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;});
+ const run=await until(()=>{const receipt=node.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;});
  const raw=String(node.store.db.prepare('SELECT json FROM query_runs WHERE id=?').get(id)!.json);assert.ok(!raw.includes(secret));assert.ok(run.events.every(event=>event.message===undefined));assert.ok(run.events.some(event=>event.stage==='model'&&event.step===2));assert.ok(run.events.some(event=>event.tool==='evidence'&&event.phase==='completed'&&event.count===1));
 });
 
@@ -118,7 +118,7 @@ test('real Coding HTTP intake and durable query can deliver citable material ori
  const upload=await node.app.inject({method:'PUT',url:`/api/sources/${source}/items`,headers,payload:{externalId:'event-one',revision:'1',observedAt:original.capturedAt,kind:'message',layer:'snapshot',text:'Generated local archive choice: use SQLite for the sample project.',document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'generated-session',projectKey:'generated-project',eventId:'000001',role:'user',attribution:'human',part:0,parts:1}}}});assert.equal(upload.statusCode,200,upload.body);
  await node.sourcePipelines.tick();
  const id=randomUUID(),request={id,input:{question:'Why did the generated project choose the local archive?',...scope}},accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:request});assert.equal(accepted.statusCode,202,accepted.body);
- const run=await until(()=>{const receipt=node.featureServices.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;});assert.equal(calls,1);assert.equal(node.featureServices.delegation.get('query:'+id).units.length,0);
+ const run=await until(()=>{const receipt=node.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;});assert.equal(calls,1);assert.equal(node.delegation.get('query:'+id).units.length,0);
  const saved=(await node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.match(saved.turns[0].result.citations[0].excerpt,/Generated local archive choice/);assert.equal(saved.turns[0].result.trace.some((row:{tool:string})=>row.tool==='evidence'),false);
  assert.equal((await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:request})).json().status,'completed');assert.equal(calls,1,'same durable HTTP ID is idempotent');
 });

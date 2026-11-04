@@ -12,10 +12,18 @@ export interface DomainRouteContribution {
  * the same root context as the plugin host. */
 export type DomainRouteTable = Readonly<Record<string, DomainRouteContribution>>;
 
+/** Several plugins may contribute routes to one feature (for example Ask owns
+ * conversations and query receipts). Mount each contribution once in arrival
+ * order without letting a later provider replace an earlier table. */
 export function contributeDomainRoutes(context:Context,contributions:DomainRouteTable){
-  const table=context.get('moteDomainRoutes');
-  if(table)Object.assign(table,contributions);
-  else context.provide('moteDomainRoutes',{...contributions});
+  const table=context.get('moteDomainRoutes')??{},merged:{[id:string]:DomainRouteContribution}={...table};
+  for(const [id,contribution] of Object.entries(contributions)){
+    const existing=merged[id];
+    merged[id]=!existing||existing===contribution?contribution:Object.freeze({mount(app:FastifyInstance){existing.mount(app);contribution.mount(app);}});
+  }
+  const frozen=Object.freeze(merged);
+  if(context.get('moteDomainRoutes'))context.set('moteDomainRoutes',frozen);
+  else context.provide('moteDomainRoutes',frozen);
 }
 
 declare module '@deepseek-ai/cordis' {
