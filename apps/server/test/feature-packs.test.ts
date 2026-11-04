@@ -1,6 +1,5 @@
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {sha256} from '../src/store.js';
-import {parseConfigDocument,serializeConfigDocument} from '@mote/shared/config-file';
 import {Connections} from '../src/connections.js';
 import {ConfigService} from '../src/config-service.js';
 import {Store} from '../src/store.js';
@@ -10,7 +9,7 @@ import {randomUUID} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync,mkdirSync,mkdtempSync,rmSync,readFileSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdirSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
@@ -20,6 +19,7 @@ import {buildApp} from '../src/app.js';
 import {createInsightSnapshot} from '../src/insight-snapshots.js';
 import {contextBundle} from '../src/context-bundle.js';
 import type {Config} from '../src/config.js';
+import type {ConnectorManifest} from '../src/connectors/registry.js';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 test('server feature disposal revokes routes without deleting retained data',async t=>{
   const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app);let retained=1;
@@ -183,7 +183,7 @@ const startupConfig=(directory:string):Config=>({dataDir:directory,token:'genera
 for(const boundary of ['connections','connector','feature','watcher'] as const)test(`startup reclaims acquired SQLite, plugins, and watcher after ${boundary} initialization fails`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-startup-cleanup-')),config=startupConfig(directory),failure=Error('Generated '+boundary+' startup failure');
  t.after(()=>rmSync(directory,{recursive:true,force:true}));
- let closedStore:Store|undefined,closedPipelines=0,closedConfig=0;
+ let closedStore:Store|undefined,closedPipelines=0,closedConfig=0,connectorManifests:ConnectorManifest[]|undefined;
  const storeClose=Store.prototype.close,pipelineClose=SourcePipelineRuntime.prototype.close,configClose=ConfigService.prototype.close;
  t.mock.method(Store.prototype,'close',function(this:Store){closedStore=this;return storeClose.call(this);});
  t.mock.method(SourcePipelineRuntime.prototype,'close',function(this:SourcePipelineRuntime){closedPipelines++;return pipelineClose.call(this);});
@@ -192,7 +192,7 @@ for(const boundary of ['connections','connector','feature','watcher'] as const)t
  if(boundary==='connector'){
    const module=join(directory,'generated-failing-connector.mjs');
    writeFileSync(module,`export const events=[];export default {apiVersion:1,id:'generated-failure',sourceKinds:['custom'],create(){return {init:async()=>{throw Error('Generated connector startup failure')},close:()=>{events.push('closed')}}}};`);
-   config.connectors={directory:join(directory,'connectors'),modules:[module]};
+   connectorManifests=[(await import(module)).default];
  }
  if(boundary==='feature'){
    const install=ServerFeatureHost.prototype.install;let count=0;
@@ -202,11 +202,11 @@ for(const boundary of ['connections','connector','feature','watcher'] as const)t
    const watch=ConfigService.prototype.startWatching;
    t.mock.method(ConfigService.prototype,'startWatching',async function(this:ConfigService){await watch.call(this);throw failure;});
  }
- await assert.rejects(buildApp(config),error=>{assert.match(String(error instanceof AggregateError?error.cause:error),/Generated .* startup failure/);return true;});
+ await assert.rejects(buildApp(config,connectorManifests?{connectorManifests}:undefined),error=>{assert.match(String(error instanceof AggregateError?error.cause:error),/Generated .* startup failure/);return true;});
  assert.ok(closedStore);assert.throws(()=>closedStore!.db.prepare('SELECT 1').get(),/not open/);assert.ok(closedPipelines>0);assert.ok(closedConfig>0);
  if(boundary==='connector'){const module=await import(join(directory,'generated-failing-connector.mjs'));assert.deepEqual(module.events,['closed']);}
  // Reopen the same generated vault and diagnostics lock through the actual HTTP entrypoint.
- t.mock.restoreAll();if(config.connectors){const {savedDocument:saved}=parseConfigDocument(readFileSync(join(directory,'mote.yaml'),'utf8'));saved.connectors={...saved.connectors,modules:[]};writeFileSync(join(directory,'mote.yaml'),serializeConfigDocument(saved));}const restarted=await buildApp(config);
+ t.mock.restoreAll();const restarted=await buildApp(config);
  assert.equal((await restarted.app.inject('/api/health')).statusCode,200);await restarted.app.close();await restarted.app.close();
 });
 

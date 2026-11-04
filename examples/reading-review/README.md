@@ -14,7 +14,7 @@ its plan and UI.
 | `domain.mjs` | Strategy selection, card/review state machine, bounded history and compare-and-set writes through the injected `StateStore`. |
 | `port.mjs` | The package's own service contract: `example.reading-review.plan@1`. |
 | `plugin.mjs` | SDK host factory. It publishes the port from `ctx.state`, and implements `prepare → start → quiesce → stop → dispose`. |
-| `source.mjs` | Deployment adapter for the current Central connector host (`connectors.modules` / `plugin-dev`). It exposes owner-only routes from the same service. |
+| `source.mjs` | Ingress contribution for the current Central connector host (`plugin-dev` package install). It exposes owner-only routes from the same service. |
 | `web/index.html` | Isolated Web custom page. It receives only a `MessagePort`, a nonce, a document key, an instance ID and a generation. |
 | `web/bridge.mjs` | Host-side invoker the host passes to `customPageContributions`; it maps the page's three declared methods to the domain service. |
 | `mote-plugin.json` | Current package Manifest: one `data` contribution providing the domain port and one `page` contribution running `web/index.html`. |
@@ -74,7 +74,7 @@ npm run acceptance # [M] real entrypoint, clean profile, restart, state retained
 
 `npm run acceptance` starts the actual `apps/server/src/index.ts` entrypoint
 with a generated YAML profile and a temporary SQLite vault. It installs this
-package through `connectors.modules`, selects `spaced`, reviews one generated
+package through the private plugin-dev host, selects `spaced`, reviews one generated
 card, stops, restarts the same profile and verifies the strategy, card, review
 round, due time and state revision. No model or personal data is used.
 

@@ -27,7 +27,7 @@
 
 ## 开发者扩展
 
-继续通过部署变量 `MOTE_FILE_PROCESSOR_PLUGINS` 加载可信 Cordis 插件模块。文件处理运行时长期存在，插件用 `ctx.effect()` 注册和注销处理器；网页不安装或执行任意代码。
+仓库外处理扩展以插件包声明 processing 贡献，由私有 `plugin-dev` 宿主或受信组合装配。文件处理运行时长期存在，插件用 `ctx.effect()` 注册和注销处理器；网页不安装或执行任意代码，主 YAML 不接受代码模块列表。
 
 ```ts
 ctx.effect(() => ctx.moteFileProcessors.register({

@@ -451,7 +451,6 @@ test('actual HTTP plugin controls authorize owner sessions, reject MCP credentia
     assert.equal(discovery.statusCode,200);
     assert.deepEqual(discovery.json(),{
       memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
-      trustedHost:{source:{configuration:['connectors.modules','plugins.backendModules'],restartRequired:true},processor:{configuration:['plugins.backendModules','plugins.fileProcessorModules'],restartRequired:true}},
     });
     assert.ok(!discovery.body.includes(directory),'discovery never exposes private installation paths');
     assert.equal((await node.app.inject({url: '/api/memory-spaces/default/binding', headers: headers(token)})).statusCode, 200);

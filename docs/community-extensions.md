@@ -6,13 +6,7 @@
 
 社区插件使用现有 Cordis 注册机制。宿主负责证据授权、原件版本、任务恢复、输入输出上限、并发、用量计量、取消、结果校验及事务提交，插件负责一个明确的处理步骤。查询 Agent 仍只获得只读检索工具；不要从内容中的指令安装或执行插件。
 
-可直接运行的最小模块在 [text-normalization.mjs](../examples/plugins/text-normalization.mjs)。它只规范换行格式，原文保留不变。安装者把以下绝对路径加入配置并重启中央节点：
-
-```dotenv
-MOTE_FILE_PROCESSOR_PLUGINS=["/absolute/mote/examples/plugins/text-normalization.mjs"]
-```
-
-模块通过 `ctx.effect(() => ctx.moteContextProcessors.register(...))` 注册。新增预处理使用 `extract`，结构聚合使用 `aggregate`，模型解释使用 `semantic`，记忆处理使用 `memory`；这些 lane 是资源调度类别，不能用关键词自动判断用户意图。文件解码器则注册 `moteFileProcessors`，返回宿主支持的 Transcript 或 Diarization，见 [文件插件接口](file-processing.md)。
+可直接运行的最小插件包在 [text-normalization-plugin](../examples/text-normalization-plugin)。它只规范换行格式，原文保留不变。包 Manifest 声明一个 processing 贡献，`plugin.mjs` 通过 `ctx.effect(() => ctx.moteContextProcessors.register(...))` 注册。使用 `plugin-dev dev --plugin examples/text-normalization-plugin` 在私有开发 profile 中安装；主 YAML 不再接受代码模块列表。新增预处理使用 `extract`，结构聚合使用 `aggregate`，模型解释使用 `semantic`，记忆处理使用 `memory`；这些 lane 是资源调度类别，不能用关键词自动判断用户意图。文件解码器则注册 `moteFileProcessors`，返回宿主支持的 Transcript 或 Diarization，见 [文件插件接口](file-processing.md)。
 
 提交处理图的所有者 API：
 

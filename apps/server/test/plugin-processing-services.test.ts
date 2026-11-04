@@ -118,7 +118,7 @@ test('a mid-prepare failure releases the borrowed engine handlers, vault transac
   const dependencies={
     store,files,configService:undefined,diagnostics:undefined,executor:engine,backendContext:undefined,materials,
     sourcePipelines:{setProductConsumer(){},options:()=>({consumers:[]})},mediaAssets:undefined,
-    modules:[],modelAuthority:undefined,analyze:undefined,
+    plugins:[],modelAuthority:undefined,analyze:undefined,
     analysisSnapshot:()=>({settings:fileProcessingSchema.parse({}),identity:{kind:'profile',id:'generated'}}),analysisRevision:()=>0,
     semanticFingerprint:()=>'generated',
   } as unknown as ProcessingServicesDependencies;
@@ -147,7 +147,7 @@ test('a duplicate processor contribution fails prepare and leaves no partial cap
   const dependencies={
     store,files,configService:undefined,diagnostics:undefined,executor:engine,backendContext:undefined,materials,
     sourcePipelines:{setProductConsumer(){},options:()=>({consumers:[]})},mediaAssets:undefined,
-    modules:[],contributions:[{id:'generated.duplicate-processor',processors:[duplicate]}],modelAuthority:undefined,analyze:undefined,
+    plugins:[],contributions:[{id:'generated.duplicate-processor',processors:[duplicate]}],modelAuthority:undefined,analyze:undefined,
     analysisSnapshot:()=>({settings:fileProcessingSchema.parse({}),identity:{kind:'profile',id:'generated'}}),analysisRevision:()=>0,
     semanticFingerprint:()=>'generated',
   } as unknown as ProcessingServicesDependencies;

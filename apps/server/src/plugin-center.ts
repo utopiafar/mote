@@ -102,10 +102,6 @@ export class PluginCenter {
   }
   hostCapabilities(){return {
     memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
-    trustedHost:{
-      source:{configuration:['connectors.modules','plugins.backendModules'],restartRequired:true},
-      processor:{configuration:['plugins.backendModules','plugins.fileProcessorModules'],restartRequired:true},
-    },
   };}
   instanceView(id:string):PluginInstanceView{const {view,stepId}=this.instance(id),references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
     if(!this.store.db.prepare('SELECT 1 FROM plugin_instances WHERE id=?').get(id))return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};

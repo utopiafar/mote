@@ -2,7 +2,7 @@ import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
@@ -17,14 +17,13 @@ const transcript:Transcript={durationMs:1000,segments:[{startMs:0,endMs:1000,tex
 function deferred<T=void>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>resolve=done);return {promise,resolve};}
 async function fixture(t:TestContext,processors:FileProcessor[]=[]){
  const directory=mkdtempSync(join(tmpdir(),'mote-shutdown-')),store=new Store(directory);
- const fixtureKey='mote.shutdown-processors.'+randomUUID(),modulePath=join(directory,'generated-processors.mjs');
- // This trusted generated module installs the test closures before startup
- // validates persisted processor settings, on both the first run and restart.
- if(processors.length){Reflect.set(globalThis,Symbol.for(fixtureKey),processors);writeFileSync(modulePath,`export default {name:'generated-shutdown-processors',inject:['moteFileProcessors'],apply(ctx){const processors=globalThis[Symbol.for(${JSON.stringify(fixtureKey)})];if(!processors)throw Error('Generated processors are unavailable');for(const processor of processors)ctx.effect(()=>ctx.moteFileProcessors.register(processor));}};`);}
- const config:Config={dataDir:directory,token:'generated-shutdown-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',fileProcessorModules:processors.length?[modulePath]:[]};
+ // This trusted plugin installs the test closures before startup validates
+ // persisted processor settings, on both the first run and restart.
+ const plugin=processors.length?{name:'generated-shutdown-processors',inject:['moteFileProcessors'],apply(ctx:any){for(const processor of processors)ctx.effect(()=>ctx.moteFileProcessors.register(processor));}}:undefined;
+ const config:Config={dataDir:directory,token:'generated-shutdown-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
- const start=async(agent?:import('../src/app.js').QueryAgent)=>{const node=await buildApp(config,{store,agent});nodes.push(node);await node.app.ready();return node;};
- t.after(async()=>{for(const node of nodes)await node.app.close();Reflect.deleteProperty(globalThis,Symbol.for(fixtureKey));store.close();rmSync(directory,{recursive:true,force:true});});
+ const start=async(agent?:import('../src/app.js').QueryAgent)=>{const node=await buildApp(config,{store,agent,...(plugin?{processingPlugins:[plugin]}:{})});nodes.push(node);await node.app.ready();return node;};
+ t.after(async()=>{for(const node of nodes)await node.app.close();store.close();rmSync(directory,{recursive:true,force:true});});
  return {store,start};
 }
 type Node=Awaited<ReturnType<typeof buildApp>>;

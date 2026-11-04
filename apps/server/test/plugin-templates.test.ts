@@ -83,7 +83,7 @@ test('[K] the real Central host installs and runs the generated connector and do
       assert.equal(status?.sdkVersion,'0.1.0','domain adapter status is published by the real registry');
       const seed=lines.find(line=>line.itemId);
       assert.equal(seed?.itemsAfter-seed?.itemsBefore,1,'the domain adapter wrote through its owner routes');
-      assert.equal(seed?.refused,'connector_operation_failed','the error branch fails through the real mount mapping');
+      assert.equal(seed?.refused,'invalid_item_text','the error branch fails through the real mount mapping');
     }
   }
 });

@@ -67,7 +67,7 @@ flowchart LR
 | 洞察配方 | `recording-memory.ts` | 独立提取与复核策略、来源级启用、明确匿名归属、原始证据校验 |
 | 通用界面 | `RecordingsSettings.tsx`、`ArchivedAudio.tsx` | 从连接器登记表发现 Provider，通用日期、同步状态、重试和按需回听 |
 
-`recordingManifest(id, create, {label, setup})` 贡献来源能力、所有者路由、设置页元数据及生命周期。受信部署模块可通过 `MOTE_CONNECTOR_PLUGINS` 加载，沿用现有连接器插件机制；新增 Provider 不需要改公共同步、任务、归档、Memory 或设置页。公共契约从 `connectors/index.ts` 导出。插件是受信部署代码，录音正文不会被加载为插件或指令。
+`recordingManifest(id, create, {label, setup})` 贡献来源能力、所有者路由、设置页元数据及生命周期。仓库外插件包可声明 ingress 贡献并由私有 `plugin-dev` 宿主安装；新增 Provider 不需要改公共同步、任务、归档、Memory 或设置页。公共契约从 `connectors/index.ts` 导出。插件是受信部署代码，录音正文不会被加载为插件或指令。
 
 每个插件提供平台身份与原文读取。更多实时推送、桥接执行端、厂商摘要、标记/照片和设备级筛选仍需实际消费者及相应契约；本版不把这些未实现能力列为已支持。
 

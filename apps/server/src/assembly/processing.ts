@@ -1,6 +1,6 @@
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {Context} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
 import type {CaptureRecord,TokenUsage,UsageReceipt} from '@mote/shared';
@@ -93,6 +93,7 @@ export interface ProcessingAssemblyDependencies {
   readonly files:FileStore;
   readonly sourceContexts:SourceContextStore;
   readonly mediaAssets:MediaAssets;
+  readonly plugins?:readonly Plugin[];
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
   readonly modelSettings:ModelSettingsStore;
@@ -168,7 +169,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   const platform=createProcessingServices({
     store,files,configService,diagnostics,executor,backendContext,materials,sourcePipelines,mediaAssets,
     ...(dependencies.transcriptionProvider?{transcriptionProvider:dependencies.transcriptionProvider}:{}),
-    modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],
+    ...(dependencies.plugins?.length?{plugins:dependencies.plugins}:{}),
     ...(config.media?{media:config.media}:{}),modelAuthority:mediaModelAuthority,analyze:analyzeFile,analysisSnapshot:resolveFileModel,
     analysisRevision:()=>modelSettings.view().revision,semanticFingerprint,
   });

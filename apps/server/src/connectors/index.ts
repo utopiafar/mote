@@ -6,7 +6,7 @@ import {installRecordingSources,recordingSourceManifests,type RecordingProvider}
 import {createInstanceState} from '../plugins/instance-state.js';
 import {createConnectorHostAdapter,type ConnectorHostAdapter,type ConnectorInstanceScope} from '../plugins/connector-host-adapter.js';
 import {createDynamicHttpDispatcher,type DynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
-import {loadConnectorModules,type ConnectorManifest} from './registry.js';
+import type {ConnectorManifest} from './registry.js';
 import {equalToken} from './mcp.js';
 import {mcpManifest} from '../plugins/mcp-source-transport.js';
 import {googleCalendarManifest,type GoogleDependencies} from '../plugins/google-calendar-source.js';
@@ -49,15 +49,14 @@ function connectorScope(packageId:string,instanceId:string,errorMessage:string):
   return {resources,scope,fence:()=>resources.stop(),close:()=>resources.close()};
 }
 
-/** Register built-ins plus trusted deployment modules before Fastify listens.
+/** Register built-ins plus trusted assembly manifests before Fastify listens.
  * Owner routes and OAuth callbacks reach only the one dynamic dispatcher; each
  * installed connector gets its own host scope and failure rollback. */
 export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[],dispatcherInput?:DynamicHttpDispatcher):Promise<ConnectorHostAdapter>{
   const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
   const removeMemory=installRecordingSources(context.memoryStrategies);
   if(removeMemory)app.addHook('onClose',async()=>removeMemory());
-  const modules=await loadConnectorModules(ctx.config.connectors.modules??[]);
-  const manifests=[...builtins(testing),...modules,...additionalManifests];
+  const manifests=[...builtins(testing),...additionalManifests];
   const status=connectorScope('mote.connectors','status','Connector status scope disposal failed');
   app.addHook('onClose',()=>status.close());
   const states=new WeakMap<HostScope,StateStore>();
@@ -68,7 +67,7 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   dispatcher.attach(app);
   const adapter=createConnectorHostAdapter({
     manifests,context:ctx,dispatcher,statusScope:status.scope,
-    required:modules.map(manifest=>manifest.id),
+    required:additionalManifests.map(manifest=>manifest.id),
     scopeFor:(manifest,instanceId)=>connectorScope(manifest.id,instanceId,`Connector ${instanceId} scope disposal failed`),
     stateFor:scope=>{
       let state=states.get(scope);

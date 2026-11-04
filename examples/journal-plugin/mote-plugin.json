@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "example.journal",
+  "name": "Example journal source and pack",
+  "version": "0.1.0",
+  "trust": "external",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "example-journal-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "example-journal.connector",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    },
+    {
+      "id": "example-journal.processing",
+      "version": "1",
+      "surface": "processing",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "processing.pack"
+      ]
+    }
+  ],
+  "capabilities": [
+    "source.connector",
+    "processing.pack"
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Owner-configured journal source intake",
+    "Deterministic source recipe and product consumer"
+  ]
+}
