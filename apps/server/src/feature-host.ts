@@ -4,11 +4,8 @@ import type {FastifyInstance} from 'fastify';
 import {collectorIngressWrite} from './ingress.js';
 import {PluginResourceScope} from '@mote/plugin-host';
 import type {DomainRouteContribution} from './plugins/domain-routes.js';
-<<<<<<< HEAD
 import type {FeatureServices} from './feature-services.js';
-=======
 import type {HostContributionDescriptor} from './feature-inventory.js';
->>>>>>> origin/main
 
 export class ServerFeatureScope extends PluginResourceScope {
   constructor(onError:(error:unknown)=>void=()=>{}){super(onError,'Feature disposal failed',true);}
