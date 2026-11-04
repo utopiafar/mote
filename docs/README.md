@@ -1,32 +1,29 @@
 # 项目文档索引
 
-Current direction (2026-10-23): [single-owner MVP](adr-single-owner-mvp.md). Earlier dated validation does not qualify this recovery.
-Central（server + web）、macOS、Android 使用各自产品版本；当前版本分别记录在 app package.json 与 Android version.properties。拆分架构与发版操作见 [独立发布架构](release-architecture.md) 和 [发布流程](releasing.md)。早期版本曾从 0.8.0 重置到 0.0.1，历史验收应结合日期阅读。
+当前方向（2026-10-23）：[单 Owner MVP](adr-single-owner-mvp.md)。
+Central（server + web）、macOS、Android 使用各自产品版本；当前版本分别记录在 app package.json 与 Android version.properties。拆分架构与发版操作见 [独立发布架构](release-architecture.md) 和 [发布流程](releasing.md)。早期版本曾从 0.8.0 重置到 0.0.1，旧发布记录应结合日期阅读。
 
-使用指南描述当前代码，历史验收只证明当次执行的范围，方案记录保留当时的取舍。文档中的“本轮”“已通过”和构建产物路径均应结合该篇日期阅读，不代表本次重新验收；旧性能记录与专项发布门槛不会自动成为当前日常门槛。测试分层与触发规则以 [testing](testing.md) 为准。当前基线与本轮证据见 [MVP 决策](adr-mvp-baseline.md) 和 [清理审计](audits/mvp-baseline-cleanup-2026-10-09.md)。
+本目录保留描述当前代码的使用指南、仍有效的设计说明和 ADR；ADR 与方案记录保留当时的取舍。历史验收记录、审计和工作台账已移出仓库，需要时从 Git 历史查阅，历史结果不是当前证据。文档中的“本轮”“已通过”等表述应结合该篇日期阅读。测试分层与触发规则以 [testing](testing.md) 为准，当前基线见 [MVP 决策](adr-mvp-baseline.md)。
 
 ## 常用入口
 
 | 需要了解什么 | 当前说明 |
 | --- | --- |
 | 安装、开发、部署与更新 | [项目首页（中文）](../README.zh-CN.md)、[English](../README.md)、[Agent 安装](agent-install.md)、[开发](development.md)、[部署](deployment.md)、[当前 DEV 更新](updating.md)、[发布](releasing.md) |
-| 测试分层、定向命令与 CI | [测试规则](testing.md)、[CI 入口](ci.md)、[多模块协作](agent-development-workflow.md)、[真实回归 skill](../.agents/skills/real-world-testing/SKILL.md) |
+| 测试分层、定向命令与 CI | [测试规则](testing.md)、[测试操作手册](testing-runbook.md)、[CI 入口](ci.md)、[多模块协作](agent-development-workflow.md)、[真实回归 skill](../.agents/skills/real-world-testing/SKILL.md) |
 | 采集、隐私和上传 | [统一行为](collection-and-sync.md)、[macOS](desktop.md)、[Android](android.md)、[文字审查与中央感知](central-perception.md)、[同步恢复](sync-recovery.md) |
 | 本地 OCR / ASR 与文件 | [运行时和模型安装](ocr-asr-implementation-plan.md)、[文件归档](files.md)、[文件处理](file-processing.md)、[类型策略](file-processing-policies.md) |
-| MVP 清理、断代与验证 | [当前基线与本轮回归](audits/mvp-baseline-cleanup-2026-10-09.md)、[基线 ADR](adr-mvp-baseline.md)；历史 [原始审计](audits/compatibility-audit-2026-10-04.md) 与 [83 项实施](audits/compatibility-cleanup-2026-10-04.md) |
+| MVP 基线与断代 | [基线 ADR](adr-mvp-baseline.md)、[单 Owner MVP](adr-single-owner-mvp.md)、[升级与回退](deployment.md#升级与回退) |
 | 数据、权限、协议 | [架构](architecture.md)、[正式资料](material-architecture.md)、[协议](protocol.md)、[内容加密](content-storage.md)、[资产存储](asset-storage.md) |
 | Agent、记忆和行动 | [Agent](agent.md)、[模型配置](model-providers.md)、[生命周期](memory-lifecycle.md)、[记忆更新](memory-updates.md)、[日程](calendar-actions.md)、[行动更新](action-updates.md) |
-| 结构化页面与自动 Memory | [采集范围和字段](ui-page-capture.md)、[接入 ADR](adr-ui-page-automatic-memory.md)、[验证边界](validation/ui-page-automatic-memory-2026-10-10.md) |
-| 每天看了什么、做了什么 | [日常事件 Memory](adr-daily-event-memory.md)、[日常回顾验证](validation/daily-event-memory-2026-10-10.md) |
+| 结构化页面与自动 Memory | [采集范围和字段](ui-page-capture.md)、[接入 ADR](adr-ui-page-automatic-memory.md) |
+| 每天看了什么、做了什么 | [日常事件 Memory](adr-daily-event-memory.md) |
 | 飞书文档与个人活动 | [接入](lark-integration.md)、[已确认决定](adr-feishu-document-context.md)、[生成场景验收](testing-feishu-document-context.md) |
-| 浅色 / 深色 / 跟随系统 | [外观决定](adr-cross-platform-appearance.md)、[验证矩阵](validation/cross-platform-appearance.md) |
+| 浅色 / 深色 / 跟随系统 | [外观决定](adr-cross-platform-appearance.md) |
 | 当前界面、对话和运行状态 | [Slate 导航](ui-slate.md)、[对话](conversations.md)、[Operations](operations.md)、[执行器](execution-engine.md)、[排错](troubleshooting.md) |
-| 当前用户旅程与三端 UI 定稿 | [三端定稿与源清单](design/ui-final-three-clients-2026-10-29.md)、[定稿 ADR](adr-ui-final-three-clients.md)；原对话最终决定优先，128 组逐状态实施/验证分开记录。历史 [UI IA v1](adr-ui-ia-v1.md)、[模块与完整旅程](ui-user-journeys.md) 保留未被替代的合同 |
-| 第五轮三端 UI 落地与逐页验收 | [落地方案与验收门槛](design/ui-rollout-2026-10-14.md)、[当前验证记录](validation/ui-rollout-2026-10-14.md) |
-| 2026-10-10 系统改造 | [已确认方案](design/system-refactor-2026-10-10.md)、[当前ADR](adr-system-refactor.md)、[验收结果与边界](validation/system-refactor-2026-10-10.md) |
-| 插件中心与可替换记忆一期 | [已确认实施方案](design/plugin-center-phase-one-2026-10-12.md)、[架构决定](adr-plugin-center-memory-replacement.md)、[验证计划](design/plugin-center-phase-one-validation-2026-10-12.md)；一期控制与固定适配器已实现；验收范围以验证计划中的实际记录为准 |
-
-端侧 Qwen 文档是已删除运行时的历史说明，当前截图不调用 VLM。旧版充电补 OCR、默认加密、签名在线更新及 Memory 的周期 AND 数量门槛不能当作当前默认。现行入口分别见上表。
+| 当前用户旅程与三端 UI 定稿 | [三端定稿与源清单](design/ui-final-three-clients-2026-10-29.md)、[定稿 ADR](adr-ui-final-three-clients.md)；原对话最终决定优先。历史 [UI IA v1](adr-ui-ia-v1.md)、[模块与完整旅程](ui-user-journeys.md) 保留未被替代的合同 |
+| 2026-10-10 系统改造 | [系统改造 ADR](adr-system-refactor.md) |
+| 插件中心与可替换记忆一期 | [插件中心](plugin-center.md)、[已确认实施方案](design/plugin-center-phase-one-2026-10-12.md)、[架构决定](adr-plugin-center-memory-replacement.md)；一期控制与固定适配器已实现 |
 
 ## 专题与实现说明
 
@@ -38,7 +35,6 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [agent-prompt-and-startup](agent-prompt-and-startup.md) | Bounded prompts and startup measurements |
 | [agent](agent.md) | Agent 配置与权限 |
 | [android-bulk-dedupe](android-bulk-dedupe.md) | Android local bulk image deduplication |
-| [android-capture-recovery](android-capture-recovery.md) | Android capture recovery and central navigation |
 | [android-library-performance](android-library-performance.md) | Android 大资料库性能与当前格式 4 存储 |
 | [android-local-state](android-local-state.md) | Android shared local state |
 | [android-power-optimization](android-power-optimization.md) | Android 采集与同步开销优化 |
@@ -51,7 +47,6 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [central-memory](central-memory.md) | 中央导入、记忆与洞察 |
 | [central-perception](central-perception.md) | 上传审查与中央感知 |
 | [client-navigation](client-navigation.md) | 原生客户端导航与设置 |
-| [client-scheduling-and-status](client-scheduling-and-status.md) | Client scheduling and status validation (0.0.61 worktree) |
 | [client-settings-and-storage](client-settings-and-storage.md) | 客户端设置与图片保存位置 |
 | [cloudflare-tunnel](cloudflare-tunnel.md) | Cloudflare Tunnel 部署 |
 | [coding-agent-memory](coding-agent-memory.md) | 编码 Agent 对话与经验记忆 |
@@ -62,7 +57,6 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [connections](connections.md) | 设备配对与独立连接 |
 | [connectors](connectors.md) | 中央连接器 |
 | [content-storage](content-storage.md) | 内容存储与一次性批量解密 |
-| [context-architecture](context-architecture.md) | 通用上下文架构 · 0.0.54 |
 | [context-layers](context-layers.md) | 资料分层与渐进式记忆 |
 | [conversations](conversations.md) | 对话历史与继续提问 |
 | [deployment](deployment.md) | 独立中央节点部署、备份与迁移 |
@@ -75,6 +69,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [execution-protocol](execution-protocol.md) | Execution protocol |
 | [file-processing-policies](file-processing-policies.md) | 中央文件类型策略 |
 | [file-processing](file-processing.md) | 中央文件处理：Cordis 插件与本地多人录音 |
+| [file-sync-design](file-sync-design.md) | 文件同步与中央处理设计 |
 | [files](files.md) | 文件归档与中央处理 |
 | [format-workers](format-workers.md) | Bounded format work |
 | [gmail](gmail.md) | Gmail 只读来源 |
@@ -86,7 +81,6 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [memory-lifecycle](memory-lifecycle.md) | Memory lifecycle |
 | [memory-review-policy](memory-review-policy.md) | Bounded memory review reuse |
 | [memory-updates](memory-updates.md) | Unified extraction and versioned memory review |
-| [mixed-load-stability](mixed-load-stability.md) | Fixed-data mixed-load stability |
 | [processing-throughput](processing-throughput.md) | Continuous processing, usage accounting and budget removal |
 | [model-providers](model-providers.md) | 中央模型服务 |
 | [ocr-asr-implementation-plan](ocr-asr-implementation-plan.md) | 中央 OCR 与录音转写：方案与实施 |
@@ -111,64 +105,17 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [usage-and-query-progress](usage-and-query-progress.md) | 对话进度、用量和模型目录 |
 | [web-login-and-pairing](web-login-and-pairing.md) | 中央网页登录与设备配对 |
 
-## 历史验收、调查与设计记录
+## 决策记录
 
-`local-inference`、`memory-trigger-options`、`file-sync-design` 保留早期运行时或方案；现状以关联的操作指南为准。验证材料保留原始通过、失败、未执行与生成素材/真实模型/真机范围，不追溯改写历史结论。
+常用的跨模块决定如下；其他决定见各专题文档链接的 `adr-*.md`。
 
 | 文档 | 内容 |
 | --- | --- |
 | [系统改造 ADR](adr-system-refactor.md) | 已确认的统一查询、滚动 Memory 合批、审核恢复与前后台隔离决定 |
 | [任务恢复与执行预算 ADR](adr-task-recovery-and-execution-budgets.md) | 按任务类型注册宽松期限、资源等待、模型反馈修正和失败分类原则 |
 | [范围评估与模型选取 Memory ADR](adr-memory-range-evaluation.md) | 完整原件、逐范围评估、独立审核、模型选取、资源恢复与旧任务契约边界 |
-| [范围评估回归矩阵](memory-range-evaluation-validation.md) | 新旧入口、选取与未完成状态、实际资源恢复、授权和重启场景；执行结果单独记录 |
-| [系统改造方案（2026-10-10，已确认）](design/system-refactor-2026-10-10.md) | 14模块变更、5组选型、旅程、supersession和发布路线；拟议收益不是实测结果 |
-| [系统改造验证方案](design/system-refactor-validation-2026-10-10.md) | 2026-10-10 历史专项的22条旅程、质量rubric、性能对照与发布范围；不作为日常测试规则，结果见当次验收记录 |
 | [问答证据与简化上下文决定](adr-ask-evidence-quality-and-simple-context.md) | 模型覆盖、移除近似预算与二分、录音时间/正文、质量实验与实际恢复边界 |
-| [跨来源状态问答回归](ask-quality-validation.md) | 多来源与续问的生成资料场景、固定输入比较方法、证据覆盖和验证边界 |
-| [大范围续问与 Memory 启动回归](validation/query-lease-and-memory-activation-2026-10-14.md) | 完整依赖批量授权、租约续期、删除栅栏与显式启动后的重启恢复；生成 HTTP/provider 回归证据 |
 | [Memory 证据送达与失败状态决定](adr-memory-evidence-delivery-and-failure-state.md) | 整合 A、独立图片证据、真实失败和有界回执；保留历史执行授权边界 |
-| [Memory 证据链路修复回归](validation/memory-evidence-recovery-2026-10-15.md) | 完整入口、状态转换、生成夹具和隔离真实数据验收 |
-| [0.0.13-validation](0.0.13-validation.md) | 0.0.13 验证记录 |
-| [0.0.2-validation](0.0.2-validation.md) | 0.0.2 验收记录 |
-| [0.0.3-validation](0.0.3-validation.md) | 0.0.3 验收记录 |
-| [0.0.4-validation](0.0.4-validation.md) | 0.0.4 验收记录 |
-| [0.0.5-validation](0.0.5-validation.md) | 0.0.5 验收记录 |
-| [0.0.6-validation](0.0.6-validation.md) | 0.0.6 Android 升级无响应修复 |
-| [agent-context-validation](agent-context-validation.md) | Agent 上下文与任务架构验证（0.0.43） |
-| [central-memory-validation](central-memory-validation.md) | 中央 Memory 工作流验证 |
-| [client-background-audit](client-background-audit.md) | Android / mac 客户端 UI 阻塞盘点 |
-| [client-feedback-validation](client-feedback-validation.md) | 客户端状态反馈复查 |
-| [coding-agent-validation](coding-agent-validation.md) | Coding Agent 验收记录（2026-09-17） |
-| [connection-validation](connection-validation.md) | 0.6.0 连接与统计验证 |
-| [context-architecture-validation](context-architecture-validation.md) | 0.0.56 架构升级验证 |
-| [file-sync-design](file-sync-design.md) | 已实现的处理扩展 |
-| [file-sync-validation](file-sync-validation.md) | 0.0.18 Cordis 与录音处理增量验收 |
-| [issue-2-validation](issue-2-validation.md) | Issue 2 验收工作记录 |
-| [issue-3-validation](issue-3-validation.md) | Issue #3 / 0.0.38 |
-| [issue-4-client-settings](issue-4-client-settings.md) | Issue #4: client settings and central archive |
-| [live-validation](live-validation.md) | Mote 0.2.1：真实模型与复杂链路验收 |
-| [local-inference](local-inference.md) | 本机千问视觉审查与通用任务运行时 |
-| [media-validation](media-validation.md) | 媒体上下文验证记录 |
-| [memory-admission-validation](memory-admission-validation.md) | Memory admission validation — 0.0.44 |
-| [memory-trigger-options](memory-trigger-options.md) | Memory 整理与洞察触发：决策备忘 |
-| [memory-validation-0.0.31](memory-validation-0.0.31.md) | Memory 生命周期验收（0.0.31） |
-| [memory-validation-diagnostics](memory-validation-diagnostics.md) | Memory validation diagnostics |
-| [operations-validation](operations-validation.md) | 0.3.0 部署、环境隔离与诊断验证 |
-| [privacy-metadata-validation](privacy-metadata-validation.md) | 0.7.0 分级采集与元数据验证 |
-| [review-2026-09-23](review-2026-09-23.md) | 项目复查、修复与场景验证（2026-09-23） |
-| [review-upload-sync-2026-09-23](review-upload-sync-2026-09-23.md) | Upload and synchronization review — 2026-09-23 |
-| [session-preview-validation](session-preview-validation.md) | Session 与压缩预览验证 |
-| [sources-validation](sources-validation.md) | Mote 0.4.0：来源与记忆验收记录 |
-| [testing-0.0.61](testing-0.0.61.md) | 0.0.61 验证记录 |
-| [tunnel-validation](tunnel-validation.md) | 0.3.1 服务端配置与 Tunnel 验证 |
-| [ui-page-research](ui-page-research.md) | 页面采集：实践调研与实现决策 |
-| [update-validation](update-validation.md) | 0.5.1 发布与更新验证 |
-| [0.0.59](validation/0.0.59.md) | 0.0.59 分层上下文与响应性能验证 |
-| [0.0.60](validation/0.0.60.md) | 0.0.60 分层上下文与响应性能验证 |
-| [development-history](validation/0.0.61/development-history.md) | 0.0.61 验证记录（发布前工作记录） |
-| [persona-memory-results](validation/2026-09-23/persona-memory-results.md) | Persona 长周期记忆评估 |
-| [validation](validation.md) | Mote 0.2.0 基线验收记录 |
-| [web-login-validation](web-login-validation.md) | 0.0.9 登录、页面职责与配对验证 |
 
 ## 发布记录与 Agent Skill
 

@@ -138,7 +138,7 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 本次是配置格式的破坏变更：主配置改为 YAML version 1，旧 `mote.env`、`model-settings.json`、`file-processing.json` 与 SQLite 当前运行设置不再作为配置来源，也不会自动转换。中央仍使用既有 `backend_epoch=6`，Desktop/Android 当前本机格式为 4，HTTP 便携归档仍为 version 2。已有 epoch 6 资料库无需新空目录或 reset；备份并离线准备新 YAML，保留原资料目录、访问令牌与内容密钥，再由所有者明确启动新版本。
 
-历史 MVP 基线曾切换上述存储与客户端格式，这与本次配置改造是两件事。来自更早 epoch、客户端格式、内容包装或便携包的资料仍不自动转换。跨越该历史基线时，请先用相应旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，再选择新空目录；只有明确放弃旧资料时才按 [MVP 基线操作](audits/mvp-baseline-cleanup-2026-10-09.md) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
+历史 MVP 基线曾切换上述存储与客户端格式，这与本次配置改造是两件事。来自更早 epoch、客户端格式、内容包装或便携包的资料仍不自动转换。跨越该历史基线时，请先用相应旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，再选择新空目录；只有明确放弃旧资料时才按 [MVP 基线操作](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/audits/mvp-baseline-cleanup-2026-10-09.md) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
 
 上述历史跨代的新空环境可使用 `node scripts/mote.mjs init --profile prod --home /srv/mote-epoch4/profiles`，再重新配置当前模型、文件 policy、来源和客户端连接。若在已备份且停止的原目录明确放弃旧资料，可执行 `npm run reset:mvp-vault -- --data-dir /absolute/old-vault --confirm-clear`；该命令会清空资料及旧模型/文件处理配置。它保留令牌、content-key 和 connectors，不能把旧 collector 凭据改成 owner；旧 collector 文件需另行备份并移走后重新配对，见上述实施记录。仅转换配置格式时不要执行该命令。
 
@@ -197,7 +197,7 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 回退先验证旧快照，另存当前仓库的 `pre-rollback-*` 备份，恢复升级前的数据和版本。**升级后新增资料不会出现在回退后的活动仓库中**，但会保存在额外快照，以及原生的 `data.before-rollback-*` 目录或 Docker 原来的命名卷中。CLI 不删除这些保留副本，可验收后导出需要的数据再迁入。只保留一级直接回退元数据；备份目录中更早的快照仍在。
 
-跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 6，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [本次清理实施记录](audits/mvp-baseline-cleanup-2026-10-09.md) 手动选择。
+跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 6，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [本次清理实施记录](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/audits/mvp-baseline-cleanup-2026-10-09.md) 手动选择。
 
 使用 launchd 的环境：先 `launchctl bootout` 停止自动管理，再执行升级或回退；验收后用 CLI `stop` 停止临时后台实例，再 `launchctl bootstrap` 原 plist，使 launchd 重新接管新版本。不要在 job 正在自动重启时迁移数据。
 
@@ -231,7 +231,7 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 
 更新专项使用 `node --test scripts/update-tests.mjs scripts/update-deployment-tests.mjs`，覆盖合成 RSA 签名、真实校验下载、安全提取、镜像 digest/实际版本、无权限 HTTP 参数，以及临时 Node 中央的实际切换/回退。进程用例复用当前编译代码作为构建 fixture，不等于从公网完成 npm 安装或发布生产 Release；Docker 用例需在 Docker 主机另行验收。没有操作日常节点、调用真实模型或使用真实 Google/Tunnel 凭据。HTTP 更新接口另由 `apps/server/test/updates.test.ts` 覆盖。
 
-0.3.1 已完成服务端配置页面、Cloudflare Tunnel 专项回归和真实 Linux Docker 验收，最新结果见 [验证记录](tunnel-validation.md)。下方同时保留既有部署能力的验证说明。
+0.3.1 已完成服务端配置页面、Cloudflare Tunnel 专项回归和真实 Linux Docker 验收。下方同时保留既有部署能力的验证说明。
 
 `npm run test:profiles` 在一次性临时 dev/test 目录及随机 loopback 端口运行真实 Node 中央进程，覆盖环境污染隔离、跨令牌拒绝、加密图片、文件导入状态分离、备份恢复、代码版本切换、回退、PID 防误杀、原生输出轮转与 plist 语法。本轮已在 Mac 执行通过；没有读取个人屏幕、连接正式 47832 或调用真实模型。
 

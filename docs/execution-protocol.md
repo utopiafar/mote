@@ -20,7 +20,7 @@ not run ALTER/backfill passes or persist a historical projection sidecar. The ol
 execution migration command has been removed. Restart recovery, dependency waits,
 retry deadlines, cancellation fences, and lease ownership remain current runtime
 behaviors. For the destructive MVP upgrade procedure, see
-[compatibility cleanup](audits/compatibility-cleanup-2026-10-04.md).
+[compatibility cleanup](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/audits/compatibility-cleanup-2026-10-04.md).
 
 The protocol deliberately does not classify user text or infer intent. The
 only deterministic mappings are explicit persisted state/error codes and

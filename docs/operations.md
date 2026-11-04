@@ -14,7 +14,7 @@ Current failures and stale steps remain visible until a replacement actually exi
 
 `operation_changes` is a bounded committed-change journal. Clients consume its cursor, deduplicate IDs and reset their reads when a cursor has expired. Rollback emits no visible changes. Web resources are scoped to one authenticated API instance, deduplicate observers and fence late responses. A single Operations subscription refreshes matching visible details and filtered lists, pauses requests on hidden documents and stops when no observer remains. Temporary disconnects retain the last result and retry.
 
-The Processing page displays operation summaries and paged step details, including prior configurations. Source pages still own their domain controls; the existing context workflow controls remain available. Import phases, query runs and insight runs now use the shared executor, with parent membership propagation and persistent result references. Domain lifecycle windows link their child work to the same Operation. Collector credentials do not gain owner-only task reads: native clients show central processing as unknown and offer the authorized central task page. See [execution and snapshot integration](operation-import-insight-closure.md) and [native status contract](client-scheduling-and-status.md).
+The Processing page displays operation summaries and paged step details, including prior configurations. Source pages still own their domain controls; the existing context workflow controls remain available. Import phases, query runs and insight runs now use the shared executor, with parent membership propagation and persistent result references. Domain lifecycle windows link their child work to the same Operation. Collector credentials do not gain owner-only task reads: native clients show central processing as unknown and offer the authorized central task page. See [execution and snapshot integration](operation-import-insight-closure.md) and [native status contract](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/client-scheduling-and-status.md).
 
 Validation: 400 dated generated operations exercise keyset paging and change cursors, transaction rollback, shared step counts, current/history migration, optional work and collector denial. Authenticated application tests cover unauthenticated/collector rejection and malformed bounds. Cache tests cover late and aborted responses, session isolation, retry and shared subscriptions. A real Electron renderer with an isolated generated server exercises 400 operation rows, automatic list/detail updates, filter reset, pagination, detail focus restoration and 200%/mobile layout (`scripts/test-web-operations.cjs`). These are fixture tests; no live model or personal data is used.
 
@@ -24,8 +24,7 @@ and `stepCounts` expose the remaining states independently. Memory summaries
 separate processing failures from input invalidation with `invalidatedBatches`
 and a publication `outcome`; an all-invalidated terminal task is skipped in its
 execution envelope without changing persisted scheduling state. Action analysis
-alerts require a surviving job and matching current evidence. See the
-[current-status regression](validation/current-status-counts.md).
+alerts require a surviving job and matching current evidence.
 
 Startup recovery also respects activation. A manual Memory job created without
 an explicit start remains dormant; `run()` persists activation before scheduling.
@@ -34,5 +33,4 @@ cancelled or revoked work cannot. Ordinary query dependency checks use current
 permission metadata in batches and yield during asynchronous preparation so the
 existing execution lease can renew; the final external-request and publication
 fences still revalidate all dependencies. Counters and status must not report
-success merely because a model returned or a task was admitted. See the
-[query lease and activation regressions](validation/query-lease-and-memory-activation-2026-10-14.md).
+success merely because a model returned or a task was admitted.

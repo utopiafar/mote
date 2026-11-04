@@ -64,6 +64,6 @@ and the [epoch 6 baseline](adr-mvp-baseline.md). Optional workspace/semantic met
 does not renew old grants; productsVersion 2 is reused only by its exact reader
 contract. No historical vault is migrated or reset by this change.
 
-The [module proposal](design/system-refactor-2026-10-10.md) and
-[journey matrix](design/system-refactor-validation-2026-10-10.md) define the scope.
+The [module proposal](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/system-refactor-2026-10-10.md) and
+[journey matrix](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/system-refactor-validation-2026-10-10.md) define the scope.
 Release notes and the dated validation record report what was actually executed.

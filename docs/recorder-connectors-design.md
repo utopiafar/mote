@@ -108,4 +108,4 @@ Omi Integration Apps 区分完整对话、实时转写、原始音频和每日�
 - [飞书 × 安克产品说明](https://www.feishu.cn/content/article/7597268954498763996)、[官方 Lark CLI](https://github.com/larksuite/cli)、[妙记文字接口](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/minutes-v1/minute-transcript/get)、[媒体接口](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/minutes-v1/minute-media/get)。
 - [DWS 1.0.62 源码与文档](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/tree/v1.0.62)、[DWS 授权说明](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/v1.0.62/README_zh.md)、[A1 JSAPI](https://open.dingtalk.com/tools/explorer/jsapi?id=11937)、[闪记事件](https://open.dingtalk.com/document/development/flash-memory-status-change-open-event)。事件是否覆盖硬件按键录音仍未验证。
 
-验证结果见 [0.0.76 验证记录](validation/0.0.76.md)。仍需真实钉钉账号、两款物理录音笔新录音、长期令牌刷新及更大历史库验收。首次授权的终端命令步骤也仍可改进为现有设置流程；本版已授权本机的日常同步无需重复操作。
+仍需真实钉钉账号、两款物理录音笔新录音、长期令牌刷新及更大历史库验收。首次授权的终端命令步骤也仍可改进为现有设置流程；本版已授权本机的日常同步无需重复操作。

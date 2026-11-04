@@ -21,8 +21,7 @@ Agent limit. Coverage describes each listed target range, not completion of the
 whole original. Separately scheduled ranges alone do not require more context;
 genuine missing interpretive evidence remains explicit. The host aggregates job
 completion and preserves all original range grants. See the
-[batch context ADR](adr-memory-batch-context.md) and
-[generated regression](memory-batch-context-validation.md).
+[batch context ADR](adr-memory-batch-context.md).
 
 `memory.input` is a metadata-only execution pool. Pending output uses admission waiting with a bounded retry delay, before any attempt or model slot is claimed. The existing memory feature's tick rechecks original plans; a host wake hook can shorten that delay. Failed/unavailable inputs remain blocked until explicit retry; retrying Memory does not initiate media processing. A pending input's readiness timer does not block an explicit retry of another failed input; actual provider cooldowns still apply. Binding a newly ready input, creating its batches, saving plan associations and registering execution steps occur in the same fenced transaction. Quota failure rolls the entire operation back.
 

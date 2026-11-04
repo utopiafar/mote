@@ -79,10 +79,10 @@ adb reverse tcp:47842 tcp:47842
 开发时使用[定向测试](testing.md#daily-feedback)，尽早接通跨模块真实路径；计划收敛后再完成候选检查。检查范围、日志和风险分级见 [testing](testing.md)，自动 PR 检查见 [CI](ci.md)。
 
 <a id="background-testing"></a>
-后台 UI、生成素材和模拟器操作见[后台测试](testing.md#background-testing)。
+后台 UI、生成素材和模拟器操作见[测试操作手册](testing-runbook.md#background-testing)。
 
 <a id="pr-check-scope"></a>
-受影响候选计划和结果复用见[候选检查](testing.md#early-integration-and-candidate-checks)。对话结束、交接和 Draft PR 更新不扩大测试范围。
+受影响候选计划和结果复用见[候选检查](testing.md#early-integration-and-candidate-checks)。
 
 ## 调试与分享诊断
 

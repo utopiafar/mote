@@ -39,4 +39,4 @@ Native 自动准备目标为 macOS arm64/x64、Linux glibc arm64/x64。Windows�
 
 本决定细化 [录音结果与执行就绪](adr-recording-outcomes-runtime.md) 的运行时部分；其资料归属、重试授权及不确定执行规则继续有效。
 
-本轮实际准备、生成素材处理、固定提交截图、平台未测范围与剩余整页差异见[验证报告](validation/ui-final-media-2026-10-29/README.md)。
+本轮实际准备、生成素材处理、固定提交截图、平台未测范围与剩余整页差异见[验证报告](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/ui-final-media-2026-10-29/README.md)。
