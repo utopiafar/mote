@@ -15,7 +15,12 @@ export class MemoryIntegrationSettings {
   constructor(private store:Store,private strategies:MemoryStrategies){
     if(!store.db.prepare('SELECT 1 FROM settings WHERE key=?').get(settingKey))this.save(this.newSelection(strategies.resolveIntegration(defaultMemoryIntegrationRecipe).binding));
   }
-  private latest(){return Number(this.store.db.prepare("SELECT coalesce(max(seq),0) n FROM memory_events WHERE stream='memory'").get()!.n);}
+  private latest(){
+    // The Memory lifecycle installs `memory_events`. A settings activation may
+    // prepare before that table exists; a fresh vault has no events to skip.
+    if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_events'").get())return 0;
+    return Number(this.store.db.prepare("SELECT coalesce(max(seq),0) n FROM memory_events WHERE stream='memory'").get()!.n);
+  }
   private newSelection(binding:MemoryIntegrationSelection['binding']):MemoryIntegrationSelection{return {activation:randomUUID(),afterSequence:this.latest(),binding};}
   private save(value:MemoryIntegrationSelection){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json)+128);this.store.db.prepare('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(settingKey,json);}
   selection(){return memoryIntegrationSelectionSchema.parse(JSON.parse(String(this.store.db.prepare('SELECT value FROM settings WHERE key=?').get(settingKey)!.value)));}
@@ -33,3 +38,7 @@ export class MemoryIntegrationSettings {
   }
   eligible(ids:readonly string[],afterSequence:number,through:number){const allowed=new Set(this.store.db.prepare("SELECT DISTINCT entity FROM memory_events WHERE stream='memory' AND seq>? AND seq<=? AND entity IN (SELECT value FROM json_each(?))").all(afterSequence,through,JSON.stringify(ids)).map(r=>String(r.entity)));return ids.filter(id=>allowed.has(id));}
 }
+
+/** Consumer-facing integration selection surface. Epoch and pin checks stay
+ * inside the owner; callers only read or replace the durable selection. */
+export type MemoryIntegrationSettingsPort=Pick<MemoryIntegrationSettings,'onApplied'|'selection'|'view'|'current'|'configure'|'eligible'>;
