@@ -21,7 +21,7 @@ import {GmailConnector} from './gmail.js';
 import {LarkConnector} from './lark.js';
 import type {LarkRunner} from './lark-cli.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
-import type {FastifyInstance,FastifyRequest} from 'fastify';
+import type {FastifyInstance} from 'fastify';
 import {ZodError,z} from 'zod';
 
 export type {ConnectorConfig,ConnectorContext} from './types.js';
