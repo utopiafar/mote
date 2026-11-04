@@ -28,7 +28,6 @@ import {createDevicesSource} from '../src/plugins/devices-source.js';
 import {firstDeviceData} from '../src/first-device-data.js';
 import {ConnectionError,type ConnectionCredential} from '../src/connections.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
-import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {sha256} from '../src/store.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
@@ -47,7 +46,7 @@ async function fixture(t:TestContext){
   const config=new ConfigService({path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0},watch:false});config.register({id:'execution',schema:executionSettingsSchema,defaultValue:executionSettingsSchema.parse({})});await config.initialize();
   const materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials),sources=new SourceStore(store,undefined,memoryWork.inputs),connections=new Connections(store,sources),authorization=createAuthorizationPlatform({ownerToken},{store,connections,availableModelConnections:()=>[]});await authorization.prepare();
   const execution=createExecutionPlatform({store,settings:new ExecutionSettings(config),modelAuthorization:authorization.assembly.modelAuthorization});await execution.prepare();execution.start();
-  const host=new PluginHost({kind:'central',id:'generated-c10-host'}),runtimePlatform=createSourceRuntime({plugins:[codingSourcePlugin]},{store,materials,memoryWork,execution});
+  const host=new PluginHost({kind:'central',id:'generated-c10-host'}),runtimePlatform=createSourceRuntime({},{store,materials,memoryWork,execution});
   await host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(runtimePlatform)});
   const runtime=runtimePlatform.runtimeForAssembly;sources.pipelines=runtime;
   const files=new FileStore(store,sources);
