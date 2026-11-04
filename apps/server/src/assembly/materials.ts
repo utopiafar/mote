@@ -18,17 +18,18 @@ import type {BackgroundModelAuthorization} from '../background-model-authorizati
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
-import {MaterialOrganizerRuntime} from '../material-organizers.js';
 import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
 import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
 import {createMaterialMemoryIntake,createMaterialMemoryIntakeFactory,materialMemoryIntakeContribution,materialMemoryIntakeDeclaration,materialMemoryIntakeReplacement,type MaterialMemoryIntakeBindings} from '../plugins/material-memory-intake.js';
+import {createMaterialOrganizerService,materialOrganizerServiceContribution,materialOrganizerServiceDeclaration,materialOrganizerServiceReplacement} from '../plugins/material-organizer-service.js';
 import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
 import {createMaterialRetrievalIndex,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,materialRetrievalIndexReplacement} from '../plugins/material-retrieval-index.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement},
   {contribution:materialMemoryIntakeContribution,declaration:materialMemoryIntakeDeclaration,replacement:materialMemoryIntakeReplacement},
+  {contribution:materialOrganizerServiceContribution,declaration:materialOrganizerServiceDeclaration,replacement:materialOrganizerServiceReplacement},
   {contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement},
   {contribution:materialContextContribution,declaration:materialContextDeclaration,replacement:materialContextReplacement},
 ]);
@@ -104,8 +105,10 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
   resources.defer(()=>retrievalIndex.close());
   retrievalIndex.prepare();retrievalIndex.start();
   const indexer=retrievalIndex.retrievalIndex;
-  const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
-  resources.defer(()=>materialOrganizer.close());
+  const organizerService=createMaterialOrganizerService({store,materials,executor,memoryCandidates:materialMemoryWork});
+  resources.defer(()=>organizerService.close());
+  organizerService.prepare();organizerService.start();
+  const materialOrganizer=organizerService.organizerForAssembly;
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
   // One EvidenceReader and one context registry own every read surface. The
   // factory borrows the roots repositories; it never constructs a second

@@ -4,10 +4,10 @@ import type {ServerFeatureHost,ServerFeatureScope} from '../feature-host.js';
 import type {ServerFeatureAdapter} from './index.js';
 
 /** Pre-H14 mount point. The materials route table belongs to the material-context
- * plugin; this adapter keeps feature-scoped revocation, inventory and Agent-tool
- * disposal until the host mounts domain contributions natively. */
+ * plugin, and the organizer poll belongs to its domain plugin. This adapter keeps
+ * feature-scoped revocation, inventory and Agent-tool disposal until the host
+ * mounts domain contributions natively. */
 export function register(app:FastifyInstance,{materialOrganizer}:Pick<FeatureServices,'materialOrganizer'>,scope:ServerFeatureScope|undefined,host:ServerFeatureHost){
- scope?.every(5000,()=>materialOrganizer.tick(200));
  app.addHook('onReady',async()=>{void scope?.run(()=>materialOrganizer.tick(200));});
  host.mountDomainRoutes('mote.materials',app);
 }
