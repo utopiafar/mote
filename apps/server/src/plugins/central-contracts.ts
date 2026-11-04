@@ -4,7 +4,7 @@ import {
   type ReplacementPolicy,
 } from '@mote/plugin-api/contracts';
 import type {CaptureInput} from '@mote/shared';
-import type {CaptureRead, CaptureContextRead, MaterialRead, MemoryRead, MemoryReadSnapshots, MemoryInputSelection} from '../evidence-read-ports.js';
+import type {CaptureRead, CaptureContextRead, MaterialRead, MemoryRead, MemoryReadSnapshots, MemoryInputSelection, MemoryRecordRead, MemoryRecordSnapshots} from '../evidence-read-ports.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextQuery} from '../context-query.js';
 import type {ContextTreeRegistry} from '../context-trees.js';
@@ -165,6 +165,8 @@ export const centralServices = {
   memoryCandidates: serviceContract<MaterialMemoryCandidates>('mote.central.material-memory-candidates', '1'),
   memoryRead: serviceContract<MemoryRead>('mote.central.memory-read', '1'),
   memorySnapshots: serviceContract<MemoryReadSnapshots>('mote.central.memory-read-snapshots', '1'),
+  memoryRecords: serviceContract<MemoryRecordRead>('mote.central.memory-record-read', '1'),
+  memoryRecordSnapshots: serviceContract<MemoryRecordSnapshots>('mote.central.memory-record-snapshots', '1'),
   memoryInputSelection: serviceContract<MemoryInputSelection>('mote.central.memory-input-selection', '1'),
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
@@ -198,7 +200,8 @@ export const centralMigrationSlices = {
   media: {task:'C18A/C18B/C18C', factory:'media-processing', replacement:'hot', legacy:['mediaAssets','mediaPreparation','perception','mediaRange','withMediaOwnerBatch','withMediaOwnerIntent'], objects:['MediaAssets','MediaPreparation/worker/config invalidation','ImageProcessing/recipes','media execution facts'], consumers:['C10A','C11','C17','C19','AGENT']},
   materials: {task:'C19A/C19B/C19C/C19D/C19E', factory:'material-context', replacement:'hot', legacy:['materials','materialOrganizer','materialMemoryWork','indexer','evidenceReader','contextTrees'], objects:['MaterialStore/revision publication','organizer/backlog','retrieval/vector index','unique EvidenceReader/SourceContextStore','MaterialMemoryWork/capture intake','context trees/library/raw projections'], consumers:['C09','C10B','C17','C20','C22','C26','C27','AGENT','WEB','MAC','ANDROID']},
   imports: {task:'C20', factory:'import-services', replacement:'hot', legacy:['imports','importTasks','launchImport','launchOwnerImport'], objects:['ImportStore','PythonSourcePackExecutor','importTasks/importAgents','queued restart/manifest/lease recovery'], consumers:['C11','C17','C19','AGENT','WEB']},
-  memoryControl: {task:'C21A/C21B/C21C/C21D', factory:'memory-control-services', replacement:'hot', legacy:['memories','memoryBindings','memoryIntegrationSettings','memoryRecipeSettings'], objects:['MemoryStore','Strategies/RecipeSettings','Automation/freeze','Bindings/retained readers/control'], consumers:['C19E','C22','C23','C24','C27']},
+  memoryControl: {task:'C21A/C21B/C21C/C21D', factory:'memory-control-services', replacement:'hot', legacy:['memories','memoryBindings','memoryIntegrationSettings','memoryRecipeSettings'], objects:['Strategies/RecipeSettings','Automation/freeze','Bindings/retained readers/control'], consumers:['C19E','C22','C23','C24','C27']},
+  memoryRecords: {task:'C21B', factory:'memory-record-repository', replacement:'hot', legacy:[], objects:['MemoryStore record storage','memory storage schema'], consumers:['C19E','C22','C23','C24','AGENT']},
   memoryRuntime: {task:'C22A/C22B/C22C', factory:'memory-lifecycle', replacement:'hot', legacy:['memoryPipeline','lifecycle','memoryDelegation','reviewExtraction','automaticMemoryScheduling'], objects:['MemoryPipeline/review cache','MemoryLifecycle/extensions/WorkingMemory','TopicsHost','owner continuation/questions/delegation'], consumers:['C19E','C21','C24','C26','AGENT']},
   memoryProviders: {task:'C23', factory:'memory-provider-adapters', replacement:'hot', legacy:[], objects:['MemoryAdapters/Mem0/Hindsight/workers','fixed namespace/config readers','Hindsight authority/usage maps','prepared stages/probes'], consumers:['C21D','C24','AGENT']},
   publication: {task:'C24', factory:'memory-publication', replacement:'hot', legacy:['memoryPublication'], objects:['MemoryPublication/poll','retirement/dependencies','submitted writes/erases/revocations/native cleanup references','EvidenceDeletion/export/provider backup'], consumers:['C10B','C19','C21D','C22','HOST']},
@@ -224,6 +227,7 @@ export const centralServiceOwners = {
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
   configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
+  memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
   memoryStagePublication:'publication', memoryOwnerPublication:'publication', mediaAssetsRead:'media',
 } as const satisfies Record<CentralService, CentralSlice>;
 
