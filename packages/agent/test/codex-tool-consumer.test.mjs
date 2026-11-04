@@ -6,7 +6,7 @@ import {createAgent} from '../dist/index.js';
 import {createSourceReadPack} from '../dist/tools/packs/sources.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {codexContextTools} from '../dist/codex-agent.js';
+import {codexContextTools} from '../dist/runtime/codex/tools.js';
 import {contextToolDefinitions, contextToolSnapshot} from '../dist/tool-contributions.js';
 import {toCodexTool, toRuntimeToolDefinition, toolInputSchema} from '../dist/tools/runtime-schema.js';
 import {codexImageMetadata, codexImageSteerInputs} from '../dist/tools/image-result.js';
