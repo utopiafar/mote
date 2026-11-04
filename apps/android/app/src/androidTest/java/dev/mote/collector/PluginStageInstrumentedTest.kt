@@ -322,7 +322,8 @@ class PluginStageInstrumentedTest {
         assertTrue("the system entries provider is active in the real app", SystemEntriesPlugin.availability(context).active)
         grantNotifications()
 
-        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+        val scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
+        try {
             val home = onTop("the plugin-owned home mounts Ask and the quick records") { activity ->
                 val mounted = tags(activity)
                 listOf("home-ask-action", "home-record-action", "home-photo-action", "home-audio-action").all { it in mounted }
@@ -409,6 +410,10 @@ class PluginStageInstrumentedTest {
                 activity is MainActivity && tags(activity).contains("menu:" + MoteI18n.text("采集与同步"))
             }
             android.util.Log.i("MoteAcceptance", "plugin stage: home, system entries, Ask, settings, library and sources reachable; recreate kept durable owners")
+        } finally {
+            val open = inStage(Stage.RESUMED, Stage.PAUSED, Stage.STOPPED)
+            main { open.forEach { it.finish() } }
+            until("the plugin stage activities finish") { inStage(Stage.RESUMED, Stage.PAUSED, Stage.STOPPED).isEmpty() }
         }
     }
 
