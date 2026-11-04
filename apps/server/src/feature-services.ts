@@ -3,7 +3,6 @@ import type {BackgroundModelAuthorization} from './background-model-authorizatio
 import type {ModelAuthorizationHost} from './model-authorization-host.js';
 import type {AutomaticActivity} from './automatic-activity.js';
 import type {ConfigService} from './config-service.js';
-import type {MemoryBindings} from './memory-bindings.js';
 import type {MemoryPublication} from './memory-publication.js';
 import type {OwnerQuestions} from './owner-questions.js';
 import type {ActivityProjection} from './activity.js';
@@ -73,7 +72,6 @@ export interface FeatureServices {
   modelAuthorizationHost:ModelAuthorizationHost;
   automaticActivity:AutomaticActivity;
   configService:ConfigService;
-  memoryBindings:MemoryBindings;
   memoryPublication:MemoryPublication;
   ownerQuestions:OwnerQuestions;
   activity:ActivityProjection;
