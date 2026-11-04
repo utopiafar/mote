@@ -1,10 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
-import {Context} from '@deepseek-ai/cordis';
 import {buildContextEnvelope,type ContextReader} from '@mote/agent';
-import {register} from '../src/features/agent-view.js';
-import {ServerFeatureHost} from '../src/feature-host.js';
+import {registerAgentViewRoutes} from '../src/plugins/agent-view-routes.js';
 import {contextIndex} from '../src/context-index.js';
 import type {Store} from '../src/store.js';
 import type {SourceStore} from '../src/sources.js';
@@ -26,14 +24,14 @@ test('root catalog avoids corpus scans; source and layer cursors allow complete 
  assert.throws(()=>contextIndex(store,memory,sources,{path:'/context/sources',deviceId:'other',cursor:first.nextCursor!}),/Source directory changed or cursor does not match/);
 });
 
-test('Cordis Agent view preview shares the envelope, keeps scope, pages originals and revokes on disposal',async()=>{
- const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app),calls:unknown[]=[];
+test('activity-owned Agent view preview shares the envelope, keeps scope, pages originals and validates recorded reads',async()=>{
+ const app=Fastify(),calls:unknown[]=[];
  const record={id:'generated-evidence',capturedAt:'2026-10-01T00:00:00Z',appName:'Generated',ocrText:'A'.repeat(4000)+'B'.repeat(4000)+'C'};
  const memory={id:'generated-memory',title:'Generated lead',statement:'Generated statement',uncertainty:'Generated uncertainty',createdAt:'2026-10-01T00:00:00Z',status:'published',tier:'consolidated'};
  const reader={memories:async(args:Record<string,unknown>)=>{calls.push(args);return {items:[memory],nextCursor:null,...(args.includeEvidence?{sourceSpans:[{record,offset:4000,length:20}]}:{})};},sourceItems:async()=>({items:[record],nextCursor:null}),evidence:async(args:Record<string,unknown>)=>{calls.push(args);return args.deviceId==='other'?[]:[record];},contextTools:()=>[]} as unknown as ContextReader;
  const diagnostics={snapshot:()=>({lastSeq:0,agentTrace:{enabled:false}}),events:()=>({items:[],nextSeq:0,oldestSeq:null})} as unknown as FeatureServices['diagnostics'];
  try{
-  await host.install({id:'mote.agent-view',version:'1',components:[]},child=>register(child,{archiveReader:reader,diagnostics}));
+  registerAgentViewRoutes(app,{archiveReader:reader,diagnostics,evidenceReader:{artifact:()=>undefined}});
   const input={question:'Generated question',deviceId:'fixture',after:'2026-09-30T00:00:00Z',before:'2026-10-02T00:00:00Z',timeZone:'Asia/Shanghai'};
   const response=await app.inject({method:'POST',url:'/api/agent-view/startup',payload:input});assert.equal(response.statusCode,200,response.body);
   const preview=response.json();assert.equal(preview.modelCalls,0);assert.equal(preview.context.untrustedMemoryLeads.length,1);assert.equal(preview.context.untrustedMemoryLeads[0].statement,memory.statement);
@@ -44,6 +42,5 @@ test('Cordis Agent view preview shares the envelope, keeps scope, pages original
   const sourcePage=(await app.inject('/api/agent-view/source-items?sourceId=fixture')).json();assert.equal(sourcePage.items[0].preview.length,400);assert.equal(sourcePage.items[0].ocrText,undefined);
   const proof=(await app.inject('/api/agent-view/memories?id=generated-memory&includeEvidence=true')).json().sourceSpans[0];assert.equal(proof.record.ocrText,'B'.repeat(20));assert.equal(proof.offset,0);
   assert.equal((await app.inject('/api/agent-view/evidence?id=generated-evidence&length=4001')).statusCode,500); // Standalone Fastify has no host Zod error handler.
-  await host.dispose('mote.agent-view');assert.equal((await app.inject({method:'POST',url:'/api/agent-view/startup',payload:input})).statusCode,503);assert.equal(host.registry.list().length,0);
- }finally{await host.close();await root.fiber.dispose();await app.close();}
+ }finally{await app.close();}
 });

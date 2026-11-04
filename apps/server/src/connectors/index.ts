@@ -3,19 +3,17 @@ import {join} from 'node:path';
 import {PluginResourceScope,type HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import {mcpContext,remoteMcpContext} from './mcp-context.js';
-import {gmailContext} from './gmail-context.js';
 import {installRecordingMemory} from './recording-memory.js';
 import {recordingManifest,type RecordingProvider} from './recordings.js';
 import {createFeishuRecordings} from './lark-recordings.js';
 import {createDingtalkRecordings} from './dingtalk-recordings.js';
-import {moteText} from '../i18n.js';
 import {createInstanceState} from '../plugins/instance-state.js';
 import {createConnectorHostAdapter,type ConnectorHostAdapter,type ConnectorInstanceScope} from '../plugins/connector-host-adapter.js';
 import {createDynamicHttpDispatcher,type DynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
 import {loadConnectorModules,type ConnectorManifest} from './registry.js';
 import {equalToken,registerMcp,RemoteMcp} from './mcp.js';
 import {googleCalendarManifest,type GoogleDependencies} from '../plugins/google-calendar-source.js';
-import {GmailConnector} from './gmail.js';
+import {gmailManifest} from '../plugins/gmail-source.js';
 import {larkManifest,type LarkRunner} from '../plugins/lark-source.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
 import type {FastifyInstance} from 'fastify';
@@ -44,19 +42,7 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
     };
   }},
   googleCalendarManifest(testing?.google),
-  {apiVersion:1,id:'gmail',sourceKinds:['gmail'],statusKey:'gmail',create:ctx=>{
-    const gmail=new GmailConnector(gmailContext(ctx),testing?.gmail);
-    return {
-      init:()=>gmail.init(),status:()=>gmail.status(),configureSyncInterval:interval=>gmail.configureSyncInterval(interval),
-      configure:host=>{
-        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/start',bodyLimit:16384,handler:()=>gmail.start()});
-        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/sync',bodyLimit:16384,handler:()=>gmail.sync()});
-        host.ownerRoute({method:'DELETE',path:'/api/connectors/gmail',bodyLimit:16384,handler:()=>gmail.disconnect()});
-        host.oauthCallback({path:'/oauth/google/callback',statePrefix:'gmail.',complete:(state,code)=>gmail.callback(state,code),successMessage:moteText('Gmail 已连接。请返回 Mote 同步邮件。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
-      },
-      close:()=>gmail.close(),
-    };
-  }},
+  gmailManifest(testing?.gmail),
   larkManifest(testing?.lark),
 ];}
 

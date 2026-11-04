@@ -30,6 +30,7 @@ import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
 import {gmailScope} from '../src/connectors/gmail.js';
 import type {LarkRunner} from '../src/connectors/lark-cli.js';
+import {MemoryInputAuthorization} from '../src/memory-input-authorization.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
@@ -638,6 +639,84 @@ test('stopping the Google instance mid-poll drops late results, restart replays 
   assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:1,duplicates:0,calendars:1});
   assert.equal(sources.getItem(source.id,event.id)!.text,'Generated late page');
   assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:0,duplicates:1,calendars:1},'the replayed page dedupes instead of archiving twice');
+});
+
+test('stopping the Gmail instance mid-page drops the late response, restart resumes the confirmed cursor and Google keeps working',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-connectors-')),store=new Store(join(directory,'vault'));
+  const sources=new SourceStore(store,undefined,new MemoryInputAuthorization(store,()=>true));
+  const ctx:ConnectorContext={store,sources,evidenceReader:connectorReader(store,sources),config:{dataDir:join(directory,'vault'),token:owner,allowedOrigins:['https://synthetic.invalid'],connectors:{directory:join(directory,'private'),googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
+  t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
+  const gmailMessage=(id:string)=>({id,threadId:`generated-thread-${id}`,historyId:'9',internalDate:'1767225600000',labelIds:['INBOX'],payload:{mimeType:'text/plain',headers:[{name:'subject',value:`Generated ${id}`}],body:{data:Buffer.from(`Generated ${id} body`).toString('base64url')}}});
+  let gated=true,entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(resolve=>entered=resolve),hold=new Promise<void>(resolve=>release=resolve);
+  const pageTokens:(string|null)[]=[];
+  const gmailOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  gmailOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-gmail-refresh',access_token:'synthetic-gmail-access',scope:gmailScope}})) as never;
+  gmailOauth.getAccessToken=(async()=>({token:'synthetic-gmail-access'})) as never;
+  const gmail:GoogleDependencies={oauthFactory:()=>gmailOauth,fetch:(async(input,init)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/profile'))return Response.json({emailAddress:'generated@example.invalid',historyId:'7'});
+    if(url.pathname.endsWith('/messages')){
+      pageTokens.push(url.searchParams.get('pageToken'));
+      return url.searchParams.get('pageToken')==='generated-page-2'?Response.json({messages:[]}):Response.json({messages:[{id:'generated-message'},{id:'late-message'}],nextPageToken:'generated-page-2'});
+    }
+    if(url.pathname.endsWith('/messages/late-message')){
+      if(gated){entered();await hold;assert.equal(init?.signal?.aborted,true,'the late response must arrive after the stopped instance cancelled its request');}
+      return Response.json(gmailMessage('late-message'));
+    }
+    if(url.pathname.endsWith('/messages/generated-message'))return Response.json(gmailMessage('generated-message'));
+    throw Error('Unexpected Gmail fixture URL: '+url.pathname);
+  }) as typeof fetch};
+  const googleOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  googleOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-refresh-private',access_token:'synthetic-access-private',scope:'https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly'}})) as never;
+  googleOauth.getAccessToken=(async()=>({token:'synthetic-access-private'})) as never;
+  const event=googleEvent('generated-sibling','Generated sibling event');
+  const google:GoogleDependencies={oauthFactory:()=>googleOauth,fetch:(async(input)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/calendarList'))return Response.json({items:[calendar]});
+    return Response.json({items:[event],nextSyncToken:'generated-replay'});
+  }) as typeof fetch};
+  const app=Fastify(),connectors=await registerConnectors(app,ctx,{google,gmail});
+  t.after(async()=>{await connectors.close();await app.close();});
+  const headers={authorization:`Bearer ${owner}`};
+  const started=await app.inject({method:'POST',url:'/api/connectors/gmail/start',headers});
+  const state=new URL(started.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${state}&code=generated-code`})).statusCode,200);
+  const gmailSource=sources.listSources().find(s=>s.kind==='gmail')!;
+  const grants=()=>store.db.prepare('SELECT * FROM memory_input_authorizations WHERE source_id=? ORDER BY input_key').all(gmailSource.id);
+  const syncing=app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers});
+  await waiting;
+  const stopping=connectors.stop('gmail');
+  gated=false;release();
+  await stopping;
+  assert.equal((await syncing).statusCode,503,'a stopped poll reports its cancellation, never a partial page');
+  assert.equal(sources.getItem(gmailSource.id,'generated-message:0')!.text,'Generated generated-message body');
+  assert.equal(sources.getItem(gmailSource.id,'late-message:0'),undefined,'a stopped poll never commits its late response');
+  assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,1,'the late response archived nothing');
+  assert.equal(grants().length,1,'no semantic admission was minted for the dropped response');
+  const saved=JSON.parse(await readFile(join(directory,'private/gmail.json'),'utf8'));
+  assert.equal(saved.historyId,undefined);assert.equal(saved.full.pageToken,undefined,'the failed page cannot skip unconfirmed mail');
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).statusCode,404,'a stopped instance releases its routes');
+  const googleStart=await app.inject({method:'POST',url:'/api/connectors/google/start',headers});
+  const googleState=new URL(googleStart.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${googleState}&code=generated-code`})).statusCode,200);
+  assert.equal((await app.inject({method:'PUT',url:'/api/connectors/google/calendars',headers,payload:{calendarIds:[calendar.id]}})).statusCode,200);
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:1,duplicates:0,calendars:1},'Google keeps syncing while Gmail is stopped');
+  const prior=sources.getItem(gmailSource.id,'generated-message:0')!;
+  await connectors.restart('gmail');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).json(),{imported:1,duplicates:1,hasMore:true});
+  assert.deepEqual(sources.getItem(gmailSource.id,'generated-message:0'),prior,'the replayed page keeps the confirmed source revision');
+  const late=sources.getItem(gmailSource.id,'late-message:0')!;
+  assert.equal(late.text,'Generated late-message body');
+  assert.equal(late.document?.originalMetadata?.messageId,'late-message');
+  assert.equal(late.document?.originalMetadata?.threadId,'generated-thread-late-message');
+  assert.match(late.revision,/^[0-9a-f]{64}$/);
+  assert.equal(grants().length,2,'replaying the confirmed page mints no duplicate model admission');
+  assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,2);
+  assert.equal(JSON.parse(await readFile(join(directory,'private/gmail.json'),'utf8')).full.pageToken,'generated-page-2','the confirmed cursor advanced exactly one page');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).json(),{imported:0,duplicates:0,hasMore:false});
+  assert.equal(JSON.parse(await readFile(join(directory,'private/gmail.json'),'utf8')).historyId,'7');
+  assert.deepEqual(pageTokens,[null,null,'generated-page-2'],'the restart resumed the page at the last confirmed cursor');
 });
 
 test('cancelling or stopping the Lark instance mid-fetch drops late CLI results and restart resumes sync',async t=>{
