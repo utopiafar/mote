@@ -1,4 +1,3 @@
-import {createMemoryControl} from './memory-control.js';
 import {createMemoryModelAuthorityJobReader} from './memory-model-authority.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
 import {createModelEvidenceAuthority,contextFailure} from './model-evidence-authority.js';
@@ -13,13 +12,12 @@ import {assemblePlatform} from './assembly/platform.js';
 import {assembleSources} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
 import {assembleMedia,assemblePerception,assembleProcessing} from './assembly/processing.js';
-import {MemoryTopicsHost} from './memory-topics-host.js';
+import {memoryInputs,memoryRuntime} from './assembly/memory.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
 import {modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
 import {agentModelConnection,captureModelIdentity,sourceModelIdentity} from './model-authorization-host.js';
 import {MODEL_FEATURES,DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
 import type {ObservationName} from './execution-observability.js';
-import {memoryIntegrationImageInputs} from './memory-image-grants.js';
 import {assertMemoryImageGrants} from './memory-image-grants.js';
 import {memoryReadRanges} from './memory-read-context.js';
 import {retainFailureContext} from './execution-failures.js';
@@ -27,13 +25,11 @@ import {OwnerQuestions} from './owner-questions.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,formatEvidenceRef} from '@mote/shared';
 import {imageOutput} from './evidence-image.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
-import {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
-import {memoryEvidenceFingerprint} from './memory.js';
 import { Context } from '@deepseek-ai/cordis';
 import cors from '@fastify/cors';
 import staticFiles from '@fastify/static';
-import { AgentNotConfiguredError,AgentYieldError,originalEvidenceReceipt,createImportAgent,skillCatalog,type AgentTraceEvent,type ContextReader,type QueryInput } from '@mote/agent';
+import { AgentNotConfiguredError,AgentYieldError,originalEvidenceReceipt,createImportAgent,type AgentTraceEvent,type ContextReader,type QueryInput } from '@mote/agent';
 import { ProviderFailure,captureSchema,type CaptureInput,type CaptureRecord,type QueryResult } from '@mote/shared';
 import { negotiateLocale } from '@mote/shared/i18n';
 import Fastify,{ type FastifyInstance,type FastifyReply,type FastifyRequest } from 'fastify';
@@ -74,21 +70,13 @@ import { INGRESS_PROTOCOL_VERSION,collectorIngressWrite } from './ingress.js';
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
-import {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import {AutomaticActivity} from './automatic-activity.js';
-import { MemoryLifecycle,projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,freezeSemanticContextTime,type LifecycleExtension,type LifecycleSettings } from './memory-lifecycle.js';
-import {MemoryStrategies} from './memory-strategies.js';
+import { freezeSemanticContextTime,type LifecycleExtension } from './memory-lifecycle.js';
 import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
-import { MemoryPipeline } from './memory-pipeline.js';
-import { MemoryAutomation } from './memory-automation.js';
 import {PluginCenter} from './plugin-center.js';
 import {GitHubPluginReleases} from './plugin-release.js';
-import {MemoryBindings} from './memory-bindings.js';
-import {MemoryPublication} from './memory-publication.js';
-import {MemoryAdapters} from './memory-adapters.js';
 import {registerPluginRoutes} from './plugin-routes.js';
-import { MemoryReviewCache } from './memory-review-cache.js';
 import { reviewMemory } from './memory-review.js';
 import { ReloadableAgent,applyModelSettings,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
@@ -102,7 +90,6 @@ import { semanticProcessor } from './semantic-extraction.js';
 import { conversationUnderstandingProcessor } from './conversation-understanding.js';
 import { Store,StoreError,sha256 } from './store.js';
 import { UsageLedger } from './usage.js';
-import { WorkingMemory } from './working-memory.js';
 
 function parseCaptureBundle(body:unknown):CaptureInput[] {
   if(!Buffer.isBuffer(body))throw new StoreError('Capture bundle body must be gzip bytes');
@@ -133,11 +120,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     availableModelConnections:()=>availableModelConnections(),connections:dependencies?.connections,
     queryQualityExperiment:dependencies?.queryQualityExperiment,
     assertModelEvidence:input=>assertModelEvidence(input)});
-  projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
-  const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
-  const memoryAutomation=new MemoryAutomation(store);
-  let memoryBindings:MemoryBindings|undefined;
-  const {materials,materialMemoryWork}=await prepareMaterials({bootstrap,store,authorization:authorizationPlatform.commits,resources,memoryRecipeSettings,newInputAdmission:()=>memoryBindings?.accepting()??memoryAutomation.accepting()});
+  const {memoryStrategies,memoryRecipeSettings,memoryAutomation,integrationSettings,bindings,topics}=memoryInputs({store,configService});
+  const {materials,materialMemoryWork}=await prepareMaterials({bootstrap,store,authorization:authorizationPlatform.commits,resources,memoryRecipeSettings,newInputAdmission:()=>bindings.current?.accepting()??memoryAutomation.accepting()});
   // One service tree owns backend plugins. Each runtime installs into its own
   // managed scope below this root, so closing one cannot dispose a sibling.
   const backendContext=new Context();
@@ -180,9 +164,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   conversations.onTurnReceived=turnId=>modelAuthorizationHost.conversation(turnId);
   const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
   resources.beforeClose(()=>pluginCenter.close());
-  memoryBindings=new MemoryBindings(store,memories,memoryAutomation,pluginCenter,executor);
-  resources.defer(()=>memoryBindings!.close());
-  evidenceReader.memoryBindings=memoryBindings;
+  // Bindings are built by memoryRuntime below, but their disposer keeps its
+  // original slot: released after active queries, connectors and the agent.
+  resources.defer(()=>bindings.current?.close());
   const ownerQuestions=new OwnerQuestions(store);
   backendContext.provide('moteOwnerQuestions',ownerQuestions);
   const archivedFiles=bootstrap.vault.archivedFiles;
@@ -288,19 +272,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     if(config.embeddingModel&&config.embeddingBaseUrl)models.push(modelConnection('embedding:central',{model:config.embeddingModel,baseUrl:config.embeddingBaseUrl,apiKey:config.embeddingApiKey}));
     return [...new Map([...models,...additionalModelConnections()].map(connection=>[connection.id+'@'+connection.fingerprint,connection])).values()];
   };
-  const hindsightMeters=new Map<string,ReturnType<UsageLedger['start']>>();
-  const hindsightAuthorities=new Map<string,(settings:import('@mote/shared/models').ModelSettings)=>void>();
-  const memoryAdapters=new MemoryAdapters(join(config.dataDir,'plugins','instances'),pluginCenter,modelSettings,{codex,runModelFor,
-    assertModelAuthority:(settings,request)=>{if(request.purpose==='startup'||request.purpose==='capability_probe')return;const assert=request.opId&&hindsightAuthorities.get(request.opId);if(!assert)throw new StoreError('Native Memory operation authority expired',409);assert(settings);},
-    onRequestStarted:(settings,request)=>hindsightMeters.set(request.requestId,usageLedger.start(settings.provider,settings.model,'hindsight-engine',{agentId:'hindsight-engine',moduleId:'memories',skillId:null,operationId:request.opId,requestId:request.requestId})),
-    onUsage:(_settings,usage,request)=>hindsightMeters.get(request.requestId)?.update(usage),
-    onRequestFinished:request=>{hindsightMeters.get(request.requestId)?.finish(request.status);hindsightMeters.delete(request.requestId);},
-  });
-  resources.beforeClose(()=>memoryAdapters.close());
-  memoryBindings.providerFactory=(id,namespace)=>memoryAdapters.provider(id,namespace);
-  pluginCenter.probe=(id,signal)=>memoryAdapters.probe(id,signal);
-  pluginCenter.configurationAllowed=(field,value)=>memoryAdapters.configurationAllowed(field.type,value);
-  pluginCenter.retired=id=>{void memoryAdapters.retire(id);};
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   let queryRuns:DelegatedQueryRuns;
@@ -576,7 +547,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
-  const memoryReviews=new MemoryReviewCache();resources.defer(()=>memoryReviews.clear());
   const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
     draftOrigin,strategy,deletions:memories.deletions,authorizeDeletionEvidence:ids=>memoryPipeline.inputs.assertDeletion(ids,input.modelProfileId),cache:memoryReviews,snapshot:()=>{
       const ids=input.evidenceReadRanges?[...new Set([...(input.evidenceIds??[]),...memoryReadRanges(result,input.evidenceRanges??[],input.evidenceReadRanges).map(range=>range.id)])]:input.evidenceIds??[];
@@ -609,33 +579,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
   };
-  const memoryPublication=new MemoryPublication(store,memories,memoryBindings,executor);
-  resources.defer(()=>memoryPublication.close());
-  memoryPublication.revokeEvidence=ids=>memoryAdapters.erasePreparedEvidence(ids);
-  let memoryTopics:MemoryTopicsHost|undefined;
-  const memoryPipeline=new MemoryPipeline({onPublished:(step,items,job)=>memoryTopics?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublication,assertNewManualWork:()=>memoryBindings.assertNewManualWork(),nativeStages:{settle:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryAdapters.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},prepare:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryAdapters.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
-    const engineProfile=pluginCenter.instanceView(namespace.instanceId).configuration.modelProfileId;if(typeof engineProfile!=='string')throw new StoreError('Native Memory model profile is missing',409);
-    const engineConnection=agentModelConnection({kind:'profile',id:engineProfile},modelSettings.select('memory',engineProfile).settings),assertAuthority=modelAuthorization.capture(engineConnection);
-    const bindingIdentity=JSON.stringify(binding),pins=new Map(originals.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
-    const assert=()=>{assertAuthority();input.signal?.throwIfAborted();context.assertAuthority?.();assertModelEvidence(input);if(JSON.stringify(memoryBindings.binding())!==bindingIdentity)throw new StoreError('Native Memory binding changed',409);for(const [id,fingerprint] of pins){const current=memories.readEvidence([id])[0];if(!current||!memories.isCurrentEvidence(id)||memoryEvidenceFingerprint(current)!==fingerprint||!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy()))throw new StoreError('Native Memory originals were changed or revoked',409);}};
-    assert();const transportAssert=(settings:import('@mote/shared/models').ModelSettings)=>{if(agentModelConnection({kind:'profile',id:engineProfile},settings).fingerprint!==engineConnection.fingerprint)throw new StoreError('Native Memory model snapshot changed',409);assert();};hindsightAuthorities.set(context.opId,transportAssert);
-    try{const result=await memoryAdapters.engine(namespace.instanceId,namespace).prepare({namespace,opId:context.opId,phase:context.phase,evidence,relatedMemories:context.relatedMemories,signal:input.signal});assert();input.onEvidence?.(originals);if(context.relatedMemories?.length)input.onMemoryBodies?.(context.relatedMemories);return result;}finally{if(hindsightAuthorities.get(context.opId)===transportAssert)hindsightAuthorities.delete(context.opId);}})},batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,strategies:memoryStrategies,executor,store,memories,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,admission:{materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:id=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy()),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),automaticAllowed:job=>materialMemoryWork.authorized(job)&&[...(job.automaticGrants??[]),...(job.automaticGrant?[job.automaticGrant]:[])].every(grant=>sourcePipelines.memoryAllowed(grant.sourceId)),deletionEvidenceAllowedForMemory:id=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy()),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy(),required)},models:{configuration:memoryConfiguration,model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}}},phases:{understand:understandConversation,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`}});
-  resources.defer(()=>memoryPipeline.close());
-  memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
-  memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
-  materialMemoryWork.reconcile(memoryPipeline);
-  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,executor,dependencies?.semanticContextTime,configService);
-  resources.defer(()=>lifecycle.close());
-  const working=new WorkingMemory(store,conversations);
-  lifecycle.automaticAdmission=id=>!['extraction','consolidation'].includes(id)||memoryBindings!.accepting();
-  memoryBindings.onReleased=()=>lifecycle.skipAutomaticBacklog();
-  pluginCenter.admissionChanged=(id,enabled)=>{if(memoryBindings!.binding().namespace?.instanceId===id){if(enabled)lifecycle.skipAutomaticBacklog();memoryAutomation.touch();}};
-  const memoryControl=createMemoryControl({store,pipeline:memoryPipeline,lifecycle,executor,publication:memoryPublication});
-  memoryBindings.pendingTail=memoryControl.pendingTail;
-  memoryAutomation.onResume=memoryControl.resume;
-  memoryAutomation.onStop=memoryControl.stop;
-  memoryAutomation.counts=memoryControl.counts;
-  const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
+  const {memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryIntegrationSettings,memoryTopics}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,bindings,topics,integrationSettings,topicsCanPublish:()=>catalogChangesEnabled&&!closing,review:reviewExtraction,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
 
@@ -810,8 +754,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>featureHost.close());
   registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   await installServerFeatures(featureHost,featureServices,bootstrap.features);
-  memoryTopics=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader,()=>catalogChangesEnabled&&!closing),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query:input=>queryAgent(input,'query','memories')});
-  resources.defer(()=>memoryTopics?.close());
+  resources.defer(()=>memoryTopics.close());
   await configurationPlatform.start();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
