@@ -64,6 +64,8 @@ test('small Coding upload flows through feature routes to pinned owner and real 
   for(const surface of ['ingress','upload','data','command','agent'])assert.ok(inventory.capabilities.some((c:any)=>c.surface===surface),surface);
   assert.ok(inventory.capabilities.some((c:any)=>c.featureId==='mote.notes'&&c.id==='http:POST:/api/notes'));
   assert.ok(inventory.capabilities.some((c:any)=>c.featureId==='mote.files'&&c.surface==='upload'));
+  assert.ok(inventory.capabilities.some((c:any)=>c.featureId==='mote.source-runtime'&&c.id==='source-runtime'&&c.state==='active'));
+  assert.equal(inventory.features.filter((feature:any)=>feature.id==='mote.source-runtime').length,1);
   assert.doesNotMatch(JSON.stringify(inventory),/generated-fixture-token|fixture-only/);
   assert.equal((await call('/api/agent-view/catalog?path=%2Fetc')).statusCode,400);
   assert.equal((await call('/api/agent-view/material-read?ref='+encodeURIComponent('archive:raw-hidden'))).statusCode,400);

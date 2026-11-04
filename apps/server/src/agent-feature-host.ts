@@ -2,6 +2,7 @@ import {Context} from '@deepseek-ai/cordis';
 import {FeatureRegistry} from '@mote/shared';
 import {createOfficialReadPacks,defineToolDescriptor,type ToolDescriptor,type ReadPackRegistration,type ContextReader} from '@mote/agent';
 import {StoreError} from './store.js';
+import type {HostContributionDescriptor} from './feature-inventory.js';
 const groups:Record<string,(keyof ContextReader)[]>={
   context:['catalog','search','timeline','evidence'],materials:['materialCatalog','materialRead'],
   capture:['readImage','segments','activity'],files:['readFileEvidence','fileChunks'],media:['mediaActivity'],
@@ -49,7 +50,18 @@ export async function installAgentFeatures(root:Context,implementation:ContextRe
     });
     await fiber;fibers.set(featureId,fiber);
   }
-  return {registry,reader,registerTools:(featureId:string,contributions:readonly ToolDescriptor[])=>{
+  return {registry,reader,
+    /** Read-tool registrations stay owned by their Agent feature scope; the
+     * feature inventory projects them without exposing callables. */
+    contributions():HostContributionDescriptor[]{
+      const inventory=registry.inventory();
+      return inventory.features.map(feature=>({
+        id:'agent-feature:'+feature.id,version:feature.version,surface:'agent',runtime:'host',
+        featureId:feature.id,featureVersion:feature.version,self:false,state:inventory.capabilities.some(capability=>capability.featureId===feature.id&&capability.state==='active')?'active':'unavailable',
+        components:inventory.capabilities.filter(capability=>capability.featureId===feature.id).map(({featureId:_featureId,state,reason,...component})=>({...component,state,...(reason?{reason}:{})})),
+      }));
+    },
+    registerTools:(featureId:string,contributions:readonly ToolDescriptor[])=>{
     const descriptors=contributions.map(defineToolDescriptor),ownerId=featureId+':tools';
     const fiber=root.plugin((ctx:Context)=>{
       const lifetime=new AbortController();ctx.effect(()=>()=>lifetime.abort(new StoreError('Agent capability unavailable',503)));
