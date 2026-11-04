@@ -31,17 +31,22 @@ object SupportEvents {
             state.put("localSourceCount", sources.size).put("enabledLocalSourceCount", sources.count { it.enabled })
                 .put("localSourceBytes", File(context.noBackupFilesDir, "local-sources").listFiles()?.sumOf { it.length() } ?: 0L)
         }.onFailure { state.put("localSourcesReadable", false) }
-        val safeConfig = JSONObject()
+        val safeConfig = supportConfiguration(config)
+        val samples = runCatching { NumericSupport.sanitize(JSONObject(dev.mote.collector.plugins.NativeSystemToolsPlugin.diagnostics(context).export()).getJSONArray("samples")) }.getOrElse { JSONArray() }
+        return JSONObject().put("version", 1).put("app", metadata).put("state", state).put("configuration", safeConfig)
+            .put("logs", runtime(context).exportRange(System.currentTimeMillis() - hours * 3600000L)).put("events", journal(context).read()).put("samples", samples).put("batteryAttribution", "device-wide, not attributable to Mote").toString(2)
+    }
+
+    /** Explicit allowlist for the support package. Never copy endpoint,
+     * credential, device name, drafts or captured content. */
+    internal fun supportConfiguration(config: CollectorConfig?): JSONObject = JSONObject().apply {
         config?.let {
-            safeConfig.put("configured", it.server.isNotBlank() && it.token.isNotBlank()).put("diagnosticsEnabled", it.diagnosticsEnabled)
+            put("configured", it.server.isNotBlank() && it.token.isNotBlank()).put("diagnosticsEnabled", it.diagnosticsEnabled)
                 .put("intervalSeconds", it.intervalSeconds).put("maxQueueMiB", it.maxQueueMiB).put("wifiOnly", it.wifiOnly)
                 .put("projectionMode", it.mode == "projection").put("jpegQuality", it.jpegQuality).put("captureMaxSide", it.captureMaxSide)
                 .put("chargingOnly", it.chargingOnly).put("batteryPauseBelowPct", it.batteryPauseBelowPct)
                 .put("uploadGateEnabled", it.uploadGate.enabled)
         }
-        val samples = runCatching { NumericSupport.sanitize(JSONObject(Diagnostics(context).export()).getJSONArray("samples")) }.getOrElse { JSONArray() }
-        return JSONObject().put("version", 1).put("app", metadata).put("state", state).put("configuration", safeConfig)
-            .put("logs", runtime(context).exportRange(System.currentTimeMillis() - hours * 3600000L)).put("events", journal(context).read()).put("samples", samples).put("batteryAttribution", "device-wide, not attributable to Mote").toString(2)
     }
 }
 

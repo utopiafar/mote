@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {UsageGroups,TurnUsage} from '../src/Usage.js';
+import {UsageGroups,TurnUsage} from '../src/plugins/maintenance/Usage.js';
 import type {UsageGroup,UsageReceipt} from '@mote/shared';
 test('usage groups show unknown measurements distinctly from free usage and retain failure context',()=>{
   const group:UsageGroup={id:'fixture',label:'生成的 Agent',filter:{agentId:'fixture'},runs:2,completed:0,failed:1,running:1,successRate:0,averageDurationMs:1000,p95DurationMs:1000,requests:3,reportedRequests:1,inputTokens:100,outputTokens:10,totalTokens:110,cacheReadTokens:0,cacheHitRate:null,unknownUsage:1,unknownCache:2,unpriced:1,costs:{USD:0,CNY:null}};

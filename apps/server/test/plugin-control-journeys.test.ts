@@ -287,6 +287,21 @@ test('verified preparation cannot apply after metadata changes; cancel releases 
   f.bindings.action('cancel', {...bindingCommand(f), preparationId}); assert.equal(f.bindings.accepting(), true); assert.equal(f.bindings.binding().planId, 'mote.builtin');
 });
 
+test('a persisted verified-preparation freeze survives restart and its recorded holder can still cancel it', async t => {
+  const f = fixture(t), instance = await enabled(f);
+  await generatedMemory(f, 'frozen-across-restart');
+  const preparationId = await verifiedPreparation(f, 'instance:' + instance.id);
+  assert.equal(f.automation.state().barrier, preparationId);
+  assert.equal(f.bindings.accepting(), false);
+  await f.restart();
+  assert.equal(f.automation.state().barrier, preparationId, 'the cutover holder is durable');
+  assert.equal(f.bindings.accepting(), false);
+  f.bindings.action('cancel', {...bindingCommand(f), preparationId});
+  assert.equal(f.automation.state().barrier, undefined);
+  assert.equal(f.bindings.accepting(), true, 'the recorded holder release never leaves admission permanently frozen');
+  assert.equal(f.bindings.binding().planId, 'mote.builtin');
+});
+
 for (const lostAcknowledgement of [false, true]) test(`real worker migration cancelled after submission ${lostAcknowledgement ? 'with a lost acknowledgement' : 'with an acknowledgement'} preserves the old binding and reconciles later source deletion after restart`, async t => {
   const f = fixture(t, generatedRelease(), true), instance = await enabled(f), memory = await generatedMemory(f, 'cancelled-migration');
   const sourceBinding = f.bindings.binding(), targetNamespace = {ownerId: 'mote-owner', instanceId: instance.id, bindingRevision: sourceBinding.generation + 1};

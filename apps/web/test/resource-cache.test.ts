@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type {Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
-import {OperationFeed} from '../src/operation-feed.js';
+import {OperationFeed} from '../src/plugins/work/operation-feed.js';
 const turn=()=>new Promise<void>(resolve=>setImmediate(resolve));
 function fake(){const calls:{path:string;signal:AbortSignal;resolve:(v:unknown)=>void;reject:(e:unknown)=>void}[]=[];const api={request:(path:string,init:any)=>new Promise((resolve,reject)=>calls.push({path,signal:init.signal,resolve,reject}))} as Api;return {api,calls};}
 test('shared read cache deduplicates subscribers, fences stale refreshes and isolates sessions',async()=>{
@@ -27,7 +27,7 @@ test('revocation and deletion remove cached evidence while transport failures re
  for(const status of [401,403,404,410]){const {api,calls}=fake(),resource=resources(api).get('/api/captures/generated'),off=resource.subscribe(()=>{});calls[0].resolve({text:'generated original'});await turn();resource.refresh();calls[1].reject(new ApiError('unavailable',status));await turn();assert.equal(resource.getSnapshot().data,undefined);assert.equal(resource.getSnapshot().error instanceof ApiError,true);off();}
 });
 test('operation changes invalidate the shared domain resources without touching unrelated settings',async()=>{
- const {affectedResource}=await import('../src/operation-feed.js');
+ const {affectedResource}=await import('../src/plugins/work/operation-feed.js');
  const kinds={memory:['/api/memories?limit=30','/api/memory-jobs/x','/api/context-trees','/api/context-trees/auto.x/nodes/n1'],file:['/api/files/id','/api/source-items?sourceId=x'],capture:['/api/capture-browser/id','/api/captures?limit=30','/api/insights?limit=30','/api/insights/saved-result'],import:['/api/imports/id','/api/memories?limit=30'],query:['/api/query-runs/id','/api/conversations/id'],insight:['/api/insight-runs/id','/api/insights']};
  for(const [kind,paths] of Object.entries(kinds)){for(const path of paths)assert.equal(affectedResource(path,new Set([kind+':x']),false),true,path);assert.equal(affectedResource('/api/model-settings',new Set([kind+':x']),false),false);}
  assert.equal(affectedResource('/api/context-trees',new Set(['workflow:x']),false),true);assert.equal(affectedResource('/api/context-trees',new Set(['context-trees:x']),false),true);assert.equal(affectedResource('/api/context-trees',new Set(['memory-provider-reconcile:x']),false),true);assert.equal(affectedResource('/api/context-trees',new Set(['capture:x']),false),false);assert.equal(affectedResource('/api/context-trees',new Set(['insight:x']),false),false);assert.equal(affectedResource('/api/context-trees',new Set(['plugin-check:x']),false),false);
@@ -38,7 +38,7 @@ test('reopening an unobserved detail revalidates its immutable ref after externa
 });
 
 test('only the fixed insight receipt collection skips capture and file hints; reports and reset retain revalidation',async()=>{
- const {affectedResource}=await import('../src/operation-feed.js');
+ const {affectedResource}=await import('../src/plugins/work/operation-feed.js');
  for(const path of ['/api/insight-runs','/api/insight-runs?limit=20']){
   for(const kind of ['capture','file'])assert.equal(affectedResource(path,new Set([kind+':generated']),false),false,path+' '+kind);
   for(const kind of ['insight','workflow','import'])assert.equal(affectedResource(path,new Set([kind+':generated']),false),true,path+' '+kind);

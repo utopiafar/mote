@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import type {RecordingStatus} from '@mote/shared';
 import type {Api} from '../src/api.js';
-import {Sources} from '../src/Sources.js';
+import {Sources} from '../src/plugins/sources/Sources.js';
 import {RecordingsSettings} from '../src/RecordingsSettings.js';
 import {resources} from '../src/resource-cache.js';
 

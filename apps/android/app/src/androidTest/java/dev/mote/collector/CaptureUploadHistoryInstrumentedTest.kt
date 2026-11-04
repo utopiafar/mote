@@ -141,29 +141,34 @@ class CaptureUploadHistoryInstrumentedTest {
             val file = File(directory, "history.sqlite")
             val history = CaptureUploadHistory(file, cipher)
             val batch = UUID.randomUUID().toString(); val scope = CaptureUploadReceipt.scope(endpoint, device)
-            val sender = CaptureUploadAttempts(history, batch, scope, "generated-replay")
-            fun send() = sender.send(listOf(event), event.toString().toByteArray().size.toLong(), true) {
-                val connection = java.net.URL("$endpoint/api/captures").openConnection() as java.net.HttpURLConnection
-                try {
-                    connection.requestMethod = "POST"; connection.doOutput = true
-                    connection.connectTimeout = 10000; connection.readTimeout = 10000
-                    connection.setRequestProperty("content-type", "application/json")
-                    connection.setRequestProperty("authorization", "Bearer generated-upload-history-fixture-token")
-                    connection.outputStream.use { it.write(event.toString().toByteArray()) }
-                    val status = connection.responseCode
-                    val stream = if (status >= 400) connection.errorStream else connection.inputStream
-                    status to JSONObject(stream.bufferedReader().use { it.readText() })
-                } finally { connection.disconnect() }
-            }
-            assertEquals(503, send().first)
+            fun send(transport: dev.mote.collector.plugins.DurableCaptureTransport) =
+                transport.send(listOf(event), individual = true, bytes = event.toString().toByteArray().size.toLong()) {
+                    val connection = java.net.URL("$endpoint/api/captures").openConnection() as java.net.HttpURLConnection
+                    try {
+                        connection.requestMethod = "POST"; connection.doOutput = true
+                        connection.connectTimeout = 10000; connection.readTimeout = 10000
+                        connection.setRequestProperty("content-type", "application/json")
+                        connection.setRequestProperty("authorization", "Bearer generated-upload-history-fixture-token")
+                        connection.outputStream.use { it.write(event.toString().toByteArray()) }
+                        val status = connection.responseCode
+                        val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                        status to JSONObject(stream.bufferedReader().use { it.readText() })
+                    } finally { connection.disconnect() }
+                }
+            // The ingress use case goes through the durable transport owner, not a
+            // direct attempt/finalizer pair in the Activity test.
+            val plugin = dev.mote.collector.plugins.DurableTransportPlugin.get(context)
+            val lost = send(plugin.captureTransport(queue, history, endpoint, device, batch, 30))
+            assertEquals(503, lost.response.first)
             val reopened = CaptureUploadHistory(file, cipher)
             assertEquals("unknown", reopened.attempts(scope).single().state)
             assertEquals(0, reopened.attempts(scope).single().acknowledged)
             assertEquals(1, queue.pendingSync().count)
             assertTrue(reopened.page(scope).isEmpty())
-            val replay = send()
-            assertTrue(replay.first in setOf(200, 201))
-            assertTrue(replay.second!!.getJSONObject("receipt").getBoolean("duplicate"))
+            val replay = send(plugin.captureTransport(queue, reopened, endpoint, device, batch, 30))
+            assertTrue(replay.response.first in setOf(200, 201))
+            assertTrue(replay.response.second!!.getJSONObject("receipt").getBoolean("duplicate"))
+            assertEquals(1, replay.acknowledged)
             val confirmation = CaptureUploadReceipt.create(endpoint, device, event, event, batch, System.currentTimeMillis(), 30)
             CaptureReceiptFinalizer(reopened).received(queue, confirmation)
             CaptureReceiptFinalizer(reopened).received(queue, confirmation)
@@ -171,7 +176,7 @@ class CaptureUploadHistoryInstrumentedTest {
             assertEquals(1, reopened.page(scope).size)
             assertEquals(setOf("unknown", "received"), reopened.attempts(scope).map { it.state }.toSet())
             assertEquals(2, reopened.attempts(scope).size)
-            assertEquals(replay.first, reopened.attempts(scope).single { it.state == "received" }.results.getInt(event.getString("id")))
+            assertEquals(replay.response.first, reopened.attempts(scope).single { it.state == "received" }.results.getInt(event.getString("id")))
             assertEquals("Generated replay original", queue.capture(event.getString("id"))!!.getString("ocrText"))
         } finally { directory.deleteRecursively() }
     }

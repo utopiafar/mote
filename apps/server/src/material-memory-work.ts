@@ -6,6 +6,7 @@ import {DEFAULT_MEMORY_INPUT_SCOPE,MemoryInputAuthorization,type AutomaticMemory
 import {memoryWorkPackageSchema,type MemoryWorkPackage} from './memory-work-contract.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {memoryRecipeBindingSchema,type MemoryStrategyRef} from './memory-strategy-contract.js';
+import type {MemoryInputSelection} from './evidence-read-ports.js';
 
 const requiredSchema=materialRequirementsSchema;
 type WorkRow={material_id:string;scope:string;revision:string;required_json:string;source_required_json:string;input_fingerprint:string|null;ready_at:number;job_id:string|null;error:string|null;input_key:string;auto_authorized:number;binding_json:string|null;context_time:string|null};
@@ -27,25 +28,45 @@ export class MaterialMemoryWork {
   private readonly active=new Set<string>();
   private planning=false;
   private dormantCursor:[string,string]=['',''];
+  private readonly priorContextChanged?:(materialId:string,cause?:'attribution'|'derived')=>void;
+  private readonly contextChanged=(id:string,cause?:'attribution'|'derived')=>{this.priorContextChanged?.(id,cause);this.withdraw(id);};
+  private memorySelection?:MemoryInputSelection;
+  private disposed=false;
   readonly inputs:MemoryInputAuthorization;
   constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly now=Date.now,private readonly automaticEnabled=()=>true,private readonly recipes?:MemoryRecipeSettings,private readonly newInputAdmission=automaticEnabled){
-    const priorContextChanged=materials.onContextChanged;
-    materials.onContextChanged=(id,cause)=>{priorContextChanged?.(id,cause);this.withdraw(id);};
-    this.inputs=new MemoryInputAuthorization(store,newInputAdmission,now,recipes);
-    const db=store.db;
-    this.transaction(()=>{
-    db.exec('CREATE TABLE IF NOT EXISTS material_memory_revocations(job_id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL)');
-    db.exec(`CREATE TABLE IF NOT EXISTS material_memory_requests(
-      material_id TEXT NOT NULL,scope TEXT NOT NULL,revision TEXT NOT NULL,required_json TEXT NOT NULL,ready_at INTEGER NOT NULL,
-      job_id TEXT,error TEXT,input_key TEXT NOT NULL,auto_authorized INTEGER NOT NULL,binding_json TEXT,context_time TEXT,source_required_json TEXT NOT NULL,input_fingerprint TEXT,
-      PRIMARY KEY(material_id,scope));
-      CREATE INDEX IF NOT EXISTS material_memory_requests_due ON material_memory_requests(ready_at,job_id);
-      CREATE INDEX IF NOT EXISTS material_memory_requests_input ON material_memory_requests(input_key,scope,material_id);`);
-    db.exec(`CREATE TRIGGER IF NOT EXISTS material_memory_forget BEFORE DELETE ON material_heads BEGIN
-      INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_requests WHERE material_id=old.id AND job_id IS NOT NULL;
-      DELETE FROM memory_input_authorizations WHERE source_id=old.source_id AND input_key IN (SELECT input_key FROM material_memory_requests WHERE material_id=old.id);
-      DELETE FROM material_memory_requests WHERE material_id=old.id; END;`);
-    });
+    this.priorContextChanged=materials.onContextChanged;
+    materials.onContextChanged=this.contextChanged;
+    try{
+      this.inputs=new MemoryInputAuthorization(store,newInputAdmission,now,recipes);
+      const db=store.db;
+      this.transaction(()=>{
+      db.exec('CREATE TABLE IF NOT EXISTS material_memory_revocations(job_id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL)');
+      db.exec(`CREATE TABLE IF NOT EXISTS material_memory_requests(
+        material_id TEXT NOT NULL,scope TEXT NOT NULL,revision TEXT NOT NULL,required_json TEXT NOT NULL,ready_at INTEGER NOT NULL,
+        job_id TEXT,error TEXT,input_key TEXT NOT NULL,auto_authorized INTEGER NOT NULL,binding_json TEXT,context_time TEXT,source_required_json TEXT NOT NULL,input_fingerprint TEXT,
+        PRIMARY KEY(material_id,scope));
+        CREATE INDEX IF NOT EXISTS material_memory_requests_due ON material_memory_requests(ready_at,job_id);
+        CREATE INDEX IF NOT EXISTS material_memory_requests_input ON material_memory_requests(input_key,scope,material_id);`);
+      db.exec(`CREATE TRIGGER IF NOT EXISTS material_memory_forget BEFORE DELETE ON material_heads BEGIN
+        INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_requests WHERE material_id=old.id AND job_id IS NOT NULL;
+        DELETE FROM memory_input_authorizations WHERE source_id=old.source_id AND input_key IN (SELECT input_key FROM material_memory_requests WHERE material_id=old.id);
+        DELETE FROM material_memory_requests WHERE material_id=old.id; END;`);
+      });
+    }catch(error){
+      if(materials.onContextChanged===this.contextChanged)materials.onContextChanged=this.priorContextChanged;
+      throw error;
+    }
+  }
+  /** The domain plugin publishes the reader-backed selection through this owner. */
+  bindSelection(selection:MemoryInputSelection){if(this.disposed)throw new StoreError('Memory input selection is unavailable',503);this.memorySelection=selection;}
+  inputSelection():MemoryInputSelection{
+    if(this.disposed||!this.memorySelection)throw new StoreError('Memory input selection is unavailable',503);
+    return this.memorySelection;
+  }
+  dispose(){
+    if(this.disposed)return;
+    this.disposed=true;
+    if(this.materials.onContextChanged===this.contextChanged)this.materials.onContextChanged=this.priorContextChanged;
   }
   private rows(id:string){return this.store.db.prepare('SELECT * FROM material_memory_requests WHERE material_id=?').all(id) as WorkRow[];}
   private transaction<T>(run:()=>T):T{const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{const result=run();if(own)db.exec('COMMIT');return result;}catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}}

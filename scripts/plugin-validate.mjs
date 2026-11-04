@@ -10,7 +10,7 @@ const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 /** The generic release resolver has no service runtime yet; keep this server-specific compatibility check outside the composition planner. */
 export function releaseCompatibilityFailures(manifest) {
-  return manifest.runtime === 'service' ? [{code: 'unsupported_runtime', message: 'The generic release resolver does not provide a service runtime'}] : [];
+  return manifest.runtime === 'service' ? [{code: 'unsupported_runtime', message: 'The generic release resolver does not provide a service runtime', remediation: 'Publish the package with "runtime": "worker", or install it on a host that provides a service runtime'}] : [];
 }
 
 export async function validatePackage({manifestPath, zipPath, host = 'central', hostDependencies = [], releaseContract}) {
@@ -24,7 +24,7 @@ export async function validatePackage({manifestPath, zipPath, host = 'central', 
   try { entries = Object.keys(release.validatePluginArchive(archive, manifest)); }
   catch (error) { failures.push({code: 'archive_invalid', message: error.message}); }
   const plan = planComposition({revision: 1, host, packages: [manifest], hostDependencies});
-  if (!plan.ok) failures.push(...plan.failures.map(failure => ({code: failure.code, message: failure.message})));
+  if (!plan.ok) failures.push(...plan.failures.map(failure => ({...failure})));
   return {ok: failures.length === 0, manifest, digest, entries, plan: plan.ok ? plan.plan : null, failures};
 }
 

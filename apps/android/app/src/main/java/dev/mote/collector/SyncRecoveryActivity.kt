@@ -58,7 +58,7 @@ class SyncRecoveryActivity : MoteActivity() {
         reading = true
         executor.execute {
             val value = runCatching {
-                val settings = Settings(this); val local = LocalStateRepository.get(this).state.value; val c = local.active ?: error(MoteI18n.text("正在读取存储状态")); val sources = runCatching { localSources().pendingSync() }.getOrNull()
+                val settings = Settings(this); val local = LocalStatusProducer.get(this).state.value; val c = local.active ?: error(MoteI18n.text("正在读取存储状态")); val sources = runCatching { localSources().pendingSync() }.getOrNull()
                 val config = settings.read(); val status = settings.storedSyncStatus()
                 val translations = if (status.state in setOf("unconfigured", "paused")) MoteI18n.translations(SyncReadiness.obsoleteMessages) else emptyMap()
                 val visible = SyncReadiness.visible(config, status, SyncSchedule.waitingReason(this, config), c, local.sourceIssues, local.pending, inventoryUnavailable = local.error != null, sourceUnavailable = local.sourceError || sources == null) { source, value -> source == value || translations[source]?.contains(value) == true }

@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {AutomaticTopics,type TopicMemoryRead} from './automatic-topics.js';
+import type {AutomaticTopics} from './automatic-topics.js';
 import {publishOperationChange} from './operation-projection.js';
 import type {Store} from './store.js';
 import {moteText} from './i18n.js';
@@ -29,18 +29,22 @@ export class ContextTreeRegistry {
   private publishChange(kind:'registry'|'classifier'){
     if(this.store?.db.isOpen&&this.canPublish())publishOperationChange(this.store,'context-trees:'+kind);
   }
-  initializeAutomatic(store:Store,reader:TopicMemoryRead,canPublish?:()=>boolean){
-    this.store=store;if(canPublish)this.canPublish=canPublish;
-    if(this.automatic)return this.automatic;
-    const automatic=this.automatic=new AutomaticTopics(store,reader),register=automatic.register.bind(automatic);
+  /** Attach the plugin-owned automatic topic index. The registry never
+   * constructs it; classifier changes flow back through this catalog. */
+  attachAutomatic(automatic:AutomaticTopics,options:{store?:Store;canPublish?:()=>boolean}={}){
+    if(this.automatic)throw new StoreError('Automatic topics are already attached',409);
+    if(options.store)this.store=options.store;
+    if(options.canPublish)this.canPublish=options.canPublish;
+    const register=automatic.register.bind(automatic);
     automatic.register=(classifier)=>{
       const dispose=register(classifier);
       try{this.publishChange('classifier');}catch(error){dispose();throw error;}
       let removed=false;
       return()=>{if(removed)return;removed=true;dispose();this.publishChange('classifier');};
     };
-    return automatic;
+    this.automatic=automatic;
   }
+  detachAutomatic(automatic:AutomaticTopics){if(this.automatic===automatic)this.automatic=undefined;}
   register(raw:ContextTree){
     const tree=treeSchema.parse(raw);if(tree.id.startsWith('auto.'))throw new StoreError('Automatic topic namespace is reserved');const ids=new Set(tree.nodes.map(node=>node.id));
     if(this.trees.has(tree.id)||ids.size!==tree.nodes.length)throw new StoreError('Duplicate context tree identity');

@@ -45,10 +45,19 @@ export class AutomaticTopics {
   private active=new Set<string>();
   private failed=false;
   private activeSnapshots=new Set<string>();
+  private closed=false;
+  private readonly lifetime=new AbortController();
   constructor(private store:Store,private reader:TopicMemoryRead){
     store.db.exec(`CREATE TABLE IF NOT EXISTS context_topic_batches (operation_id TEXT PRIMARY KEY, json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS context_topic_heads (snapshot_key TEXT PRIMARY KEY, operation_id TEXT NOT NULL)`);
   }
+  /** Stop every classifier and fence in-flight results. A stopped index is
+   * never revived; its plugin activation constructs a fresh instance. */
+  close(){
+    if(this.closed)return;
+    this.closed=true;this.lifetime.abort();this.classifiers.clear();this.activeSnapshots.clear();
+  }
   register(classifier:TopicClassifier){
+    if(this.closed)throw new StoreError('Topic classifier unavailable',503);
     id.parse(classifier.id);z.string().min(1).max(100).parse(classifier.version);
     if(this.classifiers.has(classifier.id))throw new StoreError('Duplicate topic classifier');
     const registered={...classifier};this.classifiers.set(classifier.id,registered);
@@ -79,13 +88,15 @@ export class AutomaticTopics {
     catch(error){if(error instanceof StoreError&&[404,409].includes(error.statusCode))return undefined;throw error;}
   }
   async classify(input:{operationId:string;classifierId:string;memoryIds:string[]},authority:TopicAuthority){
+    if(this.closed)throw new StoreError('Topic classifier unavailable',503);
     const operationId=z.string().min(1).max(200).parse(input.operationId);
     z.string().min(1).max(200).parse(authority.admissionId);
     const ids=z.array(z.string().uuid()).min(1).max(100).parse(input.memoryIds);
     if(new Set(ids).size!==ids.length)throw new StoreError('Duplicate topic input');
     const classifier=this.classifiers.get(input.classifierId);
     if(!classifier)throw new StoreError('Topic classifier unavailable',503);
-    const fence=()=>{authority.signal.throwIfAborted();authority.assertCurrent();if(this.classifiers.get(classifier.id)!==classifier)throw new StoreError('Topic classifier was removed',409);};
+    const signal=AbortSignal.any([authority.signal,this.lifetime.signal]);
+    const fence=()=>{signal.throwIfAborted();authority.assertCurrent();if(this.closed)throw new StoreError('Topic classifier unavailable',503);if(this.classifiers.get(classifier.id)!==classifier)throw new StoreError('Topic classifier was removed',409);};
     fence();
     if(this.active.has(operationId))throw new StoreError('Topic classification is already running',409);
     this.active.add(operationId);let heldSnapshot:string|undefined;
@@ -102,7 +113,7 @@ export class AutomaticTopics {
       this.activeSnapshots.add(snapshotKey);heldSnapshot=snapshotKey;
       // This trusted adapter must call the host-fenced model transport. It must
       // not infer intent from source instructions or promote attribution to fact.
-      const raw=await classifier.classify({memories:structuredClone(memories),signal:authority.signal});
+      const raw=await classifier.classify({memories:structuredClone(memories),signal});
       fence();this.assertInputs(memories);
       const result=parseTopicClassification(raw,ids);
       const batch:Batch={snapshotKey,operationId,admissionId:authority.admissionId,classifierId:classifier.id,classifierVersion:classifier.version,dependencies,result};
@@ -119,9 +130,10 @@ export class AutomaticTopics {
         this.store.db.exec('RELEASE context_topic_publish');
       }catch(error){this.store.db.exec('ROLLBACK TO context_topic_publish; RELEASE context_topic_publish');throw error;}
       this.failed=false;return {state:'completed' as const};
-    }catch(error){if(!authority.signal.aborted)this.failed=true;throw error;}finally{this.active.delete(operationId);if(heldSnapshot)this.activeSnapshots.delete(heldSnapshot);}
+    }catch(error){if(!signal.aborted)this.failed=true;throw error;}finally{this.active.delete(operationId);if(heldSnapshot)this.activeSnapshots.delete(heldSnapshot);}
   }
   async trees():Promise<ContextTree[]>{
+    if(this.closed)return [];
     const trees:Array<{tree:ContextTree;memories:Memory[];batch:Batch;classifier:TopicClassifier}>=[];
     for(const row of this.store.db.prepare('SELECT b.json FROM context_topic_batches b JOIN context_topic_heads h ON h.operation_id=b.operation_id ORDER BY h.snapshot_key').all()){
       const batch=JSON.parse(String(row.json)) as Batch;
@@ -136,5 +148,5 @@ export class AutomaticTopics {
     // Earlier asynchronous provider reads do not retain an old permission.
     return trees.filter(({memories,batch,classifier})=>{if(this.classifiers.get(classifier.id)!==classifier||this.store.db.prepare('SELECT operation_id FROM context_topic_heads WHERE snapshot_key=?').get(batch.snapshotKey)?.operation_id!==batch.operationId)return false;try{this.assertInputs(memories);return true;}catch(error){if(error instanceof StoreError&&[404,409].includes(error.statusCode))return false;throw error;}}).map(({tree})=>tree);
   }
-  state(){return {state:this.active.size?'running':this.classifiers.size?(this.failed?'failed':'ready'):'unavailable'} as const;}
+  state(){return {state:this.closed||!this.classifiers.size?'unavailable':this.active.size?'running':this.failed?'failed':'ready'} as const;}
 }

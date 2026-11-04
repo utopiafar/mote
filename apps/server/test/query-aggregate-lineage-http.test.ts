@@ -27,7 +27,7 @@ for(const transition of ['heartbeat','delete-before-followup','delete-during-que
  await node.store.ingest({id,deviceId:'generated-selected',deviceName:'Generated selected',platform:'android',source:'activity',capturedAt:'2026-10-01T01:00:00Z',durationMs:30000,ocrText:'',appId:'generated.app',appName:'Generated app',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
  const first=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated aggregate question',deviceId:'generated-selected'}});
  if(fixtureFailure)throw fixtureFailure;
- if(transition==='delete-during-query'){assert.equal(first.statusCode,409,first.body);assert.ok(node.featureServices.conversations.list().items.every(item=>item.status==='failed'));return;}
+ if(transition==='delete-during-query'){assert.equal(first.statusCode,409,first.body);assert.ok(node.conversations.list().items.every(item=>item.status==='failed'));return;}
  assert.equal(first.statusCode,200,first.body);assert.equal(first.json().evidenceDependencies.complete,true);if(transition==='delete-before-followup')node.store.delete(id);
  const second=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated aggregate follow-up',conversationId:first.json().conversationId,deviceId:'generated-selected'}});if(fixtureFailure)throw fixtureFailure;assert.equal(second.statusCode,200,second.body);assert.equal(second.json().evidenceDependencies.complete,true);assert.equal(calls,2);
 });

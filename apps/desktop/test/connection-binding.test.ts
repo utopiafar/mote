@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DurableQueue } from '../src/queue';
 import { defaultConfig } from '../src/config';
+import { connectionBinding } from '../src/connection-binding';
 import { event, image } from './fixtures';
 let directory: string;
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-binding-fixture-')); });
@@ -20,6 +21,18 @@ it('binds a local backlog only after confirmation, preserves the binding after r
   await expect(queue.binding.commit({ ...initial, token: 'replacement' }, true, true)).rejects.toThrow('节点');
   await queue.binding.commit({ ...initial, token: 'replacement' }, true, false, true);
   expect(await readFile(join(directory, 'connection-binding.json'), 'utf8')).not.toContain('replacement');
+});
+it('binds the canonical shared instance scope so the same node survives a different URL spelling', async () => {
+  const token = 'generated-scope-owner-token-' + 'a'.repeat(32);
+  const first = { ...defaultConfig(), serverUrl: 'https://first.example/', token };
+  const same = { ...first, serverUrl: 'https://first.example' }, other = { ...first, serverUrl: 'https://other.example' };
+  expect(connectionBinding(first)).toMatchObject({ kind: 'bound', origin: 'https://first.example' });
+  expect(connectionBinding(first)).toEqual(connectionBinding(same));
+  const queue = new DurableQueue(directory, first); await queue.initialize(); await queue.enqueue(event(), image);
+  expect(queue.binding.matches(same)).toBe(true); expect(queue.binding.matches(other)).toBe(false);
+  await queue.binding.commit({ ...same, token: 'replacement-owner-token-' + 'b'.repeat(32) }, true, false, true);
+  await expect(queue.binding.commit(other, true, true, true)).rejects.toThrow('节点');
+  expect(JSON.parse(await readFile(join(directory, 'connection-binding.json'), 'utf8'))).toMatchObject({ kind: 'bound', origin: 'https://first.example' });
 });
 it('persists interval checkpoints and clears retry deadlines without changing pending contents', async () => {
   const config = defaultConfig(); let queue = new DurableQueue(directory, config); await queue.initialize(); await queue.enqueue(event(), image);

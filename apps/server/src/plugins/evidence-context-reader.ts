@@ -1,5 +1,7 @@
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {ContextReader} from '@mote/agent';
+import {skillCatalog,type ContextReader} from '@mote/agent';
+import type {FastifyInstance} from 'fastify';
+import {z} from 'zod';
 import {StoreError,type Store} from '../store.js';
 import type {SourceStore} from '../sources.js';
 import type {FileStore} from '../files.js';
@@ -10,7 +12,11 @@ import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {SourceItemRecipeCatalog} from '../source-item-recipe.js';
 import type {SourceContextStore} from '../source-context.js';
 import type {MemoryBindings} from '../memory-bindings.js';
-import {createContextTrees,type ContextTreeRegistry} from '../context-trees.js';
+import {createContextTrees,registerContextTreeRoutes,type ContextTreeRegistry} from '../context-trees.js';
+import {createContextQuery} from '../context-query-composition.js';
+import {registerContextRoutes} from '../context-routes.js';
+import {navigationScopeSchema} from '../context-navigation.js';
+import {registerEvidenceRoutes} from '../evidence-routes.js';
 import {EvidenceReader,type EvidenceReaderAgentOptions} from '../evidence-reader.js';
 import type {CaptureRead,CaptureContextRead,MaterialRead,MemoryRead,MemoryReadSnapshot,MemoryReadSnapshots,MemoryInputSelection} from '../evidence-read-ports.js';
 import {centralServices,type ContextNavigationRead,type ContextTreesRead} from './central-contracts.js';
@@ -25,7 +31,7 @@ export const evidenceContextReaderContribution={
     centralServices.captureRead,centralServices.captureContextRead,
     centralServices.contextNavigationRead,centralServices.contextTreesRead,
     centralServices.materialRead,centralServices.memoryRead,
-    centralServices.memorySnapshots,centralServices.memoryInputSelection,
+    centralServices.memorySnapshots,
   ].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
 } as const satisfies ManifestContribution;
 export const evidenceContextReaderDeclaration={id:evidenceContextReaderContribution.id,apiVersion:'1'} as const;
@@ -37,7 +43,7 @@ export interface EvidenceContextReaderDependencies {
   readonly store:Store;
   readonly sources:SourceStore;
   readonly files?:FileStore;
-  readonly indexer?:Indexer;
+  readonly indexer?:Pick<Indexer,'search'>;
   readonly fileEvidence?:FileEvidence;
   readonly materials?:MaterialStore;
   readonly sourcePipelines?:SourcePipelineRuntime;
@@ -67,6 +73,9 @@ export interface EvidenceContextReader {
    * service value, and never a reason to construct another EvidenceReader. */
   readonly assembly:{readonly reader:EvidenceReader;readonly contextTrees:ContextTreeRegistry};
   agent(options:EvidenceReaderAgentOptions):ContextReader;
+  /** Mount the context HTTP contribution once, before the host listens. The
+   * handlers use this reader and its context-tree registry at request time. */
+  routes(app:FastifyInstance):void;
   /** Idempotent. Revokes agent views/ports and releases this reader's retained
    * snapshots; borrowed repositories keep their own lifetime. */
   dispose():void;
@@ -85,6 +94,7 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
   if(deps.memoryBindings)reader.memoryBindings=deps.memoryBindings;
   const contextTrees=deps.contextTrees??createContextTrees();
   let disposed=false;
+  const mounted=new WeakSet<FastifyInstance>();
   // The memoryBindings port is used by ContextTreeRegistry.page and other host
   // consumers that own their snapshot only for one read. Track these so a
   // factory disposal releases whichever are still outstanding, while a normal
@@ -170,6 +180,20 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
         Object.defineProperty(guarded,key,{enumerable:true,value:(...args:unknown[])=>fenced(()=>(value as (...values:unknown[])=>unknown).apply(view,args))});
       }
       return guarded;
+    },
+    routes(app:FastifyInstance){
+      if(mounted.has(app))throw new StoreError('Context routes are already installed',409);
+      assertOpen();
+      mounted.add(app);
+      app.register(async child=>{
+        child.addHook('onRequest',async(_request,reply)=>{if(disposed||reader.disposed)return reply.code(503).send({error:'feature_unavailable'});});
+        registerEvidenceRoutes(child,reader);
+        registerContextTreeRoutes(child,reader,contextTrees);
+        child.get('/api/context/segments',async request=>reader.segments(z.object({...navigationScopeSchema.shape,id:z.string().max(1600).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(request.query)));
+        child.get('/api/context-index',async request=>reader.catalogAsync(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),...navigationScopeSchema.shape}).strict().parse(request.query)));
+        registerContextRoutes(child,createContextQuery(store,sources,reader));
+        child.get('/api/skills',async()=>({items:skillCatalog()}));
+      });
     },
     dispose(){
       if(disposed)return;

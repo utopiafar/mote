@@ -10,6 +10,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.mote.collector.plugins.DailyHomePlugin
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.Executors
@@ -40,7 +41,7 @@ class CaptureStatusActivity : MoteActivity() {
     }) {
         instanceReadHooks?.read?.invoke() ?: run {
             val settings = Settings(applicationContext); val config = settings.read()
-            CaptureOverview.facts(applicationContext, settings, config, LocalStateRepository.get(applicationContext).state.value)
+            CaptureOverview.facts(applicationContext, settings, config, LocalStatusProducer.get(applicationContext).state.value)
         }
     }
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 2500) } }
@@ -49,7 +50,7 @@ class CaptureStatusActivity : MoteActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val content = moteDetailPage(primary = null, title = MoteI18n.text("采集状态"), onBack = ::leave)
-        line = HomeCaptureRow(this, open = null, act = ::forward)
+        line = DailyHomePlugin.owner(this).captureRow(this, open = null, act = ::forward)
         content.addView(line, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(MoteTheme.spaceItem) })
         heading(content, MoteI18n.text("来源"))
         screen = control(content, MoteI18n.text("屏幕采集"), "capture-status-screen") { forwardPage("PRIVACY") }
@@ -136,11 +137,11 @@ class CaptureStatusActivity : MoteActivity() {
         listOf(screenAction, sendAction, all).forEach { it.isEnabled = !working }
     }
 
-    private fun pauseScreen() = work { done -> CaptureControls.pauseScreen(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
-    private fun toggleSend(paused: Boolean) = work { done -> CaptureControls.setSendingPaused(this, paused) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+    private fun pauseScreen() = work { done -> dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+    private fun toggleSend(paused: Boolean) = work { done -> dev.mote.collector.plugins.CapturePlugin.controls().setSendingPaused(this, paused) { result -> result.exceptionOrNull()?.let(::notice); done() } }
     private fun toggleAll() {
         if (facts?.enabled != true) { forward(CaptureOverview.Action.RESUME); return }
-        work { done -> CaptureControls.stopAll(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+        work { done -> dev.mote.collector.plugins.CapturePlugin.controls().stopAll(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
     }
     private fun work(run: (() -> Unit) -> Unit) {
         if (working) return

@@ -1,6 +1,7 @@
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {Conversations,type Conversation} from './conversations.js';
+import type {Conversation} from './conversations.js';
+import type {ConversationRepository as Conversations} from './plugins/central-contracts.js';
 import {Store,StoreError,sha256} from './store.js';
 import type {LifecycleExecution,LifecycleSettings} from './memory-lifecycle.js';
 import {combineDependencies} from './conversation-lineage.js';

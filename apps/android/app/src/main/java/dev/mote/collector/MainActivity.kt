@@ -20,7 +20,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.plugins.DailyHomeOwner
+import dev.mote.collector.plugins.DailyHomePlugin
+import dev.mote.collector.plugins.DailyHomeSections
+import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeRecordReceipt
+import dev.mote.collector.plugins.NativeSystemToolsPlugin
+import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import java.util.concurrent.Executors
 
 class MainActivity : MoteActivity() {
@@ -81,7 +87,8 @@ class MainActivity : MoteActivity() {
     private lateinit var homeScreenAction: Button
     private lateinit var homeSourceList: LinearLayout
     private val homeTask by lazy { UiTask(this) }
-    private val homeSections = mutableListOf<HomeSection>()
+    private var homeSections: DailyHomeSections? = null
+    private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
     private lateinit var homeCaptureRow: HomeCaptureRow
     private lateinit var homeGreeting: TextView
@@ -90,9 +97,6 @@ class MainActivity : MoteActivity() {
     private lateinit var homeRecordReceipt: LinearLayout
     private lateinit var homeFirstIntro: TextView
     private var homeReceiptAvailable = false
-    private var homeReceiptSignature: String? = null
-    private var homeSourceSignature: String? = null
-    private val homeRecordsCache = RevisionCache()
     internal fun isFirstUseRecordEntry() = firstUse
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
@@ -188,7 +192,8 @@ class MainActivity : MoteActivity() {
     private var statusLoading = false
     private var statusRefreshPending = false
     private var resumed = false
-    private val settingsSummaries = SettingsSummaryTracker()
+    private val settingsSummaries by lazy { NativeAdministrationPlugin.owner(this).settingsSummary() }
+    private val systemTools by lazy { NativeSystemToolsPlugin.owner(this) }
     private var settingsSendRow: LinearLayout? = null
     private var settingsConnectionRow: LinearLayout? = null
     private var localStateJob: kotlinx.coroutines.Job? = null
@@ -310,17 +315,23 @@ class MainActivity : MoteActivity() {
         refreshStatus()
         if (savedInstanceState == null && intent.getStringExtra("page") == "OBSERVATIONS") pagesHost.post { showObservations() }
         if (savedInstanceState == null) takeCaptureAction(intent)
-        MoteSystemEntries.refresh(applicationContext)
+        dev.mote.collector.plugins.SystemEntriesPlugin.refresh(applicationContext)
     }
 
     private fun buildToday() {
-        val local = LocalStateRepository.get(this).state.value
+        val local = LocalStatusProducer.get(this).state.value
         homeHasRecords = (local.active?.records ?: 0) > 0 || (local.sourcePending ?: 0) > 0
         firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
         page(Page.OVERVIEW, null)
         content.setPadding(dp(16), dp(8), dp(16), dp(28))
+        // The plugin owns the home reads and mounted sections; this Activity only routes actions.
+        val home = DailyHomePlugin.owner(this)
+        homePlugin = home
+        homeSections?.close()
+        val sections = home.sections()
+        homeSections = sections
         // Look at the top, act at the bottom: one capture line here, Ask and quick records in the thumb zone.
-        homeCaptureRow = HomeCaptureRow(this, open = { startActivity(Intent(this, CaptureStatusActivity::class.java)) }, act = ::runCaptureAction)
+        homeCaptureRow = home.captureRow(this, open = { startActivity(Intent(this, CaptureStatusActivity::class.java)) }, act = ::runCaptureAction)
         content.addView(homeCaptureRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
         homeWelcome = text(MoteI18n.text("欢迎使用 Mote"), NativeFontRole.META, NativeColorRole.MUTED)
         homeGreeting = text(MoteI18n.text("想问什么？"), NativeFontRole.TITLE_MOBILE).apply {
@@ -328,11 +339,14 @@ class MainActivity : MoteActivity() {
             setPadding(0, dp(22), 0, dp(29))
             (layoutParams as LinearLayout.LayoutParams).bottomMargin = 0
         }
-        homeSections.forEach { it.close() }; homeSections.clear()
-        HomeCalendarNeedsView(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
-            homeSections += it; content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        // Work and discovery own their home blocks: a stopped plugin publishes none.
+        val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
+        val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
+        if (NativeWorkDiscoveryPlugin.HomeSection.CALENDAR_NEEDS in workHomeSections) {
+            workDiscovery.homeCalendarNeeds(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
+                sections.add(it); content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+            }
         }
-        homeReceiptSignature = null
         homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         val pageContent = content
         val guide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
@@ -357,7 +371,7 @@ class MainActivity : MoteActivity() {
         text(MoteI18n.text("最近对话"), NativeFontRole.META, NativeColorRole.MUTED).apply {
             setPadding(0, dp(9), 0, dp(1))
         }
-        HomeConversationView(this, archiveEmpty = { empty ->
+        val conversations = home.conversation(this, archiveEmpty = { empty ->
             homeArchiveEmpty = empty
             firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
             updateFirstUse()
@@ -366,12 +380,17 @@ class MainActivity : MoteActivity() {
             intent.removeExtra("moteConversationOrigin");intent.removeExtra("moteConversationGeneration");intent.putExtra("conversationId", id)
             centralContent?.captureAskConversationIntent()
             showPage(Page.ASK)
-        }.also { homeSections += it; content.addView(it) }
+        }
+        sections.add(conversations)
+        content.addView(conversations)
         content = pageContent
         // Existing discoveries follow the continuing work; the home never generates a new one.
-        HomeDiscoveryView(this){id->
-            startActivity(Intent(this,CentralActivity::class.java).putExtra("page","insights").apply{if(id!=null)putExtra("insightId",id)})
-        }.also { homeSections += it; content.addView(it) }
+        if (NativeWorkDiscoveryPlugin.HomeSection.DISCOVERY in workHomeSections) {
+            workDiscovery.homeDiscovery(this) { id ->
+                startActivity(Intent(this,CentralActivity::class.java).putExtra("page","insights").apply{if(id!=null)putExtra("insightId",id)})
+            }.also { sections.add(it); content.addView(it) }
+        }
+        sections.show()
         updateFirstUse()
     }
 
@@ -393,7 +412,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun buildManagement() {
-        val local = LocalStateRepository.get(this).state.value
+        val local = LocalStatusProducer.get(this).state.value
         page(Page.MANAGE, null)
         content.setPadding(dp(20), dp(23), dp(20), dp(28))
         fun caption(label: String) { text(label, NativeFontRole.META, NativeColorRole.MUTED).apply { NativePresentationStyles.bind(this, "menu-caption") { (it as TextView).textSize = 11f } } }
@@ -445,7 +464,6 @@ class MainActivity : MoteActivity() {
             content.addView(captureProgress)
             captureAction = button(MoteI18n.text("开始采集"), primary = !settings.enabled) { if (settings.enabled) stopCapture() else startCapture() }
 
-            homeSourceSignature = null
             homeSourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             content.addView(homeSourceList)
             button(MoteI18n.text("来源管理")) { showPage(Page.SOURCES) }
@@ -489,8 +507,9 @@ class MainActivity : MoteActivity() {
     }
 
     private fun loadHomeContent() {
-        if (currentPage == Page.OVERVIEW) homeSections.forEach { it.refresh() }
+        homeSections?.refresh()
         if (!::homeSourceList.isInitialized || homeTask.busy || currentPage !in setOf(Page.OVERVIEW, Page.MANAGE, Page.SOURCES)) return
+        val home = homePlugin ?: return
         homeTask.start("", {}, {
             val store = applicationContext.localSources()
             val sources = store.sources().map { source ->
@@ -504,7 +523,7 @@ class MainActivity : MoteActivity() {
                     }
                 }
             }
-            val captures = HomeLocalCaptures.collect(homeRecordsCache, LocalStateRepository.get(applicationContext).state.value.revision.records,
+            val captures = home.captures(LocalStatusProducer.get(applicationContext).state.value.revision.records,
                 applicationContext.recordDraftStore().draft(),
                 NativeRecordReceipt.recordId?.let { id -> QueueStorage(applicationContext).committedCapture(id)?.let { applicationContext.withNativeNotePreview(it) } },
                 pendingRecovery = { QueueStorage(applicationContext).stageRecoveryPending() }) {
@@ -523,9 +542,8 @@ class MainActivity : MoteActivity() {
                 val receipt = capturePage.optJSONObject("savedReceipt")
                 homeReceiptAvailable = receipt != null
                 updateFirstUse()
-                val receiptSignature = HomeLocalSignature.receipt(receipt?.optString("id").orEmpty(), receipt?.let(NativeRecordPreview::text).orEmpty(), receipt?.optString("capturedAt").orEmpty(), loadedConfig.hasSyncConnection())
-                if (receiptSignature != homeReceiptSignature) {
-                homeReceiptSignature = receiptSignature
+                val receiptSignature = home.receiptSignature(receipt?.optString("id").orEmpty(), receipt?.let(NativeRecordPreview::text).orEmpty(), receipt?.optString("capturedAt").orEmpty(), loadedConfig.hasSyncConnection())
+                if (home.receiptChanged(receiptSignature)) {
                 homeRecordReceipt.removeAllViews()
                 homeRecordReceipt.visibility = if (receipt == null) View.GONE else View.VISIBLE
                 if (receipt != null) {
@@ -540,11 +558,10 @@ class MainActivity : MoteActivity() {
                     if(loadedConfig.hasSyncConnection()) lightTextAction(MoteI18n.text("查看 Central 的接收结果")+" ↗",homeRecordReceipt) { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(loadedConfig.server))) }
                 }
                 }
-                val sourceSignature = HomeLocalSignature.sources(sources.filter { it.first.syncContinuously }.map { (source, state) ->
+                val sourceSignature = home.sourceSignature(sources.filter { it.first.syncContinuously }.map { (source, state) ->
                     Triple(source.id, source.name, LocalContentPresentation.sourceStatus(source, state) + state.optString("folderProgress").takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty())
                 })
-                if (sourceSignature != homeSourceSignature) {
-                homeSourceSignature = sourceSignature
+                if (home.sourcesChanged(sourceSignature)) {
                 homeSourceList.removeAllViews()
                 if (sources.none { it.first.syncContinuously }) homeSourceList.addView(TextView(this).apply { text = MoteI18n.text("尚未添加文件夹。添加后可在这里查看范围和状态。"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
                 sources.filter { it.first.syncContinuously }.forEach { (source, state) ->
@@ -590,7 +607,7 @@ class MainActivity : MoteActivity() {
         val kind = MoteI18n.text(if (note) "随手记" else "采集记录")
         val provenance = if (title == kind) timestamp else "$kind · $timestamp"
         addContentRow(parent, title, NativeRecordPreview.text(item), "library-record:" + item.getString("id"), if (note) "notes" else "capture", listOf(provenance, location).filter(String::isNotBlank).joinToString(" · ")) {
-            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", LibraryCaptureProjection.version(item)).putExtra("recordObservationCount", LibraryCaptureProjection.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
+            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", dev.mote.collector.plugins.NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", dev.mote.collector.plugins.NativeLibraryPlugin.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
         }
     }
 
@@ -1097,7 +1114,7 @@ class MainActivity : MoteActivity() {
         localContentOcr = sourceCheck("使用本机 OCR 补充结构化内容", config.localContentOcr)
         localContentOcr.setOnCheckedChangeListener { _, _ -> updateSaveBar(); renderAppRules() }
         uiPageRules.addTextChangedListener(rulesWatcher)
-        appCaptureEditor = AppCaptureEditor(this,
+        appCaptureEditor = dev.mote.collector.plugins.SystemEntriesPlugin.appCaptureEditor(this,
             snapshot = { runCatching { AppCapturePresentation.Snapshot(currentAppRules(), PrivacyRules.exclusions(excludes.text.toString()), uiPageRules.text.toString(),
                 loadedConfig.mode == "projection", localContentOcr.isChecked) }.getOrNull() },
             change = { id, mode ->
@@ -1309,7 +1326,7 @@ class MainActivity : MoteActivity() {
                 val c = Settings(app).read()
                 if (!c.hasSyncConnection()) false else {
                     c.validateConnection()
-                    if (app.localSources().sources().any { it.enabled }) SourceWork.schedule(app, true, syncExplicit = true)
+                    if (app.localSources().sources().any { it.enabled }) dev.mote.collector.plugins.SourceProviderPlugin.owner(app).schedule(manual = true, syncExplicit = true)
                     else UploadWorker.schedule(app, c, true)
                     true
                 }
@@ -1535,9 +1552,9 @@ class MainActivity : MoteActivity() {
         if (requestCode in setOf(103, 104)) {
             fun feedback(message:String){diagnosticExportStatus?.apply { text=message;visibility=View.VISIBLE }}
             if(resultCode!=RESULT_OK || data?.data==null){feedback(MoteI18n.text("导出已取消，记录与设置保留。"));return}
-            val uri = data.data!!; val app = applicationContext
+            val uri = data.data!!; val app = applicationContext; val tools = systemTools
             uiTask.start(MoteI18n.text("正在导出诊断包…"), { feedback(it) }, {
-                val body = if (requestCode == 104) SupportEvents.export(app, logExportHours) else Diagnostics(app).export()
+                val body = if (requestCode == 104) tools.supportBundle(app, logExportHours) else tools.diagnostics(app).export()
                 app.contentResolver.openOutputStream(uri)!!.use { it.write(body.toByteArray()) }
             }) { result -> feedback(if (result.isSuccess) MoteI18n.text("诊断包已导出") else MoteI18n.text("诊断导出失败")) }
             return
@@ -1588,7 +1605,7 @@ class MainActivity : MoteActivity() {
     private fun pauseScreenCapture() {
         if (applyingSettings || uiTask.busy) return
         applyingSettings = true
-        CaptureControls.pauseScreen(this) { result ->
+        dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result ->
             applyingSettings = false
             if (isDestroyed) return@pauseScreen
             result.onSuccess { loadedConfig = settings.read(); refreshStatus(); loadHomeContent() }
@@ -1675,7 +1692,7 @@ class MainActivity : MoteActivity() {
     }
     private fun readStatus(): StatusSnapshot {
         val c = runCatching { settings.read() }.getOrNull()
-        val local = LocalStateRepository.get(this).state.value
+        val local = LocalStatusProducer.get(this).state.value
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val screenLive = c?.screenCollectionEnabled == true && (if (c.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
         val systemLive = c?.observesSystem() == true && MediaCollectionService.connected
@@ -1778,6 +1795,7 @@ class MainActivity : MoteActivity() {
         if (currentPage == Page.ASK) centralContent?.resume()
         if (currentPage == Page.ACTIVITY) activityContent?.resume()
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
+        if (currentPage == Page.OVERVIEW) homeSections?.show() else homeSections?.pause()
         loadHomeContent()
         updatePermissionStatuses()
         RuntimeSettings.observeProjectionConsent { if (::server.isInitialized) resumeProjectionAfterSettings() }
@@ -1805,7 +1823,7 @@ class MainActivity : MoteActivity() {
     }
     override fun onPause() {
         resumed = false
-        homeSections.forEach { it.pause() }
+        homeSections?.pause()
         centralContent?.pause()
         activityContent?.pause()
         localStateJob?.cancel(); localStateJob = null
@@ -1814,7 +1832,7 @@ class MainActivity : MoteActivity() {
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { homeSections.forEach { it.close() }; homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { homeSections?.close(); homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
@@ -1880,7 +1898,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun showPage(page: Page, discardConfirmed: Boolean = false, connectionEntryOrigin: ConnectionOrigin? = null) {
-        if (page != Page.OVERVIEW) homeSections.forEach { it.pause() }
+        if (page != Page.OVERVIEW) homeSections?.pause() else homeSections?.show()
         if (page == Page.DEVELOPER && !RuntimeProfile.current.developerTools) {
             showPage(Page.SETTINGS, discardConfirmed, connectionEntryOrigin)
             return

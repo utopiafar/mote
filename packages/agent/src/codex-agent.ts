@@ -20,10 +20,9 @@ const toolsFor=(input:QueryInput,snapshot=contextToolSnapshot(input)):CodexTool[
   return [...contextToolDefinitions(input).map(([name,description,fields]):CodexTool=>{
     const pin=pins.get(name);
     return pin?toCodexTool(pin):{type:'function',name,description,inputSchema:toolInputSchema(fields)};
-  }),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.id!=='document-import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
+  }),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.availability!=='import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
 };
 export const codexContextTools=toolsFor({question:''});
-const answerSchema={type:'object',properties:{answer:{type:'string'},citationIds:{type:'array',items:{type:'string'}}},required:['answer','citationIds'],additionalProperties:false};
 
 export function createCodexAgent(options:AgentOptions){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<AgentAnswer>>();
@@ -60,7 +59,7 @@ export function createCodexAgent(options:AgentOptions){
         assertToolPins();
         trace({type:'tool.started',stage:'tool',phase:'started',tool:name,payload:{arguments:args}});
         if(name==='skill'){
-          const skill=bundledSkills.find(s=>s.id!=='document-import'&&s.id===(args as {name?:unknown})?.name);
+          const skill=bundledSkills.find(s=>s.availability!=='import'&&s.id===(args as {name?:unknown})?.name);
           if(!skill)throw new Error('Unknown skill');const result={name:skill.name,content:skill.content};trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result}});return result;
         }
         if(!taskTools(input).includes(name))throw new Error('Unknown tool');
@@ -86,7 +85,7 @@ export function createCodexAgent(options:AgentOptions){
       };
       if(closed)throw new AgentProviderError();
       input.signal?.throwIfAborted();
-      const {system,prompt,metrics}=assembleHostContext(input,bridge.seedEvidence,options.maxTokens??65536,options.maxToolCalls,runTools);
+      const {system,prompt,metrics,outputSchema}=assembleHostContext(input,bridge.seedEvidence,options.maxTokens??65536,options.maxToolCalls,runTools);
       trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:runTools}});
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       session=new CodexSession(options,call,trace,input.onUsage,async(token,delivered)=>{
@@ -100,7 +99,7 @@ export function createCodexAgent(options:AgentOptions){
         const repair=repairAttempt?{repair:true,repairAttempt}:{};
         trace({type:'model.started',stage:'model',phase:'started',payload:{prompt,...repair}});
         const started=performance.now();
-        const text=await Promise.race([session!.run(prompt,answerSchema),bridge.failure]);
+        const text=await Promise.race([session!.run(prompt,outputSchema),bridge.failure]);
         assertCurrent();
         trace({type:'model.completed',stage:'model',phase:'completed',durationMs:performance.now()-started,payload:{response:text,...repair}});
         return {terminal:{kind:'completed'},candidate:{text}};

@@ -4,8 +4,7 @@ import type {StateStore} from '@mote/plugin-api';
 import type {StopReason} from '@mote/plugin-api/contracts';
 import {sourceKindSchema,type SourceCapabilityDescriptor} from '@mote/shared';
 import {z} from 'zod';
-import {equalToken} from './mcp.js';
-import {ConnectorError,type ConnectorContext} from './types.js';
+import type {ConnectorContext} from './types.js';
 
 type Method='GET'|'POST'|'PUT'|'DELETE';
 export type OwnerRoute={
@@ -86,21 +85,28 @@ const failureCode=(error:unknown,fallback:string)=>{
  * create/init failure owned by the install caller. */
 export const connectorCleanupFailure=(errors:readonly unknown[])=>Object.assign(new AggregateError(errors,'Connector cleanup failed'),{connectorCleanup:true as const});
 export const isConnectorCleanupFailure=(error:unknown)=>Boolean(error&&typeof error==='object'&&(error as {connectorCleanup?:unknown}).connectorCleanup===true);
-const oauthPath=/^\/oauth\/[a-z][a-z0-9-]*\/callback$/;
+/** Trusted deployment modules are explicit code, never archive contents. */
+export async function loadConnectorModules(specifiers:readonly string[]):Promise<ConnectorManifest[]>{
+  const manifests:ConnectorManifest[]=[];
+  for(const specifier of specifiers){
+    if(typeof specifier!=='string'||!specifier||specifier.length>2000||/[\r\n\0]/.test(specifier)||/^[a-z][a-z0-9+.-]*:/i.test(specifier)&&!specifier.startsWith('file:'))throw Error('Invalid connector module specifier');
+    const exports=await import(specifier) as {default?:unknown;connector?:unknown};
+    manifests.push((exports.default??exports.connector) as ConnectorManifest);
+  }
+  return manifests;
+}
 
 /** A deployment scoped registry: plugins are explicit trusted code, archive contents are never loaded as code. */
 export class ConnectorRegistry {
   private manifests:ConnectorManifest[]=[];
   private instances:{manifest:ConnectorManifest;instance:ConnectorInstance;scope?:HostScope;disposed?:boolean}[]=[];
   private failures=new Map<string,{manifest:ConnectorManifest;state:'failed'|'blocked';error:string}>();
-  private routes:OwnerRoute[]=[];
-  private callbacks:OAuthCallback[]=[];
   private addedKinds:string[]=[];
   private statusHandle?:ConnectorRouteHandle;
   private started=false;
   private closed=false;
   private closing?:Promise<void>;
-  constructor(private app:FastifyInstance|undefined,private context:ConnectorContext,private options:ConnectorRegistryOptions={}){}
+  constructor(private context:ConnectorContext,private options:ConnectorRegistryOptions={}){}
 
   register(value:unknown,hot=false){
     if(this.closed||(!hot&&this.started))throw Error('Connector registry is already started');
@@ -123,14 +129,6 @@ export class ConnectorRegistry {
     return state?{...this.context,state}:this.context;
   }
 
-  async loadModules(specifiers:readonly string[]){
-    for(const specifier of specifiers){
-      if(typeof specifier!=='string'||!specifier||specifier.length>2000||/[\r\n\0]/.test(specifier)||/^[a-z][a-z0-9+.-]*:/i.test(specifier)&&!specifier.startsWith('file:'))throw Error('Invalid connector module specifier');
-      const exports=await import(specifier) as {default?:unknown;connector?:unknown};
-      this.register(exports.default??exports.connector);
-    }
-  }
-
   async start(){
     if(this.started||this.closed)throw Error('Connector registry is already started');
     this.started=true;
@@ -146,7 +144,7 @@ export class ConnectorRegistry {
       }
       for(const manifest of this.manifests){
         const scope=this.options.scopeFor?.(manifest);
-        if(this.options.http&&!scope)throw Error('Connector scope is unavailable');
+        if(!scope)throw Error('Connector scope is unavailable');
         const instance=await manifest.create(this.instanceContext(manifest,scope));
         if(!instance||typeof instance!=='object')throw Error(`Connector ${manifest.id} did not create an instance`);
         const disposedLate=async()=>{
@@ -165,22 +163,16 @@ export class ConnectorRegistry {
         }
       }
       if(this.closed)throw Error('Connector registry is closed');
-      if(this.options.http){
-        if(!this.options.statusScope)throw Error('Connector status scope is unavailable');
-        this.mountStatus(this.options.statusScope);
-        for(const {instance,scope} of this.instances)instance.configure?.({
-          ownerRoute:route=>{if(!scope)throw Error('Connector scope is unavailable');this.options.http!.ownerRoute(route,scope);},
-          oauthCallback:callback=>{if(!scope)throw Error('Connector scope is unavailable');this.options.http!.oauthCallback(callback,scope);},
-        });
-        for(const {instance} of this.instances)if(instance.mountTransport){
-          if(!this.options.transport)throw Error('Connector transport is unavailable');
-          await this.options.transport(instance);
-        }
-      }else{
-        const host:ConnectorHost={ownerRoute:route=>this.addOwnerRoute(route),oauthCallback:callback=>this.addOAuthCallback(callback)};
-        for(const {instance} of this.instances)instance.configure?.(host);
-        this.mount();
-        for(const {instance} of this.instances)await instance.mountTransport?.(this.app!);
+      const http=this.options.http;if(!http)throw Error('Connector HTTP host is unavailable');
+      if(!this.options.statusScope)throw Error('Connector status scope is unavailable');
+      this.mountStatus(this.options.statusScope);
+      for(const {instance,scope} of this.instances){
+        if(!scope)throw Error('Connector scope is unavailable');
+        instance.configure?.({ownerRoute:route=>http.ownerRoute(route,scope),oauthCallback:callback=>http.oauthCallback(callback,scope)});
+      }
+      for(const {instance} of this.instances)if(instance.mountTransport){
+        if(!this.options.transport)throw Error('Connector transport is unavailable');
+        await this.options.transport(instance);
       }
       return this;
     }catch(error){try{await this.close();}catch(cleanup){throw new AggregateError([error,cleanup],'Connector initialization and disposal failed',{cause:error});}throw error;}
@@ -244,48 +236,6 @@ export class ConnectorRegistry {
     this.clearFailure(id);
   }
 
-  private addOwnerRoute(route:OwnerRoute){
-    if(!['GET','POST','PUT','DELETE'].includes(route.method)||!/^\/api\/connectors\/[a-z0-9][a-z0-9_/-]*$/.test(route.path)||route.path==='/api/connectors/status'||typeof route.handler!=='function')throw Error('Invalid connector owner route');
-    if(this.routes.some(other=>other.method===route.method&&other.path===route.path))throw Error(`Connector route ${route.method} ${route.path} is already registered`);
-    this.routes.push(route);
-  }
-  private addOAuthCallback(callback:OAuthCallback){
-    if(!oauthPath.test(callback.path)||typeof callback.complete!=='function'||typeof callback.successMessage!=='string'||typeof callback.failureMessage!=='string'||callback.statePrefix!==undefined&&(typeof callback.statePrefix!=='string'||!callback.statePrefix||callback.statePrefix.length>80||/[\r\n\0]/.test(callback.statePrefix)))throw Error('Invalid connector OAuth callback');
-    if(this.callbacks.some(other=>other.path===callback.path&&other.statePrefix===callback.statePrefix))throw Error(`Connector OAuth callback ${callback.path} is already registered`);
-    this.callbacks.push(callback);
-  }
-  private mount(){
-    const app=this.app;if(!app)throw Error('Connector Fastify host is unavailable');
-    const owner=async(request:FastifyRequest,reply:FastifyReply)=>{
-      if(!(this.context.ownerAuthorization?.(request.headers.authorization)??equalToken(request.headers.authorization,this.context.config.token)))return reply.code(401).send({error:'unauthorized'});
-      reply.header('Cache-Control','no-store');
-    };
-    const action=(handler:OwnerRoute['handler'])=>async(request:FastifyRequest,reply:FastifyReply)=>{
-      try{return await handler(request,reply);}catch(error){
-        const known=error instanceof ConnectorError;
-        return reply.code(known?error.statusCode:error instanceof z.ZodError?400:502).send({error:known?error.code:error instanceof z.ZodError?'connector_input_invalid':'connector_operation_failed',requestId:request.id});
-      }
-    };
-    app.get('/api/connectors/status',{onRequest:owner},()=>Object.fromEntries(this.instances.flatMap(({manifest,instance})=>manifest.statusKey&&instance.status?[[manifest.statusKey,instance.status()]]:[])));
-    for(const route of this.routes)app.route({method:route.method,url:route.path,onRequest:owner,...(route.bodyLimit?{bodyLimit:route.bodyLimit}:{}),handler:action(route.handler)});
-    for(const path of new Set(this.callbacks.map(callback=>callback.path))){
-      const candidates=this.callbacks.filter(callback=>callback.path===path);
-      if(candidates.filter(callback=>!callback.statePrefix).length>1)throw Error(`Connector OAuth callback ${path} has multiple defaults`);
-      app.get(path,async(request,reply)=>{
-        reply.header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').header('Content-Security-Policy',"default-src 'none'; style-src 'none'");
-        const fallback=candidates.find(callback=>!callback.statePrefix);
-        let selected=fallback??candidates[0]!;
-        try{
-          const input=z.object({state:z.string().min(20).max(200),code:z.string().min(1).max(4096)}).passthrough().parse(request.query);
-          const matched=candidates.filter(callback=>callback.statePrefix&&input.state.startsWith(callback.statePrefix)).sort((a,b)=>b.statePrefix!.length-a.statePrefix!.length)[0];
-          if(!matched&&!fallback)throw new ConnectorError('oauth_state_unrecognized',400);
-          selected=matched??fallback!;
-          await selected.complete(input.state,input.code);
-          return reply.type('text/plain; charset=utf-8').send(selected.successMessage);
-        }catch{return reply.code(400).type('text/plain; charset=utf-8').send(selected.failureMessage);}
-      });
-    }
-  }
   inventory():ConnectorInventoryEntry[]{
     const active:ConnectorInventoryEntry[]=this.instances.map(({manifest})=>({id:manifest.id,version:String(manifest.apiVersion),sourceKinds:manifest.sourceKinds.map(k=>typeof k==='string'?k:k.kind),active:!this.closed,state:'active'}));
     const failed:ConnectorInventoryEntry[]=[...this.failures.values()].filter(value=>!this.instances.some(entry=>entry.manifest.id===value.manifest.id)).map(({manifest,state,error})=>({id:manifest.id,version:String(manifest.apiVersion),sourceKinds:manifest.sourceKinds.map(k=>typeof k==='string'?k:k.kind),active:false,state,error}));

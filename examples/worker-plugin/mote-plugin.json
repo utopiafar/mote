@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "template.local-memory",
+  "name": "Template local memory provider",
+  "version": "0.1.0",
+  "trust": "external",
+  "runtime": "worker",
+  "entry": "main.mjs",
+  "archive": {
+    "asset": "template-local-memory-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "capabilities": [
+    "repository",
+    "retrieval"
+  ],
+  "configuration": [
+    {
+      "id": "dataFile",
+      "label": "Provider data file",
+      "type": "text",
+      "required": true,
+      "description": "Private JSON file owned by this provider instance. The host never reads, shares or pre-creates it."
+    }
+  ],
+  "dependencies": [],
+  "access": [
+    "Provider data file declared in the instance configuration"
+  ]
+}

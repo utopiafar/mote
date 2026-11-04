@@ -3928,6 +3928,10 @@ export const german: Readonly<Record<string, string>> = {
   "（当前）": "(aktuell)",
   "{0}{1}\n可用 {2}\n{3}": "{0}{1}\nVerfügbar {2}\n{3}",
   "无法读取系统存储位置：{0}": "System-Speicherorte können nicht gelesen werden: {0}",
+  "导入未完成": "Import nicht abgeschlossen",
+  "备份无法读取": "Sicherung kann nicht gelesen werden",
+  "无法写入所选位置": "Am ausgewählten Speicherort kann nicht geschrieben werden",
+  "无法读取所选文件": "Die ausgewählte Datei kann nicht gelesen werden",
   "刷新存储状态": "Speicherstatus aktualisieren",
   "迁移本机保存位置": "Lokalen Speicherort migrieren",
   "迁移到{0}：\n{1}\n\n已有图片、待 OCR 结果和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。": "Nach {0} migrieren:\n{1}\n\nBilder, ausstehende OCR-Ergebnisse und Warteschlangeneinträge werden zusammen migriert. Nach erfolgreicher Prüfung wird der Ort gewechselt und die alte Kopie bereinigt. Der zentrale Archivort bleibt unverändert.",
@@ -6710,6 +6714,8 @@ export const german: Readonly<Record<string, string>> = {
   "客户端登录": "Client-Anmeldung",
   "允许「{0}」登录并使用所有中央功能。": "„{0}“ erlauben, sich anzumelden und alle zentralen Funktionen zu nutzen.",
   "继续登录客户端": "Client-Anmeldung fortsetzen",
+  "拒绝这次登录": "Diese Anmeldung ablehnen",
+  "已拒绝这次客户端登录。": "Diese Client-Anmeldung wurde abgelehnt.",
   "客户端已登录，可返回客户端继续。": "Der Client ist angemeldet. Kehren Sie zum Client zurück, um fortzufahren.",
   "请升级中央节点后再登录。": "Aktualisieren Sie den zentralen Knoten, bevor Sie sich anmelden.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Anmeldedaten sind sicher gespeichert. Alle zentralen Funktionen teilen sich diese Anmeldung.",
@@ -10116,5 +10122,9 @@ export const german: Readonly<Record<string, string>> = {
   "正在启动": "Wird gestartet",
   "没有正在运行的版本": "Keine Version wird ausgeführt",
   "阻塞原因": "Blockierungen",
-  "需要重新构建（requires-build）": "Neuer Build erforderlich (requires-build)"
+  "需要重新构建（requires-build）": "Neuer Build erforderlich (requires-build)",
+  "快捷入口不可用": "Schnelleinstiege nicht verfügbar",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin ist gestoppt; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin ist nicht geladen; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin muss neu gebaut werden; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar."
 };

@@ -3928,6 +3928,10 @@ export const spanish: Readonly<Record<string, string>> = {
   "（当前）": "(actual)",
   "{0}{1}\n可用 {2}\n{3}": "{0}{1}\nDisponibles {2}\n{3}",
   "无法读取系统存储位置：{0}": "No se pueden leer las ubicaciones de almacenamiento del sistema: {0}",
+  "导入未完成": "Importación no completada",
+  "备份无法读取": "No se puede leer la copia de seguridad",
+  "无法写入所选位置": "No se puede escribir en la ubicación seleccionada",
+  "无法读取所选文件": "No se puede leer el archivo seleccionado",
   "刷新存储状态": "Actualizar estado de almacenamiento",
   "迁移本机保存位置": "Migrar almacenamiento local",
   "迁移到{0}：\n{1}\n\n已有图片、待 OCR 结果和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。": "Migrar a {0}:\n{1}\n\nLas imágenes, los resultados OCR pendientes y los registros en cola se migran juntos. Tras la verificación se cambia de ubicación y se limpia la copia antigua. La ubicación del archivo central no cambia.",
@@ -6710,6 +6714,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "客户端登录": "Inicio de sesión del cliente",
   "允许「{0}」登录并使用所有中央功能。": "Permitir que «{0}» inicie sesión y use todas las funciones centrales.",
   "继续登录客户端": "Continuar inicio de sesión del cliente",
+  "拒绝这次登录": "Rechazar este inicio de sesión",
+  "已拒绝这次客户端登录。": "Se rechazó este inicio de sesión del cliente.",
   "客户端已登录，可返回客户端继续。": "El cliente ha iniciado sesión. Vuelve al cliente para continuar.",
   "请升级中央节点后再登录。": "Actualiza el nodo central antes de iniciar sesión.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Las credenciales de inicio de sesión se guardaron de forma segura. Todas las funciones centrales comparten este inicio de sesión.",
@@ -10116,5 +10122,9 @@ export const spanish: Readonly<Record<string, string>> = {
   "正在启动": "Iniciando",
   "没有正在运行的版本": "Ninguna versión está en ejecución",
   "阻塞原因": "Bloqueos",
-  "需要重新构建（requires-build）": "Se requiere recompilar (requires-build)"
+  "需要重新构建（requires-build）": "Se requiere recompilar (requires-build)",
+  "快捷入口不可用": "Accesos rápidos no disponibles",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "El complemento de accesos del sistema está detenido; los accesos rápidos y las acciones de notificación no están disponibles.",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "El complemento de accesos del sistema no está cargado; los accesos rápidos y las acciones de notificación no están disponibles.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "El complemento de accesos del sistema necesita recompilarse; los accesos rápidos y las acciones de notificación no están disponibles."
 };

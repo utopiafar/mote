@@ -14,7 +14,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Raw platform observations, never inferred user intent. All persistence runs on the observer worker. */
-internal class SystemEventCollector(private val context: Context, private val worker: Handler) {
+internal class SystemEventCollector(private val context: Context, private val worker: Handler, private val isActive: () -> Boolean = { true }) {
     private val settings = Settings(context)
     private val pending = AtomicInteger()
     @Volatile private var session = UUID.randomUUID().toString()
@@ -22,14 +22,14 @@ internal class SystemEventCollector(private val context: Context, private val wo
     private val seen = object : LinkedHashMap<String, String>(128, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 512
     }
-    private fun allowed(c: CollectorConfig) = settings.enabled && MediaCollectionService.connected && !ConnectionGuard.changing() && !QueueStorage.recovering &&
+    private fun allowed(c: CollectorConfig) = isActive() && settings.enabled && MediaCollectionService.connected && !ConnectionGuard.changing() && !QueueStorage.recovering &&
         MediaCollection.permissionAllowed(context) && context.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() &&
         MediaPrivacy.powerAllowed(c, Diagnostics.battery(context))
 
     fun notification(sbn: StatusBarNotification, removed: Boolean, reason: Int? = null) {
         // Dismissal is outside the owner's collection contract. Do not even
         // inspect notification extras or mutate the deduplication cache.
-        if (removed) return
+        if (removed || !isActive()) return
         val c = settings.read()
         if (!c.notificationCollectionEnabled || !allowed(c) || sbn.packageName == context.packageName) return
         val mode = MediaPrivacy.mode(sbn.packageName, c)
@@ -67,6 +67,7 @@ internal class SystemEventCollector(private val context: Context, private val wo
     }
 
     fun state(action: String) {
+        if (!isActive()) { lastState = null; return }
         val c = settings.read()
         if (!c.deviceEventCollectionEnabled || !allowed(c)) { lastState = null; return }
         val locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
@@ -82,11 +83,12 @@ internal class SystemEventCollector(private val context: Context, private val wo
     }
 
     fun refresh() {
+        if (!isActive()) { seen.clear(); lastState = null; return }
         val c = settings.read()
-        if (!allowed(c)) { seen.clear(); lastState = null; Notifications.showEvents(context, null); return }
+        if (!allowed(c)) { seen.clear(); lastState = null; context.systemEntries().showEvents(null); return }
         if (!c.notificationCollectionEnabled) seen.clear()
         state("state_observed")
-        Notifications.showEvents(context, listOfNotNull(
+        context.systemEntries().showEvents(listOfNotNull(
             if (c.notificationCollectionEnabled) MoteI18n.text("通知事件已启用") else null,
             if (c.deviceEventCollectionEnabled) MoteI18n.text("亮屏与锁定事件已启用") else null
         ).takeIf { it.isNotEmpty() }?.joinToString(" · "))
@@ -103,12 +105,13 @@ internal class SystemEventCollector(private val context: Context, private val wo
                 .put("observation", JSONObject().put("sessionId", session).put("elapsedRealtimeMs", SystemClock.elapsedRealtime())))
     }
     private fun submit(c: CollectorConfig, event: JSONObject, reviewHeld: Boolean = false, accept: () -> Boolean) {
+        if (!isActive()) return
         if (pending.incrementAndGet() > 128) { pending.decrementAndGet(); reportFailure(); return }
         val epoch = MediaCollection.epoch.get()
         worker.post {
             try {
                 ConnectionGuard.sync {
-                    if (!allowed(c) || !settings.read().sameCaptureConfiguration(c) || MediaCollection.epoch.get() != epoch) return@sync
+                    if (!isActive() || !allowed(c) || !settings.read().sameCaptureConfiguration(c) || MediaCollection.epoch.get() != epoch) return@sync
                     val before = LinkedHashMap(seen); val previousState = lastState
                     if (!accept()) return@sync
                     try {

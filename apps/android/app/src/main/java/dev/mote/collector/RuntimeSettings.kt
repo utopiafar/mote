@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.work.WorkManager
+import dev.mote.collector.plugins.CapturePlugin
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -15,12 +16,11 @@ object RuntimeSettings {
     private val stopGeneration = java.util.concurrent.atomic.AtomicLong()
     @Volatile var stopping = false; private set
     private val stopCallers = mutableListOf<(kotlin.Result<Unit>) -> Unit>()
-    private val projectionConsent = ProjectionConsentHandoff()
     private var configurationObserver: (() -> Unit)? = null
     fun observeConfiguration(observer: (() -> Unit)?) { configurationObserver = observer }
-    fun takeProjectionConsentRequest() = projectionConsent.take()
-    fun observeProjectionConsent(observer: (() -> Unit)?) { if (observer == null) projectionConsent.detach() else projectionConsent.attach(observer) }
-    fun cancelProjectionConsentRequest() = projectionConsent.cancel()
+    fun takeProjectionConsentRequest() = CapturePlugin.controllers()?.reconfiguration?.takeConsentRequest() ?: false
+    fun observeProjectionConsent(observer: (() -> Unit)?) { CapturePlugin.controllers()?.reconfiguration?.observeConsent(observer) }
+    fun cancelProjectionConsentRequest() { CapturePlugin.controllers()?.reconfiguration?.cancelConsent() }
     @Volatile var currentConfiguration: CollectorConfig? = null; private set
     @Volatile private var progressMessage = ""
     @Volatile private var startedAt = 0L
@@ -47,7 +47,7 @@ object RuntimeSettings {
             main.post {
                 if (ownsHold) ConnectionGuard.endReconfiguration()
                 app.stopService(android.content.Intent(app, ProjectionService::class.java))
-                Notifications.clear(app); Notifications.clearMedia(app)
+                app.systemEntries().clear(); app.systemEntries().clearMedia()
                 MediaCollection.clear(); MediaCollectionService.refresh()
                 stopping = false
                 val waiting = stopCallers.toList(); stopCallers.clear()
@@ -116,13 +116,14 @@ object RuntimeSettings {
             }
             currentConfiguration = current.getOrNull()
             main.post {
+                val reconfiguration = CapturePlugin.controllers()?.reconfiguration
                 val applied = runCatching {
                     val config = current.getOrThrow()
                     val enabled = settings.enabled && (config.screenCollectionEnabled || config.observesSystem()) && stopVersion == stopGeneration.get()
                     if (!config.screenCollectionEnabled && !config.observesSystem()) executor.execute { settings.enabled = false }
                     val resume = wasEnabled && enabled
                     var needsConsent = false
-                    when (captureResume(wasEnabled, enabled, if (config.screenCollectionEnabled) config.effectiveMode() else "accessibility", ProjectionService.instance != null)) {
+                    when (reconfiguration?.resume(wasEnabled, enabled, if (config.screenCollectionEnabled) config.effectiveMode() else "accessibility", ProjectionService.instance != null) ?: CaptureResume.STOPPED) {
                         CaptureResume.EXISTING_PROJECTION -> ProjectionService.instance!!.applyConfiguration(config)
                         CaptureResume.NEW_PROJECTION -> {
                             if (!config.observesSystem()) { executor.execute { settings.enabled = false }; needsConsent = true }
@@ -145,14 +146,14 @@ object RuntimeSettings {
                 ConnectionGuard.endReconfiguration()
                 CaptureAccessibilityService.instance?.refreshSchedule()
                 MediaCollectionService.refresh()
-                if (result.isSuccess && applied.getOrNull()?.projectionConsentRequired == true) projectionConsent.request()
+                if (result.isSuccess && applied.getOrNull()?.projectionConsentRequired == true) reconfiguration?.requestConsent()
                 finished(if (result.isFailure) kotlin.Result.failure(result.exceptionOrNull()!!) else applied)
                 configurationObserver?.invoke()
                 executor.execute {
                     runCatching {
                         if (applied.isSuccess) current.getOrNull()?.let { config ->
                             UploadWorker.schedule(app, config)
-                            SourceWork.schedule(app)
+                            dev.mote.collector.plugins.SourceProviderPlugin.owner(app).schedule()
                         }
                     }.onFailure { settings.uploadStatus(MoteI18n.text("设置已保存，同步调度暂不可用：{0}", it.message ?: MoteI18n.text("请稍后重试"))) }
                 }

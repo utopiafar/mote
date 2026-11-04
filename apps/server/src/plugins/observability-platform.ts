@@ -1,13 +1,16 @@
 import {monitorEventLoopDelay,type IntervalHistogram} from 'node:perf_hooks';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
+import {z} from 'zod';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext,HostScope} from '@mote/plugin-host';
 import type {TokenUsage,UsageAttribution,UsageReceipt} from '@mote/shared';
 import type {Store} from '../store.js';
-import {ServerDiagnostics,type ServerDiagnosticsOptions} from '../diagnostics.js';
+import {ServerDiagnostics,diagnosticStageFilters,type ServerDiagnosticsOptions} from '../diagnostics.js';
 import {ExecutionObservability,type ObservationClock} from '../execution-observability.js';
+import {scopeFields} from '../query-scope.js';
 import {UsageLedger,type OperationUsage} from '../usage.js';
-import {createUpdateService,type ReleaseCheck,type UpdateContext} from '../updates.js';
+import {createUpdateService,registerUpdateRoutes,type ReleaseCheck,type UpdateContext} from '../updates.js';
 import {centralServices,type UsageRecording} from './central-contracts.js';
 
 /** Private host configuration, never a Manifest configuration value or a wire DTO. */
@@ -43,6 +46,27 @@ export interface ObservabilityRead {
   snapshot():Readonly<Record<string,FlatValue>>;
   /** Bounded sanitized events. Detailed Agent trace payloads never leave here. */
   events(afterSeq?:number,limit?:number):Readonly<{items:readonly DiagnosticReadEvent[];nextSeq:number;oldestSeq:number|null}>;
+}
+
+/** Host/domain projections owned outside C06. The observability platform owns the
+ * safe diagnostics envelope and the HTTP transport; callers never supply a writer,
+ * credential or raw log path. Values are serialized only by its own routes. */
+export interface DiagnosticProjection {
+  readonly execution:unknown;
+  readonly services:unknown;
+  readonly queue:unknown;
+  readonly storage:unknown;
+}
+/** Composition-only read views owned by the existing root assembly. They are
+ * consumed by the platform's routes and expose no object handles. */
+export interface ObservabilitySystemView {
+  status():unknown;
+  updates(cursor:number,limit:number):unknown;
+  buildInfo():unknown;
+}
+export interface ObservabilityRouteViews {
+  readonly system:ObservabilitySystemView;
+  readonly diagnostics:()=>DiagnosticProjection;
 }
 
 /** Trusted H05/29 assembly only. Raw writer/handles never become an ordinary plugin port. */
@@ -119,6 +143,9 @@ export interface ObservabilityPlatform extends PluginLifecycle {
   read(scope:PluginScope):ObservabilityRead;
   /** Frozen ordinary-consumer port; it exposes no ledger summary, price or writer. */
   usagePort():UsageRecording;
+  /** Trusted assembly mounts this contribution once before Fastify listen. Handlers
+   * dispatch to the current activation; without one they reject with 503. */
+  routes(app:FastifyInstance,scope:PluginScope,views:ObservabilityRouteViews):void;
   close():Promise<void>;
 }
 
@@ -130,7 +157,7 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
   let ledger:UsageLedger|undefined,admitted:AdmittedUsageFactory|undefined;
   let eventLoop:IntervalHistogram|undefined,softwareUpdate:ReturnType<typeof createUpdateService>|undefined;
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopping'|'stopped'|'disposed'='created';
-  let closing:Promise<void>|undefined;
+  let closing:Promise<void>|undefined,mounted=false;
   const current=()=>{if(phase!=='active'&&phase!=='quiescing')throw unavailable();};
   /** The host guards a service call, not methods on the object it returns. A
    * retained meter must therefore recheck this platform on every write: accepted
@@ -188,6 +215,55 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
     })();
     return closing;
   }
+  /** Mounted once by the trusted assembly before listen. The handler-level guard
+   * reads the live activation phase and scope, so a stopped platform fails closed
+   * without registering or removing Fastify routes. */
+  function routes(app:FastifyInstance,routeScope:PluginScope,views:ObservabilityRouteViews){
+    if(mounted)throw unavailable();
+    if(phase!=='prepared'&&phase!=='active'&&phase!=='quiescing')throw unavailable();
+    if(!views?.system||typeof views.diagnostics!=='function')throw unavailable();
+    mounted=true;
+    const assertCurrent=(request:FastifyRequest)=>{
+      if(phase!=='active'&&!(phase==='quiescing'&&(request.method==='GET'||request.method==='HEAD')))throw unavailable();
+      try{routeScope.assertCurrent();}catch{throw unavailable();}
+    };
+    const diagnosticSnapshot=()=>({version:1,scope:'central-safe-diagnostics',...diagnostics!.snapshot(),...views.diagnostics()});
+    app.register(async child=>{
+      child.addHook('onRequest',async request=>{assertCurrent(request);});
+      child.get('/api/status',async()=>views.system.status());
+      child.get('/api/updates',async request=>{
+        const {cursor,limit}=z.object({cursor:z.coerce.number().int().min(0).default(0),limit:z.coerce.number().int().min(1).max(200).default(100)}).parse(request.query);
+        return views.system.updates(cursor,limit);
+      });
+      child.get('/api/build-info',async()=>views.system.buildInfo());
+      registerUpdateRoutes(child,softwareUpdate!);
+      child.get('/api/diagnostics',async()=>diagnosticSnapshot());
+      child.get('/api/diagnostics/logs',async(request,reply)=>{
+        const {file}=z.object({file:z.coerce.number().int().min(0).max(9).default(0)}).strict().parse(request.query);
+        return reply.type('text/plain; charset=utf-8').send(await diagnostics!.readRaw(file));
+      });
+      child.get('/api/diagnostics/log-pages',async request=>{
+        const args=z.object({file:z.coerce.number().int().min(0).max(9).default(0),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(500).default(100),stage:z.enum(diagnosticStageFilters).default('all')}).strict().parse(request.query);
+        return diagnostics!.readPage(args.file,args.page,args.pageSize,args.stage);
+      });
+      child.get('/api/diagnostics/events',async request=>{
+        const args=z.object({afterSeq:z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),limit:z.coerce.number().int().min(1).max(500).default(200)}).strict().parse(request.query);
+        return diagnostics!.events(args.afterSeq,args.limit);
+      });
+      child.get('/api/support-bundle',async(request,reply)=>{
+        const range=z.object({after:z.string().datetime().default(new Date(Date.now()-86400000).toISOString()),before:z.string().datetime().default(new Date(Date.now()+1).toISOString())}).strict().refine(v=>v.after<v.before).parse(request.query);
+        diagnostics!.record('support.exported',{requestId:request.id});
+        const logs=await diagnostics!.exportRange(range.after,range.before);
+        return reply.header('Content-Disposition','attachment; filename="mote-support.json"').type('application/json').send({version:1,scope:'central-safe-support',createdAt:new Date().toISOString(),snapshot:diagnosticSnapshot(),...logs});
+      });
+      child.get('/api/usage',async request=>{
+        const day=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s);
+        const {from,to,timeZone,groupBy,page,pageSize,...filters}=z.object({from:day,to:day,timeZone:scopeFields.timeZone.default('UTC'),page:z.coerce.number().int().min(1).max(1000000).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(20),groupBy:z.enum(['agent','module','skill','model','provider']).default('agent'),agentId:z.string().min(1).max(128).optional(),moduleId:z.string().min(1).max(128).optional(),skillId:z.string().min(1).max(128).optional(),provider:z.string().min(1).max(128).optional(),model:z.string().max(512).optional(),status:z.enum(['running','completed','failed']).optional()}).strict().refine(v=>v.from<=v.to&&Date.parse(v.to)-Date.parse(v.from)<=366*86400000).parse(request.query);
+        return ledger!.summary(from,to,timeZone,filters,groupBy,page,pageSize);
+      });
+      child.put('/api/usage/prices',async request=>ledger!.setPrice(request.body));
+    });
+  }
   return Object.freeze({
     async prepare(){
       if(phase!=='created')throw unavailable();
@@ -218,6 +294,7 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
     forAssembly:acquire,
     read,
     usagePort:()=>usagePort,
+    routes,
   });
 }
 

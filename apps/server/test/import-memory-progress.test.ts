@@ -37,7 +37,7 @@ for(const mode of ['failed','waiting','planner-failed'] as const)test(`import re
   assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),1);
   const jobId=String(node.store.db.prepare('SELECT job_id FROM memory_input_authorizations WHERE capture_id=?').get(ids[0])!.job_id),job=await node.memoryPipeline.run(jobId);
   assert.equal(job.status,mode==='waiting'?'waiting_for_input':'failed');
-  if(mode==='planner-failed'){assert.ok(planningCalls>0&&planningCalls<=3);assert.equal(node.featureServices.delegation.list().find(work=>work.profileId==='memory.feedback')?.failureReceipt?.attempt,3);assert.equal(job.errorCode,'memory_feedback_planning_failed');assert.equal(node.featureServices.ownerQuestions.page({operationId:'memory:'+jobId}).items.length,0);assert.equal(node.featureServices.activity.detail('memory:'+jobId).state,'failed');}
+  if(mode==='planner-failed'){assert.ok(planningCalls>0&&planningCalls<=3);assert.equal(node.featureServices.delegation.list().find(work=>work.profileId==='memory.feedback')?.failureReceipt?.attempt,3);assert.equal(job.errorCode,'memory_feedback_planning_failed');assert.equal(node.featureServices.ownerQuestions.page({operationId:'memory:'+jobId}).items.length,0);assert.equal(node.activity.detail('memory:'+jobId).state,'failed');}
   assert.ok(job.batches.some(batch=>batch.status==='completed'));assert.ok(job.batches.every(batch=>!batch.supersededBy));
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);
   assert.equal(importMemoryProgress(node.store,[ids[0]])!.completed,1);

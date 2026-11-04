@@ -1,22 +1,26 @@
 import type {ServerFeatureScope} from '../feature-host.js';
 import type {FastifyInstance} from 'fastify';
-import {registerFileRoutes} from '../file-routes.js';
 import type {FeatureServices} from '../feature-services.js';
-import type {FilePlaybackGrants} from '../plugins/files-source.js';
+import {filesSourceRoutesFor,type FilePlaybackGrants} from '../plugins/files-source.js';
+import {StoreError} from '../store.js';
 import type {ServerFeatureAdapter} from './index.js';
 
-/** C11's files-source factory owns FileStore creation/close/sweep and the
- * playback-grant scope. This feature only registers the existing HTTP protocol. */
+/** C11's files-source factory owns FileStore creation/close/sweep, the
+ * playback-grant scope and the file transport. This feature only mounts the
+ * plugin's single route contribution inside the feature host's HTTP scope.
+ * Pre-H14 bridge: the published playback scope keys that contribution; H14
+ * removes this member together with the feature adapter. */
 export interface FilesFeatureSource {readonly playback:FilePlaybackGrants}
 
 /** Owns resumable binary transport, extraction views and authenticated playback. */
-export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,executor,files,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization,filesSource}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|"executor"|'files'|'processing'|'ingress'|'sourceOwner'|'credential'|'evidenceReader'|'diagnostics'|'setPlaybackAuthorization'>&{filesSource?:FilesFeatureSource},scope?:ServerFeatureScope){
- scope?.every(5000,()=>{processing.prepare();return executor.tick();});scope?.defer(()=>processing.close());
- const playbackAuthorization=registerFileRoutes(app,files,processing,ingress,sourceOwner,req=>credential(req)?.deviceId,evidenceReader,diagnostics,withMediaOwnerIntent,withMediaOwnerBatch,filesSource?.playback);
- setPlaybackAuthorization(playbackAuthorization);
- // The app-level bypass must not outlive this route contribution. The plugin
- // separately retires the token registry when its own scope quiesces.
- scope?.defer(()=>setPlaybackAuthorization(()=>false));
+export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,executor,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization,filesSource}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|"executor"|'processing'|'ingress'|'sourceOwner'|'credential'|'evidenceReader'|'diagnostics'|'setPlaybackAuthorization'>&{filesSource?:FilesFeatureSource},scope?:ServerFeatureScope){
+  scope?.every(5000,()=>{processing.prepare();return executor.tick();});scope?.defer(()=>processing.close());
+  const source=filesSource?filesSourceRoutesFor(filesSource.playback):undefined;
+  if(!source)throw new StoreError('Files source routes are unavailable',503);
+  source.routes(app,{processing,ingress,authorize:sourceOwner,device:req=>credential(req)?.deviceId,evidence:evidenceReader,diagnostics,withOwnerIntent:withMediaOwnerIntent,withOwnerBatch:withMediaOwnerBatch,setPlaybackAuthorization});
+  // The app-level bypass must not outlive this route contribution. The plugin
+  // separately retires the token registry when its own scope quiesces.
+  scope?.defer(()=>setPlaybackAuthorization(()=>false));
 }
 
 export const adapter:ServerFeatureAdapter={

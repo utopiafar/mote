@@ -5,9 +5,9 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale, getLocale} from '@mote/shared/i18n';
 import {Overview} from '../src/Overview';
-import {Insights} from '../src/Insights';
-import {Conversations} from '../src/Conversations';
-import {Connections} from '../src/Connections';
+import {Insights} from '../src/plugins/discovery/Insights';
+import {Conversations} from '../src/plugins/ask/Conversations';
+import {Connections} from '../src/plugins/sources/Connections';
 import {webFeatures} from '../src/features/registry';
 import { featuresReady } from '../src/features/bootstrap.js';
 import {readPage} from '../src/navigation';
@@ -118,6 +118,8 @@ test('source device pairing and AI access use distinct routes and inventories wi
   const api = apiWith((path, init) => {
     if (path === '/api/features') return {schemaVersion: 1, revision: 1, features: [], capabilities: []};
     if (path === '/api/connectors/status') return {};
+    if (path === '/api/connectors/lark') return {};
+    if (path === '/api/sources') return {items: []};
     if (path === '/api/configuration') return {groups: []};
     if (path === '/api/connections') return {items: credentials, mcp: {enabled: true, writeEnabled: true, writeSourceIds: ['generated-source']}};
     writes.push({path, ...(init?.body ? {body: JSON.parse(String(init.body))} : {})});

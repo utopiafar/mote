@@ -1,4 +1,4 @@
-import {useMaintenanceTransfer,provideMaintenanceDownload,maintenanceFailure,maintenanceTechnicalFailure} from './maintenance-transfer';
+import {useMaintenanceTransfer,provideMaintenanceDownload,maintenanceFailure,maintenanceTechnicalFailure} from './plugins/maintenance/maintenance-transfer';
 import {useResource} from './useResource';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect, useRef, useState, type ReactNode} from 'react';

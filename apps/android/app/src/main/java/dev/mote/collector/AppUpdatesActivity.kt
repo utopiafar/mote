@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.plugins.NativeSystemToolsPlugin
 
 class AppUpdatesActivity : MoteActivity() {
     private lateinit var store: AppUpdateStore
@@ -29,6 +30,7 @@ class AppUpdatesActivity : MoteActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val task by lazy { UiTask(this) }
     private val cancelTask by lazy { UiTask(this) }
+    private val systemTools by lazy { NativeSystemToolsPlugin.owner(this) }
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 1000) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -50,7 +52,7 @@ class AppUpdatesActivity : MoteActivity() {
         task.start(MoteI18n.text("正在读取更新设置…"), { label.text = it }, {
             val value = AppUpdateStore(applicationContext); value to value.config()
         }) { result ->
-            result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background(MoteI18n.text("正在读取安装状态…")) { AppUpdateInstaller.reconcile(applicationContext); AppUpdateWork.reconcile(applicationContext) } }
+            result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background(MoteI18n.text("正在读取安装状态…")) { systemTools.reconcileUpdates(applicationContext); AppUpdateWork.reconcile(applicationContext) } }
                 .onFailure { label.text = MoteI18n.text("更新设置读取失败，请重试") }
         }
     }
@@ -71,14 +73,14 @@ class AppUpdatesActivity : MoteActivity() {
                 "download" -> background(MoteI18n.text("正在提交下载…")) { AppUpdateWork.enqueue(applicationContext, "download") }
                 "install" -> {
                     if (!packageManager.canRequestPackageInstalls()) startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-                    else background(MoteI18n.text("正在准备安装…")) { val ticket = AppUpdateInstaller.request(applicationContext); AppUpdateInstaller.stage(applicationContext, ticket) }
+                    else background(MoteI18n.text("正在准备安装…")) { val ticket = systemTools.requestUpdate(applicationContext); systemTools.stageUpdate(applicationContext, ticket) }
                 }
                 "check" -> background(MoteI18n.text("正在检查更新…")) { AppUpdateWork.enqueue(applicationContext, "check") }
             }
         }
         cancel = button(MoteI18n.text("取消")) {
             background(MoteI18n.text("正在取消…"), cancelTask) {
-                if (store.prefs.getString("state", "") in UpdatePresentation.installStates) AppUpdateInstaller.cancelSession(applicationContext)
+                if (store.prefs.getString("state", "") in UpdatePresentation.installStates) systemTools.cancelUpdate(applicationContext)
                 else AppUpdateWork.cancel(applicationContext)
             }
         }
@@ -106,7 +108,7 @@ class AppUpdatesActivity : MoteActivity() {
         MoteUi.button(primary, true)
         render()
     }
-    override fun onResume() { super.onResume(); foreground = true; if (::store.isInitialized && ::status.isInitialized) background(MoteI18n.text("正在读取安装状态…")) { AppUpdateInstaller.reconcile(applicationContext); AppUpdateWork.reconcile(applicationContext) }; handler.post(refresh) }
+    override fun onResume() { super.onResume(); foreground = true; if (::store.isInitialized && ::status.isInitialized) background(MoteI18n.text("正在读取安装状态…")) { systemTools.reconcileUpdates(applicationContext); AppUpdateWork.reconcile(applicationContext) }; handler.post(refresh) }
     override fun onPause() { foreground = false; handler.removeCallbacks(refresh); super.onPause() }
     private fun background(label: String, runner: UiTask = task, action: () -> Unit) {
         if (runner.busy) { Toast.makeText(this, MoteI18n.text("操作正在进行"), Toast.LENGTH_SHORT).show(); return }

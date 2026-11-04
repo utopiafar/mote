@@ -3928,6 +3928,10 @@ export const french: Readonly<Record<string, string>> = {
   "（当前）": "(actuel)",
   "{0}{1}\n可用 {2}\n{3}": "{0}{1}\nDisponible : {2}\n{3}",
   "无法读取系统存储位置：{0}": "Impossible de lire les emplacements système : {0}",
+  "导入未完成": "Importation non terminée",
+  "备份无法读取": "Impossible de lire la sauvegarde",
+  "无法写入所选位置": "Impossible d’écrire à l’emplacement sélectionné",
+  "无法读取所选文件": "Impossible de lire le fichier sélectionné",
   "刷新存储状态": "Actualiser l'état du stockage",
   "迁移本机保存位置": "Migrer le stockage local",
   "迁移到{0}：\n{1}\n\n已有图片、待 OCR 结果和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。": "Migrer vers {0} :\n{1}\n\nLes images, résultats OCR en attente et enregistrements en file migrent ensemble. Après vérification, l'emplacement change et l'ancienne copie est nettoyée. L'emplacement de l'archive centrale reste inchangé.",
@@ -6710,6 +6714,8 @@ export const french: Readonly<Record<string, string>> = {
   "客户端登录": "Connexion du client",
   "允许「{0}」登录并使用所有中央功能。": "Autoriser « {0} » à se connecter et à utiliser toutes les fonctions centrales.",
   "继续登录客户端": "Continuer la connexion du client",
+  "拒绝这次登录": "Refuser cette connexion",
+  "已拒绝这次客户端登录。": "Cette connexion client a été refusée.",
   "客户端已登录，可返回客户端继续。": "Le client est connecté. Retournez au client pour continuer.",
   "请升级中央节点后再登录。": "Mettez à niveau le nœud central avant de vous connecter.",
   "登录凭据已安全保存，所有中央功能共用此登录。": "Les identifiants de connexion sont enregistrés en toute sécurité. Toutes les fonctions centrales partagent cette connexion.",
@@ -10116,5 +10122,9 @@ export const french: Readonly<Record<string, string>> = {
   "正在启动": "Démarrage",
   "没有正在运行的版本": "Aucune version n’est en cours d’exécution",
   "阻塞原因": "Blocages",
-  "需要重新构建（requires-build）": "Reconstruction requise (requires-build)"
+  "需要重新构建（requires-build）": "Reconstruction requise (requires-build)",
+  "快捷入口不可用": "Entrées rapides indisponibles",
+  "系统入口插件已停用；快捷入口和通知动作不可用。": "Le plugin des entrées système est arrêté ; les entrées rapides et les actions de notification sont indisponibles.",
+  "系统入口插件未加载；快捷入口和通知动作不可用。": "Le plugin des entrées système n’est pas chargé ; les entrées rapides et les actions de notification sont indisponibles.",
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Le plugin des entrées système doit être reconstruit ; les entrées rapides et les actions de notification sont indisponibles."
 };

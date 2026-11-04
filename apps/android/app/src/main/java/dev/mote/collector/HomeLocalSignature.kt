@@ -20,6 +20,39 @@ internal object HomeLocalSignature {
 }
 
 /**
+ * The plugin-owned local read state: the record revision cache plus the last rendered source
+ * and receipt signatures. An unchanged revision or signature reuses the previous answer, so the
+ * home neither reopens the queue nor rebuilds rows that still show the same content.
+ */
+internal class HomeLocalState {
+    private val records = RevisionCache()
+    private var sources: String? = null
+    private var receipt: String? = null
+
+    fun captures(recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, pendingRecovery: () -> Boolean, exists: () -> Boolean): JSONObject =
+        HomeLocalCaptures.collect(records, recordsRevision, draft, savedReceipt, pendingRecovery, exists)
+
+    fun sourcesChanged(signature: String): Boolean {
+        if (signature == sources) return false
+        sources = signature
+        return true
+    }
+
+    fun receiptChanged(signature: String): Boolean {
+        if (signature == receipt) return false
+        receipt = signature
+        return true
+    }
+
+    /** A new home mount has no rendered rows yet; its first render must build
+     * even when the content signature still matches the previous Activity. */
+    fun resetSignatures() {
+        sources = null
+        receipt = null
+    }
+}
+
+/**
  * The has-any-records answer keyed by the local-records revision. An unchanged revision reuses
  * the last answer without touching the queue; a changed revision, including a full deletion,
  * runs [check] once more.

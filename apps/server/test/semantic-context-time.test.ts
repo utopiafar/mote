@@ -125,7 +125,7 @@ test('Ask samples before model queuing and every working summary inherits the sa
   t.after(()=>release.resolve());
   const {node}=await appFixture(t,async input=>{calls.push(input);if(input.skill==='working-memory')assert.deepEqual(input.contextEvidenceDependencies,{version:1,complete:true,ids:[]});if(input.question==='Generated blocker'){entered.resolve();await release.promise;}return empty(input.skill==='working-memory'?'Generated complete summary':'Generated answer');},()=>{samples++;if(samples===3)thirdSample.resolve();return semantic;});
   node.featureServices.interactiveGate.configure(1);
-  const conversations=node.featureServices.conversations;
+  const conversations=node.conversations;
   let conversationId:string|undefined;
   // These owner-generated prefixes read no original evidence. Their complete
   // empty lineage is explicit, as a real host receipt would record it.

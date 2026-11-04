@@ -20,7 +20,7 @@ internal class LibraryCaptureView(
     private val retention: () -> Unit,
 ) {
     private val task = UiTask(activity)
-    private val projection = LibraryCaptureProjection()
+    private val projection = dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).captureProjection()
     private val status = TextView(activity)
     private val host = parent
     private val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
@@ -47,7 +47,7 @@ internal class LibraryCaptureView(
     private var files = emptyList<JSONObject>()
     private var remoteNotice = ""
     @Volatile private var verifiedConnection: Pair<String, Long>? = null
-    private val refreshPolicy = LocalStateRepository.get(activity).state.value.let { LibraryRefreshPolicy(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
+    private val refreshPolicy = LocalStatusProducer.get(activity).state.value.let { dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).refreshPolicy(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var incrementalScheduled = false
     private var incrementalPending = false
@@ -168,7 +168,7 @@ internal class LibraryCaptureView(
     }
     fun refresh() {
         cancelIncremental()
-        LocalStateRepository.get(activity).state.value.let { refreshPolicy.baseline(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
+        LocalStatusProducer.get(activity).state.value.let { refreshPolicy.baseline(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
         val current = CentralAccess.resolve(activity)
         if (task.busy && session == current.server to current.generation && activeFilter == source && activeDay == day) {
             refreshPending = true; sourceView.refresh(source, day); return
@@ -377,7 +377,7 @@ internal class LibraryCaptureView(
                     text = MoteI18n.text("查看中央版本")
                     setOnClickListener { activity.startActivity(android.content.Intent(activity, CaptureRecordsActivity::class.java)
                         .putExtra("recordId", row.identity.id).putExtra("recordRemote", true).putExtra("recordOrigin", row.identity.scope)
-                        .putExtra("recordDeviceId", row.identity.deviceId).putExtra("recordObservationCount", LibraryCaptureProjection.observations(centralVersion)).putExtra("recordVersion", LibraryCaptureProjection.version(centralVersion))
+                        .putExtra("recordDeviceId", row.identity.deviceId).putExtra("recordObservationCount", dev.mote.collector.plugins.NativeLibraryPlugin.observations(centralVersion)).putExtra("recordVersion", dev.mote.collector.plugins.NativeLibraryPlugin.version(centralVersion))
                         .putExtra("recordSource", centralVersion.optString("source"))) }
                 })
             }

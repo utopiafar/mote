@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {PluginHost,PluginHostError,type HostPluginContext,type HostScope} from '@mote/plugin-host';
-import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease,type ReplacementPolicy} from '@mote/plugin-api/contracts';
+import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease,type ReplacementPolicy,type PluginLifecycle} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {Config} from './config.js';
 import type {ConfigService} from './config-service.js';
@@ -8,6 +8,7 @@ import type {Store} from './store.js';
 import type {createVaultPlatformAssembly} from './plugins/vault-platform.js';
 import {createInstanceState} from './plugins/instance-state.js';
 import type {ConfigurationPlatform} from './plugins/configuration-platform.js';
+import {c10IntegrationDeclaration} from './plugins/c10-integration.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
 import type {ServerFeatureAdapter} from './features/index.js';
 import {defaultDistribution} from './distribution/default.js';
@@ -110,7 +111,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     const authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
     return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
-      authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
+      authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),host,get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
       /** Trusted build-only installation in the same host; no public service or second host. */
       async installObservabilityPlatform(options:ObservabilityPlatformOptions){
         if(observability)return observability;
@@ -120,6 +121,12 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
           factory:createObservabilityPlatformFactory(options,{store:storage.value.store},(value,valueScope)=>{platform=value;scope=valueScope;})});
         if(!platform||!scope)throw Error('Observability platform did not hand off its trusted assembly');
         facts.push(Object.freeze({id:'observability-platform',version:'1.0.0'}));observability={platform,scope};return observability;
+      },
+      /** Trusted C10 activation in the same host; callers retain the owner to stop or replace it. */
+      async installSourceIntegration(factory:(context:HostPluginContext)=>PluginLifecycle|Promise<PluginLifecycle>){
+        const owner=await host.install({identity:{host:host.identity,packageId:'mote.source-integration',installationId:'build:source-integration@1.0.0',instanceId:'source-integration',activationId:randomUUID()},
+          contributions:[c10IntegrationDeclaration],restartRequired:true,factory});
+        if(!facts.some(fact=>fact.id==='source-integration'))facts.push(Object.freeze({id:'source-integration',version:'1.0.0'}));return owner;
       },
       close:()=>closing??=(async()=>{try{await host.close();}finally{await Promise.all(leases.map(lease=>lease.release()));}})()});
   }catch(error){

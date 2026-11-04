@@ -125,24 +125,19 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 settings.syncStatus("waiting", it); return Result.retry()
             }
             stage = EventStage.QUEUE
-            val queue = applicationContext.queue()
+            val transportPlugin = dev.mote.collector.plugins.DurableTransportPlugin.get(applicationContext)
+            val queue = transportPlugin.openQueue()
             val contexts = applicationContext.captureContexts().pending(config.server.trimEnd('/'), settings.deviceId, includeUnbound = settings.dataOrigin() == config.server.trimEnd('/'))
             if (contexts.isNotEmpty()) {
                 SyncHeartbeat.send(applicationContext, settings, config, queue)
                 if (!CaptureContextSync.syncPending(applicationContext, config)) return failed(MoteI18n.text("采集来源说明有版本冲突，请保留或更新说明后重试"), retryable = false)
             }
-            val history = applicationContext.captureUploadHistory()
-            val finalizer = CaptureReceiptFinalizer(history)
-            history.prune(UploadHistoryRetention.read(applicationContext))
-            history.recoverInterrupted(CaptureUploadReceipt.scope(config.server, settings.deviceId), LoginProcess.id, includeCurrentProcess = true)
-            finalizer.recover(queue, CaptureUploadReceipt.scope(config.server, settings.deviceId))
-            UploadHistoryRecovery.available()
             // Each actual worker execution has its own batch identity, including a WorkManager retry.
             val batchId = java.util.UUID.randomUUID().toString()
-            val itemHistory = ItemUploadSession(applicationContext, config, batchId, "capture").also { it.restore() }
-            val attempts = CaptureUploadAttempts(history, batchId, CaptureUploadReceipt.scope(config.server, settings.deviceId), LoginProcess.id)
+            val itemHistory = transportPlugin.uploadSession(config, batchId, "capture").also { it.restore() }
+            val transport = transportPlugin.captureTransport(queue, config, batchId)
             settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
-            if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
+            if (!inputData.getBoolean("continuation", false)) dev.mote.collector.plugins.SourceProviderPlugin.owner(applicationContext).enqueueUpload(config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")
             // The configured batch size is the number of records in one worker
             // operation. Compressed JSONL transport supports up to 500.
@@ -197,45 +192,44 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 pendingRecordId = sent.first().getString("id")
                 var wireBytes = 0L
                 val individual = !config.packedUpload
-                val response: Pair<Int, JSONObject?> = if (individual) {
-                    wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
-                    SyncSchedule.requireConditions(applicationContext, config)
-                    attempts.send(sent, wireBytes, individual = true, originals = events) {
-                        CollectorHttp(applicationContext).post("${config.server}/api/captures", sent.first(), config.connectionToken())
-                    }
-                } else {
-                    val result = UploadNegotiation.sendShrinking(sent) { batch ->
-                        val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
+                val outcome: dev.mote.collector.plugins.CaptureSendOutcome
+                try {
+                    outcome = if (individual) {
+                        wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
                         SyncSchedule.requireConditions(applicationContext, config)
-                        attempts.send(batch, bundle.size.toLong(), individual = false, originals = events) {
-                            CollectorHttp(applicationContext).postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
+                        transport.send(sent, events, individual = true, bytes = wireBytes) {
+                            CollectorHttp(applicationContext).post("${config.server}/api/captures", sent.first(), config.connectionToken())
                         }
+                    } else {
+                        var last: dev.mote.collector.plugins.CaptureSendOutcome? = null
+                        val result = UploadNegotiation.sendShrinking(sent) { batch ->
+                            val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
+                            SyncSchedule.requireConditions(applicationContext, config)
+                            transport.send(batch, events, individual = false, bytes = bundle.size.toLong()) {
+                                CollectorHttp(applicationContext).postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
+                            }.also { last = it }.response
+                        }
+                        sent = result.first
+                        requireNotNull(last)
                     }
-                    sent = result.first; result.second
+                } catch (error: IllegalArgumentException) {
+                    if (individual) return failed(MoteI18n.text("上传确认 ID 不匹配"))
+                    throw error
                 }
+                val response = outcome.response
                 slice.record(wireBytes)
                 liveBytes = if (preferNew) liveBytes + wireBytes else 0L
                 retainTurn()
                 Diagnostics(applicationContext).add("uploadBytes", wireBytes)
-                val receipts = if (individual) {
-                    if (response.first in setOf(200, 201) && !IngressV2Protocol.validCapture(pendingRecordId!!, response.second)) return failed(MoteI18n.text("上传确认 ID 不匹配"))
-                    mapOf(pendingRecordId!! to response.first)
-                } else {
-                    if (response.first != 200) return failed(MoteI18n.text("批量上传未确认（HTTP {0}）", response.first), response.first !in setOf(400, 401, 403, 413))
-                    BatchUpload.receipts(sent.map { it.getString("id") }.toSet(), response.second)
-                }
+                val receipts = outcome.receipts
+                if (!individual && response.first != 200) return failed(MoteI18n.text("批量上传未确认（HTTP {0}）", response.first), response.first !in setOf(400, 401, 403, 413))
                 var retry = false
                 var permanent = false
-                var acknowledged = 0
                 for (event in sent) {
                     val id = event.getString("id")
                     val code = receipts[id]
                     when (code) {
                         200, 201 -> {
-                            val original = events.single { it.getString("id") == id }
-                            finalizer.received(queue, CaptureUploadReceipt.create(config.server, settings.deviceId, original, event,
-                                batchId, System.currentTimeMillis(), config.uploadedRetentionDays))
-                            acknowledged++
                             if (individual) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                             settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true)
                         }
@@ -244,7 +238,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                         else -> { retry = true; if (code in setOf(400, 401, 403, 413, 426)) permanent = true }
                     }
                 }
-                if (!individual && acknowledged > 0) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = response.first)
+                if (!individual && outcome.acknowledged > 0) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = response.first)
                 pendingRecordId = null
                 remaining -= sent.size + skippedAttachments
                 if (attachmentRetry) return failed(MoteI18n.text("部分记录未确认"))
@@ -274,8 +268,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
     private fun finishStatus() = SyncHealth.finish(applicationContext)
     companion object {
         private val captureUploadGate = ReentrantLock()
-        fun heartbeat(context: Context, config: CollectorConfig) = HeartbeatWorker.stateChanged(context, Settings(context).read())
-        fun schedule(context: Context, config: CollectorConfig, manual: Boolean = false) = SyncSchedule.schedule(context, config, manual)
+        fun heartbeat(context: Context, config: CollectorConfig) = dev.mote.collector.plugins.DurableTransportPlugin.get(context).heartbeat()
+        fun schedule(context: Context, config: CollectorConfig, manual: Boolean = false) =
+            dev.mote.collector.plugins.DurableTransportPlugin.get(context).scheduleUpload(config, manual)
         fun isWifi(context: Context): Boolean {
             val manager = context.getSystemService(ConnectivityManager::class.java)
             val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false

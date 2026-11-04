@@ -2,7 +2,7 @@ import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {ChevronRight} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from './api';
-import {memoryStatus,type Memory} from './Memories';
+import {memoryStatus,type Memory} from './plugins/memory/Memories';
 
 type ResultPage={ids:string[];total:number;nextCursor:string|null};
 type ResultRow={id:string;memory?:Memory;error?:unknown};

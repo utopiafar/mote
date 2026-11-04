@@ -34,4 +34,16 @@ internal object WorkPolling {
     /** The saved-results list never stops while visible; a terminal work only slows it down. */
     const val RESULTS_TERMINAL_MS = TERMINAL_MS
     fun rearmResults(live: Boolean, schedule: (Long) -> Unit) = schedule(if (live) MS else RESULTS_TERMINAL_MS)
+
+    /** Plugin-owned poll loop for its pages. A page that is not visible keeps no
+     * pending refresh: [stop] cancels one, and [rearm] refuses to arm a new one
+     * until the page is visible again. */
+    internal class Session(
+        private val visible: () -> Boolean,
+        private val schedule: (Long) -> Unit,
+        private val cancel: () -> Unit,
+    ) {
+        fun rearm(delay: Long) { cancel(); if (visible()) schedule(delay) }
+        fun stop() = cancel()
+    }
 }

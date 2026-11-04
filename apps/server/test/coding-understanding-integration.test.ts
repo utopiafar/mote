@@ -140,7 +140,7 @@ test('revoking the parent Memory grant during understanding prevents semantic an
  const started=deferred(),release=deferred(),producerSettled=deferred();let calls=0;
  t.after(()=>release.resolve());
  const node=await appFixture(t,async(input,reader)=>{calls++;assert.ok(isUnderstanding(input));const originals=await supplied(input,reader);input.onUsage?.(tokens(31,2,false));started.resolve();await release.promise;return response(originals[0].id,owner,products(originals[0].id,true));});
- const ledger=node.featureServices.usageLedger,startUsage=ledger.start.bind(ledger);
+ const ledger=node.observabilityAssembly.usage,startUsage=ledger.start.bind(ledger);
  ledger.start=(...args)=>{
   const meter=startUsage(...args);if(args[2]!=='coding-conversation-understanding')return meter;
   const finish=meter.finish;meter.finish=status=>{const receipt=finish(status);producerSettled.resolve();return receipt;};return meter;
