@@ -5,6 +5,7 @@ import type {FeatureServices} from '../feature-services.js';
 import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {ServerFeatureScope} from '../feature-host.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
+import {createAgentImportHost} from '../agent-import-host.js';
 import {createImportServices,importServicesContribution,importServicesDeclaration,importServicesReplacement,type ImportServicesDependencies} from '../plugins/import-services.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
@@ -17,7 +18,8 @@ export interface ImportsAssemblyDependencies extends ImportServicesDependencies 
 }
 
 export function assembleImports(dependencies:ImportsAssemblyDependencies){
-  const importServices=createImportServices(dependencies);
+  const importHost=createAgentImportHost(dependencies);
+  const importServices=createImportServices(dependencies,importHost);
   dependencies.resources.defer(()=>importServices.close());
   importServices.prepare();importServices.start();
   contributeDomainRoutes(dependencies.backendContext,{'mote.imports':Object.freeze({mount:(app:FastifyInstance,_services?:FeatureServices,scope?:ServerFeatureScope)=>importServices.routes(app,scope)})});
