@@ -1,5 +1,6 @@
 import type {AgentOptions,QueryInput} from '@mote/agent';
 import {skillCatalog} from '@mote/agent';
+import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {QueryResult} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
 import {StoreError,type Store} from '../store.js';
@@ -25,7 +26,8 @@ import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import {memoryIntegrationImageInputs} from '../memory-image-grants.js';
 import {MemoryStrategies} from '../memory-strategies.js';
 import {MemoryRecipeSettings} from '../memory-recipe-settings.js';
-import {MemoryAutomation} from '../memory-automation.js';
+import type {MemoryAutomation} from '../memory-automation.js';
+import {createMemoryAutomationAdmission,memoryAutomationAdmissionContribution,memoryAutomationAdmissionDeclaration,memoryAutomationAdmissionReplacement} from '../plugins/memory-automation-admission.js';
 import {MemoryIntegrationSettings} from '../memory-integration-settings.js';
 import {MemoryBindings} from '../memory-bindings.js';
 import {MemoryAdapters} from '../memory-adapters.js';
@@ -36,13 +38,14 @@ import {WorkingMemory} from '../working-memory.js';
 import {MemoryTopicsHost} from '../memory-topics-host.js';
 import {createMemoryControl} from '../memory-control.js';
 import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,MemoryLifecycle,type LifecycleSettings} from '../memory-lifecycle.js';
-import type {CentralDomainPlugin} from '../bootstrap.js';
 import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,memoryRecordRepositoryReplacement} from '../plugins/memory-record-repository.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
- * distribution concatenates each domain's list into one selected table. */
+ * distribution concatenates each domain's list into one selected table.
+ * Includes MEM02 memoryRecordRepository and MEM03/C21C automation admission. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryRecordRepositoryContribution,declaration:memoryRecordRepositoryDeclaration,replacement:memoryRecordRepositoryReplacement},
+  {contribution:memoryAutomationAdmissionContribution,declaration:memoryAutomationAdmissionDeclaration,replacement:memoryAutomationAdmissionReplacement},
 ]);
 
 /** A slot a later assembly stage fills once the object exists; callbacks
@@ -66,8 +69,12 @@ export function memoryInputs(dependencies:MemoryInputStageDependencies){
   const {store,configService}=dependencies;
   projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
   const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
-  const memoryAutomation=new MemoryAutomation(store);
-  return Object.freeze({memoryStrategies,memoryRecipeSettings,memoryAutomation,
+  // MemoryAutomation is only constructed inside the C21C plugin factory. The
+  // borrowed Store has no independent disposal here; the vault owns it.
+  const automationAdmission=createMemoryAutomationAdmission(store);
+  automationAdmission.prepare();automationAdmission.start();
+  const memoryAutomation=automationAdmission.automationForAssembly;
+  return Object.freeze({memoryStrategies,memoryRecipeSettings,memoryAutomation,automationAdmission,
     bindings:lateBinding<MemoryBindings>(),topics:lateBinding<MemoryTopicsHost>(),integrationSettings:lateBinding<MemoryIntegrationSettings>()});
 }
 

@@ -26,6 +26,7 @@ import type {ProcessingRuntime} from '../processing-runtime.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-publication-contract.js';
+import type {MemoryAutomation} from '../memory-automation.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
  * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
@@ -120,6 +121,9 @@ export interface ConfigurationDomain<Value> {
 }
 export type UsageRecording = Pick<UsageLedger, 'start' | 'operation'>;
 export type PluginControlRead = Pick<PluginCenter, 'view' | 'instanceView'>;
+/** C21C's durable pause/freeze admission. Callbacks that project local stop/resume
+ * work remain on the trusted assembly bridge, never this control port. */
+export type MemoryAdmission = Pick<MemoryAutomation, 'state' | 'view' | 'accepting' | 'command' | 'freeze' | 'release' | 'touch'>;
 export type ProcessingSubmission = Pick<ProcessingRuntime, 'enqueue' | 'view' | 'retry' | 'cancel'>;
 export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'withdraw' | 'planningInput' | 'sourceRequirements' | 'authorized'>;
 /** Read-only managed-asset state. Installs, imports, cancellation and the
@@ -156,6 +160,7 @@ export const centralServices = {
   configuration: serviceContract<ConfigurationDomain<unknown>>('mote.central.configuration-domain', '1'),
   usage: serviceContract<UsageRecording>('mote.central.usage-recording', '1'),
   pluginControlRead: serviceContract<PluginControlRead>('mote.central.plugin-control-read', '1'),
+  memoryAdmission: serviceContract<MemoryAdmission>('mote.central.memory-admission', '1'),
   processing: serviceContract<ProcessingSubmission>('mote.central.processing-submission', '1'),
   memoryCandidates: serviceContract<MaterialMemoryCandidates>('mote.central.material-memory-candidates', '1'),
   memoryRead: serviceContract<MemoryRead>('mote.central.memory-read', '1'),
@@ -220,7 +225,7 @@ export const centralServiceOwners = {
   materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
   retrievalIndex:'materials', materialIndex:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
-  configuration:'configuration', usage:'observability', pluginControlRead:'control', processing:'processing',
+  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
   memoryStagePublication:'publication', memoryOwnerPublication:'publication', mediaAssetsRead:'media',

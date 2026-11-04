@@ -60,3 +60,51 @@ test('a failing post-commit cleanup preserves the command receipt and retry cann
   assert.equal(control.accepting(),false);assert.equal(control.state().revision,2);assert.equal(cleanups,1);
   assert.equal(control.command('stop',stop).state,'paused');assert.equal(control.state().revision,2);assert.equal(cleanups,1);
 });
+
+test('replayed pause, freeze and release keep the revision and fence holder, and a foreign release cannot clear it',t=>{
+  const control=new MemoryAutomation(fixture(t));
+  const pause=command(control);control.command('pause',pause);const paused=control.state().revision;
+  control.command('pause',pause);assert.equal(control.state().revision,paused);
+  control.command('resume',command(control));assert.equal(control.accepting(),true);
+  const holder=randomUUID(),foreign=randomUUID();
+  control.freeze(holder);const frozen=control.state(),frozenRevision=frozen.revision;
+  assert.equal(frozen.barrier,holder);
+  control.freeze(holder);assert.equal(control.state().revision,frozenRevision);assert.equal(control.state().barrier,holder);
+  assert.throws(()=>control.freeze(foreign),/Another Memory switch/);
+  assert.throws(()=>control.release(foreign),/Memory switch fence changed/);
+  assert.equal(control.state().revision,frozenRevision);assert.equal(control.state().barrier,holder);
+  control.release(holder);const released=control.state();
+  assert.equal(released.barrier,undefined);assert.ok(released.generation>frozen.generation);
+  control.release(holder);assert.equal(control.state().revision,released.revision);assert.equal(control.state().generation,released.generation);
+  control.freeze(holder);assert.equal(control.state().barrier,undefined,'a stale freeze replay must not re-acquire the released fence');
+  assert.equal(control.state().revision,released.revision);
+  const later=randomUUID();control.freeze(later);control.freeze(holder);control.release(holder);
+  assert.equal(control.state().barrier,later,'replayed old freeze and release commands never clear another holder');
+  control.release(later);assert.equal(control.state().barrier,undefined);
+});
+
+test('a persisted freeze survives restart and the recorded holder releases it without hanging admission',t=>{
+  const store=fixture(t),holder=randomUUID();
+  let control=new MemoryAutomation(store);control.freeze(holder);assert.equal(control.accepting(),false);
+  control=new MemoryAutomation(store);
+  assert.equal(control.state().barrier,holder);assert.equal(control.accepting(),false);
+  assert.throws(()=>control.release(randomUUID()),/Memory switch fence changed/);
+  assert.equal(control.accepting(),false);
+  control.release(holder);assert.equal(control.state().barrier,undefined);assert.equal(control.accepting(),true);
+});
+
+test('the candidate ledger refuses new automatic work while frozen and resumes according to the durable setting after release',async t=>{
+  const store=fixture(t),control=new MemoryAutomation(store);
+  const grants=new MemoryInputAuthorization(store,()=>control.accepting()),sources=new SourceStore(store,undefined,grants);
+  sources.register({id:'generated',name:'Generated admission',kind:'custom',deviceId:'generated',platform:'import'});
+  const receive=(externalId:string)=>sources.upsert('generated',{externalId,revision:'1',observedAt:'2020-01-01T00:00:00Z',text:'Generated original '+externalId,kind:'message',layer:'original'});
+  const holder=randomUUID();control.freeze(holder);
+  const frozen=await receive('frozen');assert.equal(grants.available('generated',frozen.id),false,'frozen admission must not authorize a new automatic receipt');
+  control.release(holder);
+  const resumed=await receive('resumed');assert.equal(grants.available('generated',resumed.id),true,'release restores automatic admission while enabled');
+  assert.equal(grants.available('generated',frozen.id),false,'release never retroactively authorizes the frozen gap');
+  control.command('pause',command(control));const pausedHolder=randomUUID();control.freeze(pausedHolder);control.release(pausedHolder);
+  const paused=await receive('paused');assert.equal(grants.available('generated',paused.id),false,'release preserves a paused desired setting');
+  control.command('resume',command(control));
+  const after=await receive('after-resume');assert.equal(grants.available('generated',after.id),true);
+});
