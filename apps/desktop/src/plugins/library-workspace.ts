@@ -11,27 +11,14 @@ import {readCentralContent} from '../sync-content';
 import type {DurableQueue} from '../queue';
 import type {LocalSourceManager} from '../source-manager';
 import type {SyncHistory} from '../sync-history';
+import {libraryWorkspaceChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 /** Read-only surfaces split by primary evidence domain. */
 export const libraryReadCapability = 'library.read';
 export const memoryReadCapability = 'memory.read';
 
-export const libraryWorkspaceChannels = {
-  contentCentral: 'mote:content-central',
-  contentCentralDetail: 'mote:content-central-detail',
-  contentLocal: 'mote:content-local',
-  contentLocalDetail: 'mote:content-local-detail',
-  capturesBrowse: 'mote:captures-browse',
-  capturesDetail: 'mote:captures-detail',
-  capturesImage: 'mote:captures-image',
-  sourceArchivedContent: 'mote:source-archived-content',
-  sourcePendingContent: 'mote:source-pending-content',
-  memoryTopics: 'mote:memory-topics',
-  memoryTopicPage: 'mote:memory-topic-page',
-  memoryTopicDetail: 'mote:memory-topic-detail',
-  memoryTopicEvidence: 'mote:memory-topic-evidence',
-} as const;
+export {libraryWorkspaceChannels};
 
 export interface LibraryWorkspaceOptions {
   readonly settings: () => Config;

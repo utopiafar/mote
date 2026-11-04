@@ -23,6 +23,7 @@ import {PermissionGuide} from '../permission-guide';
 import {permissionKind, type DragPermissionKind, type PermissionStatus, type SettingsWindow} from '../permission-types';
 import {SettingsCoordinator, type SettingsDependencies} from '../settings-coordinator';
 import {failureCode, safeErrorName, type EventJournal, type EventStage} from '../support';
+import {deviceSettingsChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 /** Configuration and connection state are read broadly; every effect asks for
@@ -30,25 +31,7 @@ import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 export const deviceSettingsReadCapability = 'device-settings.read';
 export const deviceSettingsWriteCapability = 'device-settings.write';
 
-export const deviceSettingsChannels = {
-  connectionStatus: 'mote:connection-status',
-  connectionPreview: 'mote:connection-preview',
-  connectionCancel: 'mote:connection-cancel',
-  connectionImport: 'mote:connection-import',
-  connectionConfirm: 'mote:connection-confirm',
-  connectionTest: 'mote:connection-test',
-  configure: 'mote:configure',
-  syncPaused: 'mote:sync-paused',
-  permissionStatus: 'mote:permission-status',
-  permissionSettings: 'mote:permission-settings',
-  permissionRequest: 'mote:permission-request',
-  permissionRestart: 'mote:permission-restart',
-  permissions: 'mote:permissions',
-  captureContext: 'mote:capture-context',
-  captureContextSave: 'mote:capture-context-save',
-  language: 'mote:language',
-  setLanguage: 'mote:set-language',
-} as const;
+export {deviceSettingsChannels};
 
 type SettingsCollector = SettingsDependencies['collector'];
 type SettingsSources = SettingsDependencies['sources'];

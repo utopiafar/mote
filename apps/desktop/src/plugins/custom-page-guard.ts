@@ -1,6 +1,7 @@
 /** Custom page frames are bound by the main-owned registry; any navigation
  * of a bound frame is cancelled before the replacement document can run. */
 import type {CustomPageFrameClaim, CustomPageFrameTarget} from '../contracts/custom-page';
+import {customPageChannels, pushChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin} from './index';
 
 export const customPageGuardPlugin: BuiltinDesktopPlugin = {
@@ -16,14 +17,14 @@ export const customPageGuardPlugin: BuiltinDesktopPlugin = {
     // instead of relying on the guard's private counter.
     host.onCustomPageRevoked((webContentsId, revocation) => {
       if (webContentsId !== mainSenderId || mainWindow.isDestroyed()) return;
-      webContents.send('mote:custom-page-revoked', revocation);
+      webContents.send(pushChannels.customPageRevoked, revocation);
     });
-    ipcMain.handle('mote:custom-page-prepare', (event, target: CustomPageFrameTarget) => {
+    ipcMain.handle(customPageChannels.prepare, (event, target: CustomPageFrameTarget) => {
       trustedMain(event);
       if (!target || typeof target !== 'object') throw new TypeError('Invalid custom page target');
       return host.prepareCustomPageFrame(mainSenderId, target);
     });
-    ipcMain.handle('mote:custom-page-claim', (event, claim: CustomPageFrameClaim) => {
+    ipcMain.handle(customPageChannels.claim, (event, claim: CustomPageFrameClaim) => {
       trustedMain(event);
       if (!claim || typeof claim !== 'object') throw new TypeError('Invalid custom page claim');
       return host.claimCustomPageFrame(mainSenderId, claim, event.sender.mainFrame);

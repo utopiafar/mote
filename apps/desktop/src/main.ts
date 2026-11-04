@@ -12,6 +12,7 @@ import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, shell, systemPreferences, Tray } from 'electron';
 import { DesktopPluginHost, electronIpcRouter } from './plugin-host/desktop-host';
 import { NativeProviderRegistry } from './plugin-host/native-registry';
+import { deviceSettingsChannels, hostChannels, pushChannels } from './desktop-ipc-channels';
 import { registerBuiltinDesktopPlugins } from './plugins';
 import { createNotesPlugin, notesReadCapability, notesWriteCapability } from './plugins/notes';
 import { createLibraryWorkspacePlugin, libraryReadCapability, memoryReadCapability } from './plugins/library-workspace';
@@ -164,7 +165,7 @@ async function showCentral(page?: string, evidenceId?: string,workId?:string,con
 function showWindow(): void { window?.show(); window?.focus(); }
 function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start'): void {
   if (page === 'notes') { void openQuickNote?.(); return; }
-  showWindow(); window?.webContents.send('mote:navigate', page);
+  showWindow(); window?.webContents.send(pushChannels.navigate, page);
 }
 function trayIcon(): Electron.NativeImage {
   const bitmap = Buffer.alloc(20 * 20 * 4);
@@ -177,8 +178,8 @@ function trayIcon(): Electron.NativeImage {
 }
 function updateUi(status: Status): void {
   status = { ...includePreparedNote(status), operations: backgroundJobs.snapshot(), storage: storageStatus(), credentialStorage: developmentProfile ? 'json' : 'system', environment: { profile: profile.name, defaultProfile: profile.defaultProfile, dataDirectory: profile.dataDirectory } };
-  if (window && !window.isDestroyed()) window.webContents.send('mote:status', status);
-  if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.webContents.send('mote:status', status);
+  if (window && !window.isDestroyed()) window.webContents.send(pushChannels.status, status);
+  if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.webContents.send(pushChannels.status, status);
   tray?.setToolTip(moteText("Mote [{0}] · {1} · 待上传 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.queueDepth));
   tray?.setContextMenu(Menu.buildFromTemplate([
     { label: `Mote [${profile.name}] · ${status.running ? moteText("采集中") : moteText("已停止")}`, enabled: false },
@@ -194,6 +195,13 @@ function updateUi(status: Status): void {
     { label: moteText("退出 Mote（停止采集和上传）"), click: () => app.quit() },
   ]));
 }
+
+/** Shell/window/status transport is an explicit host primitive, but it still
+ * passes through the same plugin IPC authorization as business packages. */
+const hostCapability = 'host.shell';
+let registerHostIpc: (channel: string, operation: (...args: unknown[]) => unknown) => void = () => {
+  throw new Error('Host IPC is not ready');
+};
 
 let chromePlugin:ChromePlugin|undefined;
 
@@ -325,7 +333,7 @@ else {
       running: () => clientStatus().running, quitting: () => quitting,
       recoveryRequired: () => recoveryRequired, requireRecovery: message => requireRecovery(message),
       configureDiagnostics,
-      relocate: updated => queue.relocate(updated.captureStorageDirectory || storage.defaultDirectory, storage, () => store.save(updated), async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory, value => backgroundJobs.progress('mote:configure', value)),
+      relocate: updated => queue.relocate(updated.captureStorageDirectory || storage.defaultDirectory, storage, () => store.save(updated), async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory, value => backgroundJobs.progress(deviceSettingsChannels.configure, value)),
       clearStorageSelection: () => { pendingStorageDirectory = undefined; },
       pendingStorageDirectory: () => pendingStorageDirectory,
       status: clientStatus, serialize,
@@ -376,7 +384,7 @@ else {
       width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: developmentProfile },
     });
-    const broadcastAppearance=()=>{window?.setBackgroundColor(appearanceBackground());window?.webContents.send('mote:appearance',appearanceState());};
+    const broadcastAppearance=()=>{window?.setBackgroundColor(appearanceBackground());window?.webContents.send(pushChannels.appearance,appearanceState());};
     nativeTheme.on('updated',broadcastAppearance);
     window.once('closed',()=>nativeTheme.removeListener('updated',broadcastAppearance));
     refreshApplicationMenu();
@@ -385,7 +393,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability, capabilityPublisherCapability]);
+    host.registerWindow(mainSenderId, 'main', [hostCapability, notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability, capabilityPublisherCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -400,68 +408,77 @@ else {
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
       quickNoteWindow=noteWindow;
       const noteSenderId = noteWindow.webContents.id;
-      host.registerWindow(noteSenderId, 'quick-note', [notesReadCapability, notesWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability]);
+      host.registerWindow(noteSenderId, 'quick-note', [hostCapability, notesReadCapability, notesWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability]);
       noteWindow.webContents.setWindowOpenHandler(()=>({action:'deny'}));
       noteWindow.webContents.on('will-navigate',event=>event.preventDefault());
       noteWindow.webContents.on('will-attach-webview',event=>event.preventDefault());
-      const appearance=()=>{noteWindow.setBackgroundColor(appearanceBackground());noteWindow.webContents.send('mote:appearance',appearanceState());};nativeTheme.on('updated',appearance);
+      const appearance=()=>{noteWindow.setBackgroundColor(appearanceBackground());noteWindow.webContents.send(pushChannels.appearance,appearanceState());};nativeTheme.on('updated',appearance);
       noteWindow.once('closed',()=>{host.unregisterWindow(noteSenderId);nativeTheme.removeListener('updated',appearance);if(quickNoteWindow===noteWindow)quickNoteWindow=undefined;});
       await noteWindow.loadURL(pageUrl+'#quick-note');
     };
-    ipcMain.on('mote:appearance-initial' ,(event)=>{trusted(event);event.returnValue=appearanceState();});
-    ipcMain.handle('mote:set-appearance',(event,raw:unknown)=>{
-      trusted(event);
-      if(raw!=='auto'&&raw!=='light'&&raw!=='dark')throw Error('Invalid appearance');
-      writeFileSync(appearanceFile+'.tmp',JSON.stringify(raw),{mode:0o600});
-      renameSync(appearanceFile+'.tmp',appearanceFile);
-      preferredAppearance=raw;nativeTheme.themeSource=raw==='auto'?'system':raw;
-      broadcastAppearance();return appearanceState();
-    });
+    ipcMain.on(hostChannels.appearanceInitial ,(event)=>{trusted(event);event.returnValue=appearanceState();});
     // Retain authored keys: a renderer locale change does not restart the main process.
     const operationLabels: Record<string, string> = {
-      'mote:installed-applications': "正在读取应用列表",
-      'mote:diagnostics-export': "正在导出诊断", 'mote:diagnostics-sample': "正在读取诊断",
+      [hostChannels.installedApplications]: "正在读取应用列表",
+      [hostChannels.diagnosticsExport]: "正在导出诊断", [hostChannels.diagnosticsSample]: "正在读取诊断",
     };
-    const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      const stage: EventStage | undefined = ({} as Record<string, EventStage>)[channel];
-    ipcMain.handle(channel, async (event, ...args) => {
-        trusted(event);
-        if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:connection-status'].includes(channel)) throw new Error(recoveryRequired);
-        const startedAt = Date.now();
-        if (stage) void events.record(stage, 'STARTED', {operation:channel});
-        try { const label = operationLabels[channel]; const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args)); if (stage) void events.record(stage, 'OK', { elapsedMs: Date.now() - startedAt,operation:channel }); return result; }
-        catch (error) { if (stage) void events.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt,operation:channel,errorName:safeErrorName(error) }); throw error; }
-        finally { if (operationLabels[channel] && !quitting) updateUi(clientStatus()); }
+    const hostScope = host.createScope({instanceId: 'mote.host', capabilities: [hostCapability]});
+    const hostStarted = await host.startPlugin(hostScope, plugin => {
+      const roleFrameUrls = {main: [pageUrl], 'quick-note': [pageUrl + '#quick-note']};
+      registerHostIpc = (channel, operation) => {
+        const stage: EventStage | undefined = ({} as Record<string, EventStage>)[channel];
+        plugin.registerIpc({channel, capability: hostCapability, windowRoles: ['main', 'quick-note'], roleFrameUrls}, async (_view, args) => {
+          if (recoveryRequired && !([hostChannels.getStatus, hostChannels.storageRestart, deviceSettingsChannels.connectionStatus] as readonly string[]).includes(channel)) throw new Error(recoveryRequired);
+          const startedAt = Date.now();
+          if (stage) void events.record(stage, 'STARTED', {operation:channel});
+          try {
+            const label = operationLabels[channel];
+            const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args));
+            if (stage) void events.record(stage, 'OK', { elapsedMs: Date.now() - startedAt,operation:channel });
+            return result;
+          } catch (error) {
+            if (stage) void events.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt,operation:channel,errorName:safeErrorName(error) });
+            throw error;
+          } finally { if (operationLabels[channel] && !quitting) updateUi(clientStatus()); }
+        });
+      };
+      registerHostIpc(hostChannels.setAppearance, (raw: unknown) => {
+        if(raw!=='auto'&&raw!=='light'&&raw!=='dark')throw Error('Invalid appearance');
+        writeFileSync(appearanceFile+'.tmp',JSON.stringify(raw),{mode:0o600});
+        renameSync(appearanceFile+'.tmp',appearanceFile);
+        preferredAppearance=raw;nativeTheme.themeSource=raw==='auto'?'system':raw;
+        broadcastAppearance();return appearanceState();
       });
-    };
+      registerHostIpc(hostChannels.getStatus, () => clientStatus());
+      registerHostIpc(hostChannels.installedApplications, () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
+      registerHostIpc(hostChannels.feedback, () => shell.openExternal(githubFeedbackUrl({
+        version: app.getVersion(),
+        platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
+        environment: moteText("桌面客户端 · {0}", ['dev', 'test', 'prod', 'default'].includes(profile.name) ? profile.name : moteText("自定义环境")),
+      })));
+      registerHostIpc(hostChannels.codingAgents, () => discoverCodingAgents());
+      registerHostIpc(hostChannels.diagnosticsSample, async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
+      registerHostIpc(hostChannels.storageStatistics,async()=>storageStatistics([dataDirectory,queue.directory]));
+      registerHostIpc(hostChannels.diagnosticsExport, async () => {
+        const selected = await dialog.showSaveDialog(window!, { title: moteText("导出本机数值诊断（不含内容与令牌）"), defaultPath: 'mote-diagnostics.json', filters: [{ name: 'JSON diagnostics', extensions: ['json'] }] });
+        if (selected.canceled || !selected.filePath) return { canceled: true };
+        await diagnostics.sample(); await diagnostics.exportTo(selected.filePath); return { canceled: false };
+      });
+      registerHostIpc(hostChannels.central, async (page: unknown, evidenceId: unknown,conversationId: unknown) => {
+        if (evidenceId !== undefined && typeof evidenceId !== 'string') throw new Error('Invalid evidence reference');
+        if(conversationId!==undefined&&(typeof conversationId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(conversationId)))throw Error('Invalid conversation identity');
+        await showCentral(typeof page === 'string' ? page : undefined, evidenceId,undefined,conversationId);
+      });
+      registerHostIpc(hostChannels.centralWork,async (workId: unknown)=>showCentral('activity',undefined,validateCentralWorkId(workId)));
+      registerHostIpc(hostChannels.quickNote, () => openQuickNote?.());
+      registerHostIpc(hostChannels.quickNoteSize, (expanded: unknown) => {
+        if (typeof expanded !== 'boolean') throw new Error('Invalid quick-note size');
+        if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.setContentSize(quickNoteWindow.getContentSize()[0], expanded ? 594 : 466);
+      });
+      registerHostIpc(hostChannels.storageRestart, () => { app.relaunch(); app.quit(); });
+    });
+    if (!hostStarted.started) throw hostStarted.error;
     const requireRecovery = (message: string): void => { recoveryRequired = message; collector.requireRecovery(message); void localSources!.close(); };
-    handle('mote:get-status', () => clientStatus());
-    handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
-    handle('mote:feedback', () => shell.openExternal(githubFeedbackUrl({
-      version: app.getVersion(),
-      platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
-      environment: moteText("桌面客户端 · {0}", ['dev', 'test', 'prod', 'default'].includes(profile.name) ? profile.name : moteText("自定义环境")),
-    })));
-    handle('mote:coding-agents', () => discoverCodingAgents());
-    handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
-    handle('mote:storage-statistics',async()=>storageStatistics([dataDirectory,queue.directory]));
-    handle('mote:diagnostics-export', async () => {
-      const selected = await dialog.showSaveDialog(window!, { title: moteText("导出本机数值诊断（不含内容与令牌）"), defaultPath: 'mote-diagnostics.json', filters: [{ name: 'JSON diagnostics', extensions: ['json'] }] });
-      if (selected.canceled || !selected.filePath) return { canceled: true };
-      await diagnostics.sample(); await diagnostics.exportTo(selected.filePath); return { canceled: false };
-    });
-    handle('mote:central', async (page, evidenceId,conversationId) => {
-      if (evidenceId !== undefined && typeof evidenceId !== 'string') throw new Error('Invalid evidence reference');
-      if(conversationId!==undefined&&(typeof conversationId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(conversationId)))throw Error('Invalid conversation identity');
-      await showCentral(typeof page === 'string' ? page : undefined, evidenceId,undefined,conversationId);
-    });
-    handle('mote:central-work',async workId=>showCentral('activity',undefined,validateCentralWorkId(workId)));
-    handle('mote:quick-note', () => openQuickNote?.());
-    handle('mote:quick-note-size', expanded => {
-      if (typeof expanded !== 'boolean') throw new Error('Invalid quick-note size');
-      if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.setContentSize(quickNoteWindow.getContentSize()[0], expanded ? 594 : 466);
-    });
-    handle('mote:storage-restart', () => { app.relaunch(); app.quit(); });
     let loginGeneration=0;
     const endLogin=()=>serialize(async()=>{
       loginGeneration++;
@@ -525,8 +542,8 @@ else {
       guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
     });
     await askPlugin.register({host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain});
-    handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
-    handle('mote:export-metadata', async () => {
+    registerHostIpc(hostChannels.dataFolder, async () => { await shell.openPath(dataDirectory); });
+    registerHostIpc(hostChannels.exportMetadata, async () => {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
