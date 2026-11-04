@@ -46,7 +46,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
   let closing: Promise<void> | undefined;
   const observe = (event: Parameters<NonNullable<DshProviderOptions['resourceObserver']>>[0]) => { try { options.resourceObserver?.(event); } catch { /* Observation is not authority. */ } };
   const provider: RuntimeProvider<RuntimeProfileConfiguration, DshModelAdapter> = {
-    capabilities: Object.freeze({modelTransports: ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'], taskKinds: ['query'], tools: true, images: true, importWorkspace: false, hostDelegation: true, recovery: 'same-process', replacement: 'restart'}),
+    capabilities: Object.freeze({modelTransports: ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'], taskKinds: ['query'], tools: true, images: true, importWorkspace: false, hostDelegation: true, nativeDelegation: false, recovery: 'same-process', replacement: 'restart'}),
     prepare(profile, model, host) {
       if (!accepting || stopped) return Promise.reject(new AgentProviderError({category: 'blocked', code: 'runtime_unavailable', executionStarted: false}));
       const preparing = (async (): Promise<RuntimeHandle> => {

@@ -15,6 +15,8 @@ const capabilities = z.array(z.enum(RUNTIME_HOST_CAPABILITIES)).refine(values =>
 export const runtimeCapabilitiesSchema = z.object({
   modelTransports: z.array(id).readonly(), taskKinds: z.array(id).readonly(),
   tools: z.boolean(), images: z.boolean(), importWorkspace: z.boolean(), hostDelegation: z.boolean(),
+  /** Native subagents are disabled for the shipped runtimes; delegation stays on the Host channel. */
+  nativeDelegation: z.boolean(),
   recovery: z.enum(['none', 'same-process', 'durable']), replacement: z.enum(['hot', 'restart']),
 }).strict().readonly();
 export type RuntimeCapabilities = z.infer<typeof runtimeCapabilitiesSchema>;
