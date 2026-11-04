@@ -78,7 +78,7 @@ test('file thumbnail honors the content-route access contract and caches by orig
   assert.deepEqual(second.rawPayload,first.rawPayload);
 
   const inventory=(await app.inject({url:'/api/features',headers})).json();
-  assert.ok(inventory.capabilities.some((c:any)=>c.id==='source-runtime'&&c.state==='active'));
+  assert.ok(inventory.capabilities.some((c:any)=>c.id==='http:GET:/api/files/:id/thumbnail'));
 
   const text=Buffer.from('generated plain text'),textAck=await upload(app,headers,manifest(text,'text/plain','note.txt','content://generated/note'),text);
   assert.equal((await app.inject({url:`/api/files/${textAck.id}/thumbnail`,headers})).statusCode,404);

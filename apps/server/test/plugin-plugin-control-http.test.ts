@@ -148,7 +148,9 @@ test('feature inventory keeps the Web contract and content-hash revision', async
   assert.equal(inventory.revision, expected, 'inventory revision is the content digest, not a command CAS revision');
   assert.notEqual(inventory.revision, node.pluginCenter.revision());
   const snapshot = node.bootstrap.snapshot(), expectedFeatures = [...new Set(snapshot.contributions.map(contribution => contribution.identity.scope.packageId))];
-  assert.deepEqual(inventory.features.map((feature: {id: string}) => feature.id), expectedFeatures, 'each host package appears exactly once');
+  assert.equal(new Set(inventory.features.map((feature: {id: string}) => feature.id)).size, inventory.features.length, 'each feature appears exactly once');
+  assert.equal(new Set(inventory.capabilities.map((capability: {id: string}) => capability.id)).size, inventory.capabilities.length, 'each capability appears exactly once');
+  for (const featureId of expectedFeatures) assert.equal(inventory.features.filter((feature: {id: string}) => feature.id === featureId).length, 1, featureId);
   for (const contribution of snapshot.contributions) {
     const matches = inventory.capabilities.filter((capability: {id: string}) => capability.id === contribution.identity.contributionId);
     assert.equal(matches.length, 1, contribution.identity.contributionId);
@@ -156,6 +158,41 @@ test('feature inventory keeps the Web contract and content-hash revision', async
     assert.equal(matches[0].state, contribution.availability.state === 'active' ? 'active' : 'unavailable');
     assert.equal(matches[0].reason, contribution.availability.reason);
   }
+  assert.ok(inventory.capabilities.some((capability: {id: string; featureId: string; state: string}) => capability.id === 'http:GET:/api/features' && capability.featureId === 'mote.features' && capability.state === 'active'));
+  assert.ok(inventory.capabilities.some((capability: {id: string; featureId: string; surface: string}) => capability.id === 'http:POST:/api/notes' && capability.featureId === 'mote.notes' && capability.surface === 'ingress'));
+});
+
+test('contribution route capabilities follow the common host snapshot', async t => {
+  const host = new PluginHost({kind: 'central', id: randomUUID()});
+  t.after(() => host.close());
+  const handle = await host.install({
+    identity: {host: host.identity, packageId: 'fixture.routes', installationId: 'fixture-routes-install', instanceId: 'fixture-routes', activationId: randomUUID()},
+    contributions: [{id: 'fixture.routes', apiVersion: '1'}],
+    factory: () => ({prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}}),
+  });
+  const descriptors = [{
+    id: 'fixture.routes', featureVersion: '1.0.0', version: '1.0.0', surface: 'data', runtime: 'host',
+    components: [
+      {id: 'http:GET:/fixture', version: '1', surface: 'data'},
+      {id: 'http:POST:/fixture', version: '1', surface: 'command'},
+      {id: 'upload:fixture', version: '1', surface: 'upload'},
+    ],
+  }] as const;
+  const active = featureInventory(host.snapshot(), descriptors);
+  assert.deepEqual(active.capabilities.map(capability => [capability.id, capability.state]), [
+    ['fixture.routes', 'active'], ['http:GET:/fixture', 'active'], ['http:POST:/fixture', 'active'], ['upload:fixture', 'active'],
+  ]);
+  assert.deepEqual(active.features[0]?.components.map(component => component.id), ['fixture.routes', 'http:GET:/fixture', 'http:POST:/fixture', 'upload:fixture']);
+  await handle.quiesce('upgrade');
+  const quiesced = featureInventory(host.snapshot(), descriptors);
+  assert.deepEqual(quiesced.capabilities.map(capability => capability.state), ['unavailable', 'unavailable', 'unavailable', 'unavailable']);
+  const availability = host.snapshot().contributions[0]!.availability as {reason?: string};
+  assert.equal(quiesced.capabilities[1]?.reason, availability.reason);
+  assert.notEqual(quiesced.revision, active.revision);
+  await handle.close('shutdown');
+  const removed = featureInventory(host.snapshot(), descriptors);
+  assert.deepEqual(removed.features, []);
+  assert.deepEqual(removed.capabilities, []);
 });
 
 test('common host snapshot drives inventory availability and digest', async t => {

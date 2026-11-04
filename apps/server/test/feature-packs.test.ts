@@ -61,9 +61,11 @@ test('small Coding upload flows through feature routes to pinned owner and real 
   assert.equal((await call('/api/agent-view/material-read?ref='+encodeURIComponent(material.ref)+'&deviceId=unrelated')).statusCode,404);
   assert.deepEqual((await call('/api/agent-view/materials')).json(),await withFixtureOwnerModelWork(node,()=>node.featureServices.archiveReader.materialCatalog!({limit:12})));
   const inventory=(await call('/api/features')).json();
+  for(const surface of ['ingress','upload','data','command','agent'])assert.ok(inventory.capabilities.some((c:any)=>c.surface===surface),surface);
+  assert.ok(inventory.capabilities.some((c:any)=>c.featureId==='mote.notes'&&c.id==='http:POST:/api/notes'));
+  assert.ok(inventory.capabilities.some((c:any)=>c.featureId==='mote.files'&&c.surface==='upload'));
   assert.ok(inventory.capabilities.some((c:any)=>c.featureId==='mote.source-runtime'&&c.id==='source-runtime'&&c.state==='active'));
   assert.equal(inventory.features.filter((feature:any)=>feature.id==='mote.source-runtime').length,1);
-  assert.ok(inventory.capabilities.every((c:any)=>!c.id.startsWith('http:')),'legacy route registries are not part of the host projection');
   assert.doesNotMatch(JSON.stringify(inventory),/generated-fixture-token|fixture-only/);
   assert.equal((await call('/api/agent-view/catalog?path=%2Fetc')).statusCode,400);
   assert.equal((await call('/api/agent-view/material-read?ref='+encodeURIComponent('archive:raw-hidden'))).statusCode,400);
