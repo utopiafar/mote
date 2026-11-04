@@ -1,5 +1,5 @@
 import {MODEL_FEATURES,type ModelSettingsView} from '@mote/shared/models';
-import type {FileSettingsView} from './processing-settings-view';
+import type {FileSettingsView} from '../../processing-settings-view';
 
 export type ProcessingConnection={id:string;fingerprint:string};
 export type ProcessingKind='text'|'image'|'audio'|'conversation';

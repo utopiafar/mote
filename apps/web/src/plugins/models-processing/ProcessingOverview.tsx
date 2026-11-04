@@ -1,9 +1,9 @@
 import {moteText} from '@mote/shared/i18n';
 import {ChevronRight, FileText, Image, AudioLines} from 'lucide-react';
 import type {FilePolicy} from '@mote/shared';
-import {type Api,errorMessage} from './api';
-import {useResource} from './useResource';
-import {processingProfileLabel} from './processing-settings-view';
+import {type Api,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {processingProfileLabel} from '../../processing-settings-view';
 export function ProcessingOverview({api,onSelect}:{api:Api;onSelect:(category:'images'|'audio'|'documents'|'providers')=>void}){
  const read=useResource<{policy:FilePolicy}>(api,'/api/file-processing'),policy=read.data?.policy;
  const selected=(mime:string)=>policy?.profiles.find(profile=>profile.id===policy.rules.find(rule=>!rule.sourceId&&rule.type===mime)?.profileId);
