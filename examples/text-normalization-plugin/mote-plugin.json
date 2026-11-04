@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "example.text-normalization",
+  "name": "Example text normalization processor",
+  "version": "0.1.0",
+  "trust": "external",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "example-text-normalization-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "example-text-normalization.processing",
+      "version": "1",
+      "surface": "processing",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "processing.pack"
+      ]
+    }
+  ],
+  "capabilities": [
+    "processing.pack"
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Deterministic CRLF-to-LF context processor"
+  ]
+}

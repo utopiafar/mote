@@ -266,7 +266,7 @@ async function ensurePortFree(p) {
     server.listen(p.port, p.env.MOTE_HOST || '127.0.0.1', () => server.close(resolvePromise));
   });
 }
-export async function startNative(p, foreground = false) {
+export async function startNative(p, foreground = false, options = {}) {
   await assertLogRetentionCompatible(p);
   const current = await nativeIdentity(p);
   if (current.running) {
@@ -282,11 +282,11 @@ export async function startNative(p, foreground = false) {
       finally { process.off('SIGTERM', forward); process.off('SIGINT', forward); }
     } };
   }
-  const entry = join(resolve(p.meta.release), 'apps/server/dist/index.js');
+  const entry = options.entry ?? join(resolve(p.meta.release), 'apps/server/dist/index.js');
   await stat(entry).catch(() => { throw Error('Central build is missing. Run npm ci, build:libs, and build server/web in the selected release'); });
   await ensurePortFree(p);
   const marker = randomUUID(); await mkdir(join(p.directory, 'logs'), { recursive: true, mode: 0o700 });
-  const child = spawn(process.execPath, [join(repository, 'scripts/central-runner.mjs'), entry, join(resolve(p.directory, p.env.MOTE_LOG_DIR || 'logs'), 'central.log'), `--mote-instance=${marker}`], { cwd: resolve(p.meta.release), env: isolatedEnvironment(p), detached: !foreground, stdio: foreground ? 'inherit' : 'ignore' });
+  const child = spawn(process.execPath, [join(repository, 'scripts/central-runner.mjs'), entry, join(resolve(p.directory, p.env.MOTE_LOG_DIR || 'logs'), 'central.log'), `--mote-instance=${marker}`], { cwd: resolve(p.meta.release), env: isolatedEnvironment(p, options.env), detached: !foreground, stdio: foreground ? 'inherit' : 'ignore' });
   let failure; child.once('error', error => { failure = error; });
   const exited = new Promise(resolvePromise => child.once('close', (code, signal) => resolvePromise({ code, signal })));
   if (!child.pid) throw Error('Could not start central process');

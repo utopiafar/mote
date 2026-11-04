@@ -1,13 +1,6 @@
 [
   {
     "rule": "analyzable-module-reference",
-    "from": "apps/server/src/connectors/registry.ts",
-    "to": "[dynamic] specifier",
-    "kind": "runtime",
-    "reason": "Existing trusted plugin loader: the configured module location is resolved by this host adapter; not a statically named application dependency."
-  },
-  {
-    "rule": "analyzable-module-reference",
     "from": "apps/server/src/file-processors.ts",
     "to": "[dynamic] isAbsolute(specifier)?pathToFileURL(specifier).href:specifier",
     "kind": "runtime",

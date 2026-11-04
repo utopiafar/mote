@@ -4,7 +4,7 @@
 
 ## 可扩展连接器
 
-中央内置 Google 日历、Gmail、飞书和 MCP 使用版本化 connector manifest。可信部署模块通过主 YAML 的 `connectors.modules` 列表装入，例如 `modules: [file:///srv/mote/plugins/acme-notes.mjs]`；修改模块列表需重启。模块声明来源种类与能力，启动时注册 owner 路由、OAuth 回调及状态，关闭时释放后台任务；新增有界点分命名空间种类必须提供能力声明。未安装适配器的已有来源可读，但不可继续同步。manifest 示例、资料身份、处理与安全边界见[接入与正式资料架构](material-architecture.md)。
+中央内置 Google 日历、Gmail、飞书和 MCP 使用版本化 connector manifest。外部来源以插件包声明来源种类与能力，启动时注册 owner 路由、OAuth 回调及状态，关闭时释放后台任务；新增有界点分命名空间种类必须提供能力声明。`plugin-dev` 在私有开发 profile 中按 `mote-plugin.json` 安装仓库外插件包，主 YAML 不再接受代码模块列表。未安装适配器的已有来源可读，但不可继续同步。manifest 示例、资料身份、处理与安全边界见[接入与正式资料架构](material-architecture.md)。
 
 ## Google 日历
 

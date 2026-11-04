@@ -76,7 +76,7 @@ test('a third-party recording manifest contributes owner routes, source capabili
  await host.registry.close();assert.equal(closed,1);assert.equal(sources.capabilities.has('generated.recordings'),false);
 });
 
-test('trusted deployment connector modules register new source kinds and owner routes without core edits',async t=>{
+test('trusted assembly connector manifests register new source kinds and owner routes without core edits',async t=>{
   const {ctx,directory,sources,store}=await fixture(t),modulePath=join(directory,'synthetic-connector.mjs');
   const materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);ctx.materials=materials;ctx.materialOrganizers=organizers;
   await assert.rejects(Promise.resolve().then(()=>sources.register({id:'synthetic-notes',name:'Synthetic notes',kind:'synthetic.notes',deviceId:'synthetic-notes',platform:'import'})),/Source adapter is not installed/);
@@ -100,8 +100,8 @@ export default {
     close(){unregisterOrganizer?.();events.push('close');}
   };}
 };`);
-  ctx.config.connectors!.modules=[pathToFileURL(modulePath).href];
-  const app=Fastify(),connectors=await registerConnectors(app,ctx);
+  const module=await import(pathToFileURL(modulePath).href) as {default:ConnectorManifest};
+  const app=Fastify(),connectors=await registerConnectors(app,ctx,undefined,[module.default]);
   t.after(async()=>{await connectors.close();await app.close();});
   assert.ok(organizers.registry.list().some(value=>value.id==='synthetic.note-bundle'));
   const route='/api/connectors/synthetic/sync';
@@ -114,7 +114,7 @@ export default {
   assert.equal(materials.read(organized[0].ref).text,'Generated fixture note\n');
   const invalid=await app.inject({url:'/oauth/synthetic/callback?state=short&code=valid'});assert.equal(invalid.statusCode,400);assert.equal(invalid.headers['content-security-policy'],"default-src 'none'; style-src 'none'");
   const callback=await app.inject({url:`/oauth/synthetic/callback?state=synthetic.${'a'.repeat(32)}&code=valid`});assert.equal(callback.statusCode,200);assert.equal(callback.body,'Connected');
-  const module=await import(pathToFileURL(modulePath).href) as {events:string[]};assert.deepEqual(module.events,['create','init','callback']);
+  const loaded=await import(pathToFileURL(modulePath).href) as {events:string[]};assert.deepEqual(loaded.events,['create','init','callback']);
   await connectors.close();assert.deepEqual(module.events,['create','init','callback','close']);
   assert.ok(!organizers.registry.list().some(value=>value.id==='synthetic.note-bundle'));
   assert.equal(sources.getSource('synthetic-notes').enabled,false);assert.equal(sources.getSource('synthetic-notes').status?.code,'source_adapter_unavailable');

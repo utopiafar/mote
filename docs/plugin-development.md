@@ -10,16 +10,17 @@ The author-facing boundary is `@mote/plugin-sdk` alone: a plugin never
 imports `apps/*`, `packages/*` internals or `@mote/shared`. The SDK tarball
 bundles the public contracts and the host entry; `plugin-dev` verifies the
 installed copy (`PLUGIN_CONTRACT_VERSION 1`, package version `0.1.0`) before
-starting a dev profile. Trusted in-repository backend modules
-(`examples/plugins`, library domain packs) are a different deployment seam
-described in [library-plugin-contracts](library-plugin-contracts.md); they are
-assembled by the host and are not covered by these templates.
+starting a dev profile. The in-repository example packages
+(`examples/journal-plugin`, `examples/media-intake-plugin`,
+`examples/text-normalization-plugin`) are a different deployment seam described
+in [library-plugin-contracts](library-plugin-contracts.md); they are assembled
+by the host and are not covered by these templates.
 
 ## Choosing a template
 
 | Template | Directory | What it is | Deployment today |
 | --- | --- | --- | --- |
-| `connector` — ordinary integration | `examples/external-plugin` | A repository-external Source connector module: declares source kinds, uses injected `ctx.state`, publishes owner-only routes. | `plugin-dev dev`, `connectors.modules` |
+| `connector` — ordinary integration | `examples/external-plugin` | A repository-external Source plugin package: declares source kinds, uses injected `ctx.state`, publishes owner-only routes. | `plugin-dev dev` package install |
 | `worker` — deep runtime | `examples/worker-plugin` | A packaged `runtime: "worker"` plugin: `createMemoryProvider` ABI executed inside the dedicated plugin-worker process over JSON lines with per-call cancellation and drained shutdown. | Plugin-center release (`/api/plugins`) |
 | `domain` — new domain | `examples/domain-plugin` | A packaged `runtime: "service"` domain: typed port (`serviceContract`), host-bound lifecycle (`prepare`/`start`/`quiesce`/`stop`/`dispose`), durable `ctx.state`, custom page — plus a connector adapter as the deployment seam. | `PluginHost`; `plugin-dev dev` via adapter |
 
@@ -52,24 +53,25 @@ project is self-contained and buildable without the monorepo.
 
 Every generated project supports `npm run build`:
 
-- `connector` ships as source; build checks the entries load cleanly
-  (`node --check`).
-- `worker` and `domain` run `scripts/pack.mjs`, which stages the payload,
-  produces a deterministic ZIP and completes the `mote-plugin.json` archive
-  digest into `dist/`. The packer comes from the Mote checkout (`--mote PATH`
-  or `MOTE_REPOSITORY`) as development tooling; the package source itself
-  never imports repository internals. `node scripts/mote.mjs plugin-validate
-  --manifest dist/mote-plugin.json` checks the artifact end-to-end.
+- `connector`, `worker` and `domain` run `scripts/pack.mjs`, which stages the
+  payload, produces a deterministic ZIP and completes the `mote-plugin.json`
+  archive digest into `dist/`. The packer comes from the Mote checkout
+  (`--mote PATH` or `MOTE_REPOSITORY`) as development tooling; the package
+  source itself never imports repository internals. `node scripts/mote.mjs
+  plugin-validate --manifest dist/mote-plugin.json` checks the artifact
+  end-to-end.
 
 Running on a real host:
 
-- `connector` and `domain` (via its `source.mjs` adapter):
+- `connector` and `domain` (via their declared ingress contribution):
   `node scripts/mote.mjs plugin-dev dev --plugin /external/my-plugin --once --seed`.
   This creates a private plugin-dev-owned profile (ownership marker, native,
-  loopback, non-prod, storage inside the private home), loads the module
-  through the real connector registry, mounts owner routes, runs the
-  generated seed and stops. Reusing `--home`/`--profile` proves `ctx.state`
-  persistence across restarts.
+  loopback, non-prod, storage inside the private home), validates
+  `mote-plugin.json`, installs the package into the private dev host, loads its
+  ingress contribution through the real connector registry, mounts owner
+  routes, runs the generated seed and stops. Reusing `--home`/`--profile`
+  proves `ctx.state` persistence across restarts. Configuration never selects
+  executable modules.
 - `domain` additionally runs on the SDK host directly: the generated
   project's `npm test` installs the package on a real `PluginHost` (from
   `@mote/plugin-sdk/node`) and exercises the typed port through a lease.
@@ -78,7 +80,7 @@ Running on a real host:
   payload, creates an instance with the declared `dataFile` configuration
   and probes the provider (`health`/CRUD/scope/restart) before enabling.
   `plugin-dev dev` does not apply to worker packages — they have no
-  connector `source.mjs` entry.
+  ingress or processing contribution for the private dev host.
 
 ## Contracts the templates demonstrate
 
@@ -98,9 +100,8 @@ Running on a real host:
   host dispatcher; owner authorization and error mapping stay host-owned.
   A plugin failure is honest either way: keep domain errors in the
   dispatcher-mapped shape (`name` `ConnectorError`, string `code`, integer
-  `statusCode`) so hosts that resolve them return the domain's status, and
-  expect the legacy connector mount to map every plugin failure to its
-  generic `connector_operation_failed` — never return a silent success.
+  `statusCode`) so the dynamic dispatcher returns the domain's status — never
+  return a silent success.
 - **Manifest authority.** `mote-plugin.json` is the sole package authority:
   `schemaVersion 1`, exact dependency identities (no ranges), declared
   contributions and capabilities. `trust: "external"` plus `runtime` selects
@@ -137,8 +138,8 @@ node scripts/mote.mjs plugin-dev dev --plugin /tmp/gen-domain --home /tmp/dev-ho
 ```
 
 The `domain` seed itself checks one error branch (invalid input must fail
-through the real mount as the host's generic operation error, never as a
-silent success).
+through the real mount with the domain's mapped error, never as a silent
+success).
 
 ## Scanning generated artifacts
 

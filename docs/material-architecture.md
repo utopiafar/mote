@@ -58,13 +58,9 @@ flowchart LR
 
 可信连接器也可经 `ctx.processing.registry.register(processor)` 注册新的中央处理器，再由 `ctx.processing.enqueue` 提交包含 `materialInputs` 的步骤。每个输入固定正式资料修订及 UTF-16 页范围；执行器负责分页预算、重试、产物依赖和修订变化后的失效。处理器只收到只读资料页与其他输入，不会取得写入资料库的能力。当前通用处理任务须由接入方显式提交；自动 Memory 提取仍按上一段所述沿用原有证据链路。
 
-中央部署可在私有环境文件中配置可信模块，无需每次修改服务器接线代码：
+仓库外来源以插件包声明 ingress 贡献，由私有 `plugin-dev` 宿主按 Manifest 安装，无需每次修改服务器接线代码；主 YAML 不接受代码模块列表。
 
-```dotenv
-MOTE_CONNECTOR_PLUGINS='["file:///srv/mote/plugins/acme-notes.mjs"]'
-```
-
-模块默认导出 API 版本 1 的 manifest。以下例子展示最小的 owner 授权导入入口；实际外部服务连接器还需自行实现授权、范围选择、游标和错误处理。
+包入口导出 API 版本 1 的 manifest。以下例子展示最小的 owner 授权导入入口；实际外部服务连接器还需自行实现授权、范围选择、游标和错误处理。
 
 ```js
 export default {
