@@ -12,8 +12,8 @@ import { StoreError } from '../store.js';
 import type {ServerFeatureAdapter} from './index.js';
 
 /** capture: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{perception,executor,maintenanceWorker,assertRequestActive,connections,credential,diagnostics,evidenceReader,files,ingress,parseCaptureBundle,store,materials}:Pick<FeatureServices,"perception"|"executor"|"maintenanceWorker"|"assertRequestActive"|"connections"|"credential"|"diagnostics"|"evidenceReader"|"files"|"ingress"|"parseCaptureBundle"|"store"|"materials">,scope?:ServerFeatureScope){
- scope?.every(5000,()=>{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);perception.prepare();return executor.tick();});scope?.defer(()=>perception.close());scope?.defer(()=>maintenanceWorker?.close());
+export function register(app:FastifyInstance,{executor,maintenanceWorker,assertRequestActive,connections,credential,diagnostics,evidenceReader,files,ingress,parseCaptureBundle,store,materials}:Pick<FeatureServices,"executor"|"maintenanceWorker"|"assertRequestActive"|"connections"|"credential"|"diagnostics"|"evidenceReader"|"files"|"ingress"|"parseCaptureBundle"|"store"|"materials">,scope?:ServerFeatureScope){
+ scope?.every(5000,()=>{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);return executor.tick();});scope?.defer(()=>maintenanceWorker?.close());
 const deletion=new EvidenceDeletion(store,files,new MaterialNoteDeletion(store,materials));
 registerCaptureBrowser(app,{store,connections,credential,evidenceReader,deletion});
 app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);assertExternalCaptures([input],!c);assertCaptureAttachments([input],files,c);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>ingress.capture(input,()=>{assertRequestActive(req);assertCaptureAttachments([input],files,c);if(c)connections.assertCapture(c,input);}),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});

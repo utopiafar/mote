@@ -16,7 +16,7 @@ import {WorkerPluginRuntime} from '../src/plugin-runtime.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryInputAuthorization} from '../src/memory-input-authorization.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {MemoryLifecycle} from '../src/memory-lifecycle.js';
 import {MemoryIntegrationSettings} from '../src/memory-integration-settings.js';
@@ -93,6 +93,17 @@ function generatedRelease(options: {configuration?: PluginManifest['configuratio
     throw new Error('Fixture transport rejects every unregistered URL: ' + url);
   };
   return {repository, tag, commit, manifest, transport, downloads: () => downloads, failNextDownload() {downloadFailures++;}, mutateArchive() {archive = strToU8('Generated changed release bytes');}};
+}
+
+function pinnedMem0Release() {
+  const archive = zipSync({'upstream/README.md': strToU8('Generated pinned upstream provenance')});
+  const transport: PluginReleaseTransport = async url => {
+    if (url.endsWith('/releases/tags/ts-v3.3.1')) return {bytes: strToU8(JSON.stringify({tag_name: 'ts-v3.3.1', draft: false, assets: []}))};
+    if (url.endsWith('/commits/ts-v3.3.1')) return {bytes: strToU8(JSON.stringify({sha: 'a'.repeat(40)}))};
+    if (url.endsWith('/zipball/' + 'a'.repeat(40))) return {bytes: archive};
+    throw new Error('Unexpected generated Mem0 release URL: ' + url);
+  };
+  return {repository: 'mem0ai/mem0', tag: 'ts-v3.3.1', transport, commit: 'a'.repeat(40), manifest: {} as PluginManifest, downloads: () => 0, failNextDownload() {}, mutateArchive() {}};
 }
 
 async function waitFor(check: () => boolean, description: string) {
@@ -181,6 +192,60 @@ test('a service runtime release is rejected before install when this host has no
   const release = generatedRelease(); (release.manifest as any).runtime = 'service';
   const f = fixture(t, release);
   await assert.rejects(f.plugins.resolve({repository: release.repository, tag: release.tag}), /service runtime/);
+});
+
+test('pinned Mem0 installs as a worker build and follows the same enable, disable, unresolved-write and uninstall states as a native build', async t => {
+  const f = fixture(t, pinnedMem0Release());
+  f.plugins.probe = async () => ({capabilities: [{id: 'repository', state: 'verified'}, {id: 'retrieval', state: 'verified'}], issues: []});
+  const preview = await f.plugins.resolve({repository: 'mem0ai/mem0'});
+  assert.equal(preview.runtime, 'worker');
+  f.plugins.install({...pluginCommand(f), previewId: preview.id});
+  await waitFor(() => f.plugins.view().packages[0]?.state === 'installed', 'pinned Mem0 install settles');
+  const pkg = f.plugins.view().packages[0]!;
+  assert.equal(pkg.runtime, 'worker');
+  assert.equal(f.plugins.buildView(pkg.id).package, true, 'the installed release is the build source');
+  assert.equal(f.plugins.store.db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE name IN ('plugin_packages','plugin_instances','plugin_retired_instances')").get()!.count, 0, 'worker packages use the build/instance table');
+
+  const instance = f.plugins.configure(undefined, {...pluginCommand(f), packageId: pkg.id, name: 'Generated pinned Mem0', scope: 'default', configuration: {embeddingBaseUrl: 'https://generated.invalid/v1', embeddingModel: 'generated-embedding', embeddingDimension: 3}});
+  let build = f.plugins.buildView(instance.id);
+  assert.equal(build.runtime, 'worker');
+  assert.equal(build.version, '3.3.1');
+  assert.equal(build.observed, 'stopped');
+  assert.equal(build.desired, null);
+
+  f.plugins.action(instance.id, 'check', instanceCommand(f, instance.id));
+  await waitFor(() => f.plugins.instanceView(instance.id).observed !== 'checking', 'pinned Mem0 capability check settles');
+  assert.equal(f.plugins.instanceView(instance.id).observed, 'ready');
+  build = f.plugins.buildView(instance.id);
+  assert.equal(build.observed, 'stopped', 'a checked build is not active before enable');
+  f.plugins.action(instance.id, 'enable', instanceCommand(f, instance.id));
+  build = f.plugins.buildView(instance.id);
+  assert.equal(build.observed, 'active');
+  assert.equal(build.desired?.version, '3.3.1');
+  assert.ok(build.active);
+
+  f.plugins.action(instance.id, 'disable', instanceCommand(f, instance.id));
+  build = f.plugins.buildView(instance.id);
+  assert.equal(build.observed, 'stopped');
+  assert.equal(build.desired, null);
+
+  f.plugins.action(instance.id, 'enable', instanceCommand(f, instance.id));
+  f.plugins.references = id => id === instance.id ? ['Unresolved provider writes or erasures retain this instance'] : [];
+  f.plugins.action(instance.id, 'disable', instanceCommand(f, instance.id));
+  build = f.plugins.buildView(instance.id);
+  assert.equal(build.observed, 'draining');
+  assert.ok(build.active, 'a retained write keeps the worker activation visible while draining');
+  assert.throws(() => f.plugins.uninstall(pkg.id, pluginCommand(f)), /Disable and migrate/);
+  await assert.rejects(f.plugins.retireBuild(instance.id, pluginCommand(f)), /Disable and release references/);
+  assert.equal(f.plugins.buildView(instance.id).retired, false);
+  f.plugins.references = () => [];
+  f.plugins.action(instance.id, 'enable', instanceCommand(f, instance.id));
+  f.plugins.action(instance.id, 'disable', instanceCommand(f, instance.id));
+  await f.plugins.retireBuild(instance.id, pluginCommand(f));
+  assert.equal(f.plugins.buildView(instance.id).retired, true);
+  f.plugins.uninstall(pkg.id, pluginCommand(f));
+  assert.equal(f.plugins.view().packages.length, 0);
+  assert.equal(f.plugins.buildView(pkg.id).retired, true);
 });
 
 test('fixed GitHub preview, install and lost-response replay remain durable; check and enable never bind', async t => {

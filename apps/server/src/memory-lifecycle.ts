@@ -40,7 +40,8 @@ export class MemoryLifecycle {
   automaticAdmission?:(id:LifecycleExtension['id'])=>boolean;
   private extensions=new Map<string,LifecycleExtension>();
   private running=new Map<string,Promise<void>>();
-  private closed=false;private abort=new AbortController();
+  private closed=false;private quiescing=false;private abort=new AbortController();
+  private interrupting?:Promise<void>;private closing?:Promise<void>;
   private policy:LifecycleSettings;
   constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,private executor?:ExecutionEngine,private semanticContextTime?:()=>string,private configService?:ConfigService){
     this.policy=lifecycleSettingsSchema.parse(configService?.current('memory')??defaultLifecycleSettings);
@@ -77,6 +78,7 @@ export class MemoryLifecycle {
   }
   settings():LifecycleSettings{return structuredClone(this.policy);}
   request(id:LifecycleExtension['id'],ids:string[],checkpoint:string){
+    if(this.closed||this.quiescing)throw new StoreError('Memory lifecycle is not accepting new work',503);
     const extension=this.extensions.get(id);if(!extension)throw new StoreError('Lifecycle extension is unavailable',409);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{
@@ -157,7 +159,7 @@ export class MemoryLifecycle {
       drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!state.active&&(!p.enabled||this.automaticAdmission?.(e.id)===false)||state.active&&!state.active.manual&&!p.enabled&&!['extraction','consolidation'].includes(e.id)?'disabled':this.running.has(e.id)?'running':state.manualRetryRequired||e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':this.ready(e.id,p,state,pendingChanges,this.now())?'ready':e.id==='insights'&&pendingChanges<p.minChanges?'waiting_for_increment':'waiting_for_interval',
       active:state.active?{id:state.active.id,manual:state.active.manual===true,operationId:this.executor?'workflow:lifecycle:'+state.active.id:undefined,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
-    if(this.closed)return Promise.resolve();
+    if(this.closed||this.quiescing)return Promise.resolve();
     // Aggregation is independently scheduled by the maintenance worker.
     for(const extension of this.extensions.values()){
       if(this.running.has(extension.id)||!this.configured())continue;
@@ -175,7 +177,7 @@ export class MemoryLifecycle {
     return {receipt,key:sha256(JSON.stringify([id,receipt]))};
   }
   private async execute(extension:LifecycleExtension){
-      if(this.closed||!this.configured())return;
+      if(this.closed||this.quiescing||!this.configured())return;
       const settings=this.settings(),p=settings[extension.id],state=this.state(extension.id),now=this.now();
       if(!state.active&&(!p.enabled||this.automaticAdmission?.(extension.id)===false)||state.active&&!state.active.manual&&!p.enabled&&!['extraction','consolidation'].includes(extension.id)||state.cancelled||state.manualRetryRequired||extension.maxAttempts&&state.failures>=extension.maxAttempts||(state.retryAt??0)>now||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled')return;
       if(!state.active){
@@ -208,11 +210,11 @@ export class MemoryLifecycle {
           if(recovery&&['failed','waiting'].includes(executor.get(id)?.state??'')&&executor.get(id)?.error===executor.failure(id)?.code&&executor.failure(id)?.category==='transient')executor.retry(id,false);
           await executor.runStep({id,operationId,kind:'lifecycle-window',pool:'lifecycle.'+extension.id,input:{windowId:window.id,extensionId:extension.id,version:window.version},signal:this.abort.signal,policy:EXECUTION_POLICIES.orchestration,maxAttempts:extension.maxAttempts??EXECUTION_POLICIES.modelCall.maxAttempts,
             classify:error=>error instanceof AgentTimeoutError?new ExecutionFailure('transient','provider_timeout'):new ExecutionFailure('permanent',error instanceof MemoryProviderError&&error.code==='unsupported_input'?'memory_provider_unsupported_input':error instanceof StoreError?'workflow_'+error.statusCode:'step_failed'),
-            validate:()=>!this.closed&&this.state(extension.id).active?.id===window.id,
+            validate:()=>!this.closed&&!this.quiescing&&this.state(extension.id).active?.id===window.id,
             execute:async signal=>{
               const fence=this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(id)?.fence;
               const commit=<T>(write:()=>T):T=>{signal.throwIfAborted();const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{if(!fence||!executor.isCurrentGrant(id,String(fence))||this.state(extension.id).active?.id!==window.id)throw new StoreError('Lifecycle execution grant expired',409);const result=write();if(own)db.exec('COMMIT');return result;}catch(error){if(own)db.exec('ROLLBACK');throw error;}};
-              await extension.run(window,value=>commit(()=>checkpoint(value)),{operationId,jobId:window.id,signal,interrupted:()=>this.closed||executor.closed,commit,...(recovery?{recovery}:{})});signal.throwIfAborted();return true;
+              await extension.run(window,value=>commit(()=>checkpoint(value)),{operationId,jobId:window.id,signal,interrupted:()=>this.closed||this.quiescing||executor.closed,commit,...(recovery?{recovery}:{})});signal.throwIfAborted();return true;
             },commit:()=>{},read:()=>executor.get(id)?.state==='succeeded'?true:undefined,project:()=>{},
           });
         }else await extension.run(window,checkpoint);
@@ -221,7 +223,7 @@ export class MemoryLifecycle {
         // authorized window. Completing that window never undoes the cutoff.
         state.cursor=Math.max(state.cursor,this.state(extension.id).cursor,state.active.through);if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;if(!state.active.manual)state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;delete state.countedFailure;
       }catch(error){
-        if(this.closed)return;
+        if(this.closed||this.quiescing)return;
         if(state.active){
           if(this.executor?.get('lifecycle:'+state.active.id)?.state==='running')return;
           const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;Object.assign(state,latest);
@@ -249,11 +251,30 @@ export class MemoryLifecycle {
       }
       this.saveState(extension.id,state);
   }
-  async close(){
-    this.closed=true;
-    // Shutdown interrupts replayable work; explicit user cancellation stays terminal.
+  /** Stop admitting windows and interrupt in-flight invocations without
+   * cancelling their durable checkpoints. A later start resumes them. */
+  quiesce(){
+    if(this.closed||this.quiescing)return this.interrupting??Promise.resolve();
+    this.quiescing=true;this.abort.abort();
+    this.interrupting=(async()=>{try{await this.interrupt();}finally{this.interrupting=undefined;}})();
+    return this.interrupting;
+  }
+  /** Reopen admission on the same durable lifecycle after quiesce/stop. */
+  start(){
+    if(this.closed)throw new StoreError('Memory lifecycle is closed',503);
+    if(this.running.size||this.interrupting)throw new StoreError('Wait for lifecycle work to stop before restarting',409);
+    this.quiescing=false;this.abort=new AbortController();
+  }
+  private async interrupt(){
+    // Shutdown/fencing interrupts replayable work; explicit owner cancellation stays terminal.
     const interrupted=[...this.running.keys()].flatMap(key=>{const window=this.state(key).active,id=window?'lifecycle:'+window.id:undefined;return id&&this.executor?.get(id)?.state==='running'?[id]:[];});
     this.abort.abort();await Promise.allSettled([...this.running.values()]);
     for(const id of interrupted)if(this.executor?.get(id)?.state==='cancelled')this.executor.retry(id,false);
+  }
+  async close(){
+    if(this.closing)return this.closing;
+    this.closed=true;this.quiescing=true;
+    this.closing=(async()=>{await this.interrupting?.catch(()=>{});await this.interrupt();})();
+    return this.closing;
   }
 }

@@ -3,7 +3,7 @@ import {z} from 'zod';
 import {createHash} from 'node:crypto';
 import type {AttributionContext} from '@mote/shared';
 import {StoreError,type Store} from './store.js';
-import {encodeMemoryPrivate,decodeMemoryPrivate} from './memory-private-storage.js';
+import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {importAttributionDeclarationSchema as declarationSchema,portableImportAttributionSchema,type PortableImportAttribution} from './import-attribution-contract.js';
 export {portableImportAttributionSchema,type PortableImportAttribution} from './import-attribution-contract.js';
 

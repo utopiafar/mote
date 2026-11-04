@@ -23,7 +23,7 @@ import {memorySchema,type Memory} from '../src/memory-schema.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
-import {exportBoundMemories} from '../src/memory-provider-backup.js';
+import {exportBoundMemories} from '../src/plugins/memory-backup.js';
 
 const hash=(text:string)=>createHash('sha256').update(text).digest('hex');
 async function fixture(t:any){

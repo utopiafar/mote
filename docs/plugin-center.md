@@ -13,6 +13,8 @@
 3. **核验并启用**：实际供应方探测成功后才开放启用和可用方案。期望启用与实际 ready/enabled/blocked/failed 分别显示。缺依赖或错误配置不会静默改用另一供应方。
 4. **准备并应用 Memory 方案**：选择已授权历史范围，确认实际模型/Embedding 费用；迁移与核验完成后另行应用。安装或启用不会自动接管当前方案。
 
+下载的 worker 包、它们的配置实例和受信原生 build 使用同一份持久 build/instance 记录（`plugin_build_instances`）；安装包、实例配置和当前激活仍是不同事实。`/api/plugin-builds` 与 `/api/plugins` 中的 `builds` 投影 worker 和 native 相同的 id、package、version、desired、observed、blockers、source、configuration、capabilities 与 actions 字段，Web 和 Android 都消费这一投影。Mem0 与 Hindsight 的固定配方同样以 `runtime: "worker"` 的 build 安装和启停，不再走独立的包/实例表。
+
 当前整体方案支持内置、Mem0 正文+检索组合及受控 Hindsight 引擎。高级面板显示实际模块和绑定；同正文权威单独更换 retrieval、任意模块组合编辑尚未提供用户操作。
 
 一期控制目标是 `default` 空间。owner token 或现有配对 owner 会话可以管理；collector、MCP token 和只读查询 Agent 没有管理权。操作带 `operationId` 与 `expectedRevision`。断线重试保留同一请求身份和原始 body；revision 冲突需读取当前事实再作选择，不能把旧请求自动改为新授权。
@@ -24,8 +26,8 @@
 | 方案 | 安装来源与运行方式 | 必需配置与限制 |
 | --- | --- | --- |
 | Mote 内置 | 随 Central 分发；内置正文与检索 | 保留原提取、独立审核和整合；可与已核验模块方案互相迁移 |
-| Mem0 OSS 模块 | `mem0ai/mem0` 的 `ts-v3.3.1` 固定上游源码；本 Mote 构建分发受控适配器与精确锁定 `mem0ai@3.3.1`、SQLite 依赖 | Embedding endpoint、model、dimension；受保护端点使用 `model:<已有预设 ID>` 凭据引用。接管正文与检索，保留 Mote 提取/审核/整合；不包含托管平台专属能力 |
-| Hindsight 完整引擎 | `vectorize-io/hindsight` 的 `v0.10.2` 固定官方 API source wheel（ZIP）；Mote 管理的 Docker API/DB 和独立受控 worker | 选择可用模型预设；服务器需可用 Docker。接管提取、整合、正文和检索；独立审核、原件授权和发布仍归 Mote。只有实际实例探测通过才可准备 |
+| Mem0 OSS 模块 | `mem0ai/mem0` 的 `ts-v3.3.1` 固定上游源码，作为 `runtime: "worker"` 的 build 安装；本 Mote 构建分发受控适配器与精确锁定 `mem0ai@3.3.1`、SQLite 依赖 | Embedding endpoint、model、dimension；受保护端点使用 `model:<已有预设 ID>` 凭据引用。接管正文与检索，保留 Mote 提取/审核/整合；不包含托管平台专属能力 |
+| Hindsight 完整引擎 | `vectorize-io/hindsight` 的 `v0.10.2` 固定官方 API source wheel（ZIP），作为 `runtime: "worker"` 的 build 安装；Mote 管理的 Docker API/DB 和独立受控 worker | 选择可用模型预设；服务器需可用 Docker。接管提取、整合、正文和检索；独立审核、原件授权和发布仍归 Mote。只有实际实例探测通过才可准备 |
 
 这两个上游 release 不要求上游发布 Mote manifest：当前 Mote 的兼容配方提供适配器，固定源码制品用于来源身份与完整性记录，不执行上游 bootstrap/npm lifecycle 脚本。其他原始仓库或未支持的 tag 没有兼容 manifest 时明确拒绝；不能由包名推断兼容。
 
@@ -89,7 +91,8 @@ repository 更换迁移全部 Mote 保留记忆正文及更正/替代状态、�
 
 | API | 控制对象 |
 | --- | --- |
-| `GET /api/plugins`、`POST /api/plugins/resolve` | 包/实例/catalog 投影；固定 release 预览 |
+| `GET /api/plugins`、`POST /api/plugins/resolve` | 包/实例/统一 build 投影与 catalog；固定 release 预览 |
+| `GET /api/plugin-builds`、`PATCH /api/plugin-builds/:id`、`POST /api/plugin-builds/:id/retire` | worker/native 共用的 build 选择、停用与卸载；未核对写入或仍被引用的实例拒绝卸载 |
 | `POST /api/plugins/install`、`POST /api/plugins/:id/uninstall` | 安装/卸载；预览 ID 绑定私有固定制品 |
 | `POST /api/plugin-instances`、`PATCH /api/plugin-instances/:id` | 创建/更新配置，更新以实例 revision 为前提 |
 | `POST /api/plugin-instances/:id/check`、`.../enable`、`.../disable` | 实际核验与期望运行选择 |

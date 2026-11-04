@@ -4,8 +4,7 @@ import type {FastifyInstance} from 'fastify';
 import type {Context,Plugin} from '@deepseek-ai/cordis';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
-import type {HostPluginContext} from '@mote/plugin-host';
-import {BackendPluginScope} from './backend-plugin-scope.js';
+import {PluginResourceScope,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {SourceStore} from './sources.js';
 import type {Store} from './store.js';
@@ -165,37 +164,48 @@ const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSna
 };
 
 /** The recipe selects trusted, versioned capabilities; its data never carries code. */
+type CodingSourceRegistries=Pick<Context,'moteMaterialCatalog'|'moteSourceRecipes'|'moteSourcePipelines'>;
+export function installCodingSource(registries:CodingSourceRegistries,options:{accepting?:boolean}={}){
+  const dispose:Array<()=>void>=[],keep=(stop:()=>void)=>{dispose.push(stop);};
+  try{
+    keep(registries.moteMaterialCatalog.register({id:'mote.coding-session',kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,label:'Coding Agent 会话'}));
+    keep(registries.moteSourceRecipes.registerRawWriter({id:'mote.source-archive-writer',version:'1',kind:'raw-writer'},(archive,source,items,groups)=>archive.receive(source.id,items,groups)));
+    keep(registries.moteSourceRecipes.registerRawReader({id:'mote.source-archive-reader',version:'1',kind:'raw-reader'},readCodingSnapshot));
+    keep(registries.moteSourceRecipes.registerPolicy({id:'mote.retain-source-archive',version:'1',kind:'raw-retention'}));
+    keep(registries.moteSourceRecipes.registerPolicy({id:'mote.on-receive',version:'1',kind:'trigger'}));
+    keep(registries.moteSourceRecipes.registerGroup({id:'mote.coding-group',version:'1',kind:'group'},group));
+    keep(registries.moteSourceRecipes.registerStep({id:'mote.coding-assemble',version:'7',kind:'step'},input=>input.snapshot.mode==='append'?
+      organizeAppend(input.source,input.group,input.snapshot):organize({source:input.source,items:[...input.items],group:input.group})));
+    keep(registries.moteSourceRecipes.registerPublisher({id:'mote.material-draft',version:'1',kind:'publish'},input=>input.outputs.assemble as MaterialDraft|MaterialAppendDraft|undefined));
+    keep(registries.moteSourceRecipes.registerPolicy({id:'mote.material-index',version:'1',kind:'index'}));
+    keep(registries.moteSourceRecipes.registerPolicy({id:'mote.coding-exposure',version:'3',kind:'exposure'}));
+    keep(registries.moteSourceRecipes.installRecipe({
+      schemaVersion:1,id:'mote.coding',version:'8',accepts:{sourceKind:'coding-agent'},
+      raw:{writer:{id:'mote.source-archive-writer'},reader:{id:'mote.source-archive-reader'},retention:{id:'mote.retain-source-archive'}},
+      trigger:{policy:{id:'mote.on-receive'}},group:{policy:{id:'mote.coding-group'}},
+      steps:[{id:'assemble',use:{id:'mote.coding-assemble'},dependsOn:[]}],
+      publish:{use:{id:'mote.material-draft'}},index:{use:{id:'mote.material-index'}},
+      exposure:{use:{id:'mote.coding-exposure'},routes:[
+        {audience:'query',operation:'ask',phase:'pending',readProjection:'material'},
+        {audience:'query',operation:'ask',phase:'partial',readProjection:'material'},
+        {audience:'query',operation:'ask',phase:'ready',readProjection:'material'},
+        {audience:'query',operation:'ask',phase:'ready',readProjection:'segment'},
+        {audience:'memory',operation:'derive',phase:'ready',readProjection:'material'},
+      ]},
+    }));
+    keep(registries.moteSourcePipelines.register({
+      id:'mote.coding',featureId:'mote.coding',version:'8',recipe:{id:'mote.coding',version:'8'},reprocess:'manual',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memoryDependencies:['conversation'],
+    }));
+  }catch(error){
+    for(const stop of dispose.reverse()){try{stop();}catch{}}
+    throw error;
+  }
+  if(options.accepting===false)registries.moteSourcePipelines.quiesce('mote.coding');
+  return ()=>dispose.reverse().forEach(stop=>{try{stop();}catch{}});
+}
 export function codingSourcePlugin(ctx:Context,options:{accepting?:boolean}={}){
-  const recipes=ctx.moteSourceRecipes;
-  ctx.effect(()=>ctx.moteMaterialCatalog.register({id:'mote.coding-session',kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,label:'Coding Agent 会话'}));
-  ctx.effect(()=>recipes.registerRawWriter({id:'mote.source-archive-writer',version:'1',kind:'raw-writer'},(archive,source,items,groups)=>archive.receive(source.id,items,groups)));
-  ctx.effect(()=>recipes.registerRawReader({id:'mote.source-archive-reader',version:'1',kind:'raw-reader'},readCodingSnapshot));
-  ctx.effect(()=>recipes.registerPolicy({id:'mote.retain-source-archive',version:'1',kind:'raw-retention'}));
-  ctx.effect(()=>recipes.registerPolicy({id:'mote.on-receive',version:'1',kind:'trigger'}));
-  ctx.effect(()=>recipes.registerGroup({id:'mote.coding-group',version:'1',kind:'group'},group));
-  ctx.effect(()=>recipes.registerStep({id:'mote.coding-assemble',version:'7',kind:'step'},input=>input.snapshot.mode==='append'?
-    organizeAppend(input.source,input.group,input.snapshot):organize({source:input.source,items:[...input.items],group:input.group})));
-  ctx.effect(()=>recipes.registerPublisher({id:'mote.material-draft',version:'1',kind:'publish'},input=>input.outputs.assemble as MaterialDraft|MaterialAppendDraft|undefined));
-  ctx.effect(()=>recipes.registerPolicy({id:'mote.material-index',version:'1',kind:'index'}));
-  ctx.effect(()=>recipes.registerPolicy({id:'mote.coding-exposure',version:'3',kind:'exposure'}));
-  ctx.effect(()=>recipes.installRecipe({
-    schemaVersion:1,id:'mote.coding',version:'8',accepts:{sourceKind:'coding-agent'},
-    raw:{writer:{id:'mote.source-archive-writer'},reader:{id:'mote.source-archive-reader'},retention:{id:'mote.retain-source-archive'}},
-    trigger:{policy:{id:'mote.on-receive'}},group:{policy:{id:'mote.coding-group'}},
-    steps:[{id:'assemble',use:{id:'mote.coding-assemble'},dependsOn:[]}],
-    publish:{use:{id:'mote.material-draft'}},index:{use:{id:'mote.material-index'}},
-    exposure:{use:{id:'mote.coding-exposure'},routes:[
-      {audience:'query',operation:'ask',phase:'pending',readProjection:'material'},
-      {audience:'query',operation:'ask',phase:'partial',readProjection:'material'},
-      {audience:'query',operation:'ask',phase:'ready',readProjection:'material'},
-      {audience:'query',operation:'ask',phase:'ready',readProjection:'segment'},
-      {audience:'memory',operation:'derive',phase:'ready',readProjection:'material'},
-    ]},
-  }));
-  ctx.effect(()=>ctx.moteSourcePipelines.register({
-    id:'mote.coding',featureId:'mote.coding',version:'8',recipe:{id:'mote.coding',version:'8'},reprocess:'manual',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memoryDependencies:['conversation'],
-  }));
-  if(options.accepting===false)ctx.moteSourcePipelines.quiesce('mote.coding');
+  const uninstall=installCodingSource(ctx,options);
+  ctx.effect(()=>uninstall);
 }
 
 export const codingSourceContribution={
@@ -264,23 +274,29 @@ export function createCodingSourceRoutes(runtime:SourcePipelineRuntime){
 
 /** Owns only the coding recipe scope. The shared runtime, Store and source
  * catalogue remain borrowed and continue serving other source kinds. */
-export function createCodingSource(dependencies:CodingSourceDependencies,routes:ReturnType<typeof createCodingSourceRoutes>,options:CodingSourceOptions={}):CodingSource{
+export function createCodingSource(dependencies:CodingSourceDependencies,routes:ReturnType<typeof createCodingSourceRoutes>,scope:HostScope,options:CodingSourceOptions={}):CodingSource{
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'='created';
-  let scope:BackendPluginScope|undefined,activation:CodingSourceActivation|undefined,closing:Promise<void>|undefined;
+  let activation:CodingSourceActivation|undefined,uninstall:(()=>void)|undefined,plugins:PluginResourceScope|undefined,closing:Promise<void>|undefined;
   const unavailable=()=>new StoreError('Coding source is unavailable',503);
   const close=()=>closing??=(async()=>{
     if(activation)routes.deactivate(activation);
-    activation=undefined;const owned=scope;scope=undefined;
-    try{await owned?.close();}finally{phase='stopped';}
+    activation=undefined;const owned=plugins,remove=uninstall;plugins=undefined;uninstall=undefined;
+    try{await owned?.close();}finally{remove?.();phase='stopped';}
   })();
   const quiesce=()=>{if(phase==='active'){phase='quiescing';dependencies.runtime.registry.quiesce('mote.coding');routes.deactivate(activation!);}};
   return Object.freeze({
     async prepare(){
       if(phase!=='created')throw unavailable();phase='preparing';
       try{
-        scope=new BackendPluginScope(dependencies.runtime.context);
-        await scope.install((ctx:Context)=>codingSourcePlugin(ctx,{accepting:false}));
-        for(const plugin of options.plugins??[])await scope.install(plugin);
+        uninstall=installCodingSource({moteSourceRecipes:dependencies.runtime.recipes,moteSourcePipelines:dependencies.runtime.registry,moteMaterialCatalog:dependencies.runtime.materials.catalog.registry},{accepting:false});
+        plugins=new PluginResourceScope(undefined,'Coding source plugin scope disposal failed');
+        scope.defer(()=>plugins?.close());
+        const install=async(plugin:Plugin)=>{
+          const fiber=dependencies.runtime.context.plugin(plugin);
+          plugins!.defer(()=>fiber.dispose());
+          await plugins!.join((async()=>{try{await fiber;}catch(error){try{await fiber.dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Coding source plugin initialization and disposal failed',{cause:error});}throw error;}})());
+        };
+        for(const plugin of options.plugins??[])await install(plugin);
         activation={...dependencies};phase='prepared';
       }catch(error){
         try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Coding source preparation and disposal failed',{cause:error});}
@@ -296,7 +312,7 @@ export function createCodingSource(dependencies:CodingSourceDependencies,routes:
 
 export function createCodingSourceFactory(dependencies:CodingSourceDependencies,routes:ReturnType<typeof createCodingSourceRoutes>,options:CodingSourceOptions={}){
   return (context:HostPluginContext):PluginLifecycle=>{
-    const source=createCodingSource(dependencies,routes,options);
+    const source=createCodingSource(dependencies,routes,context.scope,options);
     context.scope.defer(()=>source.close());
     return {prepare:()=>source.prepare(),start:()=>source.start(),quiesce:(reason:StopReason)=>source.quiesce(reason),stop:(reason:StopReason)=>source.stop(reason),dispose:()=>source.dispose()};
   };

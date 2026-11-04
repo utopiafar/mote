@@ -8,7 +8,7 @@ import type {QueryResult} from '@mote/shared';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {MemoryPhaseOutputs} from '../src/memory-phase-outputs.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

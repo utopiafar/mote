@@ -3,13 +3,13 @@ import {EXECUTION_POLICIES} from './execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {z} from 'zod';
-import type {PluginCenterView,PluginInstanceView,PluginPackageView,PluginCapability} from '@mote/shared';
+import type {PluginBuildView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginCapability} from '@mote/shared';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {GitHubPluginReleases,type PluginManifest,type ResolvedPluginRelease} from './plugin-release.js';
 import {HostedPluginRuntime,WorkerPluginRuntime,type PluginRuntime} from './plugin-runtime.js';
 import {memoryControlCommandSchema} from './memory-automation.js';
 import {sha256,StoreError,type Store} from './store.js';
-import {PluginControlStore,type BuildInstance,type BuildSelection} from './plugins/plugin-control-store.js';
+import {PluginControlStore,type BuildInstance,type BuildInstanceRecord,type BuildPackageRecord,type BuildSelection} from './plugins/plugin-control-store.js';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,ScopeIdentity} from '@mote/plugin-api/contracts';
 import {PluginHostError,type PluginHost,type PluginHandle,type HostPluginContext} from '@mote/plugin-host';
@@ -17,15 +17,18 @@ import {centralServices} from './plugins/central-contracts.js';
 
 const configurationSchema=z.record(z.union([z.string(),z.number().finite(),z.boolean()]));
 const instanceSchema=z.object({name:z.string().trim().min(1).max(160),scope:z.literal('default'),configuration:configurationSchema,expectedRevision:z.number().int().positive(),operationId:z.string().uuid()}).strict();
-export type StoredPackage={installationId:string;view:PluginPackageView;manifest:PluginManifest;directory?:string;previewId:string;hostAdapter?:ResolvedPluginRelease['hostAdapter']};
-type StoredInstance={view:PluginInstanceView;configurationId?:string;stepId?:string};
+export type StoredPackage=BuildPackageRecord;
+type StoredInstance=BuildInstanceRecord;
+type StoredBuild=BuildInstance&{package?:StoredPackage;instance?:StoredInstance};
 const healthSchema=z.object({capabilities:z.array(z.object({id:z.string(),state:z.enum(['verified','unsupported','unknown']),reason:z.string().optional()}).strict()),issues:z.array(z.string()).default([])}).strict();
 
 const sameScope=(a:ScopeIdentity,b:ScopeIdentity)=>a.packageId===b.packageId&&a.installationId===b.installationId&&a.instanceId===b.instanceId&&a.activationId===b.activationId&&a.host.id===b.host.id&&a.host.kind===b.host.kind;
 const sameBinding=(a:ServiceBinding,b:ServiceBinding)=>a.revision===b.revision&&a.service.id===b.service.id&&a.service.apiVersion===b.service.apiVersion&&a.provider.contributionId===b.provider.contributionId&&sameScope(a.provider.scope,b.provider.scope);
 
-/** Installation, configuration and runtime admission are independent durable
- * records. All work uses the host ExecutionEngine and survives a host restart. */
+/** One durable build/instance model owns downloaded worker packages, their
+ * configured instances and trusted native builds. Installation, configuration
+ * and runtime admission stay separate facts; all work uses the host
+ * ExecutionEngine and survives a host restart. */
 export class PluginCenter {
   readonly control:PluginControlStore;
   private accepting=true;
@@ -45,12 +48,7 @@ export class PluginCenter {
   probe?:(instanceId:string,signal:AbortSignal)=>Promise<{capabilities:PluginCapability[];issues:string[]}>;
   constructor(readonly store:Store,readonly executor:ExecutionEngine,readonly releases:GitHubPluginReleases,private readonly hostOwner?:{host:PluginHost;binding:()=>ServiceBinding;assertCurrent?:()=>void;hostDependencies?:readonly TrustedHostDependency[]}){
     this.control=new PluginControlStore(store);
-    store.db.exec(`
-      CREATE TABLE IF NOT EXISTS plugin_release_previews(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS plugin_packages(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS plugin_instances(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS plugin_retired_packages(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS plugin_retired_instances(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
+    store.db.exec(`CREATE TABLE IF NOT EXISTS plugin_release_previews(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
     this.disposeHandlers.push(executor.register({kind:'plugin.install',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.control,admit:()=>this.admit(),
       validate:step=>Boolean(this.package(String(step.input.packageId))?.view.state==='installing'),
       execute:async(step,signal)=>{const value=this.preview(String(step.input.previewId));const directory=await releases.install(value);if(signal.aborted)throw new ExecutionFailure('stale','plugin_install_cancelled');return directory;},
@@ -85,11 +83,23 @@ export class PluginCenter {
   revision(){return this.control.revision();}
   private bump(){this.control.bump();}
   commandReceipt(operationId:string){return this.control.receipt(operationId);}
-  private package(id:string):StoredPackage{const row=this.store.db.prepare('SELECT json FROM plugin_packages WHERE id=? UNION ALL SELECT json FROM plugin_retired_packages WHERE id=? LIMIT 1').get(id,id);if(!row)throw new StoreError('Plugin package not found',404);return JSON.parse(String(row.json));}
+  private buildRecords():StoredBuild[]{return this.control.builds() as StoredBuild[];}
+  private packageBuild(id:string){return this.buildRecords().find(record=>record.kind==='package'&&record.package?.view.id===id);}
+  private instanceBuild(id:string){return this.buildRecords().find(record=>record.kind==='instance'&&record.instance?.view.id===id);}
+  private package(id:string):StoredPackage{const record=this.buildRecords().find(value=>value.id===id)??this.packageBuild(id);if(!record?.package)throw new StoreError('Plugin package not found',404);return record.package;}
   private preview(id:string):ResolvedPluginRelease{const row=this.store.db.prepare('SELECT json FROM plugin_release_previews WHERE id=?').get(id);if(!row)throw new StoreError('Resolve the plugin release again before installing',409);return JSON.parse(String(row.json));}
-  private instance(id:string):StoredInstance{const row=this.store.db.prepare('SELECT json FROM plugin_instances WHERE id=? UNION ALL SELECT json FROM plugin_retired_instances WHERE id=? LIMIT 1').get(id,id);if(!row)throw new StoreError('Plugin instance not found',404);return JSON.parse(String(row.json));}
-  private savePackage(value:StoredPackage){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO plugin_packages VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.view.id,json);}
-  private saveInstance(value:StoredInstance){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO plugin_instances VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.view.id,json);}
+  private instance(id:string):StoredInstance{const record=this.instanceBuild(id)??this.buildRecords().find(value=>value.id===id);if(!record?.instance)throw new StoreError('Plugin instance not found',404);return record.instance;}
+  private saveBuild(value:StoredBuild){this.control.saveBuild(value);}
+  private savePackage(value:StoredPackage){const existing=this.packageBuild(value.view.id),observed=value.view.state==='installed'?'stopped':value.view.state==='failed'?'blocked':'queued';
+    this.saveBuild({id:value.view.id,packageId:value.view.id,version:value.manifest.version,installationId:value.installationId,revision:existing?.revision??1,desired:null,retired:false,
+      observed,blockers:value.view.issues,operationId:existing?.operationId??value.view.operationId??'package',kind:'package',package:value});}
+  private saveInstance(value:StoredInstance){const existing=this.instanceBuild(value.view.id),pkg=this.package(value.view.packageId),desired=value.view.desired;
+    const observed=value.view.observed==='checking'?'starting':value.view.issues.length||value.view.observed==='blocked'?'blocked':value.view.observed==='draining'?'draining':desired?'active':'stopped';
+    const selection={packageId:value.view.packageId,version:pkg.manifest.version,configurationRevision:value.view.revision};
+    const activeSelection=desired?selection:value.view.observed==='draining'?existing?.activeSelection??existing?.desired??null:null;
+    this.saveBuild({id:value.view.id,packageId:value.view.packageId,version:pkg.manifest.version,installationId:existing?.installationId??pkg.installationId,revision:value.view.revision,
+      desired:desired?selection:null,retired:existing?.retired??false,activeSelection,
+      observed,blockers:value.view.issues,operationId:existing?.operationId??value.configurationId??value.view.id,kind:'instance',instance:value});}
   private command(kind:string,input:{operationId:string;expectedRevision:number},revision:()=>number,apply:()=>void){
     this.assertCurrent();
     const applied=this.control.command(kind,input,revision,apply);
@@ -97,14 +107,15 @@ export class PluginCenter {
     return applied;
   }
   view():PluginCenterView{
-    const instances=this.store.db.prepare('SELECT id FROM plugin_instances ORDER BY rowid').all().map(row=>this.instanceView(String(row.id))),packages=this.store.db.prepare('SELECT json FROM plugin_packages ORDER BY rowid').all().map(row=>JSON.parse(String(row.json)) as StoredPackage);
-    return {revision:this.revision(),installation:{supported:true,runtime:'worker',restartRequired:false},packages:packages.map(pkg=>({...pkg.view,configurationSchema:pkg.manifest.configuration,instanceIds:instances.filter(instance=>instance.packageId===pkg.view.id).map(instance=>instance.id),allowedActions:pkg.view.state==='installed'?['configure',...(!instances.some(instance=>instance.packageId===pkg.view.id&&(instance.desired||this.references(instance.id).length))?['uninstall' as const]:[])]:pkg.view.state==='failed'?['uninstall']:[]})),instances,catalog:[{repository:'mem0ai/mem0',name:'Mem0',description:'Pinned ts-v3.3.1 with the bundled Mote storage/retrieval adapter'},{repository:'vectorize-io/hindsight',name:'Hindsight',description:'Pinned v0.10.2; controlled engine capability verification required'}]};
+    const records=this.buildRecords(),instances=records.filter(record=>record.kind==='instance'&&!record.retired).map(record=>this.instanceView(record.instance!.view.id)),
+      packages=records.filter(record=>record.kind==='package'&&!record.retired).map(record=>record.package!);
+    return {revision:this.revision(),installation:{supported:true,runtime:'worker',restartRequired:false},packages:packages.map(pkg=>({...pkg.view,configurationSchema:pkg.manifest.configuration,instanceIds:instances.filter(instance=>instance.packageId===pkg.view.id).map(instance=>instance.id),allowedActions:pkg.view.state==='installed'?['configure',...(!instances.some(instance=>instance.packageId===pkg.view.id&&(instance.desired||this.references(instance.id).length))?['uninstall' as const]:[])]:pkg.view.state==='failed'?['uninstall']:[]})),instances,builds:this.buildViews(),catalog:[{repository:'mem0ai/mem0',name:'Mem0',description:'Pinned ts-v3.3.1 with the bundled Mote storage/retrieval adapter'},{repository:'vectorize-io/hindsight',name:'Hindsight',description:'Pinned v0.10.2; controlled engine capability verification required'}]};
   }
   hostCapabilities(){return {
     memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
   };}
-  instanceView(id:string):PluginInstanceView{const {view,stepId}=this.instance(id),references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
-    if(!this.store.db.prepare('SELECT 1 FROM plugin_instances WHERE id=?').get(id))return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
+  instanceView(id:string):PluginInstanceView{const record=this.instanceBuild(id),{view,stepId}=this.instance(id),references=this.references(id),pending=stepId&&['waiting','running'].includes(this.executor.get(stepId)?.state??'');
+    if(!record||record.retired)return {...view,desired:false,observed:'disabled',issues:references,allowedActions:[]};
     return {...view,issues:[...view.issues,...references],allowedActions:pending?[]:[...(!view.desired&&!references.length?['configure' as const,'check' as const]:[]),...(view.desired?['disable' as const]:!view.issues.length&&view.capabilities.every(value=>value.state!=='unknown')&&view.capabilities.some(value=>value.state==='verified')?['enable' as const]:[])]};
   }
   /** Only installed, checked, enabled instances supply execution declarations. */
@@ -126,13 +137,13 @@ export class PluginCenter {
   packageForInstance(id:string){const value=this.package(this.instance(id).view.packageId);return {...value,directory:join(this.releases.directory,value.view.source.digest)};}
   async resolve(raw:unknown){this.assertCurrent();const input=z.object({repository:z.string().min(1).max(2000),tag:z.string().min(1).max(200).optional()}).strict().parse(raw),value=await this.releases.resolve(input);this.assertCurrent();const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT INTO plugin_release_previews VALUES(?,?)').run(value.preview.id,json);return value.preview;}
   install(raw:unknown){const input=memoryControlCommandSchema.extend({previewId:z.string().uuid()}).strict().parse(raw);
-    this.command('install',input,()=>this.revision(),()=>{const release=this.preview(input.previewId),id=release.manifest.id+'@'+release.preview.source.digest;
-      if(this.store.db.prepare('SELECT 1 FROM plugin_packages WHERE id=?').get(id)){
+    this.command('install',input,()=>this.revision(),()=>{const release=this.preview(input.previewId),id=release.manifest.id+'@'+release.preview.source.digest,prior=this.packageBuild(id);
+      if(prior&&!prior.retired){
         const existing=this.package(id);if(existing.view.state!=='failed')return;
         existing.view.state='installing';existing.view.observed='installing';existing.view.issues=[];existing.view.operationId=input.operationId;existing.previewId=input.previewId;this.savePackage(existing);
         this.executor.enqueue(input.operationId,'plugin.install',{packageId:id,previewId:input.previewId},{id:'plugin-install:'+input.operationId});return;
       }
-      this.savePackage({installationId:randomUUID(),previewId:input.previewId,manifest:release.manifest,hostAdapter:release.hostAdapter,view:{id,name:release.manifest.name,version:release.manifest.version,source:release.preview.source,runtime:release.preview.runtime,state:'installing',desired:false,observed:'installing',issues:[],instanceIds:[],allowedActions:[],operationId:input.operationId}});
+      this.savePackage({installationId:prior?.package?.installationId??randomUUID(),previewId:input.previewId,manifest:release.manifest,hostAdapter:release.hostAdapter,view:{id,name:release.manifest.name,version:release.manifest.version,source:release.preview.source,runtime:release.preview.runtime,state:'installing',desired:false,observed:'installing',issues:[],instanceIds:[],allowedActions:[],operationId:input.operationId}});
       this.executor.enqueue(input.operationId,'plugin.install',{packageId:id,previewId:input.previewId},{id:'plugin-install:'+input.operationId});
     });return this.view();
   }
@@ -146,8 +157,8 @@ export class PluginCenter {
   }
   configure(id:string|undefined,raw:unknown){const input=instanceSchema.extend({packageId:z.string().min(1).optional()}).parse(raw);if(!id&&!input.packageId)throw new StoreError('Choose an installed plugin package');let resultId=id;
     const applied=this.command(id?'configure:'+id:'create',input,()=>id?this.instance(id).view.revision:this.revision(),()=>{
-      if(id&&!this.store.db.prepare('SELECT 1 FROM plugin_instances WHERE id=?').get(id))throw new StoreError('Plugin instance is uninstalled',409);
-      const existing=id?this.instance(id):undefined,packageId=existing?.view.packageId??input.packageId!;if(!this.store.db.prepare('SELECT 1 FROM plugin_packages WHERE id=?').get(packageId))throw new StoreError('Plugin package is uninstalled',409);const pkg=this.package(packageId);if(pkg.view.state!=='installed')throw new StoreError('Wait for plugin installation to complete',409);
+      if(id&&(!this.instanceBuild(id)||this.instanceBuild(id)!.retired))throw new StoreError('Plugin instance is uninstalled',409);
+      const existing=id?this.instance(id):undefined,packageId=existing?.view.packageId??input.packageId!;if(!this.packageBuild(packageId)||this.packageBuild(packageId)!.retired)throw new StoreError('Plugin package is uninstalled',409);const pkg=this.package(packageId);if(pkg.view.state!=='installed')throw new StoreError('Wait for plugin installation to complete',409);
       if(existing&&(existing.view.desired||this.references(id!).length))throw new StoreError('Disable and migrate the instance before configuring it',409);
       this.validateConfiguration(pkg.manifest,input.configuration);resultId=id??input.operationId;
       const capabilities:PluginCapability[]=pkg.manifest.capabilities.map(capability=>({id:capability,state:'unknown',reason:'Requires a capability check'}));
@@ -163,26 +174,32 @@ export class PluginCenter {
     });return this.instanceView(id);
   }
   uninstall(id:string,raw:unknown){const input=memoryControlCommandSchema.parse(raw);let retired:string[]=[];const applied=this.command('uninstall:'+id,input,()=>this.revision(),()=>{
-    const instances=this.view().instances.filter(value=>value.packageId===id);if(instances.some(value=>value.desired||this.references(value.id).length||value.observed==='checking'))throw new StoreError('Disable and migrate the plugin before uninstalling it',409);
+    const instances=this.view().instances.filter(value=>value.packageId===id),records=this.buildRecords(),packageRecord=this.packageBuild(id);
+    if(!packageRecord||packageRecord.retired)throw new StoreError('Plugin package not found',404);
+    if(instances.some(value=>value.desired||this.references(value.id).length||value.observed==='checking'))throw new StoreError('Disable and migrate the plugin before uninstalling it',409);
     const pkg=this.package(id);if(pkg.view.state==='installing')throw new StoreError('Wait for installation to settle before uninstalling',409);
-    for(const instance of instances){this.store.db.prepare('INSERT OR REPLACE INTO plugin_retired_instances SELECT id,json FROM plugin_instances WHERE id=?').run(instance.id);this.store.db.prepare('DELETE FROM plugin_instances WHERE id=?').run(instance.id);}this.store.db.prepare('INSERT OR REPLACE INTO plugin_retired_packages SELECT id,json FROM plugin_packages WHERE id=?').run(id);this.store.db.prepare('DELETE FROM plugin_packages WHERE id=?').run(id);retired=instances.map(instance=>instance.id);
+    for(const record of records)if(!record.retired&&(record.id===packageRecord.id||record.kind==='instance'&&record.packageId===id))this.saveBuild({...record,retired:true,activeSelection:null});
+    retired=instances.map(instance=>instance.id);
     // Immutable code remains cached; uninstall never destroys retained Memory.
   });if(applied)for(const id of retired){const runtime=this.runtimes.get(id);this.runtimes.delete(id);void runtime?.close().catch(()=>{});this.retired?.(id);}return this.view();}
-  runtime(id:string){this.assertCurrent();const existing=this.runtimes.get(id);if(existing)return existing;const instance=this.instance(id).view,pkg=this.packageForInstance(id);if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
-    this.releases.verifyInstalled(pkg.directory,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));
+  runtime(id:string){this.assertCurrent();const existing=this.runtimes.get(id);if(existing)return existing;const runtime=this.runtimeFor(this.packageForInstance(id),this.instance(id).view);this.runtimes.set(id,runtime);return runtime;}
+  /** A retained namespace can recreate its exact historical configuration
+   * without changing the current build selection. The executable process is
+   * still constructed only here, never by an adapter or an HTTP handler. */
+  runtimeFor(pkg:StoredPackage,instance:PluginInstanceView){this.assertCurrent();if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
+    const directory=pkg.directory;this.releases.verifyInstalled(directory,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));
     const create=()=>{
-      const actual=this.runtimeFactory?.(pkg,instance)??new WorkerPluginRuntime(join(pkg.directory,pkg.manifest.entry),instance.configuration,pkg.directory);
+      const actual=this.runtimeFactory?.(pkg,instance)??new WorkerPluginRuntime(join(directory,pkg.manifest.entry),instance.configuration,directory);
       const observed:PluginRuntime={ready:actual.ready?.bind(actual),close:actual.close.bind(actual),call:async(...args)=>{
         try{return await actual.call(...args);}catch(error){
-          if(error instanceof StoreError&&error.statusCode===503&&!this.closed&&this.store.db.prepare('SELECT 1 FROM plugin_instances WHERE id=?').get(id)){
-            const failed=this.instance(id);failed.view.observed='blocked';failed.view.issues=['plugin_worker_unavailable_reconciliation_required'];failed.view.capabilities=failed.view.capabilities.map(value=>({...value,state:'unknown'}));failed.view.revision++;this.saveInstance(failed);this.bump();
+          if(error instanceof StoreError&&error.statusCode===503&&!this.closed&&this.instanceBuild(instance.id)&&!this.instanceBuild(instance.id)!.retired){
+            const failed=this.instance(instance.id);failed.view.observed='blocked';failed.view.issues=['plugin_worker_unavailable_reconciliation_required'];failed.view.capabilities=failed.view.capabilities.map(value=>({...value,state:'unknown'}));failed.view.revision++;this.saveInstance(failed);this.bump();
           }
           throw error;
         }
       }};return observed;
     };
-    const runtime=this.hostOwner?new HostedPluginRuntime(this.hostOwner.host,{...this.instanceIdentity(id),host:this.hostOwner.host.identity,activationId:randomUUID()},this.hostOwner.binding(),create):create();
-    this.runtimes.set(id,runtime);return runtime;
+    return this.hostOwner?new HostedPluginRuntime(this.hostOwner.host,{...this.instanceIdentity(instance.id),host:this.hostOwner.host.identity,activationId:randomUUID()},this.hostOwner.binding(),create):create();
   }
   /** Fixed build registry only: never accept executable definitions from HTTP,
    * an installed archive or a normal plugin. No synthetic package/digest record. */
@@ -195,19 +212,48 @@ export class PluginCenter {
     if(apis.size!==1)throw new StoreError('A host contribution must use one declared API version',409);
     this.builds.set(key,Object.freeze({...build,contribution,requires:structuredClone(build.requires??[]),optional:structuredClone(build.optional??[])}));
   }
-  buildView(id:string){
-    const record=this.control.build(id);if(!record)throw new StoreError('Build instance not found',404);
-    const owned=this.buildHandles.get(id),active=owned&&!owned.handle.signal.aborted&&this.hostOwner!.host.snapshot().contributions.some(value=>
-      sameScope(value.identity.scope,owned.handle.identity)&&value.availability.state==='active');
-    const matches=Boolean(active&&JSON.stringify(owned!.selection)===JSON.stringify(record.desired));
-    return {...record,active:active?{...owned!.selection,identity:owned!.handle.identity}:null,
-      observed:matches?'active':record.observed==='active'?'blocked':record.observed,
-      blockers:record.observed==='active'&&!active?['activation_unavailable']:record.blockers,
-      restartRequired:record.observed==='restart_required'};
+  buildView(id:string){return this.unifiedBuildView(this.control.build(id),id);}
+  private unifiedBuildView(value:BuildInstance|undefined,id:string):PluginBuildView{
+    if(!value)throw new StoreError('Build instance not found',404);
+    const record=value as StoredBuild,worker=record.kind==='package'||record.kind==='instance',pkg=record.package??(worker?this.packageBuild(record.packageId)?.package:undefined),
+      instance=record.instance?.view,native=!record.kind||record.kind==='native';
+    const owned=this.buildHandles.get(id),live=owned&&!owned.handle.signal.aborted&&Boolean(this.hostOwner)&&this.hostOwner!.host.snapshot().contributions.some(entry=>
+      sameScope(entry.identity.scope,owned.handle.identity)&&entry.availability.state==='active');
+    const matches=Boolean(live&&JSON.stringify(owned!.selection)===JSON.stringify(record.desired));
+    const workerActive=Boolean(worker&&record.activeSelection);
+    const active=native?(live?{...owned!.selection,identity:owned!.handle.identity}:null):workerActive?{...record.activeSelection!,identity:this.instanceIdentity(id)}:null;
+    const observed=native?(matches?'active':record.observed==='active'?'blocked':record.observed):record.observed;
+    return {id:record.id,packageId:record.packageId,installationId:record.installationId,revision:record.revision,desired:record.desired,retired:record.retired,
+      observed,blockers:native&&record.observed==='active'&&!live?['activation_unavailable']:record.blockers,operationId:record.operationId,active,
+      restartRequired:record.observed==='restart_required',version:record.version??pkg?.manifest.version??this.builds.get(record.packageId+'@'+(record.version??'1.0.0'))?.version??'',
+      name:instance?.name??pkg?.manifest.name??id,runtime:worker?'worker':'host',source:pkg?.view.source??null,
+      configuration:instance?.configuration??{},configurationSchema:instance?.configurationSchema??pkg?.manifest.configuration??[],
+      capabilities:instance?.capabilities??[],issues:instance?.issues??record.blockers,allowedActions:instance?.allowedActions??[],package:record.kind==='package'};
   }
-  buildViews(){return this.control.builds().map(value=>this.buildView(value.id));}
+  buildViews(){return this.control.builds().map(value=>this.unifiedBuildView(value,value.id));}
   async selectBuild(id:string,raw:unknown){
     const input=memoryControlCommandSchema.extend({selection:z.object({packageId:z.string().min(1),version:z.string().min(1),configurationRevision:z.number().int().nonnegative()}).strict().nullable()}).strict().parse(raw);
+    const prior=this.control.build(id) as StoredBuild|undefined;
+    if(prior?.kind==='instance'){
+      const selection=input.selection,command=input.expectedRevision!==prior.revision&&input.expectedRevision===this.revision()?{...input,expectedRevision:prior.revision}:input;
+      if(selection&&(selection.packageId!==prior.packageId||selection.version!==prior.version))throw new StoreError('Choose the installed build version for this instance',409);
+      const applied=this.command('build:'+id,command,()=>this.control.build(id)?.revision??prior.revision,()=>{
+        const current=this.control.build(id) as StoredBuild;if(!current?.instance)throw new StoreError('Build instance not found',404);if(current.retired)throw new StoreError('Build instance is retired',409);
+        const value=current.instance,references=this.references(id);
+        if(selection&&references.length)throw new StoreError('Release retained references before replacement',409);
+        const ready=value.view.capabilities.every(capability=>capability.state!=='unknown')&&value.view.capabilities.some(capability=>capability.state==='verified');
+        value.view.desired=Boolean(selection);value.view.revision++;value.stepId=undefined;
+        value.view.observed=!selection?(references.length?'draining':'disabled'):ready?'ready':'blocked';
+        value.view.issues=selection&&!ready?['capability_unverified']:[];
+        if(selection)this.validateConfiguration(this.package(value.view.packageId).manifest,value.view.configuration,true);
+        this.saveInstance(value);this.admissionChanged?.(id,Boolean(selection));
+        const saved=this.instanceBuild(id)!;saved.observed=selection?(ready?'active':'blocked'):references.length?'draining':'stopped';
+        saved.desired=selection;this.saveBuild(saved);
+      });
+      if(!applied)await this.applying.get(id);
+      return this.buildView(id);
+    }
+    if(prior?.kind==='package')throw new StoreError('Choose a configured instance build',409);
     if(!this.hostOwner)throw new StoreError('Trusted build host is unavailable',503);
     const build=input.selection?this.builds.get(input.selection.packageId+'@'+input.selection.version):undefined;
     if(input.selection&&!build)throw new StoreError('Trusted build is not registered',409);
@@ -215,12 +261,12 @@ export class PluginCenter {
     const installed=running&&this.builds.get(running.packageId+'@'+running.version);
     const restart=build?.replacement==='restart'||installed?.replacement==='restart';
     const applied=this.command('build:'+id,input,()=>this.control.build(id)?.revision??this.revision(),()=>{
-      const prior=this.control.build(id);if(!prior&&!input.selection)throw new StoreError('Build instance not found',404);if(prior?.retired)throw new StoreError('Build instance is retired',409);
+      const previous=this.control.build(id);if(!previous&&!input.selection)throw new StoreError('Build instance not found',404);if(previous?.retired)throw new StoreError('Build instance is retired',409);
       const retained=this.references(id).length>0;if(retained&&input.selection)throw new StoreError('Release retained references before replacement',409);
-      const record:BuildInstance={id,packageId:prior?.packageId??input.selection!.packageId,installationId:prior?.installationId??randomUUID(),revision:(prior?.revision??0)+1,
+      const record:BuildInstance={id,packageId:previous?.packageId??input.selection!.packageId,version:input.selection?.version??previous?.version,installationId:previous?.installationId??randomUUID(),revision:(previous?.revision??0)+1,
         desired:input.selection,retired:false,observed:retained?'draining':restart?'restart_required':'queued',blockers:[],operationId:input.operationId};
       // An instance cannot silently change its package/data namespace.
-      if(prior&&input.selection&&prior.packageId!==input.selection.packageId)throw new StoreError('Choose a new instance for another package',409);
+      if(previous&&input.selection&&previous.packageId!==input.selection.packageId)throw new StoreError('Choose a new instance for another package',409);
       this.control.saveBuild(record);
     });
     if(applied&&!restart&&this.control.build(id)!.observed!=='draining'){
@@ -236,6 +282,14 @@ export class PluginCenter {
     if(this.restored)throw new StoreError('Build startup selection is already consumed',409);
     this.restored=true;
     for(const record of this.control.builds())if(!record.retired){
+      if(record.kind==='package')continue;
+      if(record.kind==='instance'){
+        if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
+        // Worker package instances resume their persisted desired selection
+        // without a second lazy installation path.
+        const ready=record.instance?.view.capabilities.every(capability=>capability.state!=='unknown')&&record.instance.view.capabilities.some(capability=>capability.state==='verified');
+        record.observed=ready?'active':'blocked';record.blockers=ready?[]:['capability_unverified'];this.control.saveBuild(record);continue;
+      }
       if(!record.desired){if(record.observed==='restart_required'){record.observed='stopped';record.blockers=[];this.control.saveBuild(record);}continue;}
       // Interrupted/failed activation needs an explicit new command. Boot must
       // not turn the persisted acknowledgement into an automatic retry.
@@ -304,7 +358,17 @@ export class PluginCenter {
     }
   }
   async retireBuild(id:string,raw:unknown){
-    const input=memoryControlCommandSchema.parse(raw);
+    const input=memoryControlCommandSchema.parse(raw),prior=this.control.build(id) as StoredBuild|undefined;
+    if(prior?.kind==='package'||prior?.kind==='instance'){
+      const packageId=prior.packageId,command=input.expectedRevision!==prior.revision&&input.expectedRevision===this.revision()?{...input,expectedRevision:prior.revision}:input;
+      this.command('retire-build:'+id,command,()=>this.control.build(id)?.revision??prior.revision,()=>{
+        const records=this.buildRecords(),record=records.find(value=>value.id===id);if(!record||record.retired)throw new StoreError('Build instance not found',404);
+        const scoped=records.filter(value=>!value.retired&&(value.id===record.id||record.kind==='package'&&value.kind==='instance'&&value.packageId===packageId));
+        if(scoped.some(value=>value.desired||value.kind==='instance'&&this.references(value.id).length)||this.buildHandles.has(id))throw new StoreError('Disable and release references before uninstalling',409);
+        for(const value of scoped)this.saveBuild({...value,retired:true,activeSelection:null,revision:value.revision+1});
+      });
+      return this.buildView(id);
+    }
     this.command('retire-build:'+id,input,()=>this.control.build(id)?.revision??0,()=>{
       const record=this.control.build(id);if(!record||record.desired||this.buildHandles.has(id)||this.references(id).length)throw new StoreError('Disable and release references before uninstalling',409);
       record.retired=true;record.revision++;this.control.saveBuild(record);
