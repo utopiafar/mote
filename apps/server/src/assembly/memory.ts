@@ -21,7 +21,7 @@ import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextTreeRegistry} from '../context-trees.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from '../memory.js';
-import type {Conversations} from '../conversations.js';
+import type {ConversationRepository as Conversations} from '../plugins/central-contracts.js';
 import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import {memoryIntegrationImageInputs} from '../memory-image-grants.js';
 import {MemoryStrategies} from '../memory-strategies.js';

@@ -6,28 +6,13 @@ import {DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
 import type {Config} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
-import type {Store} from '../store.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ObservationName} from '../execution-observability.js';
 import type {ConfigurationPlatform} from '../plugins/configuration-platform.js';
-import {Conversations} from '../conversations.js';
 import {AgentRuntimeHost,type AgentRuntimeHostDependencies} from '../agent-runtime-host.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import {agentModelConnection} from '../model-authorization-host.js';
 import {ReloadableAgent,applyModelSettings,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity} from '../model-agent.js';
-
-export interface AgentInputDependencies {
-  readonly store:Store;
-  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'conversation'>;
-}
-
-/** Conversation storage and its turn-authority callback; the query domain and
- * the evidence authority below consume it during their own assembly. */
-export function agentInputs(dependencies:AgentInputDependencies){
-  const conversations=new Conversations(dependencies.store);
-  conversations.onTurnReceived=turnId=>dependencies.modelAuthorizationHost.conversation(turnId);
-  return Object.freeze({conversations});
-}
 
 export interface AgentAssemblyDependencies extends Omit<AgentRuntimeHostDependencies,'codex'|'archiveImagesEnabled'|'retainSnapshot'|'releaseSnapshot'|'agentStarted'|'recordTiming'> {
   readonly config:Config;

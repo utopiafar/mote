@@ -16,7 +16,6 @@ import type {ArchivedFileStore} from './archived-files.js';
 import type {Config} from './config.js';
 import type {Connections} from './connections.js';
 import type {ContentStorageService} from './content-storage.js';
-import type {Conversations} from './conversations.js';
 import type {ServerDiagnostics} from './diagnostics.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {FileEvidence} from './file-evidence.js';
@@ -83,7 +82,6 @@ export interface FeatureServices {
   config:Config;
   connections:Connections;
   contentStorage:ContentStorageService;
-  conversations:Conversations;
   diagnostics:ServerDiagnostics;
   evidenceReader:EvidenceReader;
   fileEvidence:FileEvidence;

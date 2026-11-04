@@ -36,7 +36,7 @@ try {
     query: async () => { throw Error('No model belongs in the Kotlin upload contract'); }, close: async () => {}}});
   const historyEvidence=randomUUID();
   await central.store.ingest({id:historyEvidence,deviceId:'generated-kotlin-phone',deviceName:'Generated phone',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated saved source body'});
-  const history=central.featureServices.conversations.append(undefined,{question:'Generated saved question',evidenceIds:[historyEvidence]},
+  const history=central.conversations.append(undefined,{question:'Generated saved question',evidenceIds:[historyEvidence]},
     {answer:'Generated saved answer',citations:[{id:historyEvidence,appName:'Generated source',capturedAt:'2026-10-01T00:00:00Z',excerpt:'Generated saved excerpt'}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[historyEvidence]}});
   const origin = await central.app.listen({host: '127.0.0.1', port: 0});
   const invitation = await central.app.inject({method: 'POST', url: '/api/connections/collector-invitations',
