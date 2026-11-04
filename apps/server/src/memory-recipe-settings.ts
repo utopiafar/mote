@@ -19,27 +19,22 @@ export class MemoryRecipeSettings {
   onApplied?:()=>void;
   constructor(private store:Store,private strategies:MemoryStrategies){
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_recipe_settings(id TEXT PRIMARY KEY,source_id TEXT REFERENCES source_connections(id) ON DELETE CASCADE,json TEXT NOT NULL)');
-    if(!store.db.prepare("SELECT 1 FROM memory_recipe_settings WHERE id='default'").get()){
-      const initial=[strategies.resolve(RANGE_SELECTION_PERSONAL_RECIPE).binding];
-      store.reserveMetadata(Buffer.byteLength(JSON.stringify(initial))+128);
-      store.db.prepare("INSERT INTO memory_recipe_settings VALUES('default',NULL,?)").run(JSON.stringify(initial));
-    }
-    // Establish the capture-only default once; it never changes saved source
-    // overrides or later owner choices. Other sources keep the ordinary default.
-    if(!store.db.prepare("SELECT 1 FROM memory_recipe_settings WHERE id='capture-default'").get()){
-      const prior=this.selection(),daily=strategies.resolve(RANGE_SELECTION_DAILY_RECIPE).binding;
-      const initial=prior.some(binding=>binding.recipe.id===daily.recipe.id)?prior:[...prior,daily];
-      store.reserveMetadata(Buffer.byteLength(JSON.stringify(initial))+128);
-      store.db.prepare("INSERT INTO memory_recipe_settings VALUES('capture-default',NULL,?)").run(JSON.stringify(initial));
-    }
-    // Cloud document activities have a trusted daily-events input of their own.
-    // Copy once; future owner choices and all source overrides remain exact.
-    if(!store.db.prepare("SELECT 1 FROM memory_recipe_settings WHERE id='lark-docs-default'").get()){
-      const prior=this.selection(),daily=strategies.resolve(RANGE_SELECTION_DAILY_RECIPE).binding;
-      const initial=prior.some(binding=>binding.recipe.id===daily.recipe.id)?prior:[...prior,daily];
-      store.reserveMetadata(Buffer.byteLength(JSON.stringify(initial))+128);
-      store.db.prepare("INSERT INTO memory_recipe_settings VALUES('lark-docs-default',NULL,?)").run(JSON.stringify(initial));
-    }
+    this.initializeDefaults();
+  }
+  private stored(id:string){return this.store.db.prepare('SELECT json FROM memory_recipe_settings WHERE id=?').get(id);}
+  private insert(id:string,selection:MemoryRecipeBinding[]){
+    const json=JSON.stringify(selection);
+    this.store.reserveMetadata(Buffer.byteLength(json)+128);
+    this.store.db.prepare('INSERT INTO memory_recipe_settings VALUES(?,NULL,?)').run(id,json);
+  }
+  private initializeDefaults(){
+    const fresh=!this.stored('default'),current=this.strategies.resolve(RANGE_SELECTION_PERSONAL_RECIPE).binding,
+      daily=this.strategies.resolve(RANGE_SELECTION_DAILY_RECIPE).binding;
+    // A new vault starts from the current defaults directly. An existing vault
+    // keeps its general default when a category default is first established.
+    if(fresh)this.insert('default',[current]);
+    const base=fresh?[current]:this.selection();
+    for(const id of ['capture-default','lark-docs-default'])if(!this.stored(id))this.insert(id,base.some(binding=>binding.recipe.id===daily.recipe.id)?base:[...base,daily]);
   }
   private key(sourceId?:string,scope?:MemoryRecipeDefaultScope){return sourceId===undefined?scope?scope+'-default':'default':'source:'+sourceId;}
   private sourceDefault(sourceId:string){
