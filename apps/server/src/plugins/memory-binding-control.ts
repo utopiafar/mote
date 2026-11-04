@@ -6,7 +6,7 @@ import {createMemoryControl,type MemoryControl} from '../memory-control.js';
 import type {MemoryAutomation} from '../memory-automation.js';
 import type {MemoryLifecycle} from '../memory-lifecycle.js';
 import type {MemoryPipeline} from '../memory-pipeline.js';
-import type {MemoryPublication} from '../memory-publication.js';
+import type {MemoryPublication} from './memory-publication.js';
 import {StoreError} from '../store.js';
 import {centralServices,type MemoryBindingControl} from './central-contracts.js';
 

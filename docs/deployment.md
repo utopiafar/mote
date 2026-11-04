@@ -132,11 +132,11 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 已有反向代理可以保持 TLS overlay 关闭，将请求代理到 `127.0.0.1:47832`。`tls --disable` 只调整配置；已有 Caddy 容器需用该 profile 的 `compose -- down --remove-orphans` 后再 `start`，保留卷即可。自定义宿主端口可设置 `server.tls.httpPort`、`server.tls.httpsPort`，但公共 ACME 验证仍需正确转发到标准 80/443。项目不会修改 DNS、防火墙或购买域名。
 
-旧 profile 不会被自动转换。配置改造本身不删除资料或改变存储 epoch；如需保留当前 epoch 4 资料，先在旧版本停止写入并备份，离线将所需配置填入新 YAML，保留原数据目录、访问令牌和内容密钥，再由所有者明确启动。不要把旧 JSON/SQLite 设置作为新版本的覆盖来源。手改文件与设置页共用主 YAML；端口、目录、插件模块、媒体 worker 资源、TLS/Tunnel 启停仍需重启或对应明确 CLI 操作。
+旧 profile 不会被自动转换。配置改造本身不删除资料或改变存储 epoch；如需保留当前 epoch 6 资料，先在旧版本停止写入并备份，离线将所需配置填入新 YAML，保留原数据目录、访问令牌和内容密钥，再由所有者明确启动。不要把旧 JSON/SQLite 设置作为新版本的覆盖来源。手改文件与设置页共用主 YAML；端口、目录、插件模块、媒体 worker 资源、TLS/Tunnel 启停仍需重启或对应明确 CLI 操作。
 
 ## 升级与回退
 
-本次是配置格式的破坏变更：主配置改为 YAML version 1，旧 `mote.env`、`model-settings.json`、`file-processing.json` 与 SQLite 当前运行设置不再作为配置来源，也不会自动转换。中央仍使用既有 `backend_epoch=4`，Desktop/Android 当前本机格式为 4，HTTP 便携归档仍为 version 2。已有 epoch 4 资料库无需新空目录或 reset；备份并离线准备新 YAML，保留原资料目录、访问令牌与内容密钥，再由所有者明确启动新版本。
+本次是配置格式的破坏变更：主配置改为 YAML version 1，旧 `mote.env`、`model-settings.json`、`file-processing.json` 与 SQLite 当前运行设置不再作为配置来源，也不会自动转换。中央仍使用既有 `backend_epoch=6`，Desktop/Android 当前本机格式为 4，HTTP 便携归档仍为 version 2。已有 epoch 6 资料库无需新空目录或 reset；备份并离线准备新 YAML，保留原资料目录、访问令牌与内容密钥，再由所有者明确启动新版本。
 
 历史 MVP 基线曾切换上述存储与客户端格式，这与本次配置改造是两件事。来自更早 epoch、客户端格式、内容包装或便携包的资料仍不自动转换。跨越该历史基线时，请先用相应旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，再选择新空目录；只有明确放弃旧资料时才按 [MVP 基线操作](audits/mvp-baseline-cleanup-2026-10-09.md) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
 
@@ -168,7 +168,7 @@ node scripts/mote.mjs update --profile prod --home /srv/mote/profiles --version 
 
 Docker 更新只拉取已签名 manifest 中的 `ghcr.io/仓库@sha256:...`，验证本地 RepoDigest 后切换。不会使用漂移的 `latest` tag，也不把宿主 profile 凭据交给镜像拉取进程。公开发行依赖的 registry 可用性需要部署机器具备网络访问。
 
-同代更新保留现有 `mote.yaml`、访问令牌、数据目录/卷、连接器凭据与 Tunnel 配置；Docker 快照回退会生成新的数据卷，并原子更新 YAML 的 `storage.source` 与 revision，模型卷保持原部署身份。仅配置文件改造无需改变已符合 epoch 4 的资料库，旧配置必须手工转换。回退时归档回到升级前快照，当前连接器凭据、日历选择和来源连接配置另作私有移交；Google 增量游标会清空，下一轮重新构建有界窗口，避免跳过已回退的数据。这份临时私有移交不进入可携带的备份文件，完成后删除。服务没有自动重启安装、自动降级或自动回退策略。
+同代更新保留现有 `mote.yaml`、访问令牌、数据目录/卷、连接器凭据与 Tunnel 配置；Docker 快照回退会生成新的数据卷，并原子更新 YAML 的 `storage.source` 与 revision，模型卷保持原部署身份。仅配置文件改造无需改变已符合 epoch 6 的资料库，旧配置必须手工转换。回退时归档回到升级前快照，当前连接器凭据、日历选择和来源连接配置另作私有移交；Google 增量游标会清空，下一轮重新构建有界窗口，避免跳过已回退的数据。这份临时私有移交不进入可携带的备份文件，完成后删除。服务没有自动重启安装、自动降级或自动回退策略。
 
 ### 手动准备的版本
 
@@ -197,7 +197,7 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 回退先验证旧快照，另存当前仓库的 `pre-rollback-*` 备份，恢复升级前的数据和版本。**升级后新增资料不会出现在回退后的活动仓库中**，但会保存在额外快照，以及原生的 `data.before-rollback-*` 目录或 Docker 原来的命名卷中。CLI 不删除这些保留副本，可验收后导出需要的数据再迁入。只保留一级直接回退元数据；备份目录中更早的快照仍在。
 
-跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 4，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [本次清理实施记录](audits/mvp-baseline-cleanup-2026-10-09.md) 手动选择。
+跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 6，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [本次清理实施记录](audits/mvp-baseline-cleanup-2026-10-09.md) 手动选择。
 
 使用 launchd 的环境：先 `launchctl bootout` 停止自动管理，再执行升级或回退；验收后用 CLI `stop` 停止临时后台实例，再 `launchctl bootstrap` 原 plist，使 launchd 重新接管新版本。不要在 job 正在自动重启时迁移数据。
 
@@ -212,7 +212,7 @@ node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
 node scripts/mote.mjs backup --profile prod --home /srv/mote/profiles --out /srv/mote-backups/mote-2026-09-13
 ```
 
-CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，只对 epoch 4 的完整当前库按资产目录复制截图与文件原件（`files/objects/` 分片，仅 `.plain` / `.aes` 后缀），包含当前 `source-archive/` 批次、索引与校验；不读取旧 `blobs/`、`files/<hash>` 或旧内容包装，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
+CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，只对 epoch 6 的完整当前库按资产目录复制截图与文件原件（`files/objects/` 分片，仅 `.plain` / `.aes` 后缀），包含当前 `source-archive/` 批次、索引与校验；不读取旧 `blobs/`、`files/<hash>` 或旧内容包装，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
 
 在另一台机器初始化本代新的空环境，然后恢复本代完整离线备份：
 
@@ -223,7 +223,7 @@ node scripts/mote.mjs restore --profile prod --home /srv/mote-new/profiles --fro
 node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 ```
 
-恢复会验证当前备份 manifest、文件类型、所有 SHA-256，并二次校验复制结果。启动仍要求数据库 epoch 4，不能通过恢复旧快照绕过格式边界。活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
+恢复会验证当前备份 manifest、文件类型、所有 SHA-256，并二次校验复制结果。启动仍要求数据库 epoch 6，不能通过恢复旧快照绕过格式边界。活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
 
 内容加密默认关闭，`storage.dataKey` 本身不启用加密；主 YAML 的 `storage.contentEncryptionEnabled` 与开发者页面共用同一设置，校验提交成功后立即影响后续写入，无需重启，也不重写已有对象。`storage.dataKey` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件密钥；显式开启且未配置时会生成资料库私有的 `content-key` 文件。存在密文时必须单独备份原环境密钥或该文件，离线内容备份不携带密钥。解析文本、元数据与导入工作产物保持明文。尚有密文时不要更换原密钥；丢失密钥不能通过重新下载模型或更换访问令牌恢复内容。已有内容可在开发者页面一次性批量解密，详见[内容存储设置](content-storage.md)。
 
