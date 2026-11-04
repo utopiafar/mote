@@ -1,15 +1,20 @@
-import {EXECUTION_POLICIES} from './execution-policy.js';
+import type {ManifestContribution} from '@mote/plugin-api';
+import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
+import type {HostPluginContext} from '@mote/plugin-host';
+import {EXECUTION_POLICIES} from '../execution-policy.js';
 import type {QueryResult} from '@mote/shared';
-import type {MemoryStore,MemoryExtractOptions} from './memory.js';
-import type {MemoryBindings} from './memory-bindings.js';
-import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProviderNamespace,type MemoryProviderReceipt} from './memory-provider-contract.js';
-import {ExecutionEngine,ExecutionFailure} from './execution-engine.js';
-import {sha256,StoreError,type Store} from './store.js';
-import {memorySchema,type Memory} from './memory-schema.js';
+import type {MemoryStore,MemoryExtractOptions} from '../memory.js';
+import type {MemoryBindings} from '../memory-bindings.js';
+import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProviderNamespace,type MemoryProviderReceipt} from '../memory-provider-contract.js';
+import {ExecutionEngine,ExecutionFailure} from '../execution-engine.js';
+import {sha256,StoreError} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
+import {memorySchema,type Memory} from '../memory-schema.js';
 import {randomUUID} from 'node:crypto';
 import {installMemoryPublicationRetirement,registerMemoryPublicationDependencies,memoryPublicationRetired} from './memory-private-storage.js';
 
 import type {MemoryPublicationReceipt,MemoryPublicationDependencies,MemoryStagePublication,MemoryOwnerPublication,MemoryOwnerDeletionResult} from './memory-publication-contract.js';
+import {centralServices} from './central-contracts.js';
 function recordDependencies(records:Memory[]):MemoryPublicationDependencies{return {memoryIds:records.map(memory=>memory.id),evidenceIds:records.flatMap(memory=>memory.evidenceIds)};}
 function outputDependencies(output:any):MemoryPublicationDependencies{
   const ids=(rows:any)=>Array.isArray(rows)?rows.flatMap(row=>typeof row?.id==='string'?[row.id]:[]):[];
@@ -19,13 +24,19 @@ function outputDependencies(output:any):MemoryPublicationDependencies{
  * Their bodies and identities survive lost replies and host restarts; explicit
  * deletion/revocation retires prose while preserving reconciliation identities.
  * Only a verified receipt can make a control record visible to query readers. */
+export interface MemoryPublicationOptions {
+  /** The plugin platform starts the poll after prepare; direct class users keep
+   * the historical constructor-starts behavior. */
+  readonly autostart?:boolean;
+}
 export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPublication {
   private activeOwnerWork=0;
   private dispose?:()=>Promise<void>;
   private poll?:ReturnType<typeof setInterval>;
   private stopped=false;
+  private closed=false;
   revokeEvidence?:(ids:string[])=>Promise<void>;
-  constructor(readonly store:Store,readonly memories:MemoryStore,readonly bindings:MemoryBindings,private executor?:ExecutionEngine){
+  constructor(readonly store:Store,readonly memories:MemoryStore,readonly bindings:MemoryBindings,private executor?:ExecutionEngine,options:MemoryPublicationOptions={}){
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_publications(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_publication_outputs(id TEXT PRIMARY KEY,json TEXT NOT NULL);');
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_writes(id TEXT PRIMARY KEY,parent_id TEXT NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL,automatic INTEGER NOT NULL DEFAULT 0);');
@@ -46,8 +57,20 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
     for(const row of store.db.prepare('SELECT id,json FROM memory_owner_mutations').all()){const value=JSON.parse(String(row.json));this.register(String(row.id),recordDependencies([...(value.changed??[]),...(value.result?[value.result]:[]),...(value.before??[]).map((prior:any)=>JSON.parse(prior.json))]));}
     const references=bindings.plugins.references;
     bindings.plugins.references=id=>[...references(id),...(['memory_provider_writes','memory_provider_erases'].some(table=>Number(store.db.prepare("SELECT count(*) n FROM "+table+" WHERE state='submitted' AND json_extract(json,'$.namespace.instanceId')=?").get(id)!.n))||this.nativeCleanupPending(id)||this.evidenceRevocationRetains(id)?['Unresolved provider writes or erasures retain this instance']:[])];
-    if(executor){this.dispose=executor.register({kind:'memory.provider-reconcile',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.control,validate:()=>true,execute:async()=>{await this.reconcile();if(this.pending())throw new ExecutionFailure('waiting','memory_provider_result_unknown',5000);},commit:()=>{}});this.scheduleReconcile();this.poll=setInterval(()=>this.scheduleReconcile(),5000);this.poll.unref();}
+    if(executor){this.dispose=executor.register({kind:'memory.provider-reconcile',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.control,validate:()=>true,execute:async()=>{await this.reconcile();if(this.pending())throw new ExecutionFailure('waiting','memory_provider_result_unknown',5000);},commit:()=>{}});if(options.autostart!==false)this.start();}
   }
+  /** Start the reconcile poll for an owned activation. A stopped class instance
+   * may be started again without registering a second execution handler. */
+  start(){
+    if(this.closed||!this.executor)return;
+    this.stopped=false;
+    if(this.poll)return;
+    this.scheduleReconcile();
+    this.poll=setInterval(()=>this.scheduleReconcile(),5000);
+    this.poll.unref();
+  }
+  /** Stop accepting newly scheduled reconciliation while accepted work drains. */
+  quiesce(){this.stopped=true;if(this.poll)clearInterval(this.poll);this.poll=undefined;}
   private register(operationId:string,dependencies:MemoryPublicationDependencies){registerMemoryPublicationDependencies(this.store,operationId,dependencies);}
   private assertRetained(operationId:string){if(memoryPublicationRetired(this.store,operationId))throw new StoreError('Memory publication input was deleted or revoked',409);}
   private hasTable(name:string){return Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));}
@@ -153,6 +176,157 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
     const result=this.memories.delete(id);this.queueErases([id]);
     await this.reconcile();this.scheduleReconcile();const pending=Number(this.store.db.prepare("SELECT count(*) n FROM memory_provider_erases WHERE json_extract(json,'$.memoryId')=? AND state='submitted'").get(id)!.n);return {...result,externalErase:pending?'pending':'acknowledged',physicalEraseVerified:false};
   }
-  stop(){this.stopped=true;if(this.poll)clearInterval(this.poll);this.poll=undefined;}
-  async close(){this.stop();await this.dispose?.();}
+  stop(){this.quiesce();}
+  async close(){this.stop();this.closed=true;const dispose=this.dispose;this.dispose=undefined;await dispose?.();}
+}
+
+/** C24 owns staged publication, owner mutation replay and the durable
+ * reconciliation of unknown remote writes. The two ports deliberately separate
+ * reviewed staging from owner commands. */
+export const memoryPublicationContribution={
+  id:'memory-publication',version:'1.0.0',surface:'data',runtime:'host',
+  requires:[
+    {kind:'host',id:'mote.vault-platform',version:'1.0.0'},
+    {kind:'service',id:centralServices.memoryBindingControl.id,version:'1.0.0'},
+    {kind:'service',id:centralServices.memoryProviderAdapters.id,version:'1.0.0'},
+  ],
+  provides:[
+    {kind:'service',id:centralServices.memoryStagePublication.id,apiVersion:centralServices.memoryStagePublication.apiVersion,cardinality:'single'},
+    {kind:'service',id:centralServices.memoryOwnerPublication.id,apiVersion:centralServices.memoryOwnerPublication.apiVersion,cardinality:'single'},
+  ],
+} as const satisfies ManifestContribution;
+export const memoryPublicationDeclaration={id:memoryPublicationContribution.id,apiVersion:'1'} as const;
+/** Operation journals and provider identities live in the vault, so a fresh
+ * activation resumes unknown writes, erases and revocations without a restart. */
+export const memoryPublicationReplacement='hot' as const;
+
+export interface MemoryPublicationPlatformDependencies {
+  readonly store:Store;
+  readonly memories:MemoryStore;
+  readonly bindings:MemoryBindings;
+  readonly executor?:ExecutionEngine;
+  /** C23 owns native source cleanup; C24 keeps its durable intent. */
+  readonly revokeEvidence?:(ids:string[])=>Promise<void>;
+}
+export interface MemoryPublicationPort {
+  readonly stage:MemoryStagePublication;
+  readonly owner:MemoryOwnerPublication;
+}
+export interface MemoryPublicationBindings {
+  readonly stage:ServiceBinding;
+  readonly owner:ServiceBinding;
+}
+export interface MemoryPublicationPlatform extends PluginLifecycle {
+  readonly port:MemoryPublicationPort;
+  readonly stage:MemoryStagePublication;
+  readonly owner:MemoryOwnerPublication;
+  /** The owned domain object for the trusted assembly bridge only. */
+  readonly publication:MemoryPublication;
+  prepare():void;
+  start():void;
+  quiesce(reason?:StopReason):void;
+  stop(reason?:StopReason):Promise<void>;
+  dispose():Promise<void>;
+  close():Promise<void>;
+}
+
+const unavailable=()=>new StoreError('Memory publication is unavailable',503);
+
+/** Prepare constructs the publication object and its durable tables without
+ * scheduling background work. Start admits staged/owner work and starts the
+ * reconcile poll; quiesce refuses new work while accepted work drains; stop
+ * fences the object and close releases its handler. */
+export function createMemoryPublication(dependencies:MemoryPublicationPlatformDependencies):MemoryPublicationPlatform {
+  let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopping'|'stopped'='created';
+  let publication:MemoryPublication|undefined,closing:Promise<void>|undefined;
+  const inflight=new Set<Promise<unknown>>();
+  const readable=()=>{
+    if(!publication||phase==='created'||phase==='stopped')throw unavailable();
+    return publication;
+  };
+  const active=()=>{
+    if(phase!=='active')throw unavailable();
+    return readable();
+  };
+  const track=<T>(work:Promise<T>):Promise<T>=>{
+    const task=work.finally(()=>inflight.delete(task));
+    inflight.add(task);
+    return task;
+  };
+  const port:MemoryPublicationPort=Object.freeze({
+    stage:Object.freeze({
+      retainedOutput:<T>(operationId:string)=>readable().retainedOutput<T>(operationId),
+      retainOutput:(operationId:string,output:unknown,publicationDependencies?:MemoryPublicationDependencies)=>{active().retainOutput(operationId,output,publicationDependencies);},
+      stageExtract:(operationId:string,result:QueryResult,model:string,options:MemoryExtractOptions,assertAuthority:()=>void,automatic?:boolean)=>{active();return track(readable().stageExtract(operationId,result,model,options,assertAuthority,automatic));},
+      assert:(receipt:MemoryPublicationReceipt|undefined,result:QueryResult)=>readable().assert(receipt,result),
+      committed:(receipt:MemoryPublicationReceipt|undefined)=>readable().committed(receipt),
+    }),
+    owner:Object.freeze({
+      withOwnerWork:<T>(work:()=>Promise<T>)=>{active();return track(readable().withOwnerWork(work));},
+      publish:(id:string,version?:number)=>{active();return track(readable().publish(id,version));},
+      correct:(id:string,input:unknown)=>{active();return track(readable().correct(id,input));},
+      delete:(id:string)=>{active();return track(readable().delete(id));},
+    }),
+  });
+  const close=()=>closing??=(async()=>{
+    phase='stopping';
+    const owned=publication;
+    owned?.quiesce();
+    await Promise.allSettled([...inflight]);
+    phase='stopped';
+    publication=undefined;
+    if(owned)await owned.close();
+  })().finally(()=>{closing=undefined;});
+  const platform:MemoryPublicationPlatform=Object.freeze({
+    port,
+    get stage(){return port.stage;},
+    get owner(){return port.owner;},
+    get publication(){return readable();},
+    prepare(){
+      if(phase!=='created'&&phase!=='stopped')throw unavailable();
+      phase='preparing';
+      try{
+        const owned=new MemoryPublication(dependencies.store,dependencies.memories,dependencies.bindings,dependencies.executor,{autostart:false});
+        owned.revokeEvidence=dependencies.revokeEvidence;
+        publication=owned;
+        phase='prepared';
+      }catch(error){
+        publication=undefined;
+        phase='stopped';
+        throw error;
+      }
+    },
+    start(){
+      if(!publication||phase!=='prepared'&&phase!=='quiescing')throw unavailable();
+      publication.start();
+      phase='active';
+    },
+    quiesce(_reason?:StopReason){
+      if(phase!=='active')return;
+      phase='quiescing';
+      publication?.quiesce();
+    },
+    async stop(_reason?:StopReason){await close();},
+    dispose:close,close,
+  });
+  return platform;
+}
+export type MemoryPublicationService=ReturnType<typeof createMemoryPublication>;
+
+export function createMemoryPublicationFactory(platform:MemoryPublicationPlatform,onStarted?:(bindings:MemoryPublicationBindings)=>void){
+  return (context:HostPluginContext):PluginLifecycle=>{
+    context.scope.defer(()=>platform.close());
+    return {
+      prepare:platform.prepare,
+      start(){
+        platform.start();
+        const bindings={
+          stage:context.provide(memoryPublicationContribution.id,centralServices.memoryStagePublication,platform.port.stage),
+          owner:context.provide(memoryPublicationContribution.id,centralServices.memoryOwnerPublication,platform.port.owner),
+        };
+        onStarted?.(bindings);
+      },
+      quiesce:(reason:StopReason)=>platform.quiesce(reason),stop:(reason:StopReason)=>platform.stop(reason),dispose:platform.dispose,
+    };
+  };
 }

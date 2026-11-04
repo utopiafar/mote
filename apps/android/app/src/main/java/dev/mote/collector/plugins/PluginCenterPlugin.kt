@@ -100,6 +100,18 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     private fun installed() {
         val data = inventory ?: return
         ui.text(MoteI18n.text("安装包、配置实例和当前方案分别管理。"))
+        val builds = data.builds.filter { !it.retired }
+        if (builds.isNotEmpty()) ui.disclosure(MoteI18n.text("插件构建")) { target ->
+            builds.forEach { build ->
+                val card = ui.card(target); ui.text(build.name + " · " + build.version, NativeFontRole.SECTION, card)
+                ui.text((if (build.runtime == "worker") MoteI18n.text("中央 Worker") else MoteI18n.text("宿主构建")) + " · " + state(build.observed), parent = card)
+                ui.text(MoteI18n.text("候选版本") + " · " + (build.desired?.optString("version") ?: MoteI18n.text("已选择停用")), parent = card)
+                ui.text(MoteI18n.text("当前版本") + " · " + (build.active?.optString("version") ?: MoteI18n.text("没有正在运行的版本")), parent = card)
+                build.blockers.forEach { ui.text(it, parent = card) }
+                build.source?.let { source(it, card) }
+                capabilities(build.capabilities, card)
+            }
+        }
         if (data.packages.isEmpty()) { ui.text(MoteI18n.text("还没有安装外部插件。")); ui.button(MoteI18n.text("从 GitHub 添加")) { tab = "discover"; load() } }
         data.packages.forEach { item ->
             val card = ui.card(); ui.text(item.name + " · " + item.version, NativeFontRole.ROW, card)
@@ -292,9 +304,12 @@ internal object PluginCenterPresentation {
         "failed" -> MoteI18n.text("安装失败")
         "restart-required" -> MoteI18n.text("等待节点重启")
         "requires-build", "requires_build" -> MoteI18n.text("需要构建")
-        "enabled" -> MoteI18n.text("已启用")
-        "disabled" -> MoteI18n.text("已停用")
+        "enabled", "active" -> MoteI18n.text("已启用")
+        "disabled", "stopped" -> MoteI18n.text("已停用")
         "unconfigured" -> MoteI18n.text("待配置")
+        "queued" -> MoteI18n.text("等待启动")
+        "starting" -> MoteI18n.text("正在启动")
+        "restart_required" -> MoteI18n.text("等待节点重启")
         "draining" -> MoteI18n.text("停用中")
         "blocked" -> MoteI18n.text("需要处理")
         else -> state
@@ -319,7 +334,10 @@ internal data class PluginCapability(val id: String, val state: String, val reas
 internal data class PluginField(val id: String, val label: String, val type: String, val required: Boolean, val options: List<Pair<String, String>>, val description: String)
 internal data class PluginInstance(val id: String, val packageId: String, val name: String, val revision: Long, val scope: String, val configuration: JSONObject, val fields: List<PluginField>, val capabilities: List<PluginCapability>, val desired: Boolean, val observed: String, val issues: List<String>, val allowedActions: Set<String>, val secretStatus: JSONObject)
 internal data class PluginPackage(val id: String, val name: String, val version: String, val source: JSONObject, val runtime: String, val state: String, val observed: String, val issues: List<String>, val allowedActions: Set<String>, val fields: List<PluginField> = emptyList())
-internal data class PluginInventory(val revision: Long, val installation: JSONObject, val packages: List<PluginPackage>, val instances: List<PluginInstance>, val catalog: List<JSONObject>)
+/** Native and worker builds share one projection: identity, candidate/active
+ * selection, observed state, blockers, source, configuration and capabilities. */
+internal data class PluginBuild(val id: String, val packageId: String, val installationId: String, val name: String, val version: String, val revision: Long, val runtime: String, val retired: Boolean, val observed: String, val desired: JSONObject?, val active: JSONObject?, val blockers: List<String>, val issues: List<String>, val source: JSONObject?, val configuration: JSONObject, val capabilities: List<PluginCapability>)
+internal data class PluginInventory(val revision: Long, val installation: JSONObject, val packages: List<PluginPackage>, val instances: List<PluginInstance>, val builds: List<PluginBuild>, val catalog: List<JSONObject>)
 internal data class MemoryPlan(val id: String, val name: String, val mode: String, val available: Boolean, val reason: String, val modules: List<JSONObject>, val capabilities: List<PluginCapability>, val allowedActions: Set<String>)
 internal data class MemoryBinding(val revision: Long, val generation: Long, val mode: String, val activePlan: MemoryPlan, val plans: List<MemoryPlan>, val modules: List<JSONObject>, val admission: JSONObject, val preparation: JSONObject?, val allowedActions: Set<String>)
 
@@ -332,7 +350,8 @@ internal object PluginControlProjection {
         PluginField(field.getString("id"), field.getString("label"), field.getString("type"), field.optBoolean("required"), objects(field.optJSONArray("options")).map { it.getString("value") to it.getString("label") }, field.optString("description"))
     }
     fun instance(value: JSONObject) = PluginInstance(value.getString("id"), value.getString("packageId"), value.getString("name"), value.getLong("revision"), value.getString("scope"), value.getJSONObject("configuration"), fields(value.getJSONArray("configurationSchema")), capabilities(value.getJSONArray("capabilities")), value.getBoolean("desired"), value.getString("observed"), strings(value.getJSONArray("issues")), actions(value), value.getJSONObject("secretStatus"))
-    fun inventory(value: JSONObject) = PluginInventory(value.getLong("revision"), value.getJSONObject("installation"), objects(value.getJSONArray("packages")).map { PluginPackage(it.getString("id"), it.getString("name"), it.getString("version"), it.getJSONObject("source"), it.getString("runtime"), it.getString("state"), it.getString("observed"), strings(it.getJSONArray("issues")), actions(it), fields(it.optJSONArray("configurationSchema"))) }, objects(value.getJSONArray("instances")).map(::instance), objects(value.getJSONArray("catalog")))
+    fun build(value: JSONObject) = PluginBuild(value.getString("id"), value.getString("packageId"), value.getString("installationId"), value.optString("name", value.getString("id")), value.optString("version"), value.getLong("revision"), value.optString("runtime", "host"), value.optBoolean("retired"), value.getString("observed"), value.optJSONObject("desired"), value.optJSONObject("active"), strings(value.optJSONArray("blockers")), strings(value.optJSONArray("issues")), value.optJSONObject("source"), value.optJSONObject("configuration") ?: JSONObject(), capabilities(value.optJSONArray("capabilities")))
+    fun inventory(value: JSONObject) = PluginInventory(value.getLong("revision"), value.getJSONObject("installation"), objects(value.getJSONArray("packages")).map { PluginPackage(it.getString("id"), it.getString("name"), it.getString("version"), it.getJSONObject("source"), it.getString("runtime"), it.getString("state"), it.getString("observed"), strings(it.getJSONArray("issues")), actions(it), fields(it.optJSONArray("configurationSchema"))) }, objects(value.getJSONArray("instances")).map(::instance), objects(value.optJSONArray("builds")).map(::build), objects(value.getJSONArray("catalog")))
     fun plan(value: JSONObject) = MemoryPlan(value.getString("id"), value.getString("name"), value.getString("mode"), value.getBoolean("available"), value.optString("reason"), objects(value.getJSONArray("modules")), capabilities(value.getJSONArray("capabilities")), actions(value))
     fun binding(value: JSONObject) = MemoryBinding(value.getLong("revision"), value.getLong("generation"), value.getString("mode"), plan(value.getJSONObject("activePlan")), objects(value.getJSONArray("plans")).map(::plan), objects(value.getJSONArray("modules")), value.getJSONObject("admission"), value.optJSONObject("preparation"), actions(value))
     fun configured(fields: List<PluginField>, configuration: JSONObject): Boolean = fields.all { field ->

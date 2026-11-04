@@ -160,6 +160,7 @@ export class FileProcessorRuntime {
   readonly intake=new ImportIntakeRegistry();readonly recipes=new FileRecipeRegistry();readonly outputs=new FileOutputRegistry();
   readonly imageRecipes=new ImageRecipeRegistry();readonly imageInputs=new ImageInputRegistry();
   private removeContributions:(()=>void)|undefined;
+  private removeImageRecipes:(()=>void)|undefined;
   constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,root?:Context,options:{builtinContributions?:boolean}={}){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteFileProcessors',this.registry);
@@ -186,16 +187,18 @@ export class FileProcessorRuntime {
     // Initialization is explicitly awaited by the central app and by tick().
     void this.ready.catch(()=>{});
   }
-  /** Install built-in processors, file recipes and image recipes as one
-   * activation-owned contribution. Re-enabling installs exactly one copy. */
-  installContributions(contributions:readonly FileProcessorContribution[]=[]){
+  /** Install built-in processors and file recipes as one activation-owned
+   * contribution. The image plugin owns image recipes; standalone embedded
+   * runtimes keep installing them with the built-ins unless the host excludes
+   * them. Re-enabling installs exactly one copy. */
+  installContributions(contributions:readonly FileProcessorContribution[]=[],options:{imageRecipes?:boolean}={}){
     if(this.removeContributions)throw new Error('File processing contributions are already installed');
     const dispose:(()=>void)[]=[];
     try{
       dispose.push(installImportIntake(this.intake));
       dispose.push(installFileProcessorContributions(this.registry,[{id:'mote.builtin-file-processors',processors:builtinFileProcessors(this.provider)},...contributions]));
       dispose.push(installFileRecipes(this.recipes,this.outputs));
-      dispose.push(installImageRecipes(this.imageRecipes));
+      if(options.imageRecipes!==false)dispose.push(this.installImageRecipes());
     }catch(error){
       for(const remove of dispose.reverse()){try{remove();}catch{}}
       throw error;
@@ -203,6 +206,12 @@ export class FileProcessorRuntime {
     this.removeContributions=()=>{for(const remove of dispose.reverse()){try{remove();}catch{}}};
     return ()=>this.uninstallContributions();
   }
+  installImageRecipes(){
+    if(this.removeImageRecipes)throw new Error('Image recipes are already installed');
+    this.removeImageRecipes=installImageRecipes(this.imageRecipes);
+    return ()=>this.uninstallImageRecipes();
+  }
+  uninstallImageRecipes(){const remove=this.removeImageRecipes;this.removeImageRecipes=undefined;remove?.();}
   uninstallContributions(){const remove=this.removeContributions;this.removeContributions=undefined;remove?.();}
-  async close(){await this.ready.catch(()=>{});this.uninstallContributions();await this.pluginScope.close();}
+  async close(){await this.ready.catch(()=>{});this.uninstallContributions();this.uninstallImageRecipes();await this.pluginScope.close();}
 }

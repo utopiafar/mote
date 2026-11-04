@@ -31,7 +31,7 @@ import type {MemoryAutomation} from '../memory-automation.js';
 import {createMemoryAutomationAdmission,memoryAutomationAdmissionContribution,memoryAutomationAdmissionDeclaration,memoryAutomationAdmissionReplacement} from '../plugins/memory-automation-admission.js';
 import {createMemoryProviderAdapters,memoryProviderAdaptersContribution,memoryProviderAdaptersDeclaration,memoryProviderAdaptersReplacement} from '../plugins/memory-provider-adapters.js';
 import {createMemoryStrategySettings,memoryStrategySettingsContribution,memoryStrategySettingsDeclaration,memoryStrategySettingsReplacement,type MemoryStrategySettingsPlatform} from '../plugins/memory-strategy-settings.js';
-import {MemoryPublication} from '../memory-publication.js';
+import {createMemoryPublication,memoryPublicationContribution,memoryPublicationDeclaration,memoryPublicationReplacement} from '../plugins/memory-publication.js';
 import type {MemoryPipeline,MemoryModelSelection,MemoryPhasePorts} from '../memory-pipeline.js';
 import {memoryReadRanges} from '../memory-read-context.js';
 import {createMemoryPhasePipeline,memoryPhasePipelineContribution,memoryPhasePipelineDeclaration,memoryPhasePipelineReplacement,type MemoryPhasePipelineOptions,type MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
@@ -48,8 +48,8 @@ import type {FeatureServices} from '../feature-services.js';
  * distribution concatenates each domain's list into one selected table.
  * Includes MEM01/C21A strategy settings, MEM02 memoryRecordRepository,
  * MEM03/C21C automation admission, MEM04/C21D binding control, MEM05/C22A
- * phase/review/cache, MEM06/C22B lifecycle/extensions/working and
- * MEM09/C23 provider adapters. */
+ * phase/review/cache, MEM06/C22B lifecycle/extensions/working,
+ * MEM09/C23 provider adapters and MEM10/C24 publication. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryStrategySettingsContribution,declaration:memoryStrategySettingsDeclaration,replacement:memoryStrategySettingsReplacement},
   {contribution:memoryRecordRepositoryContribution,declaration:memoryRecordRepositoryDeclaration,replacement:memoryRecordRepositoryReplacement},
@@ -59,6 +59,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryPhasePipelineContribution,declaration:memoryPhasePipelineDeclaration,replacement:memoryPhasePipelineReplacement},
   {contribution:memoryLifecycleServiceContribution,declaration:memoryLifecycleServiceDeclaration,replacement:memoryLifecycleServiceReplacement},
   {contribution:memoryProviderAdaptersContribution,declaration:memoryProviderAdaptersDeclaration,replacement:memoryProviderAdaptersReplacement},
+  {contribution:memoryPublicationContribution,declaration:memoryPublicationDeclaration,replacement:memoryPublicationReplacement},
 ]);
 
 /** A slot a later assembly stage fills once the object exists; callbacks
@@ -169,10 +170,11 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   memoryProviderAdapters.prepare();memoryProviderAdapters.start();
   const memoryAdapters=memoryProviderAdapters.adapters;
   memoryBindings.providerFactory=(id,namespace)=>memoryProviderAdapters.port.provider(id,namespace);
-  const memoryPublication=new MemoryPublication(store,memories,memoryBindings,executor);
-  resources.defer(()=>memoryPublication.close());
-  memoryPublication.revokeEvidence=ids=>memoryProviderAdapters.port.erasePreparedEvidence(ids);
-  const memoryPipelineOptions:MemoryPhasePipelineOptions={onPublished:(step,items,job)=>topics.current?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublication,assertNewManualWork:()=>memoryBindings.assertNewManualWork(),nativeStages:{settle:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryProviderAdapters.port.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},prepare:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryProviderAdapters.port.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
+  const memoryPublicationPlatform=createMemoryPublication({store,memories,bindings:memoryBindings,executor,revokeEvidence:ids=>memoryProviderAdapters.port.erasePreparedEvidence(ids)});
+  resources.defer(()=>memoryPublicationPlatform.close());
+  memoryPublicationPlatform.prepare();memoryPublicationPlatform.start();
+  const memoryPublication=memoryPublicationPlatform.publication;
+  const memoryPipelineOptions:MemoryPhasePipelineOptions={onPublished:(step,items,job)=>topics.current?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublicationPlatform.port.stage,ownerPublication:memoryPublicationPlatform.port.owner,assertNewManualWork:()=>memoryBindings.assertNewManualWork(),nativeStages:{settle:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryProviderAdapters.port.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},prepare:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryProviderAdapters.port.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
     const engineProfile=pluginCenter.instanceView(namespace.instanceId).configuration.modelProfileId;if(typeof engineProfile!=='string')throw new StoreError('Native Memory model profile is missing',409);
     const engineConnection=agentModelConnection({kind:'profile',id:engineProfile},modelSettings.select('memory',engineProfile).settings),assertAuthority=modelAuthorization.capture(engineConnection);
     const bindingIdentity=JSON.stringify(binding),pins=new Map(originals.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
@@ -216,6 +218,6 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const memoryTopics=memoryTopicsService.host;
   topics.current=memoryTopicsService.topics;
   memoryTopicsService.start();
-  const featureServices=Object.freeze({memories,memoryStrategySettings,memoryPublication,memoryPipeline,lifecycle}) satisfies Partial<FeatureServices>;
+  const featureServices=Object.freeze({memories,memoryStrategySettings,memoryPipeline,lifecycle}) satisfies Partial<FeatureServices>;
   return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryProviderAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryStrategySettings,memoryTopics,memoryTopicsService,featureServices});
 }

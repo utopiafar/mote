@@ -68,5 +68,12 @@ class PluginCenterNativeContractTest {
         assertFalse(instance.desired)
         assertEquals("unknown", instance.capabilities.single().state)
         assertEquals(listOf("mem0ai/mem0", "vectorize-io/hindsight"), inventory.catalog.map { it.getString("repository") })
+
+        val build = inventory.builds.single { it.id == instanceId }
+        assertEquals("worker", build.runtime)
+        assertEquals(packageId, build.packageId)
+        assertEquals("stopped", build.observed)
+        assertEquals("fixture-1", build.version)
+        assertFalse(build.retired)
     }
 }

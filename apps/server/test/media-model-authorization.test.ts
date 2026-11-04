@@ -136,8 +136,8 @@ for(const action of ['pause','stop'] as const)test(`${action} during VLM pixel p
  const f=await fixture(t),bytes=await sharp({create:{width:4,height:4,channels:3,background:'#448899'}}).png().toBuffer();
  const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'generated-model',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',headers:{},extraBody:{},maxTokens:8192,agentTimeoutMs:2000,modelRequestTimeoutMs:1000,reasoningEffort:'auto',allowUnauthenticatedLocal:true};
  let arrive!:()=>void,release!:()=>void,calls=0,closed=0,activeSignal:AbortSignal|undefined;
- const started=new Promise<void>(resolve=>arrive=resolve),held=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
- const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-vlm',configured:true,receipt:{model:settings.model},settings,identity:{kind:'profile',id:'generated-vlm'}}),metered:async(_settings,_attribution,task)=>task(()=>{}),factory:async(_settings,reader,_host,identity)=>{
+ const started=new Promise<void>(resolve=>arrive=resolve),held=new Promise<void>(resolve=>release=resolve),outcomes:string[]=[];t.after(()=>release());
+ const adapter=imageUnderstanding({selection:()=>({fingerprint:'generated-vlm',configured:true,receipt:{model:settings.model},settings,identity:{kind:'profile',id:'generated-vlm'}}),metered:async(_settings,_attribution,task)=>{try{const result=await task(()=>{});outcomes.push('completed');return result;}catch(error){outcomes.push('failed');throw error;}},factory:async(_settings,reader,_host,identity)=>{
   assert.deepEqual(identity,{kind:'profile',id:'generated-vlm'});
   return {configured:true,close:async()=>{closed++;},query:async input=>{
    calls++;activeSignal=input.signal;input.assertContextAuthority?.();
@@ -149,6 +149,7 @@ for(const action of ['pause','stop'] as const)test(`${action} during VLM pixel p
  const images=await f.imageProcessor(adapter);f.command('authorize');const id=await f.upload(bytes,'image/png'),tick=images.tick();await started;
  assert.ok(f.seen.some(request=>request.stage==='image-understanding'&&request.captureId===id));f.command(action);assert.equal(activeSignal?.aborted,action==='stop');release();await tick;
  assert.equal(calls,1);assert.equal(closed,1);assert.equal(f.files.detail(id).hasOriginal,true);
+ assert.deepEqual(outcomes,[action==='stop'?'failed':'completed'],'a revoked late response stays failed in the usage receipt');
  assert.equal(images.detail(id).products.some(product=>product.kind==='understanding'),action==='pause');
  await images.tick();assert.equal(calls,1,'refresh must neither resend a completed VLM job nor resurrect stopped work');
  const gapBytes=await sharp({create:{width:4,height:4,channels:3,background:'#994488'}}).png().toBuffer(),gap=await f.upload(gapBytes,'image/png');await images.tick();assert.equal(calls,1);assert.equal(f.files.detail(gap).hasOriginal,true);

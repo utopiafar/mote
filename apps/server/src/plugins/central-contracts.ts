@@ -29,7 +29,8 @@ import type {ProcessingRuntime} from '../processing-runtime.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {MediaReadinessPort} from './ocr-asr-readiness.js';
-import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-publication-contract.js';
+import type {ImageProcessingPort} from './image-processing-service.js';
+import type {MemoryStagePublication, MemoryOwnerPublication} from './memory-publication-contract.js';
 import type {MemoryAutomation} from '../memory-automation.js';
 import type {Conversations} from '../conversations.js';
 import type {MemoryTopicsHost} from '../memory-topics-host.js';
@@ -228,6 +229,7 @@ export const centralServices = {
   ownerQuestions: serviceContract<OwnerQuestionsPort>('mote.central.owner-questions', '1'),
   mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
   mediaReadiness: serviceContract<MediaReadinessPort>('mote.central.media-readiness', '1'),
+  imageProcessing: serviceContract<ImageProcessingPort>('mote.central.image-processing', '1'),
   conversations: serviceContract<ConversationRepository>('mote.central.conversations', '1'),
   query: serviceContract<QueryDomain>('mote.central.query', '1'),
 } as const;
@@ -298,7 +300,7 @@ export const centralServiceOwners = {
   configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryStrategies:'memoryControl', memoryRecipeSettings:'memoryControl', memoryIntegrationSettings:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', memoryPhase:'memoryRuntime', memoryLifecycle:'memoryRuntime', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', mediaReadiness:'media', conversations:'query', query:'query',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', mediaReadiness:'media', imageProcessing:'media', conversations:'query', query:'query',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {
@@ -327,7 +329,7 @@ export const centralFeatureMigrations = {
   'mote.processing': {owners:['processing','media','activity'], requires:['execution','executionHandlers','configuration','modelAuthority']},
   'mote.notes': {owners:['capture','materials'], requires:['captureIntake','captureRead','requestAuthorization']},
   'mote.devices': {owners:['capture'], requires:['vault','requestAuthorization']},
-  'mote.media': {owners:['media'], requires:['configuration','modelAuthority','fileOriginalRead','mediaAssetsRead','mediaReadiness']},
+  'mote.media': {owners:['media'], requires:['configuration','modelAuthority','fileOriginalRead','mediaAssetsRead','mediaReadiness','imageProcessing']},
   'mote.owner-questions': {owners:['activity','memoryRuntime'], requires:['vault','requestAuthorization']},
   'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']},
   'mote.imports': {owners:['imports','files','agent'], requires:['execution','sourceIntake','contentRead','requestAuthorization']},

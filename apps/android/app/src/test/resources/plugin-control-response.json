@@ -74,6 +74,77 @@
       ]
     }
   ],
+  "builds": [
+    {
+      "id": "5a961459-42c7-4140-af70-0c54d7c53aa9",
+      "packageId": "generated.plugin-control@4eed0ad61040515bf3707d609758e5c75dee1d2428288046d4d01faaadf2a803",
+      "installationId": "generated-installation",
+      "name": "Generated control instance",
+      "version": "fixture-1",
+      "revision": 2,
+      "runtime": "worker",
+      "desired": null,
+      "active": null,
+      "retired": false,
+      "observed": "stopped",
+      "blockers": [],
+      "operationId": "af30d4ee-8d72-4e37-b2b2-f787491f5c17",
+      "source": {
+        "repository": "generated-fixture/plugin-control",
+        "tag": "v1",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "digest": "4eed0ad61040515bf3707d609758e5c75dee1d2428288046d4d01faaadf2a803"
+      },
+      "configuration": {
+        "endpoint": "generated-reference"
+      },
+      "configurationSchema": [
+        {
+          "id": "endpoint",
+          "label": "Generated endpoint",
+          "type": "text",
+          "required": true
+        }
+      ],
+      "capabilities": [
+        {
+          "id": "memory.repository",
+          "state": "unknown",
+          "reason": "Requires a capability check"
+        }
+      ],
+      "issues": [],
+      "allowedActions": [
+        "configure",
+        "check"
+      ],
+      "package": false,
+      "restartRequired": false
+    },
+    {
+      "id": "generated-native-build",
+      "packageId": "generated.native",
+      "installationId": "generated-native-installation",
+      "name": "Generated native build",
+      "version": "1.0.0",
+      "revision": 1,
+      "runtime": "host",
+      "desired": null,
+      "active": null,
+      "retired": false,
+      "observed": "stopped",
+      "blockers": [],
+      "operationId": "af30d4ee-8d72-4e37-b2b2-f787491f5c18",
+      "source": null,
+      "configuration": {},
+      "configurationSchema": [],
+      "capabilities": [],
+      "issues": [],
+      "allowedActions": [],
+      "package": false,
+      "restartRequired": false
+    }
+  ],
   "catalog": [
     {
       "repository": "mem0ai/mem0",

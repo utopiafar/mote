@@ -23,7 +23,7 @@ const backupScript=fileURLToPath(new URL('../../../scripts/backup.ts',import.met
 const takeBackup=(source:string,out:string)=>execFileSync(process.execPath,[backupScript,'--data',source,'--out',out],{stdio:'pipe'});
 const empty=()=>({answer:JSON.stringify({memories:[]}),citations:[],trace:[],runId:randomUUID()});
 
-test('current epoch 5 backup restores original identities, Memory history and interrupted execution without replaying completed work',async t=>{
+test('current epoch 6 backup restores original identities, Memory history and interrupted execution without replaying completed work',async t=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-combined-restore-'))),source=join(root,'source'),before=join(root,'earlier-snapshot'),snapshot=join(root,'snapshot'),target=join(root,'restored'),rollback=join(root,'rollback'),key='31'.repeat(32);
  const original=new Store(source,{dataKey:key,contentEncryptionEnabled:true}),sources=new SourceStore(original),archived=new ArchivedFileStore(original),memories=new MemoryStore(original);
  const stores=[original],engines:ExecutionEngine[]=[],pipelines:MemoryPipeline[]=[],insights:InsightRuns[]=[];
