@@ -7,6 +7,7 @@ import {sha256,StoreError} from './store.js';
 export interface MemoryAutomationStore {
   readonly db:Pick<DatabaseSync,'exec'|'prepare'|'isTransaction'>;
   reserveMetadata(bytes:number):void;
+  registerStorage(plugin:string,meters:Readonly<Record<string,string>>):void;
 }
 
 export const memoryControlCommandSchema=z.object({expectedRevision:z.number().int().positive(),operationId:z.string().uuid()}).strict();
@@ -24,6 +25,10 @@ export class MemoryAutomation {
     store.db.exec(`CREATE TABLE IF NOT EXISTS memory_automation(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_control_commands(operation_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_automation_fences(operation_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('freeze','release')),created_at INTEGER NOT NULL,PRIMARY KEY(operation_id,kind));`);
+    store.registerStorage('memory-control',{
+      memory_automation:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+      memory_control_commands:'length(CAST(operation_id AS BLOB))+length(CAST(fingerprint AS BLOB))+136',
+    });
     store.db.prepare('INSERT OR IGNORE INTO memory_automation VALUES(1,?)').run(JSON.stringify({revision:1,generation:1,desired:true} satisfies MemoryAutomationState));
   }
   state():MemoryAutomationState{return JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_automation WHERE id=1').get()!.json));}

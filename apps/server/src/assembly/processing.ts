@@ -31,6 +31,7 @@ import type {CentralDomainPlugin,bootstrapCentral} from '../bootstrap.js';
 import {createMediaAssetsService,mediaAssetsServiceContribution,mediaAssetsServiceDeclaration,mediaAssetsServiceReplacement} from '../plugins/media-assets-service.js';
 import {createOcrAsrReadiness,createOcrAsrReadinessFactory,createOcrAsrReadinessRoutes,ocrAsrReadinessContribution,ocrAsrReadinessDeclaration,ocrAsrReadinessForAssembly,ocrAsrReadinessReplacement,registerOcrAsrReadinessForAssembly} from '../plugins/ocr-asr-readiness.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
+import {vaultStorageRoutes} from '../plugins/vault-storage-routes.js';
 import {createProcessingServices,createProcessingServicesFactory,processingServicesContribution,processingServicesDeclaration,processingServicesReplacement,type ProcessingServicesStarted} from '../plugins/processing-services.js';
 import {createImageProcessingRoutes,createImageProcessingService,createImageProcessingServiceFactory,imageProcessingServiceContribution,imageProcessingServiceDeclaration,imageProcessingServiceForAssembly,imageProcessingServiceReplacement,registerImageProcessingServiceForAssembly} from '../plugins/image-processing-service.js';
 import type {FileAnalysis,FileProcessing,TranscriptionProvider} from '../file-processing.js';
@@ -192,6 +193,9 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   });
   resources.defer(()=>imageHandle.close('shutdown'));
   contributeDomainRoutes(backendContext,{'mote.media':imageRoutes});
+  // The vault owns content storage and its storage transport; this assembly
+  // only wires the already-prepared activation into the shared route table.
+  contributeDomainRoutes(backendContext,{'mote.storage':vaultStorageRoutes(()=>bootstrap.vault.contentStorage)});
   registerImageProcessingServiceForAssembly(imageService,processing);
   const featureServices=Object.freeze({processing,workflows}) satisfies Partial<FeatureServices>;
   return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices,processingServices:platform,imageProcessingService:imageService});

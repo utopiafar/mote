@@ -10,6 +10,20 @@ import type {RuntimeProfileConfiguration} from '../profile.js';
 import {readNativeDshManifest, planNativeDshAssembly, type NativeDshAssemblyEntry} from './native-assembly.js';
 
 export const DSH_RUNTIME_ID = 'mote.runtime.dsh';
+/** Native subagent and child-workflow producers are disabled even when a profile
+ * or the SDK default would otherwise load them. Delegation uses Host controls. */
+export const DSH_NATIVE_DELEGATION_PLUGINS = Object.freeze([
+  'subagent',
+  'subagent-spawn-in-process',
+  'subagent-fork-in-process',
+  'tool-subagent',
+  'tool-subagent-fork',
+  'tool-subagent-control',
+  'tool-subagent-list-agents',
+  'workflow-ptc',
+  'tool-workflow',
+  'tool-ralph',
+] as const);
 export class DshProfileError extends Error {
   constructor(readonly code: 'dsh_profile_invalid' | 'dsh_module_unavailable' | 'dsh_dependency_missing' | 'dsh_factory_duplicate') {
     super(code); this.name = 'DshProfileError';
@@ -94,7 +108,7 @@ export function createRuntimePatch(
   if (new Set(native.map(entry => entry.id)).size !== native.length || native.some(entry => entry.id.startsWith('mote-'))) throw new DshProfileError('dsh_profile_invalid');
   if (native.filter(entry => entry.factory).length > 1) throw new DshProfileError('dsh_factory_duplicate');
   return JSON.stringify([
-    ...['persistent-bash', 'persistent-pwsh', 'terminal-bash', 'terminal-pwsh', 'pty', 'subprocess', 'mcp-resources'].map(id => ({id, disabled: true})),
+    ...['persistent-bash', 'persistent-pwsh', 'terminal-bash', 'terminal-pwsh', 'pty', 'subprocess', 'mcp-resources', ...DSH_NATIVE_DELEGATION_PLUGINS].map(id => ({id, disabled: true})),
     ...harnessPrivacyEntries(),
     ...(native.some(entry => entry.factory) ? [{id: 'agent-loop', disabled: true}] : []),
     {id: 'system-prompt', config: {includeHarnessIdentity: false, includeRuntimeContext: false, personaPrefix: systemPrompt}},

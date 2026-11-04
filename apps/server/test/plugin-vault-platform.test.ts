@@ -6,6 +6,9 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {Store} from '../src/store.js';
 import {StoreDatabase} from '../src/sqlite-database.js';
+import {MemoryStore} from '../src/memory.js';
+import type {MemoryBindings} from '../src/memory-bindings.js';
+import {createMemoryPublication,createMemoryPublicationFactory,memoryPublicationDeclaration} from '../src/plugins/memory-publication.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 import {FileStore} from '../src/files.js';
 import {AssetStore} from '../src/assets.js';
@@ -223,12 +226,10 @@ test('trusted bootstrap assembly owns newly created storage and borrows injected
   t.after(async()=>{await owned.close();await borrowed.close();borrowedStore.close();rmSync(directory,{recursive:true,force:true});rmSync(borrowedDirectory,{recursive:true,force:true});});
   await owned.prepare();const own=owned.store;assert.equal(own.db.isOpen,true);await owned.close();assert.equal(own.db.isOpen,false);assert.throws(()=>owned.store,/unavailable/);
   await borrowed.prepare();assert.equal(borrowed.store,borrowedStore);
-  const files=new FileStore(borrowedStore,new (await import('../src/sources.js')).SourceStore(borrowedStore));
-  try{
-    const service=borrowed.attachContent(files);assert.equal(service.snapshot().enabled,false);
-    assert.throws(()=>borrowed.attachContent(files),{statusCode:409});
-    await borrowed.close();assert.equal(borrowedStore.db.isOpen,true);assert.equal(borrowedStore.stats().captures,0);
-  }finally{await files.close();}
+  const service=borrowed.contentStorage;assert.equal(service.snapshot().enabled,false);
+  assert.equal(borrowed.contentStorage,service,'the vault owns exactly one content storage service');
+  await borrowed.close();assert.equal(borrowedStore.db.isOpen,true);assert.equal(borrowedStore.stats().captures,0);
+  assert.throws(()=>borrowed.contentStorage,/unavailable/);
 });
 
 test('a missing C04 verifier cannot activate the scoped writer factory',t=>{
@@ -263,6 +264,41 @@ test('H04 mounts the real restart factory and publishes a read-only content port
   assert.deepEqual(reader.listForCapture('generated-capture'),[],'another live caller is unaffected');
   await handle.close('disabled');assert.throws(()=>lease.assertCurrent());assert.throws(()=>reader.listForCapture('generated-capture'));
   assert.equal(contender(directory).stdout,'acquired');
+});
+
+test('storage accounting keeps a stopped domain plugin\'s retained rows and plugin attribution on the same profile',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-vault-meters-')),host=new PluginHost({kind:'central',id:'generated-host'}),vault=createVaultPlatformAssembly({dataDir:directory});
+  t.after(async()=>{await host.close();await vault.close();rmSync(directory,{recursive:true,force:true});});
+  await vault.prepare();const store=vault.store,memories=new MemoryStore(store);
+  const bindings={binding:()=>({planId:'instance:generated',generation:1,namespace:{ownerId:'generated-owner',instanceId:'generated',bindingRevision:1}}),plugins:{references:()=>[]},assertNewManualWork:()=>{}} as unknown as MemoryBindings;
+  let activation=0;
+  const enable=async()=>{
+    const platform=createMemoryPublication({store,memories,bindings});
+    const handle=await host.install({identity:{host:host.identity,packageId:'mote.memory-publication',installationId:'build:memory-publication@1.0.0',instanceId:'memory-publication',activationId:'generated-activation-'+(++activation)},contributions:[memoryPublicationDeclaration],factory:createMemoryPublicationFactory(platform)});
+    return {platform,handle};
+  };
+  const retained=()=>store.storageBreakdown().plugins.find(group=>group.plugin==='memory-publication');
+  let current=await enable();
+  current.platform.stage.retainOutput('generated-retained',{privateDraft:'Generated retained projection body'},{evidenceIds:['generated-evidence']});
+  const output=retained()?.tables.find(table=>table.name==='memory_publication_outputs');
+  assert.ok(output&&output.bytes>0,'the plugin\'s real write is metered under its plugin identity');
+  current.platform.quiesce('disabled');
+  assert.throws(()=>current.platform.stage.retainOutput('generated-refused',{privateDraft:'Generated refused body'}),{statusCode:503});
+  await current.handle.close('disabled');
+  assert.deepEqual(retained()?.tables.find(table=>table.name==='memory_publication_outputs'),output,'stopping the plugin does not hide or reattribute retained rows');
+  current=await enable();
+  current.platform.stage.retainOutput('generated-reenabled',{privateDraft:'Generated re-enabled projection body'});
+  assert.ok(retained()!.tables.find(table=>table.name==='memory_publication_outputs')!.bytes>output.bytes,'re-enable resumes writes without a second registration');
+  await current.handle.close('disabled');
+  const expected=store.storageBreakdown();
+  assert.ok(expected.plugins.some(group=>group.plugin==='memory-publication'&&group.bytes>0));
+  await vault.close();
+  const reopened=new Store(directory);
+  try{
+    const resumed=reopened.storageBreakdown();
+    assert.deepEqual(resumed,expected,'restart preserves exact per-plugin accounting without the plugin registering again');
+    assert.ok(resumed.plugins.find(group=>group.plugin==='memory-publication')!.tables.some(table=>table.name==='memory_publication_outputs'&&table.bytes>0));
+  }finally{reopened.close();}
 });
 
 function checkScopedTypes(access:import('../src/plugins/vault-platform.js').VaultRepositoryAccess,authority:CommitAuthority){

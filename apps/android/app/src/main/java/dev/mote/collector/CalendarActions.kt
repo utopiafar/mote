@@ -6,7 +6,10 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
+import dev.mote.collector.plugins.CapabilityActionState
 import dev.mote.collector.plugins.ManagedCalendarJournalStore
+import dev.mote.collector.plugins.NativeCapabilityPublisher
+import dev.mote.collector.plugins.PluginAvailability
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -44,7 +47,8 @@ internal class CalendarActions(
     private val sessionIdentity: Pair<String, Long>? = null,
     private val scheduleDelivery: () -> Unit = { CalendarActionWorker.schedule(context) },
     private val journalStore: ManagedCalendarJournalStore = ManagedCalendarJournalStore(context),
-    private val capabilityPublisher: (String, (String, JSONObject?) -> JSONObject) -> CalendarCapabilityPublisher = { deviceId, transport -> CalendarCapabilityPublisher(deviceId, transport) },
+    private val capabilityPublisher: (String, (String, JSONObject?) -> JSONObject) -> NativeCapabilityPublisher = { deviceId, transport -> NativeCapabilityPublisher(deviceId, transport) },
+    private val provider: () -> PluginAvailability = { PluginAvailability.ACTIVE },
 ) {
     companion object { private val executionLock = Any() }
     private val settings = Settings(context)
@@ -86,7 +90,8 @@ internal class CalendarActions(
     private fun declareCapability(available: JSONArray?) = capabilityPublisher(settings.deviceId, ::deviceRequest).publish(available)
     fun connect(): JSONArray = ConnectionGuard.sync {
         val calendars = calendars()
-        declareCapability(calendars)
+        val publication = declareCapability(calendars)
+        if (publication.state == CapabilityActionState.REQUIRES_BUILD) throw IllegalStateException(MoteI18n.text("需要构建"))
         if (request("/api/connections/self").getJSONObject("credential").optString("scope") != "collector") request("/api/actions/targets", JSONObject().put("deviceId", settings.deviceId).put("deviceName", settings.read().deviceName).put("calendars", calendars))
         scheduleDelivery()
         calendars
@@ -94,7 +99,9 @@ internal class CalendarActions(
     private fun journalRead(key: String): String? = journalStore.read(key)
     private fun journalWrite(key: String, value: String) = journalStore.write(key, value)
     fun deliver() {
-        val ready = ConnectionGuard.sync { val available = if (permissions()) calendars() else null; declareCapability(available); available != null } ?: return
+        var needsBuild = false
+        val ready = ConnectionGuard.sync { val available = if (permissions()) calendars() else null; needsBuild = declareCapability(available).state == CapabilityActionState.REQUIRES_BUILD; available != null } ?: return
+        if (needsBuild) return
         val paired = ConnectionGuard.sync { !deviceRequest("/api/connections/self").getJSONObject("credential").optString("deviceId", "").isEmpty() } ?: return
         if (paired) {
             val managed = ConnectionGuard.sync { request("/api/managed-calendar-deliveries") } ?: return
@@ -116,6 +123,7 @@ internal class CalendarActions(
     } ?: error(MoteI18n.text("连接正在切换"))
     fun dismiss(action: JSONObject) = ConnectionGuard.sync { request("/api/actions/${action.getString("id")}/dismiss", JSONObject().put("version", action.getInt("version"))) }
     fun execute(id: String, managedOperationId: String? = null) = synchronized(executionLock) { ConnectionGuard.sync {
+        check(provider() != PluginAvailability.REQUIRES_BUILD) { MoteI18n.text("需要构建") }
         UUID.fromString(id)
         val route = if (managedOperationId == null) "actions" else "managed-calendar"
         managedOperationId?.let { UUID.fromString(it) }

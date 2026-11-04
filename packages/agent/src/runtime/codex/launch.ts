@@ -6,12 +6,32 @@ import type {CodexServiceTier} from '@mote/shared/models';
 import {AgentNotConfiguredError} from '../../types.js';
 
 export const CODEX_APP_SERVER_ARGS = Object.freeze(['app-server', '--listen', 'stdio://']);
+/** Native subagent/team producers stay off in every Mote App Server home. */
+export const CODEX_NATIVE_DELEGATION_FEATURES = Object.freeze(['multi_agent', 'multi_agent_v2', 'collab'] as const);
 
 export interface CodexLaunchOptions {
   readonly executable?: string;
   readonly home?: string;
   readonly workspace?: string;
   readonly serviceTier?: CodexServiceTier;
+}
+
+export type CodexAppServerConfigOptions = Pick<CodexLaunchOptions, 'workspace' | 'serviceTier'>;
+
+/** Host-owned App Server policy. Never includes user plugins, MCP, hooks or history. */
+export function codexAppServerConfig(options: CodexAppServerConfigOptions = {}): string {
+  return [
+    'cli_auth_credentials_store = "file"', 'approval_policy = "never"',
+    ...(options.serviceTier ? [`service_tier = "${options.serviceTier}"`] : []),
+    `sandbox_mode = "${options.workspace ? 'workspace-write' : 'read-only'}"`, 'web_search = "disabled"',
+    'project_doc_max_bytes = 0', 'include_environment_context = false', 'include_apps_instructions = false',
+    '[tools.update_plan]', 'enabled = false', '[tools.experimental_request_user_input]', 'enabled = false',
+    '[orchestrator.skills]', 'enabled = false', '[orchestrator.mcp]', 'enabled = false', '[skills]', 'include_instructions = false', '[skills.bundled]', 'enabled = false',
+    '[history]', 'persistence = "none"', '[analytics]', 'enabled = false',
+    '[features]', ...['apps', 'connectors', 'plugins', 'hooks', 'codex_hooks', 'memories', 'goals', ...CODEX_NATIVE_DELEGATION_FEATURES, 'browser_use', 'computer_use', 'js_repl', 'code_mode', 'code_mode_only', 'image_generation', 'imagegenext', 'view_image', 'skill_mcp_dependency_install', 'tool_suggest', 'request_permissions_tool', 'shell_snapshot', 'remote_control'].map(key => `${key} = false`),
+    ...(options.serviceTier === 'fast' ? ['fast_mode = true'] : []),
+    `shell_tool = ${Boolean(options.workspace)}`, `unified_exec = ${Boolean(options.workspace)}`, `apply_patch_freeform = ${Boolean(options.workspace)}`,
+  ].join('\n');
 }
 
 export interface CodexAppServerProcess {
@@ -36,19 +56,7 @@ export async function launchCodexAppServer(options: CodexLaunchOptions = {}): Pr
     } catch {
       throw new AgentNotConfiguredError();
     }
-    const config = [
-      'cli_auth_credentials_store = "file"', 'approval_policy = "never"',
-      ...(options.serviceTier ? [`service_tier = "${options.serviceTier}"`] : []),
-      `sandbox_mode = "${options.workspace ? 'workspace-write' : 'read-only'}"`, 'web_search = "disabled"',
-      'project_doc_max_bytes = 0', 'include_environment_context = false', 'include_apps_instructions = false',
-      '[tools.update_plan]', 'enabled = false', '[tools.experimental_request_user_input]', 'enabled = false',
-      '[orchestrator.skills]', 'enabled = false', '[orchestrator.mcp]', 'enabled = false', '[skills]', 'include_instructions = false', '[skills.bundled]', 'enabled = false',
-      '[history]', 'persistence = "none"', '[analytics]', 'enabled = false',
-      '[features]', ...['apps', 'connectors', 'plugins', 'hooks', 'codex_hooks', 'memories', 'goals', 'multi_agent', 'multi_agent_v2', 'collab', 'browser_use', 'computer_use', 'js_repl', 'code_mode', 'code_mode_only', 'image_generation', 'imagegenext', 'view_image', 'skill_mcp_dependency_install', 'tool_suggest', 'request_permissions_tool', 'shell_snapshot', 'remote_control'].map(key => `${key} = false`),
-      ...(options.serviceTier === 'fast' ? ['fast_mode = true'] : []),
-      `shell_tool = ${Boolean(options.workspace)}`, `unified_exec = ${Boolean(options.workspace)}`, `apply_patch_freeform = ${Boolean(options.workspace)}`,
-    ].join('\n');
-    await writeFile(join(home, 'config.toml'), config, {mode: 0o600});
+    await writeFile(join(home, 'config.toml'), codexAppServerConfig(options), {mode: 0o600});
     const env: NodeJS.ProcessEnv = {PATH: process.env.PATH, HOME: home, CODEX_HOME: home, TMPDIR: tmpdir()};
     for (const key of ['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy', 'SystemRoot']) {
       if (process.env[key]) env[key] = process.env[key];
