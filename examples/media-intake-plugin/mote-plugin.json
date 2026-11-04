@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "example.media-intake",
+  "name": "Example media intake processor",
+  "version": "0.1.0",
+  "trust": "external",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "example-media-intake-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "example-media-intake.processing",
+      "version": "1",
+      "surface": "processing",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "processing.pack"
+      ]
+    }
+  ],
+  "capabilities": [
+    "processing.pack"
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Deterministic text format, output and recipe contributions"
+  ]
+}

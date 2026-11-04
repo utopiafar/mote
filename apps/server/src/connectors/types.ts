@@ -4,8 +4,6 @@ import type {Store} from '../store.js';
 
 export interface ConnectorConfig {
   directory: string;
-  /** Trusted installed modules exporting a versioned ConnectorManifest. */
-  modules?: string[];
   mcpEnabled?: boolean;
   mcpReadToken?: string;
   mcpWriteEnabled?: boolean;

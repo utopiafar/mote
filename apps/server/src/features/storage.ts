@@ -2,11 +2,11 @@ import {randomUUID} from 'node:crypto';
 import type {ServerFeatureScope} from '../feature-host.js';
 import { storageStatistics } from '@mote/shared/storage-statistics';
 import type { FastifyInstance } from 'fastify';
-import { registerArchiveExport } from '../archive-export.js';
+import { registerArchiveExport } from '../plugins/archive-export.js';
 import { registerContentStorage } from '../content-storage.js';
 import type { FeatureServices } from '../feature-services.js';
 import { StoreError } from '../store.js';
-import {exportBoundMemories} from '../memory-provider-backup.js';
+import {createMemoryBackup} from '../plugins/memory-backup.js';
 import type {ServerFeatureAdapter} from './index.js';
 
 /** storage: owns its transport, data and command contributions. */
@@ -15,9 +15,10 @@ export function register(app:FastifyInstance,{archivedFiles,config,contentStorag
  if(scope)void scope.run(maintain);else void maintain();scope?.every(3600000,maintain);
 registerContentStorage(app,contentStorage);
 app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=indexer.retry();diagnostics.record('queue.snapshot',{pending:result.queued});void indexer.tick();return result;});
-registerArchiveExport(app,store,files,archivedFiles,config.maxExportBytes,evidenceReader.memoryBindings);
+const memoryBackup=evidenceReader.memoryBindings?createMemoryBackup(evidenceReader.memoryBindings):undefined;
+registerArchiveExport(app,store,files,archivedFiles,config.maxExportBytes,memoryBackup);
 app.get('/api/export',async(_req,reply)=>{
- const memories=evidenceReader.memoryBindings?await exportBoundMemories(evidenceReader.memoryBindings):undefined;
+ const memories=memoryBackup?await memoryBackup.export():undefined;
  const archive=store.exportArchive(config.maxExportBytes);if(memories)archive.memories=memories;
  if(Buffer.byteLength(JSON.stringify(archive))>config.maxExportBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
  return reply.header('Content-Disposition',`attachment; filename="mote-${new Date().toISOString().slice(0,10)}.json"`).send(archive);

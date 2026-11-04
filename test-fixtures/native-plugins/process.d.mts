@@ -4,6 +4,8 @@ export interface PrivateProcessOptions {
   healthTimeoutMs?:number;
   stopTimeoutMs?:number;
   entry?:string;
+  /** Extra private environment for the child process. */
+  env?:Record<string,string>;
   /** Extra top-level YAML document fields, applied to the first boot and every restart. */
   extraDocument?:Record<string,unknown>;
 }

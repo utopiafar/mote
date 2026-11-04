@@ -103,10 +103,10 @@ ASR 原始片段允许时间重叠。若某句的词级开始时间晚于下一�
 
 文件处理和查询 Harness 使用同一 `@deepseek-ai/cordis` 框架。文件处理使用中央常驻 Context，避免一次查询结束就销毁文件任务。查询仍由 Harness 执行，工具仅能读上下文。
 
-通过受信任的部署配置装载模块（重启生效）：
+通过受信任的插件包装配处理贡献；`plugin-dev` 在私有开发 profile 中按 Manifest 安装：
 
-```dotenv
-MOTE_FILE_PROCESSOR_PLUGINS=["/opt/mote/plugins/custom-audio.mjs"]
+```sh
+node scripts/mote.mjs plugin-dev dev --plugin /absolute/my-plugin --once
 ```
 
 ```js

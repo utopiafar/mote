@@ -1,4 +1,4 @@
-// Installed with MOTE_BACKEND_PLUGINS. Structural text normalization only.
+// Processing contribution of the media-intake plugin package. Structural text normalization only.
 const output={id:'community.located-text',version:'1'};
 export default {
   name:'community-media-intake',inject:['moteImportIntake','moteFileProcessors','moteFileOutputs','moteFileRecipes'],

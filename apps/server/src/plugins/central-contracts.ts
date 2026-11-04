@@ -31,6 +31,7 @@ import type {MediaAssets} from '../media-assets.js';
 import type {MediaReadinessPort} from './ocr-asr-readiness.js';
 import type {ImageProcessingPort} from './image-processing-service.js';
 import type {MemoryStagePublication, MemoryOwnerPublication} from './memory-publication-contract.js';
+import type {MemoryBackup} from './memory-backup.js';
 import type {MemoryAutomation} from '../memory-automation.js';
 import type {Conversations} from '../conversations.js';
 import type {MemoryTopicsHost} from '../memory-topics-host.js';
@@ -225,6 +226,7 @@ export const centralServices = {
   memoryInputSelection: serviceContract<MemoryInputSelection>('mote.central.memory-input-selection', '1'),
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
+  memoryBackup: serviceContract<MemoryBackup>('mote.central.memory-backup', '1'),
   memoryTopics: serviceContract<MemoryTopics>('mote.central.memory-topics', '1'),
   ownerQuestions: serviceContract<OwnerQuestionsPort>('mote.central.owner-questions', '1'),
   mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
@@ -300,7 +302,7 @@ export const centralServiceOwners = {
   configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryStrategies:'memoryControl', memoryRecipeSettings:'memoryControl', memoryIntegrationSettings:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', memoryPhase:'memoryRuntime', memoryLifecycle:'memoryRuntime', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', mediaReadiness:'media', imageProcessing:'media', conversations:'query', query:'query',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryBackup:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', mediaReadiness:'media', imageProcessing:'media', conversations:'query', query:'query',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {
