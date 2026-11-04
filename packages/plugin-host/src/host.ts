@@ -8,6 +8,10 @@ import {
 import {PluginHostError, PluginResourceScope} from './scope.js';
 
 export interface HostScope extends PluginScope {
+  /** The host occurrence context. Its root store is shared by sibling domain
+   * activations, so trusted adapters can mount package modules that inject
+   * several domain services by their established Cordis names. */
+  readonly cordis: Context;
   run<T>(work: (signal: AbortSignal) => T | Promise<T>): Promise<T | undefined>;
   every(ms: number, work: (signal: AbortSignal) => unknown | Promise<unknown>): () => void;
   retire(dispose: () => Awaitable<void>): void;
@@ -146,7 +150,7 @@ export class PluginHost implements ServiceResolver {
       if (runtime.phase === 'stopping' || runtime.context?.fiber.uid === null) return reject('stale_scope');
     };
     const scope: HostScope = Object.freeze({identity: runtime.identity, signal: resources.signal, assertCurrent,
-      defer: resources.defer.bind(resources), retire: resources.retire.bind(resources), run: resources.run.bind(resources), every: resources.every.bind(resources)});
+      cordis: runtime.context!, defer: resources.defer.bind(resources), retire: resources.retire.bind(resources), run: resources.run.bind(resources), every: resources.every.bind(resources)});
     const services: ServiceResolver = {acquire: <T>(contract: ServiceContract<T>, raw: ServiceBinding, signal?: AbortSignal) => {
       const binding = serviceBindingSchema.parse(raw);
       if (![...runtime.requires, ...runtime.optional].some(required => bindingKey(required) === bindingKey(binding))) return Promise.reject(new PluginHostError('permission_denied'));
