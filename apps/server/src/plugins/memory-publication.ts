@@ -12,6 +12,7 @@ import {memorySchema,type Memory} from '../memory-schema.js';
 import {randomUUID} from 'node:crypto';
 import {installMemoryPublicationRetirement,registerMemoryPublicationDependencies,memoryPublicationRetired} from './memory-private-storage.js';
 import {createEvidenceDeletion,type EvidenceDeletion,type EvidenceDeletionPorts} from './evidence-deletion.js';
+import {exportBoundMemories,type MemoryBackup} from './memory-backup.js';
 
 import type {MemoryPublicationReceipt,MemoryPublicationDependencies,MemoryStagePublication,MemoryOwnerPublication,MemoryOwnerDeletionResult} from './memory-publication-contract.js';
 import {centralServices} from './central-contracts.js';
@@ -140,6 +141,9 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
     }catch{/* Erase remains visible and retryable after restart. */}
   }}
   retainedOutput<T>(operationId:string):T|undefined{if(!this.bindings.binding().namespace)return;this.assertRetained(operationId);const row=this.store.db.prepare('SELECT json FROM memory_publication_outputs WHERE id=?').get(operationId);return row?JSON.parse(String(row.json)):undefined;}
+  /** Backup reads the exact bound bodies; it never schedules publication work
+   * and therefore remains available while the activation is quiescing. */
+  exportMemories(){return exportBoundMemories(this.bindings);}
   retainOutput(operationId:string,output:unknown,dependencies:MemoryPublicationDependencies={}){if(!this.bindings.binding().namespace)return;this.assertRetained(operationId);const inferred=outputDependencies(output);this.register(operationId,{evidenceIds:[...(inferred.evidenceIds??[]),...(dependencies.evidenceIds??[])],memoryIds:dependencies.memoryIds});const json=JSON.stringify(output);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('INSERT OR IGNORE INTO memory_publication_outputs VALUES(?,?)').run(operationId,json);}
   async stageExtract(operationId:string,result:QueryResult,model:string,options:MemoryExtractOptions,assertAuthority:()=>void,automatic=false):Promise<MemoryPublicationReceipt|undefined>{
     const binding=this.bindings.binding();if(!binding.namespace)return;
@@ -197,9 +201,10 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
   async close(){this.stop();this.closed=true;this.memories.deletions.attachBinding(undefined);const dispose=this.dispose;this.dispose=undefined;await dispose?.();}
 }
 
-/** C24 owns staged publication, owner mutation replay and the durable
- * reconciliation of unknown remote writes. The two ports deliberately separate
- * reviewed staging from owner commands. */
+/** C24 owns staged publication, owner mutation replay, the durable
+ * reconciliation of unknown remote writes and the portable backup bodies.
+ * The two publication ports deliberately separate reviewed staging from owner
+ * commands; the backup port stays a read-only consumer of the pinned binding. */
 export const memoryPublicationContribution={
   id:'memory-publication',version:'1.0.0',surface:'data',runtime:'host',
   requires:[
@@ -210,6 +215,7 @@ export const memoryPublicationContribution={
   provides:[
     {kind:'service',id:centralServices.memoryStagePublication.id,apiVersion:centralServices.memoryStagePublication.apiVersion,cardinality:'single'},
     {kind:'service',id:centralServices.memoryOwnerPublication.id,apiVersion:centralServices.memoryOwnerPublication.apiVersion,cardinality:'single'},
+    {kind:'service',id:centralServices.memoryBackup.id,apiVersion:centralServices.memoryBackup.apiVersion,cardinality:'single'},
   ],
 } as const satisfies ManifestContribution;
 export const memoryPublicationDeclaration={id:memoryPublicationContribution.id,apiVersion:'1'} as const;
@@ -231,15 +237,19 @@ export interface MemoryPublicationPlatformDependencies {
 export interface MemoryPublicationPort {
   readonly stage:MemoryStagePublication;
   readonly owner:MemoryOwnerPublication;
+  /** C24's backup contribution: portable bodies for restore and portable export. */
+  readonly backup:MemoryBackup;
 }
 export interface MemoryPublicationBindings {
   readonly stage:ServiceBinding;
   readonly owner:ServiceBinding;
+  readonly backup:ServiceBinding;
 }
 export interface MemoryPublicationPlatform extends PluginLifecycle {
   readonly port:MemoryPublicationPort;
   readonly stage:MemoryStagePublication;
   readonly owner:MemoryOwnerPublication;
+  readonly backup:MemoryBackup;
   /** The owned domain objects for the trusted assembly bridge only. */
   readonly publication:MemoryPublication;
   readonly evidenceDeletion:EvidenceDeletion;
@@ -288,6 +298,9 @@ export function createMemoryPublication(dependencies:MemoryPublicationPlatformDe
       correct:(id:string,input:unknown)=>{active();return track(readable().correct(id,input));},
       delete:(id:string)=>{active();return track(readable().delete(id));},
     }),
+    backup:Object.freeze({
+      export:()=>track(readable().exportMemories()),
+    }),
   });
   const close=()=>closing??=(async()=>{
     phase='stopping';
@@ -302,6 +315,7 @@ export function createMemoryPublication(dependencies:MemoryPublicationPlatformDe
     port,
     get stage(){return port.stage;},
     get owner(){return port.owner;},
+    get backup(){return port.backup;},
     get publication(){return readable();},
     get evidenceDeletion(){
       if(!evidenceDeletion||phase!=='active')throw unavailable();
@@ -349,6 +363,7 @@ export function createMemoryPublicationFactory(platform:MemoryPublicationPlatfor
         const bindings={
           stage:context.provide(memoryPublicationContribution.id,centralServices.memoryStagePublication,platform.port.stage),
           owner:context.provide(memoryPublicationContribution.id,centralServices.memoryOwnerPublication,platform.port.owner),
+          backup:context.provide(memoryPublicationContribution.id,centralServices.memoryBackup,platform.port.backup),
         };
         onStarted?.(bindings);
       },
