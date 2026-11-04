@@ -49,6 +49,8 @@ export interface RuntimeCapabilities {
   readonly images: boolean;
   readonly importWorkspace: boolean;
   readonly hostDelegation: boolean;
+  /** Native subagent/delegation execution is always off; Host controls remain the only path. */
+  readonly nativeDelegation: boolean;
   readonly recovery: 'none' | 'same-process' | 'durable';
   readonly replacement: 'hot' | 'restart';
 }

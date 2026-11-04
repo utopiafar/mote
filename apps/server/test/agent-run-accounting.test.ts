@@ -200,7 +200,7 @@ const realHostLeaf=(failure:Error,seen:HostEvent[]=[]):ModelAgentFactory=>async(
   const identity=(id:string):ScopeIdentity=>({packageId:'generated',installationId:'generated-install',instanceId:id,activationId:randomUUID(),host:hostIdentity});
   const scope=Object.assign(resources,{identity:identity('consumer')});
   let port:HostRunPort|undefined;
-  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:false,images:false,importWorkspace:false,hostDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,value){
+  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:false,images:false,importWorkspace:false,hostDelegation:false,nativeDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,value){
     port=value;value.emit({type:'tools.ready',tools:[]},null);
     return {run:request=>value.runModel(request.attempt,async()=>{throw failure;}),repair:async()=>{throw Error('Generated repair is unreachable');},async cancel(){},async close(){}};
   }};

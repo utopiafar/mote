@@ -43,7 +43,7 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario={}){
   const events:HostEvent[]=[],observe=createHostRunUsageObserver({runId,meter,diagnostics:{record:(...args)=>{const result=diagnostics.record(...args);if(scenario.observerThrows)throw Error('Generated diagnostic observer error');return result;}}});
   let session:HostRunSession|undefined,port:HostRunPort|undefined,modelCalls=0;
   t.after(async()=>{await session?.close();await resources.close();await host.close();await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});assert.equal(existsSync(directory),false);});
-  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:false,images:false,importWorkspace:false,hostDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,value){
+  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:false,images:false,importWorkspace:false,hostDelegation:false,nativeDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,value){
     port=value;if(scenario.prepareError)throw scenario.prepareError;
     value.emit({type:'tools.ready',tools:[]},null);
     const drive=(request:RuntimeRunRequest,run:Scenario['run'])=>value.runModel(request.attempt,async()=>{modelCalls++;meter.modelStarted();return run?run(value,request):completed();});
