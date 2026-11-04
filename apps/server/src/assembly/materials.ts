@@ -19,7 +19,7 @@ import type {BackgroundModelAuthorization} from '../background-model-authorizati
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
-import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
+import {createEvidenceContextReader,evidenceContextReaderContribution,evidenceContextReaderDeclaration,evidenceContextReaderReplacement} from '../plugins/evidence-context-reader.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
@@ -34,6 +34,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:materialOrganizerServiceContribution,declaration:materialOrganizerServiceDeclaration,replacement:materialOrganizerServiceReplacement},
   {contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement},
   {contribution:materialContextContribution,declaration:materialContextDeclaration,replacement:materialContextReplacement},
+  {contribution:evidenceContextReaderContribution,declaration:evidenceContextReaderDeclaration,replacement:evidenceContextReaderReplacement},
 ]);
 
 export interface MaterialInputDependencies {

@@ -9,6 +9,7 @@ import {z} from 'zod';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {InsightRuns} from '../insight-runs.js';
+import {InsightRuns as InsightRunsStore} from '../insight-runs.js';
 import type {InsightResult} from '../insights.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
@@ -53,6 +54,10 @@ export interface InsightServices extends PluginLifecycle {
 
 const unavailable=()=>new StoreError('Insight services are unavailable',503);
 const launchSchema=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'});
+
+/** Trusted assembly seam only: the durable run manager is a business object of
+ * this domain, not a root-constructed dependency. */
+export function openInsightRuns(...args:ConstructorParameters<typeof InsightRunsStore>){return new InsightRunsStore(...args);}
 
 /** A borrowed run manager cannot be closed here: app.ts still defers its
  * close until K04 moves construction. A natively opened manager belongs to

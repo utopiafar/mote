@@ -44,6 +44,14 @@ export interface NotesSource extends PluginLifecycle {
   close():Promise<void>;
 }
 
+/** Explicit unavailable contribution used when the default composition omits
+ * notes-source. It deliberately owns no Store, note record or deletion helper. */
+export function unavailableNotesSource(reason='The notes-source plugin is not selected'):NotesSource {
+  const unavailable=()=>{throw new StoreError(reason,503);};
+  const assembly=Object.freeze({list:unavailable,delete:unavailable,resolve:unavailable}) as unknown as NotesSourceAssembly;
+  return Object.freeze({prepare(){},start(){},quiesce(){},stop:async()=>{},dispose:async()=>{},close:async()=>{},assemblyForRoutes(){return assembly;}});
+}
+
 export function createNotesSource(dependencies:NotesSourceDependencies):NotesSource {
   const {page,attribution,evidence,deleteNote,noteDeletion}=dependencies;
   if(!page||!attribution||!evidence||!deleteNote||!noteDeletion)throw new StoreError('Notes source dependencies are unavailable',503);

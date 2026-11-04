@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import type {Store} from '../store.js';
+import {StoreError,type Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {FileStore} from '../files.js';
@@ -9,18 +9,17 @@ import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {AuthorizationPlatform} from '../plugins/authorization-platform.js';
 import type {ExecutionPlatform} from '../plugins/execution-platform.js';
 import type {FeatureServices} from '../feature-services.js';
-import {SourceStore} from '../sources.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
-import {MaterialNoteDeletion} from '../material-note-deletion.js';
 import {closeSourcePlatforms} from '../platform-close-order.js';
 import {registerFileRoutes} from '../file-routes.js';
-import {createSourceRuntime,createSourceRuntimeFactory,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
+import {createSourceRuntime,createSourceRuntimeFactory,openSourceStore,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
 import {codingSourceContribution,codingSourceDeclaration,codingSourceReplacement,createCodingSourceFactory,createCodingSourceRoutes} from '../coding-source-plugin.js';
 import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSourceReplacement} from '../plugins/files-source.js';
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
-import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSourceReplacement} from '../plugins/notes-source.js';
+import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSourceReplacement,unavailableNotesSource} from '../plugins/notes-source.js';
 import {c10IntegrationContribution,c10IntegrationDeclaration,c10IntegrationReplacement} from '../plugins/c10-integration.js';
 import {devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacement} from '../plugins/devices-source.js';
+import {openMaterialNoteDeletion} from '../plugins/material-repository.js';
 
 /** Declared build-time domain plugins the sources assembly wires; the
  * distribution concatenates each domain's list into one selected table. */
@@ -54,7 +53,7 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
     contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(sourceRuntime)});
   resources.defer(()=>sourceRuntimeOwner.close('disabled'));
   const sourcePipelines=sourceRuntime.runtimeForAssembly;
-  const sources=new SourceStore(store,sourcePipelines);
+  const sources=openSourceStore(store,sourcePipelines);
   const codingRoutes=createCodingSourceRoutes(sourcePipelines);
   const codingSourceOwner=await bootstrap.host.install({identity:{packageId:'mote.coding-source',installationId:'build:coding-source@1.0.0',instanceId:'coding-source',activationId:randomUUID(),host:bootstrap.snapshot().host},
     contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime:sourcePipelines,sources,store},codingRoutes)});
@@ -76,7 +75,9 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   captureIntake.bindAuthorization(authorizationPlatform);captureIntake.start();
   const ingress=captureIntake.ingress,modelAuthorizationHost=authorizationPlatform.assembly.modelAuthorizationHost!;
   resources.beforeClose(()=>closeSourcePlatforms({authorization:authorizationPlatform,capture:captureIntake,files:filesPlatform,source:sourceRuntime,execution:executionPlatform}));
-  const notesSource=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
+  const notesSelected=bootstrap.selectsPlugin('notes-source');
+  if(!notesSelected&&bootstrap.selectsFeature('mote.notes'))throw new StoreError('Required plugin notes-source is not selected for mote.notes',503);
+  const notesSource=notesSelected?createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:openMaterialNoteDeletion(store,materials)}):unavailableNotesSource();
   await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
   // sourceRuntime, capture and files slices.

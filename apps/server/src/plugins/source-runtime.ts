@@ -6,6 +6,7 @@ import {StoreError,type Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import {SourcePipelineRuntime} from '../source-pipelines.js';
+import {SourceStore} from '../sources.js';
 import {centralServices} from './central-contracts.js';
 import type {ExecutionPlatform} from './execution-platform.js';
 
@@ -23,6 +24,10 @@ export const sourceRuntimeContribution={id:'source-runtime',version:'1.0.0',surf
 export const sourceRuntimeDeclaration={id:sourceRuntimeContribution.id,apiVersion:'1'} as const;
 export const sourceRuntimeReplacement='hot' as const;
 const unavailable=()=>new StoreError('Source runtime is unavailable',503);
+
+/** Trusted assembly seam only: the source repository is constructed by this
+ * domain module and borrows the prepared runtime, never a second runtime. */
+export function openSourceStore(store:Store,pipelines:SourcePipelineRuntime){return new SourceStore(store,pipelines);}
 
 export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:SourceRuntimeDependencies){
   const plugins=[...(options.plugins??[])];

@@ -63,8 +63,7 @@ import { INGRESS_PROTOCOL_VERSION,collectorIngressWrite } from './ingress.js';
 import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import type {LifecycleExtension,LifecycleSettings } from './memory-lifecycle.js';
 import type {WorkingMemory} from './working-memory.js';
-import {PluginCenter} from './plugin-center.js';
-import {GitHubPluginReleases} from './plugin-release.js';
+import {openPluginControlRoot} from './plugin-center.js';
 import {registerPluginRoutes} from './plugin-routes.js';
 import type { ModelAgentFactory } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
@@ -146,8 +145,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,featureServices:materialsFeatureServices}=assembleMaterials({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
-  const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
-  resources.beforeClose(()=>pluginCenter.close());
+  const {pluginCenter,close:closePluginCenter}=openPluginControlRoot({store,executor,directory:join(config.dataDir,'plugins','packages')});
+  resources.beforeClose(closePluginCenter);
   // Binding control is prepared by memoryRuntime below, but its disposer keeps
   // its original slot: released after active queries, connectors and the agent.
   resources.defer(()=>memoryBindingControl.close());
