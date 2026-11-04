@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-const entries=['codex-agent','task-context'];
+const entries=['runtime/codex/provider','task-context'];
 
 const checks={
-  'codex-agent':"if(typeof module.createCodexAgent!=='function')throw Error('missing createCodexAgent');",
+  'runtime/codex/provider':"if(typeof module.prepareCodexRun!=='function'||typeof module.codexRuntimePlugin!=='function')throw Error('missing Codex runtime exports');",
   'task-context':"if(!module.taskTools({question:'Generated'}).includes('read_image'))throw Error('official read packs are not registered');",
 };
 

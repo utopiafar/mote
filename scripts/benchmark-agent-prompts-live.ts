@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {CodexSession} from '../packages/agent/src/codex-session.js';
-import {codexContextTools} from '../packages/agent/src/codex-agent.js';
+import {codexContextTools} from '../packages/agent/src/runtime/codex/tools.js';
 import {startBridge} from '../packages/agent/src/bridge.js';
 import {assembleContext} from '../packages/agent/src/task-context.js';
 import {SYSTEM_PROMPT,systemInstructions} from '../packages/agent/src/instructions.js';
