@@ -1,5 +1,5 @@
 import type {Context} from '@deepseek-ai/cordis';
-import type {FastifyRequest} from 'fastify';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {Store} from '../store.js';
@@ -16,7 +16,9 @@ import {modelConfiguration} from '../model-configuration.js';
 import type {ProcessingRuntime} from '../processing-runtime.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import {requestLocale} from '../i18n.js';
-import {OwnerQuestions} from '../owner-questions.js';
+import type {ModelConnection} from '../background-model-authorization.js';
+import type {ModelAuthorizationHost} from '../model-authorization-host.js';
+import {createOwnerQuestionServices} from '../plugins/owner-question-services.js';
 import {InsightRuns} from '../insight-runs.js';
 import type {Connections,ConnectionCredential} from '../connections.js';
 import type {PluginCenter} from '../plugin-center.js';
@@ -34,14 +36,24 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
 export interface WorkInputDependencies {
   readonly store:Store;
   readonly backendContext:Context;
+  readonly resources:ServerResources;
+  readonly credential:(request:FastifyRequest)=>unknown;
+  readonly modelAuthorization:Pick<ModelAuthorizationHost,'manual'>;
+  readonly availableModelConnections:()=>ModelConnection[];
 }
 
-/** Owner question storage; backend plugins consume it through the cordis
- * service the runtime installs into. */
+/** C26C's owner-question plugin plus its route contribution. The feature
+ * bridge mounts the table before listen; Memory still registers its provider
+ * on the same ledger through the current assembly bridge. */
 export function workInputs(dependencies:WorkInputDependencies){
-  const ownerQuestions=new OwnerQuestions(dependencies.store);
-  dependencies.backendContext.provide('moteOwnerQuestions',ownerQuestions);
-  return Object.freeze({ownerQuestions});
+  const ownerQuestionServices=createOwnerQuestionServices({store:dependencies.store,credential:dependencies.credential,modelAuthorization:dependencies.modelAuthorization,availableModelConnections:dependencies.availableModelConnections});
+  dependencies.resources.defer(()=>ownerQuestionServices.close());
+  ownerQuestionServices.prepare();ownerQuestionServices.start();
+  const routes=dependencies.backendContext.get('moteDomainRoutes');
+  const merged=Object.freeze({...(routes??{}),'mote.owner-questions':Object.freeze({mount:(app:FastifyInstance)=>ownerQuestionServices.routes(app)})});
+  if(routes)dependencies.backendContext.set('moteDomainRoutes',merged);
+  else dependencies.backendContext.provide('moteDomainRoutes',merged);
+  return Object.freeze({ownerQuestions:ownerQuestionServices.questions,ownerQuestionServices});
 }
 
 export interface InsightRunsAssemblyDependencies {
