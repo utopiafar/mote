@@ -136,6 +136,18 @@ test('real release enters the same host; unknown capability blocks readiness and
   await f.plugins.resetRuntime(instance.id);assert.throws(()=>f.plugins.runtime(instance.id),/integrity|digest|changed|match/i);
 });
 
+test('worker package and trusted native builds expose the same control projection fields',async t=>{
+  const path=directory(t),r=releaseFixture(path),f=await platform(path,[build()],r.releases);t.after(()=>f.close());
+  const native=await f.plugins.selectBuild('native',{...command(f.plugins.revision()),selection});assert.equal(native.runtime,'host');
+  const preview=await f.plugins.resolve({repository:r.repository,tag:r.tag});f.plugins.install({...command(f.plugins.revision()),previewId:preview.id});await until(()=>f.plugins.view().packages[0]?.state==='installed');
+  const instance=f.plugins.configure(undefined,{...command(f.plugins.revision()),packageId:f.plugins.view().packages[0]!.id,name:'Generated shared projection',scope:'default',configuration:{log:join(path,'submitted.log')}});
+  f.plugins.probe=async()=>({capabilities:[{id:'repository',state:'verified'},{id:'retrieval',state:'verified'}],issues:[]});
+  f.plugins.action(instance.id,'check',command(instance.revision));await until(()=>f.plugins.instanceView(instance.id).observed!=='checking');f.plugins.action(instance.id,'enable',command(f.plugins.instanceView(instance.id).revision));
+  const worker=f.plugins.buildView(instance.id);
+  assert.equal(worker.runtime,'worker');assert.equal(worker.observed,'active');
+  assert.deepEqual(Object.keys(worker).sort(),Object.keys(native).sort(),'Web and Android consume one field set for both build sources');
+});
+
 test('control JSON rows are charged and a quota failure rolls intent, state and receipt back together',t=>{
   const path=directory(t),limits:{maxStorageBytes?:number}={},store=new Store(path,limits);t.after(()=>store.close());const control=new PluginControlStore(store);
   const before=store.logicalBytes();const input=command(control.revision());
