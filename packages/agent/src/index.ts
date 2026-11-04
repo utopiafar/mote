@@ -36,6 +36,12 @@ export {skillCatalog, SKILL_VERSION} from './skills.js';
 export {createImportAgent, type ImportAgentInput} from './import-agent.js';
 export * from './types.js';
 export {AgentYieldError, hostControlDefinitions, hostControlInstructions, type HostControlChannel, type HostControlDefinition, type HostControlResult} from './host-controls.js';
+export {
+  HOST_DELEGATION_API_VERSION, HOST_DELEGATION_MAX_DEPTH, HOST_DELEGATION_ARGUMENTS, HOST_DELEGATION_CONTROL_DEFINITIONS,
+  HostDelegationRegistrationError, HostDelegationScopeError,
+  assertHostDelegationCall, assertHostDelegationCapability, createHostDelegationChannel, isHostDelegationToolName, narrowHostDelegationScope,
+  type HostDelegationCapabilityDescriptor, type HostDelegationChannelOptions, type HostDelegationScope, type HostDelegationToolName,
+} from './host/host-delegation.js';
 export {ContextToolError} from './tool-errors.js';
 export {originalEvidenceReceipt} from './bridge.js';
 export {extractionSeedScopeValid} from './extraction-seed-scope.js';

@@ -4,7 +4,8 @@ import {executionEnvelope,ProviderFailure,type QueryResult} from '@mote/shared';
 import {StoreError,type Store} from './store.js';
 import {safeError} from './diagnostics.js';
 import {moteText,requestLocale} from './i18n.js';
-import {DelegationRuntime,registerQueryDelegation,type DelegationWork} from './delegation-runtime.js';
+import {DelegationRuntime,type DelegationWork} from './delegation-runtime.js';
+import {createAgentDelegationPlugin} from './agent-delegation-plugin.js';
 import type {QueryRun} from './query-run-types.js';
 import type {SavedQuery} from './plugins/query-preparation.js';
 import type {RunDeadline} from './run-execution.js';
@@ -43,7 +44,7 @@ export class DelegatedQueryRuns {
   constructor(private store:Store,readonly runtime:DelegationRuntime,private callbacks:QueryCallbacks){
     store.db.exec('CREATE TABLE IF NOT EXISTS query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
     store.installContextHistoryInvalidation();
-    registerQueryDelegation(runtime,{
+    createAgentDelegationPlugin(runtime,{
       timeoutMs:input=>(input as SavedInput).executionTimeoutMs??null,
       prepare:async(work,saved,signal)=>{
         const id=work.id.slice('query:'.length),input=saved as SavedInput;
@@ -75,7 +76,7 @@ export class DelegatedQueryRuns {
         }catch(error){throw this.executionFailure(error);}
       },
       validate:work=>this.exists(work.id.slice('query:'.length)),
-    });
+    }).register();
     this.recoverGenerationPins();
     this.timer=setInterval(()=>{for(const id of new Set([...this.waiters.keys(),...this.errors.keys()])){try{if(this.get(id).status!=='running')this.notify(id);}catch{if(!this.exists(id))this.errors.delete(id);this.notify(id);}}},50);this.timer.unref();
   }
