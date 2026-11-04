@@ -50,7 +50,7 @@ async function reset(){
  releaseExport?.();releaseExport=undefined;holdExport=false;exportHeld=false;
  releaseMaterialRead?.();releaseMaterialRead=undefined;holdNextMaterialRead=false;materialReadHeld=false;
  releaseAttachmentCommit?.();releaseAttachmentCommit=undefined;dropAttachmentAck=false;holdAttachmentCommit=false;attachmentCommitHeld=false;attachmentManifests.length=0;
- for(const run of node.featureServices.queryRuns.list())if(run.status==='running')node.featureServices.queryRuns.cancel(run.id);
+ for(const run of node.queryRuns.list())if(run.status==='running')node.queryRuns.cancel(run.id);
  releaseQuery?.();releaseQuery=undefined;holdNextQuery=false;failNextQuery=false;
  for(let i=0;activeQueries>0&&i<100;i++)await new Promise(resolve=>setTimeout(resolve,20));
  seenAskRequests.length=0;askGetIds.length=0;dropAskAck=false;hideAskRuns=false;materialReads.length=0;changeMaterialOnStart=false;

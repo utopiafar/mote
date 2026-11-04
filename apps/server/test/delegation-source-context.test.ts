@@ -106,7 +106,7 @@ for(const correctWhileWaiting of [false,true])test(`HTTP source-only query opens
         const found=await call('capability_execute',{name:'sources',version:capability.data.version,argumentsJson:JSON.stringify({query:'Generated metadata phone'})});assert.equal(found.data.items.length,1);assert.ok(found.data.items[0].sourceContextRef);
         const opened=await call('attribution_context',{sourceContextRef:found.data.items[0].sourceContextRef,length:12000}),context=JSON.parse(opened.data.text);
         assert.equal(context.sourceContextStatements[0].description,'Generated phone calls; the anonymous speaker identity remains unknown.');assert.equal(bridge.records.size,0);
-        assert.equal(node.featureServices.delegation.sourceContextDependencies('query:'+runId).length,2,'metadata and description disclosure are durable before yield');
+        assert.equal(node.delegation.sourceContextDependencies('query:'+runId).length,2,'metadata and description disclosure are durable before yield');
         return submit(input,'Generated independent worker check');
       }
       assert.equal(correctWhileWaiting,false,'stale saved context must not invoke a resumed model fragment');
@@ -124,6 +124,6 @@ for(const correctWhileWaiting of [false,true])test(`HTTP source-only query opens
   for(let i=0;i<120;i++){await new Promise(resolve=>setTimeout(resolve,20));run=(await node.app.inject({url:'/api/query-runs/'+runId,headers})).json();if(run.status!=='running')break;}
   assert.equal(run.status,correctWhileWaiting?'failed':'completed');assert.equal(run.sourceContextDependencies.length,2);assert.equal(run.sourceContextDependencies[0].version,1);assert.ok(run.conversationId);
   const conversation=(await node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.equal(conversation.turns[0].question,'Generated owner metadata question');
-  if(correctWhileWaiting){assert.equal(fragments,1);assert.equal(conversation.turns[0].status,'failed');assert.equal(node.featureServices.delegation.result('query:'+runId),undefined);}
+  if(correctWhileWaiting){assert.equal(fragments,1);assert.equal(conversation.turns[0].status,'failed');assert.equal(node.delegation.result('query:'+runId),undefined);}
   else{assert.equal(fragments,2);assert.deepEqual(conversation.turns[0].result.sourceContextDependencies,run.sourceContextDependencies);assert.deepEqual(conversation.turns[0].result.citations,[]);}
 });
