@@ -16,7 +16,6 @@ import {adapter as notesAdapter} from './notes.js';
 import {adapter as devicesAdapter} from './devices.js';
 import {adapter as mediaAdapter} from './media.js';
 import {adapter as ownerQuestionsAdapter} from './owner-questions.js';
-import {adapter as memoryAdapter} from './memory.js';
 import {adapter as insightsAdapter} from './insights.js';
 import {adapter as featuresAdapter} from './features.js';
 
@@ -49,7 +48,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   devicesAdapter,
   mediaAdapter,
   ownerQuestionsAdapter,
-  memoryAdapter,
+  domainRouteContribution('mote.memory'),
   domainRouteContribution('mote.imports'),
   domainRouteContribution('mote.ask'),
   insightsAdapter,

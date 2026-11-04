@@ -3,6 +3,8 @@ import {skillCatalog} from '@mote/agent';
 import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {QueryResult} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
+import type {FastifyInstance} from 'fastify';
+import type {Context} from '@deepseek-ai/cordis';
 import {sha256,StoreError,type Store} from '../store.js';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -46,6 +48,7 @@ import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindin
 import type {MemoryTopics} from '../plugins/central-contracts.js';
 import type {OwnerQuestions} from '../owner-questions.js';
 import type {FeatureServices} from '../feature-services.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
  * distribution concatenates each domain's list into one selected table.
@@ -115,6 +118,7 @@ export function memoryInputs(dependencies:MemoryInputStageDependencies){
 export interface MemoryRuntimeDependencies {
   readonly store:Store;
   readonly resources:ServerResources;
+  readonly backendContext:Context;
   readonly configService:ConfigService;
   readonly diagnostics:ServerDiagnostics;
   readonly executor:ExecutionEngine;
@@ -162,7 +166,8 @@ export interface MemoryRuntimeDependencies {
  * the automatic topics host — the Memory runtime app.ts previously wired
  * inline. Memory objects keep their relative defer/beforeClose order. */
 export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
-  const {store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  const {store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  memoryStrategySettings.start();
   // The plugin constructs the binding; its disposer is registered by app.ts at
   // the original shutdown slot. Runtime collaborators are resolved when the
   // binding and later control projections actually run.
@@ -197,7 +202,8 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
       // Include full original metadata (speaker, source, device, dates, version),
       // not just quote text. Credentials/config are hashed, never retained.
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
-    }},ownerQuestions,materials});
+    }},ownerQuestions,materials,
+    scheduling:{automatic:lifecycleRuntime.automatic,drain:async()=>{await sourcePipelines.drainMemory(memoryPipeline,agent.configured);await memoryPipeline.tickInputs();}}});
   memoryPhasePipeline.prepare();memoryPhasePipeline.start();
   resources.defer(()=>memoryPhasePipeline.close());
   const memoryPipeline=memoryPhasePipeline.pipeline,reviewExtraction=memoryPhasePipeline.review;
@@ -225,6 +231,28 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const memoryTopics=memoryTopicsService.host;
   topics.current=memoryTopicsService.topics;
   memoryTopicsService.start();
-  const featureServices=Object.freeze({memories,memoryStrategySettings,memoryPipeline,lifecycle}) satisfies Partial<FeatureServices>;
-  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryProviderAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryStrategySettings,memoryTopics,memoryTopicsService,featureServices});
+  contributeDomainRoutes(backendContext,{'mote.memory':Object.freeze({
+    mount:(app:FastifyInstance,services?:FeatureServices,scope?:import('../feature-host.js').ServerFeatureScope)=>{
+      if(!services)throw new Error('Memory routes require the feature service bridge');
+      scope?.retire(()=>services.agentFeatures.dispose('mote.memory'));
+      memoryStrategySettings.routes(app);
+      memoryPhasePipeline.routes(app,{
+        lifecycle:()=>memoryLifecycleService.lifecycle,
+        store,files,evidenceReader,memories,
+        modelSettings:services.modelSettings,
+        modelAuthorizationHost:services.modelAuthorizationHost,
+        availableModelConnections:services.availableModelConnections,
+      });
+      memoryPublicationPlatform.routes(app,{
+        pipeline:()=>memoryPhasePipeline.pipeline,
+        files,evidenceReader,memories,
+        modelSettings:services.modelSettings,
+        query:input=>services.queryAgent(input,'query','memories'),
+        reviewExtraction:(input,result,strategy,draftOrigin)=>memoryPhasePipeline.review(input,result,strategy,draftOrigin),
+        modelAuthorizationHost:services.modelAuthorizationHost,
+        availableModelConnections:services.availableModelConnections,
+      });
+    },
+  })});
+  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryProviderAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryStrategySettings,memoryTopics,memoryTopicsService,memoryLifecycleService,memoryPublicationService:memoryPublicationPlatform});
 }
