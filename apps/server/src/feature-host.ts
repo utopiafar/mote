@@ -35,10 +35,10 @@ export class ServerFeatureHost {
   /** Mount a domain-owned route table inside this feature's child app. The
    * contribution resolves its current activation per request; the feature host
    * still owns route revocation and inventory registration. */
-  mountDomainRoutes(id:string,app:FastifyInstance,services?:FeatureServices){
+  mountDomainRoutes(id:string,app:FastifyInstance,services?:FeatureServices,scope?:ServerFeatureScope){
     const contribution:DomainRouteContribution|undefined=this.root.get('moteDomainRoutes')?.[id];
     if(!contribution)throw Error(`Domain routes are unavailable: ${id}`);
-    contribution.mount(app,services);
+    contribution.mount(app,services,scope);
   }
   async install(manifest:FeatureManifest,entry:(app:FastifyInstance,scope:ServerFeatureScope)=>void){
     if(this.closing)throw Error('Feature host is closed');

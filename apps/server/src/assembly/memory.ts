@@ -44,6 +44,7 @@ import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,mem
 import {createMemoryTopicsService,memoryTopicsServiceContribution,memoryTopicsServiceDeclaration,memoryTopicsServiceReplacement} from '../plugins/memory-topics-service.js';
 import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindingControlDeclaration,memoryBindingControlReplacement,type MemoryBindingControlPlatform} from '../plugins/memory-binding-control.js';
 import type {MemoryTopics} from '../plugins/central-contracts.js';
+import type {OwnerQuestions} from '../owner-questions.js';
 import type {FeatureServices} from '../feature-services.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the

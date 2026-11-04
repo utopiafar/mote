@@ -59,7 +59,7 @@ Manifest `schemaVersion: 1` 声明：
 
 所有者可在安装前通过 `GET /api/plugins/host-capabilities` 查询当前宿主合同。`memoryWorker` 列出 `runtime: "worker"`、`factoryExports: ["createMemoryProvider"]`、六个调用方法、`lifecycle: ["close"]` 和 `supportedCapabilities: ["repository", "retrieval"]`。完整引擎仍使用前述固定 Hindsight 宿主适配器；任意 worker 声明 `engine` 不构成可运行的完整引擎。宿主支持、release 声明和实例核验是三个不同状态；当前实例及其核验结果继续通过 `/api/plugins` 查看。MCP 与受限 collector 凭据不能读取宿主控制接口，响应不包含私有安装目录。
 
-同一响应的 `trustedHost` 说明现有 source/processor 部署入口：source 使用 `connectors.modules` 与 `plugins.backendModules`，processor 使用 `plugins.backendModules` 与 `plugins.fileProcessorModules`，这些配置需要重启。它们通过现有 ConnectorRegistry、SourcePipelineRegistry、ProcessingRuntime 与 FileProcessorRuntime 的受信插件 API 注册贡献，具体组合见 [资料插件合同](library-plugin-contracts.md)。这些 API 不属于 Memory worker ABI。通用 source/processor 的下载、安装、配置、核验、启用和 worker 调用流程仍需独立设计。
+source/processor 的仓库外开发入口是插件包与私有 `plugin-dev` 宿主：包 Manifest 声明 ingress/processing 贡献，开发宿主按声明装配，主 YAML 不再接受代码模块列表。它们通过现有 ConnectorRegistry、SourcePipelineRegistry、ProcessingRuntime 与 FileProcessorRuntime 的受信插件 API 注册贡献，具体组合见 [资料插件合同](library-plugin-contracts.md)。这些 API 不属于 Memory worker ABI。通用 source/processor 的生产安装、配置、核验、启用和 worker 调用流程仍需独立设计。
 
 每个 worker 调用接收独立的 `AbortSignal`。宿主撤销调用时发送同 ID 的取消消息，worker 中对应的 `AbortController` 请求停止；仍在初始化时等待的单个调用也可取消，不会取消其他调用所需的共享初始化。宿主立即结束已撤销的等待，拒绝迟到结果，并在关闭或传输失败时清理等待者。可信插件可能已经发出远端写入，取消与进程关闭都不证明远端回滚；未知写入仍按已有 journal 和精确操作身份先核对，再决定重试。
 

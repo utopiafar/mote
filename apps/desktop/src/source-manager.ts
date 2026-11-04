@@ -1,7 +1,7 @@
 import type {SourceUploadObserver} from './sync-history';
 import {ensureStorageFormat,DESKTOP_STORAGE_VERSION} from './storage-format';
 import { connectionToken, requireConnectionToken, sourceConnectionBinding, type LoginSettings } from './login-session';
-import {nativeStatusView} from './native-status';
+import {sourceStatusView} from './plugins/capability-publisher';
 import { meteredBody } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, safeErrorName, httpFailure, TransportFailure } from './support';
@@ -99,7 +99,7 @@ export class LocalSourceManager {
   private captureContextIds():string[]{return captureContextChannels.map(channel=>captureContextIdentity(this.connection.deviceId,channel));}
   captureContext(channel:CaptureContextChannel):Promise<SourceContextState>{return this.readContext(captureContextIdentity(this.connection.deviceId,channel));}
   saveCaptureContext(channel:CaptureContextChannel,input:unknown):Promise<SourceContextState>{return this.saveContext(captureContextIdentity(this.connection.deviceId,channel),input);}
-  status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), context:this.contexts?.get(source.id), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.blocked?moteText("中央记录冲突或已删除，本机副本保留待处理。"):row.message), facts:nativeStatusView({pending:row.pending+(row.blocked??0),lastAcknowledgedAt:row.lastAcknowledgedAt,syncState:!this.connection.serverUrl||!connectionToken(this.connection)?'unconfigured':row.blocked&&row.state!=='syncing'?'blocked':row.state==='permission_required'?'blocked':row.state==='syncing'?'uploading':row.state==='idle'&&row.pending>0?'waiting':row.state,errorCode:row.blocked?'retained_conflict':row.state==='permission_required'?'permission_required':row.state==='error'?'source_unavailable':null,scanComplete:row.scanComplete,knownItems:row.items,skipped:row.skipped})})); }
+  status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), context:this.contexts?.get(source.id), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.blocked?moteText("中央记录冲突或已删除，本机副本保留待处理。"):row.message), facts:sourceStatusView(row,Boolean(this.connection.serverUrl&&connectionToken(this.connection)))})); }
   pendingContent(): {source:LocalSource;item:import('./source-types').SourceItem;key:string}[] { return this.sources.flatMap(source => this.engines.get(source.id)?.pendingContent().map(item => ({source:structuredClone(source),item,key:sourceHash(`${item.externalId}\0${item.revision}`)})) ?? []); }
   /** Call-scoped projections never expose the mutable source configuration or original bodies. */
   pendingContentSummaries(): readonly Readonly<{sourceId:string;sourceKind:LocalSource['kind'];sourceName:string;item:PendingSourceSummary;key:string}>[] {

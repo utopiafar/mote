@@ -7,6 +7,7 @@ import {mkdtempSync,rmSync,writeFileSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
@@ -28,7 +29,8 @@ async function fixture(t:any){
   for(const value of ${JSON.stringify([review,{...review,version:'2',policy:'GENERATED_REVIEW_2'}])})dispose.push(ctx.memoryStrategies.registerReview(value));
   for(const value of ${JSON.stringify(recipes)})dispose.push(ctx.memoryStrategies.registerIntegrationRecipe(value));
  },close(){for(const fn of dispose.reverse())fn();}};}};`);
- const config:Config={dataDir:join(directory,'vault'),token:'generated-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,connectors:{directory:join(directory,'connectors'),modules:[modulePath]}};
+ const connectorManifest=(await import(pathToFileURL(modulePath).href)).default;
+ const config:Config={dataDir:join(directory,'vault'),token:'generated-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const calls:QueryInput[]=[],control:{duringQuery?:(input:QueryInput)=>Promise<void>|void;badQuote?:boolean;badRelation?:boolean;relation?:boolean;failCoding?:boolean;failPersonal?:boolean;reject?:boolean}={};
  const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
   calls.push(input);await control.duringQuery?.(input);
@@ -41,7 +43,7 @@ async function fixture(t:any){
   if(input.traceContext?.phase==='review'&&control.failPersonal&&!coding)throw Error('Generated personal review failure');
   return {answer:JSON.stringify({memories:control.reject?[]:[claim]}),citations:records.map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:''})),trace:[],runId:randomUUID()};
  }}};
- const nodeDependencies={...dependencies,createModelAgent:async()=>dependencies.agent};
+ const nodeDependencies={...dependencies,createModelAgent:async()=>dependencies.agent,connectorManifests:[connectorManifest]};
  let node=await buildApp(config,nodeDependencies);await node.app.ready();await authorizeFixtureModels(node);
  const disable=async()=>{const s=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...s,consolidation:{...s.consolidation,enabled:false,minChanges:1},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}}});};await disable();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -62,7 +64,7 @@ async function fixture(t:any){
   // Match the owner HTTP route's durable authorization before a later lifecycle tick.
   return node.modelAuthorizationHost.manual('owner-integration:'+queued.id,node.featureServices.availableModelConnections(),async()=>queued);
  };
- return {get node(){return node;},control,calls,add,api,queue,pins,async restart(changed=false){let selectedModule=modulePath;if(changed){selectedModule=join(directory,'changed-integrator.mjs');writeFileSync(selectedModule,readFileSync(modulePath,'utf8').replace('GENERATED_INTEGRATOR_1','Changed without a version'));}await node.configService.update('connectors',{modules:[selectedModule]},node.configService.revision);await node.app.close();node=await buildApp(config,nodeDependencies);await node.app.ready();},products:()=>node.memories.list().map(m=>node.memories.get(m.id)).filter(m=>m.tier==='consolidated'),view:()=>node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!};
+ return {get node(){return node;},control,calls,add,api,queue,pins,async restart(changed=false){let selectedManifest=connectorManifest;if(changed){const selectedModule=join(directory,'changed-integrator.mjs');writeFileSync(selectedModule,readFileSync(modulePath,'utf8').replace('GENERATED_INTEGRATOR_1','Changed without a version'));selectedManifest=(await import(pathToFileURL(selectedModule).href)).default;}await node.app.close();node=await buildApp(config,{...nodeDependencies,connectorManifests:[selectedManifest]});await node.app.ready();},products:()=>node.memories.list().map(m=>node.memories.get(m.id)).filter(m=>m.tier==='consolidated'),view:()=>node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!};
 }
 
 test('installed integration recipes independently replace generation and review through the owner API',async t=>{

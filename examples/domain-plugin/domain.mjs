@@ -16,9 +16,8 @@ const isObject = value => Boolean(value) && typeof value === 'object' && !Array.
 
 /** Dispatcher-mapped failure shape: `name` `ConnectorError`, `code`,
  * `statusCode`. The dynamic HTTP dispatcher resolves this shape without the
- * plugin importing host types; the legacy connector mount maps every plugin
- * failure to its generic operation error instead. Either way the domain
- * reports the same honest failure — never a silent success. */
+ * plugin importing host types. The domain reports the same honest failure —
+ * never a silent success. */
 function fail(code, statusCode = 400) {
   const error = new Error(code);
   error.name = 'ConnectorError';

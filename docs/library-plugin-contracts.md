@@ -48,16 +48,11 @@ artifact 输入使用 `authority: "artifact"`、id、revision。MaterialStore �
 
 ## 可信部署示例
 
-`examples/connectors/journal-connector.mjs` 与 `examples/plugins/journal-pack.mjs` 展示一个 namespaced 来源、命名 body/counts 产物、有界中央 policy、一个确定性消费者及目录锚点。配置绝对模块路径：
-
-```dotenv
-MOTE_CONNECTOR_PLUGINS=["/absolute/mote/examples/connectors/journal-connector.mjs"]
-MOTE_BACKEND_PLUGINS=["/absolute/mote/examples/plugins/journal-pack.mjs"]
-```
+`examples/journal-plugin` 是一个插件包，展示一个 namespaced 来源、命名 body/counts 产物、有界中央 policy、一个确定性消费者及目录锚点。`mote-plugin.json` 声明 ingress 与 processing 贡献，`plugin.mjs` 同时导出 connector 与 backend plugin；测试直接从包入口装配这两个贡献。
 
 该示例不默认采集数据或扫描历史；创建来源并通过所有者 API 配置 consumers 后，使用既有 batch intake 推送生成资料。示例 card/detail ID 是可选锚点，未部署 Web 贡献时使用通用回退。`apps/web/test/library-browser.test.ts` 展示完整 card/detail/panel/action 安装与撤销，不修改公共资料库。
 
-新来源和中央流程只新增部署模块及组合配置。新 Web 代码加入可信 bundle 组合；原生采集能力仍需要原生构建。Memory 插件中心现支持固定 GitHub 兼容 release 的受信制品和随 Mote 分发的固定上游适配配方；它不下载任意网页脚本、执行安装脚本或把任意仓库自动变成适配器。worker/服务拥有中央宿主权限，不是恶意代码沙箱。不承诺所有宿主无重启安装。停用/卸载保留历史，删除和历史重算是独立操作。配置与实际运行规则见 [插件中心](plugin-center.md)。
+新来源和中央流程只新增插件包及声明式组合。新 Web 代码加入可信 bundle 组合；原生采集能力仍需要原生构建。Memory 插件中心现支持固定 GitHub 兼容 release 的受信制品和随 Mote 分发的固定上游适配配方；它不下载任意网页脚本、执行安装脚本或把任意仓库自动变成适配器。worker/服务拥有中央宿主权限，不是恶意代码沙箱。不承诺所有宿主无重启安装。停用/卸载保留历史，删除和历史重算是独立操作。配置与实际运行规则见 [插件中心](plugin-center.md)。
 
 ## Memory 正文权威与发布
 

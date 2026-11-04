@@ -1,4 +1,4 @@
-import type {Context} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import type {FastifyInstance} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
@@ -51,7 +51,7 @@ export interface ProcessingServicesDependencies {
   readonly sourcePipelines:SourcePipelineRuntime;
   readonly mediaAssets:MediaAssets;
   readonly transcriptionProvider?:TranscriptionProvider;
-  readonly modules:readonly string[];
+  readonly plugins?:readonly Plugin[];
   readonly media?:Partial<MediaRuntimeSettings>;
   readonly modelAuthority:ModelProcessingAuthority;
   readonly analyze:FileAnalysis;
@@ -191,7 +191,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
         workflows.consumerAllowed=(sourceId,bindingId)=>dependencies.sourcePipelines.options(sourceId).consumers.includes(bindingId);
         processing=new FileProcessing(dependencies.files,dependencies.transcriptionProvider,undefined,{
           modelAuthority:dependencies.modelAuthority,configService:dependencies.configService,executor:dependencies.executor,
-          modules:[...dependencies.modules],builtinContributions:false,analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
+          ...(dependencies.plugins?.length?{plugins:[...dependencies.plugins]}:{}),builtinContributions:false,analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
           analysisRevision:dependencies.analysisRevision,diagnostics:dependencies.diagnostics,contextProcessors:workflows.registry,
           pluginScope:scope,mediaAssets:dependencies.mediaAssets,media:dependencies.media,
           contextForEvidence:record=>dependencies.materials.contextForEvidence(record),

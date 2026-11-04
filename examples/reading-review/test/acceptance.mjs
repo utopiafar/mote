@@ -1,10 +1,10 @@
 /** [M] clean-instance acceptance for the reading review package.
  *
  * Starts the real Central source entrypoint with a generated private YAML
- * profile, installs this package through `connectors.modules`, selects a
- * strategy, reviews one generated card, stops, restarts the same profile and
- * reads the committed plan again. The host, SQLite vault and instance state are
- * real; only the card text is generated. */
+ * profile, installs this package through the private plugin-dev package host,
+ * selects a strategy, reviews one generated card, stops, restarts the same
+ * profile and reads the committed plan again. The host, SQLite vault and
+ * instance state are real; only the card text is generated. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
@@ -13,11 +13,11 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {randomBytes, randomUUID} from 'node:crypto';
-import {fileURLToPath, pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
 import {serializeConfigDocument} from '../../../packages/shared/src/config-file.ts';
 
 const repository = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
-const source = pathToFileURL(fileURLToPath(new URL('../source.mjs', import.meta.url))).href;
+const pluginDirectory = fileURLToPath(new URL('../', import.meta.url));
 const report = {status: 'running', fixtureOnly: true, liveModel: false, physicalDevice: false, checks: [], failure: undefined};
 let run;
 
@@ -45,13 +45,12 @@ async function start(directory) {
     storage: {dataDir},
     models: {deployment: {model: ''}},
     diagnostics: {traceEnabled: false, level: 'silent'},
-    connectors: {modules: [source]},
   }), {mode: 0o600});
   const baseUrl = `http://127.0.0.1:${port}`;
   let output = '';
-  const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `await import(${JSON.stringify(join(repository, 'apps/server/src/index.ts'))})`], {
+  const child = spawn(process.execPath, [join(repository, 'scripts/plugin-dev-server.mjs')], {
     cwd: repository,
-    env: {...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('MOTE_'))), MOTE_CONFIG_FILE: configFile},
+    env: {...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('MOTE_'))), MOTE_CONFIG_FILE: configFile, MOTE_DEV_PLUGIN_PACKAGE: pluginDirectory},
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { output = (output + chunk.toString('utf8')).slice(-12000); });
@@ -110,7 +109,7 @@ try {
   const initial = await run.request('/api/connectors/reading-review/state');
   assert.equal(initial.strategy, null);
   assert.equal(initial.cards.length, 0);
-  report.checks.push('clean profile: external package loaded by connectors.modules and instance state initialized');
+  report.checks.push('clean profile: external package installed by the private plugin-dev host and instance state initialized');
 
   const selected = await run.request('/api/connectors/reading-review/strategy', {method: 'PUT', body: {strategy: 'spaced'}});
   assert.equal(selected.strategy, 'spaced');

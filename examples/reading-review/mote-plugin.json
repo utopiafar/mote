@@ -8,9 +8,19 @@
   "entry": "plugin.mjs",
   "archive": {
     "asset": "reading-review-1.0.0.zip",
-    "sha256": "c4b46317e3157385c187ea61c04c06e3cc810b5618de4856b70b07c13e042e65"
+    "sha256": "f86d1444b9ed0a5f2018af2e619e17c10ccd9c1af39e55ab06f1c81cda236cb3"
   },
   "contributions": [
+    {
+      "id": "reading-review.connector",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "source.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    },
     {
       "id": "reading-review.port",
       "version": "1",
@@ -49,6 +59,7 @@
     }
   ],
   "capabilities": [
+    "source.connector",
     "reading.plan",
     "reading.page"
   ],
