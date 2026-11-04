@@ -51,4 +51,4 @@
 
 未知场景无需等待「高召回率开关」才能接收；不存在该开关。质量评估分别测本人感受保留、外部观点误归属、本人活动/结果/位置召回、原件检索和引用有效性。使用相同新代码的「无声明/有声明」配对输入观察上下文收益，不冒称旧代码 A/B 或总体召回率。
 
-验收和实际执行记录见 [归属验证](validation/material-attribution-2026-10-07.md)。
+验收和实际执行记录见 [归属验证](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/material-attribution-2026-10-07.md)。

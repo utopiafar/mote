@@ -10,14 +10,14 @@ A partial original keeps its outbox entry and immutable local parts. On the next
 
 Batch capture 413 responses reduce the batch; desktop splits recursively and Android retries a smaller bundle. A single oversized record remains an error with its ID preserved. The client's explicit `packedUpload` setting selects the current transport: desktop uses JSON batch and Android uses gzip bundle when enabled; disabling it selects the current single-capture endpoint directly. Single uploads retain the same ingress receipt and ID checks.
 
-404/405 route absence is an upload failure and never switches to another endpoint. 401/403/429 also preserve the selected transport, and malformed/mismatched ACKs remain errors. This removal of endpoint negotiation is recorded in [compatibility cleanup](audits/compatibility-cleanup-2026-10-04.md).
+404/405 route absence is an upload failure and never switches to another endpoint. 401/403/429 also preserve the selected transport, and malformed/mismatched ACKs remain errors.
 
 ## Validation and remaining boundaries
 
-The following records describe existing generated fixture coverage and earlier validation. This documentation update did not rerun those checks; the current cleanup run is recorded separately in [compatibility cleanup](audits/compatibility-cleanup-2026-10-04.md).
+The following records describe existing generated fixture coverage and earlier validation.
 
 Generated tests cover a 20 MiB original yielding to 400 dated notes, process reconstruction and exact final bytes, cancellation, byte-based real-time/history service, 401/403/429, 413 splitting, and one manual collector flush of 400 historical notes plus a new note inserted between source turns. The larger durable-write fixtures use a 30-second test timeout; their original five-second harness limit was exceeded under parallel filesystem load without an assertion failure.
 
 `scripts/test-upload-fairness.cjs` uses the actual compiled desktop source manager, workers and central HTTP/SQLite. With one 20 MiB original and 400 small generated files, all four small-file manifest batches complete between original parts 0 and 1; seven source turns finish the large original with an identical SHA-256. The Electron offline-binding fixture also checks the real main/preload IPC, manual-sync policy, unchanged payloads and both queues draining.
 
-Android now rotates per-source 4 MiB/64-request/15-second slices within bounded dispatches, with a separate bounded capture queue. Web uploads one 4 MiB part per file in round-robin order and preserves upload IDs after lost ACKs. Desktop scan and upload tasks are independent; serial source-state mutations do not hold their lock across a network wait. See [client contract and focused evidence](client-scheduling-and-status.md). Scheduling is local to each client and central resource pool; it is not a global bandwidth allocator across devices.
+Android now rotates per-source 4 MiB/64-request/15-second slices within bounded dispatches, with a separate bounded capture queue. Web uploads one 4 MiB part per file in round-robin order and preserves upload IDs after lost ACKs. Desktop scan and upload tasks are independent; serial source-state mutations do not hold their lock across a network wait. See [client contract and focused evidence](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/client-scheduling-and-status.md). Scheduling is local to each client and central resource pool; it is not a global bandwidth allocator across devices.

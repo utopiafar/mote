@@ -15,7 +15,7 @@ The retired artifact inventory was `models/qwen-manifest.json`; the following ha
 | `Qwen3.5-0.8B-Q4_K_M.gguf` / `model.gguf` | 532,517,120 | `bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517` |
 | `mmproj-F16.gguf` / `mmproj.gguf` | 204,987,232 | `56e4c6cfe73b0c82e3e82bc518d7591997e61d81f723fc41a586f4fa69ea2453` |
 
-The retired downloader required both fixed hashes. A private NAS or another HTTPS host can serve the same files without changing the pinned model identity or verification policy. No accuracy, privacy guarantee, or upstream endorsement is implied. Configuration and limitations: [docs/local-inference.md](docs/local-inference.md).
+The retired downloader required both fixed hashes. A private NAS or another HTTPS host can serve the same files without changing the pinned model identity or verification policy. No accuracy, privacy guarantee, or upstream endorsement is implied. Configuration and limitations: [docs/local-inference.md](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/local-inference.md).
 
 ## llama.cpp native runtime
 

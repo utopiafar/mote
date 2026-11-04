@@ -2,7 +2,7 @@
 
 中央文件处理使用 Cordis，支持本地多人录音、说话人分离、导出和人工复核。部署与扩展说明见 [中央文件处理](file-processing.md)。
 
-实现与扩展设计见 [文件同步设计](file-sync-design.md)，实测记录见 [文件同步验证](file-sync-validation.md)。
+实现与扩展设计见 [文件同步设计](file-sync-design.md)。
 
 ## 当前行为
 
@@ -42,8 +42,6 @@
 整体进度同时说明暂停、连接、Wi-Fi、充电、电量以及手动/定时/批量策略的等待条件，不改变这些条件。接收成功与中央整理、建立索引分开显示。
 
 文件详情只在前台每 2.5 秒检查本机状态，更新状态和文件夹进度，不重建正在阅读的内容；当前版本或接收回执变化时重新加载详情，中央处理或索引仍在运行时每 5 秒检查中央状态。每次只保留一个读取任务，后台暂停、恢复和 Activity 重建会重新核对当前状态；自动内容更新保留原文页码和滚动位置。手动刷新仍可使用。
-
-对应回归和本轮验证边界见 [Android 文件同步状态验证](validation/android-file-sync-status-2026-10-13.md)。
 
 ### 首期容量边界
 
@@ -144,6 +142,6 @@ Android 本机文件队列和 transport checkpoint 使用格式 4；缺少版本
 
 ## 自动验证入口
 
-使用独立包 `dev.mote.collector.filefixture`，避免更新日常开发包。详细命令和已执行边界见 [验证记录](file-sync-validation.md)。
+使用独立包 `dev.mote.collector.filefixture`，避免更新日常开发包。详细命令见 [文件同步验证记录](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/file-sync-validation.md)。
 
 `scripts/file-sync-fixture-server.ts` 启动独立 loopback 中央节点；显式设置 `MOTE_FILE_TEST_MODEL_ENV` 才读取已有模型配置。`scripts/verify-file-sync.ts --live-model` 才启用真实模型调用。生成报告与凭据都置于忽略的 `.mote/` 目录，不能加入版本控制。

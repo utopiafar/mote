@@ -1,13 +1,11 @@
 # Small modules and early integration
 
-Use this guide for multiple owners. Single-module fixes need no coordination document or extra reviewer role.
+Use this guide when work is split across several agents or sessions. Single-module fixes need no coordination document or extra reviewer role.
 
-Agree on the user-visible result, shared interface, file ownership and one shortest real journey. Connect that journey early, before implementation grows; add light producer/consumer contracts for changed interfaces. Each owner changes a bounded module, runs focused checks and reports concrete gaps. Keep that owner for related repairs.
+Agree on the user-visible result, shared interfaces, which files each module lead may change, and one shortest real journey: the actual entrypoint/startup, an authenticated action, real producer output and the consumer's result. Wire that journey early, before implementation grows. When an interface changes, add a light contract test that feeds the producer's real serialized output to its actual consumer. Each module lead changes one bounded module, runs focused checks and reports concrete gaps; the same lead handles related repairs.
 
-Prefer GPT-6.1 Sol subagents. Parallelize independent modules, not duplicate implementations. Do not install dependencies or rebuild shared output concurrently. Coordinate expensive checks so several suites do not compete for the same CPU or emulator.
+Delegate only modules that are independent and can be checked on their own. Do not split work you can finish directly, do not run two implementations of the same module, and do not use another agent to re-check your own work. Do not install dependencies or rebuild shared output (`npm run build:libs`) concurrently. Coordinate expensive checks so several suites do not compete for the same CPU or emulator.
 
-The integration owner combines modules incrementally and freezes the candidate after planned changes converge. Use [testing](testing.md) as the single source for layers and triggers, inspect `npm run check:affected -- --dry-run`, and complete the relevant acceptance at stage completion and before release. Select relevant heavy checks explicitly and manually. After repairs rerun invalidated checks, not successful unchanged checks for a new timestamp; a handoff or Draft PR update does not expand scope.
+The integrator combines modules incrementally, freezes the candidate once planned changes converge and inspects `npm run check:affected -- --dry-run`. Stage or release acceptance follows [testing](testing.md#early-integration-and-candidate-checks).
 
-Use Git, PR descriptions, CI and ignored logs as evidence. PRs record behavior changes, actual checks and untested risks. Handoff the goal, decisions, revision, relevant result and next action; do not maintain duplicate manifests, receipt tables or per-edit progress documents.
-
-Changed product boundaries or architectural decisions follow [risk-based review](testing.md#risk-based-review); module fixes within existing decisions do not create another approval step. Report unavailable environments honestly; fixtures do not establish physical-device or live-provider behavior.
+Handoffs carry the goal, decisions, revision, relevant results and next action. Evidence stays in Git, the PR description, CI and ignored logs.

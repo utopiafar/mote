@@ -2,7 +2,7 @@
 
 全局 UI 的主题／布局扩展通过独立的[可信平台展示包合同](adr-ui-presentation-packs.md)实现。默认 Linear 主题和四目的地外壳使用同一边界；它不经过本页 Memory worker 安装器，不新增远程 UI 代码执行或主题偏好跨端同步。
 
-插件中心位于「设置 → 插件」，包含已安装、发现和记忆方案。它管理当前 Central 的包、配置实例、运行能力、自动准入和正文绑定；GitHub 资料连接器仍在来源中管理。Web 与 Android 使用同一声明式状态合同；Android 使用原生页面。实际执行记录见 [一期验证方案](design/plugin-center-phase-one-validation-2026-10-12.md)，架构选择见 [ADR](adr-plugin-center-memory-replacement.md)。
+插件中心位于「设置 → 插件」，包含已安装、发现和记忆方案。它管理当前 Central 的包、配置实例、运行能力、自动准入和正文绑定；GitHub 资料连接器仍在来源中管理。Web 与 Android 使用同一声明式状态合同；Android 使用原生页面。架构选择见 [ADR](adr-plugin-center-memory-replacement.md)。
 
 ## 安装、配置、启用和绑定
 
@@ -101,4 +101,4 @@ repository 更换迁移全部 Mote 保留记忆正文及更正/替代状态、�
 | `POST /api/memory-spaces/default/binding/prepare` | targetPlanId、已授权 scope、费用确认与当前 revision |
 | `POST /api/memory-spaces/default/binding/activate`、`.../retry`、`.../cancel` | 准备 ID、当前 revision 和新命令意图 |
 
-fixture 入口包括 `plugin-control-journeys.test.ts`、`plugin-runtime.test.ts`、`memory-automation.test.ts`、实际 SDK/worker 与读取消费者测试，Web `plugin-center.test.ts` 和 Android `PluginControlClientTest`。worker 生命周期用生成的真实子进程控制初始化等待、两个并发调用、撤销后迟到成功和关闭，检查取消通知、结果隔离及监听器清理；HTTP fixture 检查安装前能力描述和所有者／MCP／collector 边界。生成 ZIP 与 provider 只验证宿主边界，不证明真实上游语义。实际 GitHub/供应方/模型、真实 renderer、原生 UI、物理设备和最终受影响检查分别记录在 [验证方案](design/plugin-center-phase-one-validation-2026-10-12.md)；存在代码或编译成功不代表这些检查全部执行。
+fixture 入口包括 `plugin-control-journeys.test.ts`、`plugin-runtime.test.ts`、`memory-automation.test.ts`、实际 SDK/worker 与读取消费者测试，Web `plugin-center.test.ts` 和 Android `PluginControlClientTest`。worker 生命周期用生成的真实子进程控制初始化等待、两个并发调用、撤销后迟到成功和关闭，检查取消通知、结果隔离及监听器清理；HTTP fixture 检查安装前能力描述和所有者／MCP／collector 边界。生成 ZIP 与 provider 只验证宿主边界，不证明真实上游语义。实际 GitHub/供应方/模型、真实 renderer、原生 UI、物理设备和最终受影响检查需单独执行与报告；存在代码或编译成功不代表这些检查已经执行。

@@ -61,7 +61,7 @@ screen organizers, source pipelines, Memory authorization/work/package/pipeline,
 readiness, evidence exposure/reader, and App lifecycle. Android payloads/settings,
 transport, UI navigation, shared schemas and model prompts need no changes for
 this wiring. Generated HTTP, model-reader, restart, review and deletion scenarios
-are recorded in [validation](validation/ui-page-automatic-memory-2026-10-10.md).
+are recorded in [validation](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/ui-page-automatic-memory-2026-10-10.md).
 
 This supersedes only the automatic-Memory exclusion in
 [the page-field ADR](adr-android-page-fields.md), retaining its capture and central

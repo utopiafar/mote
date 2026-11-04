@@ -47,4 +47,4 @@ evidence scope, permission, retention, retry count or automatic retry changes.
 Failed or blocked batches require their existing explicit recovery path; this
 correction does not silently replay them.
 
-See [validation](memory-batch-context-validation.md).
+See [validation](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/memory-batch-context-validation.md).

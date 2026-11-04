@@ -32,8 +32,8 @@ The accepted run used five high-level query calls, with one host-rejected date f
 
 The earlier failed run and final accepted run are preserved separately:
 
-- `docs/validation/0.0.61/semantic-memory-before-grounding.json`: schema mismatch and an answer incorrectly treating one corrected claim as invalidating unrelated old-source facts.
-- `docs/validation/0.0.61/semantic-memory-accepted.json`: all three scene checks and correction answer pass. Specific host feedback, a clear unified outer schema, and the partial-correction grounding rule address the observed failures. A final wording clarification requires seconds in timed ISO calendar output; the schema itself did not change.
+- [`semantic-memory-before-grounding.json`](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/0.0.61/semantic-memory-before-grounding.json): schema mismatch and an answer incorrectly treating one corrected claim as invalidating unrelated old-source facts.
+- [`semantic-memory-accepted.json`](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/0.0.61/semantic-memory-accepted.json): all three scene checks and correction answer pass. Specific host feedback, a clear unified outer schema, and the partial-correction grounding rule address the observed failures. A final wording clarification requires seconds in timed ISO calendar output; the schema itself did not change.
 
 These are different extraction boundaries, not a same-task before/after cost or quality comparison. They are a small live regression set, not a claim of universal model accuracy.
 

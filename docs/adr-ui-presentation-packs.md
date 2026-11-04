@@ -2,7 +2,7 @@
 
 2026-10-25：导航、默认首页及页面职责已由 [UI IA v1](adr-ui-ia-v1.md) 更新。下文更早的导航描述保留为历史；视觉、原生行为与采集安全边界继续适用。
 
-Date: 2026-10-15. Accepted by the owner in this conversation. Executed validation is tracked in [the rollout ledger](design/ui-presentation-rollout-2026-10-15.md).
+Date: 2026-10-15. Accepted by the owner in this conversation. Executed validation is tracked in [the rollout ledger](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/ui-presentation-rollout-2026-10-15.md).
 
 ## Decision
 
@@ -44,7 +44,7 @@ Related Activity accepts one exact material or source ID. Durable material evide
 | Classification | Treatment |
 | --- | --- |
 | KEEP | Existing capabilities and domain authorities, draft/return semantics, exact evidence identity, read-only QueryAgent, native permissions/lifecycle, generated fixtures and truthful validation. |
-| CHANGE | Navigation and first landing in [action-first](adr-client-action-first.md), [client navigation](client-navigation.md) and [Slate](ui-slate.md); the [previous rollout](design/ui-rollout-2026-10-14.md) palette; fixed shells and compile-only theme consumption. |
+| CHANGE | Navigation and first landing in [action-first](adr-client-action-first.md), [client navigation](client-navigation.md) and [Slate](ui-slate.md); the [previous rollout](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/ui-rollout-2026-10-14.md) palette; fixed shells and compile-only theme consumption. |
 | REMOVE | Duplicate activity entries in reading collections, source-wide editors in reading mode, uncontrolled theme overrides and implicit provider precedence. Legacy deep links and technical pages keep destinations. |
 | EXCEPTION | Native renderers, dialogs, touch dimensions, keyboard/IME, system bars and back behavior remain platform-specific. New native code requires a build. UI disposal does not stop domain work. |
 | UNKNOWN | Real-device and accessibility behavior outside executed fixtures, real-model quality, future account/device preferences and remote UI distribution. |

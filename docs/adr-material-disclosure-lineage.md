@@ -23,4 +23,4 @@ EvidenceReader 在范围与暴露规则验证之后，记录所返回资料的�
 | EXCEPTION | 没有完整收据的旧问答不会被迁移成完整，也不会恢复已经清除的正文。 |
 | UNKNOWN | 原先清除事件的精确触发事务、整库所有聚合路径及实际模型完整旅程仍需验证。 |
 
-同步检查覆盖 EvidenceReader、MaterialStore、ContextReader、Bridge、问答删除回归、分页披露预算及架构文档。模型工具提示、UI 导航、来源设置和后台自动尝试次数保持原契约。验证见 [回归记录](validation/audio-output-and-query-lineage-2026-10-08.md)。
+同步检查覆盖 EvidenceReader、MaterialStore、ContextReader、Bridge、问答删除回归、分页披露预算及架构文档。模型工具提示、UI 导航、来源设置和后台自动尝试次数保持原契约。验证见 [回归记录](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/audio-output-and-query-lineage-2026-10-08.md)。

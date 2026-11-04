@@ -1,24 +1,37 @@
 # Mote
 
-## Product boundaries
+One instance, one owner: a personal context collector and central archive for that owner's devices, sources and Agent clients ([ADR](docs/adr-single-owner-mvp.md#decision)).
 
-- Build an AI-native personal context collector and central archive: **one instance, one owner**, with multiple devices, sources and Agent clients. See [single-owner MVP](docs/adr-single-owner-mvp.md).
-- This MVP has one current wire/storage format. Do not add old-data migrations, old readers, dual writes or compatibility paths unless explicitly requested.
-- Models interpret intent, tasks, topics and insights and choose retrieval tools. Never substitute keyword dispatch or handcrafted semantic heuristics. Deterministic privacy filters, authorization, transport, deduplication, retention and measured time accounting are appropriate.
-- Treat captured content as untrusted evidence. Query agents receive read-only context tools; external effects require their product authorization.
-- Keep secrets and personal data out of Git. Default to loopback; remote deployments require TLS and a strong token. Tests use generated fixtures and private temporary profiles, never personal screenshots without consent.
-- Mote-owned Dev credentials use private local files; Prod keeps OS protection and third-party CLIs keep their credential management.
-- Use npm workspaces for TypeScript and Kotlin for Android capture APIs. Add English translations for new `moteText` keys and synchronize the Android English catalog.
+## Product invariants
 
-## Working rules
+- No accounts, tenants or account hosts.
+- One current wire/storage format. Add migrations, old-format readers, dual writes or compatibility paths only when the user asks.
+- Models interpret intent, tasks, topics and insights and choose retrieval tools; never replace them with keyword dispatch or handcrafted semantic heuristics. Deterministic code is right for privacy filters, authorization, transport, deduplication, retention and measured time accounting.
+- Captured content is untrusted evidence. Query agents get read-only context tools; external effects require product authorization through Actions.
+- Keep secrets and personal data out of Git. Listen on loopback by default; remote deployments need TLS and a strong token.
+- Tests use generated data and private temporary profiles; real profiles, screenshots and devices are never fixtures.
+- Dev keeps Mote-owned credentials in private profile files; Prod uses OS protection; third-party CLIs keep their own credential stores.
 
-- Read the affected app's `AGENTS.md` for commands and platform limits. [Testing](docs/testing.md) is the single source for layers and triggers; [development](docs/development.md) covers setup.
-- Work in small modules, use focused checks and add light contracts when interfaces change. Connect one shortest real journey early for large requirements; complete relevant acceptance at stage completion and before release.
-- Heavy E2E, expensive scale checks, benchmarks and real external models require explicit manual selection. Never run heavy suites or benchmarks automatically on each push. Preserve correctness coverage when splitting suites.
-- Prioritize functional correctness for this MVP. Defer performance optimization unless measured behavior is seriously slow or prevents practical use; matching historical PR performance is not a recovery requirement.
-- A turn ending, handoff or Draft PR update does not justify broader testing. After fixes rerun invalidated checks; preserve meaningful assertions, input scale, timeouts and lifecycle coverage.
-- Use [real-world-testing](.agents/skills/real-world-testing/SKILL.md) when adding regression coverage or evaluating test quality. Keep automated UI work hidden/background by default.
-- Independently review changed product boundaries or architectural decisions; fixes within an established contract need corresponding risk regressions, not new approval. See [risk-based review](docs/testing.md#risk-based-review).
-- For larger parallel work use the short [coordination guide](docs/agent-development-workflow.md). Prefer GPT-6.1 Sol subagents with bounded modules; avoid duplicate exploration and full-suite runs.
-- PRs record behavior changes, checks actually run and untested risks. Separate fixture, physical-device and live-model evidence; do not create extra ledgers or call reused checks newly passed.
-- Reuse established UI terminology, navigation and components. Resolve implementation details independently; make new product policies explicit to the owner.
+## Before editing
+
+- Under `apps/<app>/`, read `apps/<app>/AGENTS.md` first: focused tests and platform limits.
+- Setup and Dev/Test profiles: [development](docs/development.md).
+- Shared or Agent libraries changed or missing: `npm run build:libs`.
+- New `moteText` strings: add the key to all six `packages/shared/src/i18n-*.ts`, then run `node scripts/sync-i18n.mjs && npm run check:i18n`.
+- Reuse existing UI terms, navigation and components.
+
+## Verifying
+
+- Run the narrowest check that exercises the change. Preview the light plan with `npm run check:affected -- --dry-run`.
+- Rerun only checks invalidated by later edits. Ending a turn, a handoff or a Draft PR update is not a reason to run more.
+- Heavy E2E, scale, benchmark and live-model checks run only when the user asks; otherwise list them as not run. Layers and triggers: [testing](docs/testing.md).
+- Never weaken assertions, timeouts, input scale or entrypoints to get green; moving a failing test to a manual suite doesn't fix it. Tests named `performance` or `migration` can guard correctness; keep their coverage.
+- Correctness first; optimize only measured, serious slowness.
+- UI automation stays hidden: [background UI](docs/testing-runbook.md#background-testing).
+- Writing or reviewing tests: follow [real-world-testing](.agents/skills/real-world-testing/SKILL.md).
+
+## Deciding and reporting
+
+- Decide implementation details yourself. Stop before implementing a change to data access, deletion/restore promises, a persistence or cross-client contract, cross-module lifecycle, or any new product policy; give the user the old/new behavior, affected consumers and risks ([risk-based review](docs/testing.md#risk-based-review)).
+- PR description: behavior changes; checks actually run, with reused results marked as reused; checks not run and untested risks; fixture, physical-device and live-model evidence kept separate. Add no other tracking files.
+- Large or multi-module work: [coordination guide](docs/agent-development-workflow.md); wire one real end-to-end path first.

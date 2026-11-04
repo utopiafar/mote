@@ -83,4 +83,4 @@ MOTE_FILE_TEST_DIR=<测试目录> node --import tsx scripts/test-file-dialogue.t
 
 `POST /api/files/:id/retry` 的 `stage:"diarize"` 可携带 `diarization:{artifactId,options:{processor,speakerCount,range}}`；`artifactId` 为当前原始转写，`processor` 为 `audio.diarize` 或 `audio.diarize-wespeaker`，`range` 为 `{min,max}` 或 null。`options:null` 清除此文件覆盖。仅 Owner 可提交，活动/未知调用仍遵循现有保护。CLI `media-import --role speaker-wespeaker --from DIRECTORY` 验证固定目录中的 `speaker.onnx` 后安装，不下载 ASR 或改选默认方案。
 
-行为边界和验证见 [声纹范围 ADR](adr-speaker-range-and-display.md) 与 [验证场景](validation/speaker-quality-range.md)。
+行为边界见 [声纹范围 ADR](adr-speaker-range-and-display.md)。

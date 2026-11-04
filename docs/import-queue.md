@@ -44,6 +44,3 @@ inputs, combined evidence and blank-line numbering. They also run the helper via
 Node's CLI. `imports.test.ts` verifies a later conflicting record cannot partially
 publish, originals survive, and an explicit retry can preview and confirm the
 corrected records. Live-model retries of owner-selected files are separate checks.
-
-The [2026-10-13 validation report](validation/import-disposition-preflight-2026-10-13.md)
-records generated regressions and the separately authorized local live-model case.

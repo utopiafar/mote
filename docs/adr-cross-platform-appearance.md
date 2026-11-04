@@ -28,4 +28,4 @@ The user explicitly requested three states. Apple HIG supports adaptive appearan
 
 Official references: [Android dark theme](https://developer.android.com/develop/ui/views/theming/darktheme), [Apple Dark Mode](https://developer.apple.com/design/human-interface-guidelines/dark-mode), [web color-scheme](https://web.dev/articles/color-scheme), [MediaQueryList change](https://developer.mozilla.org/en-US/docs/Web/API/MediaQueryList/change_event), [WCAG text contrast](https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum), [Android package-local night-mode implementation](https://github.com/aosp-mirror/platform_frameworks_base/blob/main/services/core/java/com/android/server/UiModeManagerService.java).
 
-Executed evidence and remaining boundaries belong in [the validation record](validation/cross-platform-appearance.md).
+Executed evidence and remaining boundaries belong in [the validation record](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/cross-platform-appearance.md).

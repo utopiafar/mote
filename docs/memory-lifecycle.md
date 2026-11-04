@@ -22,7 +22,7 @@ Creation alone does not activate a manual Memory job. Explicit `run()` persists
 activated detached jobs and still rejects pause, cancellation, revoked originals
 or changed versions. An unstarted `activationRequired=true` job stays dormant.
 MVP historical jobs can be explicitly rerun; recovery does not infer owner
-authorization from past attempts. See the [activation regression](validation/query-lease-and-memory-activation-2026-10-14.md).
+authorization from past attempts.
 
 New versioned built-in recipes and newly created unbound jobs with independent
 review use `range-evaluation@1`: complete target-range
@@ -103,6 +103,4 @@ The model procedures use the existing Cordis/Agent skill catalog, including the 
 
 No physical capture or personal screenshot is needed by these tests. Live semantic results and physical-device verification must be reported separately from fixture tests.
 
-Completed fixture and live results, costs, repaired failures and unperformed checks: [0.0.31 validation](memory-validation-0.0.31.md).
-
-Current automatic activation and persistent owner deletion intent are specified in [Memory updates](memory-updates.md#automatic-activation-and-deletion-intent-2026-09-27). Retired lifecycle schemas require the explicit [MVP upgrade procedure](audits/compatibility-cleanup-2026-10-04.md). Query-time bounded source disclosure is specified in [Memory source disclosure](memory-source-disclosure.md).
+Current automatic activation and persistent owner deletion intent are specified in [Memory updates](memory-updates.md#automatic-activation-and-deletion-intent-2026-09-27). Retired lifecycle schemas require the explicit [MVP upgrade procedure](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/audits/compatibility-cleanup-2026-10-04.md). Query-time bounded source disclosure is specified in [Memory source disclosure](memory-source-disclosure.md).
