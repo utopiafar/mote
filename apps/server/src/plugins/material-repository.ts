@@ -2,6 +2,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {MaterialStore} from '../materials.js';
+import {MaterialNoteDeletion} from '../material-note-deletion.js';
 import {StoreError} from '../store.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization,type MaterialPublication} from './central-contracts.js';
 
@@ -19,6 +20,10 @@ export interface MaterialRepositoryBindings {
 }
 
 const unavailable=()=>new StoreError('Material repository is unavailable',503);
+
+/** Trusted assembly seam only: Note deletion resolution stays part of the
+ * Material owner rather than a root-constructed business object. */
+export function openMaterialNoteDeletion(store:MaterialStore['store'],materials:MaterialStore){return new MaterialNoteDeletion(store,materials);}
 
 /** Owns the canonical MaterialStore. Other domains borrow its repository through
  * the host lease; only the publication facade accepts an external commit grant. */

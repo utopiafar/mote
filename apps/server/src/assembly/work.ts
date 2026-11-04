@@ -21,7 +21,7 @@ import {requestLocale} from '../i18n.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import {createOwnerQuestionServices} from '../plugins/owner-question-services.js';
-import {InsightRuns} from '../insight-runs.js';
+import {openInsightRuns} from '../plugins/insight-services.js';
 import type {Connections,ConnectionCredential} from '../connections.js';
 import type {PluginCenter} from '../plugin-center.js';
 import type {SourceStore} from '../sources.js';
@@ -70,7 +70,7 @@ export interface InsightRunsAssemblyDependencies {
 /** Durable insight run manager — the insight feature borrows it through
  * FeatureServices until its own domain unit takes ownership. */
 export function assembleInsightRuns(dependencies:InsightRunsAssemblyDependencies){
-  const insightRuns=new InsightRuns(dependencies.store,{executor:dependencies.executor,evidenceReader:dependencies.evidenceReader});
+  const insightRuns=openInsightRuns(dependencies.store,{executor:dependencies.executor,evidenceReader:dependencies.evidenceReader});
   dependencies.resources.defer(()=>insightRuns.close());
   return Object.freeze({insightRuns,featureServices:Object.freeze({insightRuns}) satisfies Partial<FeatureServices>});
 }

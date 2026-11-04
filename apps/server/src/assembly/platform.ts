@@ -16,6 +16,7 @@ import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import {createAuthorizationPlatform,authorizationPlatformContribution,authorizationPlatformDeclaration,authorizationPlatformReplacement} from '../plugins/authorization-platform.js';
 import {observabilityPlatformContribution,observabilityPlatformDeclaration,observabilityPlatformReplacement} from '../plugins/observability-platform.js';
 import {createExecutionPlatform,executionPlatformContribution,executionPlatformDeclaration,executionPlatformReplacement} from '../plugins/execution-platform.js';
+import {pluginControlContribution,pluginControlDeclaration} from '../plugin-center.js';
 
 /** Declared build-time domain plugins the platform assembly wires; the
  * distribution concatenates each domain's list into one selected table. */
@@ -23,6 +24,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:authorizationPlatformContribution,declaration:authorizationPlatformDeclaration,replacement:authorizationPlatformReplacement},
   {contribution:observabilityPlatformContribution,declaration:observabilityPlatformDeclaration,replacement:observabilityPlatformReplacement},
   {contribution:executionPlatformContribution,declaration:executionPlatformDeclaration,replacement:executionPlatformReplacement},
+  {contribution:pluginControlContribution,declaration:pluginControlDeclaration,replacement:'hot'},
 ]);
 
 export interface PlatformAssemblyDependencies {

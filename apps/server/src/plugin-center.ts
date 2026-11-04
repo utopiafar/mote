@@ -400,6 +400,13 @@ export interface TrustedPluginBuild {
   readonly factory:(context:HostPluginContext,configurationRevision:number)=>PluginLifecycle|Promise<PluginLifecycle>;
 }
 export const pluginControlDeclaration=Object.freeze({id:'mote.plugin-control',apiVersion:'1'});
+/** Trusted root seam only: the control plane and its release resolver are
+ * plugin-domain objects, never constructed by the application shell. */
+export function openPluginControlRoot(dependencies:{readonly store:Store;readonly executor:ExecutionEngine;readonly directory:string}){
+  const releases=new GitHubPluginReleases(dependencies.directory);
+  const pluginCenter=new PluginCenter(dependencies.store,dependencies.executor,releases);
+  return Object.freeze({pluginCenter,close:()=>pluginCenter.close()});
+}
 export const pluginControlContribution:ManifestContribution=Object.freeze<ManifestContribution>({id:pluginControlDeclaration.id,version:'1.0.0',surface:'data',runtime:'host',provides:[{kind:'service',id:centralServices.pluginControlRead.id,apiVersion:'1',cardinality:'single'}]});
 /** Borrowed host/store/executor/release resolver. Only the read port is published;
  * commands and the executable build registry stay in trusted assembly (C08). */
