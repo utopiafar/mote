@@ -12,6 +12,7 @@ import {Store} from '../src/store.js';
 import {FileStore} from '../src/files.js';
 import {SourceStore} from '../src/sources.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
+import {hostRun} from './fixtures/host-run.js';
 const text='Generated appointment is only proposed.';
 const event={title:'Generated event',start:'2099-02-01T09:00:00Z',end:'2099-02-01T10:00:00Z',timeZone:'UTC',allDay:false,location:'',description:''};
 const empty=():QueryResult=>({answer:'{"actions":[]}',citations:[],trace:[],runId:randomUUID()});
@@ -39,9 +40,10 @@ test('legacy action receipts migrate without replay and settings changes cannot 
 
 test('application action analysis usage and semantic children resolve to the admitted parent operation',async t=>{
  const {buildApp}=await import('../src/app.js'),directory=mkdtempSync(join(tmpdir(),'mote-action-operation-api-'));let node:Awaited<ReturnType<typeof buildApp>>;
- node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{agent:{configured:true,close:async()=>{},query:async input=>{
-  if(node.executor.get(input.traceContext!.jobId!)?.kind==='context-dag.semantic'){const id=input.evidenceIds![0];return {...empty(),answer:JSON.stringify({summary:'Generated appointment',evidence:[{id,quote:text}],events:[],memoryCandidates:[],actionCues:[{kind:'calendar.create',event,uncertainty:'proposed',evidence:[{id,quote:text}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}]};}
-  assert.equal(input.skill,'calendar-extraction');assert.equal(node.executor.get('actions:'+input.traceContext!.jobId)?.operationId,input.traceContext!.operationId);return answer(input.evidenceIds![0]);
+ node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+  lease?.onFinalizer?.('host');
+  if(node.executor.get(input.traceContext!.jobId!)?.kind==='context-dag.semantic'){const id=input.evidenceIds![0];hostRun(input);return {...empty(),answer:JSON.stringify({summary:'Generated appointment',evidence:[{id,quote:text}],events:[],memoryCandidates:[],actionCues:[{kind:'calendar.create',event,uncertainty:'proposed',evidence:[{id,quote:text}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}]};}
+  assert.equal(input.skill,'calendar-extraction');assert.equal(node.executor.get('actions:'+input.traceContext!.jobId)?.operationId,input.traceContext!.operationId);hostRun(input);return answer(input.evidenceIds![0]);
  }}});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});assert.equal(node.actions.engine,node.executor);
  await authorizeFixtureModels(node);
  node.sources.register({id:'fixture',kind:'custom',name:'Generated',deviceId:'fixture',platform:'import'});await node.sources.upsert('fixture',{externalId:'one',revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'original',text});await node.actions.saveSettings({revision:node.configService.revision,authorizationRevision:node.actions.authorizationRevision(),settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]}});await node.actions.tick();assert.equal(node.actions.list().length,1);const step=node.store.db.prepare("SELECT operation_id FROM execution_steps WHERE kind='actions.extract'").get()!;const receipt=JSON.parse(String(node.store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.attribution.moduleId')='actions'").get()!.json));assert.equal(receipt.attribution.operationId,step.operation_id);assert.ok(receipt.attribution.jobId);assert.ok(node.store.db.prepare('SELECT 1 FROM operation_parents WHERE parent_id=?').get(String(step.operation_id)));
@@ -66,13 +68,14 @@ test('deleted and superseded action inputs do not leave global failure alerts or
 for(const outcome of ['ready','changed','blocked'] as const)test(`action dependency ${outcome} preserves waiting, original validity and blocked retry boundaries`,async t=>{
  const {buildApp}=await import('../src/app.js'),directory=mkdtempSync(join(tmpdir(),'mote-action-semantic-wait-')),entered=deferred(),release=deferred();
  let semanticCalls=0,actionCalls=0,node:Awaited<ReturnType<typeof buildApp>>;
- node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
+ node=await buildApp({dataDir:directory,token:'generated-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+  lease?.onFinalizer?.('host');
   if(node.executor.get(input.traceContext!.jobId!)?.kind==='context-dag.semantic'){
    semanticCalls++;entered.resolve();await release.promise;
-   if(outcome==='blocked')throw new ProviderFailure({category:'blocked',code:'provider_quota'});
-   const id=input.evidenceIds![0];return {...empty(),answer:JSON.stringify({summary:'Generated appointment',evidence:[{id,quote:text}],events:[],memoryCandidates:[],actionCues:[{kind:'calendar.create',event,uncertainty:'proposed',evidence:[{id,quote:text}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}]};
+   if(outcome==='blocked'){hostRun(input,{terminal:'failed'});throw new ProviderFailure({category:'blocked',code:'provider_quota'});}
+   const id=input.evidenceIds![0];hostRun(input);return {...empty(),answer:JSON.stringify({summary:'Generated appointment',evidence:[{id,quote:text}],events:[],memoryCandidates:[],actionCues:[{kind:'calendar.create',event,uncertainty:'proposed',evidence:[{id,quote:text}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}]};
   }
-  assert.equal(input.skill,'calendar-extraction');actionCalls++;return answer(input.evidenceIds![0]);
+  assert.equal(input.skill,'calendar-extraction');actionCalls++;hostRun(input);return answer(input.evidenceIds![0]);
  }}});
  t.after(async()=>{release.resolve();await node.app.close();rmSync(directory,{recursive:true,force:true});});await authorizeFixtureModels(node);
  node.sources.register({id:'fixture',kind:'custom',name:'Generated',deviceId:'fixture',platform:'import'});

@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {DeepSeekHarness} from '@deepseek-ai/dsh-sdk-client';
+import type {AgentOptions} from '@mote/agent';
 import type {ModelSettings} from '@mote/shared/models';
 import {createAgentImportHost,type ImportCapabilityFactory} from '../src/agent-import-host.js';
 import {BackgroundModelAuthorization,modelConnection} from '../src/background-model-authorization.js';
@@ -19,19 +20,20 @@ const settings:ModelSettings={
   headers:{},extraBody:{},reasoningEffort:'off',maxTokens:1024,modelRequestTimeoutMs:10000,agentTimeoutMs:15000,allowUnauthenticatedLocal:false,
 };
 
-function fixture(t:any,options:{capability?:ImportCapabilityFactory;hostAuthorization?:Pick<BackgroundModelAuthorization,'capture'>;assertCurrent?:()=>void}={}){
+function fixture(t:any,options:{capability?:ImportCapabilityFactory;hostAuthorization?:Pick<BackgroundModelAuthorization,'capture'>;assertCurrent?:()=>void;settings?:ModelSettings;codex?:AgentOptions['codex']}={}){
   const directory=mkdtempSync(join(tmpdir(),'mote-agent-import-host-')),store=new Store(directory),files=new ArchivedFileStore(store),sources=new SourceStore(store);
-  const connection=modelConnection('profile:generated-profile:generated-model',settings),authorization=new BackgroundModelAuthorization(store,()=>[connection]);
+  const selected=options.settings??settings;
+  const connection=modelConnection('profile:generated-profile:'+selected.model,selected),authorization=new BackgroundModelAuthorization(store,()=>[connection]);
   const executor=new ExecutionEngine(store);executor.bindModelAuthority(authorization);
   const assertCurrent=options.assertCurrent??(()=>authorization.assertCurrent(connection));
   const usage={run:async<V>(task:()=>Promise<V>)=>task(),update(){},completed(){return undefined;},failed(){return undefined;}};
   const host=createAgentImportHost({
     agent:{configured:true,configuredFor:()=>true},
-    modelSettings:{select:()=>({id:'generated-profile',name:'Generated profile',settings})},
+    modelSettings:{select:()=>({id:'generated-profile',name:'Generated profile',settings:selected})},
     modelAuthorization:options.hostAuthorization??authorization,
     authorizeModelRequest:assertCurrent,
     runModelFor:()=>async(task,signal)=>{signal?.throwIfAborted();assertCurrent();return task();},
-    codex:undefined,
+    codex:options.codex,
     admittedUsage:()=>usage,
     agentGate:{run:task=>task()},
     modelOperation:{run:(_id,task)=>task()},
@@ -109,6 +111,62 @@ test('DSH fixture preview is consumed by ImportRuntime and manifest while archiv
   assert.equal(evidence.provenance?.document?.recordedAt,'2020-01-01T10:00:00Z');
   assert.equal(files.read(created.files[0]!.id).toString(),'Generated original diary text');
   assert.equal(files.read(created.files[1]!.id).toString(),'Generated attachment bytes');
+});
+
+test('Codex App Server fixture preview is consumed by the same ImportRuntime and manifest as DSH',{timeout:30000},async t=>{
+  const root=mkdtempSync(join(tmpdir(),'mote-codex-import-')),executable=join(root,'generated-codex.mjs'),rpcPath=join(root,'rpc.ndjson');
+  writeFileSync(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
+  writeFileSync(executable,`#!${process.execPath}
+import readline from 'node:readline';
+import {appendFileSync,readFileSync,writeFileSync} from 'node:fs';
+const rpc=value=>appendFileSync(${JSON.stringify(rpcPath)},JSON.stringify(value)+'\\n');
+const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+readline.createInterface({input:process.stdin}).on('line',line=>{
+ const m=JSON.parse(line);rpc(m);
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:m.params.model},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'workspaceWrite'}}});
+ else if(m.method==='turn/start'){
+  const request=JSON.parse(m.params.input[0].text),original=readFileSync(request.inputPaths[0],'utf8'),attachment=request.inputPaths[1];
+  send({id:m.id,result:{turn:{id:'generated-turn'}}});
+  writeFileSync('records.jsonl',JSON.stringify({item:{externalId:'generated-codex-diary',revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',title:'Generated Codex diary title',text:original,document:{recordedAt:'2020-01-01T10:00:00Z',timeBasis:'recorded',contentRole:'authored'}},evidencePaths:[request.inputPaths[0]],attachments:[attachment]})+'\\n');
+  writeFileSync('dispositions.json',JSON.stringify({items:[{path:request.inputPaths[0],status:'parsed',reason:'Generated authored text'},{path:attachment,status:'attachment',reason:'Generated retained attachment'}]}));
+  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({summary:'Generated Codex preview summary',recordsPath:'records.jsonl',warnings:['Generated Codex preview warning'],reviewDecision:{confidence:'low',ambiguous:true,reason:'Generated Codex review ambiguity'}})}}});
+  send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'completed'}}});
+ }
+});
+`,{mode:0o700});
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const codexSettings:ModelSettings={...settings,provider:'codex',protocol:'codex-app-server',model:'generated-codex-model',baseUrl:'',apiKey:'',reasoningEffort:'auto',modelRequestTimeoutMs:null};
+  const {store,files,imports,authorization,connection}=fixture(t,{settings:codexSettings,codex:{executable,home:root}});
+
+  const created=await imports.create({processing:'preview',instruction:'Generated owner import',files:[generatedInput('Generated original diary text'),generatedInput('Generated attachment bytes')]});
+  const preview=await ownerPrepare(imports,authorization,connection,created.id);
+  const rpc=readFileSync(rpcPath,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+  const thread=rpc.find(message=>message.method==='thread/start').params,turn=rpc.find(message=>message.method==='turn/start').params;
+  assert.equal(thread.ephemeral,true);assert.equal(thread.sandbox,'workspace-write');assert.deepEqual(thread.dynamicTools,[],'import workspace never receives archive tools');
+  const request=JSON.parse(turn.input[0].text);
+  assert.equal(request.requiredSkill,'document-import');assert.equal(request.taskId,'import');assert.equal(request.taskVersion,'1');assert.equal(request.language,'zh-CN');
+  assert.equal(preview.status,'awaiting_confirmation');
+  assert.equal(preview.preview?.count,1);
+  assert.ok(preview.warnings.includes('Generated Codex preview warning'));
+  assert.match(preview.reviewGate?.reason??'',/manual preview/);
+  assert.deepEqual(preview.captureIds,[]);
+  assert.equal(store.list().items.length,0,'the Codex runtime returns review candidates only');
+  assert.equal(files.read(created.files[0]!.id).toString(),'Generated original diary text');
+  assert.equal(files.read(created.files[1]!.id).toString(),'Generated attachment bytes');
+
+  const stored=JSON.parse(readFileSync(join(imports.directory,created.id,'prepared.jsonl'),'utf8').trim());
+  assert.equal(stored.item.title,'Generated Codex diary title');
+  assert.equal(stored.item.document.recordedAt,'2020-01-01T10:00:00Z');
+  assert.equal(stored.item.text,'Generated original diary text');
+
+  const completed=await imports.confirm(created.id);
+  assert.equal(completed.status,'completed');
+  assert.equal(completed.progress.imported,1);
+  const evidence=store.evidence(completed.captureIds)[0]!;
+  assert.equal(evidence.ocrText,'Generated original diary text');
+  assert.equal(evidence.provenance?.document?.recordedAt,'2020-01-01T10:00:00Z');
 });
 
 test('a cancelled import cannot publish a late manifest from the DSH fixture',{timeout:30000},async t=>{

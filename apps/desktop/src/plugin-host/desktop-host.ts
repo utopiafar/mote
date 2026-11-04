@@ -442,6 +442,8 @@ export class PluginScopeHandle {
   }
   get instanceId(): string { return this.#id; }
   get signal(): AbortSignal { return this.#signal; }
+  /** Read-only inventory view for lifecycle tests and diagnostics. */
+  get jobIds(): readonly string[] { return [...this.#jobs.keys()]; }
   registerIpc(spec: IpcServiceSpec, handler: IpcListener): void {
     if (this.#revoked()) throw new TypeError('Scope is revoked');
     this.#ipc.register(spec, handler);

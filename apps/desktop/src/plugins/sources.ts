@@ -10,27 +10,14 @@ import { SourceSelectionController } from '../source-selection';
 import { CalendarPermissionError } from '../source-calendar';
 import { LocalSourceManager } from '../source-manager';
 import { failureCode, safeErrorName, type EventJournal, type EventStage } from '../support';
+import {desktopJobIds, sourcesChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 /** A renderer may read source state/context without being able to mutate it. */
 export const sourcesReadCapability = 'sources.read';
 export const sourcesWriteCapability = 'sources.write';
 
-export const sourcesChannels = {
-  coding: 'mote:source-coding',
-  list: 'mote:sources',
-  context: 'mote:source-context',
-  contextSave: 'mote:source-context-save',
-  sync: 'mote:source-sync',
-  calendarAuthorize: 'mote:calendar-authorize',
-  calendar: 'mote:source-calendar',
-  update: 'mote:source-update',
-  select: 'mote:source-select',
-  cancel: 'mote:source-cancel',
-  confirm: 'mote:source-confirm',
-  files: 'mote:source-files',
-  calendarPermissions: 'mote:calendar-permissions',
-} as const;
+export {sourcesChannels};
 
 export interface SourcePathChoiceRequest {
   readonly mode: 'files' | 'directory';
@@ -181,7 +168,7 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
         register(sourcesChannels.calendarPermissions, sourcesWriteCapability, () =>
           execute(sourcesChannels.calendarPermissions, () => options.openCalendarPermissions?.()));
 
-        plugin.registerJob({id: 'sources-manager', durable: true, drain: () => manager.close()});
+        plugin.registerJob({id: desktopJobIds.sourcesManager, durable: true, drain: () => manager.close()});
         plugin.defer(() => { void manager.close(); });
       });
       if (!outcome.started) throw outcome.error;

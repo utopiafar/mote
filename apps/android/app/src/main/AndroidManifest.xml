@@ -20,66 +20,135 @@
         android:theme="@style/AppTheme" android:allowBackup="false" android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="${cleartextAllowed}" android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="false">
-        <activity android:configChanges="uiMode" android:name=".StorageStatisticsActivity" android:exported="false"/>
+        <meta-data android:name="mote.plugin.owner" android:value="host.shell" />
+        <activity android:configChanges="uiMode" android:name=".StorageStatisticsActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.storage-backup" />
+        </activity>
         <activity android:configChanges="uiMode" android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="host.shell" />
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
-        <activity android:configChanges="uiMode" android:name=".StartUsingActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".CaptureStatusActivity" android:exported="false" />
+        <activity android:configChanges="uiMode" android:name=".StartUsingActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.administration" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".CaptureStatusActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
+        </activity>
         <!-- Launcher shortcuts arrive with a cleared task; this entry owns its own task so the app's back stack is kept. -->
         <activity android:name=".QuickEntryActivity" android:exported="false" android:taskAffinity="" android:excludeFromRecents="true"
-            android:noHistory="true" android:theme="@android:style/Theme.NoDisplay" />
+            android:noHistory="true" android:theme="@android:style/Theme.NoDisplay">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
+        </activity>
         <activity android:configChanges="uiMode" android:name=".RecordEditorActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
             <intent-filter><action android:name="android.intent.action.SEND" /><category android:name="android.intent.category.DEFAULT" /><data android:mimeType="*/*" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND_MULTIPLE" /><category android:name="android.intent.category.DEFAULT" /><data android:mimeType="*/*" /></intent-filter>
         </activity>
-        <activity android:configChanges="uiMode" android:name=".ConversationRecordEditorActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:configChanges="uiMode" android:name=".CentralActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:configChanges="uiMode" android:name=".CalendarActionsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:configChanges="uiMode" android:name=".LibrarySourceReaderActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".FileContentActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:configChanges="uiMode" android:name=".SourcesActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:configChanges="uiMode" android:name=".FileTaskActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:configChanges="uiMode" android:name=".AppUpdatesActivity" android:exported="false" />
+        <activity android:configChanges="uiMode" android:name=".ConversationRecordEditorActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".CentralActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="host.shell" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".CalendarActionsActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.managed-calendar" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".LibrarySourceReaderActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.library" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".FileContentActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.sources" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".SourcesActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.sources" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".FileTaskActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.sources" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".AppUpdatesActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-tools" />
+        </activity>
         <activity android:configChanges="uiMode" android:name=".ConnectionActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.administration" />
             <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="mote" android:host="connect" /></intent-filter>
         </activity>
-        <activity android:configChanges="uiMode" android:name=".ConnectionScanActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".StorageActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".ActivityStatsActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".BackupActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".UploadHistorySettingsActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".UploadOriginalActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".UploadBatchActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".SyncQueueActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".SyncRecoveryActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".CompressionPreviewActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".CaptureRecordsActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".LogViewerActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".BulkDedupeActivity" android:exported="false" />
-        <activity android:configChanges="uiMode" android:name=".ImageDedupeDiagnosticsActivity" android:exported="false" />
+        <activity android:configChanges="uiMode" android:name=".ConnectionScanActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.administration" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".StorageActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.storage-backup" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".ActivityStatsActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.storage-backup" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".BackupActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.storage-backup" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".UploadHistorySettingsActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.durable-upload" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".UploadOriginalActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.durable-upload" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".UploadBatchActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.durable-upload" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".SyncQueueActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.durable-upload" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".SyncRecoveryActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.durable-upload" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".CompressionPreviewActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".CaptureRecordsActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.library" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".LogViewerActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-tools" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".BulkDedupeActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.storage-backup" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".ImageDedupeDiagnosticsActivity" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.storage-backup" />
+        </activity>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.record-files" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/record_file_paths" />
         </provider>
-        <service android:name=".ProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection" />
+        <service android:name=".ProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
+        </service>
         <service android:name=".MediaCollectionService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true" android:label="Mote 通知、媒体与设备事件">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
             <meta-data android:name="android.service.notification.default_filter_types" android:value="ongoing|conversations|alerting|silent" />
         </service>
         <service android:name=".CaptureAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="@string/accessibility_name">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service" />
         </service>
-        <receiver android:name=".StopReceiver" android:exported="false" />
-        <receiver android:name=".PauseScreenReceiver" android:exported="false" />
+        <receiver android:name=".StopReceiver" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
+        </receiver>
+        <receiver android:name=".PauseScreenReceiver" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
+        </receiver>
         <service android:name=".ScreenCaptureTileService" android:exported="true" android:label="@string/tile_screen_capture"
             android:icon="@drawable/ic_tile_screen" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
         <receiver android:name=".QuickEntryWidget" android:exported="true" android:label="@string/widget_label">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_entries" />
         </receiver>
-        <receiver android:name=".AppUpdateResultReceiver" android:exported="false" />
+        <receiver android:name=".AppUpdateResultReceiver" android:exported="false">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-tools" />
+        </receiver>
     </application>
 </manifest>

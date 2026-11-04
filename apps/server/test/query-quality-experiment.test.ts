@@ -12,6 +12,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {Store,StoreError} from '../src/store.js';
 import {ConfigService} from '../src/config-service.js';
+import {hostRun,hostTerminal} from './fixtures/host-run.js';
 
 const result=(answer='Generated grounded answer')=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[]}});
 const controls={} as NonNullable<QueryInput['hostControlChannel']>;
@@ -66,8 +67,9 @@ test('formal repeated current startup preserves the source journal and supports 
 });
 for(const strategy of ['base','review','research-writer','both'] as QueryQualityStrategy[])test(`Ask HTTP ${strategy} continuation reports all operation fragments rather than the last model usage`,async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-quality-http-')),cfg=config(directory),calls:QueryInput[]=[];
-  const node=await buildApp(cfg,{queryQualityExperiment:strategy,backgroundWorker:false,semanticContextTime:()=>scope.contextTime,agent:{configured:true,close:async()=>{},query:async input=>{
-    calls.push(input);input.onUsage?.({requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0});return result('Generated final '+input.traceContext?.phase);
+  const node=await buildApp(cfg,{queryQualityExperiment:strategy,backgroundWorker:false,semanticContextTime:()=>scope.contextTime,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
+    calls.push(input);hostRun(input,{usage:{requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0}});return result('Generated final '+input.traceContext?.phase);
   }}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+cfg.token},api=(method:'GET'|'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});
@@ -83,19 +85,28 @@ for(const strategy of ['base','review','research-writer','both'] as QueryQuality
 
 test('durable quality stages resume the interrupted writer without repeating completed research',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-quality-restart-')),cfg=config(directory),entered=deferred(),calls:string[]=[],nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
-  const first=await buildApp(cfg,{queryQualityExperiment:'both',backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
+  const first=await buildApp(cfg,{queryQualityExperiment:'both',backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
     const phase=input.traceContext!.phase!;calls.push(phase);
-    if(phase==='quality.writer'){entered.resolve();return new Promise((_,reject)=>input.signal!.addEventListener('abort',()=>reject(input.signal!.reason),{once:true}));}
-    input.onUsage?.({requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0});return result('Saved research interpretation');
+    if(phase==='quality.writer'){
+      entered.resolve();
+      return new Promise((_,reject)=>{
+        const abort=()=>{hostTerminal(input,'cancelled');reject(input.signal!.reason);};
+        input.signal!.addEventListener('abort',abort,{once:true});
+        if(input.signal!.aborted)abort();
+      });
+    }
+    hostRun(input,{usage:{requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0}});return result('Saved research interpretation');
   }}});nodes.push(first);
   t.after(async()=>{for(const node of nodes)await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const id=randomUUID(),headers={authorization:'Bearer '+cfg.token},created=await first.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated restart scope',...scope}}});
   assert.equal(created.statusCode,400,'contextTime is host owned');
   const accepted=await first.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated restart scope',timeZone:scope.timeZone}}});assert.equal(accepted.statusCode,202,accepted.body);
   await entered.promise;await first.app.close();assert.deepEqual(calls,['quality.research','quality.writer']);
-  const second=await buildApp(cfg,{queryQualityExperiment:'both',backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
+  const second=await buildApp(cfg,{queryQualityExperiment:'both',backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
     calls.push(input.traceContext!.phase!);assert.equal(input.hostControlChannel,undefined);assert.match(input.taskContext!.untrustedInterpretations!,/Saved research interpretation|Generated resumed writer/);
-    input.onUsage?.({requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0});return result('Generated resumed writer');
+    hostRun(input,{usage:{requests:1,reportedRequests:1,inputTokens:7,outputTokens:3,totalTokens:10,cacheReadTokens:0,cacheWriteTokens:0}});return result('Generated resumed writer');
   }}});nodes.push(second);await second.app.ready();
   let run:any;for(let i=0;i<500;i++){run=(await second.app.inject({method:'GET',url:'/api/query-runs/'+id,headers})).json();if(run.status!=='running')break;await new Promise(resolve=>setTimeout(resolve,5));}
   assert.equal(run.status,'completed',JSON.stringify(run));assert.deepEqual(calls,['quality.research','quality.writer','quality.writer','quality.review']);

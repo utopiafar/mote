@@ -9,18 +9,13 @@ import type {LocalSourceManager} from '../source-manager';
 import {syncContent} from '../sync-content';
 import type {SyncHistory, SyncHistoryContentQuery, SyncHistoryQuery} from '../sync-history';
 import {centralWorkActivity, type WorkActivityQuery} from '../work-activity';
+import {workHistoryWorkspaceChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 /** Read-only work, delivery and sync-receipt surfaces. */
 export const workHistoryReadCapability = 'work-history.read';
 
-export const workHistoryWorkspaceChannels = {
-  workActivity: 'mote:work-activity',
-  syncHistory: 'mote:sync-history',
-  syncHistoryContents: 'mote:sync-history-contents',
-  syncHistoryContent: 'mote:sync-history-content',
-  syncHistoryPending: 'mote:sync-history-pending',
-} as const;
+export {workHistoryWorkspaceChannels};
 
 export interface WorkHistoryWorkspaceOptions {
   readonly settings: () => Config;

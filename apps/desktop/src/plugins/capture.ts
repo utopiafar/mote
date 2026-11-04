@@ -13,19 +13,13 @@ import type { DurableQueue } from '../queue';
 import type { LocalSourceManager } from '../source-manager';
 import type { SyncHistory } from '../sync-history';
 import { failureCode, safeErrorName, type EventJournal, type EventStage } from '../support';
+import {captureChannels, desktopJobIds} from '../desktop-ipc-channels';
 import type { BuiltinDesktopPlugin, BuiltinPluginContext } from './index';
 
 export const captureReadCapability = 'capture.read';
 export const captureWriteCapability = 'capture.write';
 
-export const captureChannels = {
-  start: 'mote:start',
-  stop: 'mote:stop',
-  retry: 'mote:retry',
-  reviewPending: 'mote:review-pending',
-  reviewReject: 'mote:review-reject',
-  reviewApprove: 'mote:review-approve',
-} as const;
+export {captureChannels};
 
 /** The capture stage pipeline is versioned durable state, not a per-process
  * cache; both the first launch and every reopen construct the same registry. */
@@ -131,7 +125,7 @@ export function createCapturePlugin(options: CapturePluginOptions): CapturePlugi
 
         // Closing the window keeps capture alive; an explicit quit drains the
         // current capture before the collector stops its timers and watchers.
-        plugin.registerJob({id: 'capture-runtime', durable: true, drain: async () => {
+        plugin.registerJob({id: desktopJobIds.captureRuntime, durable: true, drain: async () => {
           collector.stop();
           await collector.settleCapture();
         }});
