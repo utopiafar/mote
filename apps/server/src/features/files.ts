@@ -13,8 +13,7 @@ import type {ServerFeatureAdapter} from './index.js';
 export interface FilesFeatureSource {readonly playback:FilePlaybackGrants}
 
 /** Owns resumable binary transport, extraction views and authenticated playback. */
-export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,executor,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization,filesSource}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|"executor"|'processing'|'ingress'|'sourceOwner'|'credential'|'evidenceReader'|'diagnostics'|'setPlaybackAuthorization'>&{filesSource?:FilesFeatureSource},scope?:ServerFeatureScope){
-  scope?.every(5000,()=>{processing.prepare();return executor.tick();});scope?.defer(()=>processing.close());
+export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization,filesSource}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|'processing'|'ingress'|'sourceOwner'|'credential'|'evidenceReader'|'diagnostics'|'setPlaybackAuthorization'>&{filesSource?:FilesFeatureSource},scope?:ServerFeatureScope){
   const source=filesSource?filesSourceRoutesFor(filesSource.playback):undefined;
   if(!source)throw new StoreError('Files source routes are unavailable',503);
   source.routes(app,{processing,ingress,authorize:sourceOwner,device:req=>credential(req)?.deviceId,evidence:evidenceReader,diagnostics,withOwnerIntent:withMediaOwnerIntent,withOwnerBatch:withMediaOwnerBatch,setPlaybackAuthorization});
