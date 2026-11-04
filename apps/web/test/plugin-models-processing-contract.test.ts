@@ -64,6 +64,7 @@ test('a real prepare failure keeps the effective module combination visible and 
  assert.equal(select.value,profileId,'the unsaved assignment remains in the draft');
  assert.equal(d.querySelector('.module-assignment-footer [role=status]')!.textContent,'有未保存的修改');
  assert.doesNotMatch(d.body.textContent!,/已切换/);
+ await until(()=>!!d.querySelector('.module-assignment-effective'),'effective combination');
  const effective=d.querySelector('.module-assignment-effective')!;
  assert.ok(effective,'the page shows the effective combination');
  assert.match(effective.textContent!,/generated-original-model/);
@@ -73,6 +74,7 @@ test('a real prepare failure keeps the effective module combination visible and 
  f.reject(false);
  await act(async()=>save().click());
  await until(()=>d.querySelector('.module-assignment-footer [role=status]')!.textContent?.includes('模块分配已保存')===true,'saved assignment');
+ await until(()=>d.querySelector('.module-assignment-effective')!.textContent!.includes('generated-next-model'),'receipt shows the new effective combination');
  assert.match(d.querySelector('.module-assignment-effective')!.textContent!,/Generated prepared connection · generated-next-model/);
  assert.doesNotMatch(d.body.textContent!,/已切换/);
  assert.equal((await f.call('/api/model-settings') as ModelSettingsView).defaults[feature],profileId);

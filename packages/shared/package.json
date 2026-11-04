@@ -55,6 +55,12 @@
       "require": "./dist/agent-runtimes.js",
       "default": "./dist/agent-runtimes.js"
     },
+    "./agent-runtime-status": {
+      "types": "./dist/agent-runtime-status.d.ts",
+      "import": "./dist/agent-runtime-status.js",
+      "require": "./dist/agent-runtime-status.js",
+      "default": "./dist/agent-runtime-status.js"
+    },
     "./capture-sessions": {
       "types": "./dist/capture-sessions.d.ts",
       "import": "./dist/capture-sessions.js",
@@ -164,6 +170,9 @@
       ],
       "agent-runtimes": [
         "dist/agent-runtimes.d.ts"
+      ],
+      "agent-runtime-status": [
+        "dist/agent-runtime-status.d.ts"
       ],
       "capture-sessions": [
         "dist/capture-sessions.d.ts"

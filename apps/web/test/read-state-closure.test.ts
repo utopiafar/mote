@@ -1,4 +1,4 @@
-import {modelView} from './fixtures/model-settings';
+import {modelView,runtimeReceipt} from './fixtures/model-settings';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -16,7 +16,7 @@ import {configureLocale} from '@mote/shared/i18n';
 configureLocale(()=> 'zh-CN');
 function deferred(){let resolve!:(value:any)=>void,reject!:(error:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.HTMLElement.prototype.scrollIntoView=()=>{};const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of before){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,d:dom.window.document};}
-function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();return read(path,init);},setAgentTimeout:()=>{}} as Api;}
+function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();if(path==='/api/agent-runtime-settings')return runtimeReceipt(modelView());return read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const when='2026-01-01T00:00:00Z',summary=(id:string)=>({id,title:'Conversation '+id,createdAt:when,updatedAt:when,turnCount:1,scope:{},status:'completed'}),detail=(id:string)=>({...summary(id),turns:[{id:'turn-'+id,question:'Question '+id,status:'completed',createdAt:when,result:{answer:'Answer '+id,citations:[],trace:[],runId:id}}],nextCursor:'older'});
 const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent===text)!;
 test('background conversation reads keep loaded answers usable without replaying initial loading',async t=>{
@@ -233,7 +233,7 @@ test('configuration views share reads and discard revoked deployment details',as
 test('model assignment refresh preserves owner choices and their original revision until save',async t=>{
  const {ModelAssignments}=await import('../src/plugins/models-processing/ModelAssignments.js'),{MODEL_FEATURES}=await import('@mote/shared/models'),{root,d}=await fixture(t);let revision=1,revoked=false;const writes:any[]=[];
  const view=()=>({revision,profiles:[{id:'a',name:'A',settings:{model:'a'}},{id:'b',name:'B',settings:{model:'b'}}],defaults:Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,'a'])),defaultModels:{}});
- const api={request:async(path:string,init?:RequestInit)=>{if(revoked)throw new ApiError('generated models revoked',403);if(init?.method==='PUT'){writes.push(JSON.parse(String(init.body)));throw new ApiError('generated conflict',409);}return view();}} as Api;
+ const api={request:async(path:string,init?:RequestInit)=>{if(revoked)throw new ApiError('generated models revoked',403);if(init?.method==='PUT'){writes.push(JSON.parse(String(init.body)));throw new ApiError('generated conflict',409);}return path==='/api/agent-runtime-settings'?runtimeReceipt(view()):view();}} as Api;
  await act(async()=>root.render(React.createElement(ModelAssignments,{api,revision:1,onApplied:()=>{},onManage:()=>{}})));
  const choice=d.querySelector<HTMLSelectElement>('.module-assignment-row select')!;await act(async()=>{choice.value='b';choice.dispatchEvent(new window.Event('change',{bubbles:true}));});revision=2;
  await act(async()=>resources(api).invalidate(key=>key==='/api/model-settings'));assert.equal(d.querySelector<HTMLSelectElement>('.module-assignment-row select')!.value,'b');await act(async()=>button(d,'保存模块分配').click());assert.equal(writes[0].revision,1);assert.equal(writes[0].defaults[MODEL_FEATURES[0]],'b');

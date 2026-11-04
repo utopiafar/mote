@@ -198,9 +198,15 @@ internal class CentralAdmin(
     }
     private fun models() {
         val api = client
-        ui.work(MoteI18n.text("正在读取…"), { api.get("/api/model-settings") }) { value ->
+        ui.work(MoteI18n.text("正在读取…"), {
+            RuntimeStatusReceipt.parse(api.get("/api/agent-runtime-settings"))
+                ?: throw IllegalStateException(MoteI18n.text("中央响应格式无效，请刷新后重试。"))
+        }) { receipt ->
+            val value = receipt.saved
             body.removeAllViews(); screens.setBack { screens.refresh() }
             ui.text(MoteI18n.text("模型配置"), NativeFontRole.TITLE_MOBILE)
+            val names = (0 until value.getJSONArray("profiles").length()).associate { i -> value.getJSONArray("profiles").getJSONObject(i).let { it.getString("id") to it.optString("name") } }
+            ui.text(MoteI18n.text("当前生效值") + " · " + RuntimeStatusReceipt.readinessLabel(RuntimeStatusReceipt.readiness(receipt)) + " · " + RuntimeStatusReceipt.effectiveSummary(receipt, ::label) { names[it] })
             ui.button(MoteI18n.text("功能默认模型")) { modelDefaults(value) }
             val profiles = value.getJSONArray("profiles")
             val choice = Spinner(ui).apply {
