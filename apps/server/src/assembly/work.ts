@@ -26,6 +26,7 @@ import type {PluginCenter} from '../plugin-center.js';
 import type {SourceStore} from '../sources.js';
 import type {CentralDomainPlugin} from '../bootstrap.js';
 import {actionsServicesContribution,actionsServicesDeclaration,actionsServicesReplacement,createActionsServices} from '../plugins/actions-services.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createActivityServices} from '../plugins/activity-services.js';
 
 /** ACT01's declared build-time domain plugin. The pre-H14 feature bridge mounts
@@ -76,6 +77,7 @@ export function assembleInsightRuns(dependencies:InsightRunsAssemblyDependencies
 export interface ActionsAssemblyDependencies {
   readonly store:Store;
   readonly resources:ServerResources;
+  readonly backendContext:Context;
   readonly files:FileStore;
   readonly sources:SourceStore;
   readonly connections:Connections;
@@ -92,9 +94,9 @@ export interface ActionsAssemblyDependencies {
 }
 
 /** The actions-services plugin owns the domain objects, poll and route table;
- * the assembly only binds its dependencies and lifecycle. */
+ * the assembly only binds its dependencies, lifecycle and route contribution. */
 export async function assembleActions(dependencies:ActionsAssemblyDependencies){
-  const {store,files,resources,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent}=dependencies;
+  const {store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent}=dependencies;
   const services=createActionsServices({store,files,sources,connections,executor,configService,semanticArtifacts,
     actionProviders:()=>pluginCenter.actionProviders(),
     query:input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),
@@ -102,8 +104,8 @@ export async function assembleActions(dependencies:ActionsAssemblyDependencies){
     authorization:{credential,connectionIdentity}});
   resources.defer(()=>services.close());
   await services.prepare();services.start();
-  const actionsServices=services.assemblyForRoutes();
-  return Object.freeze({actions:services.actionsForAssembly,actionsServices,featureServices:Object.freeze({actionsServices}) satisfies Partial<FeatureServices>});
+  contributeDomainRoutes(backendContext,{'mote.actions':Object.freeze({mount:(app:Parameters<typeof services.routes>[0])=>services.routes(app)})});
+  return Object.freeze({actions:services.actionsForAssembly,featureServices:Object.freeze({}) satisfies Partial<FeatureServices>});
 }
 
 export interface ActivityAssemblyDependencies {

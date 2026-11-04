@@ -1,7 +1,7 @@
 import {calendarEventSchema,calendarExpired,type ActionProposal} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import type {Actions} from './actions.js';
-import type {ActionCapabilities} from './action-capabilities.js';
+import type {ActionCapabilities} from './plugins/action-capabilities.js';
 import type {Connections,ConnectionCredential} from './connections.js';
 
 /** Central dispatches only validated proposals; models cannot create grants or choose authority. */

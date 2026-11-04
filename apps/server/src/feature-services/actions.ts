@@ -1,8 +1,4 @@
-import type {ActionsServicesAssembly} from '../plugins/actions-services.js';
+/** C25 actions member. Routes are contributed via moteDomainRoutes; no FeatureServices bridge. */
+export interface ActionsFeatureServices {}
 
-/** C25 actions member. */
-export interface ActionsFeatureServices {
-  actionsServices:ActionsServicesAssembly;
-}
-
-export const actionsFeatureServiceMembers = ['actionsServices'] as const satisfies readonly (keyof ActionsFeatureServices)[];
+export const actionsFeatureServiceMembers = [] as const satisfies readonly (keyof ActionsFeatureServices)[];
