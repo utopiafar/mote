@@ -23,6 +23,7 @@ import { createDeviceSettingsPlugin, deviceSettingsReadCapability, deviceSetting
 import { createWorkHistoryWorkspacePlugin, workHistoryReadCapability } from './plugins/work-history-workspace';
 import { createLocalStorageBackupPlugin, localStorageBackupCapability } from './plugins/local-storage-backup';
 import { createSystemToolsPlugin, systemToolsManageCapability, systemToolsReadCapability } from './plugins/system-tools';
+import { capabilityPublisherCapability, createCapabilityPublisherPlugin } from './plugins/capability-publisher';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -297,12 +298,10 @@ else {
       changed: () => { if (!quitting) updateUi(clientStatus()); },
     });
     collector = capturePlugin.collector;
-    let calendarDelivery:Promise<void>|undefined;
-    const calendarTimer=setInterval(()=>{
-      if(calendarDelivery||settings.syncPaused||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
-      calendarDelivery=nativeCalendarActions({...settings},helperPath,dataDirectory).deliver().catch(()=>{}).finally(()=>{calendarDelivery=undefined;});
-    },60000);calendarTimer.unref();
-    app.once('before-quit',()=>clearInterval(calendarTimer));
+    const capabilityPublisher = createCapabilityPublisherPlugin({
+      settings: () => settings,
+      calendar: () => nativeCalendarActions({...settings}, helperPath, dataDirectory),
+    });
 
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
@@ -386,7 +385,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability]);
+    host.registerWindow(mainSenderId, 'main', [notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability, capabilityPublisherCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -395,7 +394,7 @@ else {
     const trustedMain = (event: IpcMainInvokeEvent) => {
       if (!(window && !window.isDestroyed() && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && event.senderFrame?.url===pageUrl)) throw new Error(moteText("请求来源不受信任"));
     };
-    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, deviceSettings, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!, localStorageBackup, systemTools]);
+    await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, deviceSettings, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!, localStorageBackup, systemTools, capabilityPublisher]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
       const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
@@ -444,7 +443,6 @@ else {
       environment: moteText("桌面客户端 · {0}", ['dev', 'test', 'prod', 'default'].includes(profile.name) ? profile.name : moteText("自定义环境")),
     })));
     handle('mote:coding-agents', () => discoverCodingAgents());
-    handle('mote:action-calendar-connect', () => serialize(() => nativeCalendarActions({...settings},helperPath,dataDirectory).connectAndDeliver(()=>settings.syncPaused===true)));
     handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
     handle('mote:storage-statistics',async()=>storageStatistics([dataDirectory,queue.directory]));
     handle('mote:diagnostics-export', async () => {
