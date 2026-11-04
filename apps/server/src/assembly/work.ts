@@ -1,6 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
-import type {QueryInput} from '@mote/agent';
+import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {Store} from '../store.js';
 import type {FeatureServices} from '../feature-services.js';
@@ -15,6 +15,7 @@ import type {ModelSettingsStore} from '../model-settings.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelConfiguration} from '../model-configuration.js';
 import type {ProcessingRuntime} from '../processing-runtime.js';
+import type {ServerDiagnostics} from '../diagnostics.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import {requestLocale} from '../i18n.js';
 import type {ModelConnection} from '../background-model-authorization.js';
@@ -122,19 +123,25 @@ export interface ActivityAssemblyDependencies {
   readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
   readonly backendContext:Context;
   readonly isCollector:(request:FastifyRequest)=>boolean;
+  readonly archiveReader:ContextReader;
+  readonly diagnostics:ServerDiagnostics;
+  readonly evidenceReader:Pick<EvidenceReader,'artifact'>;
 }
 
 /** C26A's activity plugin plus its owned route contribution. Construction and
  * disposal live in the plugin; this assembly only wires the current profile and
  * exposes the feature bridge's domain route table. */
 export function assembleActivity(dependencies:ActivityAssemblyDependencies){
-  const {store,resources,operations,delegation,materials,executor,configService,modelSettings,agent,workflows,queryAgent,backendContext,isCollector}=dependencies;
+  const {store,resources,operations,delegation,materials,executor,configService,modelSettings,agent,workflows,queryAgent,backendContext,isCollector,archiveReader,diagnostics,evidenceReader}=dependencies;
   const activityServices=createActivityServices({store,operations,delegation,materials,executor,config:configService,isCollector,
+    agentView:{archiveReader,diagnostics,evidenceReader},
     options:{query:input=>queryAgent(input,'query','activity'),selection:profileId=>{const selected=modelSettings.select('chat',profileId);return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},lane:()=>workflows.settings().semantic}});
   resources.defer(()=>activityServices.close());
   activityServices.prepare();activityServices.start();
   const routes=backendContext.get('moteDomainRoutes');
-  const merged=Object.freeze({...(routes??{}),'mote.activity':Object.freeze({mount:(app:Parameters<typeof activityServices.routes>[0])=>activityServices.routes(app)})});
+  const merged=Object.freeze({...(routes??{}),
+    'mote.activity':Object.freeze({mount:(app:Parameters<typeof activityServices.routes>[0])=>activityServices.routes(app)}),
+    'mote.agent-view':Object.freeze({mount:(app:Parameters<typeof activityServices.agentViewRoutes>[0])=>activityServices.agentViewRoutes(app)})});
   if(routes)backendContext.set('moteDomainRoutes',merged);
   else backendContext.provide('moteDomainRoutes',merged);
   return Object.freeze({activity:activityServices.activity,automaticActivity:activityServices.automaticActivity,activityServices});

@@ -49,8 +49,6 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   resources.defer(()=>authorizationPlatform.close());
   await authorizationPlatform.prepare();
   const modelAuthorization=authorizationPlatform.assembly.modelAuthorization;
-  // MVP cut-over is explicit: never silently keep the old Coding event indexes live.
-  if(store.db.prepare("SELECT 1 FROM captures WHERE json_extract(json,'$.provenance.document.coding') IS NOT NULL LIMIT 1").get()){throw new Error('Legacy Coding event vault: back up and use a fresh data directory for the source-pipeline architecture. No automatic migration is performed.');}
   const runtimeSettings=bootstrap.configurationPlatform.runtimeSettings;
   const observability=await bootstrap.installObservabilityPlatform({
     logDirectory:config.logDirectory??join(config.dataDir,'logs'),

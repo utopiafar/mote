@@ -22,7 +22,6 @@ import {adapter as memoryAdapter} from './memory.js';
 import {adapter as importsAdapter} from './imports.js';
 import {adapter as askAdapter} from './ask.js';
 import {adapter as insightsAdapter} from './insights.js';
-import {adapter as agentViewAdapter} from './agent-view.js';
 import {adapter as featuresAdapter} from './features.js';
 
 /** Development-time adapters over the existing real feature factories. H14 removes
@@ -58,7 +57,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   importsAdapter,
   askAdapter,
   insightsAdapter,
-  agentViewAdapter,
+  domainRouteContribution('mote.agent-view'),
   featuresAdapter,
 ]);
 export async function installServerFeatures(host:ServerFeatureHost,services:FeatureServices,entries:readonly ServerFeatureAdapter[]=serverFeatureAdapters){

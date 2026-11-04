@@ -1,13 +1,23 @@
-import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
-import { navigationScopeSchema } from '../context-navigation.js';
-import type { FeatureServices } from '../feature-services.js';
+import type {FastifyInstance} from 'fastify';
+import {z} from 'zod';
+import type {ContextReader} from '@mote/agent';
+import {navigationScopeSchema} from '../context-navigation.js';
+import type {ServerDiagnostics} from '../diagnostics.js';
+import type {EvidenceReader} from '../evidence-reader.js';
 import {buildContextEnvelope,taskTools,systemInstructions,contextToolDefinitions} from '@mote/agent';
 import {openingMemories} from '../opening-memory.js';
 import {requestLocale} from '../i18n.js';
-import type {ServerFeatureAdapter} from './index.js';
 const scope={...navigationScopeSchema.shape,limit:z.coerce.number().int().min(1).max(20).default(12),cursor:z.string().max(4096).optional()};
-export function register(app:FastifyInstance,{archiveReader,diagnostics,evidenceReader}:Pick<FeatureServices,'archiveReader'|'diagnostics'|'evidenceReader'>){
+
+/** C26's Agent read projection. The activity plugin mounts this table over its
+ * current activation so disabling the owner also revokes Agent browsing. */
+export interface AgentViewRouteDependencies {
+  readonly archiveReader:ContextReader;
+  readonly diagnostics:Pick<ServerDiagnostics,'snapshot'|'events'>;
+  readonly evidenceReader:Pick<EvidenceReader,'artifact'>;
+}
+
+export function registerAgentViewRoutes(app:FastifyInstance,{archiveReader,diagnostics,evidenceReader}:AgentViewRouteDependencies){
   app.get('/api/agent-view/catalog',async req=>archiveReader.catalog!(z.object({...scope,path:z.string().max(100).optional()}).strict().parse(req.query)));
   app.get('/api/agent-view/materials',async req=>archiveReader.materialCatalog!(z.object({...scope,kind:z.string().max(128).optional()}).strict().parse(req.query)));
   app.get('/api/agent-view/material-read',async req=>archiveReader.materialRead!(z.object({...navigationScopeSchema.shape,ref:z.string().min(1).max(1600),offset:z.coerce.number().int().min(0).default(0),length:z.coerce.number().int().min(1).max(4000).default(4000)}).strict().parse(req.query)));
@@ -77,11 +87,3 @@ export function register(app:FastifyInstance,{archiveReader,diagnostics,evidence
     return {items,nextSeq,oldestSeq:page.oldestSeq,recording:diagnostics.snapshot().agentTrace};
   });
 }
-
-export const adapter:ServerFeatureAdapter={
-  descriptor:{id:'mote.agent-view',version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,services)=>{
-    scope.retire(()=>services.agentFeatures.dispose('mote.agent-view'));
-    register(app,services);
-  },
-};
