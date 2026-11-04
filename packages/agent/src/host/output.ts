@@ -1,5 +1,5 @@
 import {parseAnswer} from '../answer-parser.js';
-import {restoreMemoryCoverageKeys} from '../tasks/evidence-rules.js';
+import {restoreMemoryCoverageKeys} from '../tasks/memory-context.js';
 import {AgentResponseError, reportTrace, validateHostOutput, type AgentAnswer} from '../types.js';
 import type {HostEvidenceSnapshot, HostOutputDecision, HostOutputInput, HostOutputProvider} from './run-contracts.js';
 import type {QueryInput} from '../query-contracts.js';
