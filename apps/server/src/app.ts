@@ -495,7 +495,12 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     await resources.stop();
     if(startupApp)try{await startupApp.close();}catch(cleanup){failures.push(cleanup);}
     try{await resources.close();}catch(cleanup){failures.push(cleanup);}
-    if(failures.length)throw new AggregateError([error,...failures],'Server initialization and disposal failed',{cause:error});
+    if(failures.length){
+      // A failing subsystem may already report the [cause, ...cleanup] aggregate
+      // shape. Extend that list so startup cleanup never hides the original cause.
+      const startup=error instanceof AggregateError&&error.cause!==undefined?error:undefined;
+      throw new AggregateError([...(startup?startup.errors:[error]),...failures],'Server initialization and disposal failed',{cause:startup?startup.cause:error});
+    }
     throw error;
   }
 }
