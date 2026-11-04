@@ -32,6 +32,7 @@ import type {MemoryTopicsHost} from '../memory-topics-host.js';
 import type {AutomaticTopics} from '../automatic-topics.js';
 import type {OwnerQuestions} from '../owner-questions.js';
 import type {MemoryBindings} from '../memory-bindings.js';
+import type {MemoryAdapters} from '../memory-adapters.js';
 import {featureServiceMembers} from '../feature-services.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
@@ -133,6 +134,11 @@ export type MemoryAdmission = Pick<MemoryAutomation, 'state' | 'view' | 'accepti
 /** C21D's binding state machine. The plugin owns the actual bindings and local
  * control projections; the port exposes only the owner's commands and views. */
 export type MemoryBindingControl = Pick<MemoryBindings, 'view' | 'prepare' | 'action' | 'binding' | 'assertNewManualWork' | 'pendingTail'> & { accepting(): boolean };
+/** C23's external provider adapters. Bindings, publication and the native
+ * pipeline stages consume verified providers and durable cleanup through this
+ * port; the PluginCenter probe/configuration/retirement hooks and the native
+ * model authority pin stay on the trusted assembly bridge, never the port. */
+export type MemoryProviderAdapters = Pick<MemoryAdapters, 'provider' | 'engine' | 'configurationIdentity' | 'configurationAllowed' | 'probe' | 'discardPrepared' | 'erasePreparedEvidence' | 'retire'>;
 export type ProcessingSubmission = Pick<ProcessingRuntime, 'enqueue' | 'view' | 'retry' | 'cancel'>;
 export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'withdraw' | 'planningInput' | 'sourceRequirements' | 'authorized'>;
 /** Read-only managed-asset state. Installs, imports, cancellation and the
@@ -185,6 +191,7 @@ export const centralServices = {
   pluginControlRead: serviceContract<PluginControlRead>('mote.central.plugin-control-read', '1'),
   memoryAdmission: serviceContract<MemoryAdmission>('mote.central.memory-admission', '1'),
   memoryBindingControl: serviceContract<MemoryBindingControl>('mote.central.memory-binding-control', '1'),
+  memoryProviderAdapters: serviceContract<MemoryProviderAdapters>('mote.central.memory-provider-adapters', '1'),
   processing: serviceContract<ProcessingSubmission>('mote.central.processing-submission', '1'),
   memoryCandidates: serviceContract<MaterialMemoryCandidates>('mote.central.material-memory-candidates', '1'),
   memoryRead: serviceContract<MemoryRead>('mote.central.memory-read', '1'),
@@ -263,7 +270,7 @@ export const centralServiceOwners = {
   materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
   retrievalIndex:'materials', materialIndex:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
-  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryBindingControl:'memoryControl', processing:'processing',
+  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
   memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', conversations:'query',
