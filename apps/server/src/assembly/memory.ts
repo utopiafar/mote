@@ -11,7 +11,7 @@ import type {ExecutionEngine} from '../execution-engine.js';
 import type {UsageLedger} from '../usage.js';
 import type {PluginCenter} from '../plugin-center.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import type {BackgroundModelAuthorization,ModelConnection} from '../background-model-authorization.js';
 import {agentModelConnection,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ExecutionSettings} from '../execution-settings.js';
@@ -39,6 +39,7 @@ import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,mem
 import {createMemoryTopicsService,memoryTopicsServiceContribution,memoryTopicsServiceDeclaration,memoryTopicsServiceReplacement} from '../plugins/memory-topics-service.js';
 import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindingControlDeclaration,memoryBindingControlReplacement,type MemoryBindingControlPlatform} from '../plugins/memory-binding-control.js';
 import type {MemoryTopics} from '../plugins/central-contracts.js';
+import type {FeatureServices} from '../feature-services.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
  * distribution concatenates each domain's list into one selected table.
@@ -103,7 +104,7 @@ export interface MemoryRuntimeDependencies {
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
   readonly modelSettings:ModelSettingsStore;
-  readonly agent:ReloadableAgent;
+  readonly agent:AgentRuntimeRegistry;
   readonly runtimeSettings:ExecutionSettings;
   readonly codex:{executable?:string;home?:string};
   readonly instancesDirectory:string;
@@ -176,5 +177,6 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const memoryTopics=memoryTopicsService.host;
   topics.current=memoryTopicsService.topics;
   memoryTopicsService.start();
-  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryTopics,memoryTopicsService});
+  const featureServices=Object.freeze({memories,memoryIntegrationSettings,memoryRecipeSettings,memoryPublication,memoryPipeline,lifecycle}) satisfies Partial<FeatureServices>;
+  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryTopics,memoryTopicsService,featureServices});
 }

@@ -14,7 +14,7 @@ import {defaultModelSettings} from '../src/model-settings.js';
 import {ExecutionSettings,executionSettingsSchema} from '../src/execution-settings.js';
 import {ConfigService} from '../src/config-service.js';
 import {registerBuiltinDomains} from '../src/config.js';
-import {ReloadableAgent} from '../src/model-agent.js';
+import {ReloadableAgent} from '../src/agent-runtime-registry.js';
 import {Store} from '../src/store.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {createExecutionPlatform} from '../src/plugins/execution-platform.js';
