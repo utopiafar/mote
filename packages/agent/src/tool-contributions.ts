@@ -18,11 +18,13 @@ function enabled(input:QueryInput,name:string){
   return (name!=='read_image'||imageToolAvailable(input))&&(name!=='context_evidence'||input.evidenceIds!==undefined&&Boolean(input.evidenceReadRanges?.length))&&
     (name!=='action_catalog'||input.skill==='calendar-extraction'&&Boolean(input.actionCatalog));
 }
-/** Standalone Host assembly still uses the same official descriptors. Optional
- * reader operations which are unavailable cannot be advertised as tools. */
+/** Standalone Host assembly still uses the same fixed native descriptors so the
+ * advertised capability contract does not change with a partial reader; an
+ * unavailable read fails explicitly at call time. Discoverable catalog
+ * capabilities are only advertised when their reader operations exist. */
 function standalonePacks(input:QueryInput,reader?:ContextReader):readonly ReadPackRegistration[]{
   const signal=input.signal??new AbortController().signal;
-  const descriptors=createRegisteredReadPacks(readPackFacts(input)).filter(descriptor=>descriptor.requires.every(permission=>
+  const descriptors=createRegisteredReadPacks(readPackFacts(input)).filter(descriptor=>descriptor.exposure==='native'||descriptor.requires.every(permission=>
     permission==='progress'||permission==='actionCatalog'?permission==='progress'||Boolean(input.actionCatalog):!reader||typeof reader[permission]==='function'));
   return [{descriptors,lifecycle:{signal,assertCurrent(){signal.throwIfAborted();input.assertContextAuthority?.();}}}];
 }
