@@ -30,7 +30,7 @@ import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {MediaReadinessPort} from './ocr-asr-readiness.js';
 import type {ImageProcessingPort} from './image-processing-service.js';
-import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-publication-contract.js';
+import type {MemoryStagePublication, MemoryOwnerPublication} from './memory-publication-contract.js';
 import type {MemoryAutomation} from '../memory-automation.js';
 import type {Conversations} from '../conversations.js';
 import type {MemoryTopicsHost} from '../memory-topics-host.js';
