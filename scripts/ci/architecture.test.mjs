@@ -100,6 +100,7 @@ test('erased type edges, legal Server composition and domain SQL remain valid',t
   const f=fixture(t);
   f.write('packages/agent/src/consumer.ts',"import type {Shape} from '@agent-entry'; export {type Shape as Alias} from './index.js'; export type * from './index.js'; type Inline=import('./index.js').Shape;");
   f.write('apps/server/src/domain.ts',"import {type QueryAgent} from './app.js'; type Agent=typeof import('./app.js').buildApp; const sql='DELETE FROM domain_rows';");
+  f.write('apps/server/src/start-server.ts',"import {buildApp} from './app.js'; buildApp();");
   assert.deepEqual(f.check().violations,[]);
 });
 

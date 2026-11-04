@@ -15,7 +15,7 @@ import {plugins as queryPlugins} from '../assembly/query.js';
 import {plugins as agentPlugins} from '../assembly/agent.js';
 import {plugins as workPlugins} from '../assembly/work.js';
 import {plugins as importPlugins} from '../assembly/imports.js';
-import type {CentralDistribution,FoundationKind,FoundationProvider} from '../bootstrap.js';
+import type {CentralDistribution,CentralDomainPlugin,FoundationKind,FoundationProvider} from '../bootstrap.js';
 
 const contribution=(kind:FoundationKind):ManifestContribution=>Object.freeze<ManifestContribution>({id:`mote.platform.${kind}`,version:'1.0.0',surface:'data',runtime:'host',
   provides:[{kind:'service',id:`mote.platform.${kind}`,apiVersion:'1',cardinality:'single'}]});
@@ -56,5 +56,20 @@ export const authorizationProvider:FoundationProvider<'authorization'>=Object.fr
     const expected=Buffer.from(`Bearer ${config.token}`);
     return {validOwnerBearer(authorization){if(typeof authorization!=='string')return false;const supplied=Buffer.from(authorization);return supplied.length===expected.length&&timingSafeEqual(supplied,expected);}};
   }});
+/** The complete default domain-plugin selection. Each entry is owned by the
+ * assembly module for its domain; this table only selects and pins the build
+ * descriptors, never constructs a second object or installs another host. */
+export const defaultPlugins:readonly CentralDomainPlugin[]=Object.freeze([
+  ...platformPlugins,
+  ...sourcePlugins,
+  ...materialPlugins,
+  ...processingPlugins,
+  ...activityPlugins,
+  ...memoryPlugins,
+  ...queryPlugins,
+  ...agentPlugins,
+  ...workPlugins,
+  ...importPlugins,
+]);
 export const defaultDistribution:CentralDistribution=Object.freeze({foundations:Object.freeze([configurationProvider,storageProvider,authorizationProvider]),features:serverFeatureAdapters,
-  plugins:Object.freeze([...platformPlugins,...sourcePlugins,...materialPlugins,...processingPlugins,...activityPlugins,...memoryPlugins,...queryPlugins,...agentPlugins,...workPlugins,...importPlugins])});
+  plugins:defaultPlugins});

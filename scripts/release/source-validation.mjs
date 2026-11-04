@@ -5,7 +5,7 @@ import { extractSourceArchive } from '../update-archive.mjs';
 import { verifyComponent } from './components.mjs';
 
 export const centralBuildInputs = [
-  'tsconfig.base.json', 'apps/server/tsconfig.json', 'apps/server/src/index.ts',
+  'tsconfig.base.json', 'apps/server/tsconfig.json', 'apps/server/src/index.ts', 'apps/server/src/start-server.ts',
   'apps/web/tsconfig.json', 'apps/web/index.html', 'apps/web/src/main.tsx',
   'packages/shared/package.json', 'packages/shared/tsconfig.json', 'packages/shared/src/index.ts',
   'packages/agent/package.json', 'packages/agent/tsconfig.json', 'packages/agent/src/index.ts'

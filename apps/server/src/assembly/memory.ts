@@ -35,7 +35,7 @@ import {createMemoryProviderAdapters,memoryProviderAdaptersContribution,memoryPr
 import {createMemoryStrategySettings,memoryStrategySettingsContribution,memoryStrategySettingsDeclaration,memoryStrategySettingsReplacement,type MemoryStrategySettingsPlatform} from '../plugins/memory-strategy-settings.js';
 import {createMemoryPublication,memoryPublicationContribution,memoryPublicationDeclaration,memoryPublicationReplacement} from '../plugins/memory-publication.js';
 import {registerEvidenceDeletionForAssembly} from '../plugins/evidence-deletion.js';
-import {MaterialNoteDeletion} from '../material-note-deletion.js';
+import {openMaterialNoteDeletion} from '../plugins/material-repository.js';
 import type {MemoryPipeline,MemoryModelSelection,MemoryPhasePorts} from '../memory-pipeline.js';
 import {memoryReadRanges} from '../memory-read-context.js';
 import {createMemoryPhasePipeline,memoryPhasePipelineContribution,memoryPhasePipelineDeclaration,memoryPhasePipelineReplacement,type MemoryPhasePipelineOptions,type MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
@@ -181,7 +181,7 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const memoryAdapters=memoryProviderAdapters.adapters;
   memoryBindings.providerFactory=(id,namespace)=>memoryProviderAdapters.port.provider(id,namespace);
   const memoryPublicationPlatform=createMemoryPublication({store,memories,bindings:memoryBindings,executor,revokeEvidence:ids=>memoryProviderAdapters.port.erasePreparedEvidence(ids),
-    evidenceDeletion:evidenceReader.files?{captures:store,files:evidenceReader.files,aliases:new MaterialNoteDeletion(store,materials)}:undefined});
+    evidenceDeletion:evidenceReader.files?{captures:store,files:evidenceReader.files,aliases:openMaterialNoteDeletion(store,materials)}:undefined});
   resources.defer(()=>memoryPublicationPlatform.close());
   memoryPublicationPlatform.prepare();memoryPublicationPlatform.start();
   registerEvidenceDeletionForAssembly(store,()=>memoryPublicationPlatform.evidenceDeletion);
