@@ -111,6 +111,9 @@ test('Ask plugin stop cancels owned execution while feature disposal and Insight
  node.insightRuns.start(insightId,{},async(_observe,signal)=>{insightSignal=signal;await held;return {runId:randomUUID(),answer:'Generated late report',citations:[],trace:[]};});
  const imported=await node.imports.create({files:[{name:'generated.txt',dataBase64:Buffer.from('Generated input').toString('base64')}],instruction:'Generate a preview',processing:'preview'});
  const preparing=node.imports.prepare(imported.id);await started;await new Promise(resolve=>setImmediate(resolve));
+ await Promise.all(['mote.ask','mote.insights','mote.imports'].map(feature=>node.featureRoutes.dispose(feature)));
+ // A feature route only revokes its HTTP contribution; the Ask plugin's durable receipt keeps running.
+ assert.equal(querySignal?.aborted,false);assert.equal(node.queryRuns.get(queryId).status,'running');
  await Promise.all([node.queryRunServices.stop('disabled'),node.insightServices.stop('disabled'),node.importServices.stop('disabled')]);
  assert.equal(querySignal?.aborted,true);assert.equal(insightSignal?.aborted,true);assert.equal(importSignal?.aborted,true);
  assert.equal(node.queryRuns.get(queryId).status,'cancelled');assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
