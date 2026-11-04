@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {ModelSettingsEditor} from '../src/ModelSettingsEditor';
+import {ModelSettingsEditor} from '../src/plugins/models-processing/ModelSettingsEditor';
 import type {Api} from '../src/api';
 import type {ModelSettingsView} from '@mote/shared/models';
 
