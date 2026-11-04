@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import type {FeatureServices} from '../feature-services.js';
 import type {FastifyInstance} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
@@ -21,7 +22,7 @@ import {ExecutionFailure} from '../execution-engine.js';
 import type {ConcurrencyGate} from '../concurrency.js';
 import type {ModelSettingsStore} from '../model-settings.js';
 import {modelConfiguration} from '../model-configuration.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import type {BackgroundModelAuthorization,AutomaticModelPurpose,ModelConnection} from '../background-model-authorization.js';
 import {sourceModelIdentity,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {SourceContextStore} from '../source-context.js';
@@ -83,7 +84,7 @@ export interface QueryRuntimeDependencies {
   readonly executor:Pick<ExecutionEngine,'get'>;
   readonly agentGate:Pick<ConcurrencyGate,'snapshot'>;
   readonly modelSettings:ModelSettingsStore;
-  readonly agent:Pick<ReloadableAgent,'configured'|'query'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configured'|'query'>;
   readonly observabilityAssembly:Pick<ObservabilityAssembly,'admittedUsage'>;
   readonly admittedUsageFactory:QueryUsageFactory;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
@@ -260,7 +261,7 @@ export function assembleQueryRuntime(dependencies:QueryRuntimeDependencies){
     signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
 
-  return Object.freeze({activeQueries,withQueryModelAuthority,queryAgent,insight});
+  return Object.freeze({activeQueries,withQueryModelAuthority,queryAgent,insight,featureServices:Object.freeze({queryAgent,insight}) satisfies Partial<FeatureServices>});
 }
 
 export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {

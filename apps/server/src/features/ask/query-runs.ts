@@ -6,7 +6,7 @@ import {agentModelConnection} from '../../model-authorization-host.js';
 import type {ModelConnection} from '../../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../../model-authorization-host.js';
 import type {ModelSettingsStore} from '../../model-settings.js';
-import type {ReloadableAgent} from '../../model-agent.js';
+import type {AgentRuntimeRegistry} from '../../agent-runtime-registry.js';
 import {queryWithAttachmentsSchema} from '../../query-request.js';
 import type {QueryRunsPort} from '../../plugins/query-runs.js';
 
@@ -15,7 +15,7 @@ export interface QueryRunRouteDependencies {
   readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'>;
   readonly availableModelConnections:()=>ModelConnection[];
   readonly modelSettings:Pick<ModelSettingsStore,'select'>;
-  readonly agent:Pick<ReloadableAgent,'configured'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
 }
 
 /** Ask command receipts dispatch through the current plugin activation; a

@@ -10,13 +10,15 @@ import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
 import {StoreError,type Store} from '../store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
+import type {FeatureServices} from '../feature-services.js';
 import type {UsageLedger} from '../usage.js';
 import type {MaterialStore} from '../materials.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {SourceContextStore} from '../source-context.js';
 import type {FileStore} from '../files.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ModelAgentFactory,ModelAgentIdentity,ReloadableAgent} from '../model-agent.js';
+import type {ModelAgentFactory,ModelAgentIdentity} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
 import {captureModelIdentity,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import {modelConfiguration} from '../model-configuration.js';
@@ -73,7 +75,8 @@ export function assembleMedia(dependencies:MediaAssemblyDependencies){
   const unsubscribeMedia=configService.onChange(()=>{try{if(mediaConfigurationIdentity()!==initialMediaConfiguration)mediaPreparation.invalidate();}catch{mediaPreparation.invalidate();}});
   resources.beforeClose(()=>mediaPreparation.close());resources.defer(unsubscribeMedia);
   if(dependencies.backgroundWorker)mediaPreparation.resume();
-  return Object.freeze({mediaAssets,mediaPreparation});
+  const featureServices=Object.freeze({mediaAssets,mediaPreparation}) satisfies Partial<FeatureServices>;
+  return Object.freeze({mediaAssets,mediaPreparation,featureServices});
 }
 
 export interface ProcessingAssemblyDependencies {
@@ -162,7 +165,8 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   resources.defer(()=>processing.settle());
   resources.defer(()=>processing.close());
   await processing.initializeConfiguration();
-  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority});
+  const featureServices=Object.freeze({processing,workflows}) satisfies Partial<FeatureServices>;
+  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices});
 }
 
 export interface PerceptionAssemblyDependencies {
@@ -178,7 +182,7 @@ export interface PerceptionAssemblyDependencies {
   readonly resolveFileModel:FileModelResolver;
   readonly modelSettings:ModelSettingsStore;
   readonly factory:ModelAgentFactory;
-  readonly agent:ReloadableAgent;
+  readonly agent:AgentRuntimeRegistry;
   readonly admittedUsage:AdmittedUsageMeter;
 }
 
@@ -193,5 +197,6 @@ export function assemblePerception(dependencies:PerceptionAssemblyDependencies){
     return {identity:resolved.identity,fingerprint:configuration.fingerprint,configured:service?Boolean(service.apiKey||service.execution==='local'):agent.configuredFor(selected.id),settings,receipt:{profileId:service?.id??selected.id,provider:settings.provider,model:settings.model,revision:modelSettings.view().revision}};
   }})});
   resources.defer(()=>perception.close());
-  return Object.freeze({perception});
+  const featureServices=Object.freeze({perception}) satisfies Partial<FeatureServices>;
+  return Object.freeze({perception,featureServices});
 }

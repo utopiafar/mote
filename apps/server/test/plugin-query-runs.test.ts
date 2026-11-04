@@ -104,6 +104,9 @@ test('an accepted run keeps its original model while later runs use the saved mo
   assert.equal(accepted.statusCode,202,accepted.body);
   await until(()=>node.delegation.get('query:'+id).status==='waiting'?true:undefined);
   assert.equal(calls.filter(call=>call.question==='Generated pinned run').at(-1)?.model,'original-fixture');
+  // The real AgentRuntimeHost revalidates the captured model connection on every
+  // fragment. A model-only switch leaves that connection identity unchanged, so
+  // the accepted run resumes under its original model while later runs use the saved one.
   const view=(await node.app.inject({url:'/api/model-settings',headers})).json() as {revision:number;settings:Record<string,unknown>};
   const {apiKeyConfigured:_key,headersConfigured:_headers,extraBodyConfigured:_body,...settings}=view.settings;
   const saved=await node.app.inject({method:'PUT',url:'/api/model-settings',headers,payload:{revision:view.revision,settings:{...settings,model:'next-fixture'}}});

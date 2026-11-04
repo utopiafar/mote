@@ -102,7 +102,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store;
   assertCurrentDelegationSchema(store);
   let availableModelConnections=():ModelConnection[]=>[];
-  const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
+  const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync,featureServices:platformFeatureServices}=await assemblePlatform({
     bootstrap,config,store,resources,serverVersion,
     availableModelConnections:()=>availableModelConnections(),connections:dependencies?.connections,
     queryQualityExperiment:dependencies?.queryQualityExperiment,
@@ -117,8 +117,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   backendContext.provide('moteConfig',configService);
   backendContext.provide('moteExecution',executor);
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
-  const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
-  const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker});
+  const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,featureServices:sourcesFeatureServices}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
+  const {mediaAssets,mediaPreparation,featureServices:mediaFeatureServices}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker});
   const admittedUsageFactory=(route?:{mode:()=>AgentRunFinalizer|undefined;host?:()=>ReturnType<typeof observabilityAssembly.admittedUsage>|undefined})=>(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
@@ -145,7 +145,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   };
   const admittedUsage=admittedUsageFactory();
   let catalogChangesEnabled=false;
-  const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts}=assembleMaterials({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
+  const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,featureServices:materialsFeatureServices}=assembleMaterials({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
   const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
@@ -170,7 +170,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const credential=(req:FastifyRequest)=>{const c=connectionIdentity(req);return c&&!connections.isOwner(c)?c:undefined;};
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
-  const {ownerQuestions}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
+  const {featureServices:workInputFeatureServices}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
   const modelEvidenceAuthority=createModelEvidenceAuthority({resolveLineage:value=>resolveDependencies(store,value),
     assertImageGrants:(materialInputs,images)=>assertMemoryImageGrants(store,materialInputs,images),reader:evidenceReader,conversations,sourceContexts,
@@ -225,7 +225,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     ...(baseReader.readImage?{readImage:observeRead('reader_image',baseReader.readImage)}:{}),
     ...(baseReader.memories?{memories:observeRead('reader_memories',baseReader.memories)}:{}),
   };
-  const {agent,factory,codex}=await assembleAgent({
+  const {agent,factory,codex,featureServices:agentFeatureServices}=await assembleAgent({
     config,resources,diagnostics,configurationPlatform,reader,modelAuthorizationHost,
     createModelAgent:dependencies?.createModelAgent,authorization:modelAuthorization,admission:providerAdmission,
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
@@ -241,13 +241,13 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   };
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
-  const {insightRuns}=assembleInsightRuns({store,resources,executor,evidenceReader});
-  const {workflows,processing,resolveFileModel,mediaModelAuthority}=await assembleProcessing({store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider});
+  const {insightRuns,featureServices:insightRunsFeatureServices}=assembleInsightRuns({store,resources,executor,evidenceReader});
+  const {workflows,processing,resolveFileModel,mediaModelAuthority,featureServices:processingFeatureServices}=await assembleProcessing({store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider});
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
   const withMediaOwnerIntent=<T>(id:string,task:()=>Promise<T>|T)=>modelAuthorizationHost.manual('owner-media:'+randomUUID(),availableModelConnections(),async()=>task(),undefined,'manual',[captureModelIdentity(id)]);
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
   resources.defer(disposeCaptureMemoryIntake);
-  const {perception}=assemblePerception({store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
+  const {perception,featureServices:perceptionFeatureServices}=assemblePerception({store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
   additionalModelConnections=()=>[...processing.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return queryRuntime.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
@@ -344,8 +344,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     if(error instanceof ConfigServiceError)return reply.code(error.statusCode).send({error:error.code,message:error.code==='config_conflict'?moteText('配置已发生变化，请刷新后重试。'):moteText('配置未能应用，请检查配置状态后重试。'),requestId:req.id});
     reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
-  const {actions,actionsServices}=await assembleActions({store,files,resources,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent:(input,operation,moduleId,usageOwner)=>queryRuntime.queryAgent(input,operation,moduleId,usageOwner)});
-  const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting});
+  const {actions,featureServices:actionsFeatureServices}=await assembleActions({store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent:(input,operation,moduleId,usageOwner)=>queryRuntime.queryAgent(input,operation,moduleId,usageOwner)});
+  const {connectors,featureServices:connectorsFeatureServices}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting});
   // Bounded transport batch with independent durable acknowledgements. Validate the
   // entire envelope and credential scope before writing any member of the batch.
 
@@ -361,7 +361,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
 
   const serverLifecycle=createServerLifecycle();
   const queryRuntime=assembleQueryRuntime({store,resources,lifecycle:serverLifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,admittedUsageFactory,modelEvidenceAuthority,assertModelEvidence,sourceContexts});
-  const {activeQueries,withQueryModelAuthority,queryAgent,insight}=queryRuntime;
+  const {activeQueries,withQueryModelAuthority,queryAgent,insight,featureServices:queryRuntimeFeatureServices}=queryRuntime;
   const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
     draftOrigin,strategy,deletions:memories.deletions,authorizeDeletionEvidence:ids=>memoryPipeline.inputs.assertDeletion(ids,input.modelProfileId),cache:memoryReviews,snapshot:()=>{
       const ids=input.evidenceReadRanges?[...new Set([...(input.evidenceIds??[]),...memoryReadRanges(result,input.evidenceRanges??[],input.evidenceReadRanges).map(range=>range.id)])]:input.evidenceIds??[];
@@ -394,11 +394,11 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
   };
-  const {memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryIntegrationSettings,memoryTopics}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),review:reviewExtraction,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
+  const {memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryIntegrationSettings,memoryTopics,featureServices:memoryRuntimeFeatureServices}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),review:reviewExtraction,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
 
-  const {imports,importTasks,launchImport,launchOwnerImport}=assembleImports({app,store,resources,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
+  const {imports,importTasks,launchImport,launchOwnerImport,featureServices:importsFeatureServices}=assembleImports({app,store,resources,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
   const withMediaOwnerBatch=async<T>(ids:readonly string[],task:()=>T)=>modelAuthorization.manualCommand('owner-media-batch:'+randomUUID(),ids.map(captureModelIdentity),availableModelConnections(),task);
   const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
 
@@ -459,12 +459,25 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // C02 stops the worker before content accessors; DB remains alive until every
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
-  const {activity,automaticActivity,activityServices}=assembleActivity({store,resources,operations:executionPlatform.assembly.operations,delegation,materials,executor,configService,modelSettings,agent,workflows,queryAgent,backendContext,isCollector:request=>Boolean(credential(request))});
+  const {activity,automaticActivity,activityServices}=assembleActivity({store,resources,operations:executionPlatform.assembly.operations,delegation,materials,executor,configService,modelSettings,agent,workflows,queryAgent,backendContext,isCollector:request=>Boolean(credential(request)),archiveReader,diagnostics,evidenceReader});
   const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(value));
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
-  const featureServices={pluginCenter,modelAuthorization,modelAuthorizationHost,configService,memoryPublication,ownerQuestions,memoryIntegrationSettings,memoryRecipeSettings,connectors,processing,executor,actionsServices,agent,archivedFiles,config,connections,contentStorage,diagnostics,evidenceReader,fileEvidence,files,imports,indexer,ingress,insightRuns,lifecycle,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaPreparation,memories,memoryPipeline,modelSettings,perception,providerAdmission,runtimeSettings,sourcePipelines,sources,store,workflows,withMediaOwnerBatch,withMediaOwnerIntent,launchOwnerImport,availableModelConnections:()=>availableModelConnections(),contextTrees,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,memoryDelegation,connectionIdentity,credential,assertRequestActive,sourceOwner,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlatform.assemblyForRoutes().playback},notesSource:notesSource.assemblyForRoutes(),notesCapture:{authority:authorizationPlatform,route:{request:request=>pins.get(request)},intake:captureIntake.ports.captureIntake},agentFeatures,archiveReader,isClosing:()=>serverLifecycle.isClosing(),agentGate,interactiveGate,interactiveModelGate,llmGate,codex,importTasks,jobId,launchImport,insight,insightRequestSchema,mediaRange,parseCaptureBundle,queryAgent,reviewExtraction,semanticSelection,serverVersion} satisfies FeatureServices;
+  const featureServices:FeatureServices=Object.freeze({
+    ...platformFeatureServices,...sourcesFeatureServices,...mediaFeatureServices,...materialsFeatureServices,
+    ...agentFeatureServices,...insightRunsFeatureServices,...processingFeatureServices,...perceptionFeatureServices,
+    ...actionsFeatureServices,...connectorsFeatureServices,...queryRuntimeFeatureServices,...importsFeatureServices,
+    ...workInputFeatureServices,...memoryRuntimeFeatureServices,
+    ...serverLifecycle.featureServices,
+    // Host-owned and late-bound members; assemblies fill the slices above.
+    pluginCenter,withMediaOwnerBatch,withMediaOwnerIntent,parseCaptureBundle,
+    connectionIdentity,credential,assertRequestActive,sourceOwner,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},
+    notesCapture:{authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake},
+    agentFeatures,archiveReader,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,memoryDelegation,
+    archivedFiles,contentStorage,maintenanceWorker,store,modelSettings,connections,modelAuthorizationHost,
+    jobId,insightRequestSchema,mediaRange,reviewExtraction,semanticSelection,
+  });
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   resources.defer(()=>featureHost.close());
   registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});

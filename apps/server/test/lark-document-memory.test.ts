@@ -9,7 +9,7 @@ import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {MemoryStrategies} from '../src/memory-strategies.js';
-import {MemoryRecipeSettings,memoryRecipeSettingsQuery,memoryRecipeScope} from '../src/memory-recipe-settings.js';
+import {MemoryRecipeSettings,memoryRecipeSettingsQuery} from '../src/memory-recipe-settings.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
 
 const at='2026-10-15T00:00:00.000Z',end='2026-10-15T01:00:00.000Z',later='2026-10-15T02:00:00.000Z';
@@ -32,6 +32,29 @@ test('Feishu defaults copy current defaults once, retain source overrides and ne
   assert.deepEqual(settings.selection('lark').map(b=>({id:b.recipe.id,version:b.recipe.version})),[personal]);
   settings.configure({sourceId:'lark',recipes:null});assert.deepEqual(settings.selection('lark').map(b=>({id:b.recipe.id,version:b.recipe.version})),[daily]);
   settings.configure({scope:'lark-docs',recipes:[personal]});assert.deepEqual(settings.selection('lark').map(b=>({id:b.recipe.id,version:b.recipe.version})),[personal]);
+});
+
+test('a new vault writes the current defaults directly and keeps source choices in the current settings table',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-lark-memory-fresh-')),store=new Store(dir),strategies=new MemoryStrategies(),settings=new MemoryRecipeSettings(store,strategies),sources=new SourceStore(store);
+  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+  assert.deepEqual(settings.selection(),[strategies.resolve(personal).binding]);
+  assert.deepEqual(settings.selection(undefined,'capture'),[strategies.resolve(personal).binding,strategies.resolve(daily).binding]);
+  assert.deepEqual(settings.selection(undefined,'lark-docs'),[strategies.resolve(personal).binding,strategies.resolve(daily).binding]);
+  const rows=store.db.prepare('SELECT id,json FROM memory_recipe_settings ORDER BY id').all().map(row=>({id:String(row.id),recipes:JSON.parse(String(row.json)).map((binding:{recipe:{id:string;version:string}})=>binding.recipe.id+'@'+binding.recipe.version)}));
+  assert.deepEqual(rows,[
+    {id:'capture-default',recipes:['mote.personal-memory@5','mote.daily-event-memory@2']},
+    {id:'default',recipes:['mote.personal-memory@5']},
+    {id:'lark-docs-default',recipes:['mote.personal-memory@5','mote.daily-event-memory@2']},
+  ]);
+  assert.deepEqual(store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'memory_recipe_%' ORDER BY name").all().map(row=>String(row.name)),['memory_recipe_settings']);
+  sources.register({id:'ordinary',name:'Generated other',kind:'custom',deviceId:'generated',platform:'import'});
+  settings.configure({sourceId:'ordinary',recipes:[daily]});
+  assert.equal(settings.view('ordinary').inherited,false);
+  assert.deepEqual(settings.selection('ordinary').map(binding=>binding.recipe.id),[daily.id]);
+  settings.configure({sourceId:'ordinary',recipes:null});
+  assert.equal(settings.view('ordinary').inherited,true);
+  assert.deepEqual(settings.selection('ordinary'),settings.selection());
+  assert.deepEqual(store.db.prepare("SELECT id FROM memory_recipe_settings WHERE id LIKE 'source:%'").all(),[]);
 });
 
 test('full custom general selections retain all nine bindings when capture and Feishu defaults append the daily recipe',t=>{

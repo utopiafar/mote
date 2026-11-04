@@ -11,7 +11,7 @@ import type {AddressInfo} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {AgentNotConfiguredError,type ContextReader,type QueryInput} from '@mote/agent';
 import type {ModelSettings} from '@mote/shared/models';
-import {AgentRuntimeHost,type AgentRuntimeHostDependencies} from '../src/agent-runtime-host.js';
+import {AgentRuntimeRegistry,type AgentRuntimeRegistryDependencies} from '../src/agent-runtime-registry.js';
 import {buildApp} from '../src/app.js';
 import {documentFromConfig,registerBuiltinDomains,type Config} from '../src/config.js';
 import {ConfigService} from '../src/config-service.js';
@@ -25,8 +25,8 @@ const manual=process.env.MOTE_TEST_AGENT_STARTUP_JOURNEY==='1';
 const settings:ModelSettings={provider:'custom',protocol:'deepseek',model:'generated-startup-model',baseUrl:'http://127.0.0.1:1',apiKey:'generated-local-only-key',headers:{},extraBody:{},reasoningEffort:'auto',maxTokens:4096,modelRequestTimeoutMs:10000,agentTimeoutMs:20000,allowUnauthenticatedLocal:false};
 const identity={kind:'profile' as const,id:'generated-profile'};
 const reader:ContextReader={search:async()=>[],timeline:async()=>({items:[],nextCursor:null,totalCount:0}),evidence:async()=>[],activity:async()=>({captures:0}),devices:async()=>[]};
-function unitHost(factory:NonNullable<AgentRuntimeHostDependencies['createModelAgent']>,gate=new ConcurrencyGate(1)){
-  const host=new AgentRuntimeHost({codex:undefined,createModelAgent:factory,
+function unitHost(factory:NonNullable<AgentRuntimeRegistryDependencies['createModelAgent']>,gate=new ConcurrencyGate(1)){
+  const host=new AgentRuntimeRegistry({codex:undefined,createModelAgent:factory,
     authorization:{assertCurrent(){}},admission:{check(){},run:async(_settings,task)=>task()},
     runModelFor:()=>async task=>task(),authorizeModelRequest(){},assertPurpose(){},assertEvidence(){},assertEvidenceAsync:async()=>{},pinEvidence:input=>input,
     agentGate:gate,interactiveGate:gate,modelContext:new AsyncLocalStorage<QueryInput>(),modelOperation:new AsyncLocalStorage<string>(),

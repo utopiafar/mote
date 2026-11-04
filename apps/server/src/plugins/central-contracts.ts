@@ -32,6 +32,7 @@ import type {MemoryTopicsHost} from '../memory-topics-host.js';
 import type {AutomaticTopics} from '../automatic-topics.js';
 import type {OwnerQuestions} from '../owner-questions.js';
 import type {MemoryBindings} from '../memory-bindings.js';
+import {featureServiceMembers} from '../feature-services.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
  * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
@@ -207,36 +208,47 @@ export interface CentralMigrationSlice {
   readonly task: string;
   readonly factory: string;
   readonly replacement: ReplacementPolicy;
+  /** Derived from the slice file's member-name constant; never maintained by hand. */
   readonly legacy: readonly string[];
   readonly objects: readonly string[];
   readonly consumers: readonly string[];
 }
-export const centralMigrationSlices = {
-  vault: {task:'C02', factory:'vault-platform', replacement:'restart', legacy:['store','archivedFiles','contentStorage','maintenanceWorker'], objects:['Store/DB/locks','ArchivedFileStore','ContentStorageService','MaintenanceWorker/retention'], consumers:['C10','C11','C19','C21','C24']},
-  configuration: {task:'C03', factory:'configuration-platform', replacement:'restart', legacy:['configService','runtimeSettings','modelSettings','config'], objects:['ConfigService/validator/domain handlers/watchers','ExecutionSettings','ModelSettingsStore'], consumers:['C05','C17','C18','C21','AGENT']},
-  authorization: {task:'C04', factory:'authorization-platform', replacement:'restart', legacy:['connections','connectionIdentity','credential','assertRequestActive','sourceOwner','modelAuthorization','modelAuthorizationHost','availableModelConnections'], objects:['Connections/LoginHandoffs','BackgroundModelAuthorization','ModelAuthorizationHost/evidence authority','request identities/grant fences','opaque commit references/fixed issuer verification'], consumers:['C02','C10','C11','C12','C19','C22','C25','C27','HOST']},
-  execution: {task:'C05', factory:'execution-platform', replacement:'restart', legacy:['executor','providerAdmission','agentGate','llmGate','interactiveGate','interactiveModelGate'], objects:['ExecutionEngine','ProviderAdmission','four ConcurrencyGate lanes','scoped handler registrations'], consumers:['C09','C17','C19','C22','C24','C25','C27','AGENT']},
-  observability: {task:'C06', factory:'observability-platform', replacement:'restart', legacy:['diagnostics','usageLedger','eventLoop','diagnosticSnapshot','softwareUpdate','serverVersion','webVersion'], objects:['ServerDiagnostics/writer','executionObserver','UsageLedger/admittedUsage','eventLoop monitor','update service'], consumers:['C05','C17','C22','C26','C27','HOST','AGENT']},
-  control: {task:'C07/C08', factory:'plugin-control', replacement:'hot', legacy:['pluginCenter'], objects:['PluginCenter','WorkerPluginRuntime','durable commands/references','control HTTP/snapshot projection'], consumers:['C21','C23','C24','C25','WEB','HOST']},
-  sourceRuntime: {task:'C09', factory:'source-runtime', replacement:'hot', legacy:['sourcePipelines'], objects:['SourcePipelineRuntime','recipe registry/epoch','source_pipeline_bindings','checkpoint/product-consumer registrations'], consumers:['C10','C12','C17','C19','C21','C22']},
-  capture: {task:'C10/C10A/C10B/C10C', factory:'capture-sources', replacement:'hot', legacy:['sources','ingress','parseCaptureBundle','notesSource','notesCapture'], objects:['SourceStore','IngressService/RecordContext','capture/notes/devices routes','capture timeline/cache/first-data','source context routes'], consumers:['C11','C12','C19D','WEB','MAC','ANDROID']},
-  files: {task:'C11', factory:'files-source', replacement:'hot', legacy:['files','fileEvidence','setPlaybackAuthorization','filesSource'], objects:['FileStore/FileEvidence','FileRawReader','upload sessions/sweep','playback grants'], consumers:['C10A','C17','C19D','C20','MAC','ANDROID']},
-  connectors: {task:'C12/C13/C14/C15/C16', factory:'connector-host-adapter', replacement:'hot', legacy:['connectors'], objects:['ConnectorRegistry','six built-in connector factories','OAuth state/poll/CLI/session','recording binding/staging/retirement'], consumers:['C09','C19','AGENT','WEB','MAC','ANDROID']},
-  processing: {task:'C17', factory:'processing-services', replacement:'hot', legacy:['processing','workflows','semanticSelection'], objects:['ProcessingRuntime','FileProcessing/settle','semantic/conversation processor contributions','recipe handlers'], consumers:['C18','C19','C20','C22','C25']},
-  media: {task:'C18A/C18B/C18C', factory:'media-processing', replacement:'hot', legacy:['mediaAssets','mediaPreparation','perception','mediaRange','withMediaOwnerBatch','withMediaOwnerIntent'], objects:['MediaAssets','MediaPreparation/worker/config invalidation','ImageProcessing/recipes','media execution facts'], consumers:['C10A','C11','C17','C19','AGENT']},
-  materials: {task:'C19A/C19B/C19C/C19D/C19E', factory:'material-context', replacement:'hot', legacy:['materials','materialOrganizer','materialMemoryWork','indexer','evidenceReader','contextTrees'], objects:['MaterialStore/revision publication','organizer/backlog','retrieval/vector index','unique EvidenceReader/SourceContextStore','MaterialMemoryWork/capture intake','context trees/library/raw projections'], consumers:['C09','C10B','C17','C20','C22','C26','C27','AGENT','WEB','MAC','ANDROID']},
-  imports: {task:'C20', factory:'import-services', replacement:'hot', legacy:['imports','importTasks','launchImport','launchOwnerImport'], objects:['ImportStore','PythonSourcePackExecutor','importTasks/importAgents','queued restart/manifest/lease recovery'], consumers:['C11','C17','C19','AGENT','WEB']},
-  memoryControl: {task:'C21A/C21B/C21C/C21D', factory:'memory-control-services', replacement:'hot', legacy:['memories','memoryBindings','memoryIntegrationSettings','memoryRecipeSettings'], objects:['Strategies/RecipeSettings','Automation/freeze','Bindings/retained readers/control'], consumers:['C19E','C22','C23','C24','C27']},
-  memoryRecords: {task:'C21B', factory:'memory-record-repository', replacement:'hot', legacy:[], objects:['MemoryStore record storage','memory storage schema'], consumers:['C19E','C22','C23','C24','AGENT']},
-  memoryRuntime: {task:'C22A/C22B/C22C', factory:'memory-lifecycle', replacement:'hot', legacy:['memoryPipeline','lifecycle','memoryDelegation','reviewExtraction','automaticMemoryScheduling'], objects:['MemoryPipeline/review cache','MemoryLifecycle/extensions/WorkingMemory','TopicsHost','owner continuation/questions/delegation'], consumers:['C19E','C21','C24','C26','AGENT']},
-  memoryProviders: {task:'C23', factory:'memory-provider-adapters', replacement:'hot', legacy:[], objects:['MemoryAdapters/Mem0/Hindsight/workers','fixed namespace/config readers','Hindsight authority/usage maps','prepared stages/probes'], consumers:['C21D','C24','AGENT']},
-  publication: {task:'C24', factory:'memory-publication', replacement:'hot', legacy:['memoryPublication'], objects:['MemoryPublication/poll','retirement/dependencies','submitted writes/erases/revocations/native cleanup references','EvidenceDeletion/export/provider backup'], consumers:['C10B','C19','C21D','C22','HOST']},
-  actions: {task:'C25', factory:'actions-services', replacement:'hot', legacy:['actions'], objects:['Actions/handler','ActionCapabilities','ManagedCalendar/Todos','approval/grant/delivery/exact receipt'], consumers:['C26','AGENT','WEB','MAC','ANDROID']},
-  activity: {task:'C26/C26A/C26B/C26C', factory:'insight-activity-services', replacement:'hot', legacy:['activity','automaticActivity','insight','insightRuns','insightRequestSchema','ownerQuestions'], objects:['ActivityProjection','AutomaticActivity/timer','InsightRuns/snapshots','OwnerQuestions','Agent view pagination'], consumers:['C22','AGENT','WEB','MAC','ANDROID']},
-  query: {task:'C27', factory:'query-domain-services', replacement:'hot', legacy:['jobId'], objects:['Conversations/retention','DelegationRuntime','DelegatedQueryRuns','query preparation/snapshot/commit/direct images'], consumers:['C22','C26','AGENT','WEB','MAC','ANDROID']},
-  agent: {task:'A01/A04/A08/A09/A10/A12/A14/A17', factory:'agent-contributions', replacement:'hot', legacy:['agent','agentFeatures','archiveReader','codex','queryAgent'], objects:['ReloadableAgent/runtime generations','Agent tool factories/reader adapter','model transport/admission callbacks','import Agent factory'], consumers:['C17','C19D','C20','C22','C26','C27']},
-  host: {task:'H04/H05/H14', factory:'central-host', replacement:'restart', legacy:['isClosing'], objects:['Cordis/ServerResources/common host','Fastify/auth dispatch/static contribution','index.ts bootstrap/PID/runtime listener/signals'], consumers:['C02-C27','AGENT','WEB']},
-} as const satisfies Record<string, CentralMigrationSlice>;
+type CentralMigrationAudit = Omit<CentralMigrationSlice, 'legacy'>;
+
+/** Slice metadata only. `legacy` is derived below from `featureServiceMembers`, the
+ * per-slice member-name constants that also compose the FeatureServices intersection. */
+const centralMigrationAudits = {
+  vault: {task:'C02', factory:'vault-platform', replacement:'restart', objects:['Store/DB/locks','ArchivedFileStore','ContentStorageService','MaintenanceWorker/retention'], consumers:['C10','C11','C19','C21','C24']},
+  configuration: {task:'C03', factory:'configuration-platform', replacement:'restart', objects:['ConfigService/validator/domain handlers/watchers','ExecutionSettings','ModelSettingsStore'], consumers:['C05','C17','C18','C21','AGENT']},
+  authorization: {task:'C04', factory:'authorization-platform', replacement:'restart', objects:['Connections/LoginHandoffs','BackgroundModelAuthorization','ModelAuthorizationHost/evidence authority','request identities/grant fences','opaque commit references/fixed issuer verification'], consumers:['C02','C10','C11','C12','C19','C22','C25','C27','HOST']},
+  execution: {task:'C05', factory:'execution-platform', replacement:'restart', objects:['ExecutionEngine','ProviderAdmission','four ConcurrencyGate lanes','scoped handler registrations'], consumers:['C09','C17','C19','C22','C24','C25','C27','AGENT']},
+  observability: {task:'C06', factory:'observability-platform', replacement:'restart', objects:['ServerDiagnostics/writer','executionObserver','UsageLedger/admittedUsage','eventLoop monitor','update service'], consumers:['C05','C17','C22','C26','C27','HOST','AGENT']},
+  control: {task:'C07/C08', factory:'plugin-control', replacement:'hot', objects:['PluginCenter','WorkerPluginRuntime','durable commands/references','control HTTP/snapshot projection'], consumers:['C21','C23','C24','C25','WEB','HOST']},
+  sourceRuntime: {task:'C09', factory:'source-runtime', replacement:'hot', objects:['SourcePipelineRuntime','recipe registry/epoch','source_pipeline_bindings','checkpoint/product-consumer registrations'], consumers:['C10','C12','C17','C19','C21','C22']},
+  capture: {task:'C10/C10A/C10B/C10C', factory:'capture-sources', replacement:'hot', objects:['SourceStore','IngressService/RecordContext','capture/notes/devices routes','capture timeline/cache/first-data','source context routes'], consumers:['C11','C12','C19D','WEB','MAC','ANDROID']},
+  files: {task:'C11', factory:'files-source', replacement:'hot', objects:['FileStore/FileEvidence','FileRawReader','upload sessions/sweep','playback grants'], consumers:['C10A','C17','C19D','C20','MAC','ANDROID']},
+  connectors: {task:'C12/C13/C14/C15/C16', factory:'connector-host-adapter', replacement:'hot', objects:['ConnectorRegistry','six built-in connector factories','OAuth state/poll/CLI/session','recording binding/staging/retirement'], consumers:['C09','C19','AGENT','WEB','MAC','ANDROID']},
+  processing: {task:'C17', factory:'processing-services', replacement:'hot', objects:['ProcessingRuntime','FileProcessing/settle','semantic/conversation processor contributions','recipe handlers'], consumers:['C18','C19','C20','C22','C25']},
+  media: {task:'C18A/C18B/C18C', factory:'media-processing', replacement:'hot', objects:['MediaAssets','MediaPreparation/worker/config invalidation','ImageProcessing/recipes','media execution facts'], consumers:['C10A','C11','C17','C19','AGENT']},
+  materials: {task:'C19A/C19B/C19C/C19D/C19E', factory:'material-context', replacement:'hot', objects:['MaterialStore/revision publication','organizer/backlog','retrieval/vector index','unique EvidenceReader/SourceContextStore','MaterialMemoryWork/capture intake','context trees/library/raw projections'], consumers:['C09','C10B','C17','C20','C22','C26','C27','AGENT','WEB','MAC','ANDROID']},
+  imports: {task:'C20', factory:'import-services', replacement:'hot', objects:['ImportStore','PythonSourcePackExecutor','importTasks/importAgents','queued restart/manifest/lease recovery'], consumers:['C11','C17','C19','AGENT','WEB']},
+  memoryControl: {task:'C21A/C21B/C21C/C21D', factory:'memory-control-services', replacement:'hot', objects:['Strategies/RecipeSettings','Automation/freeze','Bindings/retained readers/control'], consumers:['C19E','C22','C23','C24','C27']},
+  memoryRecords: {task:'C21B', factory:'memory-record-repository', replacement:'hot', objects:['MemoryStore record storage','memory storage schema'], consumers:['C19E','C22','C23','C24','AGENT']},
+  memoryRuntime: {task:'C22A/C22B/C22C', factory:'memory-lifecycle', replacement:'hot', objects:['MemoryPipeline/review cache','MemoryLifecycle/extensions/WorkingMemory','TopicsHost','owner continuation/questions/delegation'], consumers:['C19E','C21','C24','C26','AGENT']},
+  memoryProviders: {task:'C23', factory:'memory-provider-adapters', replacement:'hot', objects:['MemoryAdapters/Mem0/Hindsight/workers','fixed namespace/config readers','Hindsight authority/usage maps','prepared stages/probes'], consumers:['C21D','C24','AGENT']},
+  publication: {task:'C24', factory:'memory-publication', replacement:'hot', objects:['MemoryPublication/poll','retirement/dependencies','submitted writes/erases/revocations/native cleanup references','EvidenceDeletion/export/provider backup'], consumers:['C10B','C19','C21D','C22','HOST']},
+  actions: {task:'C25', factory:'actions-services', replacement:'hot', objects:['Actions/handler','ActionCapabilities','ManagedCalendar/Todos','approval/grant/delivery/exact receipt'], consumers:['C26','AGENT','WEB','MAC','ANDROID']},
+  activity: {task:'C26/C26A/C26B/C26C', factory:'insight-activity-services', replacement:'hot', objects:['ActivityProjection','AutomaticActivity/timer','InsightRuns/snapshots','OwnerQuestions','Agent view pagination'], consumers:['C22','AGENT','WEB','MAC','ANDROID']},
+  query: {task:'C27', factory:'query-domain-services', replacement:'hot', objects:['Conversations/retention','DelegationRuntime','DelegatedQueryRuns','query preparation/snapshot/commit/direct images'], consumers:['C22','C26','AGENT','WEB','MAC','ANDROID']},
+  agent: {task:'A01/A04/A08/A09/A10/A12/A14/A17', factory:'agent-contributions', replacement:'hot', objects:['ReloadableAgent/runtime generations','Agent tool factories/reader adapter','model transport/admission callbacks','import Agent factory'], consumers:['C17','C19D','C20','C22','C26','C27']},
+  host: {task:'H04/H05/H14', factory:'central-host', replacement:'restart', objects:['Cordis/ServerResources/common host','Fastify/auth dispatch/static contribution','index.ts bootstrap/PID/runtime listener/signals'], consumers:['C02-C27','AGENT','WEB']},
+} as const satisfies Record<keyof typeof featureServiceMembers, CentralMigrationAudit>;
+
+type CentralMigrationSlices = {readonly [K in keyof typeof centralMigrationAudits]: (typeof centralMigrationAudits)[K] & {readonly legacy: (typeof featureServiceMembers)[K]}};
+export const centralMigrationSlices = Object.fromEntries(Object.entries(centralMigrationAudits).map(([slice, audit]) => {
+  const legacy = featureServiceMembers[slice as keyof typeof featureServiceMembers];
+  return [slice, {...audit, legacy}];
+})) as unknown as CentralMigrationSlices;
 export type CentralSlice = keyof typeof centralMigrationSlices;
 
 /** Connect feature -> consumed port -> provider factory/task without inferring a provider
@@ -288,9 +300,7 @@ export const centralFeatureMigrations = {
   'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']},
   'mote.imports': {owners:['imports','files','agent'], requires:['execution','sourceIntake','contentRead','requestAuthorization']},
   'mote.ask': {owners:['query','agent'], requires:['conversations','requestAuthorization','modelAdmission','captureRead','materialRead','memoryRead','memorySnapshots']},
-  'mote.usage': {owners:['observability'], requires:['usage','requestAuthorization']},
   'mote.insights': {owners:['activity','agent'], requires:['execution','materialRead','modelAdmission']},
-  'mote.diagnostics': {owners:['observability'], requires:['execution','requestAuthorization']},
   'mote.agent-view': {owners:['activity','agent'], requires:['materialRead','memoryRead']},
   'mote.features': {owners:['control','host'], requires:['pluginControlRead']},
 } as const satisfies Record<string, CentralFeatureMigration>;

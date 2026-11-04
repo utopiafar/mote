@@ -1,141 +1,107 @@
-import type {PluginCenter} from './plugin-center.js';
-import type {BackgroundModelAuthorization} from './background-model-authorization.js';
-import type {ModelAuthorizationHost} from './model-authorization-host.js';
-import type {ConfigService} from './config-service.js';
-import type {MemoryPublication} from './memory-publication.js';
-import type {OwnerQuestions} from './owner-questions.js';
-import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
-import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
-import type {ConnectorHostAdapter} from './plugins/connector-host-adapter.js';
-import type {FileProcessing} from './file-processing.js';
-import type {ExecutionEngine} from './execution-engine.js';
-import type {ActionsServicesAssembly} from './plugins/actions-services.js';
-import type {ReloadableAgent} from './model-agent.js';
-import type {ArchivedFileStore} from './archived-files.js';
-import type {Config} from './config.js';
-import type {Connections} from './connections.js';
-import type {ContentStorageService} from './content-storage.js';
-import type {ServerDiagnostics} from './diagnostics.js';
-import type {EvidenceReader} from './evidence-reader.js';
-import type {FileEvidence} from './file-evidence.js';
-import type {FileStore} from './files.js';
-import type {ImportStore} from './imports.js';
-import type {RetrievalIndex} from './plugins/central-contracts.js';
-import type {IngressService} from './ingress.js';
-import type {InsightRuns} from './insight-runs.js';
-import type {MemoryLifecycle} from './memory-lifecycle.js';
-import type {MaintenanceWorker} from './maintenance.js';
-import type {MaterialOrganizerRuntime} from './material-organizers.js';
-import type {MaterialMemoryWork} from './material-memory-work.js';
-import type {MaterialStore} from './materials.js';
-import type {MediaPreparation} from './media-preparation.js';
-import type {MediaAssets} from './media-assets.js';
-import type {MemoryStore} from './memory.js';
-import type {MemoryPipeline} from './memory-pipeline.js';
-import type {ModelSettingsStore} from './model-settings.js';
-import type {ImageProcessing} from './image-processing.js';
-import type {ProviderAdmission} from './provider-admission.js';
-import type {ExecutionSettings} from './execution-settings.js';
-import type {SourcePipelineRuntime} from './source-pipelines.js';
-import type {SourceStore} from './sources.js';
-import type {Store} from './store.js';
-import type {ProcessingRuntime} from './processing-runtime.js';
-import type {FastifyRequest} from 'fastify';
-import type {AgentOptions,ContextReader,QueryInput} from '@mote/agent';
-import type {CaptureInput,InsightSnapshot,QueryResult} from '@mote/shared';
-import type {ModelConnection} from './background-model-authorization.js';
-import type {ConnectionCredential} from './connections.js';
-import type {ConcurrencyGate} from './concurrency.js';
-import type {createContextTrees} from './context-trees.js';
-import type {installAgentFeatures} from './agent-feature-host.js';
-import type {registerMemoryDelegation} from './memory-delegation.js';
-import type {reviewMemory,MemoryDraftOrigin} from './memory-review.js';
-import type {NotesCapture} from './features/notes.js';
-import type {NotesSourceAssembly} from './plugins/notes-source.js';
-import type {FilesFeatureSource} from './features/files.js';
-import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
-import type {modelConfiguration} from './model-configuration.js';
-import type {insightResult} from './insights.js';
-import type {QueryScope} from './query-scope.js';
-import type {insightRequestSchema} from './query-request.js';
+import {actionsFeatureServiceMembers} from './feature-services/actions.js';
+import {activityFeatureServiceMembers} from './feature-services/activity.js';
+import {agentFeatureServiceMembers} from './feature-services/agent.js';
+import {authorizationFeatureServiceMembers} from './feature-services/authorization.js';
+import {captureFeatureServiceMembers} from './feature-services/capture.js';
+import {configurationFeatureServiceMembers} from './feature-services/configuration.js';
+import {connectorsFeatureServiceMembers} from './feature-services/connectors.js';
+import {controlFeatureServiceMembers} from './feature-services/control.js';
+import {executionFeatureServiceMembers} from './feature-services/execution.js';
+import {filesFeatureServiceMembers} from './feature-services/files.js';
+import {hostFeatureServiceMembers} from './feature-services/host.js';
+import {importsFeatureServiceMembers} from './feature-services/imports.js';
+import {materialsFeatureServiceMembers} from './feature-services/materials.js';
+import {mediaFeatureServiceMembers} from './feature-services/media.js';
+import {memoryControlFeatureServiceMembers} from './feature-services/memoryControl.js';
+import {memoryProvidersFeatureServiceMembers} from './feature-services/memoryProviders.js';
+import {memoryRecordsFeatureServiceMembers} from './feature-services/memoryRecords.js';
+import {memoryRuntimeFeatureServiceMembers} from './feature-services/memoryRuntime.js';
+import {observabilityFeatureServiceMembers} from './feature-services/observability.js';
+import {processingFeatureServiceMembers} from './feature-services/processing.js';
+import {publicationFeatureServiceMembers} from './feature-services/publication.js';
+import {queryFeatureServiceMembers} from './feature-services/query.js';
+import {sourceRuntimeFeatureServiceMembers} from './feature-services/sourceRuntime.js';
+import {vaultFeatureServiceMembers} from './feature-services/vault.js';
+import type {ActionsFeatureServices} from './feature-services/actions.js';
+import type {ActivityFeatureServices} from './feature-services/activity.js';
+import type {AgentFeatureServices} from './feature-services/agent.js';
+import type {AuthorizationFeatureServices} from './feature-services/authorization.js';
+import type {CaptureFeatureServices} from './feature-services/capture.js';
+import type {ConfigurationFeatureServices} from './feature-services/configuration.js';
+import type {ConnectorsFeatureServices} from './feature-services/connectors.js';
+import type {ControlFeatureServices} from './feature-services/control.js';
+import type {ExecutionFeatureServices} from './feature-services/execution.js';
+import type {FilesFeatureServices} from './feature-services/files.js';
+import type {HostFeatureServices} from './feature-services/host.js';
+import type {ImportsFeatureServices} from './feature-services/imports.js';
+import type {MaterialsFeatureServices} from './feature-services/materials.js';
+import type {MediaFeatureServices} from './feature-services/media.js';
+import type {MemoryControlFeatureServices} from './feature-services/memoryControl.js';
+import type {MemoryProvidersFeatureServices} from './feature-services/memoryProviders.js';
+import type {MemoryRecordsFeatureServices} from './feature-services/memoryRecords.js';
+import type {MemoryRuntimeFeatureServices} from './feature-services/memoryRuntime.js';
+import type {ObservabilityFeatureServices} from './feature-services/observability.js';
+import type {ProcessingFeatureServices} from './feature-services/processing.js';
+import type {PublicationFeatureServices} from './feature-services/publication.js';
+import type {QueryFeatureServices} from './feature-services/query.js';
+import type {SourceRuntimeFeatureServices} from './feature-services/sourceRuntime.js';
+import type {VaultFeatureServices} from './feature-services/vault.js';
 
-/** Feature entries receive a checked Pick of these domain-owned capabilities. */
-export interface RequestParser<T>{parse(input:unknown):T}
-export interface FeatureServices {
-  pluginCenter:PluginCenter;
-  modelAuthorization:BackgroundModelAuthorization;
-  modelAuthorizationHost:ModelAuthorizationHost;
-  configService:ConfigService;
-  memoryPublication:MemoryPublication;
-  ownerQuestions:OwnerQuestions;
-  memoryIntegrationSettings:MemoryIntegrationSettings;
-  memoryRecipeSettings:MemoryRecipeSettings;
-  connectors:ConnectorHostAdapter;
-  processing:FileProcessing;
-  executor:ExecutionEngine;
-  actionsServices:ActionsServicesAssembly;
-  agent:ReloadableAgent;
-  archivedFiles:ArchivedFileStore;
-  config:Config;
-  connections:Connections;
-  contentStorage:ContentStorageService;
-  diagnostics:ServerDiagnostics;
-  evidenceReader:EvidenceReader;
-  fileEvidence:FileEvidence;
-  files:FileStore;
-  imports:ImportStore;
-  indexer:RetrievalIndex;
-  ingress:IngressService;
-  insightRuns:InsightRuns;
-  lifecycle:MemoryLifecycle;
-  maintenanceWorker:MaintenanceWorker|undefined;
-  materialOrganizer:MaterialOrganizerRuntime;
-  materialMemoryWork:MaterialMemoryWork;
-  materials:MaterialStore;
-  mediaAssets:MediaAssets;
-  mediaPreparation:MediaPreparation;
-  memories:MemoryStore;
-  memoryPipeline:MemoryPipeline;
-  modelSettings:ModelSettingsStore;
-  perception:ImageProcessing;
-  providerAdmission:ProviderAdmission;
-  runtimeSettings:ExecutionSettings;
-  sourcePipelines:SourcePipelineRuntime;
-  sources:SourceStore;
-  store:Store;
-  workflows:ProcessingRuntime;
-  withMediaOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;
-  withMediaOwnerIntent:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>;
-  launchOwnerImport:(id:string,task:()=>Promise<unknown>)=>void;
-  availableModelConnections:()=>ModelConnection[];
-  contextTrees:ReturnType<typeof createContextTrees>;
-  automaticMemoryScheduling:boolean;
-  memoryDelegation:ReturnType<typeof registerMemoryDelegation>;
-  connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
-  credential:(request:FastifyRequest)=>ConnectionCredential|undefined;
-  assertRequestActive:(request:FastifyRequest)=>void;
-  sourceOwner:(request:FastifyRequest,id:string)=>void;
-  setPlaybackAuthorization:(authorize:(request:FastifyRequest)=>boolean)=>void;
-  filesSource?:FilesFeatureSource;
-  notesSource:NotesSourceAssembly;
-  notesCapture?:NotesCapture;
-  agentFeatures:Awaited<ReturnType<typeof installAgentFeatures>>;
-  archiveReader:ContextReader;
-  isClosing:()=>boolean;
-  agentGate:ConcurrencyGate;
-  interactiveGate:ConcurrencyGate;
-  interactiveModelGate:ConcurrencyGate;
-  llmGate:ConcurrencyGate;
-  codex:NonNullable<AgentOptions['codex']>;
-  importTasks:Map<string,Promise<unknown>>;
-  jobId:(params:unknown)=>string;
-  launchImport:(id:string,task:()=>Promise<unknown>)=>void;
-  insight:(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId?:string,snapshot?:InsightSnapshot)=>Promise<ReturnType<typeof insightResult>>;
-  insightRequestSchema:typeof insightRequestSchema;
-  mediaRange:RequestParser<NonNullable<Parameters<Store['mediaActivity']>[0]>>;
-  parseCaptureBundle:(body:unknown)=>CaptureInput[];
-  queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
-  reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>ReturnType<typeof reviewMemory>;
-  semanticSelection:()=>ReturnType<typeof modelConfiguration>&{configured:boolean};
-  serverVersion:string;
-}
+/** Feature entries receive a checked Pick of these domain-owned capabilities.
+ * Each slice keeps its members and member-name constant next to its C01 slice;
+ * assemblies fill the members they already assemble. */
+export type FeatureServices =
+  & VaultFeatureServices
+  & ConfigurationFeatureServices
+  & AuthorizationFeatureServices
+  & ExecutionFeatureServices
+  & ObservabilityFeatureServices
+  & ControlFeatureServices
+  & SourceRuntimeFeatureServices
+  & CaptureFeatureServices
+  & FilesFeatureServices
+  & ConnectorsFeatureServices
+  & ProcessingFeatureServices
+  & MediaFeatureServices
+  & MaterialsFeatureServices
+  & ImportsFeatureServices
+  & MemoryControlFeatureServices
+  & MemoryRecordsFeatureServices
+  & MemoryRuntimeFeatureServices
+  & MemoryProvidersFeatureServices
+  & PublicationFeatureServices
+  & ActionsFeatureServices
+  & ActivityFeatureServices
+  & QueryFeatureServices
+  & AgentFeatureServices
+  & HostFeatureServices;
+
+/** One member-name list per C01 slice, used to audit the legacy resource names. */
+export const featureServiceMembers=Object.freeze({
+  vault:vaultFeatureServiceMembers,
+  configuration:configurationFeatureServiceMembers,
+  authorization:authorizationFeatureServiceMembers,
+  execution:executionFeatureServiceMembers,
+  observability:observabilityFeatureServiceMembers,
+  control:controlFeatureServiceMembers,
+  sourceRuntime:sourceRuntimeFeatureServiceMembers,
+  capture:captureFeatureServiceMembers,
+  files:filesFeatureServiceMembers,
+  connectors:connectorsFeatureServiceMembers,
+  processing:processingFeatureServiceMembers,
+  media:mediaFeatureServiceMembers,
+  materials:materialsFeatureServiceMembers,
+  imports:importsFeatureServiceMembers,
+  memoryControl:memoryControlFeatureServiceMembers,
+  memoryRecords:memoryRecordsFeatureServiceMembers,
+  memoryRuntime:memoryRuntimeFeatureServiceMembers,
+  memoryProviders:memoryProvidersFeatureServiceMembers,
+  publication:publicationFeatureServiceMembers,
+  actions:actionsFeatureServiceMembers,
+  activity:activityFeatureServiceMembers,
+  query:queryFeatureServiceMembers,
+  agent:agentFeatureServiceMembers,
+  host:hostFeatureServiceMembers,
+} as const);
+
+export type {RequestParser} from './feature-services/media.js';

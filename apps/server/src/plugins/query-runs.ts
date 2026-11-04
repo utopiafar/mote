@@ -21,7 +21,7 @@ import {freezeSemanticContextTime,type LifecycleSettings} from '../memory-lifecy
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 import {contextFailure} from '../model-evidence-authority.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelConfiguration} from '../model-configuration.js';
 import {createQueryPreparation,type SavedQuery} from '../query-preparation.js';
 import {queryWithAttachmentsSchema} from '../query-request.js';
@@ -57,7 +57,7 @@ export interface QueryRunDependencies {
   readonly working:Pick<WorkingMemory,'prepare'>;
   readonly lifecycleSettings:()=>LifecycleSettings;
   readonly archiveReader:ContextReader;
-  readonly agent:Pick<ReloadableAgent,'configured'>;
+  readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
   readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
   readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;

@@ -3,26 +3,21 @@ import {join} from 'node:path';
 import {PluginResourceScope,type HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import {mcpContext,remoteMcpContext} from './mcp-context.js';
-import {larkContext} from './lark-context.js';
-import {gmailContext} from './gmail-context.js';
 import {installRecordingMemory} from './recording-memory.js';
 import {recordingManifest,type RecordingProvider} from './recordings.js';
 import {createFeishuRecordings} from './lark-recordings.js';
 import {createDingtalkRecordings} from './dingtalk-recordings.js';
-import {moteText} from '../i18n.js';
 import {createInstanceState} from '../plugins/instance-state.js';
 import {createConnectorHostAdapter,type ConnectorHostAdapter,type ConnectorInstanceScope} from '../plugins/connector-host-adapter.js';
 import {createDynamicHttpDispatcher,type DynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
-import {loadConnectorModules,type ConnectorManifest,type OwnerRoute} from './registry.js';
+import {loadConnectorModules,type ConnectorManifest} from './registry.js';
 import {equalToken,registerMcp,RemoteMcp} from './mcp.js';
-import {GoogleCalendarConnector,type GoogleDependencies} from './google.js';
-import {googleCalendarContext} from './google-context.js';
-import {GmailConnector} from './gmail.js';
-import {LarkConnector} from './lark.js';
-import type {LarkRunner} from './lark-cli.js';
+import {googleCalendarManifest,type GoogleDependencies} from '../plugins/google-calendar-source.js';
+import {gmailManifest} from '../plugins/gmail-source.js';
+import {larkManifest,type LarkRunner} from '../plugins/lark-source.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
 import type {FastifyInstance} from 'fastify';
-import {ZodError,z} from 'zod';
+import {ZodError} from 'zod';
 
 export type {ConnectorConfig,ConnectorContext} from './types.js';
 export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthCallback,ConnectorHttpHost,ConnectorRegistryOptions,ConnectorRouteHandle} from './registry.js';
@@ -46,56 +41,9 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
       close:async()=>{await Promise.all([remote.close(),inbound?.close()]);},
     };
   }},
-  {apiVersion:1,id:'google-calendar',sourceKinds:['google-calendar'],statusKey:'google',create:ctx=>{
-    const google=new GoogleCalendarConnector(googleCalendarContext(ctx),testing?.google);
-    return {
-      init:()=>google.init(),status:()=>google.status(),configureSyncInterval:interval=>google.configureSyncInterval(interval),
-      configure:host=>{
-        host.ownerRoute({method:'POST',path:'/api/connectors/google/start',handler:()=>google.start()});
-        host.ownerRoute({method:'GET',path:'/api/connectors/google/calendars',handler:()=>google.calendars()});
-        host.ownerRoute({method:'PUT',path:'/api/connectors/google/calendars',handler:req=>google.select(req.body)});
-        host.ownerRoute({method:'POST',path:'/api/connectors/google/sync',handler:()=>google.sync()});
-        host.ownerRoute({method:'DELETE',path:'/api/connectors/google',handler:()=>google.disconnect()});
-        host.oauthCallback({path:'/oauth/google/callback',complete:(state,code)=>google.callback(state,code),successMessage:moteText('Google 日历已连接。请返回 Mote 选择需要同步的日历。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
-      },
-      close:()=>google.close(),
-    };
-  }},
-  {apiVersion:1,id:'gmail',sourceKinds:['gmail'],statusKey:'gmail',create:ctx=>{
-    const gmail=new GmailConnector(gmailContext(ctx),testing?.gmail);
-    return {
-      init:()=>gmail.init(),status:()=>gmail.status(),configureSyncInterval:interval=>gmail.configureSyncInterval(interval),
-      configure:host=>{
-        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/start',bodyLimit:16384,handler:()=>gmail.start()});
-        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/sync',bodyLimit:16384,handler:()=>gmail.sync()});
-        host.ownerRoute({method:'DELETE',path:'/api/connectors/gmail',bodyLimit:16384,handler:()=>gmail.disconnect()});
-        host.oauthCallback({path:'/oauth/google/callback',statePrefix:'gmail.',complete:(state,code)=>gmail.callback(state,code),successMessage:moteText('Gmail 已连接。请返回 Mote 同步邮件。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
-      },
-      close:()=>gmail.close(),
-    };
-  }},
-  {apiVersion:1,id:'lark',sourceKinds:['lark-docs','lark-calendar'],create:ctx=>{
-    const lark=new LarkConnector(larkContext(ctx),testing?.lark);
-    return {
-      init:()=>lark.init(),configureSyncInterval:interval=>lark.configureSyncInterval(interval),
-      configure:host=>{
-        const route=(method:'GET'|'POST'|'PUT'|'DELETE',path:`/api/connectors/${string}`,handler:OwnerRoute['handler'])=>host.ownerRoute({method,path,bodyLimit:16384,handler});
-        route('GET','/api/connectors/lark',()=>lark.status());
-        route('POST','/api/connectors/lark/check',()=>lark.refresh());
-        route('POST','/api/connectors/lark/install',()=>lark.startInstall());
-        route('POST','/api/connectors/lark/setup',()=>lark.startSetup());
-        route('POST','/api/connectors/lark/configure',req=>lark.configure(req.body));
-        route('POST','/api/connectors/lark/login',req=>lark.login(z.object({calendar:z.boolean().optional()}).strict().parse(req.body??{}).calendar??false));
-        route('POST','/api/connectors/lark/cancel',()=>lark.cancel());
-        route('GET','/api/connectors/lark/calendars',()=>lark.calendars());
-        route('PUT','/api/connectors/lark/selection',req=>lark.select(req.body));
-        route('POST','/api/connectors/lark/preview',()=>lark.startPreview());
-        route('POST','/api/connectors/lark/sync',req=>lark.startSync(z.object({document:z.string().trim().min(1).max(4000).optional()}).strict().parse(req.body??{}).document));
-        route('DELETE','/api/connectors/lark',()=>lark.disconnect());
-      },
-      close:()=>lark.close(),
-    };
-  }},
+  googleCalendarManifest(testing?.google),
+  gmailManifest(testing?.gmail),
+  larkManifest(testing?.lark),
 ];}
 
 /** One host-owned install scope per connector. The scope owns routes, OAuth
