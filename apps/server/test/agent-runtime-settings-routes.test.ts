@@ -83,7 +83,7 @@ test('control route shows the published generation while an accepted durable que
   assert.equal(completed.json().answer,'original-fixture','the accepted run kept its fixed model version');
   assert.equal(completed.json().modelSelection.model,'original-fixture');
   assert.equal(completed.json().configuration.revision,initialView.revision,'the durable run kept the serialized configuration revision it admitted');
-  const journal=node.featureServices.delegation.journal.payload<{configurationFingerprint:string}>(heldOperationId);
+  const journal=node.delegation.journal.payload<{configurationFingerprint:string}>(heldOperationId);
   assert.equal(journal.configurationFingerprint,completed.json().configuration.fingerprint,'the registry consumed the exact receipt serialized by ConfigService preparation');
   await flush();
   assert.deepEqual(closed,['original-fixture'],'the retired generation closes after its last lease is released');
