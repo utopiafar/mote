@@ -12,8 +12,9 @@ export interface PluginControlHttpDeps {
 }
 
 /** Owner-only control plane. Query-agent tools never register these methods.
- * Existing routes and DTOs stay unchanged; trusted build control is exposed as
- * separate views so package/instance installation is never treated as enabled. */
+ * Routes keep their existing paths, while package and trusted build responses
+ * project the same durable build/instance records; installation is never
+ * treated as enabled. */
 export function registerPluginControlHttp(app: FastifyInstance, {plugins, bindings, automation, owner}: PluginControlHttpDeps) {
   const id = (request: FastifyRequest) => z.object({id: z.string().min(1)}).parse(request.params).id;
   app.get('/api/plugins', async request => { owner(request); return plugins.view(); });

@@ -1,19 +1,36 @@
+import type {PluginPackageView,PluginInstanceView} from '@mote/shared';
+import type {PluginManifest} from '../plugin-release.js';
 import {sha256,StoreError,type Store} from '../store.js';
 
 export interface PluginCommand {readonly operationId:string;readonly expectedRevision:number}
 /** An acknowledgement of a committed control intent, not proof of a remote effect. */
 export interface PluginCommandReceipt {readonly operationId:string;readonly kind:string;readonly revision:number}
 export interface BuildSelection {readonly packageId:string;readonly version:string;readonly configurationRevision:number}
+export type BuildObserved='queued'|'starting'|'active'|'stopped'|'blocked'|'restart_required'|'draining';
+/** One durable build/instance record. Native builds select a trusted host
+ * contribution; worker packages retain their release artifact and configured
+ * instance in the same record instead of separate package/instance tables. */
 export interface BuildInstance {
   readonly id:string;readonly packageId:string;readonly installationId:string;
   revision:number;desired:BuildSelection|null;retired:boolean;
-  observed:'queued'|'starting'|'active'|'stopped'|'blocked'|'restart_required'|'draining';
+  observed:BuildObserved;
   blockers:string[];operationId:string;
+  /** Worker activation retained for draining despite desired becoming null. */
+  activeSelection?:BuildSelection|null;
+  readonly kind?:'native'|'package'|'instance';
+  readonly version?:string;
+  readonly package?:BuildPackageRecord;
+  readonly instance?:BuildInstanceRecord;
 }
+export interface BuildPackageRecord {
+  installationId:string;view:PluginPackageView;manifest:PluginManifest;directory?:string;previewId:string;
+  hostAdapter?:'mote.mem0@1'|'mote.hindsight@1';
+}
+export interface BuildInstanceRecord {view:PluginInstanceView;configurationId?:string;stepId?:string}
 
 /** One vault transaction owns CAS, intent identity and its acknowledgement.
  * Runtime effects occur only after COMMIT; receipts never assert their completion.
- * These feature-owned tables install before app.ready(), like plugin_packages. */
+ * These feature-owned tables install before app.ready(). */
 export class PluginControlStore {
   constructor(readonly store:Store){store.db.exec(`
     CREATE TABLE IF NOT EXISTS plugin_center(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL);

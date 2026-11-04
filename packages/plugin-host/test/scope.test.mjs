@@ -7,6 +7,22 @@ const hostId = {kind: 'central', id: 'generated-scope-host'};
 const identity = name => ({host: hostId, packageId: 'fixture.scope', installationId: 'fixture-install', instanceId: name, activationId: name + '-activation'});
 const lifecycle = {prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}};
 
+test('Cordis exporter disposal removes its own sink while a later sibling remains active', async () => {
+  const root = new Context(), first = [], second = [];
+  const disposeFirst = root.logger.exporter({export: message => { first.push(message.name); }});
+  const disposeSecond = root.logger.exporter({export: message => { second.push(message.name); }});
+  try {
+    root.logger('generated-before').info('Synthetic lifecycle fixture');
+    disposeFirst();
+    root.logger('generated-after').info('Synthetic lifecycle fixture');
+    assert.deepEqual(first, ['generated-before']);
+    assert.deepEqual(second, ['generated-before', 'generated-after']);
+    disposeSecond();
+    root.logger('generated-closed').info('Synthetic lifecycle fixture');
+    assert.equal(second.length, 2);
+  } finally { await root.fiber.dispose(); }
+});
+
 test('shared host context keeps sibling plugin lifecycles independent', async () => {
   const root = new Context(), host = new PluginHost(hostId, root), released = [];
   const first = await host.install({identity: identity('first'), contributions: [{id: 'first', apiVersion: '1'}], factory: context => {

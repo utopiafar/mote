@@ -1,8 +1,4 @@
-import type {MemoryPublication} from '../memory-publication.js';
+/** C24 publication owns its ports and no FeatureServices member. */
+export interface PublicationFeatureServices {}
 
-/** C24 publication member. */
-export interface PublicationFeatureServices {
-  memoryPublication:MemoryPublication;
-}
-
-export const publicationFeatureServiceMembers = ['memoryPublication'] as const satisfies readonly (keyof PublicationFeatureServices)[];
+export const publicationFeatureServiceMembers = [] as const satisfies readonly (keyof PublicationFeatureServices)[];

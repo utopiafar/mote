@@ -1,6 +1,6 @@
 import {ExecutionEngine,ExecutionFailure} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
-import {encodeMemoryPrivate,decodeMemoryPrivate} from './memory-private-storage.js';
+import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {sha256,StoreError,type Store} from './store.js';
 
 /** Owned execution checkpoints, not an evictable cache or query evidence. */

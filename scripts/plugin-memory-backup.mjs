@@ -7,7 +7,6 @@ const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex
 const bodyDigest=memory=>{const {status:_,staleReason:__,updatedAt:___,...body}=memory;return hash(body);};
 const hostState=(memory,expected)=>{const {status:_,staleReason:__,updatedAt:___,...body}=memory;return {...body,status:expected.status,...(expected.staleReason===undefined?{}:{staleReason:expected.staleReason}),...(expected.updatedAt===undefined?{}:{updatedAt:expected.updatedAt})};};
 const hasTable=(db,name)=>Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
-const retainedRows=(db,active,retired)=>{const selected=new Map();for(const table of [active,retired])if(hasTable(db,table))for(const row of db.prepare('SELECT id,json FROM '+table).all())if(!selected.has(row.id))selected.set(row.id,JSON.parse(String(row.json)));return [...selected.values()];};
 const safeId=value=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/.test(value)&&!['.','..'].includes(value);
 export const safePluginBackupPath=name=>{
  const packageFile=/^plugins\/packages\/[a-f0-9]{64}\/(.+)$/.exec(name);
@@ -38,8 +37,9 @@ export async function pluginMemoryBackup(source,db){
  if(!hasTable(db,'memory_plan_binding'))return {paths,databases,providers,nativeSnapshots};
  const binding=JSON.parse(String(db.prepare('SELECT json FROM memory_plan_binding WHERE id=1').get()?.json??'null'));
  const configurations=hasTable(db,'memory_provider_configurations')?db.prepare('SELECT json FROM memory_provider_configurations').all().map(row=>JSON.parse(String(row.json))):[];
- const packages=[...new Map([...retainedRows(db,'plugin_packages','plugin_retired_packages'),...configurations.map(value=>value.package)].map(value=>[value.view.id+':'+value.view.source.digest,value])).values()];
- const storedInstances=retainedRows(db,'plugin_instances','plugin_retired_instances');
+ const builds=hasTable(db,'plugin_build_instances')?db.prepare('SELECT json FROM plugin_build_instances ORDER BY rowid').all().map(row=>JSON.parse(String(row.json))):[];
+ const packages=[...new Map([...builds.filter(value=>value.kind==='package'&&value.package).map(value=>value.package),...configurations.map(value=>value.package)].map(value=>[value.view.id+':'+value.view.source.digest,value])).values()];
+ const storedInstances=builds.filter(value=>value.kind==='instance'&&value.instance).map(value=>value.instance);
  const instances=storedInstances.map(value=>value.view);
  // Remote/generic code can retain authoritative data outside this vault. A
  // complete backup needs that provider's declared native snapshot protocol.
