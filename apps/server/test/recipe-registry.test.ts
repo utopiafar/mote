@@ -73,6 +73,14 @@ test('recipes cannot carry scripts, functions or unregistered component referenc
   assert.throws(()=>recipes.installRecipe(badConfig),/Invalid recipe component config/);
 });
 
+test('a conflicting recipe version fails without replacing the installed definition',()=>{
+ const recipes=registry(),first=recipes.installRecipe(definition());
+ const changed=definition();changed.accepts.sourceKind='local-files';
+ assert.throws(()=>recipes.installRecipe(changed),/different immutable definition or component version/);
+ assert.equal(recipes.resolveRecipe('fixture.coding','1'),first,'the originally installed recipe remains resolvable');
+ assert.deepEqual(recipes.listRecipes(),[first],'the conflict adds no second definition');
+});
+
 test('a recipe version is immutable after uninstall, and missing or upgraded components fail closed',()=>{
   const recipes=registry();const first=recipes.installRecipe(definition());
   recipes.uninstallComponent('fixture.step');

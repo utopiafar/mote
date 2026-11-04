@@ -13,7 +13,6 @@ import {adapter as materialsAdapter} from './materials.js';
 import {adapter as codingAdapter} from './coding.js';
 import {adapter as sourcesAdapter} from './sources.js';
 import {adapter as modelsAdapter} from './models.js';
-import {adapter as processingAdapter} from './processing.js';
 import {adapter as notesAdapter} from './notes.js';
 import {adapter as devicesAdapter} from './devices.js';
 import {adapter as mediaAdapter} from './media.js';
@@ -47,7 +46,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   codingAdapter,
   sourcesAdapter,
   modelsAdapter,
-  processingAdapter,
+  domainRouteContribution('mote.processing'),
   notesAdapter,
   devicesAdapter,
   mediaAdapter,
