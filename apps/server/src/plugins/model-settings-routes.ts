@@ -1,7 +1,7 @@
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
-import {codexModels,providerModels} from './model-catalog.js';
-import {modelProfileIdSchema,type ModelSettingsStore} from './model-settings.js';
+import {codexModels,providerModels} from '../model-catalog.js';
+import {modelProfileIdSchema,type ModelSettingsStore} from '../model-settings.js';
 export function registerModelSettingsRoutes(app:FastifyInstance,modelSettings:ModelSettingsStore,codex:Parameters<typeof codexModels>[1]){
   let codexCatalogPending:ReturnType<typeof codexModels>|undefined;
   app.get('/api/model-settings/codex-models',async()=>codexCatalogPending??=codexModels(undefined,codex).finally(()=>{codexCatalogPending=undefined;}));

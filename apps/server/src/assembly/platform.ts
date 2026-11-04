@@ -90,7 +90,7 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   // configuration, authorization and execution slices.
   const featureServices=Object.freeze({
     configService:bootstrap.configService,runtimeSettings,config,
-    modelAuthorization,availableModelConnections:()=>dependencies.availableModelConnections(),
+    availableModelConnections:()=>dependencies.availableModelConnections(),
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,
     // observability slice; the host keeps its runtime projection.
     diagnostics,serverVersion:dependencies.serverVersion,featureInventory:bootstrap.featureInventory,

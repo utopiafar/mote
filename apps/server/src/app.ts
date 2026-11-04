@@ -44,6 +44,7 @@ import type {QueryQualityStrategy} from './query-quality-experiment.js';
 import { registerMemoryDelegation } from './memory-delegation.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { repositoryRoot,type Config } from './config.js';
+import {contributeDomainRoutes} from './plugins/domain-routes.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
 import type {RequestAuthority} from './plugins/central-contracts.js';
@@ -172,6 +173,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
   const {featureServices:workInputFeatureServices}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
+  // The authorization platform's mote.models table; the feature bridge mounts
+  // it once and each handler dispatches against the platform's current activation.
+  contributeDomainRoutes(backendContext,{'mote.models':Object.freeze({mount:(app:FastifyInstance)=>authorizationPlatform.modelAuthorizationRoutes(app,{credential})})});
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
   const modelEvidenceAuthority=createModelEvidenceAuthority({resolveLineage:value=>resolveDependencies(store,value),
     assertImageGrants:(materialInputs,images)=>assertMemoryImageGrants(store,materialInputs,images),reader:evidenceReader,conversations,sourceContexts,
@@ -227,10 +231,11 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     ...(baseReader.memories?{memories:observeRead('reader_memories',baseReader.memories)}:{}),
   };
   const {agent,factory,codex,featureServices:agentFeatureServices}=await assembleAgent({
-    config,resources,diagnostics,configurationPlatform,reader,modelAuthorizationHost,
+    config,resources,diagnostics,backendContext,configurationPlatform,configService,runtimeSettings,reader,modelAuthorizationHost,
     createModelAgent:dependencies?.createModelAgent,authorization:modelAuthorization,admission:providerAdmission,
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
-    agentGate,interactiveGate,modelContext,modelOperation,queryAccounting,
+    agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,providerAdmission,
+    insightSettings:()=>lifecycle.settings().insights,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,delegatedSnapshot:()=>executor.poolSnapshot('delegated-agents'),wakeMemory:()=>memoryPipeline.wake(),
     allowQueryImages:()=>perception.settings().allowQueryImages,observeMemory,evidenceReader,agent:dependencies?.agent,
   });
   const modelSettings=configurationPlatform.modelSettings;
