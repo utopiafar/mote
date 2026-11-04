@@ -8,7 +8,7 @@ import Fastify from 'fastify';
 import {Store} from '../../server/src/store';
 import {SourceStore} from '../../server/src/sources';
 import {EvidenceReader} from '../../server/src/evidence-reader';
-import {createContextQuery} from '../../server/src/context-query-composition';
+import {createContextQuery} from '../../server/src/plugins/query-context';
 import {registerContextRoutes} from '../../server/src/context-routes';
 import {centralContentPage} from '../src/content-library';
 import {defaultConfig} from '../src/config';

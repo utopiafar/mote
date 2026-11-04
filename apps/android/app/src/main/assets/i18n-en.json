@@ -7215,6 +7215,7 @@
   "等待节点重启": "Awaiting node restart",
   "等待启动": "Waiting to start",
   "需要构建": "Requires a new build",
+  "宿主构建": "Host build",
   "运行中": "Running",
   "已停用": "Disabled",
   "停用中": "Disabling",
