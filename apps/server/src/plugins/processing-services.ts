@@ -1,7 +1,7 @@
 import type {Context} from '@deepseek-ai/cordis';
 import type {FastifyInstance} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {ModelSettings} from '@mote/shared/models';
 import type {ConfigService} from '../config-service.js';
@@ -15,8 +15,10 @@ import type {MediaRuntimeSettings} from '../media-configuration.js';
 import type {ModelProcessingAuthority} from '../model-processing-authority.js';
 import {ProcessingRuntime} from '../processing-runtime.js';
 import {FileProcessing,type FileAnalysis,type TranscriptionProvider} from '../file-processing.js';
+import type {FileProcessorContribution} from '../file-processors.js';
 import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
+import {contributeDomainRoutes} from './domain-routes.js';
 import {registerProcessingJobRoutes} from '../features/processing/processing-services.js';
 
 /** C17's durable ProcessingRuntime, its job storage/poll and FileProcessing.
@@ -56,6 +58,8 @@ export interface ProcessingServicesDependencies {
   readonly analysisSnapshot:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};
   readonly analysisRevision:()=>number;
   readonly semanticFingerprint:()=>string;
+  /** Additional activation-owned processor contributions; built-ins remain the default. */
+  readonly contributions?:readonly FileProcessorContribution[];
   /** Defaults to the previous file-work poll interval. */
   readonly pollIntervalMs?:number;
 }
@@ -64,7 +68,7 @@ export interface ProcessingServices {
   readonly port:ProcessingServicesPort;
   readonly workflows:ProcessingRuntime;
   readonly processing:FileProcessing;
-  prepare():Promise<void>;
+  prepare(scope?:Pick<PluginScope,'defer'>):Promise<void>;
   start():void;
   quiesce(reason?:StopReason):void;
   stop(reason?:StopReason):Promise<void>;
@@ -72,6 +76,8 @@ export interface ProcessingServices {
   close():Promise<void>;
   /** One poll-owned pass: intake discovery plus the shared execution drain. */
   tick():Promise<void>;
+  /** Contribute the domain route table from this activation. */
+  contributeRoutes():void;
   /** Mounted once before listen; handlers resolve the current activation. */
   routes(app:FastifyInstance):void;
 }
@@ -89,6 +95,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
   let phase:ProcessingServicesPhase='created',workflows:ProcessingRuntime|undefined,processing:FileProcessing|undefined;
   let poll:ReturnType<typeof setInterval>|undefined,inflight:Promise<void>|undefined,closing:Promise<void>|undefined;
   let previousSourceContextChanged:MaterialStore['onSourceContextChanged'];
+  let contributionsInstalled=false,routesContributed=false;
   const mounted=new WeakSet<FastifyInstance>();
   const readable=()=>phase==='prepared'||phase==='active'||phase==='quiescing';
   const writable=()=>{
@@ -120,6 +127,33 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
     if(dependencies.materials.onSourceContextChanged!==relay)return;
     dependencies.materials.onSourceContextChanged=previousSourceContextChanged;
   };
+  const installContributions=()=>{
+    if(contributionsInstalled)return;
+    processing!.installContributions(dependencies.contributions);
+    contributionsInstalled=true;
+  };
+  const removeContributions=()=>{
+    if(!contributionsInstalled)return;
+    contributionsInstalled=false;
+    processing?.uninstallContributions();
+  };
+  const routes=(app:FastifyInstance)=>{
+    if(mounted.has(app))throw new StoreError('Processing routes are already installed',409);
+    if(phase==='created'||phase==='disposed')throw unavailable();
+    mounted.add(app);
+    app.register(async child=>{
+      child.addHook('onRequest',async(request,reply)=>{
+        const write=['POST','PUT','PATCH','DELETE'].includes(request.method);
+        if(write?phase!=='active':!readable())return reply.code(503).send({error:'feature_unavailable'});
+      });
+      registerProcessingJobRoutes(child,{store:dependencies.store,processing:()=>port,semanticFingerprint:dependencies.semanticFingerprint});
+    });
+  };
+  const contributeRoutes=()=>{
+    if(routesContributed||!dependencies.backendContext)return;
+    contributeDomainRoutes(dependencies.backendContext,{'mote.processing':Object.freeze({mount:routes})});
+    routesContributed=true;
+  };
   const close=()=>closing??=(async()=>{
     phase='stopped';stopPoll();
     workflows?.quiesce();
@@ -127,6 +161,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
     try{await inflight;}catch{/* accepted failures remain in the engine receipt */}
     const fileProcessing=processing;processing=undefined;
     try{await fileProcessing?.settle();}catch(error){errors.push(error);}
+    contributionsInstalled=false;
     const runtime=workflows;workflows=undefined;
     try{await runtime?.close();}catch(error){errors.push(error);}
     restoreSourceContext();
@@ -145,9 +180,10 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
     port,
     get workflows(){if(!workflows||phase==='created'||phase==='disposed')throw unavailable();return workflows;},
     get processing(){if(!processing||phase==='created'||phase==='disposed')throw unavailable();return processing;},
-    /** Construct this activation's domain objects and borrow their handlers.
-     * A mid-prepare failure closes both partially constructed owners. */
-    async prepare(){
+    /** Construct this activation's domain objects and install its file
+     * capabilities. A mid-prepare failure closes both partially constructed
+     * owners and rolls back the contribution set. */
+    async prepare(scope?:Pick<PluginScope,'defer'>){
       if(phase!=='created')throw unavailable();
       try{
         workflows=new ProcessingRuntime(dependencies.store,[],{},Date.now,dependencies.executor,dependencies.materials,dependencies.backendContext,dependencies.configService);
@@ -155,11 +191,13 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
         workflows.consumerAllowed=(sourceId,bindingId)=>dependencies.sourcePipelines.options(sourceId).consumers.includes(bindingId);
         processing=new FileProcessing(dependencies.files,dependencies.transcriptionProvider,undefined,{
           modelAuthority:dependencies.modelAuthority,configService:dependencies.configService,executor:dependencies.executor,
-          modules:[...dependencies.modules],analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
+          modules:[...dependencies.modules],builtinContributions:false,analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
           analysisRevision:dependencies.analysisRevision,diagnostics:dependencies.diagnostics,contextProcessors:workflows.registry,
           pluginContext:dependencies.backendContext,mediaAssets:dependencies.mediaAssets,media:dependencies.media,
           contextForEvidence:record=>dependencies.materials.contextForEvidence(record),
         });
+        installContributions();
+        scope?.defer(removeContributions);
         previousSourceContextChanged=dependencies.materials.onSourceContextChanged;
         dependencies.materials.onSourceContextChanged=relay;
         await workflows.ready;
@@ -174,6 +212,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
     start(){
       if(phase==='active')return;
       if((phase==='prepared'||phase==='stopped')&&workflows){
+        installContributions();
         workflows.resume();
         phase='active';startPoll();return;
       }
@@ -192,23 +231,14 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
       workflows?.quiesce();
       // Drain the poll that already claimed intake for this activation.
       try{await inflight;}catch{/* the next explicit start re-observes durable work */}
+      removeContributions();
       phase='stopped';
     },
     dispose:close,
     close,
     tick(){return phase==='active'?runPoll():Promise.resolve();},
-    routes(app:FastifyInstance){
-      if(mounted.has(app))throw new StoreError('Processing routes are already installed',409);
-      if(phase==='created'||phase==='disposed')throw unavailable();
-      mounted.add(app);
-      app.register(async child=>{
-        child.addHook('onRequest',async(request,reply)=>{
-          const write=['POST','PUT','PATCH','DELETE'].includes(request.method);
-          if(write?phase!=='active':!readable())return reply.code(503).send({error:'feature_unavailable'});
-        });
-        registerProcessingJobRoutes(child,{store:dependencies.store,processing:()=>port,semanticFingerprint:dependencies.semanticFingerprint});
-      });
-    },
+    contributeRoutes,
+    routes,
   });
 }
 
@@ -216,9 +246,10 @@ export function createProcessingServicesFactory(platform:ProcessingServices,onSt
   return (context:HostPluginContext):PluginLifecycle=>{
     context.scope.defer(()=>platform.close());
     return {
-      prepare:()=>platform.prepare(),
+      prepare:()=>platform.prepare(context.scope),
       start(){
         platform.start();
+        platform.contributeRoutes();
         context.provide(processingServicesContribution.id,centralServices.processing,platform.port);
         onStarted?.({workflows:platform.workflows,processing:platform.processing});
       },
