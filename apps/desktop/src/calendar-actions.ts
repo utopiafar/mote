@@ -21,7 +21,7 @@ export class CalendarActions {
  private serial<T>(fn:()=>Promise<T>):Promise<T>{const task=(executionQueues.get(this.queueKey)??Promise.resolve()).catch(()=>{}).then(fn);executionQueues.set(this.queueKey,task);void task.finally(()=>{if(executionQueues.get(this.queueKey)===task)executionQueues.delete(this.queueKey);}).catch(()=>{});return task;}
  async deliver(){
   if(await this.io.read('enabled')!=='1')return;
-  const facts=await this.serial(async()=>{const value=await this.io.native('calendar-list');const declaration=await publishCalendarCapability(this.config.deviceId,value,this.io.request);return {permission:value.permission,paired:!!declaration};});
+  const facts=await this.serial(async()=>{const value=await this.io.native('calendar-list');const published=await publishCalendarCapability(this.config.deviceId,value,this.io.request);return {permission:value.permission,paired:!!published?.declaration};});
   if(facts.paired){const managed=await this.io.request('/api/managed-calendar-deliveries');for(const action of managed.items){const retained=await this.io.read(action.operationId);if(facts.permission==='granted'||retained&&retained!=='attempting')await this.execute(action.id,action.operationId);}if(!managed.manualReviewAllowed)return;}
   if(facts.permission!=='granted')return;
   const data=await this.io.request('/api/actions/deliveries?deviceId='+encodeURIComponent(this.config.deviceId));for(const action of data.items)await this.execute(action.id);

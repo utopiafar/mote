@@ -14,11 +14,17 @@ class CalendarCapabilityPublisher(private val deviceId: String, private val tran
         require(identity!!.getString("deviceId") == deviceId)
         val current = request("/api/device-action-capabilities")
         val declaration = current.optJSONObject("declaration")
+        val projected = current.optJSONObject("projection")?.optJSONArray("devices")?.let { devices ->
+            (0 until devices.length()).map { devices.getJSONObject(it) }.firstOrNull { it.optString("deviceId") == deviceId }
+        }
         val permission = if (available == null) "required" else "granted"
         fun canonical(items: JSONArray): String = (0 until items.length()).map { items.getJSONObject(it) }
             .sortedBy { it.getString("id") }.joinToString("|") { JSONObject().put("id", it.getString("id")).put("title", it.getString("title")).toString() }
         val calendars = available ?: JSONArray()
-        if (declaration != null && declaration.optJSONObject("capability")?.optString("id") == "calendar.manage" && declaration.optJSONObject("capability")?.optInt("version") == 1 && declaration.optBoolean("connectionActive") && declaration.optString("connectionId") == current.getString("connectionId") &&
+        // Installation, the device grant, live availability and owner authorization
+        // are separate server facts. Only this device's projected availability may
+        // suppress a needed re-declaration.
+        if (declaration != null && projected?.optBoolean("available") == true && projected.optString("grant") == permission && declaration.optJSONObject("capability")?.optString("id") == "calendar.manage" && declaration.optJSONObject("capability")?.optInt("version") == 1 && declaration.optBoolean("connectionActive") && declaration.optString("connectionId") == current.getString("connectionId") &&
             declaration.optString("permission") == permission && canonical(declaration.getJSONArray("calendars")) == canonical(calendars)) return
         request("/api/device-action-capabilities", JSONObject().put("operationId", UUID.randomUUID().toString())
             .put("expectedRevision", declaration?.getLong("revision") ?: 0).put("deviceId", deviceId)

@@ -21,6 +21,7 @@ import {IngressService} from '../ingress.js';
 import {assertExternalCaptures,assertCaptureAttachments} from '../capture-admission.js';
 import {BackgroundModelAuthorization,type ModelConnection} from '../background-model-authorization.js';
 import {ModelAuthorizationHost,sourceModelIdentity} from '../model-authorization-host.js';
+import {registerModelAuthorizationRoutes} from './model-authorization-routes.js';
 import {automaticMemoryGrantSchema,type AutomaticMemoryGrant,type MemoryInputAuthorization} from '../memory-input-authorization.js';
 import type {RequestAuthority,RequestAuthorization,CommitAuthority,CommitAuthorization,CaptureIntake,SourceIntake} from './central-contracts.js';
 
@@ -79,7 +80,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
   let phase:'created'|'prepared'|'bound'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let control:BackgroundModelAuthorization|undefined,host:ModelAuthorizationHost|undefined,connections:Connections|undefined,handoffs:LoginHandoffs|undefined;
   let repositories:AuthorizationRepositories|undefined,ingress:IngressService|undefined,closing:Promise<void>|undefined;
-  let routesInstalled=false;
+  let routesInstalled=false,modelRoutesInstalled=false;
   const disposers:(()=>void)[]=[],pending=new Set<Promise<unknown>>();
   const requestRegistry=new WeakMap<object,RequestState>(),commitRegistry=new WeakMap<object,Admission>();
   const liveAdmissions=new Set<Admission>();
@@ -260,6 +261,21 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
       return {credential:credential?{id:credential.id,scope:owner?'owner':credential.scope,label:credential.label,serverUrl:credential.serverUrl,...(credential.deviceId?{deviceId:credential.deviceId,deviceName:credential.deviceName,platform:credential.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:context.serverVersion,profile:context.profile??'default',...protocol},capabilities:{ingest:owner||credential?.scope==='collector',ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||credential?.scope==='collector',archiveRead:owner||credential?.scope==='mcp-read'}};
     });
   }
+  /** The mote.models authorization table. It is mounted once by the pre-H14
+   * feature bridge; every handler dispatches against this activation, so a
+   * stopped or not-yet-started platform reports 503 instead of stale state.
+   * `context.credential` is the same non-owner request identity the retired
+   * feature adapter supplied. */
+  function modelAuthorizationRoutes(app:FastifyInstance,context:{credential:(request:FastifyRequest)=>unknown}){
+    if(modelRoutesInstalled)throw denied('model_authorization_routes_installed',409);
+    if(phase!=='bound'&&phase!=='prepared'&&phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);
+    modelRoutesInstalled=true;
+    const controlGate:Pick<BackgroundModelAuthorization,'view'|'command'>={
+      view:()=>{if(phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);return control!.view();},
+      command:body=>{if(phase!=='active')throw denied('authorization_unavailable',503);return control!.command(body);},
+    };
+    registerModelAuthorizationRoutes(app,controlGate,()=>{if(phase!=='active'&&phase!=='quiescing')throw denied('authorization_unavailable',503);return dependencies.availableModelConnections();},context.credential);
+  }
   function refreshFences(){
     for(const [request,value] of liveRequests)try{
       assertRequest(request);
@@ -322,7 +338,7 @@ export function createAuthorizationPlatform(options:AuthorizationPlatformOptions
     bindRequest,releaseRequest,requestSignal:(request:RequestAuthority)=>assertRequest(request).signal,
     withCapture:<T>(request:RequestAuthority,input:CaptureInput|CaptureInput[],work:()=>Promise<T>)=>withTarget(request,Array.isArray(input)?{kind:'captures',input:input.map(value=>captureSchema.parse(value))}:{kind:'capture',input:captureSchema.parse(input)},work),
     withSource:<T>(request:RequestAuthority,sourceId:string,input:unknown,work:()=>Promise<T>)=>withTarget(request,Array.isArray(input)?{kind:'sources',sourceId,input:input.map(value=>sourceItemSchema.parse(value))}:{kind:'source',sourceId,input:sourceItemSchema.parse(input)},work),
-    withMemoryGrant,refreshFences,
+    withMemoryGrant,refreshFences,modelAuthorizationRoutes,
   });
 }
 export type AuthorizationPlatform=ReturnType<typeof createAuthorizationPlatform>;

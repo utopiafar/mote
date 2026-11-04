@@ -18,7 +18,7 @@ function client(read:(path:string,init?:RequestInit)=>unknown){
  const api={request:async(path:string,init?:RequestInit)=>{calls.push({path,init});
   if(path.startsWith('/api/operations/changes?'))return {ids:hints.splice(0),cursor:++feedCursor,reset:false,hasMore:false};
   if(path==='/api/devices')return {items:[]};
-  if(path==='/api/action-capabilities')return {providers:[],declarations:[],sources:[],drafts:[],grants:[]};
+  if(path==='/api/action-capabilities')return {providers:[],declarations:[],sources:[],drafts:[],grants:[],deviceCapabilities:[]};
   return read(path,init);
  },setAgentTimeout:()=>{}} as Api;
  return {api,calls,hints,count:(path:string)=>calls.filter(call=>call.path===path&&!call.init?.method).length,feed:()=>calls.filter(call=>call.path.startsWith('/api/operations/changes?')).length};
