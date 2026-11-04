@@ -67,7 +67,8 @@ test('agent chooses exact app/source/collection filters and expands content-free
     for(const [key,value] of Object.entries(filters))assert.equal(seen[key],value);
     const r=result.body.data[0];assert.equal(r.sourceType,'activity');assert.equal(r.ocrText,'');assert.equal(r.collection,'activity');assert.equal(r.metadata.state.batteryPercent,0);assert.equal(r.sampleInterval.start,'2026-09-14T00:59:45.000Z');
     const evidence=await call(bridge,'evidence',{ids:[r.id]});assert.deepEqual(evidence.body.data[0].metadata,{...sample.metadata,displayObservedAt:'2026-09-14T01:00:00+00:00'});
-    for(const bad of [{source:'task-keyword'},{appId:''},{collection:'all'},{deviceId:'outside-scope'}])assert.equal((await call(bridge,'timeline',bad)).status,400);
+    const emptyPlaceholder=await call(bridge,'timeline',{appId:''});assert.equal(emptyPlaceholder.status,200);assert.equal(seen.appId,undefined);
+    for(const bad of [{source:'task-keyword'},{appId:'x'.repeat(301)},{collection:'all'},{deviceId:'outside-scope'}])assert.equal((await call(bridge,'timeline',bad)).status,400);
   } finally {await bridge.close();}
 });
 test('agent projection preserves bounded source metadata without passing source URLs or arbitrary private fields',async()=>{
