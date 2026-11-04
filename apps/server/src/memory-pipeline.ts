@@ -37,7 +37,7 @@ import {memoryReadRanges,assertMemoryTargetSupport,mergeMemoryReadRanges,retaine
 import type {MemoryStagePublication,MemoryPublicationReceipt} from './memory-publication-contract.js';
 import {MemoryProviderError} from './memory-provider-contract.js';
 import {MemoryNativeStages} from './memory-native-stages.js';
-import type {MemoryOwnerContinuationPort,MemoryOwnerContinuationView,MemoryOwnerQuestionHandler} from './memory-owner-continuation.js';
+import type {MemoryOwnerContinuationView,MemoryOwnerQuestionHandler} from './memory-owner-continuation.js';
 import {memoryEngineDraftPin,type MemoryEngineDraftContext,type MemoryEngineDraftPin,type MemoryNativeStageAdapter,type MemoryNativeStagePort} from './memory-native-stage-contract.js';
 
 export type MemoryValidationFailure={at:string;code:string;phase:'extract'|'review';attempt?:number;runId?:string;details?:MemoryValidationDetails};
@@ -69,16 +69,6 @@ type BatchOutput={contextReadChunks?:Chunk[];workContract?:MemoryWorkContract;en
 
 /** Jobs reference originals. Validated drafts have a separate private, dependency-bound stage store. */
 export class MemoryPipeline {
-  readonly ownerContinuations:MemoryOwnerContinuationPort={
-    read:id=>{const job=this.get(id);return {id:job.id,status:job.status,batches:job.batches.map(({id,evidenceRanges})=>({id,evidenceRanges}))};},
-    scope:(jobId,batchId,key)=>{const {job,member,strategy}=this.ownerQuestionScope(jobId,batchId,key),{id,modelProfileId,modelOverride,recipes,contextTime,timeZone,batchCharacters}=job;return {job:{id,modelProfileId,modelOverride,recipes,contextTime,timeZone,batchCharacters},member,strategy};},
-    assertCurrent:(jobId,ref,ids)=>this.assertOwnerContinuationCurrent(jobId,ref,ids),
-    create:input=>{const job=this.create(input);return {id:job.id,batches:job.batches.map(({id,evidenceRanges})=>({id,evidenceRanges}))};},
-    link:(jobId,batchId,continuation,key)=>this.continuedOwnerQuestion(jobId,batchId,continuation,key),
-    closeGap:(jobId,batchId,key)=>this.closeOwnerQuestion(jobId,batchId,key),
-    dependencies:ids=>this.evidenceDependencies(ids),
-    setQuestions:handler=>this.setOwnerQuestionHandler(handler),
-  };
   get publication(){return this.options.publication;}
   assertNewManualWork(){this.options.assertNewManualWork?.();}
   assertIntegrationReadable(cards:readonly Memory[]){this.options.assertIntegrationReadable?.(cards);}
