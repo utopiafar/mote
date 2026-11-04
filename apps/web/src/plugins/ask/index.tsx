@@ -1,7 +1,7 @@
 import {moteText} from '@mote/shared/i18n';
 import {useEffect,useMemo} from 'react';
 import type {Api} from '../../api';
-import {modelSetupHref} from '../../ModelStartGuide';
+import {modelSetupHref} from '../models-processing/ModelStartGuide';
 import type {PageEntry,PageProps} from '../../features/types';
 import type {BuiltinWebPlugin} from '../types';
 import {Ask} from './Ask';

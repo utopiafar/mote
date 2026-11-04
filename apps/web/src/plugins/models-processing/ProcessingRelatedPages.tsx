@@ -1,10 +1,10 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import type {Api} from './api';
-import {ProcessingServices} from './ProcessingServices';
+import type {Api} from '../../api';
+import {ProcessingServices} from '../../ProcessingServices';
 import {ModelAssignments} from './ModelAssignments';
 import {ModelProfiles} from './ModelProfiles';
-import type {FileSettingsView} from './processing-settings-view';
+import type {FileSettingsView} from '../../processing-settings-view';
 
 type Panel={owner:Api;kind:string;page:'service'|'models'|'profiles';id?:string;sequence:number};
 const ignoreDetail=()=>{};

@@ -3,8 +3,11 @@ import {
   type ServiceRef, type ServiceBinding, type ContributionIdentity, type PluginErrorCode,
   type ReplacementPolicy,
 } from '@mote/plugin-api/contracts';
-import type {CaptureInput} from '@mote/shared';
+import type {QueryInput} from '@mote/agent';
+import type {CaptureInput, InsightSnapshot, QueryResult} from '@mote/shared';
 import type {CaptureRead, CaptureContextRead, MaterialRead, MemoryRead, MemoryReadSnapshots, MemoryInputSelection, MemoryRecordRead, MemoryRecordSnapshots} from '../evidence-read-ports.js';
+import type {insightResult} from '../insights.js';
+import type {QueryScope} from '../query-scope.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextQuery} from '../context-query.js';
 import type {ContextTreeRegistry} from '../context-trees.js';
@@ -32,6 +35,7 @@ import type {MemoryTopicsHost} from '../memory-topics-host.js';
 import type {AutomaticTopics} from '../automatic-topics.js';
 import type {OwnerQuestions} from '../owner-questions.js';
 import type {MemoryBindings} from '../memory-bindings.js';
+import type {MemoryAdapters} from '../memory-adapters.js';
 import type {MemoryStrategiesPort} from '../memory-strategies.js';
 import type {MemoryRecipeSettingsPort} from '../memory-recipe-settings.js';
 import type {MemoryIntegrationSettingsPort} from '../memory-integration-settings.js';
@@ -136,12 +140,26 @@ export type MemoryAdmission = Pick<MemoryAutomation, 'state' | 'view' | 'accepti
 /** C21D's binding state machine. The plugin owns the actual bindings and local
  * control projections; the port exposes only the owner's commands and views. */
 export type MemoryBindingControl = Pick<MemoryBindings, 'view' | 'prepare' | 'action' | 'binding' | 'assertNewManualWork' | 'pendingTail'> & { accepting(): boolean };
+/** C23's external provider adapters. Bindings, publication and the native
+ * pipeline stages consume verified providers and durable cleanup through this
+ * port; the PluginCenter probe/configuration/retirement hooks and the native
+ * model authority pin stay on the trusted assembly bridge, never the port. */
+export type MemoryProviderAdapters = Pick<MemoryAdapters, 'provider' | 'engine' | 'configurationIdentity' | 'configurationAllowed' | 'probe' | 'discardPrepared' | 'erasePreparedEvidence' | 'retire'>;
 export type ProcessingSubmission = Pick<ProcessingRuntime, 'enqueue' | 'view' | 'retry' | 'cancel'>;
 export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'withdraw' | 'planningInput' | 'sourceRequirements' | 'authorized'>;
 /** Read-only managed-asset state. Installs, imports, cancellation and the
  * managed directory itself stay with the C18A owner, never the port. */
 export type MediaAssetsRead = Pick<MediaAssets, 'ready' | 'status' | 'statuses'>;
 export type ConversationRepository = Pick<Conversations, 'list' | 'get' | 'page' | 'referenceAvailability' | 'append' | 'appendFailure' | 'delete' | 'context' | 'historyContext' | 'assertHistoryContext' | 'retiredSelection'>;
+/** The query activation owns admitted model runs, their preparation receipts
+ * and the insight entry. Consumers receive this facade, never the Agent
+ * runtime, evidence reader or metering factory. */
+export interface QueryDomain {
+  activeQueries(): number;
+  withQueryModelAuthority<T>(input: QueryInput, moduleId: string, task: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  queryAgent(input: QueryInput, operation?: 'query' | 'insight', moduleId?: string, usageOwner?: 'query' | 'caller'): Promise<QueryResult>;
+  insight(range: QueryScope & {prompt?: string; modelProfileId?: string}, onProgress?: QueryInput['onProgress'], signal?: AbortSignal, operationId?: string, snapshot?: InsightSnapshot): Promise<ReturnType<typeof insightResult>>;
+}
 /** Durable topic work enqueued from a Memory publication plus the derived
  * automatic-topic index the context catalog reads. Classification authority
  * still comes from the model admission fence on every call. */
@@ -191,6 +209,7 @@ export const centralServices = {
   memoryRecipeSettings: serviceContract<MemoryRecipeSettingsPort>('mote.central.memory-recipe-settings', '1'),
   memoryIntegrationSettings: serviceContract<MemoryIntegrationSettingsPort>('mote.central.memory-integration-settings', '1'),
   memoryBindingControl: serviceContract<MemoryBindingControl>('mote.central.memory-binding-control', '1'),
+  memoryProviderAdapters: serviceContract<MemoryProviderAdapters>('mote.central.memory-provider-adapters', '1'),
   processing: serviceContract<ProcessingSubmission>('mote.central.processing-submission', '1'),
   memoryCandidates: serviceContract<MaterialMemoryCandidates>('mote.central.material-memory-candidates', '1'),
   memoryRead: serviceContract<MemoryRead>('mote.central.memory-read', '1'),
@@ -204,6 +223,7 @@ export const centralServices = {
   ownerQuestions: serviceContract<OwnerQuestionsPort>('mote.central.owner-questions', '1'),
   mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
   conversations: serviceContract<ConversationRepository>('mote.central.conversations', '1'),
+  query: serviceContract<QueryDomain>('mote.central.query', '1'),
 } as const;
 export type CentralService = keyof typeof centralServices;
 
@@ -245,7 +265,7 @@ const centralMigrationAudits = {
   publication: {task:'C24', factory:'memory-publication', replacement:'hot', objects:['MemoryPublication/poll','retirement/dependencies','submitted writes/erases/revocations/native cleanup references','EvidenceDeletion/export/provider backup'], consumers:['C10B','C19','C21D','C22','HOST']},
   actions: {task:'C25', factory:'actions-services', replacement:'hot', objects:['Actions/handler','ActionCapabilities','ManagedCalendar/Todos','approval/grant/delivery/exact receipt'], consumers:['C26','AGENT','WEB','MAC','ANDROID']},
   activity: {task:'C26/C26A/C26B/C26C', factory:'insight-activity-services', replacement:'hot', objects:['ActivityProjection','AutomaticActivity/timer','InsightRuns/snapshots','OwnerQuestions','Agent view pagination'], consumers:['C22','AGENT','WEB','MAC','ANDROID']},
-  query: {task:'C27', factory:'query-domain-services', replacement:'hot', objects:['Conversations/retention','DelegationRuntime','DelegatedQueryRuns','query preparation/snapshot/commit/direct images'], consumers:['C22','C26','AGENT','WEB','MAC','ANDROID']},
+  query: {task:'C27', factory:'query-domain-services', replacement:'hot', objects:['Conversations/retention','DelegationRuntime','DelegatedQueryRuns','query preparation/snapshot/commit/direct images','admitted query runs/insight entry','context query composition'], consumers:['C22','C26','AGENT','WEB','MAC','ANDROID']},
   agent: {task:'A01/A04/A08/A09/A10/A12/A14/A17', factory:'agent-contributions', replacement:'hot', objects:['ReloadableAgent/runtime generations','Agent tool factories/reader adapter','model transport/admission callbacks','import Agent factory'], consumers:['C17','C19D','C20','C22','C26','C27']},
   host: {task:'H04/H05/H14', factory:'central-host', replacement:'restart', objects:['Cordis/ServerResources/common host','Fastify/auth dispatch/static contribution','index.ts bootstrap/PID/runtime listener/signals'], consumers:['C02-C27','AGENT','WEB']},
 } as const satisfies Record<keyof typeof featureServiceMembers, CentralMigrationAudit>;
@@ -269,10 +289,10 @@ export const centralServiceOwners = {
   materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
   retrievalIndex:'materials', materialIndex:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
-  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryStrategies:'memoryControl', memoryRecipeSettings:'memoryControl', memoryIntegrationSettings:'memoryControl', memoryBindingControl:'memoryControl', processing:'processing',
+  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryStrategies:'memoryControl', memoryRecipeSettings:'memoryControl', memoryIntegrationSettings:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', conversations:'query',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', conversations:'query', query:'query',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {
@@ -305,7 +325,7 @@ export const centralFeatureMigrations = {
   'mote.owner-questions': {owners:['activity','memoryRuntime'], requires:['vault','requestAuthorization']},
   'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']},
   'mote.imports': {owners:['imports','files','agent'], requires:['execution','sourceIntake','contentRead','requestAuthorization']},
-  'mote.ask': {owners:['query','agent'], requires:['conversations','requestAuthorization','modelAdmission','captureRead','materialRead','memoryRead','memorySnapshots']},
+  'mote.ask': {owners:['query','agent'], requires:['conversations','query','requestAuthorization','modelAdmission','captureRead','materialRead','memoryRead','memorySnapshots']},
   'mote.insights': {owners:['activity','agent'], requires:['execution','materialRead','modelAdmission']},
   'mote.agent-view': {owners:['activity','agent'], requires:['materialRead','memoryRead']},
   'mote.features': {owners:['control','host'], requires:['pluginControlRead']},

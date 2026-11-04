@@ -4,7 +4,7 @@ import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {MODEL_FEATURES} from '@mote/shared/models';
-import {ModelAssignments} from '../src/ModelAssignments';
+import {ModelAssignments} from '../src/plugins/models-processing/ModelAssignments';
 import {ApiError,type Api} from '../src/api';
 import {resources} from '../src/resource-cache';
 import {modelView} from './fixtures/model-settings';
