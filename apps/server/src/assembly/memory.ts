@@ -38,18 +38,13 @@ import {WorkingMemory} from '../working-memory.js';
 import {MemoryTopicsHost} from '../memory-topics-host.js';
 import {createMemoryControl} from '../memory-control.js';
 import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,MemoryLifecycle,type LifecycleSettings} from '../memory-lifecycle.js';
-import type {CentralDomainPlugin} from '../bootstrap.js';
 import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,memoryRecordRepositoryReplacement} from '../plugins/memory-record-repository.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
- * distribution concatenates each domain's list into one selected table. */
+ * distribution concatenates each domain's list into one selected table.
+ * Includes MEM02 memoryRecordRepository and MEM03/C21C automation admission. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryRecordRepositoryContribution,declaration:memoryRecordRepositoryDeclaration,replacement:memoryRecordRepositoryReplacement},
-]);
-
-/** C21C's trusted build registration. Its host installation lands with K04;
- * this descriptor keeps the default distribution's ownership inventory exact. */
-export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryAutomationAdmissionContribution,declaration:memoryAutomationAdmissionDeclaration,replacement:memoryAutomationAdmissionReplacement},
 ]);
 
