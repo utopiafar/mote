@@ -14,8 +14,9 @@ export type DomainRouteTable = Readonly<Record<string, DomainRouteContribution>>
 
 export function contributeDomainRoutes(context:Context,contributions:DomainRouteTable){
   const table=context.get('moteDomainRoutes');
-  if(table)Object.assign(table,contributions);
-  else context.provide('moteDomainRoutes',{...contributions});
+  const merged=Object.freeze({...(table??{}),...contributions});
+  if(table)context.set('moteDomainRoutes',merged);
+  else context.provide('moteDomainRoutes',merged);
 }
 
 declare module '@deepseek-ai/cordis' {

@@ -13,7 +13,7 @@ import {Connections} from '../src/connections.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases,pluginManifestSchema,type PluginManifest} from '../src/plugin-release.js';
-import {ActionCapabilities} from '../src/action-capabilities.js';
+import {ActionCapabilities} from '../src/plugins/action-capabilities.js';
 
 const capability=calendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'device',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,sameDeviceCalendar:true,completionInMoteOnly:true}});
 const command=(expectedRevision:number)=>({operationId:randomUUID(),expectedRevision});
