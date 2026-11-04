@@ -1,6 +1,6 @@
 import { bootstrapPlugins, builtinInstance, teardownPlugins } from '../plugin-host/bootstrap';
 import type { PluginContributionScope } from '../plugin-host/contributions';
-import { builtinPlugins, pluginContributions } from '../plugins';
+import { loadDefaultWebPlugins, pluginContributions } from '../plugins/default-inventory';
 import { webFeatures } from './registry';
 
 // Only the application entrypoint installs builtins. View and registry consumers
@@ -14,6 +14,7 @@ export const featureScopes=new Map<string,PluginContributionScope>();
 // same scope-owned bootstrap as external plugins; desired+compatible gates are
 // identical, and observed mounts come back from the actual install result.
 export const featuresReady=(async()=>{
+  const builtinPlugins=await loadDefaultWebPlugins();
   const instances=builtinPlugins.map(plugin=>builtinInstance(plugin.id,pluginContributions(plugin))) as InstanceSnapshotInput[];
   const result=await bootstrapPlugins(webFeatures,instances);
   for(const [instanceId,scope] of result.scopes)featureScopes.set(instanceId,scope);

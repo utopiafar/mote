@@ -9,16 +9,11 @@ import {describeBackupFile} from '../queue-backup-identity';
 import {QueueStorage} from '../queue-storage';
 import {ensureStorageFormat} from '../storage-format';
 import {failureCode, safeErrorName, type EventJournal} from '../support';
+import {localStorageBackupChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 export const localStorageBackupCapability = 'local-storage-backup.manage';
-export const localStorageBackupChannels = {
-  compressionPreview: 'mote:compression-preview',
-  storageChoose: 'mote:storage-choose',
-  storageOpen: 'mote:storage-open',
-  exportQueue: 'mote:export-queue',
-  importQueue: 'mote:import-queue',
-} as const;
+export {localStorageBackupChannels};
 
 export interface LocalStorageBackupOptions {
   readonly directory: string;

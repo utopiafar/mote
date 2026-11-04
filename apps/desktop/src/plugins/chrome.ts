@@ -7,16 +7,12 @@ import {ChromeCaptureBridge} from '../chrome-bridge';
 import {CHROME_EXTENSION_ID} from '../chrome-constants';
 import {registerChromeNativeHost,unregisterChromeNativeHost} from '../chrome-registration';
 import type {BrowserCaptureProvider} from '../browser-capture';
+import {chromeChannels, desktopJobIds} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin,BuiltinPluginContext} from './index';
 
 export const chromeReadCapability = 'chrome.read';
 export const chromeManageCapability = 'chrome.manage';
-export const chromeChannels = {
-  permissions: 'mote:chrome-permissions',
-  permissionsCancel: 'mote:chrome-permissions-cancel',
-  extensions: 'mote:chrome-extensions',
-  setup: 'mote:chrome-setup',
-} as const;
+export {chromeChannels};
 
 export interface ChromeSetupReceipt {
   readonly extensionId: string;
@@ -160,7 +156,7 @@ export function createChromePlugin(options: ChromePluginOptions): ChromePlugin {
       });
       const outcome = await host.startPlugin(scope, plugin => {
         plugin.defer(() => { void close().catch(() => undefined); });
-        plugin.registerJob({id: 'chrome-native-messaging', durable: true, drain: close});
+        plugin.registerJob({id: desktopJobIds.chromeNativeMessaging, durable: true, drain: close});
         const roleFrameUrls = {main: [pageUrl]};
         const register = (channel: string, capability: string, handler: (args: readonly unknown[]) => unknown) =>
           plugin.registerIpc({channel, capability, windowRoles: ['main'], callerCapability: capability, roleFrameUrls}, (_view, args) => handler(args));

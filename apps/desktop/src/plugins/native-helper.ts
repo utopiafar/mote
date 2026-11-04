@@ -1,16 +1,11 @@
 /** The Mac helper ships inside the client build; its provider descriptor is
- * registered at startup with the running app version. */
+ * projected from the same default inventory a packaged manifest enters. */
+import {defaultDesktopPluginInventory, registerDesktopNativeProviders} from '../plugin-inventory';
 import type {BuiltinDesktopPlugin} from './index';
 
 export const nativeHelperPlugin: BuiltinDesktopPlugin = {
   id: 'mote.native-helper',
   register({host, appVersion}) {
-    host.native.register({
-      capability: 'mote.native-helper',
-      apiVersion: '1',
-      platform: 'mac',
-      buildId: appVersion,
-      osGrants: ['screen', 'accessibility', 'calendar'],
-    });
+    registerDesktopNativeProviders(host.native, defaultDesktopPluginInventory, appVersion);
   },
 };

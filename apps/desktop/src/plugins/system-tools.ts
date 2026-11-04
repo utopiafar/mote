@@ -19,24 +19,13 @@ import {DesktopUpdater, type UpdateDependencies} from '../updater';
 import {createUpdateNetwork} from '../update-network';
 import {createChromiumUpdateFetch} from '../electron-update-fetch';
 import {acknowledgeInstalledUpdate} from '../update-install';
+import {desktopJobIds, systemToolsChannels} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 export const systemToolsReadCapability = 'system-tools.read';
 export const systemToolsManageCapability = 'system-tools.manage';
 
-export const systemToolsChannels = {
-  updateStatus: 'mote:update-status',
-  updateChannel: 'mote:update-channel',
-  updateCheck: 'mote:update-check',
-  updateDownload: 'mote:update-download',
-  updateCancel: 'mote:update-cancel',
-  updateInstall: 'mote:update-install',
-  updateReveal: 'mote:update-reveal',
-  updateNotes: 'mote:update-notes',
-  supportExport: 'mote:support-export',
-  eventsRead: 'mote:events-read',
-  eventsRaw: 'mote:events-raw',
-} as const;
+export {systemToolsChannels};
 
 export interface SystemToolsOptions {
   /** The profile data directory; the diagnostics journal lives below it. */
@@ -217,7 +206,7 @@ export function createSystemToolsPlugin(options: SystemToolsOptions): SystemTool
 
         // An explicit quit waits for the updater to finish aborting; disabling
         // the scope aborts immediately and leaves the durable queue untouched.
-        plugin.registerJob({id: 'system-tools-updater', durable: true, drain: close});
+        plugin.registerJob({id: desktopJobIds.systemToolsUpdater, durable: true, drain: close});
         plugin.defer(() => { void close(); });
       });
       if (!outcome.started) throw outcome.error;

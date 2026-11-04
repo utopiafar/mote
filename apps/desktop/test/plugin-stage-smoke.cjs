@@ -133,7 +133,9 @@ const pageChecks={
 const expectedScopes=[
   'mote.notes','mote.library-workspace','mote.device-settings','mote.work-history-workspace',
   'mote.sources','mote.chrome','mote.capture','mote.local-storage-backup','mote.system-tools','mote.ask',
+  'mote.capability-publisher',
 ];
+const hostScopes=['mote.host'];
 
 async function run(){
   const js=code=>main.webContents.executeJavaScript(code);
@@ -190,14 +192,17 @@ async function run(){
   assert.deepEqual([...observedPages].sort(),Object.keys(pageChecks).sort(),'every primary and secondary page is reachable');
   checks.push('traversed the '+Object.keys(pageChecks).length+' routed pages and captured hidden screenshots');
 
-  // Every built-in business plugin must own exactly one host scope.
+  // Every built-in business plugin must own exactly one host scope; the shell
+  // host primitive is separate and owns only the declared host channels.
   for(const id of expectedScopes)assert(scopes.has(id),'missing plugin scope '+id);
-  assert.deepEqual([...scopes.keys()].sort(),expectedScopes.slice().sort(),'unexpected or missing plugin scopes');
+  for(const id of hostScopes)assert(scopes.has(id),'missing host primitive scope '+id);
+  assert.deepEqual([...scopes.keys()].filter(id=>!hostScopes.includes(id)).sort(),expectedScopes.slice().sort(),'unexpected or missing plugin scopes');
   const scopeChannels=Object.fromEntries([...registeredChannels].map(([id,channels])=>[id,[...channels].sort()]));
   assert(scopeChannels['mote.notes'].includes('mote:note-draft')&&scopeChannels['mote.notes'].includes('mote:note'),'notes owns its draft/save IPC');
   assert(scopeChannels['mote.sources'].includes('mote:sources'),'sources owns source reads');
   assert(scopeChannels['mote.capture'].includes('mote:start'),'capture owns collection control');
-  checks.push('all '+expectedScopes.length+' business plugin scopes own their declared IPC channels');
+  assert(scopeChannels['mote.host'].includes('mote:get-status')&&scopeChannels['mote.host'].includes('mote:set-appearance'),'the explicit host primitive owns shell transport');
+  checks.push('all '+expectedScopes.length+' business plugin scopes plus the explicit host primitive own their declared IPC channels');
 
   // Quick-note draft is durable across window close/reopen; saving it produces
   // local content that the library plugin reads through the real preload IPC.

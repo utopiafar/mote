@@ -18,6 +18,7 @@ import {connectionToken} from '../login-session';
 import type {CalendarActions} from '../calendar-actions';
 import type {Config, SyncStatus} from '../contracts';
 import type {SourceStatus} from '../source-types';
+import {capabilityPublisherChannels, desktopJobIds} from '../desktop-ipc-channels';
 import type {BuiltinDesktopPlugin, BuiltinPluginContext} from './index';
 
 type DeviceCapabilityResponse={connectionId:string;declaration:ActionDeviceCapability|null;projection:DeviceCapabilityProjection};
@@ -79,7 +80,7 @@ export function collectorStatusView(sync:SyncStatus,blocked=0,inventoryAvailable
 }
 
 export const capabilityPublisherCapability='capabilities.publish';
-export const capabilityPublisherChannels={calendarConnect:'mote:action-calendar-connect'} as const;
+export {capabilityPublisherChannels};
 
 type PublisherSettings=Pick<Config,'deviceId'|'serverUrl'|'token'|'syncPaused'|'syncMode'|'authSignedOut'|'authExpiresAt'>;
 export interface CapabilityPublisherPluginOptions{
@@ -135,7 +136,7 @@ export function createCapabilityPublisherPlugin(options:CapabilityPublisherPlugi
       const outcome=await host.startPlugin(scope,plugin=>{
         plugin.registerIpc({channel:capabilityPublisherChannels.calendarConnect,capability:capabilityPublisherCapability,
           windowRoles:['main'],callerCapability:capabilityPublisherCapability,roleFrameUrls:{main:[pageUrl]}},()=>connect());
-        plugin.registerJob({id:'capability-publication',durable:true,drain:async()=>{close();await inFlight?.catch(()=>{});}});
+        plugin.registerJob({id:desktopJobIds.capabilityPublication,durable:true,drain:async()=>{close();await inFlight?.catch(()=>{});}});
         plugin.defer(close);
         timer=setInterval(()=>{void deliver().catch(()=>{});},options.intervalMs??60000);
         timer.unref();

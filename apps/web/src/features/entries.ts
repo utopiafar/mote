@@ -1,1 +1,0 @@
-export { builtinPages } from '../plugins';
