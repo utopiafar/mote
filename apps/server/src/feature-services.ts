@@ -1,11 +1,9 @@
 import type {PluginCenter} from './plugin-center.js';
 import type {BackgroundModelAuthorization} from './background-model-authorization.js';
 import type {ModelAuthorizationHost} from './model-authorization-host.js';
-import type {AutomaticActivity} from './automatic-activity.js';
 import type {ConfigService} from './config-service.js';
 import type {MemoryPublication} from './memory-publication.js';
 import type {OwnerQuestions} from './owner-questions.js';
-import type {ActivityProjection} from './activity.js';
 import type {DelegationRuntime} from './delegation-runtime.js';
 import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
@@ -70,11 +68,9 @@ export interface FeatureServices {
   pluginCenter:PluginCenter;
   modelAuthorization:BackgroundModelAuthorization;
   modelAuthorizationHost:ModelAuthorizationHost;
-  automaticActivity:AutomaticActivity;
   configService:ConfigService;
   memoryPublication:MemoryPublication;
   ownerQuestions:OwnerQuestions;
-  activity:ActivityProjection;
   delegation:DelegationRuntime;
   memoryIntegrationSettings:MemoryIntegrationSettings;
   memoryRecipeSettings:MemoryRecipeSettings;
