@@ -8,6 +8,7 @@ import type {ServerResources} from '../server-resources.js';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {AuthorizationPlatform} from '../plugins/authorization-platform.js';
 import type {ExecutionPlatform} from '../plugins/execution-platform.js';
+import type {FeatureServices} from '../feature-services.js';
 import {SourceStore} from '../sources.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import {MaterialNoteDeletion} from '../material-note-deletion.js';
@@ -72,5 +73,10 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   const notesSource=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
   await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
-  return Object.freeze({sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost});
+  // sourceRuntime, capture and files slices.
+  const featureServices=Object.freeze({
+    sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,
+    filesSource:{playback:filesAssembly.playback},
+  }) satisfies Partial<FeatureServices>;
+  return Object.freeze({sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,featureServices});
 }

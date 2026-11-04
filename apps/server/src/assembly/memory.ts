@@ -39,6 +39,7 @@ import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,mem
 import {createMemoryTopicsService,memoryTopicsServiceContribution,memoryTopicsServiceDeclaration,memoryTopicsServiceReplacement} from '../plugins/memory-topics-service.js';
 import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindingControlDeclaration,memoryBindingControlReplacement,type MemoryBindingControlPlatform} from '../plugins/memory-binding-control.js';
 import type {MemoryTopics} from '../plugins/central-contracts.js';
+import type {FeatureServices} from '../feature-services.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
  * distribution concatenates each domain's list into one selected table.
@@ -176,5 +177,6 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const memoryTopics=memoryTopicsService.host;
   topics.current=memoryTopicsService.topics;
   memoryTopicsService.start();
-  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryTopics,memoryTopicsService});
+  const featureServices=Object.freeze({memories,memoryIntegrationSettings,memoryRecipeSettings,memoryPublication,memoryPipeline,lifecycle}) satisfies Partial<FeatureServices>;
+  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryTopics,memoryTopicsService,featureServices});
 }

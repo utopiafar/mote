@@ -3,6 +3,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {Store} from '../store.js';
+import type {FeatureServices} from '../feature-services.js';
 import type {ServerResources} from '../server-resources.js';
 import type {ConfigService} from '../config-service.js';
 import type {ExecutionEngine} from '../execution-engine.js';
@@ -53,7 +54,8 @@ export function workInputs(dependencies:WorkInputDependencies){
   const merged=Object.freeze({...(routes??{}),'mote.owner-questions':Object.freeze({mount:(app:FastifyInstance)=>ownerQuestionServices.routes(app)})});
   if(routes)dependencies.backendContext.set('moteDomainRoutes',merged);
   else dependencies.backendContext.provide('moteDomainRoutes',merged);
-  return Object.freeze({ownerQuestions:ownerQuestionServices.questions,ownerQuestionServices});
+  const ownerQuestions=ownerQuestionServices.questions;
+  return Object.freeze({ownerQuestions,ownerQuestionServices,featureServices:Object.freeze({ownerQuestions}) satisfies Partial<FeatureServices>});
 }
 
 export interface InsightRunsAssemblyDependencies {
@@ -68,7 +70,7 @@ export interface InsightRunsAssemblyDependencies {
 export function assembleInsightRuns(dependencies:InsightRunsAssemblyDependencies){
   const insightRuns=new InsightRuns(dependencies.store,{executor:dependencies.executor,evidenceReader:dependencies.evidenceReader});
   dependencies.resources.defer(()=>insightRuns.close());
-  return Object.freeze({insightRuns});
+  return Object.freeze({insightRuns,featureServices:Object.freeze({insightRuns}) satisfies Partial<FeatureServices>});
 }
 
 export interface ActionsAssemblyDependencies {
@@ -100,7 +102,8 @@ export async function assembleActions(dependencies:ActionsAssemblyDependencies){
     authorization:{credential,connectionIdentity}});
   resources.defer(()=>services.close());
   await services.prepare();services.start();
-  return Object.freeze({actions:services.actionsForAssembly,actionsServices:services.assemblyForRoutes()});
+  const actionsServices=services.assemblyForRoutes();
+  return Object.freeze({actions:services.actionsForAssembly,actionsServices,featureServices:Object.freeze({actionsServices}) satisfies Partial<FeatureServices>});
 }
 
 export interface ActivityAssemblyDependencies {
