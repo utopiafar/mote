@@ -2,10 +2,13 @@ import {randomUUID} from 'node:crypto';
 import type {AsyncLocalStorage} from 'node:async_hooks';
 import {AgentNotConfiguredError,createImportAgent} from '@mote/agent';
 import type {AgentOptions} from '@mote/agent';
+import {formatEvidenceRef} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
+import type {FastifyInstance} from 'fastify';
+import {z} from 'zod';
 import type {ModelConnection,BackgroundModelAuthorization} from '../background-model-authorization.js';
 import type {Config} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -20,10 +23,14 @@ import type {ArchivedFileStore} from '../archived-files.js';
 import type {SourceStore} from '../sources.js';
 import type {FileStore} from '../files.js';
 import type {AdmittedUsageMeter} from '../assembly/processing.js';
+import type {EvidenceReader} from '../evidence-reader.js';
+import type {ServerFeatureScope} from '../feature-host.js';
 import {requestLocale} from '../i18n.js';
+import {navigationScopeSchema} from '../context-navigation.js';
 import {prepareImportInput} from '../import-runtime.js';
-import {ImportStore,type ImportPreparation,type ImportPreparationResult} from '../imports.js';
-import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput} from '../python-source-pack-executor.js';
+import {ImportInputError,ImportStore,type ImportPreparation,type ImportPreparationResult} from '../imports.js';
+import {ImportUploads,registerImportUploads} from '../import-uploads.js';
+import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput} from './python-source-pack-executor.js';
 import type {FileProcessing} from '../file-processing.js';
 import {StoreError,sha256} from '../store.js';
 import {centralServices} from './central-contracts.js';
@@ -61,6 +68,7 @@ export interface ImportServicesDependencies {
   readonly modelOperation:Pick<AsyncLocalStorage<string>,'run'>;
   readonly providerAdmission:Pick<ProviderAdmission,'run'>;
   readonly availableModelConnections:()=>ModelConnection[];
+  readonly evidenceReader:Pick<EvidenceReader,'evidence'>;
   readonly prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;
   readonly observeImport?:(workspace:string,event:unknown)=>void;
 }
@@ -70,16 +78,19 @@ export interface ImportServices extends PluginLifecycle {
   readonly importTasks:Map<string,Promise<unknown>>;
   launchImport(id:string,task:()=>Promise<unknown>):void;
   launchOwnerImport(id:string,task:()=>Promise<unknown>):void;
+  routes(app:FastifyInstance,scope?:ServerFeatureScope):void;
   close():Promise<void>;
 }
 
 const unavailable=()=>new StoreError('Import services are unavailable',503);
+const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
 
 export function createImportServices(dependencies:ImportServicesDependencies):ImportServices {
-  const {store,diagnostics,lifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections}=dependencies;
+  const {store,diagnostics,lifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections,evidenceReader}=dependencies;
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
+  const mounted=new WeakSet<FastifyInstance>();
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
-  let imports:ImportStore|undefined,closing:Promise<void>|undefined;
+  let imports:ImportStore|undefined,uploads:ImportUploads|undefined,closing:Promise<void>|undefined;
   const launchOwnerImport=(id:string,task:()=>Promise<unknown>)=>{
     if(phase!=='active')throw unavailable();
     const work='owner-import:'+randomUUID();modelAuthorization.manual(work,'manual',['import:'+id],availableModelConnections());launchImport(id,()=>modelAuthorization.run(work,task));
@@ -95,10 +106,11 @@ export function createImportServices(dependencies:ImportServicesDependencies):Im
     phase='quiescing';
     const errors:unknown[]=[];
     try{await imports?.stop();}catch(error){errors.push(error);}
+    try{await uploads?.close();}catch(error){errors.push(error);}
     const agents=await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     errors.push(...agents.flatMap(result=>result.status==='rejected'?[result.reason]:[]));
     await Promise.allSettled([...importTasks.values()]);
-    importAgents.clear();imports=undefined;phase='disposed';
+    importAgents.clear();imports=undefined;uploads=undefined;phase='disposed';
     if(errors.length)throw new AggregateError(errors,'Import services disposal failed');
   })();
   return Object.freeze({
@@ -112,6 +124,7 @@ export function createImportServices(dependencies:ImportServicesDependencies):Im
         const executor=new PythonSourcePackExecutor<PythonImportOutput>({...spec,outputSchema:pythonImportOutputSchema});
         return [spec.id,{revision:sha256(JSON.stringify(spec)),prepare:pythonImportPreparation(executor)}] as const;
       }));
+      uploads=new ImportUploads(store,archivedFiles);
       imports=new ImportStore(store,archivedFiles,sources,{executor,intake:processing.runtime.intake,fileStore:files,
         sourcePacks,
         bindPhaseAuthority:step=>{
@@ -130,6 +143,54 @@ export function createImportServices(dependencies:ImportServicesDependencies):Im
         onImported:async()=>({}),
       });
       phase='prepared';
+    },
+    routes(app:FastifyInstance,scope?:ServerFeatureScope){
+      if(mounted.has(app))throw new StoreError('Import routes are already installed',409);
+      if((phase!=='prepared'&&phase!=='active')||!imports||!uploads)throw unavailable();
+      const current=imports,currentUploads=uploads;
+      mounted.add(app);
+      app.addHook('onRequest',async(request,reply)=>{
+        const write=request.method!=='GET'&&request.method!=='HEAD';
+        if(phase!=='active'&&(phase!=='quiescing'||write))return reply.code(503).send({error:'feature_unavailable'});
+      });
+      scope?.defer(()=>current.stop());
+      registerImportUploads(app,currentUploads);scope?.defer(()=>currentUploads.close());
+      app.get('/api/import-capabilities',async()=>current.intake.list());
+      app.get('/api/imports',async()=>({items:current.list()}));
+      app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
+      app.post('/api/imports',{bodyLimit:360*1024*1024},async(req,reply)=>{
+        try{const job=await current.create(req.body);if(job.status==='queued')launchOwnerImport(job.id,()=>current.prepare(job.id));return reply.code(202).send(current.get(job.id));}
+        catch(error){if(error instanceof ImportInputError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});throw error;}
+      });
+      app.post('/api/imports/:id/cancel',async req=>current.cancel(jobId(req.params)));
+      app.get('/api/imports/:id',async req=>current.get(jobId(req.params)));
+      app.delete('/api/imports/:id',async req=>{const id=jobId(req.params);if(importTasks.has(id))throw new StoreError('Import is already processing',409);return current.delete(id);});
+      app.post('/api/imports/:id/prepare',async(req,reply)=>{const id=jobId(req.params),body=z.object({instruction:z.string().max(12000).optional()}).strict().parse(req.body??{});if(importTasks.has(id))return reply.code(202).send(current.get(id));if(body.instruction!==undefined)current.updateInstruction(id,body.instruction);current.get(id);launchOwnerImport(id,()=>current.prepare(id));return reply.code(202).send(current.get(id));});
+      app.post('/api/imports/:id/confirm',async(req,reply)=>{
+        const id=jobId(req.params);let job=current.get(id);
+        if(job.status==='completed'||job.status==='importing')return reply.code(202).send(job);
+        if(job.status!=='awaiting_confirmation')throw new StoreError('Review an import preview before confirming',409);
+        // A preview can be visible before its prepare task finishes orchestration cleanup.
+        // Do not acknowledge a confirmation that launchOwnerImport would silently discard.
+        const previewIdentity=current.confirmationIdentity(id);
+        const finishing=()=>reply.code(409).send({error:'import_finishing',message:'Parsing is finishing. Please confirm again shortly.',requestId:req.id});
+        const preparing=importTasks.get(id);
+        if(preparing){
+          let timer:ReturnType<typeof setTimeout>|undefined;
+          try{const finished=await Promise.race([preparing.then(()=>true),new Promise<false>(resolve=>{timer=setTimeout(()=>resolve(false),1000);})]);if(!finished)return finishing();}
+          finally{if(timer)clearTimeout(timer);}
+        }
+        job=current.get(id);
+        if(current.confirmationIdentity(id)!==previewIdentity)throw new StoreError('The preview changed; review it before confirming',409);
+        if(job.status==='completed'||job.status==='importing')return reply.code(202).send(job);
+        if(job.status!=='awaiting_confirmation')throw new StoreError('Review an import preview before confirming',409);
+        if(current.hasActiveWorker(id))return finishing();
+        launchOwnerImport(id,()=>current.confirm(id));return reply.code(202).send(current.get(id));
+      });
+      app.post('/api/imports/:id/retry',async(req,reply)=>{const id=jobId(req.params);current.get(id);if(importTasks.has(id)||current.hasActiveWorker(id))return reply.code(409).send({error:'import_stopping',message:'Import processing is still stopping. Retry shortly.',requestId:req.id});launchOwnerImport(id,()=>current.retry(id));return reply.code(202).send(current.get(id));});
+      app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)));
+      app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.stream(id));});
+      app.get('/api/captures/:id/archived-files',async req=>{const record=evidenceReader.evidence([formatEvidenceRef('capture',z.string().uuid().parse((req.params as {id:string}).id))],navigationScopeSchema.parse(req.query))[0];if(!record)throw new StoreError('Capture not found',404);return {items:archivedFiles.listForCapture(record.id)};});
     },
     start(){
       if(phase==='active')return;
