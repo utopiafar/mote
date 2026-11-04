@@ -61,6 +61,30 @@ After a fix rerun checks invalidated by source, dependency, fixture, configurati
 
 Document-only changes receive formatting, grammar, link and rendering review. Report fixture, physical-device and live-model evidence separately; historical results are not current evidence. In the PR record only: behavior changes, checks actually run, and untested risks. Use Git, CI and existing ignored logs; do not create a separate evidence ledger or receipt process.
 
+## Manual plugin stage and release journeys
+
+The plugin convergence candidate has manual stage, release and artifact checks outside the ordinary test glob and the automatic affected plan. Run them explicitly on the converged candidate; do not add them to every push, PR or handoff.
+
+```sh
+# Real source entrypoint, owner Note round-trip, restart and a repository-external plugin.
+node --import tsx scripts/journeys/plugin-central-stage.ts
+
+# Packaged default distribution, same-profile restart, provider/plugin lifecycle,
+# unknown writes, revoked sources and CLI backup restore.
+node --import tsx scripts/journeys/plugin-central-release.ts
+
+# Default distribution artifacts. Build/verify/clean-run cover Central, Web, Mac
+# and Android when the platform tools are available; Android needs JDK 17–24 and
+# SDK platform 36, Mac packaging needs macOS.
+node scripts/plugin-distribution.mjs build
+node scripts/plugin-distribution.mjs verify
+node scripts/plugin-distribution.mjs clean-run
+```
+
+The stage journey starts the real server entrypoint with a private generated profile and loads the repository-external `examples/external-plugin` through the private plugin-dev package host. The release journey builds the default distribution, inventories its features, restarts the packaged candidate, exercises provider and plugin lifecycle, and restores a stopped CLI profile. `plugin-distribution.mjs` builds and verifies the default compositions and deliberately rejects a mismatched plugin contract version; its clean-run starts the Central artifact from a fresh temporary home and installs a generated SDK sample. These scripts write generated artifacts under ignored paths and never publish or sign anything. Their per-journey evidence is recorded in [plugin convergence journeys](plugin-convergence-journeys.md).
+
+Report evidence by kind: **fixture** (generated profiles, loopback services, generated model transports, generated artifacts), **real model** (an actual provider with a declared model), **emulator**, **physical device**, or **third-party account**. A fixture journey cannot stand in for provider semantic quality, native permissions/OS effects, physical-device behavior or a third-party account. A successful artifact build or clean-run is stage/build evidence, not a signed release, deployment or full release qualification. If physical-device or third-party-account journeys are missing, record them as `未验证` and do not claim complete release eligibility.
+
 ## Logs
 
 Keep verbose logs in ignored files; print a short result and inspect failure excerpts. Preserve exit status, for example:
