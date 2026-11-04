@@ -1,13 +1,13 @@
-import {invalidateConfiguration} from './configuration-cache';
-import { readResource, resources } from './resource-cache';
-import { useUnsavedChanges } from './unsaved';
+import {invalidateConfiguration} from '../../configuration-cache';
+import { readResource, resources } from '../../resource-cache';
+import { useUnsavedChanges } from '../../unsaved';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, ExternalLink, KeyRound, LoaderCircle, RotateCcw, Save, SlidersHorizontal, TestTube2 } from 'lucide-react';
 import { DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, MODEL_REASONING_EFFORTS, normalizeCodexServiceTier, type ModelSettingsView, type ModelTestResult } from '@mote/shared/models';
-import { ApiError, errorMessage, type Api } from './api';
+import { ApiError, errorMessage, type Api } from '../../api';
 import { createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft } from './model-settings-form';
-import { codexReasoningChoices, type CatalogModel } from './model-reasoning';
+import { codexReasoningChoices, type CatalogModel } from '../../model-reasoning';
 const protocolNames: Record<ModelSettingsDraft['protocol'], string> = {
     'codex-app-server': "本机 Codex App Server",
     deepseek: "DeepSeek 原生",

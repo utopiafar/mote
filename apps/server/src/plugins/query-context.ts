@@ -1,11 +1,13 @@
-import {ContextQuery} from './context-query.js';
-import type {EvidenceReader} from './evidence-reader.js';
-import type {SourceStore} from './sources.js';
-import type {Store} from './store.js';
+import {ContextQuery} from '../context-query.js';
+import type {EvidenceReader} from '../evidence-reader.js';
+import type {SourceStore} from '../sources.js';
+import type {ContextInventoryRead} from './central-contracts.js';
 
-/** Composition binds the host implementations without giving ContextQuery a
- * reader implementation, database, Memory writer or provider binding. */
-export function createContextQuery(store:Store,sources:SourceStore,reader:EvidenceReader){
+type ContextQueryReader=Pick<EvidenceReader,'records'|'search'|'evidence'|'artifact'|'memories'|'memory'|'memoryPage'|'memoryAsync'|'memoryPageAsync'|'memoryBindings'>;
+
+/** Composition binds read-only inventory and reader ports without giving
+ * ContextQuery a database, Memory writer or provider binding. */
+export function createContextQuery(store:{stats:ContextInventoryRead['archive']['stats']},sources:Pick<SourceStore,'listSources'>,reader:ContextQueryReader){
   return new ContextQuery({
     records:reader.records.bind(reader),search:reader.search.bind(reader),
     evidence:reader.evidence.bind(reader),artifact:reader.artifact.bind(reader),

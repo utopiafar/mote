@@ -1,10 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import type {ModelSettingsView} from '@mote/shared/models';
-import {ApiError,type Api,errorMessage} from './api';
-import {useResource} from './useResource';
-import {useForegroundResources} from './useForegroundResources';
-import {useUnsavedChanges} from './unsaved';
+import {ApiError,type Api,errorMessage} from '../../api';
+import {useResource} from '../../useResource';
+import {useForegroundResources} from '../../useForegroundResources';
+import {useUnsavedChanges} from '../../unsaved';
 
 type Connection={id:string;fingerprint:string};
 type Kind='text'|'image'|'audio'|'conversation';

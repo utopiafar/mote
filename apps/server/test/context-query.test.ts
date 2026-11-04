@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
-import {createContextQuery} from '../src/context-query-composition.js';
+import {createContextQuery} from '../src/plugins/query-context.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 
 const captured=(minutes:number)=>new Date(Date.parse('2026-09-18T00:00:00.000Z')+minutes*60000).toISOString();

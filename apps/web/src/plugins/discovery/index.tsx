@@ -1,6 +1,6 @@
 import { moteText } from '@mote/shared/i18n';
 import React from 'react';
-import { modelSetupHref } from '../../ModelStartGuide';
+import { modelSetupHref } from '../models-processing/ModelStartGuide';
 import type { PageEntry, PageProps } from '../../features/types';
 import type { BuiltinWebPlugin } from '../types';
 

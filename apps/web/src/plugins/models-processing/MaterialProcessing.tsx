@@ -1,15 +1,15 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import type {ProcessingProfile} from '@mote/shared';
-import {type Api,errorMessage,ApiError} from './api';
-import {useResource} from './useResource';
-import {useUnsavedChanges} from './unsaved';
-import {invalidateConfiguration} from './configuration-cache';
-import {MediaPreparation} from './MediaPreparation';
-import {PerceptionSettings} from './PerceptionSettings';
-import {FileProcessingSettings} from './FileProcessingSettings';
+import {type Api,errorMessage,ApiError} from '../../api';
+import {useResource} from '../../useResource';
+import {useUnsavedChanges} from '../../unsaved';
+import {invalidateConfiguration} from '../../configuration-cache';
+import {MediaPreparation} from '../../MediaPreparation';
+import {PerceptionSettings} from '../../PerceptionSettings';
+import {FileProcessingSettings} from '../../FileProcessingSettings';
 import {useProcessingRelatedPages} from './ProcessingRelatedPages';
-import {processingProfileLabel,type FileSettingsView} from './processing-settings-view';
+import {processingProfileLabel,type FileSettingsView} from '../../processing-settings-view';
 
 type ImageView={revision:number;settings:{enabled:boolean;understandingEnabled:boolean;allowExternalProcessing:boolean;allowQueryImages:boolean;providerRevision:string;ocrEndpoint:string;ocrProcessorId:string;profileId?:string};model:{model?:string}|null};
 type Kind='images'|'audio'|'documents';

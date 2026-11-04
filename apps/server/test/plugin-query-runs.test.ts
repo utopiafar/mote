@@ -69,7 +69,7 @@ test('a prepare failure releases the delegation timer and leaves no transaction 
   const dependencies={
     store,executor:engine,executionObserver:{hostTick(){}},runtimeSettings:{execution:()=>({agentConcurrency:1,interactiveConcurrency:1})},
     evidenceReader:{},sourceContexts:{},assertModelEvidence(){},files:{},conversations:{},working:{},lifecycleSettings:()=>({}),archiveReader:{},agent:{configured:true},
-    modelEvidenceAuthority:{},modelSettings:{select(){throw Error('unused');},view(){throw Error('unused');}},queryAgent:async()=>plain(),usageLedger:{operation(){return {items:[],modelDurationMs:0} as never;}},
+    modelEvidenceAuthority:{},modelSettings:{select(){throw Error('unused');},view(){throw Error('unused');}},queryRuntime:()=>({}) as never,usageLedger:{operation(){return {items:[],modelDurationMs:0} as never;}},
   } as unknown as QueryRunDependencies;
   const platform=createQueryRunsPlatform(dependencies),exec=store.db.exec.bind(store.db),failure=new Error('Generated query receipt DDL failure');
   store.db.exec=((sql:string)=>{if(String(sql).includes('CREATE TABLE IF NOT EXISTS query_runs'))throw failure;return exec(sql);}) as typeof store.db.exec;
