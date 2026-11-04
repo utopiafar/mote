@@ -33,13 +33,31 @@ function bindings(provider:MemoryProvider):MemoryBindings{
   } as unknown as MemoryBindings;
 }
 
+/** Backup stubs expose the same pinned snapshot shape the real binding mints;
+ * `driftOnce` makes the post-export revision check observe one changed body. */
+function backupBindings(provider:MemoryProvider,records:Memory[],options:{namespace?:MemoryProviderNamespace;driftOnce?:boolean}={}):MemoryBindings{
+  const binding=options.namespace?{planId:'instance:generated',generation:1,namespace:options.namespace}:{planId:'mote.builtin',generation:1};
+  const catalog=Object.fromEntries(records.map(memory=>[memory.id,memoryProviderKey(memory)])),recordDigests=Object.fromEntries(records.map(memory=>[memory.id,memoryBodyDigest(memory)])),metadata=Object.fromEntries(records.map(memory=>[memory.id,{status:memory.status,...(memory.staleReason===undefined?{}:{staleReason:memory.staleReason}),...(memory.updatedAt===undefined?{}:{updatedAt:memory.updatedAt})}]));
+  let drift=options.driftOnce?1:0;
+  return {
+    binding:()=>structuredClone(binding),
+    retainSnapshot(){
+      const current=drift-- > 0?{...metadata,[records[0]!.id]:{...metadata[records[0]!.id],updatedAt:'2026-10-12T00:00:01Z'}}:metadata;
+      return {binding:structuredClone(binding),catalog,recordDigests,metadata:current,records:options.namespace?undefined:Object.fromEntries(records.map(memory=>[memory.id,memory])),release(){}};
+    },
+    provider:()=>provider,
+    plugins:{references:()=>[]},
+    assertNewManualWork:()=>{},
+  } as unknown as MemoryBindings;
+}
+
 async function generatedProvider(file:string,options:{loseAck?:boolean;tamper?:()=>boolean}={}){
   let puts=0;
   const state=async()=>{try{return JSON.parse(await readFile(file,'utf8')) as Record<string,Memory>;}catch{return {};}};
   const provider:MemoryProvider={
     async put(input){const records=await state();records[JSON.stringify(input.key)]=input.memory;await writeFile(file,JSON.stringify(records));puts++;if(options.loseAck)throw Error('Generated committed write lost acknowledgement');return {opId:input.opId,namespace:input.namespace,key:input.key,payloadDigest:memoryBodyDigest(input.memory),state:'applied',eraseVerified:false,recordedAt:'2026-10-12T00:00:00Z'};},
     async read(input){const value=(await state())[JSON.stringify(input.key)];return value&&options.tamper?.()?{...value,statement:'Generated substituted body under the same key'}:value??null;},
-    async export(){return Object.entries(await state()).map(([key,memory])=>({key:JSON.parse(key),memory}));},
+    async export(input){return Object.entries(await state()).map(([key,memory])=>({namespace:input.namespace,key:JSON.parse(key),memory}));},
     async remove(){},
   } as MemoryProvider;
   return {provider,puts:()=>puts};
@@ -149,4 +167,61 @@ test('the host factory provides separate stage and owner services and fences new
   assert.throws(()=>owner.value.publish('generated-missing'),{statusCode:503});
   await handle.close('disabled');
   await stage.release();await owner.release();
+});
+
+test('the backup contribution exports every host body, survives quiesce and retries a whole failed export without omissions',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-publication-plugin-backup-host-'));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const store=new Store(join(directory,'vault')),memories=new MemoryStore(store),native=await generatedProvider(join(directory,'provider.json'));
+  const first=generatedMemory('Generated host backup first body.'),second=generatedMemory('Generated host backup second body.');
+  const platform=createMemoryPublication({store,memories,bindings:backupBindings(native.provider,[first,second])});
+  t.after(async()=>{await platform.close();store.close();});
+  platform.prepare();platform.start();
+  assert.deepEqual(await platform.backup.export(),[first,second],'host records export without an external provider');
+  platform.quiesce('upgrade');
+  assert.deepEqual(await platform.backup.export(),[first,second],'accepted backup reads survive quiesce');
+  await platform.stop('disabled');
+  assert.throws(()=>platform.backup.export(),{statusCode:503});
+  platform.prepare();platform.start();
+  assert.deepEqual(await platform.backup.export(),[first,second],'the same profile re-enables the backup contribution');
+
+  const retryStore=new Store(join(directory,'retry-vault')),retryMemories=new MemoryStore(retryStore);
+  const retry=createMemoryPublication({store:retryStore,memories:retryMemories,bindings:backupBindings(native.provider,[first,second],{driftOnce:true})});
+  t.after(async()=>{await retry.close();retryStore.close();});
+  retry.prepare();retry.start();
+  await assert.rejects(retry.backup.export(),{statusCode:409},'a changed body invalidates the whole archive, never a partial export');
+  assert.deepEqual(await retry.backup.export(),[first,second],'a fresh retry includes every host body');
+});
+
+test('the host factory provides the backup service for bound instance bodies and rejects a corrupt provider export',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-publication-plugin-backup-instance-'));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const store=new Store(join(directory,'vault')),memories=new MemoryStore(store),native=await generatedProvider(join(directory,'provider.json'));
+  const memory=generatedMemory('Generated instance backup body.'),instance:MemoryProviderNamespace={ownerId:'generated-owner',instanceId:'generated-backup-instance',bindingRevision:1},stale=memorySchema.parse({...memory,status:'stale',staleReason:'evidence_changed',updatedAt:'2026-10-12T00:00:00Z'});
+  await native.provider.put({namespace:instance,key:memoryProviderKey(memory),memory,opId:randomUUID()});
+  const platform=createMemoryPublication({store,memories,bindings:backupBindings(native.provider,[stale],{namespace:instance})});
+  const host=new PluginHost({kind:'central',id:'generated-memory-backup-host'});
+  t.after(async()=>{await host.close();await platform.close();store.close();});
+  const backupService=memoryPublicationContribution.provides[2]!;
+  assert.deepEqual(checkCentralServiceDeclarations(
+    [{service:{id:backupService.id,apiVersion:backupService.apiVersion},provider:{scope:{host:{kind:'central' as const,id:'generated'},packageId:'mote.memory-publication',installationId:'generated',instanceId:'memory-publication',activationId:'generated'},contributionId:memoryPublicationContribution.id}}],
+    [{consumer:'mote.storage',service:centralServices.memoryBackup}]),[],'the publication contribution registers the backup service for storage export');
+  let bindingsValue:MemoryPublicationBindings|undefined;
+  const handle=await host.install({identity:{host:host.identity,packageId:'mote.memory-publication',installationId:randomUUID(),instanceId:randomUUID(),activationId:randomUUID()},contributions:[memoryPublicationDeclaration],factory:createMemoryPublicationFactory(platform,value=>{bindingsValue=value;})});
+  const backup=await host.acquire(centralServices.memoryBackup,bindingsValue!.backup);
+  assert.deepEqual(await backup.value.export(),[stale],'the instance namespace reads the exact provider body and applies host state');
+  await handle.quiesce('upgrade');
+  assert.deepEqual(await backup.value.export(),[stale]);
+  await handle.close('disabled');
+  assert.throws(()=>backup.value.export());
+  await backup.release();
+
+  const corruptStore=new Store(join(directory,'corrupt-vault')),corruptMemories=new MemoryStore(corruptStore),originalExport=native.provider.export.bind(native.provider);
+  native.provider.export=async input=>(await originalExport(input)).map(record=>({...record,memory:{...record.memory,statement:'Generated corrupt backup body'}}));
+  const corrupt=createMemoryPublication({store:corruptStore,memories:corruptMemories,bindings:backupBindings(native.provider,[stale],{namespace:instance})});
+  t.after(async()=>{await corrupt.close();corruptStore.close();});
+  corrupt.prepare();corrupt.start();
+  await assert.rejects(corrupt.backup.export(),{statusCode:502},'a provider body that differs from the pinned catalog is never exported');
+  native.provider.export=originalExport;
+  assert.deepEqual(await corrupt.backup.export(),[stale],'a whole retry after the corrupt reply restores every body');
 });
