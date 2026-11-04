@@ -1,7 +1,8 @@
 package dev.mote.collector.plugins
 
-import dev.mote.collector.CalendarCapabilityPublisher
 import dev.mote.collector.ManagedCalendarJournal
+import dev.mote.collector.plugins.NativeCapabilityPublisher
+import dev.mote.collector.plugins.PluginAvailability
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -61,7 +62,7 @@ class ManagedCalendarDeliveryContractTest {
             check(status in 200..299 && value != null) { "Generated Central response $status for $path" }
             value
         }
-        CalendarCapabilityPublisher(deviceId, transport).publish(JSONArray().put(JSONObject().put("id", "generated-calendar").put("title", "Generated calendar")))
+        NativeCapabilityPublisher(deviceId, transport, availability = { PluginAvailability.ACTIVE }).publish(JSONArray().put(JSONObject().put("id", "generated-calendar").put("title", "Generated calendar")))
 
         val action = ok("POST", "/fixture/add", JSONObject())
         val id = action.getString("id")

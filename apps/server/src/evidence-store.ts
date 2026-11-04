@@ -6,12 +6,13 @@ import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limit
 import {AssetStore} from './assets.js';
 import {archivedTodoSchema} from './todos.js';
 import {EvidenceArchive} from './evidence-archive.js';
-import {StorageLedger} from './storage-ledger.js';
+import {StorageLedger,type StorageMeterBreakdown,type StorageMeters} from './storage-ledger.js';
+import {vaultStorageMeters} from './vault-storage-meters.js';
 import {isStateExtension,samples as stateSamples} from '@mote/shared/state-series';
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
 import {systemEventText,sourceContentTime,resolveFileRule,type FilePolicy} from '@mote/shared';
-import {MemoryDeletions} from './memory-deletions.js';
+import {exportMemoryDeletions,restoreMemoryDeletions} from './plugins/memory-deletions.js';
 import {notificationEvidenceText} from './notification-evidence.js';
 import {exportPortableMaterials,preparePortableMaterials,restorePortableMaterials,portableMaterialEstimate} from './material-portable.js';
 import {memorySchema} from './memory-schema.js';
@@ -87,7 +88,8 @@ export class EvidenceStore {
     this.contentEncryption=new ContentEncryption(directory,this.db,options);
     this.assets=new AssetStore(this);
     this.archive=new EvidenceArchive(this);
-    this.ledger=new StorageLedger(this.db);
+    this.ledger=new StorageLedger(this.db,['blobs','file_blobs','file_objects']);
+    this.ledger.registerAll(vaultStorageMeters);
     this.ledger.bytes();
     if(!priorTable)this.db.exec('COMMIT');
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
@@ -301,7 +303,7 @@ export class EvidenceStore {
         this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,json);
         for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);
       }
-      if(archive.memoryDeletions!==undefined)new MemoryDeletions(this,readEvidence).restore(archive.memoryDeletions);
+      if(archive.memoryDeletions!==undefined)restoreMemoryDeletions(this,{read:ids=>readEvidence([...ids])},archive.memoryDeletions);
       for(const {requestHash,...task} of todoEntries){
         const prior=this.db.prepare('SELECT json,request_hash FROM todos WHERE id=?').get(task.id);
         if(prior){if(prior.request_hash!==requestHash||!Object.entries(task).every(([key,value])=>JSON.stringify(JSON.parse(String(prior.json))[key])===JSON.stringify(value)))throw new StoreError('Archived task conflicts with an existing task',409);continue;}
@@ -575,6 +577,10 @@ export class EvidenceStore {
   }
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() { return this.ledger.bytes(); }
+  /** A domain plugin declares the durable tables it owns; registrations persist
+   * outside the activating process so retained rows stay counted. */
+  registerStorage(plugin:string,meters:StorageMeters){this.ledger.register(plugin,meters);}
+  storageBreakdown():StorageMeterBreakdown{return this.ledger.breakdown();}
   stats() {
     const counts=this.db.prepare("SELECT coalesce(sum(n),0) captures,coalesce(sum(n*has_image),0) imageCaptures,coalesce(sum(CASE WHEN source='activity' THEN n ELSE 0 END),0) activityEvents,coalesce(sum(CASE WHEN source='media' THEN n ELSE 0 END),0) mediaEvents FROM capture_counts").get() as {captures:number;imageCaptures:number;activityEvents:number;mediaEvents:number};
     const times={firstCaptureAt:this.db.prepare('SELECT captured_at FROM captures ORDER BY captured_at LIMIT 1').get()?.captured_at??null,lastCaptureAt:this.db.prepare('SELECT captured_at FROM captures ORDER BY captured_at DESC LIMIT 1').get()?.captured_at??null};
@@ -605,7 +611,7 @@ export class EvidenceStore {
     if(estimated>maxBytes||stats.captures>20000)throw new StoreError('Archive too large for HTTP export; use npm run backup for a consistent database backup',413);
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
-    const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?new MemoryDeletions(this,ids=>this.evidence(ids)).export():[];
+    const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?exportMemoryDeletions(this,{read:ids=>this.evidence([...ids])}):[];
     const archive={materials:exportPortableMaterials(this),memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:2,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;

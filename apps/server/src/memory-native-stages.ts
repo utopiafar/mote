@@ -16,6 +16,10 @@ export class MemoryNativeStages implements MemoryNativeStagePort {
   constructor(private store:Store,private engine:ExecutionEngine,private adapter:MemoryNativeStageAdapter={}){
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_engine_stage_cleanups(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_engine_stage_drafts(id TEXT PRIMARY KEY,json TEXT NOT NULL,checkpoint_id TEXT); CREATE INDEX IF NOT EXISTS memory_engine_stage_checkpoint ON memory_engine_stage_drafts(checkpoint_id);');
+    store.registerStorage('memory-lifecycle',{
+      memory_engine_stage_cleanups:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
+      memory_engine_stage_drafts:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+coalesce(length(CAST(checkpoint_id AS BLOB)),0)+128',
+    });
     if(adapter.settle){
       this.unregister=engine.register({kind:'memory.engine-stage-cleanup',pool:'plugin-control',concurrency:()=>1,policy:EXECUTION_POLICIES.control,validate:()=>!this.stopping,
         execute:async step=>{const row=store.db.prepare('SELECT json,state FROM memory_engine_stage_cleanups WHERE id=?').get(String(step.input.id));if(row?.state==='pending')try{await this.track(()=>adapter.settle!(JSON.parse(String(row.json))));}catch{throw new ExecutionFailure('waiting','memory_engine_cleanup_pending',5000);}},

@@ -1,20 +1,21 @@
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
+import type {FastifyInstance} from 'fastify';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryPipeline,type MemoryPhasePorts,type MemoryPipelineOptions} from '../memory-pipeline.js';
 import {reviewMemory,type MemoryDraftOrigin} from '../memory-review.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
-import type {MemoryDeletions} from '../memory-deletions.js';
+import type {MemoryDeletions} from './memory-deletions.js';
 import type {MemoryReviewStrategy} from '../memory-strategy-contract.js';
-import type {OwnerQuestions} from '../owner-questions.js';
 import type {MaterialStore} from '../materials.js';
 import {installMemoryOwnerQuestions} from '../memory-owner-questions.js';
 import {registerMemoryDelegation,type MemoryDelegationOptions} from '../memory-delegation.js';
 import type {MemoryOwnerContinuationPort,MemoryOwnerWorkView} from '../memory-owner-continuation.js';
+import {registerMemoryRuntimeRoutes,type MemoryRuntimeRouteDependencies} from '../features/memory/runtime.js';
 import {StoreError} from '../store.js';
-import {centralServices} from './central-contracts.js';
+import {centralServices,type OwnerQuestionsPort} from './central-contracts.js';
 
 /** C22A owns the durable extraction/review phases and the bounded independent
  * review cache. The pipeline is the only writer of phase checkpoints; review
@@ -47,10 +48,13 @@ export interface MemoryPhaseReviewDependencies {
 export interface MemoryPhasePipelineDependencies {
   readonly pipeline:MemoryPhasePipelineOptions;
   readonly review:MemoryPhaseReviewDependencies;
-  /** The shared owner-question ledger is read through its current pre-ACV03
-   * interface. Declarations remain a Material concern. */
-  readonly ownerQuestions?:OwnerQuestions;
+  /** The shared owner-question ledger is read through its current port.
+   * Declarations remain a Material concern. */
+  readonly ownerQuestions?:OwnerQuestionsPort;
   readonly materials?:MaterialStore;
+  /** Accepted source-input work enters the same pipeline; the plugin owns the
+   * admission poll and stops it on quiesce. */
+  readonly scheduling?:{readonly automatic:boolean;readonly drain:()=>Promise<void>;readonly intervalMs?:number};
 }
 export type MemoryPhaseReview=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>Promise<QueryResult>;
 export type MemoryPhaseDelegationDependencies=Omit<MemoryDelegationOptions,'pipeline'>;
@@ -70,6 +74,9 @@ export interface MemoryPhasePipelinePlatform extends PluginLifecycle {
   /** Delegation is registered by this scope once its coordinator runtime
    * exists; product jobs stay owned by the same phase pipeline. */
   attachDelegation(dependencies:MemoryPhaseDelegationDependencies):void;
+  /** Mount the Memory job/settings routes once; each request resolves this
+   * activation instead of capturing a pipeline generation. */
+  routes(app:FastifyInstance,dependencies:Omit<MemoryRuntimeRouteDependencies,'pipeline'|'readable'|'writable'>):void;
   close():Promise<void>;
 }
 
@@ -109,6 +116,19 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'='created';
   let pipeline:MemoryPipeline|undefined,reviews:MemoryReviewCache|undefined,continuations:MemoryOwnerContinuationPort|undefined,closing:Promise<void>|undefined;
   let disposeQuestions:(()=>void)|undefined,delegation:ReturnType<typeof registerMemoryDelegation>|undefined,delegationDependencies:MemoryPhaseDelegationDependencies|undefined;
+  let poll:ReturnType<typeof setInterval>|undefined,draining=false;
+  const mounted=new WeakSet<FastifyInstance>();
+  const clearPoll=()=>{if(poll)clearInterval(poll);poll=undefined;};
+  const startPoll=()=>{
+    const scheduling=dependencies.scheduling;
+    if(!scheduling?.automatic||!scheduling.drain||poll)return;
+    poll=setInterval(()=>{
+      if(phase!=='active'||draining)return;
+      draining=true;
+      void scheduling.drain().catch(()=>{}).finally(()=>{draining=false;});
+    },scheduling.intervalMs??5000);
+    poll.unref?.();
+  };
   const readable=()=>{
     if(!pipeline||!reviews||!continuations||phase==='created'||phase==='stopped')throw unavailable();
     return {pipeline,reviews,continuations};
@@ -137,7 +157,7 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
   const close=()=>closing??=(async()=>{
     const owned=pipeline,stoppingDelegation=delegation,withdrawQuestions=disposeQuestions;
     const errors:unknown[]=[];
-    phase='stopped';
+    phase='stopped';clearPoll();
     pipeline=undefined;continuations=undefined;disposeQuestions=undefined;delegation=undefined;delegationDependencies=undefined;
     reviews?.clear();reviews=undefined;
     try{withdrawQuestions?.();}catch(error){errors.push(error);}
@@ -156,6 +176,16 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
       if(delegationDependencies||delegation)throw unavailable();
       delegationDependencies=value;
       try{registerDelegation();}catch(error){delegationDependencies=undefined;throw error;}
+    },
+    routes(app:FastifyInstance,routes:Omit<MemoryRuntimeRouteDependencies,'pipeline'|'readable'|'writable'>){
+      if(mounted.has(app))throw new StoreError('Memory runtime routes are already installed',409);
+      if(phase==='created'||phase==='stopped')throw unavailable();
+      mounted.add(app);
+      registerMemoryRuntimeRoutes(app,{
+        ...routes,pipeline:()=>readable().pipeline,
+        readable:()=>phase==='prepared'||phase==='active'||phase==='quiescing',
+        writable:()=>phase==='active',
+      });
     },
     prepare(){
       if(phase!=='created'&&phase!=='stopped')throw unavailable();
@@ -181,6 +211,7 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
         });
         phase='active';
         registerDelegation();
+        startPoll();
       }catch(error){
         phase='quiescing';
         disposeQuestions?.();disposeQuestions=undefined;
@@ -190,7 +221,7 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
     },
     quiesce(_reason?:StopReason){
       if(phase!=='active')return;
-      phase='quiescing';
+      phase='quiescing';clearPoll();
       // A withdrawn provider rejects a late reply before it can create a
       // continuation; the accepted pipeline work keeps draining.
       disposeQuestions?.();disposeQuestions=undefined;

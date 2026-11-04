@@ -1,9 +1,11 @@
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
+import type {FastifyInstance} from 'fastify';
 import {MemoryStrategies,defaultMemoryStrategyContribution,installMemoryStrategyContributions,type MemoryStrategiesPort,type MemoryStrategyContribution} from '../memory-strategies.js';
 import {MemoryRecipeSettings,type MemoryRecipeSettingsPort} from '../memory-recipe-settings.js';
 import {MemoryIntegrationSettings,type MemoryIntegrationSettingsPort} from '../memory-integration-settings.js';
+import {registerMemoryControlRoutes} from '../features/memory/control.js';
 import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';
 
@@ -50,6 +52,7 @@ export interface MemoryStrategySettingsPlatform extends PluginLifecycle {
   readonly recipes:MemoryRecipeSettings;
   readonly integration:MemoryIntegrationSettings;
   readonly ports:MemoryStrategySettingsPorts;
+  routes(app:FastifyInstance):void;
   close():Promise<void>;
 }
 
@@ -63,6 +66,7 @@ export function createMemoryStrategySettings(dependencies:MemoryStrategySettings
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'='created';
   let strategies:MemoryStrategies|undefined,recipes:MemoryRecipeSettings|undefined,integration:MemoryIntegrationSettings|undefined;
   let removeContributions:(()=>void)|undefined,closing:Promise<void>|undefined;
+  const mounted=new WeakSet<FastifyInstance>();
   const prepared=()=>{
     if(!strategies||!recipes||!integration||phase==='created'||phase==='stopped')throw unavailable();
     return {strategies,recipes,integration};
@@ -116,6 +120,16 @@ export function createMemoryStrategySettings(dependencies:MemoryStrategySettings
     get recipes(){return prepared().recipes;},
     get integration(){return prepared().integration;},
     ports,
+    routes(app:FastifyInstance){
+      if(mounted.has(app))throw new StoreError('Memory strategy routes are already installed',409);
+      if(phase==='created'||phase==='stopped')throw unavailable();
+      mounted.add(app);
+      registerMemoryControlRoutes(app,{
+        strategies:ports.strategies,recipes:ports.recipes,integration:ports.integration,
+        readable:()=>phase==='prepared'||phase==='active'||phase==='quiescing',
+        writable:()=>phase==='active',
+      });
+    },
     async prepare(){
       if(phase!=='created')throw unavailable();
       phase='preparing';

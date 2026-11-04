@@ -58,7 +58,7 @@ export function createCodexRuntimeProvider() {
   const handles = new Set<RuntimeHandle>(), preparations = new Set<Promise<RuntimeHandle>>(), abortPreparations = new Set<() => void>();
   let closing: Promise<void> | undefined;
   const provider: RuntimeProvider<RuntimeProfileConfiguration, CodexModelAdapter> = {
-    capabilities: Object.freeze({modelTransports: ['codex-app-server'], taskKinds: ['query'], tools: true, images: true, importWorkspace: false, hostDelegation: true, recovery: 'same-process', replacement: 'restart'}),
+    capabilities: Object.freeze({modelTransports: ['codex-app-server'], taskKinds: ['query'], tools: true, images: true, importWorkspace: false, hostDelegation: true, nativeDelegation: false, recovery: 'same-process', replacement: 'restart'}),
     prepare(profile, model, host) {
       if (!accepting || stopped) return Promise.reject(new AgentProviderError({category: 'blocked', code: 'runtime_unavailable', executionStarted: false}));
       const preparing = (async (): Promise<RuntimeHandle> => {
@@ -67,19 +67,35 @@ export function createCodexRuntimeProvider() {
         validatePreparation(profile, model, host);
         let active: RuntimeAttempt | undefined, task: Promise<RuntimeOutcome> | undefined, released = false, closed: Promise<void> | undefined;
         let cancellation: Cancellation | undefined;
+        // App Server keeps a turn open after a tool call. A Host control yield
+        // (or a stop-level tool rejection) must interrupt that turn immediately
+        // instead of waiting for a completion the Host will never accept.
+        let rejectHostFailure!: (error: Error) => void;
+        const hostFailure = new Promise<never>((_resolve, reject) => {rejectHostFailure = reject;});
+        void hostFailure.catch(() => {});
+        const reportHostFailure = (error: unknown) => {
+          if (error instanceof AgentYieldError || error instanceof AgentResponseError || error instanceof ContextToolError && error.recovery === 'stop') {
+            try { rejectHostFailure(error); } catch { /* The run already settled. */ }
+          }
+        };
         const tools: CodexTool[] = host.tools.definitions.map(tool => ({type: 'function', name: tool.name, description: tool.description, inputSchema: tool.inputSchema}));
         const deliver = async (name: string, args: unknown, callId: string, send: CodexToolDelivery): Promise<unknown> => {
           const attempt = active;
           if (!attempt || released) throw new AgentProviderError();
-          return host.tools.deliver(attempt, {callId, name, arguments: args}, async payload => {
-            let content: unknown;
-            try { content = JSON.parse(payload.text); } catch { throw new AgentProviderError(); }
-            if (payload.images?.length) {
-              if (payload.images.length !== 1 || !content || typeof content !== 'object' || Array.isArray(content)) throw new AgentProviderError();
-              content = {...content, image: payload.images[0]};
-            }
-            return send(content);
-          });
+          try {
+            return await host.tools.deliver(attempt, {callId, name, arguments: args}, async payload => {
+              let content: unknown;
+              try { content = JSON.parse(payload.text); } catch { throw new AgentProviderError(); }
+              if (payload.images?.length) {
+                if (payload.images.length !== 1 || !content || typeof content !== 'object' || Array.isArray(content)) throw new AgentProviderError();
+                content = {...content, image: payload.images[0]};
+              }
+              return send(content);
+            });
+          } catch (error) {
+            reportHostFailure(error);
+            throw error;
+          }
         };
         const session = new CodexSession({model: model.value.model, reasoningEffort: model.value.reasoningEffort, serviceTier: model.value.serviceTier, agentTimeoutMs: null, codex: profile.configuration.launch, authorizeModelRequest: model.value.authorizeModelRequest},
           deliver, event => host.observe?.(event), usage => { if (active) host.emit({type: 'usage', usage}, active); });
@@ -110,7 +126,7 @@ export function createCodexRuntimeProvider() {
             active = request.attempt;
             task = (async () => {
               try {
-                const text = await host.runModel(request.attempt, () => session.run(request.prompt, request.outputSchema));
+                const text = await host.runModel(request.attempt, () => Promise.race([session.run(request.prompt, request.outputSchema), hostFailure]));
                 return {terminal: {kind: 'completed'}, candidate: {text}};
               } catch (error) {
                 if (cancellation || host.signal.aborted) return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? cancellationCause(host, 'cancelled')}};

@@ -1,18 +1,20 @@
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
+import type {FastifyInstance} from 'fastify';
 import {EXECUTION_POLICIES} from '../execution-policy.js';
 import type {QueryResult} from '@mote/shared';
 import type {MemoryStore,MemoryExtractOptions} from '../memory.js';
-import type {MemoryBindings} from '../memory-bindings.js';
-import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProviderNamespace,type MemoryProviderReceipt} from '../memory-provider-contract.js';
+import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProvider,type MemoryProviderKey,type MemoryProviderNamespace,type MemoryProviderReceipt} from '../memory-provider-contract.js';
 import {ExecutionEngine,ExecutionFailure} from '../execution-engine.js';
 import {sha256,StoreError} from '../store.js';
 import type {EvidenceStore as Store} from '../evidence-store.js';
 import {memorySchema,type Memory} from '../memory-schema.js';
 import {randomUUID} from 'node:crypto';
 import {installMemoryPublicationRetirement,registerMemoryPublicationDependencies,memoryPublicationRetired} from './memory-private-storage.js';
-import {exportBoundMemories,type MemoryBackup} from './memory-backup.js';
+import {createEvidenceDeletion,type EvidenceDeletion,type EvidenceDeletionPorts} from './evidence-deletion.js';
+import {exportBoundMemories,type MemoryBackup,type MemoryBackupBindingPort} from './memory-backup.js';
+import {registerMemoryExtractRoute,registerMemoryOwnerRoutes,type MemoryExtractRouteDependencies} from '../features/memory/publication.js';
 
 import type {MemoryPublicationReceipt,MemoryPublicationDependencies,MemoryStagePublication,MemoryOwnerPublication,MemoryOwnerDeletionResult} from './memory-publication-contract.js';
 import {centralServices} from './central-contracts.js';
@@ -30,6 +32,22 @@ export interface MemoryPublicationOptions {
    * the historical constructor-starts behavior. */
   readonly autostart?:boolean;
 }
+/** C24 reads canonical Memory records and deletion intents through this port;
+ * it never constructs a second record storage or reaches into its SQL. */
+export type MemoryPublicationRecordPort=Pick<MemoryStore,'prepareExtract'|'assertPrepared'|'get'|'publish'|'correct'|'delete'|'isCurrentEvidence'|'readEvidence'|'deletions'>;
+/** Provider identity, transport and retention all come from the live Memory
+ * binding port. The plugin stores the binding on its deletion ledger so a
+ * deletion snapshot cannot silently move to another provider namespace. */
+export type MemoryPublicationBinding={planId:string;generation:number;namespace?:MemoryProviderNamespace};
+export interface MemoryPublicationBindingPort extends MemoryBackupBindingPort {
+  binding():MemoryPublicationBinding;
+  provider(instanceId:string,namespace?:MemoryProviderNamespace):MemoryProvider;
+  read(id:string,binding?:MemoryPublicationBinding,key?:MemoryProviderKey):Promise<Memory>;
+  assertNewManualWork():void;
+  readonly plugins:{references(id:string):string[]};
+  stageMigrationRecord?:(namespace:MemoryProviderNamespace,memory:Memory,opId:string,assertAuthority:()=>void)=>Promise<MemoryProviderReceipt>;
+  migrationActivated?:(namespace:MemoryProviderNamespace)=>void;
+}
 export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPublication {
   private activeOwnerWork=0;
   private dispose?:()=>Promise<void>;
@@ -37,7 +55,7 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
   private stopped=false;
   private closed=false;
   revokeEvidence?:(ids:string[])=>Promise<void>;
-  constructor(readonly store:Store,readonly memories:MemoryStore,readonly bindings:MemoryBindings,private executor?:ExecutionEngine,options:MemoryPublicationOptions={}){
+  constructor(readonly store:Store,readonly memories:MemoryPublicationRecordPort,readonly bindings:MemoryPublicationBindingPort,private executor?:ExecutionEngine,options:MemoryPublicationOptions={}){
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_publications(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_publication_outputs(id TEXT PRIMARY KEY,json TEXT NOT NULL);');
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_writes(id TEXT PRIMARY KEY,parent_id TEXT NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL,automatic INTEGER NOT NULL DEFAULT 0);');
@@ -45,6 +63,18 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_erases(id TEXT PRIMARY KEY,json TEXT NOT NULL,state TEXT NOT NULL);');
     store.db.exec('CREATE TABLE IF NOT EXISTS memory_provider_evidence_revocations(id TEXT PRIMARY KEY,generation INTEGER NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL);');
     installMemoryPublicationRetirement(store);
+    // This plugin owns the publication journals and their retained retirement;
+    // the vault ledger keeps no domain table names.
+    store.registerStorage('memory-publication',{
+      memory_publications:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
+      memory_publication_outputs:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+      memory_publication_dependencies:'length(CAST(operation_id AS BLOB))+length(CAST(kind AS BLOB))+length(CAST(dependency_id AS BLOB))+64',
+      memory_publication_retirements:'length(CAST(operation_id AS BLOB))+64',
+      memory_owner_mutations:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
+      memory_provider_erases:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128',
+      memory_provider_writes:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(parent_id AS BLOB))+length(CAST(state AS BLOB))+136',
+    });
+    this.memories.deletions.attachBinding({current:()=>this.bindings.binding()});
     bindings.stageMigrationRecord=(namespace,memory,opId,assertAuthority)=>this.writeAtNamespace(opId,namespace,memory,opId,assertAuthority);
     bindings.migrationActivated=namespace=>{
       const keys=new Set(store.db.prepare('SELECT json FROM memories').all().map(row=>JSON.stringify(memoryProviderKey(JSON.parse(String(row.json))))));
@@ -181,7 +211,7 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
     await this.reconcile();this.scheduleReconcile();const pending=Number(this.store.db.prepare("SELECT count(*) n FROM memory_provider_erases WHERE json_extract(json,'$.memoryId')=? AND state='submitted'").get(id)!.n);return {...result,externalErase:pending?'pending':'acknowledged',physicalEraseVerified:false};
   }
   stop(){this.quiesce();}
-  async close(){this.stop();this.closed=true;const dispose=this.dispose;this.dispose=undefined;await dispose?.();}
+  async close(){this.stop();this.closed=true;this.memories.deletions.attachBinding(undefined);const dispose=this.dispose;this.dispose=undefined;await dispose?.();}
 }
 
 /** C24 owns staged publication, owner mutation replay, the durable
@@ -208,11 +238,14 @@ export const memoryPublicationReplacement='hot' as const;
 
 export interface MemoryPublicationPlatformDependencies {
   readonly store:Store;
-  readonly memories:MemoryStore;
-  readonly bindings:MemoryBindings;
+  readonly memories:MemoryPublicationRecordPort;
+  readonly bindings:MemoryPublicationBindingPort;
   readonly executor?:ExecutionEngine;
   /** C23 owns native source cleanup; C24 keeps its durable intent. */
   readonly revokeEvidence?:(ids:string[])=>Promise<void>;
+  /** C24 also owns evidence deletion identity. Ports stay narrow; the capture
+   * feature acquires the live object instead of constructing another one. */
+  readonly evidenceDeletion?:EvidenceDeletionPorts;
 }
 export interface MemoryPublicationPort {
   readonly stage:MemoryStagePublication;
@@ -225,17 +258,20 @@ export interface MemoryPublicationBindings {
   readonly owner:ServiceBinding;
   readonly backup:ServiceBinding;
 }
+export type MemoryPublicationHttpDependencies=Omit<MemoryExtractRouteDependencies,'owner'|'store'|'memories'|'readable'|'writable'>&{readonly memories:MemoryStore};
 export interface MemoryPublicationPlatform extends PluginLifecycle {
   readonly port:MemoryPublicationPort;
   readonly stage:MemoryStagePublication;
   readonly owner:MemoryOwnerPublication;
   readonly backup:MemoryBackup;
-  /** The owned domain object for the trusted assembly bridge only. */
+  /** The owned domain objects for the trusted assembly bridge only. */
   readonly publication:MemoryPublication;
+  readonly evidenceDeletion:EvidenceDeletion;
   prepare():void;
   start():void;
   quiesce(reason?:StopReason):void;
   stop(reason?:StopReason):Promise<void>;
+  routes(app:FastifyInstance,dependencies:MemoryPublicationHttpDependencies):void;
   dispose():Promise<void>;
   close():Promise<void>;
 }
@@ -248,8 +284,8 @@ const unavailable=()=>new StoreError('Memory publication is unavailable',503);
  * fences the object and close releases its handler. */
 export function createMemoryPublication(dependencies:MemoryPublicationPlatformDependencies):MemoryPublicationPlatform {
   let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopping'|'stopped'='created';
-  let publication:MemoryPublication|undefined,closing:Promise<void>|undefined;
-  const inflight=new Set<Promise<unknown>>();
+  let publication:MemoryPublication|undefined,evidenceDeletion:EvidenceDeletion|undefined,closing:Promise<void>|undefined;
+  const inflight=new Set<Promise<unknown>>(),mounted=new WeakSet<FastifyInstance>();
   const readable=()=>{
     if(!publication||phase==='created'||phase==='stopped')throw unavailable();
     return publication;
@@ -287,7 +323,7 @@ export function createMemoryPublication(dependencies:MemoryPublicationPlatformDe
     owned?.quiesce();
     await Promise.allSettled([...inflight]);
     phase='stopped';
-    publication=undefined;
+    publication=undefined;evidenceDeletion=undefined;
     if(owned)await owned.close();
   })().finally(()=>{closing=undefined;});
   const platform:MemoryPublicationPlatform=Object.freeze({
@@ -296,16 +332,21 @@ export function createMemoryPublication(dependencies:MemoryPublicationPlatformDe
     get owner(){return port.owner;},
     get backup(){return port.backup;},
     get publication(){return readable();},
+    get evidenceDeletion(){
+      if(!evidenceDeletion||phase!=='active')throw unavailable();
+      return evidenceDeletion;
+    },
     prepare(){
       if(phase!=='created'&&phase!=='stopped')throw unavailable();
       phase='preparing';
       try{
+        evidenceDeletion=dependencies.evidenceDeletion?createEvidenceDeletion(dependencies.evidenceDeletion):undefined;
         const owned=new MemoryPublication(dependencies.store,dependencies.memories,dependencies.bindings,dependencies.executor,{autostart:false});
         owned.revokeEvidence=dependencies.revokeEvidence;
         publication=owned;
         phase='prepared';
       }catch(error){
-        publication=undefined;
+        publication=undefined;evidenceDeletion=undefined;
         phase='stopped';
         throw error;
       }
@@ -321,6 +362,15 @@ export function createMemoryPublication(dependencies:MemoryPublicationPlatformDe
       publication?.quiesce();
     },
     async stop(_reason?:StopReason){await close();},
+    routes(app:FastifyInstance,routes:MemoryPublicationHttpDependencies){
+      if(mounted.has(app))throw new StoreError('Memory publication routes are already installed',409);
+      if(!publication||phase==='created'||phase==='stopped')throw unavailable();
+      mounted.add(app);
+      const readable=()=>phase==='prepared'||phase==='active'||phase==='quiescing';
+      const writable=()=>phase==='active';
+      registerMemoryOwnerRoutes(app,{owner:port.owner,readable,writable});
+      registerMemoryExtractRoute(app,{...routes,owner:port.owner,store:dependencies.store,readable,writable});
+    },
     dispose:close,close,
   });
   return platform;

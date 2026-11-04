@@ -23,7 +23,7 @@ export async function hostFixture(
   const identity={packageId:'generated',installationId:'install',instanceId:'instance',host:{kind:'central' as const,id:'fixture'},activationId:'active'};
   const lease=<T,>(id:string,value:T):ServiceLease<T>=>{let active=true;return {binding:{service:{id,apiVersion:'1'},provider:{scope:identity,contributionId:id},revision:1},value,signal:controller.signal,assertCurrent(){assert.ok(active);},async release(){active=false;if(id==='mote.agent.host-output')options.afterOutputRelease?.();}};};
   const snapshot=contextToolSnapshot(input),definitions=toRuntimeToolDefinitions(snapshot),selection={modelId:'generated',modelRevision:1,profileId:'model',profileRevision:1,transport:'fixture'};
-  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:true,images:false,importWorkspace:false,hostDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,host){
+  const provider:RuntimeProvider={capabilities:{modelTransports:['fixture'],taskKinds:['query'],tools:true,images:false,importWorkspace:false,hostDelegation:false,nativeDelegation:false,recovery:'none',replacement:'restart'},async prepare(_profile,_model,host){
     host.emit({type:'tools.ready',tools:definitions},null);
     return {run:request=>host.runModel(request.attempt,()=>run(host,request.attempt)),repair:async()=>{throw Error('Unexpected repair');},cancel:async()=>{},close:async()=>{}};
   }};

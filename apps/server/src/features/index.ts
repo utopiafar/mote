@@ -6,7 +6,6 @@ import {adapter as activityAdapter} from './activity.js';
 import {adapter as filesAdapter} from './files.js';
 import {adapter as connectionsAdapter} from './connections.js';
 import {adapter as systemAdapter} from './system.js';
-import {adapter as storageAdapter} from './storage.js';
 import {adapter as captureAdapter} from './capture.js';
 import {adapter as contextAdapter} from './context.js';
 import {adapter as materialsAdapter} from './materials.js';
@@ -16,7 +15,6 @@ import {adapter as notesAdapter} from './notes.js';
 import {adapter as devicesAdapter} from './devices.js';
 import {adapter as mediaAdapter} from './media.js';
 import {adapter as ownerQuestionsAdapter} from './owner-questions.js';
-import {adapter as memoryAdapter} from './memory.js';
 import {adapter as insightsAdapter} from './insights.js';
 import {adapter as featuresAdapter} from './features.js';
 
@@ -37,7 +35,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   domainRouteContribution('mote.actions'),
   connectionsAdapter,
   systemAdapter,
-  storageAdapter,
+  domainRouteContribution('mote.storage'),
   captureAdapter,
   contextAdapter,
   materialsAdapter,
@@ -49,7 +47,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   devicesAdapter,
   mediaAdapter,
   ownerQuestionsAdapter,
-  memoryAdapter,
+  domainRouteContribution('mote.memory'),
   domainRouteContribution('mote.imports'),
   domainRouteContribution('mote.ask'),
   insightsAdapter,

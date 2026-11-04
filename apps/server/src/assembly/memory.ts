@@ -3,6 +3,8 @@ import {skillCatalog} from '@mote/agent';
 import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {QueryResult} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
+import type {FastifyInstance} from 'fastify';
+import type {Context} from '@deepseek-ai/cordis';
 import {sha256,StoreError,type Store} from '../store.js';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -22,7 +24,7 @@ import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextTreeRegistry} from '../context-trees.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from '../memory.js';
-import type {ConversationRepository as Conversations} from '../plugins/central-contracts.js';
+import type {ConversationRepository as Conversations,OwnerQuestionsPort} from '../plugins/central-contracts.js';
 import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import {memoryIntegrationImageInputs} from '../memory-image-grants.js';
 import type {MemoryStrategies} from '../memory-strategies.js';
@@ -32,6 +34,8 @@ import {createMemoryAutomationAdmission,memoryAutomationAdmissionContribution,me
 import {createMemoryProviderAdapters,memoryProviderAdaptersContribution,memoryProviderAdaptersDeclaration,memoryProviderAdaptersReplacement} from '../plugins/memory-provider-adapters.js';
 import {createMemoryStrategySettings,memoryStrategySettingsContribution,memoryStrategySettingsDeclaration,memoryStrategySettingsReplacement,type MemoryStrategySettingsPlatform} from '../plugins/memory-strategy-settings.js';
 import {createMemoryPublication,memoryPublicationContribution,memoryPublicationDeclaration,memoryPublicationReplacement} from '../plugins/memory-publication.js';
+import {registerEvidenceDeletionForAssembly} from '../plugins/evidence-deletion.js';
+import {MaterialNoteDeletion} from '../material-note-deletion.js';
 import type {MemoryPipeline,MemoryModelSelection,MemoryPhasePorts} from '../memory-pipeline.js';
 import {memoryReadRanges} from '../memory-read-context.js';
 import {createMemoryPhasePipeline,memoryPhasePipelineContribution,memoryPhasePipelineDeclaration,memoryPhasePipelineReplacement,type MemoryPhasePipelineOptions,type MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
@@ -44,6 +48,7 @@ import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindin
 import type {MemoryTopics} from '../plugins/central-contracts.js';
 import type {OwnerQuestions} from '../owner-questions.js';
 import type {FeatureServices} from '../feature-services.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
  * distribution concatenates each domain's list into one selected table.
@@ -113,6 +118,7 @@ export function memoryInputs(dependencies:MemoryInputStageDependencies){
 export interface MemoryRuntimeDependencies {
   readonly store:Store;
   readonly resources:ServerResources;
+  readonly backendContext:Context;
   readonly configService:ConfigService;
   readonly diagnostics:ServerDiagnostics;
   readonly executor:ExecutionEngine;
@@ -130,7 +136,7 @@ export interface MemoryRuntimeDependencies {
   readonly memoryStrategySettings:MemoryStrategySettingsPlatform;
   readonly memoryAutomation:MemoryAutomation;
   /** Shared owner-question ledger; the phase plugin owns the Memory provider. */
-  readonly ownerQuestions:OwnerQuestions;
+  readonly ownerQuestions:OwnerQuestionsPort;
   readonly pluginCenter:PluginCenter;
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
@@ -160,7 +166,8 @@ export interface MemoryRuntimeDependencies {
  * the automatic topics host — the Memory runtime app.ts previously wired
  * inline. Memory objects keep their relative defer/beforeClose order. */
 export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
-  const {store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  const {store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  memoryStrategySettings.start();
   // The plugin constructs the binding; its disposer is registered by app.ts at
   // the original shutdown slot. Runtime collaborators are resolved when the
   // binding and later control projections actually run.
@@ -173,9 +180,11 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   memoryProviderAdapters.prepare();memoryProviderAdapters.start();
   const memoryAdapters=memoryProviderAdapters.adapters;
   memoryBindings.providerFactory=(id,namespace)=>memoryProviderAdapters.port.provider(id,namespace);
-  const memoryPublicationPlatform=createMemoryPublication({store,memories,bindings:memoryBindings,executor,revokeEvidence:ids=>memoryProviderAdapters.port.erasePreparedEvidence(ids)});
+  const memoryPublicationPlatform=createMemoryPublication({store,memories,bindings:memoryBindings,executor,revokeEvidence:ids=>memoryProviderAdapters.port.erasePreparedEvidence(ids),
+    evidenceDeletion:evidenceReader.files?{captures:store,files:evidenceReader.files,aliases:new MaterialNoteDeletion(store,materials)}:undefined});
   resources.defer(()=>memoryPublicationPlatform.close());
   memoryPublicationPlatform.prepare();memoryPublicationPlatform.start();
+  registerEvidenceDeletionForAssembly(store,()=>memoryPublicationPlatform.evidenceDeletion);
   const memoryPublication=memoryPublicationPlatform.publication;
   const memoryPipelineOptions:MemoryPhasePipelineOptions={onPublished:(step,items,job)=>topics.current?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublicationPlatform.port.stage,ownerPublication:memoryPublicationPlatform.port.owner,assertNewManualWork:()=>memoryBindings.assertNewManualWork(),nativeStages:{settle:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryProviderAdapters.port.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},prepare:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryProviderAdapters.port.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
     const engineProfile=pluginCenter.instanceView(namespace.instanceId).configuration.modelProfileId;if(typeof engineProfile!=='string')throw new StoreError('Native Memory model profile is missing',409);
@@ -193,7 +202,8 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
       // Include full original metadata (speaker, source, device, dates, version),
       // not just quote text. Credentials/config are hashed, never retained.
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
-    }},ownerQuestions,materials});
+    }},ownerQuestions,materials,
+    scheduling:{automatic:lifecycleRuntime.automatic,drain:async()=>{await sourcePipelines.drainMemory(memoryPipeline,agent.configured);await memoryPipeline.tickInputs();}}});
   memoryPhasePipeline.prepare();memoryPhasePipeline.start();
   resources.defer(()=>memoryPhasePipeline.close());
   const memoryPipeline=memoryPhasePipeline.pipeline,reviewExtraction=memoryPhasePipeline.review;
@@ -221,6 +231,28 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const memoryTopics=memoryTopicsService.host;
   topics.current=memoryTopicsService.topics;
   memoryTopicsService.start();
-  const featureServices=Object.freeze({memories,memoryStrategySettings,memoryPipeline,lifecycle}) satisfies Partial<FeatureServices>;
-  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryProviderAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryStrategySettings,memoryTopics,memoryTopicsService,featureServices});
+  contributeDomainRoutes(backendContext,{'mote.memory':Object.freeze({
+    mount:(app:FastifyInstance,services?:FeatureServices,scope?:import('../feature-host.js').ServerFeatureScope)=>{
+      if(!services)throw new Error('Memory routes require the feature service bridge');
+      scope?.retire(()=>services.agentFeatures.dispose('mote.memory'));
+      memoryStrategySettings.routes(app);
+      memoryPhasePipeline.routes(app,{
+        lifecycle:()=>memoryLifecycleService.lifecycle,
+        store,files,evidenceReader,memories,
+        modelSettings:services.modelSettings,
+        modelAuthorizationHost:services.modelAuthorizationHost,
+        availableModelConnections:services.availableModelConnections,
+      });
+      memoryPublicationPlatform.routes(app,{
+        pipeline:()=>memoryPhasePipeline.pipeline,
+        files,evidenceReader,memories,
+        modelSettings:services.modelSettings,
+        query:input=>services.queryAgent(input,'query','memories'),
+        reviewExtraction:(input,result,strategy,draftOrigin)=>memoryPhasePipeline.review(input,result,strategy,draftOrigin),
+        modelAuthorizationHost:services.modelAuthorizationHost,
+        availableModelConnections:services.availableModelConnections,
+      });
+    },
+  })});
+  return Object.freeze({memoryBindings,memoryBindingControl,memoryAdapters,memoryProviderAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryStrategySettings,memoryTopics,memoryTopicsService,memoryLifecycleService,memoryPublicationService:memoryPublicationPlatform});
 }

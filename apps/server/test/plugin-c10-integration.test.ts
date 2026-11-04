@@ -20,7 +20,7 @@ import {SourceStore} from '../src/sources.js';
 import {Connections} from '../src/connections.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {MaterialNoteDeletion} from '../src/material-note-deletion.js';
-import {EvidenceDeletion} from '../src/evidence-deletion.js';
+import {createEvidenceDeletion} from '../src/plugins/evidence-deletion.js';
 import {registerCaptureBrowser} from '../src/capture-browser.js';
 import {register as registerNotes} from '../src/features/notes.js';
 import {createNotesSource} from '../src/plugins/notes-source.js';
@@ -74,7 +74,7 @@ async function fixture(t:TestContext){
     const route={request:(req:FastifyRequest)=>pins.get(req)};
     capture.routes(child,route);devices.routes(child,route);
     registerNotes(child,{store,sources,files,materials,diagnostics,connections,credential,assertRequestActive:req=>authorization.requests.assertCurrent(pins.get(req)!),ingress:capture.ingress,notesSource:notes.assemblyForRoutes(),notesCapture:{authority:authorization,route,intake:capture.ports.captureIntake}});
-    registerCaptureBrowser(child,{store,evidenceReader:reader,connections,credential,deletion:new EvidenceDeletion(store,files,noteDeletion)});
+    registerCaptureBrowser(child,{store,evidenceReader:reader,connections,credential,deletion:createEvidenceDeletion({captures:store,files,aliases:noteDeletion})});
   });
   await app.listen({host:'127.0.0.1',port:0});const address=app.server.address();assert.ok(address&&typeof address==='object');const url='http://127.0.0.1:'+address.port;
   const http=(path:string,method='GET',body?:unknown,token=ownerToken)=>fetch(url+path,{method,headers:{authorization:'Bearer '+token,...(body===undefined?{}:{'content-type':Buffer.isBuffer(body)?'application/gzip':'application/json'})},...(body===undefined?{}:{body:Buffer.isBuffer(body)?new Uint8Array(body):JSON.stringify(body)})});

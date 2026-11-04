@@ -12,7 +12,7 @@ import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {MemoryReviewCache} from '../src/memory-review-cache.js';
-import {MemoryDeletions} from '../src/memory-deletions.js';
+import {openMemoryDeletions} from '../src/plugins/memory-deletions.js';
 import {MaterialStore} from '../src/materials.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {codingSourcePlugin} from '../src/coding-source-plugin.js';
@@ -248,7 +248,7 @@ test('portable archives retain deletion intent, reject identity tampering atomic
 
 test('an explicitly bounded deletion comparison times out even when a model ignores cancellation',async t=>{
  const f=await fixture(t),id=await f.add('Generated bounded review'),draft=output(f,[id]),[old]=await save(f,draft);f.memories.delete(old.id);
- const guard=new MemoryDeletions(f.store,ids=>f.store.evidence(ids),20);let signal:AbortSignal|undefined;
+ const guard=openMemoryDeletions(f.store,{records:{read:ids=>f.store.evidence([...ids])},reviewTimeoutMs:20});let signal:AbortSignal|undefined;
  await assert.rejects(guard.review({question:'Generated'},draft,async input=>{signal=input.signal;return new Promise(()=>{});}),{name:'AgentTimeoutError'});
  assert.equal(signal?.aborted,true);assert.equal(f.memories.list().length,0);
 });
