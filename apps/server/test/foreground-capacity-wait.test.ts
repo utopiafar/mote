@@ -9,6 +9,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
+import {hostRun} from './fixtures/host-run.js';
 
 const answer=(insight:boolean):QueryResult=>({answer:insight?JSON.stringify({title:'Generated review',markdown:'Generated review.',html:'<p>Generated review.</p>'}):'Generated answer.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
 const configuration=(dataDir:string):Config=>({dataDir,token:'generated-capacity-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-not-live',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
@@ -18,7 +19,7 @@ async function until<T>(read:()=>T,ready:(value:T)=>boolean){const deadline=Date
 for(const feature of ['query','insight'] as const)for(const mode of ['worker-busy','host-cooldown'] as const)test(`synchronous HTTP ${feature} keeps one request alive through ${mode} and publishes once after release`,{timeout:15000},async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-foreground-capacity-')),config=configuration(directory);
  let calls=0;
- const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{calls++;if(mode==='worker-busy'&&calls===1)throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:1000,executionStarted:false});return answer(feature==='insight');}}});
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{lease?.onFinalizer?.('host');calls++;if(mode==='worker-busy'&&calls===1){hostRun(input,{terminal:'failed'});throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:1000,executionStarted:false});}hostRun(input);return answer(feature==='insight');}}});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  if(mode==='host-cooldown')await assert.rejects(node.featureServices.providerAdmission.run(node.modelSettings.select(feature==='query'?'chat':'insight').settings,async()=>{throw new ProviderFailure({category:'transient',code:'provider_unavailable',retryAfterMs:1000,executionStarted:false});}),ProviderFailure);
  await node.app.listen({host:'127.0.0.1',port:0});
@@ -46,7 +47,7 @@ for(const feature of ['query','insight'] as const)for(const mode of ['worker-bus
 
 test('a cooldown reported while the actual model gate is occupied creates no unissued usage receipt',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-late-model-cooldown-')),config=configuration(directory),release=deferred();let calls=0;
- const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:input=>host.runModel!(async()=>{calls++;return answer(false);},input.signal)})});
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:async(input,lease)=>{lease?.onFinalizer?.('host');return host.runModel!(async()=>{calls++;hostRun(input);return answer(false);},input.signal);}})});
  t.after(async()=>{release.resolve();await node.app.close();await rm(directory,{recursive:true,force:true});});
  const {llmGate,queryAgent,providerAdmission}=node.featureServices;llmGate.configure(1);
  const occupied=llmGate.run(()=>release.promise),pending=withFixtureOwnerModelWork(node,()=>queryAgent({question:'Generated gate-race question'}));
@@ -60,7 +61,7 @@ test('a cooldown reported while the actual model gate is occupied creates no uni
 
 test('cancelling while the actual model gate is occupied creates no unissued usage receipt',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-cancel-model-queue-')),config=configuration(directory),release=deferred(),controller=new AbortController();let calls=0;
- const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:input=>host.runModel!(async()=>{calls++;return answer(false);},input.signal)})});
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:async(input,lease)=>{lease?.onFinalizer?.('host');return host.runModel!(async()=>{calls++;hostRun(input);return answer(false);},input.signal);}})});
  t.after(async()=>{release.resolve();await node.app.close();await rm(directory,{recursive:true,force:true});});
  const {llmGate,queryAgent}=node.featureServices;llmGate.configure(1);
  const occupied=llmGate.run(()=>release.promise),pending=withFixtureOwnerModelWork(node,()=>queryAgent({question:'Generated cancelled model queue',signal:controller.signal}));
@@ -72,8 +73,15 @@ test('cancelling while the actual model gate is occupied creates no unissued usa
 
 test('admission waiting preserves already reported partial usage, while a file-analysis cooldown invents none',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-partial-admission-')),config=configuration(directory);let calls=0,partial=true;
- const query:NonNullable<Parameters<typeof buildApp>[1]>['agent']={configured:true,close:async()=>{},query:async input=>{
-  calls++;if(partial){input.onUsage?.({measurement:'thread_cumulative',complete:false,requests:0,reportedRequests:0,inputTokens:19,outputTokens:3,totalTokens:22});throw new ProviderFailure({category:'transient',code:'provider_unavailable',admissionWaiting:true,executionStarted:false,retryAfterMs:1000});}return answer(false);
+ const query:NonNullable<Parameters<typeof buildApp>[1]>['agent']={configured:true,close:async()=>{},query:async(input,lease)=>{
+  lease?.onFinalizer?.('host');
+  calls++;
+  if(partial){
+    const usage={measurement:'thread_cumulative' as const,complete:false,requests:0,reportedRequests:0,inputTokens:19,outputTokens:3,totalTokens:22};
+    input.onUsage?.(usage);hostRun(input,{usage,terminal:'failed'});
+    throw new ProviderFailure({category:'transient',code:'provider_unavailable',admissionWaiting:true,executionStarted:false,retryAfterMs:1000});
+  }
+  hostRun(input);return answer(false);
  }};
  const node=await buildApp(config,{backgroundWorker:false,agent:query,createModelAgent:async()=>query!});t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  await assert.rejects(withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent({question:'Generated partial model operation'})),ProviderFailure);

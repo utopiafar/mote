@@ -9,7 +9,7 @@ type HostRunEvent=Parameters<HostRunEventObserver>[0];
 export interface HostRunUsageObserverOptions {
   /** Bound by trusted assembly to one actual Host run, never prompt/config data. */
   readonly runId:string;
-  /** The existing C06 run-level meter. Attempts do not create receipts. */
+  /** The existing C06 run-level meter. A Host attempt starts at most one receipt. */
   readonly meter:AdmittedUsageMeter;
   readonly diagnostics:Pick<ServerDiagnostics,'record'>;
 }
@@ -56,6 +56,9 @@ export function createHostRunUsageObserver(options:HostRunUsageObserverOptions):
     }else if(event.type==='attempt.terminal'){
       if(envelope.attemptId===null||attemptTerminals.has(envelope.attemptId))return;
       attemptTerminals.add(envelope.attemptId);
+      // A real Host attempt owns one meter even when it reports no usage sample;
+      // a failed attempt must remain visible instead of leaving a fake running row.
+      isolated(()=>options.meter.modelStarted());
       record('agent.runtime_attempt_terminal',envelope,event.terminal.kind,event.terminal.kind==='completed'?'completed':event.terminal.kind==='yielded'?'yielded':'failed');
     }else if(event.type==='run.terminal'){
       // A run terminal normally carries its LAST (non-null) attempt id. Only

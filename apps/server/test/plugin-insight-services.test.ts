@@ -13,6 +13,7 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {InsightRuns} from '../src/insight-runs.js';
 import {Store} from '../src/store.js';
 import {createInsightServices,type InsightServicesDependencies} from '../src/plugins/insight-services.js';
+import {hostRun} from './fixtures/host-run.js';
 
 const headers={authorization:'Bearer generated-insight-plugin-owner'};
 function generatedConfig(dataDir:string,token=headers.authorization.slice(7)):Config{
@@ -94,8 +95,10 @@ test('a restarted run manager recovers the same receipt and never publishes a se
 test('the plugin route publishes one real run snapshot into report history',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-insight-plugin-report-'));
   const config=generatedConfig(directory),captureId=randomUUID();let calls=0;
-  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{
+  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
     calls++;const at=new Date().toISOString();
+    hostRun(input);
     return {answer:JSON.stringify({title:'Generated report',markdown:`Generated finding [${captureId}]`,html:`<p>Generated finding [${captureId}]</p>`}),citations:[{id:captureId,capturedAt:at,appName:'Generated',excerpt:'Generated original'}],trace:[],runId:randomUUID(),
       usage:{id:randomUUID(),provider:'generated-provider',model:'fixture-model',operation:'insight',createdAt:at,durationMs:1,status:'completed',estimatedCost:0,currency:'USD'}};
   }}});

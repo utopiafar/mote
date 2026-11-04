@@ -110,7 +110,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     }
   };
   const completedTurns = () => node.store.db.prepare("SELECT count(*) n FROM conversation_turns WHERE json_extract(json,'$.result') IS NOT NULL").get()!.n;
-  return {node, headers, setMode, start, wait, released, completedTurns, events};
+  const receipts = () => (node.store.db.prepare('SELECT json FROM model_usage ORDER BY created_at,id').all() as {json:string}[]).map(row => JSON.parse(row.json) as {id:string;status:string;operation:string});
+  return {node, headers, setMode, start, wait, released, completedTurns, receipts, events};
 }
 
 test('authenticated HTTP selects Codex, reads generated evidence, and saves the cited answer', async t => {
@@ -129,6 +130,10 @@ test('authenticated HTTP selects Codex, reads generated evidence, and saves the 
   const events = f.events();
   assert.deepEqual(events.map(event => event.type), ['started', 'turn', 'answer']);
   assert.equal(events.find(event => event.type === 'answer').id, record.id);
+  const receipts = f.receipts();
+  assert.equal(receipts.length, 1, 'one completed Codex run owns exactly one receipt');
+  assert.equal(receipts[0].status, 'completed');
+  assert.equal(receipts[0].operation, 'query');
   await f.released();
 });
 
@@ -143,11 +148,18 @@ test('authenticated Codex cancellation commits no half answer and releases the c
   assert.equal(f.completedTurns(), 0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memories').get()!.n, 0);
   await f.released();
+  const cancelledReceipts = f.receipts();
+  assert.equal(cancelledReceipts.length, 1, 'one cancelled Codex run owns exactly one receipt');
+  assert.equal(cancelledReceipts[0].status, 'failed');
   // A later authenticated query proves the session and tool queue were released.
   f.setMode('success');
   const next = await f.start();
   await f.wait(next, 'completed');
   assert.equal(f.completedTurns(), 1);
+  const receipts = f.receipts();
+  assert.equal(receipts.length, 2);
+  assert.equal(new Set(receipts.map(receipt => receipt.id)).size, 2, 'each Codex run keeps a unique receipt');
+  assert.deepEqual(receipts.map(receipt => receipt.status), ['failed', 'completed']);
   await f.released();
 });
 
@@ -161,9 +173,16 @@ test('an App Server crash commits no half answer and a later authenticated Codex
   assert.ok(!f.events().some(event => event.type === 'answer'));
   assert.equal(f.completedTurns(), 0);
   await f.released();
+  const failedReceipts = f.receipts();
+  assert.ok(failedReceipts.length >= 1, 'each failed Codex attempt owns a receipt');
+  assert.ok(failedReceipts.every(receipt => receipt.status === 'failed'));
+  assert.equal(new Set(failedReceipts.map(receipt => receipt.id)).size, failedReceipts.length, 'failed receipts stay unique');
   f.setMode('success');
   const next = await f.start();
   await f.wait(next, 'completed');
   assert.equal(f.completedTurns(), 1);
+  const receipts = f.receipts();
+  assert.equal(new Set(receipts.map(receipt => receipt.id)).size, receipts.length, 'each Codex run keeps a unique receipt');
+  assert.equal(receipts.filter(receipt => receipt.status === 'completed').length, 1);
   await f.released();
 });
