@@ -102,8 +102,10 @@ export class FileProcessing {
     }));
   }
   /** Install the activation-owned file capabilities before configuration validation. */
-  installContributions(contributions?:readonly import('./file-processors.js').FileProcessorContribution[]){return this.runtime.installContributions(contributions);}
+  installContributions(contributions?:readonly import('./file-processors.js').FileProcessorContribution[],options?:{imageRecipes?:boolean}){return this.runtime.installContributions(contributions,options);}
   uninstallContributions(){this.runtime.uninstallContributions();}
+  installImageRecipes(){return this.runtime.installImageRecipes();}
+  uninstallImageRecipes(){this.runtime.uninstallImageRecipes();}
   /** Validate installed-processor contracts before the application serves requests. */
   async initializeConfiguration(){await this.runtime.ready;parseFilePolicy(this.saved.policy,this.saved.policy,this.runtime.registry,{preserveCredentials:false,applyParameterDefaults:false});}
   private log(event:string,id?:string,fields:EventFields={},level:'debug'|'info'|'warn'|'error'='info') {

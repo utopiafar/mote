@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import type {AttributionContext,CaptureInput} from '@mote/shared';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
-import {encodeMemoryPrivate,decodeMemoryPrivate} from './memory-private-storage.js';
+import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {recordContextDeclarationSchema as declarationSchema,portableRecordContextSchema,type PortableRecordContext} from './record-context-contract.js';
 export {portableRecordContextSchema,type PortableRecordContext} from './record-context-contract.js';
 

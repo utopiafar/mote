@@ -16,7 +16,7 @@ import {WorkerPluginRuntime} from '../src/plugin-runtime.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryInputAuthorization} from '../src/memory-input-authorization.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {MemoryLifecycle} from '../src/memory-lifecycle.js';
 import {MemoryIntegrationSettings} from '../src/memory-integration-settings.js';

@@ -2,7 +2,7 @@ import {forgetRetiredConversationRoots,retiredConversationRoot} from './conversa
 import type {StatementSync} from 'node:sqlite';
 import {MaterialCatalog} from './material-catalog.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,documentSchema,attributionContextSchema,ownerRelationSchema,unknownAttributionContext,type AttributionContext,type OwnerRelation,type CaptureRecord} from '@mote/shared';
-import {encodeMemoryPrivate,decodeMemoryPrivate} from './memory-private-storage.js';
+import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';

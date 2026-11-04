@@ -18,7 +18,7 @@ import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {MemoryAdapters} from '../src/memory-adapters.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {ModelSettingsStore} from '../src/model-settings.js';
 import {Mem0MemoryProvider} from '../src/mem0-memory-provider.js';
 

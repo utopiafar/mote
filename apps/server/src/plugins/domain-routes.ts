@@ -20,7 +20,7 @@ export function contributeDomainRoutes(context:Context,contributions:DomainRoute
   const table=context.get('moteDomainRoutes')??{},merged:{[id:string]:DomainRouteContribution}={...table};
   for(const [id,contribution] of Object.entries(contributions)){
     const existing=merged[id];
-    merged[id]=!existing||existing===contribution?contribution:Object.freeze({mount(app:FastifyInstance){existing.mount(app);contribution.mount(app);}});
+    merged[id]=!existing||existing===contribution?contribution:Object.freeze({mount(app:FastifyInstance,services?:FeatureServices){existing.mount(app,services);contribution.mount(app,services);}});
   }
   const frozen=Object.freeze(merged);
   if(context.get('moteDomainRoutes'))context.set('moteDomainRoutes',frozen);

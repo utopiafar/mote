@@ -10,7 +10,7 @@ import {PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryInputAuthorization} from '../src/memory-input-authorization.js';

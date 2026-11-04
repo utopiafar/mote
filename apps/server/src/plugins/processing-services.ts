@@ -129,7 +129,7 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
   };
   const installContributions=()=>{
     if(contributionsInstalled)return;
-    processing!.installContributions(dependencies.contributions);
+    processing!.installContributions(dependencies.contributions,{imageRecipes:false});
     contributionsInstalled=true;
   };
   const removeContributions=()=>{

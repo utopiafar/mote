@@ -9,7 +9,7 @@ import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {ActivityServices} from '../plugins/activity-services.js';
-import type {MemoryPublication} from '../memory-publication.js';
+import type {MemoryPublication} from '../plugins/memory-publication.js';
 import type {FeatureServices} from '../feature-services.js';
 
 /** Shared shutdown latch. Admission paths poll it while handlers still run;
