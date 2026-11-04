@@ -6,6 +6,7 @@ import {safeError} from './diagnostics.js';
 import {moteText,requestLocale} from './i18n.js';
 import {DelegationRuntime,registerQueryDelegation,type DelegationWork} from './delegation-runtime.js';
 import type {QueryRun} from './query-run-types.js';
+import type {SavedQuery} from './plugins/query-preparation.js';
 import type {RunDeadline} from './run-execution.js';
 import {ExecutionFailure} from './execution-engine.js';
 
@@ -21,6 +22,10 @@ type QueryCallbacks={
   commit:(body:unknown,result:QueryResult,work:DelegationWork)=>Receipt;
   failure?:(body:unknown,error:unknown)=>Receipt;
   operationUsage?:(operationId:string,createdAt:string,finishedAt:string)=>import('./usage.js').OperationUsage;
+  /** A recovered request may resume only while its exact pinned model profile is still installed. */
+  pinnedConfigurationCurrent?:(prepared:QueryInput,fingerprint:string)=>boolean;
+  /** The final product write rechecks the durable model authorization. */
+  assertModelWork?:(work:DelegationWork)=>void;
 };
 
 /** Replayable request receipts. Durable coordination owns model fragments;
@@ -60,6 +65,7 @@ export class DelegatedQueryRuns {
       },
       commit:(work,answer)=>{
         try{
+        callbacks.assertModelWork?.(work);
         const id=work.id.slice('query:'.length),saved=runtime.journal.payload<SavedInput>(work.id),run=this.raw(id),result=answer as QueryResult;
         const receipt=callbacks.commit(saved.hostRequest,result,work);
         Object.assign(run,receipt,{status:'completed',updatedAt:new Date().toISOString(),evidenceDependencies:result.evidenceDependencies,sourceContextDependencies:result.sourceContextDependencies});delete run.error;
@@ -70,7 +76,25 @@ export class DelegatedQueryRuns {
       },
       validate:work=>this.exists(work.id.slice('query:'.length)),
     });
+    this.recoverGenerationPins();
     this.timer=setInterval(()=>{for(const id of new Set([...this.waiters.keys(),...this.errors.keys()])){try{if(this.get(id).status!=='running')this.notify(id);}catch{if(!this.exists(id))this.errors.delete(id);this.notify(id);}}},50);this.timer.unref();
+  }
+  /** A restart cannot rebuild a retired model generation. Resume only when the
+   * current profile still matches the request's exact fingerprint; otherwise
+   * the durable job is explicitly blocked before any new model attempt. */
+  private recoverGenerationPins(){
+    for(const row of this.store.db.prepare("SELECT id FROM query_runs WHERE json_extract(json,'$.status')='running'").all() as {id:string}[]){
+      const workId='query:'+row.id;
+      let work:DelegationWork;try{work=this.runtime.get(workId);}catch{continue;}
+      if(!['waiting','running','blocked'].includes(work.status))continue;
+      let saved:SavedQuery;try{saved=this.runtime.journal.payload<SavedQuery>(workId);}catch{continue;}
+      if(!saved.prepared)continue;
+      const fingerprint=saved.configurationFingerprint;let current=false;
+      try{current=Boolean(fingerprint)&&this.callbacks.pinnedConfigurationCurrent?.(saved.prepared,fingerprint!)===true;}catch{current=false;}
+      if(current)continue;
+      this.runtime.block(workId,'model_snapshot_unavailable');
+      const run=this.raw(row.id);run.error={code:'model_snapshot_unavailable',message:'model_snapshot_unavailable'};this.save(run);
+    }
   }
   private exists(id:string){return Boolean(this.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(id));}
   private raw(id:string):QueryRun{const row=this.store.db.prepare('SELECT json FROM query_runs WHERE id=?').get(id);if(!row)throw new StoreError('Query run not found',404);return JSON.parse(String(row.json));}
@@ -110,6 +134,9 @@ export class DelegatedQueryRuns {
   /** The conversation failure and its receipt share one host transaction. */
   private finishFailure(run:QueryRun,work:DelegationWork){
     const foreground=this.foregroundRequests.get(run.id);
+    // A recovery block did not make a model attempt or publish a product; the
+    // run receipt stays visible without creating a conversation failure turn.
+    if(work.status==='blocked'&&work.error==='model_snapshot_unavailable')return;
     if(!['failed','blocked'].includes(work.status)&&!(work.status==='stale'&&(work.error==='source_context_changed'||work.error==='evidence_deleted'&&foreground)))return;
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
