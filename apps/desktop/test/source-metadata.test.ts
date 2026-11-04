@@ -8,7 +8,8 @@ import { FileAccessMarkers } from '../src/source-atime';
 import { scanSourceFiles, observedFileMetadata } from '../src/source-files';
 import { SourceSync } from '../src/source-sync';
 import { decodeCalendarScan } from '../src/source-calendar';
-import { DEFAULT_SOURCE_OPTIONS, type SourceScan } from '../src/source-types';
+import { DEFAULT_SOURCE_OPTIONS, type SourceDefinition, type SourceItem, type SourceScan } from '../src/source-types';
+import { sourceAck } from './fixtures';
 let directory: string;
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-file-metadata-'))); });
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
@@ -42,6 +43,20 @@ describe('observed file and calendar timestamps', () => {
   it('only records deletion observation time after a complete scan and retains actual last file modification time', async () => {
     const path = join(directory, 'fixture.md'); await writeFile(path, 'synthetic original');
     const first = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS); const enginePath = join(directory, '.state.json'); const engine = new SourceSync(enginePath); await engine.initialize(); await engine.stage(first, true);
+    // Only an acknowledged revision has a central record to tombstone, so deliver the first revision.
+    const source: SourceDefinition = { id: 'fixture', name: 'synthetic source', kind: 'local-files', deviceId: 'synthetic-source-device', platform: 'macos', retention: 'snapshot', enabled: true };
+    const delivered: SourceItem[] = [];
+    const ackFor = (manifest: { item: SourceItem }) => sourceAck(source.id, manifest.item, manifest.item.document?.fileIndex ? 'file-revision' : 'source-item');
+    await engine.flush(source, async (requestPath, body) => {
+      if (requestPath === '/api/sources') return { ...source, enabled: true };
+      if (requestPath === '/api/file-sync/v1/capabilities') return {};
+      if (requestPath.startsWith('/api/file-sync/v1/head')) return { revision: null };
+      const manifest = body as { item: SourceItem; sha256?: string; sizeBytes?: number };
+      if (requestPath === '/api/file-sync/v1/uploads') { delivered.push(structuredClone(manifest.item)); return { uploadId: 'synthetic-upload', ack: { ...ackFor(manifest), sha256: manifest.sha256, sizeBytes: manifest.sizeBytes } }; }
+      if (requestPath === '/api/file-sync/v1/revisions') { delivered.push(structuredClone(manifest.item)); return ackFor(manifest); }
+      throw new Error('unexpected ' + requestPath);
+    });
+    expect(delivered).toHaveLength(1); expect(engine.status().pending).toBe(0);
     const absent: SourceScan = { items: [], seen: [], complete: false, skipped: 1 }; expect(await engine.stage(absent, true)).toBe(0);
     const observedAt = '2026-09-14T02:00:00Z'; expect(await engine.stage({ ...absent, complete: true }, true, observedAt)).toBe(1);
     const saved = sourceState(enginePath) as any, tombstone = [...(saved.pendingRealtime ?? []), ...(saved.pendingHistory ?? [])].at(-1); expect(tombstone.deleted).toBe(true); expect(tombstone.metadata.file.deletionObservedAt).toBe(observedAt); expect(tombstone.modifiedAt).toBe(first.items[0].modifiedAt);
