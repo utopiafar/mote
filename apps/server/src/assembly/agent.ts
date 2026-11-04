@@ -12,7 +12,6 @@ import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {ExecutionSettings} from '../execution-settings.js';
 import type {ServerResources} from '../server-resources.js';
-import type {FeatureServices} from '../feature-services.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {MaintenanceWorker} from '../maintenance.js';
 import type {LifecycleSettings} from '../memory-lifecycle.js';
@@ -103,5 +102,5 @@ export async function assembleAgent(dependencies:AgentAssemblyDependencies){
   });
   services.start();
   contributeDomainRoutes(dependencies.backendContext,{'mote.models':Object.freeze({mount:(app:FastifyInstance)=>services.routes(app)})});
-  return Object.freeze({agent:runtime,factory,codex,featureServices:Object.freeze({agent:runtime}) satisfies Partial<FeatureServices>});
+  return Object.freeze({agent:runtime,factory,codex});
 }

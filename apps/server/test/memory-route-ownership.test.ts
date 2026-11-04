@@ -1,12 +1,11 @@
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {existsSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {featureServiceMembers} from '../src/feature-services.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {memorySchema} from '../src/memory-schema.js';
 
@@ -30,14 +29,11 @@ const snapshot=(value:unknown):unknown=>{
   return typeof value;
 };
 
-test('FeatureServices retains no Memory member after the owner-port migration',()=>{
-  assert.deepEqual([
-    ...featureServiceMembers.memoryControl,
-    ...featureServiceMembers.memoryRecords,
-    ...featureServiceMembers.memoryRuntime,
-    ...featureServiceMembers.memoryProviders,
-    ...featureServiceMembers.publication,
-  ],[]);
+test('the transitional feature service bridge is gone and Memory routes stay plugin-owned',()=>{
+  assert.equal(existsSync(new URL('../src/feature-services/',import.meta.url)),false);
+  assert.equal(existsSync(new URL('../src/feature-services.ts',import.meta.url)),false);
+  assert.equal(existsSync(new URL('../src/feature-host.ts',import.meta.url)),false);
+  assert.equal(existsSync(new URL('../src/agent-feature-host.ts',import.meta.url)),false);
 });
 
 /** [K] These literal shapes are the Web Memory page's current reads. A route

@@ -112,6 +112,16 @@ test('Server domain aliases and re-export barrels cannot import runtime assembly
   assert.deepEqual(rule(f.check()),['server-no-assembly-import']);
 });
 
+test('server app.ts stays a host launcher and cannot import business modules',t=>{
+  const f=fixture(t);
+  f.write('apps/server/src/host.ts','export const buildHost=()=>{};');
+  f.write('apps/server/src/app.ts',"import {buildHost} from './host.js'; export const buildApp=()=>buildHost();");
+  assert.deepEqual(f.check().violations,[]);
+  f.write('apps/server/src/domain.ts','export const domain=()=>{};');
+  f.write('apps/server/src/app.ts',"import {domain} from './domain.js'; export const buildApp=()=>domain();");
+  assert.deepEqual(rule(f.check()),['server-app-no-business-import']);
+});
+
 test('Desktop contracts allow domain leaves and external DTOs, but reject implementation types and runtime imports',t=>{
   const f=fixture(t);
   f.write('apps/desktop/src/contracts/ask.ts',"import type {DiagnosticsStatus} from '@mote/diagnostics'; export type AskCommand='start';");

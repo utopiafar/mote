@@ -14,7 +14,6 @@ import type {FileEvidence} from '../file-evidence.js';
 import type {SourceStore} from '../sources.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';
-import type {FeatureServices} from '../feature-services.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {MaterialStore} from '../materials.js';
@@ -134,6 +133,5 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
     'mote.context':Object.freeze({mount:(app:Parameters<typeof evidenceContext.routes>[0])=>evidenceContext.routes(app)}),
   });
   // materials slice.
-  const featureServices=Object.freeze({materials,materialOrganizer,materialMemoryWork,indexer,evidenceReader,contextTrees}) satisfies Partial<FeatureServices>;
-  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,featureServices});
+  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext});
 }

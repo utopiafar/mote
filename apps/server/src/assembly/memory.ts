@@ -47,7 +47,6 @@ import {createMemoryTopicsService,memoryTopicsServiceContribution,memoryTopicsSe
 import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindingControlDeclaration,memoryBindingControlReplacement,type MemoryBindingControlPlatform} from '../plugins/memory-binding-control.js';
 import type {MemoryTopics} from '../plugins/central-contracts.js';
 import type {OwnerQuestions} from '../owner-questions.js';
-import type {FeatureServices} from '../feature-services.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
@@ -141,6 +140,8 @@ export interface MemoryRuntimeDependencies {
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
   readonly modelSettings:ModelSettingsStore;
+  readonly availableModelConnections:()=>ModelConnection[];
+  readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
   readonly agent:AgentRuntimeRegistry;
   readonly runtimeSettings:ExecutionSettings;
   readonly codex:{executable?:string;home?:string};
@@ -166,7 +167,7 @@ export interface MemoryRuntimeDependencies {
  * the automatic topics host — the Memory runtime app.ts previously wired
  * inline. Memory objects keep their relative defer/beforeClose order. */
 export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
-  const {store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  const {store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,availableModelConnections,queryAgent,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
   memoryStrategySettings.start();
   // The plugin constructs the binding; its disposer is registered by app.ts at
   // the original shutdown slot. Runtime collaborators are resolved when the
@@ -232,25 +233,23 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   topics.current=memoryTopicsService.topics;
   memoryTopicsService.start();
   contributeDomainRoutes(backendContext,{'mote.memory':Object.freeze({
-    mount:(app:FastifyInstance,services?:FeatureServices,scope?:import('../feature-host.js').ServerFeatureScope)=>{
-      if(!services)throw new Error('Memory routes require the feature service bridge');
-      scope?.retire(()=>services.agentFeatures.dispose('mote.memory'));
+    mount:(app:FastifyInstance)=>{
       memoryStrategySettings.routes(app);
       memoryPhasePipeline.routes(app,{
         lifecycle:()=>memoryLifecycleService.lifecycle,
         store,files,evidenceReader,memories,
-        modelSettings:services.modelSettings,
-        modelAuthorizationHost:services.modelAuthorizationHost,
-        availableModelConnections:services.availableModelConnections,
+        modelSettings,
+        modelAuthorizationHost,
+        availableModelConnections,
       });
       memoryPublicationPlatform.routes(app,{
         pipeline:()=>memoryPhasePipeline.pipeline,
         files,evidenceReader,memories,
-        modelSettings:services.modelSettings,
-        query:input=>services.queryAgent(input,'query','memories'),
+        modelSettings,
+        query:input=>queryAgent(input,'query','memories'),
         reviewExtraction:(input,result,strategy,draftOrigin)=>memoryPhasePipeline.review(input,result,strategy,draftOrigin),
-        modelAuthorizationHost:services.modelAuthorizationHost,
-        availableModelConnections:services.availableModelConnections,
+        modelAuthorizationHost,
+        availableModelConnections,
       });
     },
   })});

@@ -3,17 +3,22 @@ import type {FastifyInstance} from 'fastify';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import {z} from 'zod';
 import {StoreError} from '../store.js';
-import type {ServerFeatureScope} from '../feature-host.js';
-import type {FeatureServices} from '../feature-services.js';
+import type {PluginResourceScope} from '@mote/plugin-host';
+import type {ArchivedFileStore} from '../archived-files.js';
+import type {Config} from '../config.js';
 import type {ContentStorageService} from '../content-storage.js';
+import type {ServerDiagnostics} from '../diagnostics.js';
+import type {EvidenceReader} from '../evidence-reader.js';
+import type {FileStore} from '../files.js';
+import type {RetrievalIndex} from './central-contracts.js';
+import type {MaterialStore} from '../materials.js';
 import {registerArchiveExport} from './archive-export.js';
 import {createMemoryBackup} from './memory-backup.js';
 import type {DomainRouteContribution} from './domain-routes.js';
 
 /** Vault-owned storage transport. Content storage is constructed by the vault
  * platform plugin; every handler resolves the current activation instead of
- * capturing a snapshot at mount time. The remaining readers arrive through the
- * feature bridge until H14 replaces them with domain ports. */
+ * capturing a snapshot at mount time. */
 export function registerContentStorage(app:FastifyInstance,service:ContentStorageService){
   app.get('/api/content-storage',async()=>service.snapshot());
   app.put('/api/content-storage',async req=>service.save(z.object({enabled:z.boolean(),revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)}).strict().parse(req.body)));
@@ -21,10 +26,19 @@ export function registerContentStorage(app:FastifyInstance,service:ContentStorag
   app.post('/api/content-storage/decrypt/cancel',async()=>service.cancel());
 }
 
-export function vaultStorageRoutes(content:()=>ContentStorageService):DomainRouteContribution{
-  return Object.freeze({mount(app:FastifyInstance,services?:FeatureServices,scope?:ServerFeatureScope){
-    if(!services)throw Error('Storage routes require the feature bridge');
-    const {archivedFiles,config,diagnostics,evidenceReader,files,indexer,store}=services;
+export interface VaultStorageRouteDependencies {
+  readonly archivedFiles:ArchivedFileStore;
+  readonly config:Config;
+  readonly diagnostics:ServerDiagnostics;
+  readonly evidenceReader:EvidenceReader;
+  readonly files:FileStore;
+  readonly indexer:RetrievalIndex;
+  readonly store:MaterialStore['store'];
+}
+
+export function vaultStorageRoutes(content:()=>ContentStorageService,dependencies:VaultStorageRouteDependencies):DomainRouteContribution{
+  const {archivedFiles,config,diagnostics,evidenceReader,files,indexer,store}=dependencies;
+  return Object.freeze({mount(app:FastifyInstance,scope?:PluginResourceScope){
     const maintain=()=>{files.sweep();if(config.retentionDays>0)return diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted})));};
     if(scope)void scope.run(maintain);else void maintain();scope?.every(3600000,maintain);
     registerContentStorage(app,content());

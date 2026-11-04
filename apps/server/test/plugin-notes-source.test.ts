@@ -19,7 +19,8 @@ import type {RequestAuthority} from '../src/plugins/central-contracts.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {MaterialNoteDeletion} from '../src/material-note-deletion.js';
-import {register as registerNotesFeature} from '../src/features/notes.js';
+import {notesFeature} from '../src/features/notes.js';
+import {FeatureScope} from '../src/features/index.js';
 import {createNotesSource,createNotesSourceFactory,notesSourceContribution,notesSourceDeclaration} from '../src/plugins/notes-source.js';
 
 async function fixture(t:any){
@@ -37,7 +38,7 @@ async function fixture(t:any){
   const app=Fastify(),pins=new WeakMap<object,RequestAuthority>();
   app.addHook('onRequest',async request=>{if(!request.headers.authorization)return;pins.set(request,node.authorizationPlatform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)node.authorizationPlatform.releaseRequest(pin);});
-  registerNotesFeature(app,{...node.featureServices,notesSource:source.assemblyForRoutes(),notesCapture:{authority:node.authorizationPlatform,route:{request:request=>pins.get(request)},intake:node.captureIntake.ports.captureIntake}} as any);
+  notesFeature({assertRequestActive:node.featureServices.assertRequestActive,connections:node.featureServices.connections,credential:node.featureServices.credential,diagnostics:node.featureServices.diagnostics,files:node.featureServices.files,ingress:node.featureServices.ingress,notesSource:source.assemblyForRoutes(),notesCapture:{authority:node.authorizationPlatform,route:{request:request=>pins.get(request)},intake:node.captureIntake.ports.captureIntake}}).mount(app,new FeatureScope());
   await app.ready();
   t.after(async()=>{await app.close();await source.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   return {node,source,app,assembly:source.assemblyForRoutes(),headers:{authorization:'Bearer '+config.token}};
@@ -56,7 +57,7 @@ async function intakeFixture(t:any){
   app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'notes_intake_failed'});});
   app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
-  registerNotesFeature(app,{assertRequestActive:()=>{},connections:platform.assembly.connections!,credential:()=>undefined,diagnostics,files,ingress:intake.ingress,materials,sources,store,notesSource:source.assemblyForRoutes(),notesCapture:{authority:platform,route:{request:request=>pins.get(request)},intake:intake.ports.captureIntake}} as any);
+  notesFeature({assertRequestActive:()=>{},connections:platform.assembly.connections!,credential:()=>undefined,diagnostics,files,ingress:intake.ingress,notesSource:source.assemblyForRoutes(),notesCapture:{authority:platform,route:{request:request=>pins.get(request)},intake:intake.ports.captureIntake}}).mount(app,new FeatureScope());
   await app.ready();
   t.after(async()=>{await app.close();await source.close();await intake.close();await platform.close();await diagnostics.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {store,sources,platform,intake,app,headers:{authorization:'Bearer '+ownerToken}};

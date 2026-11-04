@@ -15,7 +15,6 @@ import type {ArchivedFileStore} from '../archived-files.js';
 import type {SourceStore} from '../sources.js';
 import type {FileStore} from '../files.js';
 import type {EvidenceReader} from '../evidence-reader.js';
-import type {ServerFeatureScope} from '../feature-host.js';
 import {navigationScopeSchema} from '../context-navigation.js';
 import {ImportInputError,ImportStore,type ImportPreparation,type ImportPreparationResult} from '../imports.js';
 import {ImportUploads,registerImportUploads} from '../import-uploads.js';
@@ -57,7 +56,7 @@ export interface ImportServices extends PluginLifecycle {
   readonly importTasks:Map<string,Promise<unknown>>;
   launchImport(id:string,task:()=>Promise<unknown>):void;
   launchOwnerImport(id:string,task:()=>Promise<unknown>):void;
-  routes(app:FastifyInstance,scope?:ServerFeatureScope):void;
+  routes(app:FastifyInstance):void;
   close():Promise<void>;
 }
 
@@ -113,7 +112,7 @@ export function createImportServices(dependencies:ImportServicesDependencies,imp
       });
       phase='prepared';
     },
-    routes(app:FastifyInstance,scope?:ServerFeatureScope){
+    routes(app:FastifyInstance){
       if(mounted.has(app))throw new StoreError('Import routes are already installed',409);
       if((phase!=='prepared'&&phase!=='active')||!imports||!uploads)throw unavailable();
       const current=imports,currentUploads=uploads;
@@ -122,8 +121,7 @@ export function createImportServices(dependencies:ImportServicesDependencies,imp
         const write=request.method!=='GET'&&request.method!=='HEAD';
         if(phase!=='active'&&(phase!=='quiescing'||write))return reply.code(503).send({error:'feature_unavailable'});
       });
-      scope?.defer(()=>current.stop());
-      registerImportUploads(app,currentUploads);scope?.defer(()=>currentUploads.close());
+      registerImportUploads(app,currentUploads);
       app.get('/api/import-capabilities',async()=>current.intake.list());
       app.get('/api/imports',async()=>({items:current.list()}));
       app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
@@ -171,7 +169,11 @@ export function createImportServices(dependencies:ImportServicesDependencies,imp
     async stop(_reason?:StopReason){
       if(phase==='stopped'||phase==='disposed')return;
       if(phase==='created'){phase='stopped';return;}
-      phase='quiescing';await Promise.allSettled([...importTasks.values()]);phase='stopped';
+      phase='quiescing';
+      const errors:unknown[]=[];
+      try{await imports?.stop();}catch(error){errors.push(error);}
+      await Promise.allSettled([...importTasks.values()]);phase='stopped';
+      if(errors.length)throw new AggregateError(errors,'Import service stop failed');
     },
     dispose:close,
     close,

@@ -1,15 +1,19 @@
 import {Context} from '@deepseek-ai/cordis';
 import {FeatureRegistry} from '@mote/shared';
 import {createOfficialReadPacks,defineToolDescriptor,type ToolDescriptor,type ReadPackRegistration,type ContextReader} from '@mote/agent';
-import {StoreError} from './store.js';
-import type {HostContributionDescriptor} from './feature-inventory.js';
+import {StoreError} from '../store.js';
+import type {HostContributionDescriptor} from '../feature-inventory.js';
+
 const groups:Record<string,(keyof ContextReader)[]>={
   context:['catalog','search','timeline','evidence'],materials:['materialCatalog','materialRead'],
   capture:['readImage','segments','activity'],files:['readFileEvidence','fileChunks'],media:['mediaActivity'],
   sources:['sourceHistory','sources','sourceContext','sourceItems'],memory:['memories'],devices:['devices'],
 };
-/** Query agents and the owner-only inspector dispatch through the same read-only registrations. */
-export async function installAgentFeatures(root:Context,implementation:ContextReader){
+
+/** Query agents and the owner-only inspector dispatch through the same read-only
+ * registrations. Read tools remain scoped to their feature activation; a
+ * disabled feature revokes its registrations without touching retained data. */
+export async function installAgentReadTools(root:Context,implementation:ContextReader,enabled:(featureId:string)=>boolean=()=>true){
   const rootLifetime=new AbortController(),lifetimes=new WeakMap<Function,AbortSignal>();
   root.effect(()=>()=>rootLifetime.abort(new StoreError('Agent capability unavailable',503)));
   const registry=new FeatureRegistry<Function>(),reader={} as ContextReader,fibers=new Map<string,{dispose():Promise<void>}>();
@@ -32,6 +36,7 @@ export async function installAgentFeatures(root:Context,implementation:ContextRe
   };
   for(const [name,keys] of Object.entries(groups)){
     const featureId='mote.'+name;
+    if(!enabled(featureId))continue;
     const fiber=root.plugin((ctx:Context)=>{
       const lifetime=new AbortController();ctx.effect(()=>()=>lifetime.abort(new StoreError('Agent capability unavailable',503)));
       ctx.effect(()=>registry.install({id:featureId,version:'1',components:keys.map(key=>({id:'agent:'+key,version:'1',surface:'agent'}))}));

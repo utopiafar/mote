@@ -1,9 +1,7 @@
 import type {FastifyInstance} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
 import type {ServerResources} from '../server-resources.js';
-import type {FeatureServices} from '../feature-services.js';
 import type {CentralDomainPlugin} from '../bootstrap.js';
-import type {ServerFeatureScope} from '../feature-host.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createAgentImportHost} from '../agent-import-host.js';
 import {createImportServices,importServicesContribution,importServicesDeclaration,importServicesReplacement,type ImportServicesDependencies} from '../plugins/import-services.js';
@@ -22,7 +20,7 @@ export function assembleImports(dependencies:ImportsAssemblyDependencies){
   const importServices=createImportServices(dependencies,importHost);
   dependencies.resources.defer(()=>importServices.close());
   importServices.prepare();importServices.start();
-  contributeDomainRoutes(dependencies.backendContext,{'mote.imports':Object.freeze({mount:(app:FastifyInstance,_services?:FeatureServices,scope?:ServerFeatureScope)=>importServices.routes(app,scope)})});
+  contributeDomainRoutes(dependencies.backendContext,{'mote.imports':Object.freeze({mount:(app:FastifyInstance)=>importServices.routes(app)})});
   const {imports}=importServices;
-  return Object.freeze({imports,importServices,featureServices:Object.freeze({}) satisfies Partial<FeatureServices>});
+  return Object.freeze({imports,importServices});
 }

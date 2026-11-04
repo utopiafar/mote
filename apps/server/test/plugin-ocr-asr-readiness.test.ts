@@ -7,10 +7,11 @@ import {setTimeout as delay} from 'node:timers/promises';
 import Fastify from 'fastify';
 import {PluginHost} from '@mote/plugin-host';
 import type {ConfigService} from '../src/config-service.js';
-import type {FeatureServices} from '../src/feature-services.js';
 import {MediaAssets,type MediaRole} from '../src/media-assets.js';
 import {centralServices} from '../src/plugins/central-contracts.js';
-import {createOcrAsrReadiness,createOcrAsrReadinessFactory,createOcrAsrReadinessRoutes,ocrAsrReadinessDeclaration} from '../src/plugins/ocr-asr-readiness.js';
+import {createOcrAsrReadiness,createOcrAsrReadinessFactory,ocrAsrReadinessDeclaration} from '../src/plugins/ocr-asr-readiness.js';
+import {FeatureScope} from '../src/features/index.js';
+import {mediaPreparationFeature} from '../src/features/media.js';
 
 class FixtureAssets extends MediaAssets {
   installed=false;installs=0;
@@ -65,12 +66,12 @@ test('a failed prepare closes the partial runtime and removes its configuration 
 
 test('media routes return 503 while stopped and recover without another registration',async t=>{
  const f=await fixture(t);f.assets.installed=true;
- const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({ocr:true})}),routes=createOcrAsrReadinessRoutes();
- const host=new PluginHost({kind:'central',id:'generated-readiness-host'}),app=Fastify();let binding:import('@mote/plugin-api/contracts').ServiceBinding|undefined;
+ const service=createOcrAsrReadiness({runtime:f.runtime,media:f.media,assets:f.assets,configService:f.configService,fetch:async()=>Response.json({ocr:true})});
+ const host=new PluginHost({kind:'central',id:'generated-readiness-host'}),app=Fastify(),scope=new FeatureScope();let binding:import('@mote/plugin-api/contracts').ServiceBinding|undefined;
  t.after(async()=>{await app.close();await host.close();});
- const handle=await host.install({identity:{host:host.identity,packageId:'generated.media.readiness',installationId:'generated-install',instanceId:'generated-readiness',activationId:'generated-activation'},contributions:[ocrAsrReadinessDeclaration],factory:createOcrAsrReadinessFactory(service,value=>{binding=value.readiness;routes.activate(service.port);})});
+ const handle=await host.install({identity:{host:host.identity,packageId:'generated.media.readiness',installationId:'generated-install',instanceId:'generated-readiness',activationId:'generated-activation'},contributions:[ocrAsrReadinessDeclaration],factory:createOcrAsrReadinessFactory(service,value=>{binding=value.readiness;})});
  const lease=await host.acquire(centralServices.mediaReadiness,binding!);assert.equal(lease.value.phase,'active');
- routes.mount(app,{connections:{assertActive(){}},credential:()=>undefined,mediaRange:{parse:(value:unknown)=>value},store:{mediaActivity:()=>({generated:true})}} as unknown as FeatureServices);
+ mediaPreparationFeature({connections:{assertActive(){}},credential:()=>undefined,mediaRange:{parse:(value:unknown)=>value},store:{mediaActivity:()=>({generated:true})},mediaPreparation:()=>service.port}).mount(app,scope);
  assert.equal((await app.inject({url:'/api/media-activity'})).statusCode,200);
  assert.equal((await app.inject({method:'POST',url:'/api/media-preparation/ocr',payload:{}})).statusCode,202);
  assert.equal((await settled(service.port,'ocr')).state,'ready');

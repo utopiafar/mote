@@ -3,7 +3,6 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {Store} from '../store.js';
-import type {FeatureServices} from '../feature-services.js';
 import type {ServerResources} from '../server-resources.js';
 import type {ConfigService} from '../config-service.js';
 import type {ExecutionEngine} from '../execution-engine.js';
@@ -21,7 +20,7 @@ import {requestLocale} from '../i18n.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import {createOwnerQuestionServices} from '../plugins/owner-question-services.js';
-import {openInsightRuns} from '../plugins/insight-services.js';
+import {createInsightServices,openInsightRuns,type InsightServices,type InsightServicesDependencies} from '../plugins/insight-services.js';
 import type {Connections,ConnectionCredential} from '../connections.js';
 import type {PluginCenter} from '../plugin-center.js';
 import type {SourceStore} from '../sources.js';
@@ -57,7 +56,7 @@ export function workInputs(dependencies:WorkInputDependencies){
   if(routes)dependencies.backendContext.set('moteDomainRoutes',merged);
   else dependencies.backendContext.provide('moteDomainRoutes',merged);
   const ownerQuestions=ownerQuestionServices.questions;
-  return Object.freeze({ownerQuestions,ownerQuestionServices,featureServices:Object.freeze({ownerQuestions}) satisfies Partial<FeatureServices>});
+  return Object.freeze({ownerQuestions,ownerQuestionServices});
 }
 
 export interface InsightRunsAssemblyDependencies {
@@ -65,14 +64,28 @@ export interface InsightRunsAssemblyDependencies {
   readonly resources:ServerResources;
   readonly executor:ExecutionEngine;
   readonly evidenceReader:EvidenceReader;
+  readonly query:InsightServicesDependencies['query'];
+  readonly modelAuthorization:ModelAuthorizationHost;
+  readonly availableModelConnections:()=>ModelConnection[];
+  readonly agent:Pick<AgentRuntimeRegistry,'configuredFor'>;
+  readonly modelSettings:Pick<import('../model-settings.js').ModelSettingsStore,'select'>;
+  readonly isClosing:()=>boolean;
+  readonly diagnostics:Pick<ServerDiagnostics,'run'>;
 }
 
-/** Durable insight run manager — the insight feature borrows it through
- * FeatureServices until its own domain unit takes ownership. */
+/** Durable insight run manager plus its owned HTTP activation. */
 export function assembleInsightRuns(dependencies:InsightRunsAssemblyDependencies){
   const insightRuns=openInsightRuns(dependencies.store,{executor:dependencies.executor,evidenceReader:dependencies.evidenceReader});
   dependencies.resources.defer(()=>insightRuns.close());
-  return Object.freeze({insightRuns,featureServices:Object.freeze({insightRuns}) satisfies Partial<FeatureServices>});
+  const insightServices:InsightServices=createInsightServices({
+    runs:insightRuns,query:dependencies.query,modelAuthorization:dependencies.modelAuthorization,
+    availableModelConnections:dependencies.availableModelConnections,agent:dependencies.agent,modelSettings:dependencies.modelSettings,
+    isClosing:dependencies.isClosing,diagnostics:dependencies.diagnostics,
+    readHistory:query=>dependencies.store.insights(query),readReport:id=>dependencies.store.insight(id),
+  });
+  insightServices.prepare();insightServices.start();
+  dependencies.resources.defer(()=>insightServices.close());
+  return Object.freeze({insightRuns,insightServices});
 }
 
 export interface ActionsAssemblyDependencies {
@@ -106,7 +119,7 @@ export async function assembleActions(dependencies:ActionsAssemblyDependencies){
   resources.defer(()=>services.close());
   await services.prepare();services.start();
   contributeDomainRoutes(backendContext,{'mote.actions':Object.freeze({mount:(app:Parameters<typeof services.routes>[0])=>services.routes(app)})});
-  return Object.freeze({actions:services.actionsForAssembly,featureServices:Object.freeze({}) satisfies Partial<FeatureServices>});
+  return Object.freeze({actions:services.actionsForAssembly});
 }
 
 export interface ActivityAssemblyDependencies {

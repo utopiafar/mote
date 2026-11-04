@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,readdirSync} from 'node:fs';
-import ts from 'typescript';
 import {
   serviceBindingSchema, serviceRefSchema, type ContributionIdentity, type ServiceBinding, type ServiceLease,
 } from '@mote/plugin-api/contracts';
 import {
-  centralServices, centralServiceOwners, centralMigrationSlices, centralFeatureMigrations, checkCentralServiceDeclarations,
+  centralServices, centralServiceOwners, checkCentralServiceDeclarations,
   type CaptureIntake, type MaterialPublication, type VaultTransactions, type CommitAuthority, type CommitAuthorization,
-  type CentralMigrationSlice, type CaptureImageRead, type ContextNavigationRead, type ContextInventoryRead, type ContextTreesRead,
+  type CaptureImageRead, type ContextNavigationRead, type ContextInventoryRead, type ContextTreesRead,
 } from '../src/plugins/central-contracts.js';
 import type {CaptureRead, CaptureContextRead, MemoryRead, MemoryReadSnapshots, MemoryInputSelection} from '../src/evidence-read-ports.js';
 import type {CaptureInput} from '@mote/shared';
@@ -19,142 +17,17 @@ import type {registerEvidenceRoutes} from '../src/evidence-routes.js';
 import type {MemoryExtractRouteDependencies,MemoryOwnerRouteDependencies} from '../src/features/memory/publication.js';
 import type {MemoryOwnerPublication} from '../src/plugins/memory-publication-contract.js';
 import * as contractExports from '../src/plugins/central-contracts.js';
-import {featureServiceMembers} from '../src/feature-services.js';
 
 // These are T1 declaration/type checks. No provider/host or runtime authorization is implemented
 // by C01, and a successful preflight is not evidence of a real startup/HTTP/SQLite T3 journey.
-const source = (path: string) => ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url),'utf8'), ts.ScriptTarget.Latest, true);
-
-test('every actually installed server feature has replaceable factory owners and explicit service requirements', () => {
-  // H05 installs the actual default adapter table instead of spelling out one
-  // host.install call per feature. Follow that source, retaining full coverage.
-  const file = source('../src/features/index.ts');
-  const declaration = file.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : [])
-    .find(node => ts.isIdentifier(node.name) && node.name.text === 'serverFeatureAdapters');
-  const initializer = declaration?.initializer;
-  assert.ok(initializer && ts.isCallExpression(initializer) && initializer.expression.getText(file) === 'Object.freeze', 'unexpected default feature registry');
-  const entries = initializer.arguments[0];
-  assert.ok(entries && ts.isArrayLiteralExpression(entries), 'default feature registry must expose its complete entries');
-  const imported = new Map<string,string>();
-  for (const statement of file.statements) {
-    if (!ts.isImportDeclaration(statement) || statement.importClause?.isTypeOnly) continue;
-    const specifier = statement.moduleSpecifier, named = statement.importClause?.namedBindings;
-    if (!ts.isStringLiteral(specifier) || !specifier.text.startsWith('./') || !ts.isNamedImports(named)) continue;
-    for (const element of named.elements) {
-      if ((element.propertyName ?? element.name).text === 'adapter') imported.set(element.name.text, specifier.text);
-    }
-  }
-  const installed: string[] = [];
-  let importedInstalled = 0;
-  for (const entry of entries.elements) {
-    // ACT02+ may replace a fully-migrated adapter with domainRouteContribution('mote.x')
-    // so the registry still lists every installed feature id without a features/*.ts adapter.
-    if (ts.isCallExpression(entry)
-      && entry.expression.getText(file) === 'domainRouteContribution'
-      && entry.arguments.length === 1
-      && ts.isStringLiteral(entry.arguments[0])) {
-      installed.push(entry.arguments[0].text);
-      continue;
-    }
-    assert.ok(ts.isIdentifier(entry), 'feature registry must aggregate imported adapters or domainRouteContribution ids');
-    const specifier = imported.get(entry.text);
-    assert.ok(specifier, `missing imported adapter for ${entry.text}`);
-    importedInstalled += 1;
-    const module = source(`../src/features/${specifier.slice(2).replace(/\.js$/, '.ts')}`);
-    const adapter = module.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : [])
-      .find(node => ts.isIdentifier(node.name) && node.name.text === 'adapter');
-    assert.ok(adapter?.initializer && ts.isObjectLiteralExpression(adapter.initializer), `unexpected feature adapter in ${specifier}`);
-    const descriptor = adapter.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(module) === 'descriptor');
-    const factory = adapter.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(module) === 'factory');
-    assert.ok(factory && ts.isPropertyAssignment(factory) && (ts.isArrowFunction(factory.initializer) || ts.isFunctionExpression(factory.initializer)), 'feature must have an executable adapter');
-    assert.ok(descriptor && ts.isPropertyAssignment(descriptor) && ts.isObjectLiteralExpression(descriptor.initializer), 'unexpected feature descriptor');
-    const id = descriptor.initializer.properties.find(property => ts.isPropertyAssignment(property) && property.name.getText(module) === 'id');
-    assert.ok(id && ts.isPropertyAssignment(id) && ts.isStringLiteral(id.initializer));
-    installed.push(id.initializer.text);
-  }
-  assert.equal(imported.size, importedInstalled, 'every imported adapter must be installed exactly once');
-  assert.equal(installed.length, 23);
-  assert.equal(new Set(installed).size, installed.length);
-  assert.deepEqual(Object.keys(centralFeatureMigrations).sort(), installed.sort());
-  for (const migration of Object.values(centralFeatureMigrations)) {
-    assert.ok(migration.owners.length);
-    for (const owner of migration.owners) {
-      const slice = centralMigrationSlices[owner];
-      assert.ok(slice.factory && slice.task && slice.objects.length && slice.consumers.length);
-      assert.ok(['hot','restart'].includes(slice.replacement));
-    }
-    assert.ok(migration.requires.length);
-    for (const requirement of migration.requires) {
-      serviceRefSchema.parse(centralServices[requirement]);
-      assert.ok(centralMigrationSlices[centralServiceOwners[requirement]].task);
-    }
-  }
-  assert.ok(centralFeatureMigrations['mote.notes'].requires.includes('captureRead'));
-  assert.ok(centralFeatureMigrations['mote.notes'].owners.includes('materials'), 'exact Note GET belongs to the canonical reader contribution');
-  assert.deepEqual(centralFeatureMigrations['mote.processing'].owners, ['processing','media','activity']);
-  assert.ok(centralFeatureMigrations['mote.storage'].owners.includes('publication'), 'provider backup must not be reduced to host metadata');
+test('the C01 transition audit is gone while service contracts and ownership stay explicit',()=>{
+  assert.equal('centralMigrationSlices' in contractExports,false);
+  assert.equal('centralFeatureMigrations' in contractExports,false);
+  assert.equal(new Set(Object.keys(centralServices)).size,Object.keys(centralServices).length);
+  for(const [name,owner] of Object.entries(centralServiceOwners))assert.equal(typeof owner,'string',name);
 });
 
-/** K06 baseline. The FeatureServices bridge may only shrink as slices move to plugin ports. */
-const featureServiceMemberBaseline = 79;
-
-/** Each slice is one file with its own interface and member-name constant. The bag is
- * only the intersection of those interfaces, so a member cannot silently exist outside
- * a slice or be borrowed from another owner. */
-function featureServiceSlices() {
-  const files = readdirSync(new URL('../src/feature-services/', import.meta.url)).filter(file => file.endsWith('.ts')).sort();
-  const declarations = (file: ts.SourceFile) => file.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : []);
-  const slices = new Map<string, {interfaceName: string; members: string[]}>();
-  for (const file of files) {
-    const slice = file.slice(0, -'.ts'.length);
-    const module = source(`../src/feature-services/${file}`);
-    const declared = module.statements.filter((statement): statement is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(statement) && statement.name.text.endsWith('FeatureServices'));
-    assert.equal(declared.length, 1, `${file} must export exactly one slice interface`);
-    const members = declared[0]!.members.map(member => { assert.ok(member.name && ts.isIdentifier(member.name)); return member.name.text; }).sort();
-    const constants = declarations(module).filter(declaration => ts.isIdentifier(declaration.name) && declaration.name.text.endsWith('FeatureServiceMembers'));
-    assert.equal(constants.length, 1, `${file} must export exactly one member-name constant`);
-    let names = constants[0]!.initializer;
-    while (names && (ts.isAsExpression(names) || ts.isSatisfiesExpression(names))) names = names.expression;
-    assert.ok(names && ts.isArrayLiteralExpression(names), `${file} member-name constant must be an array literal`);
-    const constantMembers = names.elements.map(element => { assert.ok(ts.isStringLiteral(element)); return element.text; }).sort();
-    assert.deepEqual(constantMembers, members, `${file} member-name constant must list its interface members`);
-    slices.set(slice, {interfaceName: declared[0]!.name.text, members});
-  }
-  return {files, slices};
-}
-
-test('every FeatureServices member belongs to exactly one migration slice', () => {
-  const {files, slices} = featureServiceSlices();
-  assert.deepEqual(files.map(file => file.slice(0, -'.ts'.length)), Object.keys(centralMigrationSlices).sort());
-  assert.deepEqual(Object.keys(featureServiceMembers).sort(), Object.keys(centralMigrationSlices).sort(), 'every slice must expose its member-name constant');
-  const owners = new Map<string,string>();
-  for (const [slice, {members}] of slices) for (const member of members) {
-    const owner = owners.get(member);
-    assert.equal(owner, undefined, `${member} belongs to both ${owner} and ${slice}`);
-    owners.set(member, slice);
-  }
-  const runtimeMembers = Object.values(featureServiceMembers).flat();
-  assert.equal(new Set(runtimeMembers).size, runtimeMembers.length, 'a member must belong to exactly one slice');
-  assert.deepEqual([...runtimeMembers].sort(), [...owners.keys()].sort(), 'every bridge member must be owned by exactly one slice');
-  const assigned = Object.values(centralMigrationSlices).flatMap((slice: CentralMigrationSlice) => [...slice.legacy]);
-  assert.deepEqual(assigned.sort(), [...owners.keys()].sort(), 'the audit legacy lists must be the derived slice ownership');
-  const bag = source('../src/feature-services.ts');
-  const featureServices = bag.statements.find(statement => ts.isTypeAliasDeclaration(statement) && statement.name.text === 'FeatureServices');
-  assert.ok(featureServices && ts.isTypeAliasDeclaration(featureServices));
-  const intersection = ts.isIntersectionTypeNode(featureServices.type) ? featureServices.type.types : [featureServices.type];
-  const references = intersection.map(type => {
-    assert.ok(ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName));
-    return type.typeName.text;
-  });
-  assert.deepEqual(references.sort(), [...slices.values()].map(({interfaceName}) => interfaceName).sort(), 'FeatureServices must intersect every slice interface once');
-});
-
-test('FeatureServices member count never exceeds the K06 baseline', () => {
-  const {slices} = featureServiceSlices();
-  const members = [...slices.values()].flatMap(({members}) => members);
-  assert.ok(members.length <= featureServiceMemberBaseline,
-    `FeatureServices grew from ${featureServiceMemberBaseline} to ${members.length} members; expose new work through a plugin port instead of widening the bridge`);
-});
+const requirements=(consumer:string,keys:readonly (keyof typeof centralServices)[])=>keys.map(key=>({consumer,service:centralServices[key]}));
 
 const provider = (instanceId: string, activationId = 'activation-1', installationId = 'installation-1'): ContributionIdentity => ({
   scope: {packageId:'generated.provider', installationId, instanceId, host:{kind:'central',id:'generated-host'}, activationId},
@@ -174,7 +47,7 @@ test('missing authorization is a concrete startup blocker for Note intake, never
 
 test('context browsing cannot start with only exact evidence reads and its other declared dependencies', () => {
   const missing = centralServices.captureContextRead;
-  const required = centralFeatureMigrations['mote.context'].requires.map(key => ({consumer:'mote.context',service:centralServices[key]}));
+  const required = requirements('mote.context',['captureRead','captureImageRead','captureContextRead','contextNavigationRead','contextInventoryRead','contextTreesRead','memoryRead','memorySnapshots']);
   const declared = required.filter(item => item.service.id !== missing.id).map(item => ({service:item.service,provider:provider('context-reader')}));
   assert.deepEqual(checkCentralServiceDeclarations(declared, required), [
     {code:'dependency_unavailable',service:missing,consumer:'mote.context',providers:[]},
@@ -185,7 +58,7 @@ test('context browsing cannot start with only exact evidence reads and its other
 
 for (const key of ['memoryInputSelection','memoryOwnerPublication'] as const) test(`Memory cannot start without its ${key} dependency`, () => {
   const missing = centralServices[key];
-  const required = centralFeatureMigrations['mote.memory'].requires.map(name => ({consumer:'mote.memory',service:centralServices[name]}));
+  const required = requirements('mote.memory',['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']);
   const declared = required.filter(item => item.service.id !== missing.id).map(item => ({service:item.service,provider:provider('memory-services')}));
   assert.deepEqual(checkCentralServiceDeclarations(declared, required), [
     {code:'dependency_unavailable',service:missing,consumer:'mote.memory',providers:[]},
@@ -199,7 +72,7 @@ for (const consumer of [
   'mote.storage','mote.capture','mote.materials',
 ] as const) test(`${consumer} cannot start without its fixed C04 commit verifier`, () => {
   const missing = centralServices.commitAuthorization;
-  const required = centralFeatureMigrations[consumer].requires.map(key => ({consumer,service:centralServices[key]}));
+  const required = requirements(consumer,consumer==='mote.storage'?['commitAuthorization','vault','contentRead']:consumer==='mote.capture'?['commitAuthorization','requestAuthorization','captureIntake','captureRead']:['commitAuthorization','vault','materialRepository','materialRead','requestAuthorization']);
   const declared = required.filter(item => item.service.id !== missing.id).map(item => ({service:item.service,provider:provider('write-services')}));
   assert.deepEqual(checkCentralServiceDeclarations(declared, required), [
     {code:'dependency_unavailable',service:missing,consumer,providers:[]},

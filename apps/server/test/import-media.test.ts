@@ -17,7 +17,7 @@ import {SourceStore} from '../src/sources.js';
 import {ImportStore} from '../src/imports.js';
 import type {ImportPreparation,ImportPreparationResult} from '../src/imports.js';
 import {prepareImportInput} from '../src/import-runtime.js';
-import {ServerFeatureScope} from '../src/feature-host.js';
+import {FeatureScope} from '../src/features/index.js';
 import {materialId} from '../src/materials.js';
 import {ImportIntakeRegistry,installImportIntake} from '../src/import-intake.js';
 import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes} from '../src/file-recipes.js';
@@ -26,7 +26,7 @@ import {generatedAppleDouble} from './fixtures/appledouble.js';
 
 async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>,prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>,configureImage=false){
   // Advance durable workers explicitly, so wall-clock load cannot race assertions.
-  t.mock.method(ServerFeatureScope.prototype,'every',()=>{});
+  t.mock.method(FeatureScope.prototype,'every',()=>()=>{});
   const directory=mkdtempSync(join(tmpdir(),'mote-media-import-'));
   let node:Awaited<ReturnType<typeof buildApp>>;
   t.after(async()=>{try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});

@@ -7,8 +7,6 @@ import type {MediaAssets} from '../media-assets.js';
 import type {MediaConfiguration} from '../media-configuration.js';
 import {MediaPreparation} from '../media-preparation.js';
 import {StoreError} from '../store.js';
-import type {FeatureServices} from '../feature-services.js';
-import {register as registerMediaRoutes} from '../features/media.js';
 import {centralServices} from './central-contracts.js';
 
 export const ocrAsrReadinessContribution={
@@ -125,20 +123,3 @@ export function createOcrAsrReadinessFactory(platform:OcrAsrReadiness,onStarted?
     };
   };
 }
-
-/** Stable pre-H14 route table. Handlers resolve the currently leased port on
- * every request, so replacement never mounts a duplicate route. */
-export function createOcrAsrReadinessRoutes(){
-  let current:MediaReadinessPort|undefined;
-  const mounted=new WeakSet<FastifyInstance>();
-  return Object.freeze({
-    activate(port:MediaReadinessPort){current=port;},
-    mount(app:FastifyInstance,services?:FeatureServices){
-      if(mounted.has(app))throw new StoreError('Media routes are already installed',409);
-      if(!services)throw unavailable();
-      mounted.add(app);
-      registerMediaRoutes(app,{...services,mediaPreparation:()=>current??(()=>{throw unavailable();})()});
-    },
-  });
-}
-export type OcrAsrReadinessRoutes=ReturnType<typeof createOcrAsrReadinessRoutes>;

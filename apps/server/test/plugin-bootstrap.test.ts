@@ -30,7 +30,7 @@ test('default loader preserves the complete product, owner checks and original n
   const execution=node.featureServices.runtimeSettings.execution();
   assert.deepEqual({agent:node.executionPlatform.assembly.agentGate.snapshot().limit,llm:node.executionPlatform.assembly.llmGate.snapshot().limit,interactive:node.executionPlatform.assembly.interactiveGate.snapshot().limit,interactiveModel:node.executionPlatform.assembly.interactiveModelGate.snapshot().limit},
     {agent:execution.agentConcurrency,llm:execution.llmConcurrency,interactive:execution.interactiveConcurrency,interactiveModel:execution.interactiveConcurrency});
-  assert.deepEqual(node.featureHost.registry.inventory().features.map(feature=>feature.id),[
+  assert.deepEqual(node.featureRoutes.registry.inventory().features.map(feature=>feature.id),[
     'mote.activity','mote.files','mote.actions','mote.connections','mote.system','mote.storage','mote.capture','mote.context','mote.materials',
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
     'mote.imports','mote.ask','mote.insights','mote.agent-view','mote.features',

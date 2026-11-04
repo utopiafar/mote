@@ -10,7 +10,6 @@ import {createInstanceState} from './plugins/instance-state.js';
 import type {ConfigurationPlatform} from './plugins/configuration-platform.js';
 import {c10IntegrationDeclaration} from './plugins/c10-integration.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
-import type {ServerFeatureAdapter} from './features/index.js';
 import {defaultDistribution} from './distribution/default.js';
 import {featureInventory,type HostContributionDescriptor} from './feature-inventory.js';
 
@@ -46,7 +45,9 @@ export interface CentralDomainPlugin {
 }
 export interface CentralDistribution {
   readonly foundations:readonly ({[K in FoundationKind]:FoundationProvider<K>}[FoundationKind])[];
-  readonly features:readonly ServerFeatureAdapter[];
+  /** Selected HTTP feature ids. The implementation is build-owned; composition
+   * selects which surfaces this host mounts. */
+  readonly features:readonly string[];
   readonly plugins:readonly CentralDomainPlugin[];
 }
 export const foundationContracts=Object.freeze<{readonly [K in FoundationKind]:ServiceContract<FoundationValues[K]>}>({
@@ -75,8 +76,8 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
       invalid('Invalid foundation provider descriptor');
   }
   if(selected.length!==kinds.length)invalid('Unknown foundation provider kind');
-  const features=distribution.features.map(entry=>({descriptor:{...entry.descriptor},factory:entry.factory}));
-  if(new Set(features.map(entry=>entry.descriptor.id)).size!==features.length)invalid('Duplicate feature contribution');
+  const features=distribution.features.map(id=>{if(typeof id!=='string'||!id)invalid('Invalid feature contribution');return id;});
+  if(new Set(features).size!==features.length)invalid('Duplicate feature contribution');
   const plugins=distribution.plugins.map(entry=>({...entry,contribution:{...entry.contribution}}));
   if(new Set(plugins.map(entry=>entry.contribution.id)).size!==plugins.length)invalid('Duplicate domain plugin contribution');
   for(const plugin of plugins)if(plugin.contribution.id!==plugin.declaration.id||!plugin.replacement)invalid('Invalid domain plugin descriptor');
@@ -118,7 +119,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,
       authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),host,get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
       selectsPlugin:(id:string)=>plugins.some(plugin=>plugin.contribution.id===id),
-      selectsFeature:(id:string)=>features.some(feature=>feature.descriptor.id===id),
+      selectsFeature:(id:string)=>features.includes(id),
       featureInventory:(extra:readonly HostContributionDescriptor[]=[])=>featureInventory(host.snapshot(),[...contributions,...extra]),
       /** Trusted build-only installation in the same host; no public service or second host. */
       async installObservabilityPlatform(options:ObservabilityPlatformOptions){

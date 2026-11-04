@@ -4,7 +4,6 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import {configDocumentDomains,configFromDocument,documentFromConfig,validateResolvedConfigDocument,type ConfigDocument} from '../config.js';
 import {createConfigurationPlatform} from '../plugins/configuration-platform.js';
 import {createVaultPlatformAssembly} from '../plugins/vault-platform.js';
-import {serverFeatureAdapters} from '../features/index.js';
 import {plugins as platformPlugins} from '../assembly/platform.js';
 import {plugins as sourcePlugins} from '../assembly/sources.js';
 import {plugins as materialPlugins} from '../assembly/materials.js';
@@ -71,5 +70,13 @@ export const defaultPlugins:readonly CentralDomainPlugin[]=Object.freeze([
   ...workPlugins,
   ...importPlugins,
 ]);
-export const defaultDistribution:CentralDistribution=Object.freeze({foundations:Object.freeze([configurationProvider,storageProvider,authorizationProvider]),features:serverFeatureAdapters,
+/** The complete default HTTP feature selection. The build owns each route
+ * implementation; a reduced distribution mounts only the ids it names. */
+export const defaultFeatures=Object.freeze([
+  'mote.activity','mote.files','mote.actions','mote.connections','mote.system','mote.storage',
+  'mote.capture','mote.context','mote.materials','mote.coding','mote.sources','mote.models',
+  'mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions',
+  'mote.memory','mote.imports','mote.ask','mote.insights','mote.agent-view','mote.features',
+] as const);
+export const defaultDistribution:CentralDistribution=Object.freeze({foundations:Object.freeze([configurationProvider,storageProvider,authorizationProvider]),features:defaultFeatures,
   plugins:defaultPlugins});

@@ -6,7 +6,6 @@ import {registerAgentViewRoutes} from '../src/plugins/agent-view-routes.js';
 import {contextIndex} from '../src/context-index.js';
 import type {Store} from '../src/store.js';
 import type {SourceStore} from '../src/sources.js';
-import type {FeatureServices} from '../src/feature-services.js';
 
 test('root catalog avoids corpus scans; source and layer cursors allow complete bounded browsing',()=>{
  const store={archive:{stats(){throw Error('First screen must not count the corpus');}}} as unknown as Store;
@@ -29,7 +28,7 @@ test('activity-owned Agent view preview shares the envelope, keeps scope, pages 
  const record={id:'generated-evidence',capturedAt:'2026-10-01T00:00:00Z',appName:'Generated',ocrText:'A'.repeat(4000)+'B'.repeat(4000)+'C'};
  const memory={id:'generated-memory',title:'Generated lead',statement:'Generated statement',uncertainty:'Generated uncertainty',createdAt:'2026-10-01T00:00:00Z',status:'published',tier:'consolidated'};
  const reader={memories:async(args:Record<string,unknown>)=>{calls.push(args);return {items:[memory],nextCursor:null,...(args.includeEvidence?{sourceSpans:[{record,offset:4000,length:20}]}:{})};},sourceItems:async()=>({items:[record],nextCursor:null}),evidence:async(args:Record<string,unknown>)=>{calls.push(args);return args.deviceId==='other'?[]:[record];},contextTools:()=>[]} as unknown as ContextReader;
- const diagnostics={snapshot:()=>({lastSeq:0,agentTrace:{enabled:false}}),events:()=>({items:[],nextSeq:0,oldestSeq:null})} as unknown as FeatureServices['diagnostics'];
+ const diagnostics={snapshot:()=>({lastSeq:0,agentTrace:{enabled:false}}),events:()=>({items:[],nextSeq:0,oldestSeq:null})} as unknown as import('../src/diagnostics.js').ServerDiagnostics;
  try{
   registerAgentViewRoutes(app,{archiveReader:reader,diagnostics,evidenceReader:{artifact:()=>undefined}});
   const input={question:'Generated question',deviceId:'fixture',after:'2026-09-30T00:00:00Z',before:'2026-10-02T00:00:00Z',timeZone:'Asia/Shanghai'};

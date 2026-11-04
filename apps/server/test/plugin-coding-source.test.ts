@@ -11,10 +11,7 @@ import {Store} from '../src/store.js';
 import {MaterialStore} from '../src/materials.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {SourceStore} from '../src/sources.js';
-import {ServerFeatureHost} from '../src/feature-host.js';
-import {installServerFeatures} from '../src/features/index.js';
-import {adapter as codingAdapter} from '../src/features/coding.js';
-import type {FeatureServices} from '../src/feature-services.js';
+import {FeatureRoutes,installFeatureRoutes} from '../src/features/index.js';
 import {codingSourceContribution,codingSourceDeclaration,codingSourceReplacement,createCodingSourceFactory,createCodingSourceRoutes,type CodingSourceOptions} from '../src/coding-source-plugin.js';
 
 const identity=()=>({packageId:'generated.coding-source',installationId:randomUUID(),instanceId:'coding',activationId:randomUUID(),host:{kind:'central' as const,id:'generated-coding-host'}});
@@ -26,9 +23,9 @@ async function fixture(t:TestContext){
   const open=async()=>{
     const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials);await runtime.ready;
     const sources=new SourceStore(store,runtime),host=new PluginHost({kind:'central',id:'generated-coding-host'}),routes=createCodingSourceRoutes(runtime);
-    const app=Fastify(),root=new Context(),featureHost=new ServerFeatureHost(root,app);
-    await installServerFeatures(featureHost,{sourcePipelines:runtime} as FeatureServices,[codingAdapter]);await app.ready();
-    return {store,materials,runtime,sources,host,routes,app,root,featureHost};
+    const app=Fastify(),root=new Context(),featureRoutes=new FeatureRoutes(root,app);
+    await installFeatureRoutes(featureRoutes,[{id:'mote.coding',mount:app=>routes.mount(app)}]);await app.ready();
+    return {store,materials,runtime,sources,host,routes,app,root,featureRoutes};
   };
   let current=await open(),owner:Awaited<ReturnType<PluginHost['install']>>|undefined;
   const startCoding=async(options:CodingSourceOptions={})=>{
@@ -36,7 +33,7 @@ async function fixture(t:TestContext){
     owner=await s.host.install({identity:identity(),contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime:s.runtime,sources:s.sources,store:s.store},s.routes,options)});
   };
   const close=async()=>{
-    const s=current;await s.featureHost.close();await s.app.close();await s.host.close();await s.runtime.close();await s.materials.index?.close();s.store.close();await s.root.fiber.dispose();owner=undefined;
+    const s=current;await s.featureRoutes.close();await s.app.close();await s.host.close();await s.runtime.close();await s.materials.index?.close();s.store.close();await s.root.fiber.dispose();owner=undefined;
   };
   t.after(async()=>{await close();rmSync(directory,{recursive:true,force:true});});
   await startCoding();
