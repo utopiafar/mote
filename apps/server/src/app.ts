@@ -22,7 +22,6 @@ import {agentModelConnection,captureModelIdentity} from './model-authorization-h
 import {MODEL_FEATURES,DEFAULT_MODEL_MAX_TOKENS,modelProvider} from '@mote/shared/models';
 import type {ObservationName} from './execution-observability.js';
 import {assertMemoryImageGrants} from './memory-image-grants.js';
-import {memoryReadRanges} from './memory-read-context.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,formatEvidenceRef} from '@mote/shared';
 import {imageOutput} from './evidence-image.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
@@ -64,11 +63,9 @@ import { registerMemoryExtensions } from './lifecycle-extensions.js';
 import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import type {LifecycleExtension,LifecycleSettings } from './memory-lifecycle.js';
 import type {WorkingMemory} from './working-memory.js';
-import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import {PluginCenter} from './plugin-center.js';
 import {GitHubPluginReleases} from './plugin-release.js';
 import {registerPluginRoutes} from './plugin-routes.js';
-import { reviewMemory } from './memory-review.js';
 import type { ModelAgentFactory } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
@@ -77,7 +74,7 @@ import { linkOperationParent } from './operation-projection.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
 import { semanticProcessor } from './semantic-extraction.js';
 import { conversationUnderstandingProcessor } from './conversation-understanding.js';
-import { Store,StoreError,sha256 } from './store.js';
+import { Store,StoreError } from './store.js';
 import { UsageLedger } from './usage.js';
 
 function parseCaptureBundle(body:unknown):CaptureInput[] {
@@ -372,15 +369,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   }).strict().refine(value=>!value.after||!value.before||Date.parse(value.after)<Date.parse(value.before),{message:'Invalid time range'});
 
   const queryAgent=query.queryAgent,insight=query.insight,withQueryModelAuthority=query.withQueryModelAuthority;
-  const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
-    draftOrigin,strategy,deletions:memories.deletions,authorizeDeletionEvidence:ids=>memoryPipeline.inputs.assertDeletion(ids,input.modelProfileId),cache:memoryReviews,snapshot:()=>{
-      const ids=input.evidenceReadRanges?[...new Set([...(input.evidenceIds??[]),...memoryReadRanges(result,input.evidenceRanges??[],input.evidenceReadRanges).map(range=>range.id)])]:input.evidenceIds??[];
-      if(ids.some(id=>!memories.isCurrentEvidence(id)))throw new StoreError('Memory evidence changed during review',409);
-      // Include full original metadata (speaker, source, device, dates, version),
-      // not just quote text. Credentials/config are hashed, never retained.
-      return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
-    },
-  });
   const understandConversation:NonNullable<import('./memory-pipeline.js').MemoryPhasePorts['understand']>=async input=>{
     const refs=[...new Set(input.ranges.map(range=>input.materialRefs[range.id]))];
     if(refs.length!==1||!refs[0])return;
@@ -404,7 +392,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
   };
-  const {memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryIntegrationSettings,memoryTopics,featureServices:memoryRuntimeFeatureServices}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),review:reviewExtraction,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
+  const {memoryBindings,memoryAdapters,memoryPublication,memoryPipeline,reviewExtraction,lifecycle,working,memoryIntegrationSettings,memoryTopics,featureServices:memoryRuntimeFeatureServices}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
   memoryWorkingHost=working;memoryLifecycleHost=lifecycle;
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
