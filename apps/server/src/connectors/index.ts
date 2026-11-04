@@ -15,8 +15,7 @@ import {createConnectorHostAdapter,type ConnectorHostAdapter,type ConnectorInsta
 import {createDynamicHttpDispatcher,type DynamicHttpDispatcher} from '../plugins/dynamic-http-dispatcher.js';
 import {loadConnectorModules,type ConnectorManifest,type OwnerRoute} from './registry.js';
 import {equalToken,registerMcp,RemoteMcp} from './mcp.js';
-import {GoogleCalendarConnector,type GoogleDependencies} from './google.js';
-import {googleCalendarContext} from './google-context.js';
+import {googleCalendarManifest,type GoogleDependencies} from '../plugins/google-calendar-source.js';
 import {GmailConnector} from './gmail.js';
 import {LarkConnector} from './lark.js';
 import type {LarkRunner} from './lark-cli.js';
@@ -46,21 +45,7 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
       close:async()=>{await Promise.all([remote.close(),inbound?.close()]);},
     };
   }},
-  {apiVersion:1,id:'google-calendar',sourceKinds:['google-calendar'],statusKey:'google',create:ctx=>{
-    const google=new GoogleCalendarConnector(googleCalendarContext(ctx),testing?.google);
-    return {
-      init:()=>google.init(),status:()=>google.status(),configureSyncInterval:interval=>google.configureSyncInterval(interval),
-      configure:host=>{
-        host.ownerRoute({method:'POST',path:'/api/connectors/google/start',handler:()=>google.start()});
-        host.ownerRoute({method:'GET',path:'/api/connectors/google/calendars',handler:()=>google.calendars()});
-        host.ownerRoute({method:'PUT',path:'/api/connectors/google/calendars',handler:req=>google.select(req.body)});
-        host.ownerRoute({method:'POST',path:'/api/connectors/google/sync',handler:()=>google.sync()});
-        host.ownerRoute({method:'DELETE',path:'/api/connectors/google',handler:()=>google.disconnect()});
-        host.oauthCallback({path:'/oauth/google/callback',complete:(state,code)=>google.callback(state,code),successMessage:moteText('Google 日历已连接。请返回 Mote 选择需要同步的日历。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
-      },
-      close:()=>google.close(),
-    };
-  }},
+  googleCalendarManifest(testing?.google),
   {apiVersion:1,id:'gmail',sourceKinds:['gmail'],statusKey:'gmail',create:ctx=>{
     const gmail=new GmailConnector(gmailContext(ctx),testing?.gmail);
     return {
