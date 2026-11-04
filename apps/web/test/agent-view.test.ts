@@ -17,6 +17,8 @@ test('recorded text uses tool-returned offsets and never invents reads from meta
  assert.deepEqual(recordedReads({...base,truncated:true}),[]);
  assert.deepEqual(recordedReads({...base,trace:{...base.trace!,status:'failed'}}),[]);
  assert.deepEqual(recordedReads({...base,trace:{...base.trace!,payload:{result:{data:{id:'fixture',title:'Metadata only'}}}}}),[]);
+ // A declared call without its completed record is not an actual read.
+ assert.deepEqual(recordedReads({...base,trace:{...base.trace!,type:'tool.started'}}),[]);
 });
 test('recorded outputs and original actions use only complete stored protocol fields',()=>{
  const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',output:TraceEvent={seq:3,at:'fixture',trace:{type:'model.completed',payload:{response:'<script>untrusted literal output</script>'}}};
