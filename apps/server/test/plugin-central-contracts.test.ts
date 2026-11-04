@@ -84,18 +84,17 @@ test('every actually installed server feature has replaceable factory owners and
   assert.ok(centralFeatureMigrations['mote.storage'].owners.includes('publication'), 'provider backup must not be reduced to host metadata');
 });
 
-test('every current FeatureServices member has one migration slice, including closures and scope resources', () => {
-  const assigned = Object.values(centralMigrationSlices).flatMap((slice: CentralMigrationSlice) => [...slice.legacy]);
-  assert.equal(new Set(assigned).size, assigned.length, 'a legacy resource must not have duplicate closing owners');
-  // Each slice is one file with its own interface and member-name constant. The
-  // bag is only the intersection of those interfaces, so a slice cannot silently
-  // borrow or duplicate a member from another owner.
-  const sliceFiles = readdirSync(new URL('../src/feature-services/', import.meta.url)).filter(file => file.endsWith('.ts')).sort();
-  const sliceNames = Object.keys(centralMigrationSlices).sort();
-  assert.deepEqual(sliceFiles.map(file => file.slice(0, -'.ts'.length)), sliceNames);
+/** K06 baseline. The FeatureServices bridge may only shrink as slices move to plugin ports. */
+const featureServiceMemberBaseline = 79;
+
+/** Each slice is one file with its own interface and member-name constant. The bag is
+ * only the intersection of those interfaces, so a member cannot silently exist outside
+ * a slice or be borrowed from another owner. */
+function featureServiceSlices() {
+  const files = readdirSync(new URL('../src/feature-services/', import.meta.url)).filter(file => file.endsWith('.ts')).sort();
   const declarations = (file: ts.SourceFile) => file.statements.flatMap(statement => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : []);
-  const interfaces = new Map<string,string[]>();
-  for (const file of sliceFiles) {
+  const slices = new Map<string, {interfaceName: string; members: string[]}>();
+  for (const file of files) {
     const slice = file.slice(0, -'.ts'.length);
     const module = source(`../src/feature-services/${file}`);
     const declared = module.statements.filter((statement): statement is ts.InterfaceDeclaration => ts.isInterfaceDeclaration(statement) && statement.name.text.endsWith('FeatureServices'));
@@ -108,9 +107,26 @@ test('every current FeatureServices member has one migration slice, including cl
     assert.ok(names && ts.isArrayLiteralExpression(names), `${file} member-name constant must be an array literal`);
     const constantMembers = names.elements.map(element => { assert.ok(ts.isStringLiteral(element)); return element.text; }).sort();
     assert.deepEqual(constantMembers, members, `${file} member-name constant must list its interface members`);
-    assert.deepEqual(members, [...(centralMigrationSlices as Record<string,CentralMigrationSlice>)[slice]!.legacy].sort(), `${file} must own exactly its migration legacy resources`);
-    interfaces.set(declared[0]!.name.text, members);
+    slices.set(slice, {interfaceName: declared[0]!.name.text, members});
   }
+  return {files, slices};
+}
+
+test('every FeatureServices member belongs to exactly one migration slice', () => {
+  const {files, slices} = featureServiceSlices();
+  assert.deepEqual(files.map(file => file.slice(0, -'.ts'.length)), Object.keys(centralMigrationSlices).sort());
+  assert.deepEqual(Object.keys(featureServiceMembers).sort(), Object.keys(centralMigrationSlices).sort(), 'every slice must expose its member-name constant');
+  const owners = new Map<string,string>();
+  for (const [slice, {members}] of slices) for (const member of members) {
+    const owner = owners.get(member);
+    assert.equal(owner, undefined, `${member} belongs to both ${owner} and ${slice}`);
+    owners.set(member, slice);
+  }
+  const runtimeMembers = Object.values(featureServiceMembers).flat();
+  assert.equal(new Set(runtimeMembers).size, runtimeMembers.length, 'a member must belong to exactly one slice');
+  assert.deepEqual([...runtimeMembers].sort(), [...owners.keys()].sort(), 'every bridge member must be owned by exactly one slice');
+  const assigned = Object.values(centralMigrationSlices).flatMap((slice: CentralMigrationSlice) => [...slice.legacy]);
+  assert.deepEqual(assigned.sort(), [...owners.keys()].sort(), 'the audit legacy lists must be the derived slice ownership');
   const bag = source('../src/feature-services.ts');
   const featureServices = bag.statements.find(statement => ts.isTypeAliasDeclaration(statement) && statement.name.text === 'FeatureServices');
   assert.ok(featureServices && ts.isTypeAliasDeclaration(featureServices));
@@ -119,11 +135,14 @@ test('every current FeatureServices member has one migration slice, including cl
     assert.ok(ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName));
     return type.typeName.text;
   });
-  assert.deepEqual(references.sort(), [...interfaces.keys()].sort(), 'FeatureServices must intersect every slice interface once');
-  assert.deepEqual(Object.keys(featureServiceMembers).sort(), sliceNames);
-  const runtimeMembers = Object.values(featureServiceMembers).flat();
-  assert.equal(new Set(runtimeMembers).size, runtimeMembers.length, 'a member must belong to exactly one slice');
-  assert.deepEqual([...runtimeMembers].sort(), assigned.sort());
+  assert.deepEqual(references.sort(), [...slices.values()].map(({interfaceName}) => interfaceName).sort(), 'FeatureServices must intersect every slice interface once');
+});
+
+test('FeatureServices member count never exceeds the K06 baseline', () => {
+  const {slices} = featureServiceSlices();
+  const members = [...slices.values()].flatMap(({members}) => members);
+  assert.ok(members.length <= featureServiceMemberBaseline,
+    `FeatureServices grew from ${featureServiceMemberBaseline} to ${members.length} members; expose new work through a plugin port instead of widening the bridge`);
 });
 
 const provider = (instanceId: string, activationId = 'activation-1', installationId = 'installation-1'): ContributionIdentity => ({
