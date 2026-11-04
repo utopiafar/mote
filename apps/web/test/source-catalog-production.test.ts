@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {pathToFileURL} from 'node:url';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
@@ -12,6 +11,7 @@ import type {FeatureInventory,RecordingStatus} from '@mote/shared';
 import {buildApp} from '../../server/src/app.js';
 import type {Config} from '../../server/src/config.js';
 import type {RecordingProvider} from '../../server/src/connectors/recordings.js';
+import {recordingManifest} from '../../server/src/plugins/recording-sources.js';
 import type {Api} from '../src/api.js';
 import {pages as sourcePages} from '../src/plugins/sources/index.js';
 import {webFeatures} from '../src/features/registry.js';
@@ -24,19 +24,14 @@ async function settle(check:()=>boolean){
 
 test('production connector inventory opens built-in and third-party recording cards through the real owner GET routes without account or provider work',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-source-catalog-production-'));
-  const modulePath=join(directory,'generated-recording-connector.mjs');
-  const recordingModule=new URL('../../server/src/connectors/recordings.ts',import.meta.url).href;
-  await writeFile(modulePath,`
-import {recordingManifest} from ${JSON.stringify(recordingModule)};
-export const providerCalls=[];
-const unused=async method=>{providerCalls.push(method);throw Error('No provider work belongs in generated discovery fixtures');};
-export default recordingManifest('generated',()=>({
-  id:'generated',version:'generated-fixture@1',
-  account:()=>unused('account'),discover:()=>unused('discover'),metadata:()=>unused('metadata'),
-  transcript:()=>unused('transcript'),media:()=>unused('media'),
-}),{label:'Generated third-party recorder',setup:{description:'Generated setup fixture only'}});
-`);
-  const config:Config={dataDir:join(directory,'vault'),token:'generated-source-catalog-owner-token',tokenPath:'generated-fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),modules:[pathToFileURL(modulePath).href]}};
+  const generatedProviderCalls:string[]=[];
+  const generatedUnused=async(method:string):Promise<never>=>{generatedProviderCalls.push(method);throw Error('No provider work belongs in generated discovery fixtures');};
+  const connectorManifest=recordingManifest('generated',()=>({
+    id:'generated',version:'generated-fixture@1',
+    account:()=>generatedUnused('account'),discover:()=>generatedUnused('discover'),metadata:()=>generatedUnused('metadata'),
+    transcript:()=>generatedUnused('transcript'),media:()=>generatedUnused('media'),
+  }),{label:'Generated third-party recorder',setup:{description:'Generated setup fixture only'}});
+  const config:Config={dataDir:join(directory,'vault'),token:'generated-source-catalog-owner-token',tokenPath:'generated-fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors')}};
   const providerCalls:string[]=[],modelCalls:string[]=[],cliCalls:string[]=[];
   const providerFixture=(id:string):RecordingProvider=>{
     const unused=async(method:string):Promise<never>=>{providerCalls.push(id+':'+method);throw Error('No account or provider reads belong in generated discovery fixtures');};
@@ -55,11 +50,11 @@ export default recordingManifest('generated',()=>({
   });
   node=await buildApp(config,{
     backgroundWorker:false,
+    connectorManifests:[connectorManifest],
     connectorTesting:{recordings:[providerFixture('feishu'),providerFixture('dingtalk')],lark:async()=>{cliCalls.push('lark');throw Error('No CLI invocation belongs in generated discovery fixtures');}},
     agent:{configured:false,query:async()=>{modelCalls.push('query');throw Error('No model is authorized for generated discovery fixtures');},close:async()=>{}},
   });
   await node.app.ready();
-  const plugin=await import(pathToFileURL(modulePath).href) as {providerCalls:string[]};
   const requests:{method:string;path:string;status:number}[]=[],navigation:string[]=[];
   const api={request:async<T>(path:string,init?:RequestInit):Promise<T>=>{
     const method=(init?.method??'GET').toUpperCase(),record={method,path,status:0};
@@ -116,7 +111,7 @@ export default recordingManifest('generated',()=>({
   assert.deepEqual(navigation,[],'provider links preserve their query rather than invoke a fallback page callback');
   assert.ok(requests.every(request=>request.method==='GET'&&request.status===200));
   assert.deepEqual(providerCalls,[]);
-  assert.deepEqual(plugin.providerCalls,[]);
+  assert.deepEqual(generatedProviderCalls,[]);
   assert.deepEqual(cliCalls,[]);
   assert.deepEqual(modelCalls,[]);
 });

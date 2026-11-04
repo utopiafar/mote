@@ -2,10 +2,10 @@ import {moteText} from './i18n.js';
 import {z} from 'zod';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {OwnerQuestions} from './owner-questions.js';
 import type {OwnerQuestionRecord,OwnerQuestionAnswer} from './owner-question-contract.js';
 import {MaterialStore,parseMaterialRef} from './materials.js';
 import type {MemoryOwnerContinuationPort} from './memory-owner-continuation.js';
+import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
 import {StoreError,type Store} from './store.js';
 import type {MemoryWorkMember} from './memory-work-contract.js';
 import {linkOperationParent} from './operation-projection.js';
@@ -21,7 +21,7 @@ const context=(record:OwnerQuestionRecord)=>record.context as Context;
 
 /** Memory is one trusted provider of the shared owner-question host.
  * Reading, model interpretation and explicit continuation keep their existing owners. */
-export function installMemoryOwnerQuestions({questions,continuations,materials,store,query}:{questions:OwnerQuestions;continuations:MemoryOwnerContinuationPort;materials:MaterialStore;store:Store;query:(input:QueryInput)=>Promise<QueryResult>}){
+export function installMemoryOwnerQuestions({questions,continuations,materials,store,query}:{questions:OwnerQuestionsPort;continuations:MemoryOwnerContinuationPort;materials:MaterialStore;store:Store;query:(input:QueryInput)=>Promise<QueryResult>}){
  // This provider owns declarations derived from its question, including erasure.
  store.db.exec("CREATE TRIGGER IF NOT EXISTS memory_owner_declaration_retired AFTER UPDATE OF json ON owner_questions WHEN json_extract(new.json,'$.state')='obsolete' BEGIN DELETE FROM material_owner_declarations WHERE id=new.id; END;");
  store.db.exec("DELETE FROM material_owner_declarations WHERE id IN (SELECT id FROM owner_questions WHERE json_extract(json,'$.state')='obsolete')");

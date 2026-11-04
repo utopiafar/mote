@@ -12,6 +12,16 @@
   },
   "contributions": [
     {
+      "id": "template-collection.connector",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "source.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    },
+    {
       "id": "template-collection.port",
       "version": "1",
       "surface": "data",
@@ -49,6 +59,7 @@
     }
   ],
   "capabilities": [
+    "source.connector",
     "collection.state",
     "collection.page"
   ],

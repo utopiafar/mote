@@ -19,7 +19,7 @@ import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {memoryImageGrants} from '../src/memory-image-grants.js';
 import {ImportStore} from '../src/imports.js';
-import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation} from '../src/python-source-pack-executor.js';
+import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation} from '../src/plugins/python-source-pack-executor.js';
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-evidence-images-')),store=new Store(directory),sources=new SourceStore(store);

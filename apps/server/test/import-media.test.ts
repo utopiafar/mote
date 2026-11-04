@@ -31,10 +31,11 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
   let node:Awaited<ReturnType<typeof buildApp>>;
   t.after(async()=>{try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
   await seed?.(directory);
-  const config:Config={dataDir:directory,token:'generated-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'http://127.0.0.1:19300/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,backendPluginModules:modules};
+  const config:Config={dataDir:directory,token:'generated-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'http://127.0.0.1:19300/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const processingPlugins=await Promise.all(modules.map(async module=>((await import(pathToFileURL(module).href)).default)));
   const calls:string[]=[],modelCalls:string[]=[],failed=new Set<string>();
   const start=async()=>{
-    node=await buildApp(config,{backgroundWorker:false,prepareImport,transcriptionProvider:{transcribe:async input=>{
+    node=await buildApp(config,{backgroundWorker:false,processingPlugins,prepareImport,transcriptionProvider:{transcribe:async input=>{
       const parts:Buffer[]=[];for await(const part of input.body)parts.push(part);const key=Buffer.concat(parts).toString();calls.push(key);
       if(failed.has(key))throw new StoreError('Generated unsupported response',422);
       return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated participant described a plan; its outcome is unknown.'}]};
@@ -147,7 +148,7 @@ test('mixed image and text import uses separate native extraction and preserves 
 });
 
 test('a deployment plugin extends format, output schema and DAG without changing import or file hosts',async t=>{
-  const path=fileURLToPath(new URL('../../../examples/plugins/media-intake.mjs',import.meta.url)),f=await fixture(t,[path]);
+  const path=fileURLToPath(new URL('../../../examples/media-intake-plugin/plugin.mjs',import.meta.url)),f=await fixture(t,[path]);
   await f.node.processing.save({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,typeProfiles:{'application/vnd.mote.text':'community.text-extract'}},policy:fixtureFilePolicy({...f.node.processing.view().settings,typeProfiles:{'application/vnd.mote.text':'community.text-extract'}},f.node.processing.runtime.registry)});
   const job=await f.create([entry('unknown.custom','MOTE-TEXT\nGenerated first\r\nGenerated second')]);assert.equal(job.status,'completed',JSON.stringify(job));assert.equal(job.media![0].format.id,'community.text-format');
   await f.node.processing.tick();const id=job.media![0].captureId!;assert.equal(f.node.files.chunks(id)[0].ocrText,'Generated first\nGenerated second');assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);

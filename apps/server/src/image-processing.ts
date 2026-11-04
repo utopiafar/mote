@@ -39,7 +39,7 @@ import {mediaRuntimeSettings,type MediaRuntimeSettings} from './media-configurat
 export class ImageProcessing {
  readonly engine:ExecutionEngine;readonly inputs:ImageInputRegistry;
  private unregister:Array<()=>Promise<void>>=[];private disposeInputs:()=>void;
- private attachments:ImageAttachmentIntake;private closed=false;private closing?:Promise<void>;private workerReady=false;private checkedAt=0;private probe?:Promise<void>;
+ private attachments:ImageAttachmentIntake;private closed=false;private quiescing=false;private closing?:Promise<void>;private workerReady=false;private checkedAt=0;private probe?:Promise<void>;
  private readonly processorAdmission:ProcessorAdmission;
  private prepareCursor=0;private readonly media:MediaRuntimeSettings;private savedSettings:PerceptionConfiguration;
  private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>;captureIds?:string[]}>();
@@ -254,8 +254,10 @@ export class ImageProcessing {
    if(this.workerReady&&!this.closed)for(const job of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind='images.ocr' AND error='ocr_worker_unavailable' AND state='waiting'").all())this.engine.retry(String(job.id),false);
   })().finally(()=>{this.probe=undefined;});return this.probe;
  }
+ /** Stop admitting newly discovered image work; accepted steps may still drain. */
+ quiesce(){this.quiescing=true;}
  prepare(){
-  if(this.closed)return [];
+  if(this.closed||this.quiescing)return [];
   this.releaseCompletedSnapshotInputs();
   if(Date.now()-this.checkedAt>=5000)void this.refreshWorker();
   void this.attachments.prepare();this.backfillBatch();

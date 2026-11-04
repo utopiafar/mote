@@ -8,7 +8,7 @@ import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {ImportStore} from '../src/imports.js';
-import {PythonSourcePackExecutor,macPythonSandboxProfile,pythonImportOutputSchema,pythonImportPreparation,type PythonSandboxLauncher} from '../src/python-source-pack-executor.js';
+import {PythonSourcePackExecutor,macPythonSandboxProfile,pythonImportOutputSchema,pythonImportPreparation,type PythonSandboxLauncher} from '../src/plugins/python-source-pack-executor.js';
 
 /** Generated fixtures exercise the process protocol when the host test sandbox cannot nest sandbox-exec. */
 const fixtureLauncher:PythonSandboxLauncher=(workspace,python,runner)=>({command:python,args:['-I','-B',runner],cwd:workspace,

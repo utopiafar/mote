@@ -1,6 +1,6 @@
 import { SyncHistory, captureHistoryItem } from './sync-history';
 import { connectionToken } from './login-session';
-import {collectorStatusView} from './native-status';
+import {collectorStatusView} from './plugins/capability-publisher';
 import {extractUiPages,uiSnapshotSchema,uiPageText,namedPage,type UiSnapshot,type UiPageV3} from '@mote/shared';
 import {runHelper} from './native';
 import type {BrowserCaptureProvider} from './browser-capture';

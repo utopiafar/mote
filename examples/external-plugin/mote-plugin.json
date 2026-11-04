@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "example.external-source",
+  "name": "Example external source",
+  "version": "0.1.0",
+  "trust": "external",
+  "runtime": "service",
+  "entry": "plugin.mjs",
+  "archive": {
+    "asset": "example-external-source-0.1.0.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "contributions": [
+    {
+      "id": "example-external-source.connector",
+      "version": "1",
+      "surface": "ingress",
+      "runtime": "service",
+      "entry": "plugin.mjs",
+      "capabilities": [
+        "source.connector"
+      ]
+    }
+  ],
+  "capabilities": [
+    "source.connector"
+  ],
+  "configuration": [],
+  "dependencies": [],
+  "access": [
+    "Owner-configured external source intake"
+  ]
+}

@@ -29,7 +29,9 @@ import type {ProcessingRuntime} from '../processing-runtime.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {MediaReadinessPort} from './ocr-asr-readiness.js';
-import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-publication-contract.js';
+import type {ImageProcessingPort} from './image-processing-service.js';
+import type {MemoryStagePublication, MemoryOwnerPublication} from './memory-publication-contract.js';
+import type {MemoryBackup} from './memory-backup.js';
 import type {MemoryAutomation} from '../memory-automation.js';
 import type {Conversations} from '../conversations.js';
 import type {MemoryTopicsHost} from '../memory-topics-host.js';
@@ -41,6 +43,7 @@ import type {MemoryStrategiesPort} from '../memory-strategies.js';
 import type {MemoryRecipeSettingsPort} from '../memory-recipe-settings.js';
 import type {MemoryIntegrationSettingsPort} from '../memory-integration-settings.js';
 import type {MemoryPhasePipelinePort} from './memory-phase-pipeline.js';
+import type {MemoryLifecycleServicePort} from './memory-lifecycle-service.js';
 import {featureServiceMembers} from '../feature-services.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
@@ -213,6 +216,7 @@ export const centralServices = {
   memoryBindingControl: serviceContract<MemoryBindingControl>('mote.central.memory-binding-control', '1'),
   memoryProviderAdapters: serviceContract<MemoryProviderAdapters>('mote.central.memory-provider-adapters', '1'),
   memoryPhase: serviceContract<MemoryPhasePipelinePort>('mote.central.memory-phase-pipeline', '1'),
+  memoryLifecycle: serviceContract<MemoryLifecycleServicePort>('mote.central.memory-lifecycle', '1'),
   processing: serviceContract<ProcessingSubmission>('mote.central.processing-submission', '1'),
   memoryCandidates: serviceContract<MaterialMemoryCandidates>('mote.central.material-memory-candidates', '1'),
   memoryRead: serviceContract<MemoryRead>('mote.central.memory-read', '1'),
@@ -222,10 +226,12 @@ export const centralServices = {
   memoryInputSelection: serviceContract<MemoryInputSelection>('mote.central.memory-input-selection', '1'),
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
+  memoryBackup: serviceContract<MemoryBackup>('mote.central.memory-backup', '1'),
   memoryTopics: serviceContract<MemoryTopics>('mote.central.memory-topics', '1'),
   ownerQuestions: serviceContract<OwnerQuestionsPort>('mote.central.owner-questions', '1'),
   mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
   mediaReadiness: serviceContract<MediaReadinessPort>('mote.central.media-readiness', '1'),
+  imageProcessing: serviceContract<ImageProcessingPort>('mote.central.image-processing', '1'),
   conversations: serviceContract<ConversationRepository>('mote.central.conversations', '1'),
   query: serviceContract<QueryDomain>('mote.central.query', '1'),
 } as const;
@@ -266,7 +272,7 @@ const centralMigrationAudits = {
   memoryRecords: {task:'C21B', factory:'memory-record-repository', replacement:'hot', objects:['MemoryStore record storage','memory storage schema'], consumers:['C19E','C22','C23','C24','AGENT']},
   memoryRuntime: {task:'C22A/C22B/C22C', factory:'memory-lifecycle', replacement:'hot', objects:['MemoryPipeline phase/review/cache','MemoryLifecycle/extensions/WorkingMemory','TopicsHost','owner continuation/questions/delegation'], consumers:['C19E','C21','C24','C26','AGENT']},
   memoryProviders: {task:'C23', factory:'memory-provider-adapters', replacement:'hot', objects:['MemoryAdapters/Mem0/Hindsight/workers','fixed namespace/config readers','Hindsight authority/usage maps','prepared stages/probes'], consumers:['C21D','C24','AGENT']},
-  publication: {task:'C24', factory:'memory-publication', replacement:'hot', objects:['MemoryPublication/poll','retirement/dependencies','submitted writes/erases/revocations/native cleanup references','EvidenceDeletion/export/provider backup'], consumers:['C10B','C19','C21D','C22','HOST']},
+  publication: {task:'C24', factory:'memory-publication', replacement:'hot', objects:['MemoryPublication/poll','retirement/dependencies','submitted writes/erases/revocations/native cleanup references','MemoryDeletions/EvidenceDeletion/export/provider backup'], consumers:['C10B','C19','C21D','C22','HOST']},
   actions: {task:'C25', factory:'actions-services', replacement:'hot', objects:['Actions/handler','ActionCapabilities','ManagedCalendar/Todos','approval/grant/delivery/exact receipt'], consumers:['C26','AGENT','WEB','MAC','ANDROID']},
   activity: {task:'C26/C26A/C26B/C26C', factory:'insight-activity-services', replacement:'hot', objects:['ActivityProjection','AutomaticActivity/timer','InsightRuns/snapshots','OwnerQuestions','Agent view pagination'], consumers:['C22','AGENT','WEB','MAC','ANDROID']},
   query: {task:'C27', factory:'query-domain-services', replacement:'hot', objects:['Conversations/retention','DelegationRuntime','DelegatedQueryRuns','query preparation/snapshot/commit/direct images','admitted query runs/insight entry','context query composition'], consumers:['C22','C26','AGENT','WEB','MAC','ANDROID']},
@@ -293,10 +299,10 @@ export const centralServiceOwners = {
   materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
   retrievalIndex:'materials', materialIndex:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
-  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryStrategies:'memoryControl', memoryRecipeSettings:'memoryControl', memoryIntegrationSettings:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', memoryPhase:'memoryRuntime', processing:'processing',
+  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryStrategies:'memoryControl', memoryRecipeSettings:'memoryControl', memoryIntegrationSettings:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', memoryPhase:'memoryRuntime', memoryLifecycle:'memoryRuntime', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', mediaReadiness:'media', conversations:'query', query:'query',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryBackup:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', mediaReadiness:'media', imageProcessing:'media', conversations:'query', query:'query',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {
@@ -325,7 +331,7 @@ export const centralFeatureMigrations = {
   'mote.processing': {owners:['processing','media','activity'], requires:['execution','executionHandlers','configuration','modelAuthority']},
   'mote.notes': {owners:['capture','materials'], requires:['captureIntake','captureRead','requestAuthorization']},
   'mote.devices': {owners:['capture'], requires:['vault','requestAuthorization']},
-  'mote.media': {owners:['media'], requires:['configuration','modelAuthority','fileOriginalRead','mediaAssetsRead','mediaReadiness']},
+  'mote.media': {owners:['media'], requires:['configuration','modelAuthority','fileOriginalRead','mediaAssetsRead','mediaReadiness','imageProcessing']},
   'mote.owner-questions': {owners:['activity','memoryRuntime'], requires:['vault','requestAuthorization']},
   'mote.memory': {owners:['memoryControl','memoryRuntime','memoryProviders','publication'], requires:['memoryCandidates','memoryRead','memorySnapshots','memoryInputSelection','memoryStagePublication','memoryOwnerPublication','modelAdmission']},
   'mote.imports': {owners:['imports','files','agent'], requires:['execution','sourceIntake','contentRead','requestAuthorization']},

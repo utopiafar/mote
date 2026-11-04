@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {Context,Plugin} from '@deepseek-ai/cordis';
+import type {Plugin} from '@deepseek-ai/cordis';
 import {PluginHost} from '@mote/plugin-host';
 import {ConfigService} from '../src/config-service.js';
 import {ExecutionSettings,executionSettingsSchema} from '../src/execution-settings.js';
@@ -27,7 +27,7 @@ const ownerToken='generated-source-owner',sourceId='generated-coding';
 const identity=()=>({packageId:'generated.source-runtime',installationId:randomUUID(),instanceId:randomUUID(),activationId:randomUUID(),host:{kind:'central' as const,id:'generated-source-host'}});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>{resolve=done;});return {promise,resolve};};
 const event=(id='one')=>({externalId:id,revision:'1',observedAt:'2026-11-03T01:00:00Z',kind:'message',layer:'snapshot',text:'Generated source requirement '+id,document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'generated-session',projectKey:'generated-project',eventId:id,role:'user',attribution:'human',part:0,parts:1}}});
-const lowPriority=(context:Context)=>{context.effect(()=>context.moteSourcePipelines.register({...context.moteSourcePipelines.get('mote.coding')!,id:'generated.low',priority:-10}));};
+const lowPriority:Plugin={name:'generated-low-priority',inject:['moteSourcePipelines'],apply:context=>{context.effect(()=>context.moteSourcePipelines.register({...context.moteSourcePipelines.get('mote.coding')!,id:'generated.low',priority:-10}));}};
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-source-runtime-')),config=new ConfigService({path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0},watch:false});
   config.register({id:'execution',schema:executionSettingsSchema,defaultValue:executionSettingsSchema.parse({})});await config.initialize();const settings=new ExecutionSettings(config);

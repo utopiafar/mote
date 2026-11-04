@@ -8,14 +8,15 @@ import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {MemoryPhaseOutputs} from '../src/memory-phase-outputs.js';
-import {decodeMemoryBatch} from '../src/memory-private-storage.js';
+import {decodeMemoryBatch} from '../src/plugins/memory-private-storage.js';
 import type {MemoryBindings} from '../src/memory-bindings.js';
 import type {MemoryProvider} from '../src/memory-provider-contract.js';
 import {MaterialStore} from '../src/materials.js';
 import {OwnerQuestions} from '../src/owner-questions.js';
 import {installMemoryOwnerQuestions} from '../src/memory-owner-questions.js';
+import {createMemoryOwnerContinuations} from '../src/plugins/memory-phase-pipeline.js';
 import {reviewMemory} from '../src/memory-review.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
@@ -44,7 +45,7 @@ async function fixture(t:TestContext){
         return {runId:randomUUID(),answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'needs_owner_input',candidateIndexes:[],question:{prompt:'Are you the speaker describing the generated telescope?',choices:[],reason:'The generated original does not establish owner correspondence.',evidence:[{id:member.id,quote:record.ocrText}]}})),...fixtureMemoryCapacity(input)}),citations:[{id:originalId,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[]};
       },{draftOrigin:origin})}});
     questions=new OwnerQuestions(store);
-    disposeQuestions=installMemoryOwnerQuestions({questions,continuations:pipeline.ownerContinuations,materials:new MaterialStore(store),store,query:async()=>{throw Error('No owner question or reply can be created without its published Material');}});
+    disposeQuestions=installMemoryOwnerQuestions({questions,continuations:createMemoryOwnerContinuations(pipeline),materials:new MaterialStore(store),store,query:async()=>{throw Error('No owner question or reply can be created without its published Material');}});
   }
   async function close(){disposeQuestions();await pipeline.close();await publication.close();store.close();}
   open();originalId=randomUUID();

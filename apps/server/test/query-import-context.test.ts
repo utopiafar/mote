@@ -69,7 +69,7 @@ test('HTTP-imported maximum notes remain readable through native Ask and current
   // Await the task admitted by HTTP, including orchestration cleanup before confirm.
   // A missing task means it already settled; the status assertions below still apply.
   const waitForImportTask=async()=>{
-    const task=node.featureServices.importTasks.get(importId);if(!task)return;
+    const task=node.importServices.importTasks.get(importId);if(!task)return;
     let timer:ReturnType<typeof globalThis.setTimeout>|undefined;
     try{
       await Promise.race([task,new Promise<never>((_,reject)=>{

@@ -8,7 +8,7 @@ import {buildApp} from '../src/app.js';
 import {materialId,type MaterialDraft,type MaterialRecord} from '../src/materials.js';
 import {MaterialNoteDeletion} from '../src/material-note-deletion.js';
 import {captureLibraryVersion,materialEvidenceLibraryVersion} from '../src/capture-library-version.js';
-import {EvidenceDeletion} from '../src/evidence-deletion.js';
+import {createEvidenceDeletion} from '../src/plugins/evidence-deletion.js';
 
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-note-delete-identity-')),token='generated-note-delete-identity-token';let modelCalls=0;
@@ -82,7 +82,7 @@ test('a deleted original cannot be resurrected through its prior alias',async t=
 
 test('the existing deletion transaction rechecks the alias and rolls back a synchronous guard failure',async t=>{
  const f=await fixture(t),n=await f.note(),resolver=new MaterialNoteDeletion(f.store,f.materials);let checks=0;
- const deletion=new EvidenceDeletion(f.store,f.files,{resolve:id=>{checks++;const actual=resolver.resolve(id);if(checks===2){assert.equal(f.store.db.isTransaction,true);return {virtual:true,captureId:randomUUID()};}return actual;}});
+ const deletion=createEvidenceDeletion({captures:f.store,files:f.files,aliases:{resolve:id=>{checks++;const actual=resolver.resolve(id);if(checks===2){assert.equal(f.store.db.isTransaction,true);return {virtual:true,captureId:randomUUID()};}return actual;}}});
  assert.throws(()=>deletion.delete(n.anchor),{statusCode:409});assert.equal(f.store.db.isTransaction,false);assert.equal(checks,2);assert.equal((await f.get('/api/capture-browser/'+n.anchor)).json().ocrText,n.text);assert.equal((await f.get('/api/capture-browser/'+n.id)).statusCode,200);
 });
 

@@ -20,7 +20,7 @@ async function freePort(){
 }
 
 /** Actual source entrypoint in a private YAML profile, with explicit stop/start. */
-export async function createPrivateProcess({version='1',directory,healthTimeoutMs=15000,stopTimeoutMs=10000,entry:entrypoint=entry,extraDocument}={}){
+export async function createPrivateProcess({version='1',directory,healthTimeoutMs=15000,stopTimeoutMs=10000,entry:entrypoint=entry,extraDocument,env:extraEnv={}}={}){
   const parent=directory??mkdtempSync(join(tmpdir(),'mote-native-plugin-process-'));
   if(directory)mkdirSync(parent,{recursive:true,mode:0o700});
   const root=directory?join(parent,`process-${randomUUID()}`):parent;
@@ -33,7 +33,7 @@ export async function createPrivateProcess({version='1',directory,healthTimeoutM
   const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_')));
   async function start(){
     output='';
-    const spawned=spawn(process.execPath,['--import','tsx','--input-type=module','-e',`await import(${JSON.stringify(entrypoint)})`],{cwd:repository,env:{...env,MOTE_CONFIG_FILE:configFile},stdio:['ignore','pipe','pipe']});
+    const spawned=spawn(process.execPath,['--import','tsx','--input-type=module','-e',`await import(${JSON.stringify(entrypoint)})`],{cwd:repository,env:{...env,...extraEnv,MOTE_CONFIG_FILE:configFile},stdio:['ignore','pipe','pipe']});
     child=spawned;
     for(const stream of [spawned.stdout,spawned.stderr])stream.on('data',chunk=>{output=(output+chunk.toString('utf8')).slice(-12000);});
     const deadline=Date.now()+healthTimeoutMs;
