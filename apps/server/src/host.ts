@@ -441,9 +441,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
   const maintenanceWorker=bootstrap.vault.startMaintenance();
   resources.defer(()=>maintenanceWorker?.close());
-  const maintenanceTimer=setInterval(()=>{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);void executor.tick().catch(()=>{});},5000);
-  (maintenanceTimer as unknown as {unref?:()=>unknown}).unref?.();
-  resources.defer(()=>clearInterval(maintenanceTimer));
 
   observabilityPlatform.routes(app,observabilityScope,{
     system:{
@@ -493,11 +490,11 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.connections'))routes.push(withAgentTools(connectionsFeature({config,connections,connectionIdentity,serverVersion})));
   if(selected('mote.system'))routes.push(healthFeature(serverVersion));
   if(selected('mote.storage'))routes.push(domain('mote.storage'));
-  if(selected('mote.capture'))routes.push(withAgentTools(captureFeature({store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress})));
+  if(selected('mote.capture'))routes.push(withAgentTools(captureFeature({store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress,executor,maintenanceWorker})));
   if(selected('mote.context'))routes.push(domain('mote.context'));
   if(selected('mote.materials'))routes.push(domain('mote.materials'));
   if(selected('mote.coding'))routes.push(codingFeature);
-  if(selected('mote.sources'))routes.push(withAgentTools(sourcesFeature({credential,evidenceReader,sources,store,materials})));
+  if(selected('mote.sources'))routes.push(withAgentTools(sourcesFeature({credential,evidenceReader,sources,store,materials,sourcePipelines})));
   if(selected('mote.models'))routes.push(domain('mote.models'));
   if(selected('mote.processing'))routes.push(domain('mote.processing'));
   if(selected('mote.notes')&&bootstrap.selectsPlugin('notes-source'))routes.push(withAgentTools(notesFeature({assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource:notesSource.assemblyForRoutes(),notesCapture})));

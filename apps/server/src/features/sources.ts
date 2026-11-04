@@ -5,7 +5,7 @@ import type {EvidenceReader} from '../evidence-reader.js';
 import type {MaterialStore} from '../materials.js';
 import type {SourceStore} from '../sources.js';
 import type {Store} from '../store.js';
-import type {FeatureRoute} from './index.js';
+import type {FeatureRoute,FeatureScope} from './index.js';
 
 export interface SourcesFeatureDependencies {
   readonly credential:(request:FastifyRequest)=>ConnectionCredential|undefined;
@@ -13,11 +13,14 @@ export interface SourcesFeatureDependencies {
   readonly sources:SourceStore;
   readonly store:Store;
   readonly materials:MaterialStore;
+  readonly sourcePipelines:{tick():Promise<unknown>;close():unknown};
 }
 
-/** sources: retains the library view; C09 owns source polling and transport. */
+/** sources: retains polling and the library view; C10 owns source transport. */
 export function sourcesFeature(dependencies:SourcesFeatureDependencies):FeatureRoute {
-  return Object.freeze({id:'mote.sources',mount(app:FastifyInstance){
+  const {sourcePipelines}=dependencies;
+  return Object.freeze({id:'mote.sources',mount(app:FastifyInstance,scope:FeatureScope){
+    scope.every(5000,()=>sourcePipelines.tick());scope.defer(()=>sourcePipelines.close());
     registerLibrarySourceView(app,{store:dependencies.store,sources:dependencies.sources,materials:dependencies.materials,evidenceReader:dependencies.evidenceReader,credential:dependencies.credential});
   }});
 }

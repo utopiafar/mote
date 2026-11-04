@@ -52,7 +52,6 @@ export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:So
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Source runtime preparation and cleanup failed',{cause:error});}throw error;}
     },
     start(){if(phase!=='prepared')throw unavailable();runtime!.start();phase='active';},
-    tick(){if(phase!=='active')return Promise.resolve();return runtime!.tick();},
     quiesce(_reason?:StopReason){if(phase==='active'){phase='quiescing';runtime!.quiesce();handlers!.quiesce();}},
     stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
     /** Trusted root creates SourceStore with this exact runtime; C04 binds its
@@ -65,6 +64,6 @@ export function createSourceRuntimeFactory(platform:SourceRuntime){
   return (context:HostPluginContext):PluginLifecycle=>{
     const abort=()=>{void platform.close().catch(()=>{});};context.scope.signal.addEventListener('abort',abort,{once:true});
     context.scope.defer(async()=>{try{await platform.close();}finally{context.scope.signal.removeEventListener('abort',abort);}});
-    return {prepare:()=>platform.prepare(context.scope),start(){platform.start();context.scope.every(5000,()=>platform.tick());},quiesce:platform.quiesce,stop:platform.stop,dispose:platform.close};
+    return {prepare:()=>platform.prepare(context.scope),start:platform.start,quiesce:platform.quiesce,stop:platform.stop,dispose:platform.close};
   };
 }

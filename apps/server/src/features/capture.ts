@@ -11,7 +11,7 @@ import type {ConnectionCredential,Connections} from '../connections.js';
 import type {IngressService} from '../ingress.js';
 import {StoreError,type Store} from '../store.js';
 import {parseCaptureBundle} from '../plugins/capture-intake.js';
-import type {FeatureRoute} from './index.js';
+import type {FeatureRoute,FeatureScope} from './index.js';
 
 export interface CaptureFeatureDependencies {
   readonly store:Store;
@@ -22,12 +22,15 @@ export interface CaptureFeatureDependencies {
   readonly evidenceReader:EvidenceReader;
   readonly files:FileStore;
   readonly ingress:IngressService;
+  readonly executor:{tick():Promise<unknown>};
+  readonly maintenanceWorker?:unknown;
 }
 
 /** capture: owns its transport, data and command contributions. */
 export function captureFeature(dependencies:CaptureFeatureDependencies):FeatureRoute {
-  const {assertRequestActive,connections,credential,diagnostics,evidenceReader,files,ingress,store}=dependencies;
-  return Object.freeze({id:'mote.capture',mount(app:FastifyInstance){
+  const {assertRequestActive,connections,credential,diagnostics,evidenceReader,files,ingress,store,executor,maintenanceWorker}=dependencies;
+  return Object.freeze({id:'mote.capture',mount(app:FastifyInstance,scope:FeatureScope){
+    scope.every(5000,()=>{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);return executor.tick();});
     const deletion={capability:(id:string)=>evidenceDeletionForAssembly(store).capability(id),delete:(id:string)=>evidenceDeletionForAssembly(store).delete(id)};
     registerCaptureBrowser(app,{store,connections,credential,evidenceReader,deletion});
     app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);assertExternalCaptures([input],!c);assertCaptureAttachments([input],files,c);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>ingress.capture(input,()=>{assertRequestActive(req);assertCaptureAttachments([input],files,c);if(c)connections.assertCapture(c,input);}),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
