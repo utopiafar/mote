@@ -73,7 +73,7 @@ export class StorageLedger {
     expressions.memory_job_dependencies='length(CAST(job_id AS BLOB))+length(CAST(evidence_id AS BLOB))+64';
     // Plugin control and provider journals are durable vault metadata. Their
     // private bodies must obey the same logical quota as canonical Memory.
-    for(const name of ['plugin_control_receipts','plugin_build_instances','plugin_release_previews','plugin_packages','plugin_instances','plugin_retired_packages','plugin_retired_instances','memory_automation','memory_plan_binding','memory_preparation','memory_provider_receipts','memory_publication_outputs','memory_provider_model_snapshots','memory_provider_configurations'])expressions[name]='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128';
+    for(const name of ['plugin_control_receipts','plugin_build_instances','plugin_release_previews','memory_automation','memory_plan_binding','memory_preparation','memory_provider_receipts','memory_publication_outputs','memory_provider_model_snapshots','memory_provider_configurations'])expressions[name]='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128';
     expressions.plugin_instance_state="bytes+length(CAST(key AS BLOB))+length(CAST(package_id AS BLOB))+length(CAST(installation_id AS BLOB))+length(CAST(instance_id AS BLOB))+length(CAST(updated_at AS BLOB))+32";
     for(const name of ['memory_publications','memory_owner_mutations','memory_provider_erases','memory_engine_stage_cleanups'])expressions[name]='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128';
     expressions.memory_provider_writes='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(parent_id AS BLOB))+length(CAST(state AS BLOB))+136';

@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {ConnectorHost} from '../src/connectors/registry.js';
 
 const externalSource = fileURLToPath(new URL('../../../examples/external-plugin/source.mjs', import.meta.url));
+const externalManifest = (await import(pathToFileURL(externalSource).href)).default;
 const token = 'generated-state-owner-token';
 const headers = {authorization: `Bearer ${token}`};
 
@@ -19,7 +20,7 @@ function config(dataDir: string): Config {
     allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
     embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
     connectors: {
-      directory: join(dataDir, 'connectors'), modules: [externalSource],
+      directory: join(dataDir, 'connectors'),
       mcpEnabled: false, mcpReadToken: '', mcpWriteEnabled: false, mcpWriteToken: '', mcpWriteSourceIds: [],
       googleClientId: '', googleClientSecret: '', googleRedirectUri: '', syncIntervalMs: 900_000, allowLocalMcp: false,
     },
@@ -30,7 +31,7 @@ test('the external sample reads and writes host-bound state across restart and d
   const directory = mkdtempSync(join(tmpdir(), 'mote-external-plugin-state-'));
   t.after(() => rmSync(directory, {recursive: true, force: true}));
   const launches = async () => {
-    const node = await buildApp(config(directory), {backgroundWorker: false});
+    const node = await buildApp(config(directory), {backgroundWorker: false, connectorManifests: [externalManifest]});
     try {
       const response = await node.app.inject({url: '/api/connectors/status', headers});
       assert.equal(response.statusCode, 200, response.body);
@@ -59,7 +60,7 @@ test('the external sample reads and writes host-bound state across restart and d
 test('a running server installs, stops and re-enables one connector without touching siblings', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-connector-hot-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const node = await buildApp(config(directory), { backgroundWorker: false });
+  const node = await buildApp(config(directory), { backgroundWorker: false, connectorManifests: [externalManifest] });
   t.after(() => node.app.close());
   const connectors = node.featureServices.connectors;
   const route = '/api/connectors/generated-hot';

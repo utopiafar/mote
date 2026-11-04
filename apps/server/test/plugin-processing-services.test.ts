@@ -56,15 +56,16 @@ test('processing disables without admitting writes, drains accepted work and re-
   assert.equal((await node.app.inject({url:'/api/processing',headers})).statusCode,503);
   assert.deepEqual(node.processing.runtime.registry.list(),[],'stopping withdraws the file processor contributions');
   assert.deepEqual(node.processing.runtime.recipes.list(),{recipes:[],stages:[]},'stopping withdraws the file recipes');
-  assert.deepEqual(node.processing.runtime.imageRecipes.list(),{recipes:[],stages:[]},'stopping withdraws the image recipes');
+  assert.equal(node.processing.runtime.imageRecipes.list().recipes.length,1,'image recipes belong to the still-active image plugin');
+  assert.equal(node.processing.runtime.imageRecipes.list().stages.length,2,'stopping processing does not withdraw image stages');
   node.processingServices.start();
   assert.equal(registrations,0,'re-enable reuses the one activation handler set');
   assert.equal(node.processingServices.port.phase,'active');
   assert.deepEqual(node.processing.runtime.registry.list().map(processor=>processor.id),['audio.http','audio.local-dialogue','text.utf8','document.generic','image.http','audio.diarize','audio.diarize-wespeaker'],'re-enable installs exactly one processor set');
   assert.equal(node.processing.runtime.recipes.list().recipes.length,2,'re-enable installs each file recipe once');
   assert.equal(node.processing.runtime.recipes.list().stages.length,4,'re-enable installs each file stage once');
-  assert.equal(node.processing.runtime.imageRecipes.list().recipes.length,1,'re-enable installs each image recipe once');
-  assert.equal(node.processing.runtime.imageRecipes.list().stages.length,2,'re-enable installs each image stage once');
+  assert.equal(node.processing.runtime.imageRecipes.list().recipes.length,1,'re-enable still has exactly one image recipe');
+  assert.equal(node.processing.runtime.imageRecipes.list().stages.length,2,'re-enable still has exactly one copy of each image stage');
   node.processingServices.start();
   assert.equal(node.processing.runtime.recipes.list().recipes.length,2,'an active start is idempotent');
   const reopened=await node.app.inject({url:'/api/processing',headers});
@@ -118,7 +119,7 @@ test('a mid-prepare failure releases the borrowed engine handlers, vault transac
   const dependencies={
     store,files,configService:undefined,diagnostics:undefined,executor:engine,backendContext:undefined,materials,
     sourcePipelines:{setProductConsumer(){},options:()=>({consumers:[]})},mediaAssets:undefined,
-    modules:[],modelAuthority:undefined,analyze:undefined,
+    plugins:[],modelAuthority:undefined,analyze:undefined,
     analysisSnapshot:()=>({settings:fileProcessingSchema.parse({}),identity:{kind:'profile',id:'generated'}}),analysisRevision:()=>0,
     semanticFingerprint:()=>'generated',
   } as unknown as ProcessingServicesDependencies;
@@ -147,7 +148,7 @@ test('a duplicate processor contribution fails prepare and leaves no partial cap
   const dependencies={
     store,files,configService:undefined,diagnostics:undefined,executor:engine,backendContext:undefined,materials,
     sourcePipelines:{setProductConsumer(){},options:()=>({consumers:[]})},mediaAssets:undefined,
-    modules:[],contributions:[{id:'generated.duplicate-processor',processors:[duplicate]}],modelAuthority:undefined,analyze:undefined,
+    plugins:[],contributions:[{id:'generated.duplicate-processor',processors:[duplicate]}],modelAuthority:undefined,analyze:undefined,
     analysisSnapshot:()=>({settings:fileProcessingSchema.parse({}),identity:{kind:'profile',id:'generated'}}),analysisRevision:()=>0,
     semanticFingerprint:()=>'generated',
   } as unknown as ProcessingServicesDependencies;

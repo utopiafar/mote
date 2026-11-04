@@ -13,6 +13,8 @@
 3. **核验并启用**：实际供应方探测成功后才开放启用和可用方案。期望启用与实际 ready/enabled/blocked/failed 分别显示。缺依赖或错误配置不会静默改用另一供应方。
 4. **准备并应用 Memory 方案**：选择已授权历史范围，确认实际模型/Embedding 费用；迁移与核验完成后另行应用。安装或启用不会自动接管当前方案。
 
+下载的 worker 包、它们的配置实例和受信原生 build 使用同一份持久 build/instance 记录（`plugin_build_instances`）；安装包、实例配置和当前激活仍是不同事实。`/api/plugin-builds` 与 `/api/plugins` 中的 `builds` 投影 worker 和 native 相同的 id、package、version、desired、observed、blockers、source、configuration、capabilities 与 actions 字段，Web 和 Android 都消费这一投影。Mem0 与 Hindsight 的固定配方同样以 `runtime: "worker"` 的 build 安装和启停，不再走独立的包/实例表。
+
 当前整体方案支持内置、Mem0 正文+检索组合及受控 Hindsight 引擎。高级面板显示实际模块和绑定；同正文权威单独更换 retrieval、任意模块组合编辑尚未提供用户操作。
 
 一期控制目标是 `default` 空间。owner token 或现有配对 owner 会话可以管理；collector、MCP token 和只读查询 Agent 没有管理权。操作带 `operationId` 与 `expectedRevision`。断线重试保留同一请求身份和原始 body；revision 冲突需读取当前事实再作选择，不能把旧请求自动改为新授权。
@@ -24,8 +26,8 @@
 | 方案 | 安装来源与运行方式 | 必需配置与限制 |
 | --- | --- | --- |
 | Mote 内置 | 随 Central 分发；内置正文与检索 | 保留原提取、独立审核和整合；可与已核验模块方案互相迁移 |
-| Mem0 OSS 模块 | `mem0ai/mem0` 的 `ts-v3.3.1` 固定上游源码；本 Mote 构建分发受控适配器与精确锁定 `mem0ai@3.3.1`、SQLite 依赖 | Embedding endpoint、model、dimension；受保护端点使用 `model:<已有预设 ID>` 凭据引用。接管正文与检索，保留 Mote 提取/审核/整合；不包含托管平台专属能力 |
-| Hindsight 完整引擎 | `vectorize-io/hindsight` 的 `v0.10.2` 固定官方 API source wheel（ZIP）；Mote 管理的 Docker API/DB 和独立受控 worker | 选择可用模型预设；服务器需可用 Docker。接管提取、整合、正文和检索；独立审核、原件授权和发布仍归 Mote。只有实际实例探测通过才可准备 |
+| Mem0 OSS 模块 | `mem0ai/mem0` 的 `ts-v3.3.1` 固定上游源码，作为 `runtime: "worker"` 的 build 安装；本 Mote 构建分发受控适配器与精确锁定 `mem0ai@3.3.1`、SQLite 依赖 | Embedding endpoint、model、dimension；受保护端点使用 `model:<已有预设 ID>` 凭据引用。接管正文与检索，保留 Mote 提取/审核/整合；不包含托管平台专属能力 |
+| Hindsight 完整引擎 | `vectorize-io/hindsight` 的 `v0.10.2` 固定官方 API source wheel（ZIP），作为 `runtime: "worker"` 的 build 安装；Mote 管理的 Docker API/DB 和独立受控 worker | 选择可用模型预设；服务器需可用 Docker。接管提取、整合、正文和检索；独立审核、原件授权和发布仍归 Mote。只有实际实例探测通过才可准备 |
 
 这两个上游 release 不要求上游发布 Mote manifest：当前 Mote 的兼容配方提供适配器，固定源码制品用于来源身份与完整性记录，不执行上游 bootstrap/npm lifecycle 脚本。其他原始仓库或未支持的 tag 没有兼容 manifest 时明确拒绝；不能由包名推断兼容。
 
@@ -57,7 +59,7 @@ Manifest `schemaVersion: 1` 声明：
 
 所有者可在安装前通过 `GET /api/plugins/host-capabilities` 查询当前宿主合同。`memoryWorker` 列出 `runtime: "worker"`、`factoryExports: ["createMemoryProvider"]`、六个调用方法、`lifecycle: ["close"]` 和 `supportedCapabilities: ["repository", "retrieval"]`。完整引擎仍使用前述固定 Hindsight 宿主适配器；任意 worker 声明 `engine` 不构成可运行的完整引擎。宿主支持、release 声明和实例核验是三个不同状态；当前实例及其核验结果继续通过 `/api/plugins` 查看。MCP 与受限 collector 凭据不能读取宿主控制接口，响应不包含私有安装目录。
 
-同一响应的 `trustedHost` 说明现有 source/processor 部署入口：source 使用 `connectors.modules` 与 `plugins.backendModules`，processor 使用 `plugins.backendModules` 与 `plugins.fileProcessorModules`，这些配置需要重启。它们通过现有 ConnectorRegistry、SourcePipelineRegistry、ProcessingRuntime 与 FileProcessorRuntime 的受信插件 API 注册贡献，具体组合见 [资料插件合同](library-plugin-contracts.md)。这些 API 不属于 Memory worker ABI。通用 source/processor 的下载、安装、配置、核验、启用和 worker 调用流程仍需独立设计。
+source/processor 的仓库外开发入口是插件包与私有 `plugin-dev` 宿主：包 Manifest 声明 ingress/processing 贡献，开发宿主按声明装配，主 YAML 不再接受代码模块列表。它们通过现有 ConnectorRegistry、SourcePipelineRegistry、ProcessingRuntime 与 FileProcessorRuntime 的受信插件 API 注册贡献，具体组合见 [资料插件合同](library-plugin-contracts.md)。这些 API 不属于 Memory worker ABI。通用 source/processor 的生产安装、配置、核验、启用和 worker 调用流程仍需独立设计。
 
 每个 worker 调用接收独立的 `AbortSignal`。宿主撤销调用时发送同 ID 的取消消息，worker 中对应的 `AbortController` 请求停止；仍在初始化时等待的单个调用也可取消，不会取消其他调用所需的共享初始化。宿主立即结束已撤销的等待，拒绝迟到结果，并在关闭或传输失败时清理等待者。可信插件可能已经发出远端写入，取消与进程关闭都不证明远端回滚；未知写入仍按已有 journal 和精确操作身份先核对，再决定重试。
 
@@ -89,7 +91,8 @@ repository 更换迁移全部 Mote 保留记忆正文及更正/替代状态、�
 
 | API | 控制对象 |
 | --- | --- |
-| `GET /api/plugins`、`POST /api/plugins/resolve` | 包/实例/catalog 投影；固定 release 预览 |
+| `GET /api/plugins`、`POST /api/plugins/resolve` | 包/实例/统一 build 投影与 catalog；固定 release 预览 |
+| `GET /api/plugin-builds`、`PATCH /api/plugin-builds/:id`、`POST /api/plugin-builds/:id/retire` | worker/native 共用的 build 选择、停用与卸载；未核对写入或仍被引用的实例拒绝卸载 |
 | `POST /api/plugins/install`、`POST /api/plugins/:id/uninstall` | 安装/卸载；预览 ID 绑定私有固定制品 |
 | `POST /api/plugin-instances`、`PATCH /api/plugin-instances/:id` | 创建/更新配置，更新以实例 revision 为前提 |
 | `POST /api/plugin-instances/:id/check`、`.../enable`、`.../disable` | 实际核验与期望运行选择 |

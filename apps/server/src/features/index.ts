@@ -17,7 +17,6 @@ import {adapter as devicesAdapter} from './devices.js';
 import {adapter as mediaAdapter} from './media.js';
 import {adapter as ownerQuestionsAdapter} from './owner-questions.js';
 import {adapter as memoryAdapter} from './memory.js';
-import {adapter as importsAdapter} from './imports.js';
 import {adapter as insightsAdapter} from './insights.js';
 import {adapter as featuresAdapter} from './features.js';
 
@@ -30,7 +29,7 @@ export interface ServerFeatureAdapter {
 }
 const domainRouteContribution=(id:string):ServerFeatureAdapter=>({
   descriptor:{id,version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,services,host)=>{scope.assertCurrent();host.mountDomainRoutes(id,app,services);},
+  factory:(app,scope,services,host)=>{scope.assertCurrent();host.mountDomainRoutes(id,app,services,scope);},
 });
 export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze([
   activityAdapter,
@@ -51,7 +50,7 @@ export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze
   mediaAdapter,
   ownerQuestionsAdapter,
   memoryAdapter,
-  importsAdapter,
+  domainRouteContribution('mote.imports'),
   domainRouteContribution('mote.ask'),
   insightsAdapter,
   domainRouteContribution('mote.agent-view'),

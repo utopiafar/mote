@@ -6,6 +6,7 @@ import {mkdtempSync,rmSync,writeFileSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
@@ -31,7 +32,8 @@ async function fixture(t:any){
     for(const value of ${JSON.stringify(reviews)})disposers.push(ctx.memoryStrategies.registerReview(value));
     for(const value of ${JSON.stringify(recipes)})disposers.push(ctx.memoryStrategies.registerRecipe(value));
   },close(){for(const dispose of disposers.reverse())dispose();}};}};`);
-  const config:Config={dataDir:join(directory,'vault'),token:'generated-strategy-test-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,connectors:{directory:join(directory,'connectors'),modules:[modulePath]}};
+  const connectorManifest=(await import(pathToFileURL(modulePath).href)).default;
+  const config:Config={dataDir:join(directory,'vault'),token:'generated-strategy-test-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const calls:QueryInput[]=[],control:{failCoding:boolean;duringExtract?:()=>void;duringReview?:()=>void}={failCoding:false};
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
     const topic=fixtureTopicResult(input);if(topic)return topic;
@@ -49,7 +51,8 @@ async function fixture(t:any){
     const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?record.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):record.ocrText.slice(0,120);
     return fixtureMemoryWorkResult(input,{answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:memories,actionCues:[]}:{memories}),citations:[{id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()});
   }}};
-  let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
+  const nodeDependencies={...dependencies,connectorManifests:[connectorManifest]};
+  let node=await buildApp(config,nodeDependencies);await node.app.ready();await authorizeFixtureModels(node);
   const disable=async()=>{const settings=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...settings}});};await disable();
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const add=async(sourceId:string,coding=false,revision='1')=>{
@@ -64,7 +67,7 @@ async function fixture(t:any){
     const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload:{contextTime,evidenceIds,recipes:ids.map(id=>id==='mote.personal-memory'?{id,version:'5'}:id==='mote.coding-memory'?{id,version:'3'}:ref(id))}});
     assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);
   };
-  return {get node(){return node;},calls,control,add,run,async restart(changed=false){let selectedModule=modulePath;if(changed){selectedModule=join(directory,'changed-strategies.mjs');writeFileSync(selectedModule,readFileSync(modulePath,'utf8').replace('GENERATED_EXTRACTION_1','Changed generation'));}await node.configService.update('connectors',{modules:[selectedModule]},node.configService.revision);await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();await disable();},count:(phase:string)=>calls.filter(c=>(c.traceContext?.phase??'extract')===phase).length};
+  return {get node(){return node;},calls,control,add,run,async restart(changed=false){let selectedManifest=connectorManifest;if(changed){const selectedModule=join(directory,'changed-strategies.mjs');writeFileSync(selectedModule,readFileSync(modulePath,'utf8').replace('GENERATED_EXTRACTION_1','Changed generation'));selectedManifest=(await import(pathToFileURL(selectedModule).href)).default;}await node.app.close();node=await buildApp(config,{...nodeDependencies,connectorManifests:[selectedManifest]});await node.app.ready();await disable();},count:(phase:string)=>calls.filter(c=>(c.traceContext?.phase??'extract')===phase).length};
 }
 
 test('installed recipes compose independent products, replace either strategy, and reuse extraction across sources and restart',async t=>{

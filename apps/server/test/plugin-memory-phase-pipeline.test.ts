@@ -12,7 +12,7 @@ import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import type {MemoryBindings} from '../src/memory-bindings.js';
 import type {MemoryProviderNamespace} from '../src/memory-provider-contract.js';

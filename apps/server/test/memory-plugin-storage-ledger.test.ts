@@ -7,7 +7,7 @@ import {Store} from '../src/store.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';

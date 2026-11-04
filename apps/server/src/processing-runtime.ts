@@ -8,10 +8,9 @@ import {z} from 'zod';
 import {artifactOutput,type ArtifactOutput} from './evidence-archive.js';
 import {parseMaterialRef,type MaterialReadPage,type MaterialStore} from './materials.js';
 import {StoreError,type Store} from './store.js';
-import {BackendPluginScope} from './backend-plugin-scope.js';
+import {PluginResourceScope,PluginEpochs,type HostScope} from '@mote/plugin-host';
 import type {ConfigService} from './config-service.js';
 import {workflowConfigurationSchema,defaultWorkflowConfiguration,WORKFLOW_LANES,type WorkflowConfiguration} from './workflow-configuration.js';
-import {InstallationEpochs} from './installation-epochs.js';
 
 const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'null').digest('hex');
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
@@ -27,7 +26,8 @@ export interface ContextProcessor {
 }
 export class ContextProcessorRegistry {
   private processors=new Map<string,ContextProcessor>();
-  readonly epochs=new InstallationEpochs();
+  readonly epochs:PluginEpochs;
+  constructor(scope?:HostScope){this.epochs=new PluginEpochs(scope);}
   register(processor:ContextProcessor){
     if(!/^[a-zA-Z0-9_.-]{1,100}$/.test(processor.id)||!processor.version||!['extract','aggregate','semantic','memory'].includes(processor.lane)||this.processors.has(processor.id))throw Error('Invalid or duplicate context processor');
     if(processor.produces&&(processor.produces.length>16||new Set(processor.produces.map(v=>v.key)).size!==processor.produces.length||processor.produces.some(v=>!(/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(v.key))||!v.kind)))throw Error('Invalid processor product declaration');
@@ -52,17 +52,22 @@ const lanes=WORKFLOW_LANES;
 /** Durable DAG with fenced commits and per-lane admission. Cordis owns plugin life;
  * this host owns retries, lineage, cancellation and transaction boundaries. */
 export class ProcessingRuntime {
-  readonly registry=new ContextProcessorRegistry();readonly consumers=new MaterialConsumerRegistry();
-  consumerAllowed:(sourceId:string,bindingId:string)=>boolean=()=>false;readonly context:Context;private readonly pluginScope:BackendPluginScope;
+  readonly registry:ContextProcessorRegistry;readonly consumers:MaterialConsumerRegistry;
+  consumerAllowed:(sourceId:string,bindingId:string)=>boolean=()=>false;readonly context:Context;private readonly resources:PluginResourceScope;
   readonly ready:Promise<void>;readonly engine:ExecutionEngine;private owned:boolean;private stopping=false;private accepting=true;private closing?:Promise<void>;
   // Logical execution cancellation can finish before an async plugin returns.
   private tasks=new Set<Promise<unknown>>();
   private unregister:Array<()=>Promise<void>>=[];private policy:WorkflowConfiguration;private policyEpoch=Object.fromEntries(WORKFLOW_LANES.map(lane=>[lane,0])) as Record<ProcessingLane,number>;
-  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore,root?:Context,private configService?:ConfigService){
+  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore,scope?:HostScope,private configService?:ConfigService){
     this.policy=workflowConfigurationSchema.parse(configService?.current('workflows')??defaultWorkflowConfiguration(limits));
     configService?.setHandler<WorkflowConfiguration>('workflows',next=>{const value=workflowConfigurationSchema.parse(next),previous=this.settings();return {apply:()=>{},publish:()=>{this.policy=structuredClone(value);},rollback:()=>{this.policy=structuredClone(previous);},complete:()=>this.completePolicy(value,previous)};});
-    this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
-    this.pluginScope.provide('moteContextProcessors',this.registry);this.pluginScope.provide('moteMaterialConsumers',this.consumers);
+    this.resources=new PluginResourceScope(undefined,'Processing runtime plugin scope disposal failed');
+    this.context=scope?.cordis.root??new Context();
+    if(!scope)this.resources.retire(()=>this.context.fiber.dispose());
+    if(scope)scope.defer(()=>this.resources.close());
+    this.registry=new ContextProcessorRegistry(scope);this.consumers=new MaterialConsumerRegistry(scope);
+    const provide=(name:string,value:unknown)=>{const remove=this.context.provide(name,value);this.resources.retire(()=>remove());};
+    provide('moteContextProcessors',this.registry);provide('moteMaterialConsumers',this.consumers);
     store.db.exec(`CREATE TABLE IF NOT EXISTS processing_jobs(id TEXT PRIMARY KEY,lane TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS processing_ready ON processing_jobs(lane,state,available_at);
       CREATE TABLE IF NOT EXISTS processing_dependencies(job_id TEXT NOT NULL REFERENCES processing_jobs(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES processing_jobs(id),PRIMARY KEY(job_id,dependency_id));`);
@@ -95,8 +100,12 @@ export class ProcessingRuntime {
         this.enqueue([{name:'consume',processor:binding.processor,productInputs:[{authority:'material',ref:material.ref,key:binding.accepts.key}],config:binding.config}],undefined,{sourceId:material.origin.sourceId,bindingId:binding.id,version:binding.version,bindingFingerprint:fingerprint(binding)});
       },
     }));
-    const pluginScope=this.pluginScope;
-    this.ready=(async()=>{for(const plugin of plugins)await pluginScope.install(plugin);})();void this.ready.catch(()=>{});
+    const install=async(plugin:Plugin)=>{
+      const fiber=this.context.plugin(plugin);
+      this.resources.defer(()=>fiber.dispose());
+      await this.resources.join((async()=>{try{await fiber;}catch(error){try{await fiber.dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Processing plugin initialization and disposal failed',{cause:error});}throw error;}})());
+    };
+    this.ready=(async()=>{for(const plugin of plugins)await install(plugin);})();void this.ready.catch(()=>{});
   }
   enqueue(raw:ProcessingStep[],parentGrant?:ParentGrant,consumerGrant?:ConsumerGrant){
     this.assertAccepting();
@@ -238,7 +247,7 @@ export class ProcessingRuntime {
     const errors=stopped.flatMap(result=>result.status==='rejected'?[result.reason]:[]);
     await Promise.allSettled([...this.tasks]);
     try{if(this.owned)await this.engine.close();}catch(error){errors.push(error);}
-    try{await this.pluginScope.close();}catch(error){errors.push(error);}
+    try{await this.resources.close();}catch(error){errors.push(error);}
     if(errors.length)throw new AggregateError(errors,'Processing runtime disposal failed');
   })();}
 }

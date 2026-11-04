@@ -3,8 +3,9 @@
  * Same shortest server journey as plugin-startup-contract.test.ts — real
  * entrypoint start, owner authentication, POST note, GET original, stop,
  * same-profile restart, reread — plus one stage step: a repository-external
- * plugin package (the H08 examples/external-plugin sample) is loaded by the
- * real Central connector registry through connectors.modules. */
+ * plugin package (the H08 examples/external-plugin sample) is installed through
+ * the private plugin-dev package host and loaded by the real Central connector
+ * registry. */
 import assert from 'node:assert/strict';
 import { cp, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -32,7 +33,7 @@ async function stageExternalPlugin() {
   const sdk = await import(pathToFileURL(sdkPath).href) as { PLUGIN_CONTRACT_VERSION?:unknown; PLUGIN_SDK_VERSION?:unknown };
   assert.equal(sdk.PLUGIN_CONTRACT_VERSION, 1);
   assert.equal(sdk.PLUGIN_SDK_VERSION, '0.1.0');
-  return { plugin, source: pathToFileURL(join(plugin, 'source.mjs')).href };
+  return { plugin };
 }
 
 async function pluginStatus(): Promise<{ ready?:boolean; sdkVersion?:string; launches?:number }> {
@@ -45,8 +46,11 @@ async function pluginStatus(): Promise<{ ready?:boolean; sdkVersion?:string; lau
 }
 
 try {
-  const { source } = await stageExternalPlugin();
-  run = await createPrivateProcess({ extraDocument: { connectors: { modules: [source] } } });
+  const { plugin } = await stageExternalPlugin();
+  run = await createPrivateProcess({
+    entry: join(repository, 'scripts/plugin-dev-server.mjs'),
+    env: { MOTE_DEV_PLUGIN_PACKAGE: plugin },
+  });
   assert.equal((await fetch(run.url + '/api/status')).status, 401);
   const status = await run.request('/api/status') as { storage?:{ captures?:number } };
   assert.equal(typeof status.storage?.captures, 'number');

@@ -14,8 +14,9 @@ import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {
   initialize, loadProfile, nativeIdentity, profilePaths, startNative, stopNative,
-  updateProfileConfiguration, withProfileLock,
+  withProfileLock,
 } from './profile-lib.mjs';
+import {loadDevPluginPackage} from './plugin-dev-package.mjs';
 
 const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const templates = {
@@ -110,9 +111,9 @@ async function resolveSdk(plugin) {
 async function dev(values) {
   requireCentral(values.host);
   const plugin = resolve(values.plugin ?? process.cwd());
-  const source = join(plugin, 'source.mjs');
-  if (!(await exists(source))) throw Error(`External source template is missing ${source}`);
-  await resolveSdk(plugin);
+  const sdkPath = await resolveSdk(plugin);
+  const sdk = await import(sdkPath);
+  const loaded = await loadDevPluginPackage(plugin, {schema: sdk.packageManifestSchema});
   const port = values.port === undefined ? await freePort() : Number(values.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error('--port must be an integer between 1 and 65535');
   const home = resolve(values.home ?? join(tmpdir(), `mote-plugin-dev-${randomUUID().slice(0, 8)}`));
@@ -128,12 +129,11 @@ async function dev(values) {
   try {
     started = await withProfileLock(p, async () => {
       if ((await nativeIdentity(p)).running) throw Error('The plugin-dev profile is already running; use a separate --home/--profile for this smoke test.');
-      await updateProfileConfiguration(p, document => {
-        document.connectors = {...(document.connectors ?? {}), modules: [source]};
-        document.plugins = {...(document.plugins ?? {}), backendModules: []};
-      });
       p = await loadProfile(paths);
-      return startNative(p, !values.once);
+      return startNative(p, !values.once, {
+        entry: join(repository, 'scripts/plugin-dev-server.mjs'),
+        env: {MOTE_DEV_PLUGIN_PACKAGE: plugin},
+      });
     });
     if (started.alreadyRunning) throw Error('The plugin-dev profile was started by another process; refusing to stop or reuse it');
     if (interrupted) throw Error('plugin-dev was interrupted before verification completed');
@@ -145,10 +145,10 @@ async function dev(values) {
       if (values.seed) await runSeed(p, plugin);
       await stopNative(p);
       stopped = true;
-      print({profile, home, url: p.url, pid: started.pid, started: true, stopped: true, connectors});
+      print({profile, home, url: p.url, pid: started.pid, package: loaded.manifest.id, started: true, stopped: true, connectors});
       return;
     }
-    print({profile, home, url: p.url, pid: started.pid, started: true, view: 'foreground'});
+    print({profile, home, url: p.url, pid: started.pid, package: loaded.manifest.id, started: true, view: 'foreground'});
     if (values.seed) await runSeed(p, plugin);
     const result = await started.wait();
     if (interrupted) return;

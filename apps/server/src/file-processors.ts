@@ -1,4 +1,4 @@
-import {InstallationEpochs} from './installation-epochs.js';
+import {PluginResourceScope,PluginEpochs,type HostScope} from '@mote/plugin-host';
 import {ProviderFailure,providerHttpFailure} from '@mote/shared';
 import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import {extractDocument,extractUtf8} from './format-work.js';
@@ -11,7 +11,6 @@ import {transcriptSchema,diarizationSchema,fileProcessingSchema,type Transcript,
 import {StoreError,sha256} from './store.js';
 import type {ModelConnection} from './background-model-authorization.js';
 import type {ProcessingService} from '@mote/shared';
-import {BackendPluginScope} from './backend-plugin-scope.js';
 import {ImportIntakeRegistry,installImportIntake} from './import-intake.js';
 import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes,type ComponentRef} from './file-recipes.js';
 import {ImageInputRegistry} from './image-inputs.js';
@@ -81,7 +80,8 @@ export interface FileProcessor {
 const builtinProcessors=new WeakSet<FileProcessor>();
 export class ProcessorRegistry {
   private entries=new Map<string,FileProcessor>();
-  readonly epochs=new InstallationEpochs();
+  readonly epochs:PluginEpochs;
+  constructor(scope?:HostScope){this.epochs=new PluginEpochs(scope);}
   register(processor:FileProcessor){
     if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||!processor.version||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
     if(processor.awaitResponseOnCancel!==undefined&&typeof processor.awaitResponseOnCancel!=='boolean')throw new Error('Invalid processor cancellation capability');
@@ -154,48 +154,60 @@ function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
   }}));
   return processors;
 }
-/** File processing plugins live in the shared backend context when mounted by the server. */
+/** File processing plugins mount into the host scope's Cordis root when mounted
+ * by the server; standalone tests own a private root. */
 export class FileProcessorRuntime {
-  readonly context:Context;readonly registry=new ProcessorRegistry();readonly ready:Promise<void>;private readonly pluginScope:BackendPluginScope;
-  readonly intake=new ImportIntakeRegistry();readonly recipes=new FileRecipeRegistry();readonly outputs=new FileOutputRegistry();
+  readonly context:Context;readonly registry:ProcessorRegistry;readonly ready:Promise<void>;private readonly resources=new PluginResourceScope(undefined,'File processor plugin scope disposal failed');
+  readonly intake=new ImportIntakeRegistry();readonly recipes:FileRecipeRegistry;readonly outputs=new FileOutputRegistry();
   readonly imageRecipes=new ImageRecipeRegistry();readonly imageInputs=new ImageInputRegistry();
   private removeContributions:(()=>void)|undefined;
-  constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,root?:Context,options:{builtinContributions?:boolean}={}){
-    this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
-    this.pluginScope.provide('moteFileProcessors',this.registry);
-    this.pluginScope.provide('moteImportIntake',this.intake);
-    this.pluginScope.provide('moteFileRecipes',this.recipes);
-    this.pluginScope.provide('moteFileOutputs',this.outputs);
-    this.pluginScope.provide('moteImageRecipes',this.imageRecipes);
-    this.pluginScope.provide('moteImageInputs',this.imageInputs);
-    if(contextProcessors&&!root)this.pluginScope.provide('moteContextProcessors',contextProcessors);
-    const pluginScope=this.pluginScope;
+  private removeImageRecipes:(()=>void)|undefined;
+  constructor(private readonly provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,scope?:HostScope,options:{builtinContributions?:boolean}={}){
+    this.context=scope?.cordis.root??new Context();
+    if(!scope)this.resources.retire(()=>this.context.fiber.dispose());
+    if(scope)scope.defer(()=>this.resources.close());
+    this.registry=new ProcessorRegistry(scope);this.recipes=new FileRecipeRegistry(scope);
+    const provide=(name:string,value:unknown)=>{const remove=this.context.provide(name,value);this.resources.retire(()=>remove());};
+    provide('moteFileProcessors',this.registry);
+    provide('moteImportIntake',this.intake);
+    provide('moteFileRecipes',this.recipes);
+    provide('moteFileOutputs',this.outputs);
+    provide('moteImageRecipes',this.imageRecipes);
+    provide('moteImageInputs',this.imageInputs);
+    if(contextProcessors&&this.context.get('moteContextProcessors',false)===undefined)provide('moteContextProcessors',contextProcessors);
+    const install=async(plugin:Plugin)=>{
+      const fiber=this.context.plugin(plugin);
+      this.resources.defer(()=>fiber.dispose());
+      await this.resources.join((async()=>{try{await fiber;}catch(error){try{await fiber.dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'File processor plugin initialization and disposal failed',{cause:error});}throw error;}})());
+    };
     this.ready=(async()=>{
       try{
         // A host activation may own these contributions itself; the standalone
         // runtime keeps installing them for tests and embedded use.
-        if(options.builtinContributions!==false)await pluginScope.install({name:'mote-file-capabilities',apply:ctx=>{ctx.effect(()=>this.installContributions());}});
-        for(const plugin of plugins)await pluginScope.install(plugin);
+        if(options.builtinContributions!==false)await install({name:'mote-file-capabilities',apply:ctx=>{ctx.effect(()=>this.installContributions());}});
+        for(const plugin of plugins)await install(plugin);
         for(const specifier of modules){
           // Only deployment configuration selects executable plugin modules. HTTP callers cannot install code.
           const loaded=await import(isAbsolute(specifier)?pathToFileURL(specifier).href:specifier);
-          await pluginScope.install(loaded.default??loaded);
+          await install(loaded.default??loaded);
         }
-      }catch(error){await pluginScope.close();throw error;}
+      }catch(error){await this.resources.close();throw error;}
     })();
     // Initialization is explicitly awaited by the central app and by tick().
     void this.ready.catch(()=>{});
   }
-  /** Install built-in processors, file recipes and image recipes as one
-   * activation-owned contribution. Re-enabling installs exactly one copy. */
-  installContributions(contributions:readonly FileProcessorContribution[]=[]){
+  /** Install built-in processors and file recipes as one activation-owned
+   * contribution. The image plugin owns image recipes; standalone embedded
+   * runtimes keep installing them with the built-ins unless the host excludes
+   * them. Re-enabling installs exactly one copy. */
+  installContributions(contributions:readonly FileProcessorContribution[]=[],options:{imageRecipes?:boolean}={}){
     if(this.removeContributions)throw new Error('File processing contributions are already installed');
     const dispose:(()=>void)[]=[];
     try{
       dispose.push(installImportIntake(this.intake));
       dispose.push(installFileProcessorContributions(this.registry,[{id:'mote.builtin-file-processors',processors:builtinFileProcessors(this.provider)},...contributions]));
       dispose.push(installFileRecipes(this.recipes,this.outputs));
-      dispose.push(installImageRecipes(this.imageRecipes));
+      if(options.imageRecipes!==false)dispose.push(this.installImageRecipes());
     }catch(error){
       for(const remove of dispose.reverse()){try{remove();}catch{}}
       throw error;
@@ -203,6 +215,12 @@ export class FileProcessorRuntime {
     this.removeContributions=()=>{for(const remove of dispose.reverse()){try{remove();}catch{}}};
     return ()=>this.uninstallContributions();
   }
+  installImageRecipes(){
+    if(this.removeImageRecipes)throw new Error('Image recipes are already installed');
+    this.removeImageRecipes=installImageRecipes(this.imageRecipes);
+    return ()=>this.uninstallImageRecipes();
+  }
+  uninstallImageRecipes(){const remove=this.removeImageRecipes;this.removeImageRecipes=undefined;remove?.();}
   uninstallContributions(){const remove=this.removeContributions;this.removeContributions=undefined;remove?.();}
-  async close(){await this.ready.catch(()=>{});this.uninstallContributions();await this.pluginScope.close();}
+  async close(){await this.ready.catch(()=>{});this.uninstallContributions();this.uninstallImageRecipes();await this.resources.close();}
 }

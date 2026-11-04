@@ -23,14 +23,14 @@ test('owner cancellation aborts import parsing, fences late results, survives re
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token};
  const get=async(id:string)=>(await node.app.inject({method:'GET',url:'/api/imports/'+id,headers})).json();
- const wait=async(id:string,status:string)=>{await node.featureServices.importTasks.get(id);const job=await get(id);assert.equal(job.status,status,'Import task settled before its HTTP state is inspected');return job;};
+ const wait=async(id:string,status:string)=>{await node.importServices.importTasks.get(id);const job=await get(id);assert.equal(job.status,status,'Import task settled before its HTTP state is inspected');return job;};
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{processing:'automatic',files:[{name:'generated.custom',dataBase64:Buffer.from('Generated original').toString('base64')}]}});assert.equal(created.statusCode,202);
  const id=created.json().id;await started;
  const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'});const collector=await readAgentCredential(node.connections);
  for(const [authorization,status] of [['',401],['Bearer '+collector.token,403]] as const)assert.equal((await node.app.inject({method:'POST',url:`/api/imports/${id}/cancel`,headers:{authorization}})).statusCode,status);
  const cancelled=await node.app.inject({method:'POST',url:`/api/imports/${id}/cancel`,headers});assert.equal(cancelled.statusCode,200);assert.equal(cancelled.json().status,'cancelled');assert.equal(signal?.aborted,true);
  const premature=await node.app.inject({method:'POST',url:`/api/imports/${id}/retry`,headers});assert.equal(premature.statusCode,409);assert.equal(premature.json().error,'import_stopping');assert.equal(calls,1);
- await setTimeout(3100);assert.equal(node.featureServices.importTasks.has(id),false,'logical task is settled while physical parser is still held');
+ await setTimeout(3100);assert.equal(node.importServices.importTasks.has(id),false,'logical task is settled while physical parser is still held');
  const delayed=await node.app.inject({method:'POST',url:`/api/imports/${id}/retry`,headers});assert.equal(delayed.statusCode,409);assert.equal(delayed.json().error,'import_stopping');assert.equal((await get(id)).status,'cancelled');assert.equal(calls,1);
  await assert.rejects(node.imports.retry(id),{statusCode:409});assert.equal((await get(id)).status,'cancelled');
  release();await node.featureServices.executor.drain(node.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'imports.%'").all().map(row=>String(row.id)));
@@ -61,7 +61,7 @@ for(const changed of [false,true])test(`confirm during settled preview cleanup $
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from('Generated confirmation boundary').toString('base64')}]}});
  assert.equal(created.statusCode,202);const id=created.json().id;await atCleanup;
  assert.equal(node.imports.get(id).status,'awaiting_confirmation');assert.equal(node.imports.hasActiveWorker(id),false);
- assert.equal(node.featureServices.importTasks.has(id),true,'only preparation orchestration cleanup remains');
+ assert.equal(node.importServices.importTasks.has(id),true,'only preparation orchestration cleanup remains');
  const timedOut=await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});
  assert.equal(timedOut.statusCode,409,'unsettled cleanup must not hang or falsely acknowledge confirmation');assert.equal(timedOut.json().error,'import_finishing');
  assert.equal(node.store.list().items.length,0);
@@ -72,6 +72,6 @@ for(const changed of [false,true])test(`confirm during settled preview cleanup $
  for(const response of responses)assert.equal(response.statusCode,changed?409:202,response.body);
  if(changed){assert.equal(node.imports.get(id).status,'awaiting_confirmation');assert.equal(node.store.list().items.length,0);return;}
  // HTTP 202 acknowledges admission; await the launched task within the existing test budget.
- await node.featureServices.importTasks.get(id);
+ await node.importServices.importTasks.get(id);
  assert.equal(node.imports.get(id).status,'completed');assert.equal(node.store.list().items.length,1);
 });

@@ -12,7 +12,7 @@
 
 长期整合只接收 layer=memory 的未失效 episode。仅重述或将无关约束打包为检查清单不算新增价值。每条结果提供实际使用的 relatedMemoryIds，宿主验证其属于本轮候选、未失效且贡献了引用证据。原始证据仍直接挂在每条结果上。独立审核和生成均计入模型调用账本，reviewRunId 指向最终审核运行，模型字段优先使用宿主生成的用量回执。
 
-当前持久 Memory 使用严格 schema：版本、domain、tier、kind、admission、fingerprint 和原件证据结构必须明确保存，证据条目必须有 contentHash。读取不补分类、版本或 admission；`layer=legacy` 已删除，缺字段的旧记录拒绝读取，旧中央库也由 epoch 4 边界拒绝启动，不会自动转换或发布。MVP 切换需按清理记录先用旧版本备份/导出，再建立当前格式环境；升级不会自动把旧私人资料发送给模型。
+当前持久 Memory 使用严格 schema：版本、domain、tier、kind、admission、fingerprint 和原件证据结构必须明确保存，证据条目必须有 contentHash。读取不补分类、版本或 admission；`layer=legacy` 已删除，缺字段的旧记录拒绝读取，旧中央库也由 epoch 6 边界拒绝启动，不会自动转换或发布。MVP 切换需按清理记录先用旧版本备份/导出，再建立当前格式环境；升级不会自动把旧私人资料发送给模型。
 
 Owner 的列表 API 不传 layer 时可列出当前合法的 observation 和 memory；网页默认显示精选记忆。Agent 的 memories 工具默认 layer=memory，也可显式查询 observation，或回到 search_context 搜索原始资料。生效状态不会改变分类；审核后生效的观察不等于升级为个人事实。重新处理资料必须通过当前授权范围建立新任务，并使用本轮固定的原件版本与检查点。
 

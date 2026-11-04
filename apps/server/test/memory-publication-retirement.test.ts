@@ -16,10 +16,10 @@ import {PluginCenter} from '../src/plugin-center.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
-import {MemoryPublication} from '../src/memory-publication.js';
+import {MemoryPublication} from '../src/plugins/memory-publication.js';
 import {Mem0MemoryProvider} from '../src/mem0-memory-provider.js';
 import {memoryProviderKey,type MemoryProvider,type MemoryProviderRead} from '../src/memory-provider-contract.js';
-import {exportBoundMemories} from '../src/memory-provider-backup.js';
+import {exportBoundMemories} from '../src/plugins/memory-backup.js';
 import {setTimeout as delay} from 'node:timers/promises';
 
 const journalTables=['memory_publications','memory_publication_outputs','memory_provider_writes','memory_owner_mutations'];

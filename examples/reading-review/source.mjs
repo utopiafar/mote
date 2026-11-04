@@ -1,10 +1,10 @@
 /** Deployment adapter for the current Central connector host.
  *
- * This is the real install path used by `plugin-dev` and
- * `connectors.modules`: the host creates one scoped connector instance, binds
- * `ctx.state` to that instance's persistent namespace, and lets the package
- * publish its own owner routes. The domain, comparison and state behavior are
- * shared with the SDK host entry in `plugin.mjs`. */
+ * This is the ingress contribution used by `plugin-dev`: the host creates one
+ * scoped connector instance, binds `ctx.state` to that instance's persistent
+ * namespace, and lets the package publish its own owner routes. The domain,
+ * comparison and state behavior are shared with the SDK host entry in
+ * `plugin.mjs`. */
 import {PLUGIN_SDK_VERSION} from '@mote/plugin-sdk';
 import {createReadingReviewService} from './domain.mjs';
 

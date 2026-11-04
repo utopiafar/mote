@@ -6,6 +6,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store} from '../src/store.js';
 import {ProcessingRuntime,type ProcessingLane} from '../src/processing-runtime.js';
+import {MaterialConsumerRegistry} from '../src/material-consumers.js';
+import {SourcePipelineRegistry} from '../src/source-pipelines.js';
+import {PluginHost} from '@mote/plugin-host';
 import {EXECUTION_POLICIES} from '../src/execution-policy.js';
 import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
 import type {Context} from '@deepseek-ai/cordis';
@@ -60,6 +63,35 @@ test('parent re-entry preserves a failed semantic child until an explicit retry'
  runtime.enqueue(steps,{stepId:parent,fence:'generated-next-grant'});await runtime.tick();assert.equal(calls,2,'completed semantic output is reused');
 });
 
+
+test('stopping the host activation fences in-flight processor output and every registration epoch',async t=>{
+  const store=fixture(t),host=new PluginHost({kind:'central',id:'generated-continuity-host'});
+  let runtime!:ProcessingRuntime,pipeline!:SourcePipelineRegistry,consumers!:MaterialConsumerRegistry;
+  let pipelineEpoch:string|undefined,consumerEpoch:string|undefined;
+  let entered!:()=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+  const identity={host:{kind:'central' as const,id:'generated-continuity-host'},packageId:'generated.continuity',installationId:'generated-install',instanceId:'generated-processing',activationId:randomUUID()};
+  const handle=await host.install({identity,contributions:[],factory:context=>{
+    runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,undefined,context.scope);
+    runtime.registry.register({id:'fixture.host-scope',version:'1',lane:'extract',async process(){entered();await held;return [{kind:'generated',text:'Generated late host output',metadata:{}}];}});
+    pipeline=new SourcePipelineRegistry(context.scope);
+    pipeline.register({id:'fixture.host-pipeline',version:'1',sourceKinds:['note'],storage:'records',index:'none',modelInput:'material'});
+    consumers=new MaterialConsumerRegistry(context.scope);
+    consumers.register({id:'fixture.host-consumer',version:'1',processor:'fixture.host-scope',processorVersion:'1',accepts:{kind:'note',schemaVersion:1,key:'body'}});
+    pipelineEpoch=pipeline.epochs.get('fixture.host-pipeline');consumerEpoch=consumers.epochs.get('fixture.host-consumer');
+    return {prepare(){},start(){},quiesce(){},stop(){},dispose(){}};
+  }});
+  t.after(async()=>{release();await runtime?.close();await host.close();});
+  const record=observation('Generated host scope input');await store.ingest(record);
+  const id=runtime.enqueue([{name:'held',processor:'fixture.host-scope',inputs:[record.id]}]).held;
+  const running=runtime.tick();await started;
+  await handle.close('disabled');release();await running;
+  assert.equal(runtime.engine.get(id)?.state,'blocked');
+  assert.equal(runtime.engine.get(id)?.error,'processor_instance_unavailable');
+  assert.equal(store.db.prepare("SELECT count(*) n FROM context_artifacts WHERE json_extract(json,'$.processor')='fixture.host-scope'").get()!.n,0);
+  assert.equal(pipeline.epochs.matches('fixture.host-pipeline',pipelineEpoch),false);
+  assert.equal(consumers.epochs.matches('fixture.host-consumer',consumerEpoch),false);
+});
 
 test('module close waits for a held async processor before plugin retirement while sibling execution continues',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-processing-module-close-')),store=new Store(directory),engine=new ExecutionEngine(store);

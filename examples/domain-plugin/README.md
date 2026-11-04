@@ -15,7 +15,7 @@ kinds and how to choose between them.
 | `port.mjs` | The typed port contract (`serviceContract`). Contributing entries provide it; consumers acquire it through the host lease. |
 | `domain.mjs` | The domain itself: an append-only collection with durable `ctx.state` persistence, compare-and-set writes, bounded input and fail-closed normalization. Lifecycle-aware (`quiesce` refuses writes; `close` stops everything). |
 | `plugin.mjs` | The SDK service-runtime entry. The factory constructs the service, `prepare` loads state, `start` provides the port, `quiesce`/`stop`/`dispose` drain it. The package never chooses its own package/installation/instance identity. |
-| `source.mjs` | Connector-manifest adapter: the real install path today (`plugin-dev dev`, `connectors.modules`). Publishes owner routes under `/api/connectors/template-collection/` on the same injected `ctx.state`. |
+| `source.mjs` | Ingress contribution: the real install path today (`plugin-dev dev` package install). Publishes owner routes under `/api/connectors/template-collection/` on the same injected `ctx.state`. |
 | `seed.mjs` | Generated-seed hook for `plugin-dev dev --seed`; writes one generated item and prints JSON. |
 | `web/index.html` | Custom page speaking the plugin-host page bridge (`state` and `add` methods). |
 | `scripts/pack.mjs` | Builds the deterministic ZIP payload and completes the Manifest digest into `dist/`. |
@@ -23,9 +23,9 @@ kinds and how to choose between them.
 
 The domain never imports host internals — only `@mote/plugin-sdk` for the
 port contract. Failures keep the dispatcher-mapped shape (`name`
-`ConnectorError`, `code`, `statusCode`); the current connector mount maps
-every plugin failure to its generic `connector_operation_failed`, and the
-seed's error branch asserts that real mapping rather than a silent success.
+`ConnectorError`, `code`, `statusCode`); the dynamic dispatcher preserves that
+shape, and the seed's error branch asserts the real mapping rather than a
+silent success.
 
 ## Create, build and verify
 

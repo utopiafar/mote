@@ -37,19 +37,19 @@ for(const scenario of ['initial','retry-after-restart','unbound-retry'] as const
  }else{
   const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload});
   assert.equal(created.statusCode,202,created.body);id=created.json().id;
-  await node.featureServices.importTasks.get(id);
+  await node.importServices.importTasks.get(id);
  }
  let job=node.imports.get(id);
  if(scenario!=='initial'){
   assert.equal(job.status,'failed');assert.match(job.error??'',scenario==='unbound-retry'?/owner authorization/:/Generated parser failure/);
   await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();
   const retried=await node.app.inject({method:'POST',url:`/api/imports/${id}/retry`,headers});assert.equal(retried.statusCode,202,retried.body);
-  await node.featureServices.importTasks.get(id);job=node.imports.get(id);
+  await node.importServices.importTasks.get(id);job=node.imports.get(id);
  }
  assert.equal(job.status,'awaiting_confirmation',job.error);
  assert.equal(job.preview?.count,1);assert.equal(calls,scenario==='initial'?1:2);
  const confirmed=await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});assert.equal(confirmed.statusCode,202,confirmed.body);
- await node.featureServices.importTasks.get(id);job=node.imports.get(id);
+ await node.importServices.importTasks.get(id);job=node.imports.get(id);
  assert.equal(job.status,'completed');assert.equal(job.progress.imported,1);
  assert.equal(node.modelAuthorization.view().state,'unapproved','a manual import must not authorize unrelated background work');
 });
@@ -67,13 +67,13 @@ test('an explicitly retried import reports queued while another import is using 
  }});await node.app.ready();t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token};
  const create=async(text:string)=>{const response=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from(text).toString('base64')}]}});assert.equal(response.statusCode,202);return response.json().id as string;};
- const target=await create('generated-target');await node.featureServices.importTasks.get(target);assert.equal(node.imports.get(target).status,'failed');
+ const target=await create('generated-target');await node.importServices.importTasks.get(target);assert.equal(node.imports.get(target).status,'failed');
  const occupying=await create('generated-blocker');await blockerStarted;
  const retry=await node.app.inject({method:'POST',url:`/api/imports/${target}/retry`,headers});assert.equal(retry.statusCode,202);
  const deadline=Date.now()+5000;while(Date.now()<deadline){const step=node.store.db.prepare("SELECT state FROM execution_steps WHERE kind='imports.prepare' AND json_extract(input,'$.jobId')=?").get(target);if(step?.state==='waiting')break;await setTimeout(10);}
  const step=node.store.db.prepare("SELECT state FROM execution_steps WHERE kind='imports.prepare' AND json_extract(input,'$.jobId')=?").get(target);
  assert.equal(step?.state,'waiting');const queued=node.imports.get(target);
  assert.equal(queued.status,'queued');assert.equal(queued.processingStatus,'archived');assert.equal(queued.error,undefined);
- release();await Promise.all([node.featureServices.importTasks.get(occupying),node.featureServices.importTasks.get(target)]);
+ release();await Promise.all([node.importServices.importTasks.get(occupying),node.importServices.importTasks.get(target)]);
  assert.equal(node.imports.get(target).status,'awaiting_confirmation');
 });
