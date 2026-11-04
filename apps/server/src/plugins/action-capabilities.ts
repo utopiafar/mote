@@ -1,14 +1,14 @@
-import {ActionInputScope} from './action-input-scope.js';
+import {ActionInputScope} from '../action-input-scope.js';
 import {actionGrantCommandSchema,type ActionGrant,type ActionPluginProvider,type ActionPluginIdentity} from '@mote/shared';
 import {actionCapabilityCommandSchema,actionCapabilityDraftSchema,actionDeviceDeclarationSchema,calendarManageCapability,calendarCapabilityIdentitySchema,type ActionCapabilityDraft,type ActionDeviceCapability} from '@mote/shared';
-import {Store,StoreError,sha256} from './store.js';
-import type {SourceStore} from './sources.js';
-import type {Connections,ConnectionCredential} from './connections.js';
+import {StoreError,sha256} from '../store.js';
+import type {SourceStore} from '../sources.js';
+import type {Connections,ConnectionCredential} from '../connections.js';
 
 /** Owner control plane; installing a plugin or saving a draft never authorizes execution. */
 export class ActionCapabilities {
  readonly inputs:ActionInputScope;
- constructor(private store:Store,private sources:SourceStore,private connections:Connections,private providers:()=>ActionPluginProvider[]=()=>[]){this.inputs=new ActionInputScope(store,sources);store.db.exec(`
+ constructor(private store:ConstructorParameters<typeof ActionInputScope>[0],private sources:SourceStore,private connections:Connections,private providers:()=>ActionPluginProvider[]=()=>[]){this.inputs=new ActionInputScope(store,sources);store.db.exec(`
   CREATE TABLE IF NOT EXISTS action_device_capabilities(device_id TEXT PRIMARY KEY,json TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS action_capability_grants(id TEXT PRIMARY KEY,json TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS action_capability_drafts(id TEXT PRIMARY KEY,json TEXT NOT NULL);

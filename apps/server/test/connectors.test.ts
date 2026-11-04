@@ -28,6 +28,7 @@ import type {ConnectorManifest} from '../src/connectors/registry.js';
 import {connectorRegistryHost} from './fixtures/connector-host.js';
 import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
+import {gmailScope} from '../src/connectors/gmail.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
@@ -580,6 +581,62 @@ test('Google disconnect waits for token-refresh work and cannot resurrect creden
   await connector.init();t.after(()=>connector.close());await authorize();block=true;
   const reading=connector.calendars();await started;const disconnect=connector.disconnect();release();await reading;await disconnect;
   assert.equal(connector.status().connected,false);await assert.rejects(readFile(join(directory,'private/google-calendar.json')),{code:'ENOENT'});
+});
+
+test('stopping the Google instance mid-poll drops late results, restart replays them and Gmail keeps working',async t=>{
+  const {ctx,sources,directory}=await fixture(t),event=googleEvent('late-page','Generated late page');
+  let gated=true,entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(resolve=>entered=resolve),hold=new Promise<void>(resolve=>release=resolve);
+  const googleOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  googleOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-refresh-private',access_token:'synthetic-access-private',scope:'https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly'}})) as never;
+  googleOauth.getAccessToken=(async()=>({token:'synthetic-access-private'})) as never;
+  const google:GoogleDependencies={oauthFactory:()=>googleOauth,fetch:(async(input,init)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/calendarList'))return Response.json({items:[calendar]});
+    if(gated){
+      entered();
+      await new Promise<void>((resolve,reject)=>{
+        init?.signal?.addEventListener('abort',()=>reject(new DOMException('The operation was aborted.','AbortError')),{once:true});
+        void hold.then(resolve);
+      });
+    }
+    return Response.json({items:[event],nextSyncToken:'generated-replay'});
+  }) as typeof fetch};
+  const gmailOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  gmailOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-gmail-refresh',access_token:'synthetic-gmail-access',scope:gmailScope}})) as never;
+  gmailOauth.getAccessToken=(async()=>({token:'synthetic-gmail-access'})) as never;
+  const gmail:GoogleDependencies={oauthFactory:()=>gmailOauth,fetch:(async(input)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/profile'))return Response.json({emailAddress:'generated@example.invalid',historyId:'1'});
+    if(url.pathname.endsWith('/messages'))return Response.json({messages:[{id:'generated-message'}]});
+    if(url.pathname.endsWith('/messages/generated-message'))return Response.json({id:'generated-message',threadId:'generated-thread',historyId:'1',internalDate:'1767225600000',payload:{mimeType:'text/plain',headers:[{name:'subject',value:'Generated gmail evidence'}],body:{data:Buffer.from('Generated gmail body').toString('base64url')}}});
+    throw Error('Unexpected Gmail fixture URL: '+url.pathname);
+  }) as typeof fetch};
+  const app=Fastify(),connectors=await registerConnectors(app,ctx,{google,gmail});
+  t.after(async()=>{await connectors.close();await app.close();});
+  const headers={authorization:`Bearer ${owner}`};
+  const started=await app.inject({method:'POST',url:'/api/connectors/google/start',headers});
+  const state=new URL(started.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${state}&code=generated-code`})).statusCode,200);
+  assert.equal((await app.inject({method:'PUT',url:'/api/connectors/google/calendars',headers,payload:{calendarIds:[calendar.id]}})).statusCode,200);
+  const source=sources.listSources().find(s=>s.kind==='google-calendar')!;
+  const syncing=app.inject({method:'POST',url:'/api/connectors/google/sync',headers});
+  await waiting;
+  await connectors.stop('google-calendar');
+  gated=false;release();
+  assert.equal((await syncing).statusCode,502);
+  assert.equal(sources.listItems({sourceId:source.id}).items.length,0,'a stopped poll never commits its late results');
+  assert.equal(JSON.parse(await readFile(join(directory,'private/google-calendar.json'),'utf8')).checkpoints[calendar.id],undefined,'the stopped poll cannot skip unpublished items');
+  const gmailStart=await app.inject({method:'POST',url:'/api/connectors/gmail/start',headers});
+  const gmailState=new URL(gmailStart.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${gmailState}&code=generated-code`})).statusCode,200);
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).json(),{imported:1,duplicates:0,hasMore:false});
+  const gmailSource=sources.listSources().find(s=>s.kind==='gmail')!;
+  assert.equal(sources.getItem(gmailSource.id,'generated-message:0')!.text,'Generated gmail body');
+  await connectors.restart('google-calendar');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:1,duplicates:0,calendars:1});
+  assert.equal(sources.getItem(source.id,event.id)!.text,'Generated late page');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:0,duplicates:1,calendars:1},'the replayed page dedupes instead of archiving twice');
 });
 
 test('Google real provider timestamps remain distinct from observation and metadata-only changes create revisions',async t=>{
