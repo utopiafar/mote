@@ -3,7 +3,7 @@ import {MEMORY_VISUAL_EVIDENCE_CONTRACT} from './memory-image-proof.js';
 import {memoryImageGrants,assertMemoryImageGrants,uninspectedMemoryImageTargets} from './memory-image-grants.js';
 import {ActivityMemoryIndex} from './activity-memory-index.js';
 import {memoryFeedbackBatchId,validMemoryFeedbackPlan,hasUsefulMemoryFeedbackScope,type MemoryFeedbackPlanner,type MemoryFeedbackRequest,type MemoryFeedbackPlan,type MemoryFeedbackGroup} from './memory-feedback.js';
-import {decodeMemoryJob,encodeMemoryJob,decodeMemoryBatch,encodeMemoryBatch,installMemoryPrivateRetirement} from './memory-private-storage.js';
+import {decodeMemoryJob,encodeMemoryJob,decodeMemoryBatch,encodeMemoryBatch,installMemoryPrivateRetirement} from './plugins/memory-private-storage.js';
 import {memoryWorkPackageSchema,memoryWorkInstruction,readMemoryWorkCoverage,type MemoryWorkPackage,type MemoryWorkMember,type MemoryWorkCoverage,type MemoryOwnerQuestion,type MemoryWorkInspection} from './memory-work-contract.js';
 import type {MaterialInputPin} from './material-readiness.js';
 import {MemoryInputPlans,manualMemoryInputPlanSchema,type ManualMemoryInputPlanRequest,type ManualMemoryInputPlan,type MemoryPlanSummary,type MemoryRecipeProgress} from './memory-input-plans.js';
@@ -34,7 +34,7 @@ import {memoryReviewReceiptSchema,type MemoryReviewReceipt} from './memory-schem
 import {MemoryPhaseOutputs} from './memory-phase-outputs.js';
 import {MemoryExtractionDrafts} from './memory-extraction-drafts.js';
 import {memoryReadRanges,assertMemoryTargetSupport,mergeMemoryReadRanges,retainedMemoryReadReceipt} from './memory-read-context.js';
-import type {MemoryStagePublication,MemoryPublicationReceipt} from './memory-publication-contract.js';
+import type {MemoryStagePublication,MemoryOwnerPublication,MemoryPublicationReceipt} from './plugins/memory-publication-contract.js';
 import {MemoryProviderError} from './memory-provider-contract.js';
 import {MemoryNativeStages} from './memory-native-stages.js';
 import type {MemoryOwnerContinuationView,MemoryOwnerQuestionHandler} from './memory-owner-continuation.js';
@@ -63,13 +63,16 @@ export interface MemoryPhasePorts {
   query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;
   skillVersion?:string;
 }
-export type MemoryPipelineOptions={models:MemoryModelSelection;phases:MemoryPhasePorts;onPublished?:(step:ExecutionStep,memories:readonly import('./memory-schema.js').Memory[],job:MemoryJob)=>void;assertIntegrationAuthority?:()=>void;withIntegrationAuthority?:<T>(id:string,manual:boolean,evidenceIds:string[],task:()=>Promise<T>)=>Promise<T>;integrationReadInput?:(cards:readonly Memory[])=>Pick<QueryInput,'processingImages'|'processingMaterialInputs'|'processingEvidence'>;assertIntegrationReadable?:(cards:readonly Memory[])=>void;assertNewManualWork?:()=>void;admission?:MemoryInputAdmissionOptions;nativeStages?:MemoryNativeStageAdapter;publication?:MemoryStagePublication;strategies?:MemoryStrategies;executor?:ExecutionEngine;concurrency?:()=>number;requireAdmission?:boolean;store:Store;memories:MemoryStore;batchCharacters?:number|(()=>number)};
+export type MemoryPipelineOptions={models:MemoryModelSelection;phases:MemoryPhasePorts;onPublished?:(step:ExecutionStep,memories:readonly import('./memory-schema.js').Memory[],job:MemoryJob)=>void;assertIntegrationAuthority?:()=>void;withIntegrationAuthority?:<T>(id:string,manual:boolean,evidenceIds:string[],task:()=>Promise<T>)=>Promise<T>;integrationReadInput?:(cards:readonly Memory[])=>Pick<QueryInput,'processingImages'|'processingMaterialInputs'|'processingEvidence'>;assertIntegrationReadable?:(cards:readonly Memory[])=>void;assertNewManualWork?:()=>void;admission?:MemoryInputAdmissionOptions;nativeStages?:MemoryNativeStageAdapter;publication?:MemoryStagePublication;ownerPublication?:MemoryOwnerPublication;strategies?:MemoryStrategies;executor?:ExecutionEngine;concurrency?:()=>number;requireAdmission?:boolean;store:Store;memories:MemoryStore;batchCharacters?:number|(()=>number)};
 
 type BatchOutput={contextReadChunks?:Chunk[];workContract?:MemoryWorkContract;engineDrafts?:MemoryEngineDraftPin[];publication?:MemoryPublicationReceipt;feedbackPlan?:MemoryFeedbackPlan;coverage?:MemoryWorkCoverage;strategy?:MemoryRecipeBinding;result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 
 /** Jobs reference originals. Validated drafts have a separate private, dependency-bound stage store. */
 export class MemoryPipeline {
   get publication(){return this.options.publication;}
+  /** C24 owner commands remain on the pipeline bridge until its routes move to
+   * a domain contribution; they never share the read-only stage port. */
+  get ownerPublication(){return this.options.ownerPublication;}
   assertNewManualWork(){this.options.assertNewManualWork?.();}
   assertIntegrationReadable(cards:readonly Memory[]){this.options.assertIntegrationReadable?.(cards);}
   assertIntegrationAuthority(){this.options.assertIntegrationAuthority?.();}

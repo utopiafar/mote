@@ -1,9 +1,36 @@
-import type {PluginErrorCode} from '@mote/plugin-api/contracts';
+import type {PluginErrorCode,PluginScope} from '@mote/plugin-api/contracts';
 
 export class PluginHostError extends Error {
   constructor(readonly code: PluginErrorCode) { super('Plugin host operation is unavailable'); this.name = 'PluginHostError'; }
 }
 type Cleanup = () => unknown | Promise<unknown>;
+type EpochScope = Pick<PluginScope,'identity'|'signal'|'assertCurrent'>;
+let detached=0;
+const detachedScope=():EpochScope=>({identity:{packageId:'mote.detached',installationId:'detached',instanceId:'detached',activationId:`detached:${++detached}`,host:{kind:'central',id:'detached'}},signal:new AbortController().signal,assertCurrent(){}});
+
+/** Registration generations tied to one host activation. Aborting the scope
+ * invalidates every epoch, and re-installing an id invalidates work accepted by
+ * the previous registration even when the implementation object is reused. */
+export class PluginEpochs {
+  private sequence = 0;
+  private readonly current = new Map<string,string>();
+  private readonly scope: EpochScope;
+  constructor(scope?: EpochScope) { this.scope = scope ?? detachedScope(); }
+  install(id: string) {
+    this.scope.assertCurrent();
+    const epoch = `${this.scope.identity.activationId}:${++this.sequence}`;
+    this.current.set(id, epoch);
+    return () => { if (this.current.get(id) === epoch) this.current.delete(id); };
+  }
+  get(id: string): string | undefined {
+    if (this.scope.signal.aborted) return undefined;
+    try { this.scope.assertCurrent(); } catch { return undefined; }
+    return this.current.get(id);
+  }
+  matches(id: string, epoch: string | undefined): boolean {
+    return epoch !== undefined && this.get(id) === epoch;
+  }
+}
 
 /** Resource ownership shared by the generic host and legacy server adapters.
  * This is not a scheduler, persistent journal, authorization grant or code sandbox. */

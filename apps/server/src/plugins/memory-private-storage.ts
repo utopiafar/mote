@@ -1,6 +1,6 @@
-import {moteText} from './i18n.js';
-import type {Store} from './store.js';
-import type {MemoryJob,MemoryBatch} from './memory-pipeline.js';
+import {moteText} from '../i18n.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
+import type {MemoryJob,MemoryBatch} from '../memory-pipeline.js';
 
 import type {MemoryPublicationDependencies} from './memory-publication-contract.js';
 /** Dependency routing is explicit host metadata, never an interpretation of

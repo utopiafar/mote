@@ -1,7 +1,7 @@
 import type {Plugin} from '@deepseek-ai/cordis';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
-import type {HostPluginContext} from '@mote/plugin-host';
+import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import type {HostPluginContext,HostScope} from '@mote/plugin-host';
 import {StoreError,type Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
@@ -35,14 +35,14 @@ export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:So
     closing=Promise.allSettled(tasks).then(results=>{phase='disposed';const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);if(errors.length)throw new AggregateError(errors,'Source runtime disposal failed');});return closing;
   }
   return Object.freeze({
-    async prepare(scope:PluginScope){
+    async prepare(scope:HostScope){
       if(phase!=='created')throw unavailable();phase='preparing';
       try{
         scope.assertCurrent();const engine=dependencies.execution.assembly.executor;
         if(!dependencies.memoryWork)throw new StoreError('Shared source memory receipts are required',503);
         if(engine.store!==dependencies.store||dependencies.materials.store!==dependencies.store)throw new StoreError('Source runtime repository mismatch',503);
         handlers=dependencies.execution.handlersForAssembly(scope);
-        runtime=new SourcePipelineRuntime(dependencies.store,dependencies.materials,plugins,undefined,engine,dependencies.memoryWork,handlers);
+        runtime=new SourcePipelineRuntime(dependencies.store,dependencies.materials,plugins,scope,engine,dependencies.memoryWork,handlers);
         runtime.quiesce();await runtime.ready;scope.assertCurrent();if(phase!=='preparing')throw unavailable();phase='prepared';
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Source runtime preparation and cleanup failed',{cause:error});}throw error;}
     },

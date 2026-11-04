@@ -2,7 +2,7 @@
 
 `apps/server/test/combined-backup-recovery.test.ts` invokes the production backup script and `restoreProfile`, then opens the resulting SQLite and originals through current domain stores. All content is generated; no live model is called.
 
-Both the early and later snapshots use Central epoch 4 and chunked originals. The later snapshot adds a two-part binary, owner-corrected Memory history, completed and partially committed imports, partially processed Memory, a completed insight and interrupted durable execution.
+Both the early and later snapshots use Central epoch 6 and chunked originals. The later snapshot adds a two-part binary, owner-corrected Memory history, completed and partially committed imports, partially processed Memory, a completed insight and interrupted durable execution.
 
 The fixture checks original bytes/SHA-256 and identities, source revisions, Memory supersession, successful checkpoints and import step attempts. Restored foreign leases lose their active fence; eligible work resumes while completed outputs remain intact. Unfinished imports require fresh analysis/preview and preserve idempotent already-committed records. Restoring the earlier snapshot uses another empty destination.
 

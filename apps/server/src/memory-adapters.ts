@@ -2,7 +2,6 @@ import {join} from 'node:path';
 import {existsSync} from 'node:fs';
 import type {PluginCenter,StoredPackage} from './plugin-center.js';
 import {memoryProviderNamespaceSchema,type MemoryProvider,type MemoryProviderNamespace} from './memory-provider-contract.js';
-import {WorkerPluginRuntime} from './plugin-runtime.js';
 import {Mem0MemoryProvider} from './mem0-memory-provider.js';
 import {WorkerMemoryProvider} from './worker-memory-provider.js';
 import {sha256,StoreError} from './store.js';
@@ -68,7 +67,7 @@ export class MemoryAdapters {
       if(!prior){const json=JSON.stringify(snapshot);this.plugins.store.reserveMetadata(Buffer.byteLength(json));this.plugins.store.db.prepare('INSERT INTO memory_provider_model_snapshots VALUES(?,?)').run(key,json);}
       provider=createHindsightEngine({directory:join(this.directory,id,'configuration-'+sha256(identity)),instanceId:id,configurationIdentity:identity,settings,codex:this.options.codex,runModel:this.options.runModelFor?.(settings),assertModelAuthority:request=>{this.assertFrozenModel(instance,identity);return this.options.assertModelAuthority?.(settings,request);},onUsage:(usage,request)=>this.options.onUsage?.(settings,usage,request),onRequestStarted:request=>this.options.onRequestStarted?.(settings,request),onRequestFinished:request=>this.options.onRequestFinished?.(request)});
     }
-    else provider=new WorkerMemoryProvider(this.plugins.runtimeFactory?.(pkg,instance)??new WorkerPluginRuntime(join(pkg.directory,pkg.manifest.entry),instance.configuration,pkg.directory));
+    else provider=new WorkerMemoryProvider(this.plugins.runtimeFactory?.(pkg,instance)??this.plugins.runtimeFor(pkg,instance));
     this.providers.set(key,provider);return provider;
   }
   private async restart(id:string){const key=id+':'+this.plugins.configurationIdentity(id),prior=this.providers.get(key);this.providers.delete(key);await prior?.close();await this.plugins.resetRuntime(id);return this.provider(id);}

@@ -19,7 +19,7 @@ Unknown or incomplete usage still cannot be reported as zero cost. Evidence
 authorization continues before every outbound HTTP model attempt, including
 repair and compression turns; that private channel reserves no allowance.
 
-Fresh epoch 4 installs only current lane settings. No old-budget tables, setting
+Fresh epoch 6 installs only current lane settings. No old-budget tables, setting
 conversion or budget-wait revival run at startup. An older vault is rejected
 before schema initialization. Current provider waits, checkpoints and leases
 continue through the ordinary execution engine. See [MVP baseline](adr-mvp-baseline.md).
