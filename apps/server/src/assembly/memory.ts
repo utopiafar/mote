@@ -35,10 +35,11 @@ import {MemoryPublication} from '../memory-publication.js';
 import {MemoryPipeline,type MemoryModelSelection,type MemoryPhasePorts} from '../memory-pipeline.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
 import {WorkingMemory} from '../working-memory.js';
-import {MemoryTopicsHost} from '../memory-topics-host.js';
 import {createMemoryControl} from '../memory-control.js';
 import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,MemoryLifecycle,type LifecycleSettings} from '../memory-lifecycle.js';
 import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,memoryRecordRepositoryReplacement} from '../plugins/memory-record-repository.js';
+import {createMemoryTopicsService,memoryTopicsServiceContribution,memoryTopicsServiceDeclaration,memoryTopicsServiceReplacement} from '../plugins/memory-topics-service.js';
+import type {MemoryTopics} from '../plugins/central-contracts.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
  * distribution concatenates each domain's list into one selected table.
@@ -46,6 +47,7 @@ import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,mem
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryRecordRepositoryContribution,declaration:memoryRecordRepositoryDeclaration,replacement:memoryRecordRepositoryReplacement},
   {contribution:memoryAutomationAdmissionContribution,declaration:memoryAutomationAdmissionDeclaration,replacement:memoryAutomationAdmissionReplacement},
+  {contribution:memoryTopicsServiceContribution,declaration:memoryTopicsServiceDeclaration,replacement:memoryTopicsServiceReplacement},
 ]);
 
 /** A slot a later assembly stage fills once the object exists; callbacks
@@ -75,7 +77,7 @@ export function memoryInputs(dependencies:MemoryInputStageDependencies){
   automationAdmission.prepare();automationAdmission.start();
   const memoryAutomation=automationAdmission.automationForAssembly;
   return Object.freeze({memoryStrategies,memoryRecipeSettings,memoryAutomation,automationAdmission,
-    bindings:lateBinding<MemoryBindings>(),topics:lateBinding<MemoryTopicsHost>(),integrationSettings:lateBinding<MemoryIntegrationSettings>()});
+    bindings:lateBinding<MemoryBindings>(),topics:lateBinding<MemoryTopics>(),integrationSettings:lateBinding<MemoryIntegrationSettings>()});
 }
 
 export interface MemoryRuntimeDependencies {
@@ -108,7 +110,7 @@ export interface MemoryRuntimeDependencies {
   readonly semanticContextTime?:()=>string;
   /** Slots minted by the inputs stage; this stage assigns their current object. */
   readonly bindings:LateBinding<MemoryBindings>;
-  readonly topics:LateBinding<MemoryTopicsHost>;
+  readonly topics:LateBinding<MemoryTopics>;
   readonly integrationSettings:LateBinding<MemoryIntegrationSettings>;
   /** Publishes catalog changes only during the active lifecycle. */
   readonly topicsCanPublish:()=>boolean;
@@ -167,6 +169,12 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   memoryAutomation.onStop=memoryControl.stop;
   memoryAutomation.counts=memoryControl.counts;
   const memoryIntegrationSettings=dependencies.integrationSettings.current=new MemoryIntegrationSettings(store,memoryStrategies);
-  const memoryTopics=topics.current=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader,dependencies.topicsCanPublish),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query});
-  return Object.freeze({memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryTopics});
+  const memoryTopicsService=createMemoryTopicsService({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,contextTrees,reader:evidenceReader,canPublish:dependencies.topicsCanPublish,
+    assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query});
+  resources.defer(()=>memoryTopicsService.close());
+  memoryTopicsService.prepare();
+  const memoryTopics=memoryTopicsService.host;
+  topics.current=memoryTopicsService.topics;
+  memoryTopicsService.start();
+  return Object.freeze({memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryControl,memoryIntegrationSettings,memoryTopics,memoryTopicsService});
 }

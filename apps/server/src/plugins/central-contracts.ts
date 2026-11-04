@@ -27,6 +27,8 @@ import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {MemoryStagePublication, MemoryOwnerPublication} from '../memory-publication-contract.js';
 import type {MemoryAutomation} from '../memory-automation.js';
+import type {MemoryTopicsHost} from '../memory-topics-host.js';
+import type {AutomaticTopics} from '../automatic-topics.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
  * C02-C27 implement their providers; H owns loading, selection and lifecycle. This file
@@ -129,6 +131,16 @@ export type MaterialMemoryCandidates = Pick<MaterialMemoryWork, 'observe' | 'wit
 /** Read-only managed-asset state. Installs, imports, cancellation and the
  * managed directory itself stay with the C18A owner, never the port. */
 export type MediaAssetsRead = Pick<MediaAssets, 'ready' | 'status' | 'statuses'>;
+/** Durable topic work enqueued from a Memory publication plus the derived
+ * automatic-topic index the context catalog reads. Classification authority
+ * still comes from the model admission fence on every call. */
+export interface MemoryTopics {
+  enqueue: MemoryTopicsHost['enqueue'];
+  register: AutomaticTopics['register'];
+  classify: AutomaticTopics['classify'];
+  trees: AutomaticTopics['trees'];
+  state: AutomaticTopics['state'];
+}
 
 /** Separate tokens deliberately keep owner mutation, model disclosure and retained-reader
  * lifetimes out of each other's read capability. Actual grant/cleanup behavior is not here. */
@@ -170,6 +182,7 @@ export const centralServices = {
   memoryInputSelection: serviceContract<MemoryInputSelection>('mote.central.memory-input-selection', '1'),
   memoryStagePublication: serviceContract<MemoryStagePublication>('mote.central.memory-stage-publication', '1'),
   memoryOwnerPublication: serviceContract<MemoryOwnerPublication>('mote.central.memory-owner-publication', '1'),
+  memoryTopics: serviceContract<MemoryTopics>('mote.central.memory-topics', '1'),
   mediaAssetsRead: serviceContract<MediaAssetsRead>('mote.central.media-assets-read', '1'),
 } as const;
 export type CentralService = keyof typeof centralServices;
@@ -228,7 +241,7 @@ export const centralServiceOwners = {
   configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
-  memoryStagePublication:'publication', memoryOwnerPublication:'publication', mediaAssetsRead:'media',
+  memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', mediaAssetsRead:'media',
 } as const satisfies Record<CentralService, CentralSlice>;
 
 export interface CentralFeatureMigration {

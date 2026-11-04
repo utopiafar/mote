@@ -185,7 +185,6 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
       if(mounted.has(app))throw new StoreError('Context routes are already installed',409);
       assertOpen();
       mounted.add(app);
-      contextTrees.initializeAutomatic(store,reader);
       app.register(async child=>{
         child.addHook('onRequest',async(_request,reply)=>{if(disposed||reader.disposed)return reply.code(503).send({error:'feature_unavailable'});});
         registerEvidenceRoutes(child,reader);
