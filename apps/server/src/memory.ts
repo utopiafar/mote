@@ -169,9 +169,9 @@ export class MemoryStore {
     if(options.prepared)this.assertPrepared(options.prepared,result);
     assertMemoryWorkAnswerSize(result.answer);
     let input:unknown;try{input=JSON.parse(result.answer);}catch{throw new MemoryOutputValidationError('json','Model returned an invalid memory format; no memories were saved');}
-    const claims=z.array(claimSchema);
+    const claims=z.array(claimSchema),maxCandidates=options.workContract?undefined:8;
     const citationIds=z.array(z.string().uuid());
-    const parsed=z.object({memories:claims,citationIds:citationIds.optional(),...(options.workContract?{coverage:memoryRangeEvaluationCoverageSchema}:{})}).strict().safeParse(input);
+    const parsed=z.object({memories:maxCandidates===undefined?claims:claims.max(maxCandidates),citationIds:citationIds.optional(),...(options.workContract?{coverage:memoryRangeEvaluationCoverageSchema}:{})}).strict().safeParse(input);
     if(!parsed.success){
       const codingIssue=parsed.error.issues.find(issue=>issue.path[2]==='coding'||issue.code==='unrecognized_keys'&&issue.keys.includes('applicability'));
       throw new MemoryOutputValidationError(codingIssue?'coding_contract':'schema','Model returned an invalid memory structure; no memories were saved',{fieldPath:validationLocation((codingIssue??parsed.error.issues[0]).path),problem:validationProblem(codingIssue??parsed.error.issues[0]),workContract:options.workContract,...(typeof (codingIssue??parsed.error.issues[0]).path[1]==='number'?{candidateIndex:Number((codingIssue??parsed.error.issues[0]).path[1])}:{})});
