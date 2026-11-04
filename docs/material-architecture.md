@@ -1,6 +1,6 @@
 # 接入与正式资料架构
 
-> Coding 接入使用 Cordis source pipeline：原始事件只存文件归档，按会话发布正式资料后才索引和送入模型。普通记录来源保留各自物理原件，但组织工作也经过持久执行引擎与正式资料发布。MVP 断代、统一收据和业务决策见 [后端流程重构工作稿](backend-plugin-rearchitecture.md) 与 [Source pipelines](source-pipelines.md)。
+> Coding 接入使用 Cordis source pipeline：原始事件只存文件归档，按会话发布正式资料后才索引和送入模型。普通记录来源保留各自物理原件，但组织工作也经过持久执行引擎与正式资料发布。MVP 断代、统一收据和业务决策见 [后端流程重构工作稿](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/backend-plugin-rearchitecture.md) 与 [Source pipelines](source-pipelines.md)。
 
 Mote 把来源采集、可靠运输、证据归档、正式资料组织和模型读取分开。新增接入应先复用现有的资料形态与处理步骤；只有数据形态确实不同，才增加新的组织器或读取方式。来源内容始终是数据，不能作为 Agent 指令。程序不根据关键词判断用户意图、主题或洞察。
 
@@ -38,7 +38,7 @@ flowchart LR
 
 正式资料 ID 由 `sourceId` 与上游逻辑 `externalId` 生成，传输批次和上传时间不参与身份。修订根据资料内容生成；每个修订保存资料类型与格式版本、文本或资产块、成员引用、完整度 `coverage`、保真度 `fidelity` 和原件保留状态 `retention`。块可带时间、行号、会话事件或原件定位，读取时返回精确范围。跨来源的“同一会议/项目”应由显式关系连接多个资料，不能仅因名称相似就合并原件身份。
 
-文件处理恢复可能再次进入以前出现过的完整度状态，例如 `pending → partial/blocked → pending`。受信任的 source-item 发布器在当前 CAS 下可声明 `processingStateTransition`：只有正文、资产、来源成员、定位、归属上下文、产物身份等完全未变，而仅 `coverage` 和产物状态/原因变化时，重复的历史清单才会以新的修订及递增序号发布。历史修订保持不可变，未变且有效的块引用继续复用；连续发布同一状态仍幂等。普通历史内容回退仍拒绝，HTTP 请求与查询模型不能设置这个宿主选项。验证见 [处理状态循环回归](validation/material-readiness-cycle.md)。
+文件处理恢复可能再次进入以前出现过的完整度状态，例如 `pending → partial/blocked → pending`。受信任的 source-item 发布器在当前 CAS 下可声明 `processingStateTransition`：只有正文、资产、来源成员、定位、归属上下文、产物身份等完全未变，而仅 `coverage` 和产物状态/原因变化时，重复的历史清单才会以新的修订及递增序号发布。历史修订保持不可变，未变且有效的块引用继续复用；连续发布同一状态仍幂等。普通历史内容回退仍拒绝，HTTP 请求与查询模型不能设置这个宿主选项。
 
 内容块可用 `evidenceIds` 补充细粒度输入依赖，例如某个转写片段；目前支持该块原始 capture 成员及其文件片段，不扩大原件授权范围。原始 capture 依赖自动保留，片段更正与撤销会同步使对应正式证据失效。普通资料修订复用文本、定位、来源成员与证据上下文完全相同且仍有效的块引用；标题、来源时间或身份等上下文改变时重新生成引用。依赖已失效时，即使重建文字恰好相同，也产生新证据版本，之后重复发布仍幂等。依赖关系纳入现有查询投影和存储用量核算，不新增任务引擎。
 

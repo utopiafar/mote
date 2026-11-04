@@ -78,4 +78,4 @@ release and validation records retain their original evidence. Current guides,
 configuration, journals, tests and caller assumptions are updated together.
 
 Generated journey coverage and executed checks are recorded in
-[the validation report](validation/archive-admission-cleanup-2026-10-11.md).
+[the validation report](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/archive-admission-cleanup-2026-10-11.md).

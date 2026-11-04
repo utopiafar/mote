@@ -213,7 +213,7 @@ missing/invalid coverage, actual resource failure without subdivision,
 successful siblings, cancellation/deletion races,
 immutable old receipts, close/reopen and explicit retry, and contract-bound draft,
 product and retained-output reuse. No personal content or credentials enter Git.
-The [journey and regression matrix](memory-range-evaluation-validation.md) keeps
+The [journey and regression matrix](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/memory-range-evaluation-validation.md) keeps
 the required state transitions and actual execution evidence separate.
 
 The owner separately authorized fresh live evaluation of the five known failed

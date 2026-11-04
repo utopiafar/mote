@@ -8,7 +8,7 @@ validation. This ADR records the accepted boundaries; it does not imply every
 platform, provider or failure combination has been verified. Current supported
 behavior is in [Plugin center](plugin-center.md), the original delivery
 breakdown is in the [phase-one plan](design/plugin-center-phase-one-2026-10-12.md),
-and executed evidence is in the [validation ledger](design/plugin-center-phase-one-validation-2026-10-12.md).
+and executed evidence is in the [validation ledger](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/plugin-center-phase-one-validation-2026-10-12.md).
 
 ## Accepted product decisions
 

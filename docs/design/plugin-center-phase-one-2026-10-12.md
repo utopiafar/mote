@@ -2,7 +2,7 @@
 
 日期：2026-10-12。状态：**产品决策已接受；一期实现已接入，验证按层次记录**。
 
-所有者已确认 1A–8A，并在设计原型之后授权实际实施、完整链路验收以及 PR/合并。本文保留决策与实施分解；当前支持的接口、固定适配器和运行限制见[插件中心](../plugin-center.md)，实际结果见[验证账本](plugin-center-phase-one-validation-2026-10-12.md)。最初只读设计基线为 `9aecdb1`，不能将该历史基线或合成原型当作当前产品验证。
+所有者已确认 1A–8A，并在设计原型之后授权实际实施、完整链路验收以及 PR/合并。本文保留决策与实施分解；当前支持的接口、固定适配器和运行限制见[插件中心](../plugin-center.md)，实际结果见[验证账本](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/plugin-center-phase-one-validation-2026-10-12.md)。最初只读设计基线为 `9aecdb1`，不能将该历史基线或合成原型当作当前产品验证。
 
 需要模型时使用本地 Codex Server 的 `gpt-6.1-sol` / `medium`。本次实际验收使用独立 Central、生成原件与私有测试凭据；未读取或改写生产 Central，未采集个人截图。实现与可公开的生成回归测试可以随已授权 PR 提交；令牌、私有运行资料和模型输入留在本地。本文件不把供应方声明或 fixture 成功当作真实模型质量证明。
 
@@ -38,7 +38,7 @@
 | 能力清单 | `feature-inventory.ts`、`/api/features`、FeatureInventory 展示运行能力 | 保留 inventory 作为事实核验；不能拿它代替包安装、期望状态与配置实例 |
 | 展示 | WebFeatureHost 与 CentralCatalogDescriptor 有现成贡献和回退 | 新增插件控制平面和声明式配置 UI，验证 Web/Electron/Android 实际消费者 |
 
-依据是 [当前架构](../architecture.md)、[Memory 策略](../memory-strategies.md)、[生命周期](../memory-lifecycle.md)、[社区扩展](../community-extensions.md) 和 [资料库插件契约](../library-plugin-contracts.md)。[后端重构工作稿](../backend-plugin-rearchitecture.md) 中的 QueryGateway/IndexProvider 是目标边界，不能当成已完成的检索供应方机制。
+依据是 [当前架构](../architecture.md)、[Memory 策略](../memory-strategies.md)、[生命周期](../memory-lifecycle.md)、[社区扩展](../community-extensions.md) 和 [资料库插件契约](../library-plugin-contracts.md)。[后端重构工作稿](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/backend-plugin-rearchitecture.md) 中的 QueryGateway/IndexProvider 是目标边界，不能当成已完成的检索供应方机制。
 
 ## 3. 三条完整用户旅程
 
@@ -229,7 +229,7 @@ Web/Electron 需通过实际 renderer 证明导航、安装配置表单、重启
 
 W2 的原型与部分控制 UI 可以并行设计，但不能在供应方可行性未成立时把“完整引擎可用”作为成品状态。阶段失败不以静默降级结束；未知能力要缩小已支持模式或带回 owner 决策。这些 waves 已进入实现与验证；表中门槛仍作为分层验收要求，实际执行结果见验证账本。未执行的组合或平台不能由其他层次的成功代替。
 
-后续交付需通过 [验证方案](plugin-center-phase-one-validation-2026-10-12.md)：生成 fixture 覆盖结构/生命周期，实际依赖/worker/service 和 renderer 覆盖安装重启，Mem0 OSS CRUD/检索与 Hindsight 引擎模式覆盖真实行为，独立语义 rubric 覆盖质量。真实模型、真实 GitHub/服务账户与物理设备检查分别记录；没有实际执行不能写 passed。实际实现验收运行 `npm run check:affected` 覆盖受影响组件及消费者，并补充生成故障旅程、实际服务/模型与 UI 证据。所有者已授权验收后的 PR 和合并；本地私有凭据、生产资料与临时报告不随代码提交。
+后续交付需通过 [验证方案](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/plugin-center-phase-one-validation-2026-10-12.md)：生成 fixture 覆盖结构/生命周期，实际依赖/worker/service 和 renderer 覆盖安装重启，Mem0 OSS CRUD/检索与 Hindsight 引擎模式覆盖真实行为，独立语义 rubric 覆盖质量。真实模型、真实 GitHub/服务账户与物理设备检查分别记录；没有实际执行不能写 passed。实际实现验收运行 `npm run check:affected` 覆盖受影响组件及消费者，并补充生成故障旅程、实际服务/模型与 UI 证据。所有者已授权验收后的 PR 和合并；本地私有凭据、生产资料与临时报告不随代码提交。
 
 ## 9. Supersession 与未知
 
@@ -268,4 +268,4 @@ W2 的原型与部分控制 UI 可以并行设计，但不能在供应方可行�
 
 Graphiti/LangMem 是后续适配参照，不加入一期必交付范围。Harness 插件发现/生命周期可复用其适合的部分，但不能将 Agent 插件管理直接当成 Mote 的正文权威、历史授权、供应方迁移或 UI 控制平面。
 
-历史设计阶段完成仓库只读调查、方案、ADR 和合成 UI 浏览器检查，见[第 11 节](plugin-center-phase-one-validation-2026-10-12.md#11-历史设计原型检查)。后续真实实现、生成 fixture、固定供应方/模型、实际产品 Web UI 和备份结果按独立层次记录。物理设备、未运行平台及完整质量矩阵仍为 NOT RUN；不读取或传输个人截图。
+历史设计阶段完成仓库只读调查、方案、ADR 和合成 UI 浏览器检查，见[第 11 节](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/plugin-center-phase-one-validation-2026-10-12.md#11-历史设计原型检查)。后续真实实现、生成 fixture、固定供应方/模型、实际产品 Web UI 和备份结果按独立层次记录。物理设备、未运行平台及完整质量矩阵仍为 NOT RUN；不读取或传输个人截图。

@@ -181,7 +181,7 @@ sharing the current SQLite lease mechanism.
 This supersedes conflicting policy in [execution-engine](execution-engine.md),
 [provider-failures](provider-failures.md), [file-processing](file-processing.md)
 and the task-wide deadline interpretation recorded in the dated
-[audio timeout validation](validation/audio-processing-timeout.md). Current behavior is described by [task execution policies](task-execution-policies.md);
+[audio timeout validation](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/audio-processing-timeout.md). Current behavior is described by [task execution policies](task-execution-policies.md);
 the dated validation retains the old implementation and results. The bounded
 recovery wording in [recording outcomes](adr-recording-outcomes-runtime.md),
 [range evaluation](adr-memory-range-evaluation.md) and

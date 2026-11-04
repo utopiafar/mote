@@ -2,11 +2,11 @@
 
 2026-10-25：导航、默认首页及页面职责已由 [UI IA v1](adr-ui-ia-v1.md) 更新。下文更早的导航描述保留为历史；视觉、原生行为与采集安全边界继续适用。
 
-2026-10-17：Central Web、macOS 与 Android 在现有设置中提供浅色／深色／跟随系统，新安装默认跟随系统；配色和原生控件一起切换，导航与输入状态保留。保持既有 Linear 结构与风格，见[外观决定](adr-cross-platform-appearance.md)与[本次验证](validation/cross-platform-appearance.md)。
+2026-10-17：Central Web、macOS 与 Android 在现有设置中提供浅色／深色／跟随系统，新安装默认跟随系统；配色和原生控件一起切换，导航与输入状态保留。保持既有 Linear 结构与风格，见[外观决定](adr-cross-platform-appearance.md)。
 
-2026-10-15：所有者已选择全局结构 A 与 Design Lab A · Linear，取代第五轮配色、容器及旧主导航基础。当前默认为资料库／内容、问一问、来源、活动，今天／首页辅助；视觉为暖石墨暗色、紫强调与暖白主动作。主题／布局通过可信平台展示包消费，权限、数据、任务和原生交互保持原有责任。见 [新 ADR](adr-ui-presentation-packs.md) 与[执行台账](design/ui-presentation-rollout-2026-10-15.md)。以下日期记录保留历史依据，不再限制新导航和视觉。
+2026-10-15：所有者已选择全局结构 A 与 Design Lab A · Linear，取代第五轮配色、容器及旧主导航基础。当前默认为资料库／内容、问一问、来源、活动，今天／首页辅助；视觉为暖石墨暗色、紫强调与暖白主动作。主题／布局通过可信平台展示包消费，权限、数据、任务和原生交互保持原有责任。见 [新 ADR](adr-ui-presentation-packs.md)。以下日期记录保留历史依据，不再限制新导航和视觉。
 
-Slate 提供视觉 token、原生组件和中央工作台的历史设计基线。2026-10-11 的 [行动优先 ADR](adr-client-action-first.md) 当时取代原生客户端的旧入口组织，保留权限与中央处理边界；2026-10-13 用户再次反馈后的 [五轮共同美术风格候选](design/ui-art-direction-five-rounds.md) 是上一轮配色、纸页及容器取舍的历史依据。讨论原型中的演示数字、进度与权限回调不作为产品运行数据。
+Slate 提供视觉 token、原生组件和中央工作台的历史设计基线。2026-10-11 的 [行动优先 ADR](adr-client-action-first.md) 当时取代原生客户端的旧入口组织，保留权限与中央处理边界；2026-10-13 用户再次反馈后的 [五轮共同美术风格候选](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/ui-art-direction-five-rounds.md) 是上一轮配色、纸页及容器取舍的历史依据。讨论原型中的演示数字、进度与权限回调不作为产品运行数据。
 
 中央一级入口为资料库、问一问、来源、活动，今天／设置／全部功能为辅助入口。活动承接处理进度；系统管理集中运行统计、上下文任务、处理器、模型、费用、存储和诊断，用户设置保留会话与语言。所有旧 hash 入口由 `apps/web/src/navigation.ts` 映射至同一业务页。资料筛选在证据打开期间保留；浏览器返回/前进恢复证据，关闭后恢复焦点。原图需要主动展开。
 
@@ -16,9 +16,9 @@ Mac 与 Android 的一级入口为内容、问一问、来源、活动，首页�
 
 Android 使用 Kotlin 原生 Activity 和 Android Views。中央工作台、资料库、问答、随手记及中央管理页共用原生登录；当前设备邀请签发 owner 凭据，可管理全归档，设备筛选只限定视图。原有 MCP 权限范围和节点绑定保护保留。Android 后台切换不丢弃配置草稿，离开编辑页会询问；草稿不写入系统 Bundle。
 
-2026-10-13 的 [用户反馈续迭代](design/ui-focus-and-consistency-2026-10-13.md) 保留 Slate 配色与原生导航，Android 采用一致的表面、动作、表单和阅读角色：同类间距、圆角、图标与字体跨页面复用，不再混用桌面纸页和原生大圆角面板。设置围绕配置与维护，采集和同步操作在首页现有区域承接；Web 与 Mac 设置也隐藏通用新记录动作。原五项评估继续保留，另检查页面职责及视觉一致性，当前截图必须证明目标内容完成加载。
+2026-10-13 的 [用户反馈续迭代](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/ui-focus-and-consistency-2026-10-13.md) 保留 Slate 配色与原生导航，Android 采用一致的表面、动作、表单和阅读角色：同类间距、圆角、图标与字体跨页面复用，不再混用桌面纸页和原生大圆角面板。设置围绕配置与维护，采集和同步操作在首页现有区域承接；Web 与 Mac 设置也隐藏通用新记录动作。原五项评估继续保留，另检查页面职责及视觉一致性，当前截图必须证明目标内容完成加载。
 
-共享角色源在 `packages/shared/design-tokens.json`，包括颜色、字体层级、间距、控件尺寸和表面 / 控件 / 阅读圆角。运行 `node scripts/generate-design-tokens.mjs` 生成 Web/Electron CSS、共享主题和 Android Kotlin/XML/JSON；`--check` 验证产物同步。当前共同方向为 Linear 方案 A 的暖石墨暗色、紫强调、暖白主动作、系统无衬线和紧凑桌面控件；平台导航、触控尺寸、系统权限与文件选择器仍用原生实现。2026-10-14 选定第五轮的 [落地范围与取舍](design/ui-rollout-2026-10-14.md)、五轮历史评价和原图保留原始记录。
+共享角色源在 `packages/shared/design-tokens.json`，包括颜色、字体层级、间距、控件尺寸和表面 / 控件 / 阅读圆角。运行 `node scripts/generate-design-tokens.mjs` 生成 Web/Electron CSS、共享主题和 Android Kotlin/XML/JSON；`--check` 验证产物同步。当前共同方向为 Linear 方案 A 的暖石墨暗色、紫强调、暖白主动作、系统无衬线和紧凑桌面控件；平台导航、触控尺寸、系统权限与文件选择器仍用原生实现。2026-10-14 选定第五轮的 [落地范围与取舍](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/design/ui-rollout-2026-10-14.md)、五轮历史评价和原图保留原始记录。
 
 处理任务页使用 owner-only `/api/operations` 分页读取 Operation 及步骤状态；原 `/api/processing` 上下文任务入口仍保留。截图感知、文件、Memory、导入、问答、洞察、生命周期、日程分析和 embedding 已接入共享执行器，各领域保留自己的配置与进度入口。支持的操作由服务端状态确定，不返回私人步骤输入，见 [Operations](operations.md)。结果不明的日程仍走原有核实流程。
 

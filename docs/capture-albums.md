@@ -12,8 +12,6 @@ Opening an album synchronously renders grid placeholders. Only the selected page
 
 Both local and central screenshot browsing use this flow. Central browsing requires a server that supports the selected grouping endpoint; older servers show an explicit unavailable/version error. Web retains the full record view with its existing filters. Mac session image pages use its existing 30-record page size; Web and Android use 20.
 
-For historical session/preview acceptance, see [Session and preview checks](session-preview-validation.md).
-
 Current cleanup validation (2026-10-04): all 245 JVM tests across 54 suites passed, with no failures, errors or skips. Instrumentation Kotlin sources compiled and the debug APK assembled. No emulator or physical-device instrumentation, live-model or personal-data check ran. Earlier acceptance records below are historical, not a rerun of the current code.
 
 ## Why the previous path was slow

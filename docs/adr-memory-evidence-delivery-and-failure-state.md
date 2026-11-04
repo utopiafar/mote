@@ -3,7 +3,7 @@
 Accepted by the owner on 2026-10-15. This decision follows the observed empty
 integration reads, image interpretation being used as original evidence, false
 context waits, repeated planner failures and misleading trace counts. Validation
-is recorded separately in [the regression record](validation/memory-evidence-recovery-2026-10-15.md).
+is recorded separately in [the regression record](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/memory-evidence-recovery-2026-10-15.md).
 
 ## Chosen behavior
 

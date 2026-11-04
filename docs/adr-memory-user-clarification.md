@@ -117,6 +117,6 @@ Material attribution context, backend/Web registrations, Activity source entries
 Ask navigation and regression fixtures implement this decision. English text and
 the Android English catalog are synchronized.
 
-See [validation](memory-user-clarification-validation.md),
+See [validation](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/memory-user-clarification-validation.md),
 [attribution](adr-material-attribution.md),
 [conversations](conversations.md) and [Activity](delegation-and-activity.md).

@@ -37,7 +37,7 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 ## 签名清单更新通道
 
-代码仍保留客户端签名清单下载与安装、中央 `check-update` / `update`、独立更新助手及失败回退。它们要求受内置公钥信任的 manifest 和对应资产；切换仓库不会更换信任根，不能跳过签名、证书或版本校验。验证器只接受所属端的独立标签与必填组件身份：`central-vX.Y.Z`、`desktop-vX.Y.Z`、`android-vX.Y.Z`。旧统一 `vX.Y.Z` 标签与缺组件的清单拒绝；清单不能夹带其他端资产。当前 Profile 发布不使用该通道。历史验证见 [0.5.1 更新验收](update-validation.md)，当前产物与流程见 [发布说明](releasing.md)。
+代码仍保留客户端签名清单下载与安装、中央 `check-update` / `update`、独立更新助手及失败回退。它们要求受内置公钥信任的 manifest 和对应资产；切换仓库不会更换信任根，不能跳过签名、证书或版本校验。验证器只接受所属端的独立标签与必填组件身份：`central-vX.Y.Z`、`desktop-vX.Y.Z`、`android-vX.Y.Z`。旧统一 `vX.Y.Z` 标签与缺组件的清单拒绝；清单不能夹带其他端资产。当前 Profile 发布不使用该通道。当前产物与流程见 [发布说明](releasing.md)。
 
 ## 验证边界
 

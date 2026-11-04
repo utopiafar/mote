@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json && cp src/import-parser.mjs src/media-native-runtime.mjs dist/ && cp src/import-disposition-validation.mjs src/import-disposition-validation.d.mts src/log-retention-config.mjs src/log-retention-config.d.mts dist/ && mkdir -p dist/connectors && cp src/connectors/cli-runtime.mjs dist/connectors/cli-runtime.mjs && cp src/plugin-worker.mjs dist/plugin-worker.mjs && cp src/hindsight-worker.py dist/hindsight-worker.py",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test --test-concurrency=4 --test-timeout=120000 test/*.test.ts",
+    "test:file": "node --import tsx --test --test-concurrency=4 --test-timeout=120000",
     "prebuild": "npm run build -w @mote/plugin-host"
   },
   "dependencies": {

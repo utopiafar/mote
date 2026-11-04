@@ -1,8 +1,8 @@
 # Central server
 
-- Own HTTP/MCP, evidence, processing, Memory, Ask and Actions for one instance owner. Do not introduce an account host.
-- Focused test from `apps/server`: `node --import tsx --test --test-concurrency=4 --test-timeout=120000 test/connections.test.ts`. Select an existing affected file; keep its required timeout.
-- Build shared/Agent inputs when changed or absent. SQLite must match the active Node ABI. `npm test` uses the full test glob; appended filenames do not narrow it. Generated SQLite/HTTP fixtures do not establish external-model quality.
-- Typecheck from the repository root: `npm run typecheck -w @mote/server`. Coordinate shared builds; do not rebuild shared output concurrently.
-- Translate new `moteText` keys and synchronize Android English strings.
-- Test layers, triggers and coverage requirements are defined in [testing](../../docs/testing.md).
+Owns HTTP/MCP, evidence, processing, Memory, Ask and Actions for the instance owner. Never add an account host.
+
+- Focused test (repo root): `npm run test:file -w @mote/server -- test/connections.test.ts`. Pick an existing affected file; the script keeps the required concurrency and 120 s timeout.
+- Typecheck (repo root): `npm run typecheck -w @mote/server`
+- `better-sqlite3` must match the active Node ABI; rebuild it after switching Node versions.
+- Generated SQLite/HTTP fixtures don't cover external-model quality.

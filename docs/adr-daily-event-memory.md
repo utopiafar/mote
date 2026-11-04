@@ -125,4 +125,4 @@ instructions/tools, UI selection/navigation and i18n, generated journey fixtures
 live-model and renderer scripts, and the prior ADR/product guides.
 
 Validation and its fixture/live/physical boundaries are recorded
-[separately](validation/daily-event-memory-2026-10-10.md).
+[separately](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/daily-event-memory-2026-10-10.md).

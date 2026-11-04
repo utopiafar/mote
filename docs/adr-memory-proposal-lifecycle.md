@@ -48,7 +48,7 @@ host. The SDK schema subset rejects numeric/array limit keywords; tests compile
 all definitions with the real converter. Host-authored argument failures cross
 the bridge as invalid_delegation_arguments; provider failures remain private.
 
-See [validation](memory-proposal-lifecycle-validation.md).
+See [validation](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/memory-proposal-lifecycle-validation.md).
 
 ## Status reconciliation correction, 2026-10-09
 

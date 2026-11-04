@@ -1,6 +1,6 @@
 # ADR: Single-owner MVP and incremental recovery
 
-Accepted by the owner, 2026-10-23. Implementation and evidence are recorded in the [recovery inventory](single-owner-recovery-inventory.md); this decision is not itself a test or release qualification.
+Accepted by the owner, 2026-10-23. Implementation and evidence are recorded in the [recovery inventory](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/single-owner-recovery-inventory.md); this decision is not itself a test or release qualification.
 
 ## Decision
 
@@ -30,7 +30,7 @@ This supersedes the shared-account contracts in the former `adr-multiuser-scope`
 
 Appearance, unified configuration, retained historical answers and some Memory/evidence reliability already exist in the target. Restore recording, retry, Memory, plugin, client and performance requirements only where the baseline lacks desired behavior. Account-regression repairs are not automatically new features. UI prototype PR #185 is not production implementation.
 
-The [recovery inventory](single-owner-recovery-inventory.md) records the disposition of every intervening first-parent change and distinguishes restored requirements from behavior already present in the baseline.
+The [recovery inventory](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/single-owner-recovery-inventory.md) records the disposition of every intervening first-parent change and distinguishes restored requirements from behavior already present in the baseline.
 
 ## Development and validation
 

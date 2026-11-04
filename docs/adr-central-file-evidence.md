@@ -26,4 +26,4 @@ This supersedes device read-request assumptions in the current implementation ba
 evidence reader guide. It completes the [archive cleanup](adr-archive-admission-cleanup.md)
 and follows the [upload/processing contract](upload-processing-decoupling.md).
 Historical validation reports retain their original results. Executed validation
-is recorded in [the cleanup report](validation/file-evidence-cleanup-2026-10-11.md).
+is recorded in [the cleanup report](https://github.com/utopiafar/mote/blob/9c9a36e25355b1251aedbec2d5da89a63d8926de/docs/validation/file-evidence-cleanup-2026-10-11.md).

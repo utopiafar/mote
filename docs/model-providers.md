@@ -175,8 +175,6 @@ models:
 
 ## 验证
 
-Harness 0.2.0-rc.2 / Cordis 4.0.4 的分模块覆盖、合成全流程结果与兼容性边界见[升级验证记录](harness-upgrade-validation.md)。
-
 自动化覆盖配置持久化、凭据隔离、默认路由、逐次选择、热切换、旧文件拒绝和授权。`scripts/test-model-profiles-ui.cjs` 使用独立临时资料库与生成答案验证前端操作、凭据不回显、桌面及窄屏布局。
 
 Codex 测试分为协议模拟进程和真实 CLI + 本机合成 Responses 服务。后者验证 `initialize → thread/start → turn/start`、两轮动态工具、引用和查询工具清单：
