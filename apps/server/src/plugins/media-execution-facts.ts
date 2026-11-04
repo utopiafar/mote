@@ -1,8 +1,10 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {requestLocalJson,isLoopback} from './local-http.js';
-import {sha256,StoreError,type Store} from './store.js';
-import type {ExecutionStep} from './execution-engine.js';
+import {requestLocalJson,isLoopback} from '../local-http.js';
+import {sha256,StoreError} from '../store.js';
+import type {ExecutionStep} from '../execution-engine.js';
+import type {FileStore} from '../files.js';
+type Store=FileStore['store'];
 
 export const mediaExecutionFact=z.object({version:z.literal(1),requestId:z.string().uuid(),incarnation:z.string().uuid().optional(),stage:z.enum(['ocr','transcribe','diarize']).optional(),state:z.enum(['accepted','running','succeeded','failed','unknown']),acceptedAt:z.number().int().positive().optional(),startedAt:z.number().int().positive().optional(),finishedAt:z.number().int().positive().optional(),outcome:z.enum(['completed','processing_failed','worker_restarted','receipt_unavailable']).optional(),failureCode:z.enum(['processing_failed','processing_timeout','unsupported_input']).optional()}).strict();
 export type MediaExecutionFact=z.infer<typeof mediaExecutionFact>;
