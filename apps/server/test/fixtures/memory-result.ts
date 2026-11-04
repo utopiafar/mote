@@ -2,6 +2,8 @@ import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {MemoryStore} from '../../src/memory.js';
 import {MemoryPipeline,type MemoryPipelineOptions} from '../../src/memory-pipeline.js';
+import {memoryReviewReceipt} from '../../src/memory-review.js';
+import {sha256} from '../../src/store.js';
 import type {MemoryWorkMember} from '../../src/memory-work-contract.js';
 /** Synthetic models choose canonical admission and quote actual generated fixture evidence. */
 export function fixtureMemoryResult(memories:MemoryStore,result:QueryResult,ranges?:{id:string;offset:number;length:number}[],input?:Pick<QueryInput,'taskContext'>):QueryResult {
@@ -20,7 +22,20 @@ export function fixtureMemoryResult(memories:MemoryStore,result:QueryResult,rang
  return changed?{...result,answer:JSON.stringify(output)}:result;
 }
 export function fixtureMemoryPipeline(options:MemoryPipelineOptions){
- const pipeline=new MemoryPipeline({...options,phases:{...options.phases,query:async input=>fixtureMemoryResult(options.memories,await options.phases.query(input),input.evidenceRanges,input),...(options.phases.review?{review:async(input:any,draft:QueryResult,strategy:any,origin)=>fixtureMemoryResult(options.memories,await options.phases.review!(input,draft,strategy,origin),input.evidenceRanges,input)}:{})}});
+ // Preserve result identity so a review receipt stays attached; the synthetic
+ // reviewer emits final canonical admission/evidence without a real model.
+ const decorate=(input:any,result:QueryResult)=>{
+  const fixed=fixtureMemoryResult(options.memories,result,input.evidenceRanges,input);
+  if(fixed===result)return result;
+  const receipt=memoryReviewReceipt(result);if(receipt)receipt.resultHash=sha256(fixed.answer);
+  result.answer=fixed.answer;
+  return result;
+ };
+ const reviewedInput=(input:any)=>{
+  const validate=input.validateOutput;
+  return validate?{...input,validateOutput:async(result:QueryResult)=>validate(fixtureMemoryResult(options.memories,result,input.evidenceRanges,input))}:input;
+ };
+ const pipeline=new MemoryPipeline({...options,phases:{...options.phases,query:async input=>decorate(input,await options.phases.query(input)),...(options.phases.review?{review:async(input:any,draft:QueryResult,strategy:any,origin)=>decorate(input,await options.phases.review!(reviewedInput(input),draft,strategy,origin))}:{})}});
  if(options.phases.review){const create=pipeline.create.bind(pipeline);pipeline.create=input=>create(input.recipes||input.manualPlans||input.automaticGrant||input.automaticGrants?input:{...input,recipes:[{id:'mote.personal-memory',version:'5'}]});}
   return pipeline;
 }

@@ -304,7 +304,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     platform.bindRoutes({authorization:authorizationPlatform,capture:captureIntake,files,evidenceReader,memories:evidenceReader.memories});return platform;
   },mount=>mount(app));
   const startSourceIntegration=()=>bootstrap.installSourceIntegration(sourceIntegrationFactory);
-  const sourceIntegration=await startSourceIntegration();
   app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
@@ -350,6 +349,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     if(error instanceof ConfigServiceError)return reply.code(error.statusCode).send({error:error.code,message:error.code==='config_conflict'?moteText('配置已发生变化，请刷新后重试。'):moteText('配置未能应用，请检查配置状态后重试。'),requestId:req.id});
     reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
+  // Source routes mount after the root error handler so their encapsulated
+  // child app inherits owner-facing validation/conflict mapping (not Fastify's
+  // default 500 serializer).
+  const sourceIntegration=await startSourceIntegration();
   const {actions}=await assembleActions({store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)});
   const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Bounded transport batch with independent durable acknowledgements. Validate the

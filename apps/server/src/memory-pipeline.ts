@@ -982,7 +982,10 @@ export class MemoryPipeline {
             this.assertContextReadScope(job,batch,observedReadChunks(result));
             try{
               if(uninspectedMemoryImageTargets(this.store,imageInputs,processingImages,result,memoryReadRanges(result,ranges,readRanges),workMembers).length)throw new MemoryOutputValidationError('image_evidence','Original-image target was not inspected: deliver its pixels or same-original OCR, or report incomplete with the missing proof',{workContract:contract});
-              if(workMembers)readMemoryWorkCoverage(result,workMembers);
+              // A missing coverage envelope stays actionable before quote scope,
+              // but ownership of a present envelope follows exact quote validation.
+              const envelope=(()=>{try{return (JSON.parse(result.answer) as {coverage?:unknown}).coverage;}catch{return undefined;}})();
+              if(workMembers&&!Array.isArray(envelope))readMemoryWorkCoverage(result,workMembers);
               // Quote validation must precede coverage ownership checks: an
               // invented quote is actionable quote feedback, not missing coverage.
               this.options.memories.extract(result,model,{workContract:contract,profile:profile.id,requireAdmission:this.options.phases.review?true:this.options.requireAdmission,evidenceRanges:memoryReadRanges(result,ranges,readRanges),expectedFingerprints:expectedFingerprints(result),validateOnly:true});

@@ -35,6 +35,8 @@ test('default loader preserves the complete product, owner checks and original n
     'mote.coding','mote.sources','mote.models','mote.processing','mote.notes','mote.devices','mote.media','mote.owner-questions','mote.memory',
     'mote.imports','mote.ask','mote.insights','mote.agent-view','mote.features',
   ]);
+  // 3 foundations + observability + source integration + 10 domain activations
+  // (including the readiness and image-processing owners).
   assert.equal(node.bootstrap.snapshot().contributions.length,15);
   assert.deepEqual(node.bootstrap.hostDependencies,[...defaultDistribution.foundations.map(provider=>({id:provider.id,version:provider.version})),{id:'observability-platform',version:'1.0.0'},{id:'source-integration',version:'1.0.0'}]);
   assert.equal(node.configurationPlatform,node.bootstrap.configurationPlatform);
