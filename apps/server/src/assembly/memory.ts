@@ -1,5 +1,6 @@
 import type {AgentOptions,QueryInput} from '@mote/agent';
 import {skillCatalog} from '@mote/agent';
+import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {QueryResult} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
 import {StoreError,type Store} from '../store.js';
@@ -25,7 +26,8 @@ import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import {memoryIntegrationImageInputs} from '../memory-image-grants.js';
 import {MemoryStrategies} from '../memory-strategies.js';
 import {MemoryRecipeSettings} from '../memory-recipe-settings.js';
-import {MemoryAutomation} from '../memory-automation.js';
+import type {MemoryAutomation} from '../memory-automation.js';
+import {createMemoryAutomationAdmission,memoryAutomationAdmissionContribution,memoryAutomationAdmissionDeclaration,memoryAutomationAdmissionReplacement} from '../plugins/memory-automation-admission.js';
 import {MemoryIntegrationSettings} from '../memory-integration-settings.js';
 import {MemoryBindings} from '../memory-bindings.js';
 import {MemoryAdapters} from '../memory-adapters.js';
@@ -36,6 +38,12 @@ import {WorkingMemory} from '../working-memory.js';
 import {MemoryTopicsHost} from '../memory-topics-host.js';
 import {createMemoryControl} from '../memory-control.js';
 import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,MemoryLifecycle,type LifecycleSettings} from '../memory-lifecycle.js';
+
+/** C21C's trusted build registration. Its host installation lands with K04;
+ * this descriptor keeps the default distribution's ownership inventory exact. */
+export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:memoryAutomationAdmissionContribution,declaration:memoryAutomationAdmissionDeclaration,replacement:memoryAutomationAdmissionReplacement},
+]);
 
 /** A slot a later assembly stage fills once the object exists; callbacks
  * installed earlier dereference it at call time instead of capturing a `let`
@@ -58,8 +66,12 @@ export function memoryInputs(dependencies:MemoryInputStageDependencies){
   const {store,configService}=dependencies;
   projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
   const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
-  const memoryAutomation=new MemoryAutomation(store);
-  return Object.freeze({memoryStrategies,memoryRecipeSettings,memoryAutomation,
+  // MemoryAutomation is only constructed inside the C21C plugin factory. The
+  // borrowed Store has no independent disposal here; the vault owns it.
+  const automationAdmission=createMemoryAutomationAdmission(store);
+  automationAdmission.prepare();automationAdmission.start();
+  const memoryAutomation=automationAdmission.automationForAssembly;
+  return Object.freeze({memoryStrategies,memoryRecipeSettings,memoryAutomation,automationAdmission,
     bindings:lateBinding<MemoryBindings>(),topics:lateBinding<MemoryTopicsHost>(),integrationSettings:lateBinding<MemoryIntegrationSettings>()});
 }
 
