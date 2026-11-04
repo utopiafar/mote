@@ -1,5 +1,5 @@
 import {createModelEvidenceAuthority} from './model-evidence-authority.js';
-import type {QueryAgent,AgentRunFinalizer} from './query-agent.js';
+import type {QueryAgent} from './query-agent.js';
 import type {FeatureServices} from './feature-services.js';
 import {insightRequestSchema} from './query-request.js';
 import {ServerResources} from './server-resources.js';
@@ -117,14 +117,11 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
   const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,featureServices:sourcesFeatureServices}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
   const {mediaAssets,mediaPreparation,featureServices:mediaFeatureServices}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker});
-  const admittedUsageFactory=(route?:{mode:()=>AgentRunFinalizer|undefined;host?:()=>ReturnType<typeof observabilityAssembly.admittedUsage>|undefined})=>(...args:Parameters<UsageLedger['start']>)=>{
+  const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
     const accounting={agentStarted:()=>{agentStarted=true;},modelQueued:()=>{modelQueued=true;},modelStarted:()=>{
       agentStarted=true;
-      // Admission for a declared Host run belongs to the Host meter. Starting
-      // the legacy receipt here would leave a second, permanently running row.
-      if(route?.mode()==='host'){route.host?.()?.modelStarted();return;}
       start().modelStarted();
     }};
     return {
@@ -141,7 +138,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       },
     };
   };
-  const admittedUsage=admittedUsageFactory();
   let catalogChangesEnabled=false;
   const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,featureServices:materialsFeatureServices}=assembleMaterials({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
@@ -249,7 +245,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const serverLifecycle=createServerLifecycle();
   const {queryServices:queryRuntimeServices,query}=await prepareQueryRuntime({
     bootstrap,resources,store,lifecycle:serverLifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,
-    executor,agentGate,modelSettings,agent,observabilityAssembly,admittedUsageFactory,modelEvidenceAuthority,assertModelEvidence,sourceContexts,
+    executor,agentGate,modelSettings,agent,observabilityAssembly,modelEvidenceAuthority,assertModelEvidence,sourceContexts,
   });
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.

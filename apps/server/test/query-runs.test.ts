@@ -7,14 +7,17 @@ import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {ProviderFailure} from '@mote/shared';
 import type {Config} from '../src/config.js';
+import {hostRun,hostTerminal,hostUsage} from './fixtures/host-run.js';
 const token='generated-query-owner-token',headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 test('background admission survives client departure, deduplicates and persists progress, result and usage',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-query-runs-'));let complete!:()=>void,calls=0;
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-runs-'));let complete!:()=>void,calls=0,heldRun='';
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
     calls++;input.onProgress?.({stage:'tool',tool:'search_context',phase:'started'});
-    input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});
+    heldRun=hostUsage(input,{requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});
     await new Promise<void>(r=>{complete=r;});input.onProgress?.({stage:'tool',tool:'search_context',phase:'completed',count:3});
+    hostTerminal(input,'completed',heldRun);
     return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};
   }};
   const {app,store}=await buildApp(config(dir),{agent});t.after(async()=>{complete?.();await app.close();rmSync(dir,{recursive:true,force:true});});
@@ -75,8 +78,9 @@ test('unrelated archive deletion does not fail a query, but deleting used eviden
 
 test('execution entrypoints attribute insight, memory and isolated file analysis without inspecting prompt text',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-attribution-entrypoints-'));let failFile=false,closedFiles=0;
-  const emit=(input:Parameters<QueryAgent['query']>[0])=>input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{emit(input);return {answer:input.skill==='memory-extraction'?JSON.stringify({memories:[]}):input.skill==='personal-insight'?JSON.stringify({title:'Generated report',markdown:'Generated report',html:'<p>Generated report</p>'}):'Generated report',citations:[],trace:[],runId:randomUUID()};}};
+  const usage={requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0};
+  const emit=(input:Parameters<QueryAgent['query']>[0])=>{input.onUsage?.(usage);hostRun(input,{usage});};
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{lease?.onFinalizer?.('host');emit(input);return {answer:input.skill==='memory-extraction'?JSON.stringify({memories:[]}):input.skill==='personal-insight'?JSON.stringify({title:'Generated report',markdown:'Generated report',html:'<p>Generated report</p>'}):'Generated report',citations:[],trace:[],runId:randomUUID()};}};
   const {app,processing,store,featureServices}=await buildApp(config(dir),{agent,createModelAgent:async(_settings,_reader,_host,identity)=>{assert.ok(identity);assert.equal(identity.kind,'profile');return {configured:true,close:async()=>{closedFiles++;},query:async input=>{emit(input);if(failFile)throw Error('Generated model failure');return {answer:'Generated file summary',citations:[],trace:[],runId:randomUUID()};}};}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const insight=await app.inject({method:'POST',url:'/api/insights',headers,payload:{}});assert.equal(insight.statusCode,200,insight.body);
@@ -153,7 +157,7 @@ const settleReads=async(app:any,store:any,id:string)=>{let last='',detail:any;fo
 
 test('repeated reads of a completed run do not write to the store',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-query-run-readonly-'));
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}};
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{lease?.onFinalizer?.('host');hostRun(input,{usage:{requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0}});return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}};
   const {app,store}=await buildApp(config(dir),{agent});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const id=randomUUID();
@@ -175,9 +179,9 @@ test('repeated reads of a completed run do not write to the store',async t=>{
 });
 
 test('running reads return fresh usage without writes and the completed transition writes once',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-transition-'));let entered!:()=>void,release!:()=>void,held:Parameters<QueryAgent['query']>[0];
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-transition-'));let entered!:()=>void,release!:()=>void,held:Parameters<QueryAgent['query']>[0],heldRun='';
   const running=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{held=input;input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});entered();await gate;return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}};
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{lease?.onFinalizer?.('host');held=input;heldRun=hostUsage(input,{requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});entered();await gate;hostTerminal(input,'completed',heldRun);return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}};
   const {app,store}=await buildApp(config(dir),{agent});
   t.after(async()=>{release();await app.close();rmSync(dir,{recursive:true,force:true});});
   const id=randomUUID();
@@ -189,7 +193,7 @@ test('running reads return fresh usage without writes and the completed transiti
   assert.equal(first.operationUsage.total.totalTokens,40);
   log.sql.length=0;
   const whileRunning=persistedRun(store,id);
-  held!.onUsage?.({requests:2,reportedRequests:2,inputTokens:60,outputTokens:20,totalTokens:80,cacheReadTokens:20,cacheWriteTokens:0});
+  hostUsage(held!,{requests:2,reportedRequests:2,inputTokens:60,outputTokens:20,totalTokens:80,cacheReadTokens:20,cacheWriteTokens:0},heldRun);
   const second=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();
   assert.equal(second.status,'running');assert.equal(second.operationUsage.total.totalTokens,80,'the next read recomputes live usage');
   const third=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();
