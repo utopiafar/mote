@@ -20,9 +20,11 @@ const active=(state:State)=>['queued','dependencies','verifying_dependencies','m
 export class MediaPreparation {
   private jobs=new Map<MediaRole,Job>();
   private workers=new Map<'ocr'|'dialogue',Worker>();
+  private workersStopping?:Promise<void>;
   private tail=Promise.resolve();
   private closing=false;
   private changed=false;
+  private abort=new AbortController();
   private repository:string;
   readonly directory:string;
   constructor(private options:Options){
@@ -44,7 +46,7 @@ export class MediaPreparation {
     const {media}=this.options;if(!media.workerToken)return false;
     const url=new URL(role==='ocr'?media.ocrEndpoint:media.asrEndpoint);url.pathname='/health';url.search='';url.hash='';
     try{
-      const response=await(this.options.fetch??fetch)(url,{headers:{Authorization:`Bearer ${media.workerToken}`},redirect:'error',signal:AbortSignal.timeout(2500)});
+      const response=await(this.options.fetch??fetch)(url,{headers:{Authorization:`Bearer ${media.workerToken}`},redirect:'error',signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(2500)])});
       if(!response.ok)return false;
       const result=await response.json() as {ocr?:boolean;asr?:boolean;diarization?:boolean;wespeaker?:boolean};
       return role==='ocr'?result.ocr===true:role==='speaker-wespeaker'?result.asr===true&&result.diarization===true&&result.wespeaker===true:result.asr===true&&result.diarization===true;
@@ -118,7 +120,12 @@ export class MediaPreparation {
     if(this.options.runtime!=='native'||this.unsupported()||!existsSync(join(this.directory,'current.json')))return;
     for(const role of ['ocr','dialogue'] as const)if(this.options.assets.ready(role))void this.start(role,false);
   }
-  invalidate(){this.changed=true;for(const job of this.jobs.values())if(active(job.state))job.controller.abort();void this.stopWorkers();}
-  private async stopWorkers(){const owned=[...this.workers.values()];this.workers.clear();await Promise.all(owned.map(worker=>worker.close()));}
-  async close(){this.closing=true;for(const job of this.jobs.values())job.controller.abort();await this.tail;await this.stopWorkers();}
+  invalidate(){this.changed=true;this.abort.abort();for(const job of this.jobs.values())if(active(job.state))job.controller.abort();void this.stopWorkers();}
+  private stopWorkers(){
+    if(this.workersStopping)return this.workersStopping;
+    const owned=[...this.workers.values()];this.workers.clear();
+    const stopping=Promise.all(owned.map(worker=>worker.close())).then(()=>{});this.workersStopping=stopping;
+    void stopping.finally(()=>{if(this.workersStopping===stopping)this.workersStopping=undefined;});return stopping;
+  }
+  async close(){this.closing=true;this.abort.abort();for(const job of this.jobs.values())job.controller.abort();await this.tail;await this.stopWorkers();}
 }

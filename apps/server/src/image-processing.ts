@@ -18,7 +18,7 @@ import type {ConfigService} from './config-service.js';
 import {effectiveProcessorParameters} from './processor-parameters.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {requestLocalJson,isLoopback} from './local-http.js';
-import type {MediaExecutionCall} from './media-execution-facts.js';
+import type {MediaExecutionCall} from './plugins/media-execution-facts.js';
 import {ProcessorAdmission} from './processor-admission.js';
 import type {ModelProcessingAuthority} from './model-processing-authority.js';
 import type {MaterialStore} from './materials.js';

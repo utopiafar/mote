@@ -41,7 +41,7 @@ test('native start failure is not ready, retry runs an owned authenticated HTTP 
  await preparation.start('ocr');assert.equal((await settled(preparation,'ocr')).state,'failed');
  await writeFile(script,"const http=require('node:http');http.createServer((req,res)=>{if(req.headers.authorization!=='Bearer '+process.env.MOTE_MEDIA_WORKER_TOKEN){res.writeHead(401);res.end();return;}res.setHeader('content-type','application/json');res.end(JSON.stringify({ocr:true}));}).listen(Number(process.argv[process.argv.indexOf('--port')+1]),'127.0.0.1');");
  await preparation.start('ocr');const result=await settled(preparation,'ocr');assert.equal(result.state,'ready');assert.equal(result.runtimeReady,true);assert.ok(!JSON.stringify(result).includes(f.media.workerToken));
- assert.equal((await fetch(f.media.ocrEndpoint.replace('/ocr','/health'))).status,401);await preparation.close();await assert.rejects(fetch(f.media.ocrEndpoint));
+ assert.equal((await fetch(f.media.ocrEndpoint.replace('/ocr','/health'))).status,401);preparation.invalidate();await preparation.close();await assert.rejects(fetch(f.media.ocrEndpoint));assert.equal((await preparation.status('ocr')).error,'configuration_changed');
 });
 test('Docker prepares model files and checks its existing sidecar without invoking native dependency installation',async t=>{
  const f=await fixture(t);let native=0;const preparation=new MediaPreparation({runtime:'docker',...f,prepare:async()=>{native++;throw Error('must not run');},fetch:async()=>Response.json({asr:true,diarization:true})});t.after(()=>preparation.close());
@@ -56,4 +56,12 @@ test('cancelling startup waits for its owned unready worker to exit before repor
 test('custom native endpoints remain explicit and are never installed over or claimed managed',async t=>{
  const f=await fixture(t),preparation=new MediaPreparation({runtime:'native',...f,media:{...f.media,ocrEndpoint:'https://example.invalid/ocr'}});t.after(()=>preparation.close());
  assert.equal((await preparation.status('ocr')).error,'external_worker');assert.throws(()=>preparation.start('ocr'),/external_worker/);assert.equal(f.assets.installs,0);
+});
+
+
+test('configuration invalidation aborts an in-flight worker health request',async t=>{
+ const f=await fixture(t);f.assets.installed.add('ocr');let signal:AbortSignal|undefined;
+ const preparation=new MediaPreparation({runtime:'docker',...f,fetch:async(_input,init)=>{signal=init?.signal as AbortSignal;await new Promise<void>((_resolve,reject)=>{if(signal.aborted){reject(signal.reason);return;}signal.addEventListener('abort',()=>reject(signal.reason),{once:true});});return Response.json({ocr:true});}});t.after(()=>preparation.close());
+ const reading=preparation.status('ocr');for(let index=0;index<100&&!signal;index++)await new Promise(resolve=>setTimeout(resolve,1));
+ assert.ok(signal);preparation.invalidate();assert.equal(signal.aborted,true);assert.equal((await reading).runtimeReady,false);await preparation.close();
 });

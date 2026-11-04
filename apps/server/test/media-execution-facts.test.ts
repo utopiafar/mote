@@ -13,7 +13,7 @@ import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
-import {readMediaExecutionFact} from '../src/media-execution-facts.js';
+import {readMediaExecutionFact} from '../src/plugins/media-execution-facts.js';
 
 async function until(check:()=>Promise<boolean>,label:string,diagnostics?:()=>unknown){const deadline=Date.now()+15000;while(!await check()){if(Date.now()>deadline)throw Error('Generated media journey did not reach '+label+(diagnostics?' '+JSON.stringify(diagnostics()):''));await delay(10);}}
 async function fixture(t:TestContext,mode='fail2',hold=true){
