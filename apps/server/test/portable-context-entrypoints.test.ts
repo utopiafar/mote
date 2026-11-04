@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 
 // Each entry needs its own ESM graph: an earlier Store import otherwise masks
 // the initialization cycle that prevented the standalone Agent view starting.
-for(const entry of ['features/agent-view','record-context','source-context','import-attribution','material-portable']){
+for(const entry of ['plugins/agent-view-routes','record-context','source-context','import-attribution','material-portable']){
   test(`standalone ${entry} starts before Store and preserves portable context validation`,()=>{
     const url=(name:string)=>new URL(`../src/${name}.ts`,import.meta.url).href;
     const result=spawnSync(process.execPath,['--import','tsx','--input-type=module','-e',`
