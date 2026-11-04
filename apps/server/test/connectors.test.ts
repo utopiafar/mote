@@ -24,7 +24,8 @@ import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {SourceStore} from '../src/sources.js';
 import {registerConnectors} from '../src/connectors/index.js';
 import {recordingManifest,type RecordingProvider} from '../src/connectors/recordings.js';
-import {ConnectorRegistry,type ConnectorManifest} from '../src/connectors/registry.js';
+import type {ConnectorManifest} from '../src/connectors/registry.js';
+import {connectorRegistryHost} from './fixtures/connector-host.js';
 import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
@@ -63,12 +64,13 @@ function seedMemory(store:Store,id:string,evidenceIds:string[],createdAt:string,
 test('a third-party recording manifest contributes owner routes, source capabilities and generic settings metadata and releases its runtime',async t=>{
  const {ctx,sources}=await fixture(t),app=Fastify();let accounts=0,closed=0;
  const provider:RecordingProvider={id:'generated',version:'fixture@1',account:async()=>{accounts++;return {id:'generated-owner'};},discover:async()=>({ids:[]}),metadata:async()=>({id:'generated-recording',title:'Generated',durationMs:0}),transcript:async()=>{throw Error('Unused generated fixture');},media:async()=>{throw Error('Unused generated fixture');},close:async()=>{closed++;}};
- const registry=new ConnectorRegistry(app,ctx);registry.register(recordingManifest('generated',()=>provider,{label:'Generated recording plugin',setup:{command:'generated login'}}));await registry.start();
- t.after(async()=>{await registry.close();await app.close();});
+ const host=connectorRegistryHost(app,ctx,[recordingManifest('generated',()=>provider,{label:'Generated recording plugin',setup:{command:'generated login'}})]);
+ await host.registry.start();
+ t.after(async()=>{await host.close();await app.close();});
  assert.equal(accounts,0);assert.equal(sources.capabilities.has('generated.recordings'),true);
  const denied=await app.inject('/api/connectors/status');assert.equal(denied.statusCode,401);
  const result=await app.inject({url:'/api/connectors/status',headers:{authorization:'Bearer '+owner}});const status=result.json()['generated-recordings'];assert.equal(status.category,'recordings');assert.equal(status.provider,'generated');assert.equal(status.label,'Generated recording plugin');assert.equal(status.setup.command,'generated login');assert.equal(accounts,0);
- await registry.close();assert.equal(closed,1);assert.equal(sources.capabilities.has('generated.recordings'),false);
+ await host.registry.close();assert.equal(closed,1);assert.equal(sources.capabilities.has('generated.recordings'),false);
 });
 
 test('trusted deployment connector modules register new source kinds and owner routes without core edits',async t=>{
@@ -117,21 +119,22 @@ export default {
 });
 
 test('connector registry rejects duplicate manifests and disposes a failed initializer',async t=>{
-  const {ctx}=await fixture(t),app=Fastify();t.after(()=>app.close());
-  const registry=new ConnectorRegistry(app,ctx),events:string[]=[];
+  const {ctx}=await fixture(t),app=Fastify(),events:string[]=[];
   const manifest:ConnectorManifest={apiVersion:1,id:'synthetic-failure',sourceKinds:[{kind:'synthetic.failure',capabilities:{lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false}}],create:()=>({init:async()=>{events.push('init');throw Error('Synthetic initialization failure');},close:()=>{events.push('close');}})};
-  registry.register(manifest);
-  assert.throws(()=>registry.register(manifest),/already registered/);
-  await assert.rejects(registry.start(),/Synthetic initialization failure/);
+  const host=connectorRegistryHost(app,ctx,[manifest]);t.after(async()=>{await host.close();await app.close();});
+  assert.throws(()=>host.registry.register(manifest),/already registered/);
+  await assert.rejects(host.registry.start(),/Synthetic initialization failure/);
   assert.deepEqual(events,['init','close']);assert.equal(ctx.sources.capabilities.has('synthetic.failure'),false);
 });
 
 test('shared OAuth callback paths dispatch declared state prefixes and keep callback responses restrictive',async t=>{
-  const {ctx}=await fixture(t),app=Fastify(),registry=new ConnectorRegistry(app,ctx),seen:string[]=[];
-  t.after(async()=>{await registry.close();await app.close();});
-  registry.register({apiVersion:1,id:'default-oauth',sourceKinds:[],create:()=>({configure:host=>host.oauthCallback({path:'/oauth/shared/callback',complete:async()=>{seen.push('default');},successMessage:'Default connected',failureMessage:'Default rejected'})})});
-  registry.register({apiVersion:1,id:'prefixed-oauth',sourceKinds:[],create:()=>({configure:host=>host.oauthCallback({path:'/oauth/shared/callback',statePrefix:'mail.',complete:async()=>{seen.push('mail');},successMessage:'Mail connected',failureMessage:'Mail rejected'})})});
-  await registry.start();
+  const {ctx}=await fixture(t),app=Fastify(),seen:string[]=[];
+  const host=connectorRegistryHost(app,ctx,[
+    {apiVersion:1,id:'default-oauth',sourceKinds:[],create:()=>({configure:host=>host.oauthCallback({path:'/oauth/shared/callback',complete:async()=>{seen.push('default');},successMessage:'Default connected',failureMessage:'Default rejected'})})},
+    {apiVersion:1,id:'prefixed-oauth',sourceKinds:[],create:()=>({configure:host=>host.oauthCallback({path:'/oauth/shared/callback',statePrefix:'mail.',complete:async()=>{seen.push('mail');},successMessage:'Mail connected',failureMessage:'Mail rejected'})})},
+  ]);
+  t.after(async()=>{await host.close();await app.close();});
+  await host.registry.start();
   const mail=await app.inject({url:`/oauth/shared/callback?state=mail.${'a'.repeat(32)}&code=fixture`});
   assert.equal(mail.statusCode,200);assert.equal(mail.body,'Mail connected');assert.equal(mail.headers['cache-control'],'no-store');assert.equal(mail.headers['content-security-policy'],"default-src 'none'; style-src 'none'");
   const general=await app.inject({url:`/oauth/shared/callback?state=${'b'.repeat(32)}&code=fixture`});
@@ -609,20 +612,24 @@ test('MCP context pages every published memory under a small serialized budget',
 
 
 test('connector initialization retains its cause and aggregates every failed cleanup',async t=>{
- const {ctx}=await fixture(t),app=Fastify(),registry=new ConnectorRegistry(app,ctx),events:string[]=[];
- t.after(()=>app.close());
+ const {ctx}=await fixture(t),app=Fastify(),events:string[]=[];
  const failure=Error('Generated init failure'),first=Error('Generated first close failure'),second=Error('Generated second close failure');
- registry.register({apiVersion:1,id:'generated-first',sourceKinds:['custom'],create:()=>({close:()=>{events.push('first');throw first;}})});
- registry.register({apiVersion:1,id:'generated-second',sourceKinds:['custom'],create:()=>({init:async()=>{throw failure;},close:()=>{events.push('second');throw second;}})});
- await assert.rejects(registry.start(),(error:unknown)=>{assert.ok(error instanceof AggregateError);assert.equal(error.cause,failure);assert.equal(error.errors[0],failure);assert.ok(error.errors[1] instanceof AggregateError);assert.deepEqual(error.errors[1].errors,[second,first]);return true;});
- assert.deepEqual(events,['second','first']);await assert.rejects(registry.close(),AggregateError);assert.deepEqual(events,['second','first']);
+ const host=connectorRegistryHost(app,ctx,[
+  {apiVersion:1,id:'generated-first',sourceKinds:['custom'],create:()=>({close:()=>{events.push('first');throw first;}})},
+  {apiVersion:1,id:'generated-second',sourceKinds:['custom'],create:()=>({init:async()=>{throw failure;},close:()=>{events.push('second');throw second;}})},
+ ]);
+ t.after(async()=>{await host.close().catch(()=>{});await app.close();});
+ await assert.rejects(host.registry.start(),(error:unknown)=>{assert.ok(error instanceof AggregateError);assert.equal(error.cause,failure);assert.equal(error.errors[0],failure);assert.ok(error.errors[1] instanceof AggregateError);assert.deepEqual(error.errors[1].errors,[second,first]);return true;});
+ assert.deepEqual(events,['second','first']);await assert.rejects(host.registry.close(),AggregateError);assert.deepEqual(events,['second','first']);
 });
 
 test('concurrent connector closes await the same in-progress transport shutdown',async t=>{
- const {ctx}=await fixture(t),app=Fastify(),registry=new ConnectorRegistry(app,ctx);let release!:()=>void,closed=0;
- const held=new Promise<void>(resolve=>release=resolve);t.after(async()=>{release();await registry.close();await app.close();});
- registry.register({apiVersion:1,id:'generated-held',sourceKinds:['custom'],create:()=>({close:async()=>{closed++;await held;}})});await registry.start();
- const closing=registry.close();assert.equal(registry.close(),closing);let settled=false;void closing.then(()=>settled=true);
+ const {ctx}=await fixture(t),app=Fastify();let release!:()=>void,closed=0;
+ const held=new Promise<void>(resolve=>release=resolve);
+ const host=connectorRegistryHost(app,ctx,[{apiVersion:1,id:'generated-held',sourceKinds:['custom'],create:()=>({close:async()=>{closed++;await held;}})}]);
+ t.after(async()=>{release();await host.close();await app.close();});
+ await host.registry.start();
+ const closing=host.registry.close();assert.equal(host.registry.close(),closing);let settled=false;void closing.then(()=>settled=true);
  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(settled,false);assert.equal(closed,1);
  release();await closing;assert.equal(closed,1);
 });

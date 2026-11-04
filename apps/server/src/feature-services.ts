@@ -7,7 +7,7 @@ import type {OwnerQuestions} from './owner-questions.js';
 import type {DelegationRuntime} from './delegation-runtime.js';
 import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
-import type {ConnectorRegistry} from './connectors/registry.js';
+import type {ConnectorHostAdapter} from './plugins/connector-host-adapter.js';
 import type {FileProcessing} from './file-processing.js';
 import type {ExecutionEngine} from './execution-engine.js';
 import type {ActionsServicesAssembly} from './plugins/actions-services.js';
@@ -73,7 +73,7 @@ export interface FeatureServices {
   delegation:DelegationRuntime;
   memoryIntegrationSettings:MemoryIntegrationSettings;
   memoryRecipeSettings:MemoryRecipeSettings;
-  connectors:ConnectorRegistry;
+  connectors:ConnectorHostAdapter;
   processing:FileProcessing;
   executor:ExecutionEngine;
   actionsServices:ActionsServicesAssembly;

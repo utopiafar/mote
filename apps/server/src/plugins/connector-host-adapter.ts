@@ -117,7 +117,7 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
     ownerRoute:(route,scope)=>options.dispatcher.registerOwnerRoute(scope,route),
     oauthCallback:(callback,scope)=>options.dispatcher.registerOAuthCallback(scope,callback),
   };
-  const registry=new ConnectorRegistry(undefined,options.context,{
+  const registry=new ConnectorRegistry(options.context,{
     http,scopeFor,statusScope:options.statusScope,manageCapabilities:false,
     ...(options.transport?{transport:options.transport}:{}),
     ...(options.stateFor?{stateFor:(_manifest:ConnectorManifest,scope?:HostScope)=>{
