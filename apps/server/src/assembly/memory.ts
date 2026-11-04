@@ -36,6 +36,14 @@ import {WorkingMemory} from '../working-memory.js';
 import {MemoryTopicsHost} from '../memory-topics-host.js';
 import {createMemoryControl} from '../memory-control.js';
 import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,MemoryLifecycle,type LifecycleSettings} from '../memory-lifecycle.js';
+import type {CentralDomainPlugin} from '../bootstrap.js';
+import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,memoryRecordRepositoryReplacement} from '../plugins/memory-record-repository.js';
+
+/** Declared build-time domain plugins the memory assembly wires; the
+ * distribution concatenates each domain's list into one selected table. */
+export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
+  {contribution:memoryRecordRepositoryContribution,declaration:memoryRecordRepositoryDeclaration,replacement:memoryRecordRepositoryReplacement},
+]);
 
 /** A slot a later assembly stage fills once the object exists; callbacks
  * installed earlier dereference it at call time instead of capturing a `let`
