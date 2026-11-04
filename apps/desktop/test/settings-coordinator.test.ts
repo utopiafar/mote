@@ -11,7 +11,7 @@ import { DEFAULT_SOURCE_OPTIONS } from '../src/source-types';
 import { NoteDraftStore } from '../src/note-draft';
 import { SettingsCoordinator, type SettingsDependencies } from '../src/settings-coordinator';
 import type { Config } from '../src/contracts';
-import { event, image } from './fixtures';
+import { event, image, runtimeStatusReceipt } from './fixtures';
 import { ConnectionController } from '../src/connection-controller';
 import { ConnectionOnboarding } from '../src/connection';
 import type { ConnectionStatus } from '../src/contracts/connection';
@@ -190,7 +190,8 @@ it('ignores an old connection check after settings change, deduplicates a runnin
   const f = await fixture();
   try {
     const entry = connectionEntry(f); let release!: (response: Response) => void;
-    const fetcher = vi.fn().mockImplementationOnce(async () => new Promise<Response>(resolve => { release = resolve; })).mockResolvedValueOnce(Response.json({ error: 'unauthorized' }, { status: 401 })).mockImplementationOnce(async () => Response.json(entry.identity()));
+    const self: Array<() => Response | Promise<Response>> = [() => new Promise<Response>(resolve => { release = resolve; }), () => Response.json({ error: 'unauthorized' }, { status: 401 }), () => Response.json(entry.identity())];
+    const fetcher = vi.fn(async (url: string) => url.endsWith('/agent-runtime-settings') ? Response.json(runtimeStatusReceipt()) : self.shift()!());
     vi.stubGlobal('fetch', fetcher);
     const pending = entry.controller.test(); expect((await entry.controller.test()).state).toBe('checking'); expect(fetcher).toHaveBeenCalledTimes(1);
     f.dependencies.installSettings({ ...f.settings(), token: 'generated-new-check-token-123456789' });
@@ -198,6 +199,7 @@ it('ignores an old connection check after settings change, deduplicates a runnin
     release(Response.json(entry.identity()));
     expect((await pending).state).toBe('unchecked'); expect(entry.status().message).toBe('Generated new connection');
     expect((await entry.controller.test()).state).toBe('error');
-    expect((await entry.controller.test()).state).toBe('connected'); expect(fetcher).toHaveBeenCalledTimes(3);
+    expect((await entry.controller.test()).state).toBe('connected'); expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(entry.status().message).toContain('已就绪'); expect(entry.status().message).toContain('generated-model');
   } finally { await f.close(); }
 });

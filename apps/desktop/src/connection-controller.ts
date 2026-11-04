@@ -1,5 +1,6 @@
 import { moteText } from '@mote/shared/i18n';
 import { ConnectionError, ConnectionOnboarding, testConnection } from './connection';
+import { agentRuntimeStatusSummary, readAgentRuntimeStatus } from './agent-runtime-status';
 import { updateConfig } from './config';
 import type { Config, Platform } from './contracts';
 import type { ConnectionStatus } from './contracts/connection';
@@ -40,7 +41,9 @@ export class ConnectionController {
     const requested = d.settings(); d.installStatus({ state: 'checking', message: moteText('正在验证已保存连接与权限…') });
     try {
       const identity = await testConnection(requested);
-      if (d.settings() === requested) d.installStatus({ state: 'connected', message: moteText('管理员连接正常 · 可访问完整中央仓库'), checkedAt: new Date().toISOString(), identity });
+      let runtime = '';
+      try { runtime = ' · ' + agentRuntimeStatusSummary(await readAgentRuntimeStatus(requested)); } catch { runtime = ' · ' + moteText('当前生效值') + '：' + moteText('不可用'); }
+      if (d.settings() === requested) d.installStatus({ state: 'connected', message: moteText('管理员连接正常 · 可访问完整中央仓库') + runtime, checkedAt: new Date().toISOString(), identity });
     } catch (error) {
       if (d.settings() === requested) d.installStatus({ state: 'error', message: error instanceof ConnectionError ? error.message : moteText('连接检查失败；已保存配置未改变'), checkedAt: new Date().toISOString() });
     }
