@@ -1,6 +1,6 @@
 import {memoryRangeEvaluationCoverageSchema,assertMemoryWorkAnswerSize} from './memory-work-contract.js';
 import type {MemoryWorkContract} from './memory-strategy-contract.js';
-import {MemoryDeletions} from './memory-deletions.js';
+import {openMemoryDeletions,type MemoryDeletions} from './plugins/memory-deletions.js';
 import {PERSONAL_CONTEXT_POLICY} from './memory-policy.js';
 import {codingProjectIdentity} from './coding-project.js';
 import {randomUUID} from 'node:crypto';
@@ -48,7 +48,7 @@ export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:Pre
 const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
   readonly deletions:MemoryDeletions;
-  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){this.deletions=new MemoryDeletions(store,this.readEvidence);if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();initializedStores.add(store);}}
+  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){this.deletions=openMemoryDeletions(store,{records:{read:ids=>this.readEvidence([...ids])}});if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();initializedStores.add(store);}}
   /** Native card inventory, including stale cards retained in the owner archive. */
   count(){return Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n);}
   private ensureIndex(){

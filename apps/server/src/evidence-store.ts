@@ -11,7 +11,7 @@ import {isStateExtension,samples as stateSamples} from '@mote/shared/state-serie
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
 import {systemEventText,sourceContentTime,resolveFileRule,type FilePolicy} from '@mote/shared';
-import {MemoryDeletions} from './memory-deletions.js';
+import {exportMemoryDeletions,restoreMemoryDeletions} from './plugins/memory-deletions.js';
 import {notificationEvidenceText} from './notification-evidence.js';
 import {exportPortableMaterials,preparePortableMaterials,restorePortableMaterials,portableMaterialEstimate} from './material-portable.js';
 import {memorySchema} from './memory-schema.js';
@@ -301,7 +301,7 @@ export class EvidenceStore {
         this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,json);
         for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);
       }
-      if(archive.memoryDeletions!==undefined)new MemoryDeletions(this,readEvidence).restore(archive.memoryDeletions);
+      if(archive.memoryDeletions!==undefined)restoreMemoryDeletions(this,{read:ids=>readEvidence([...ids])},archive.memoryDeletions);
       for(const {requestHash,...task} of todoEntries){
         const prior=this.db.prepare('SELECT json,request_hash FROM todos WHERE id=?').get(task.id);
         if(prior){if(prior.request_hash!==requestHash||!Object.entries(task).every(([key,value])=>JSON.stringify(JSON.parse(String(prior.json))[key])===JSON.stringify(value)))throw new StoreError('Archived task conflicts with an existing task',409);continue;}
@@ -605,7 +605,7 @@ export class EvidenceStore {
     if(estimated>maxBytes||stats.captures>20000)throw new StoreError('Archive too large for HTTP export; use npm run backup for a consistent database backup',413);
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
-    const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?new MemoryDeletions(this,ids=>this.evidence(ids)).export():[];
+    const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?exportMemoryDeletions(this,{read:ids=>this.evidence([...ids])}):[];
     const archive={materials:exportPortableMaterials(this),memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:2,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;

@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {ContextToolError} from '@mote/agent';
+import {ContextToolError,HOST_DELEGATION_CONTROL_DEFINITIONS} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {Store} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
-import {DelegationRuntime,DELEGATION_CONTROL_DEFINITIONS} from '../src/delegation-runtime.js';
+import {DelegationRuntime} from '../src/delegation-runtime.js';
 
 const proposal=(id='one')=>({id,capabilityId:'generated.package',title:'Generated branch',goal:'Inspect generated input',input:{members:[id]}});
 function fixture(t:any){
@@ -44,8 +44,8 @@ test('declared bounds compile for both adapters and invalid arguments survive th
  f.runtime.start({id:'argument-plan',profileId:'generated.plan',goal:'Generated',input:{},allowedCapabilities:['generated.package']});
  const controls=f.runtime.controlChannel('argument-plan');
  try{
- for(const definition of DELEGATION_CONTROL_DEFINITIONS)assert.doesNotThrow(()=>parameterSchemaSpecToJsonSchema(definition.fields as any));
- assert.match(DELEGATION_CONTROL_DEFINITIONS.find(tool=>tool.name==='delegation_submit')!.description,/1–8/);
+ for(const definition of HOST_DELEGATION_CONTROL_DEFINITIONS)assert.doesNotThrow(()=>parameterSchemaSpecToJsonSchema(definition.fields as any));
+ assert.match(HOST_DELEGATION_CONTROL_DEFINITIONS.find(tool=>tool.name==='delegation_submit')!.description,/1–8/);
  const bridge=await startBridge({search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]},{question:'Generated input',hostRetrieval:'none',hostControlChannel:controls},24);t.after(()=>bridge.close());
  const call=async(tool:string,body:unknown)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:response.status,body:await response.json() as any};};
  for(const [tool,body,message] of [['delegation_submit',{units:Array.from({length:25},(_,i)=>proposal('p'+i))},/1–8/],['delegation_results',{limit:100},/1–30/],['delegation_submit',{units:[{id:'missing',capabilityId:'generated.package',title:'Generated',input:{}}]},/goal/]] as const){
