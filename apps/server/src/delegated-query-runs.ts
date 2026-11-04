@@ -6,7 +6,7 @@ import {safeError} from './diagnostics.js';
 import {moteText,requestLocale} from './i18n.js';
 import {DelegationRuntime,registerQueryDelegation,type DelegationWork} from './delegation-runtime.js';
 import type {QueryRun} from './query-run-types.js';
-import type {SavedQuery} from './query-preparation.js';
+import type {SavedQuery} from './plugins/query-preparation.js';
 import type {RunDeadline} from './run-execution.js';
 import {ExecutionFailure} from './execution-engine.js';
 
