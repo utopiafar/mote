@@ -3,9 +3,10 @@ import {CalendarActions,type CalendarActionIO} from '../src/calendar-actions';
 
 it('connecting publishes only writable calendars and background permission loss does not prompt or claim',async()=>{
  let permission='granted',declaration:any=null;const commands:string[]=[],requests:string[]=[];const ledger=new Map<string,string>();
+ const projection=(value:any)=>({id:'calendar.manage',version:1,installed:true,grant:value?.permission??'unavailable',available:Boolean(value?.connectionActive&&value.permission==='granted'),authorized:false,waitingDevice:!value?.connectionActive,devices:value?[{deviceId:'mac',revision:value.revision,connectionActive:value.connectionActive,grant:value.permission,available:Boolean(value.connectionActive&&value.permission==='granted'),authorized:false,waitingDevice:!value.connectionActive}]:[]});
  const io:CalendarActionIO={
   native:async command=>{commands.push(command);return {permission,calendars:permission==='granted'?[{id:'generated',title:'Generated',writable:true}]:[]};},
-  request:async(path,body:any)=>{requests.push(path);if(path==='/api/connections/self')return {credential:{deviceId:'mac'}};if(path==='/api/device-action-capabilities'){if(body)declaration={...body,revision:body.expectedRevision+1,connectionId:'paired',connectionActive:true};return body?declaration:{connectionId:'paired',declaration};}if(path==='/api/managed-calendar-deliveries')return {items:[],manualReviewAllowed:true};if(path.startsWith('/api/actions/deliveries'))return {items:[]};return {};},
+  request:async(path,body:any)=>{requests.push(path);if(path==='/api/connections/self')return {credential:{deviceId:'mac'}};if(path==='/api/device-action-capabilities'){if(body)declaration={...body,revision:body.expectedRevision+1,connectionId:'paired',connectionActive:true};return body?declaration:{connectionId:'paired',declaration,projection:projection(declaration)};}if(path==='/api/managed-calendar-deliveries')return {items:[],manualReviewAllowed:true};if(path.startsWith('/api/actions/deliveries'))return {items:[]};return {};},
   read:async key=>ledger.get(key),write:async(key,value)=>{ledger.set(key,value);},
  };
  const client=new CalendarActions({deviceId:'mac',deviceName:'Generated Mac'},io);

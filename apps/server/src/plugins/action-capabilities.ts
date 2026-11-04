@@ -1,6 +1,6 @@
 import {ActionInputScope} from '../action-input-scope.js';
 import {actionGrantCommandSchema,type ActionGrant,type ActionPluginProvider,type ActionPluginIdentity} from '@mote/shared';
-import {actionCapabilityCommandSchema,actionCapabilityDraftSchema,actionDeviceDeclarationSchema,calendarManageCapability,calendarCapabilityIdentitySchema,type ActionCapabilityDraft,type ActionDeviceCapability} from '@mote/shared';
+import {actionCapabilityCommandSchema,actionCapabilityDraftSchema,actionDeviceDeclarationSchema,calendarManageCapability,calendarCapabilityIdentitySchema,projectDeviceCapability,type ActionCapabilityDraft,type ActionDeviceCapability,type DeviceCapabilityProjection} from '@mote/shared';
 import {StoreError,sha256} from '../store.js';
 import type {SourceStore} from '../sources.js';
 import type {Connections,ConnectionCredential} from '../connections.js';
@@ -34,7 +34,27 @@ export class ActionCapabilities {
   });
  }
  declaration(deviceId:string){const value=this.read<ActionDeviceCapability>('action_device_capabilities',deviceId);return value?{...value,connectionActive:this.active(value.connectionId)}:undefined;}
- inventory(){return {providers:this.providers(),grants:this.grants().map(grant=>({...grant,available:this.available(grant)})),sources:this.inputs.catalog(),capabilities:[calendarManageCapability],executionEnabled:this.grants().some(grant=>this.available(grant)),declarations:this.store.db.prepare('SELECT device_id FROM action_device_capabilities ORDER BY device_id').all().map(row=>this.declaration(String(row.device_id))),drafts:this.store.db.prepare('SELECT json FROM action_capability_drafts ORDER BY id').all().map(row=>JSON.parse(String(row.json)) as ActionCapabilityDraft)};}
+ declarations():ActionDeviceCapability[]{return this.store.db.prepare('SELECT json FROM action_device_capabilities ORDER BY device_id').all().map(row=>JSON.parse(String(row.json)) as ActionDeviceCapability).map(value=>({...value,connectionActive:this.active(value.connectionId)}));}
+ /** Owner-safe projection of device-published capabilities. `installed` comes
+  * from actual enabled plugin providers, `available` from the live declaration,
+  * `authorized` from the owner grant, and `waitingDevice` only when an installed
+  * capability has no live device. */
+ private capabilityProjections(deviceId?:string):DeviceCapabilityProjection[]{
+  const providers=this.providers(),declarations=this.declarations().filter(value=>deviceId===undefined||value.deviceId===deviceId);
+  const grants=this.grants().filter(value=>deviceId===undefined||value.target.deviceId===deviceId).map(value=>({...value,available:this.available(value)}));
+  const identities=new Map<string,{id:string;version:number}>();
+  for(const value of [calendarManageCapability,...providers.map(provider=>provider.capability),...declarations.map(value=>value.capability),...grants.map(grant=>grant.capability)])identities.set(value.id+'@'+value.version,{id:value.id,version:value.version});
+  return [...identities.values()].sort((a,b)=>a.id.localeCompare(b.id)||a.version-b.version).map(value=>projectDeviceCapability({
+    ...value,installed:providers.some(provider=>provider.capability.id===value.id&&provider.capability.version===value.version),
+    declarations:declarations.filter(declaration=>declaration.capability.id===value.id&&declaration.capability.version===value.version),
+    grants:grants.map(grant=>({state:grant.state,authorized:this.scopeValid(grant),target:{deviceId:grant.target.deviceId}})),
+  }));
+ }
+ deviceProjection(deviceId:string){return this.capabilityProjections(deviceId).find(value=>value.id===calendarManageCapability.id&&value.version===calendarManageCapability.version)??null;}
+ inventory(){
+  const grants=this.grants().map(grant=>({...grant,available:this.available(grant)}));
+  return {providers:this.providers(),grants,sources:this.inputs.catalog(),capabilities:[calendarManageCapability],executionEnabled:grants.some(grant=>grant.available),deviceCapabilities:this.capabilityProjections(),declarations:this.declarations(),drafts:this.store.db.prepare('SELECT json FROM action_capability_drafts ORDER BY id').all().map(row=>JSON.parse(String(row.json)) as ActionCapabilityDraft)};
+ }
  saveDraft(raw:unknown){const input=actionCapabilityDraftSchema.parse(raw);return this.command('draft',input,()=>{
   const prior=this.read<ActionCapabilityDraft>('action_capability_drafts',input.id);if((prior?.revision??0)!==input.expectedRevision||prior?.state==='revoked')throw new StoreError('Capability draft changed; refresh before retrying',409);
   const declaration=this.declaration(input.target.deviceId);if(!declaration?.connectionActive||!calendarCapabilityIdentitySchema.safeParse(declaration.capability).success||declaration.permission!=='granted'||declaration.revision!==input.target.declarationRevision||!declaration.calendars.some(item=>item.id===input.target.calendarId))throw new StoreError('The device calendar declaration is unavailable or changed',409);
@@ -49,12 +69,18 @@ export class ActionCapabilities {
  grant(id:string){return this.read<ActionGrant>('action_capability_grants',id);}
  grants():ActionGrant[]{return this.store.db.prepare('SELECT json FROM action_capability_grants ORDER BY id').all().map(row=>JSON.parse(String(row.json)));}
  private pluginAvailable(identity:ActionPluginIdentity){return this.providers().some(provider=>JSON.stringify(provider.identity)===JSON.stringify(identity));}
- available(grant:ActionGrant){
+ /** Owner authorization remains scoped even while the target device is offline
+  * or its OS grant is withdrawn; live availability is a separate check. */
+ private scopeValid(grant:ActionGrant){
   if(grant.state!=='active'||!calendarCapabilityIdentitySchema.safeParse(grant.capability).success||!this.pluginAvailable(grant.plugin))return false;
   const declaration=this.declaration(grant.target.deviceId);
-  if(!declaration?.connectionActive||!calendarCapabilityIdentitySchema.safeParse(declaration.capability).success||declaration.connectionId!==grant.connectionId||declaration.revision!==grant.target.declarationRevision||declaration.permission!=='granted'||!declaration.calendars.some(calendar=>calendar.id===grant.target.calendarId))return false;
-  if(!grant.inputs.sources.every(identity=>this.inputs.valid(identity)))return false;
-  return true;
+  if(!declaration||!calendarCapabilityIdentitySchema.safeParse(declaration.capability).success||declaration.connectionId!==grant.connectionId||declaration.revision!==grant.target.declarationRevision||!declaration.calendars.some(calendar=>calendar.id===grant.target.calendarId))return false;
+  return grant.inputs.sources.every(identity=>this.inputs.valid(identity));
+ }
+ available(grant:ActionGrant){
+  if(!this.scopeValid(grant))return false;
+  const declaration=this.declaration(grant.target.deviceId);
+  return Boolean(declaration?.connectionActive&&declaration.permission==='granted');
  }
  authorize(raw:unknown){const input=actionGrantCommandSchema.parse(raw);return this.command('grant',input,()=>{
   const previous=this.grant(input.id);if((previous?.revision??0)!==input.expectedRevision||previous?.state==='revoked')throw new StoreError('Action grant changed; refresh before authorizing',409);

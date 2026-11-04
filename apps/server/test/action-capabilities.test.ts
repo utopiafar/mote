@@ -6,7 +6,8 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {Store,StoreError} from '../src/store.js';
+import {Store,StoreError,sha256} from '../src/store.js';
+import {calendarPluginCapabilitySchema} from '@mote/shared';
 
 const owner='generated-action-capability-owner',headers=(token=owner)=>({authorization:'Bearer '+token});
 const agent:QueryAgent={configured:false,query:async()=>{throw Error('Capability contracts do not call a model');},close:async()=>{}};
@@ -105,14 +106,71 @@ test('replacement pairing cannot inherit an old connection declaration or silent
 });
 
 
+test('Mac and Kotlin publisher payloads keep installed, available, authorized and waiting-device separate; old connection heartbeats cannot revive or rebind',async t=>{
+ const {publishCalendarCapability}=await import('../../desktop/src/calendar-capabilities.js');
+ const f=await fixture(t),mac=await f.pair('generated-phone'),tablet=await f.pair('generated-tablet');
+ const origin=await f.app.listen({host:'127.0.0.1',port:0});
+ const requestFor=(token:string)=>async(path:string,body?:unknown)=>{const response=await fetch(origin+path,{method:body?'POST':'GET',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});assert.equal(response.status,200,path);return response.json();};
+ const inventory=async()=> (await f.app.inject({url:'/api/action-capabilities',headers:headers()})).json();
+ const projection=async()=> (await inventory()).deviceCapabilities.find((value:any)=>value.id==='calendar.manage'&&value.version===1);
+ const macPayload={permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar',writable:true}]};
+ const published=await publishCalendarCapability('generated-phone',macPayload,requestFor(mac.token));
+ assert.equal(published!.declaration.revision,1);assert.equal(published!.projection.installed,false);assert.equal(published!.projection.available,true);assert.equal(published!.projection.authorized,false);assert.equal(published!.projection.waitingDevice,false);
+ // Exact CalendarCapabilityPublisher payload from Kotlin: operationId, expectedRevision, deviceId, capability, permission, calendars.
+ const kotlinBody={operationId:randomUUID(),expectedRevision:0,deviceId:'generated-tablet',capability:{id:'calendar.manage',version:1},permission:'granted',calendars:[{id:'generated-kotlin-calendar',title:'Generated Kotlin calendar'}]};
+ const declared=await requestFor(tablet.token)('/api/device-action-capabilities',kotlinBody);assert.equal(declared.revision,1);assert.equal(declared.permission,'granted');
+ let current=await projection();
+ assert.equal(current.installed,false,'installation is the enabled provider, not a device declaration');
+ assert.equal(current.available,true,'both real publishers report a live granted device');
+ assert.equal(current.authorized,false,'a declaration is never an owner grant');
+ assert.equal(current.waitingDevice,false,'installed is false, so waiting-device cannot be inferred from a missing provider');
+ assert.equal(current.grant,'granted');
+
+ const providerCapability=calendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'device',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,sameDeviceCalendar:true,completionInMoteOnly:true}});
+ const provider=()=>({identity:{packageId:'generated.calendar',releaseDigest:'a'.repeat(64),instanceId:'generated-instance',instanceRevision:1,capabilityDigest:sha256(JSON.stringify(providerCapability))},name:'Generated calendar',capability:providerCapability});
+ f.pluginCenter.actionProviders=()=>[provider()];
+ current=await projection();assert.equal(current.installed,true);assert.equal(current.available,true);assert.equal(current.authorized,false);assert.equal(current.waitingDevice,false);
+
+ const target=(await inventory()).declarations.find((value:any)=>value.deviceId==='generated-phone');
+ const saved=await f.app.inject({method:'PUT',url:'/api/action-capability-drafts',headers:headers(),payload:{operationId:randomUUID(),expectedRevision:0,id:randomUUID(),capability:{id:'calendar.manage',version:1},target:{deviceId:'generated-phone',calendarId:'generated-calendar',declarationRevision:target.revision},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-source-device',platform:'import'}],existingArchived:true,futureInputs:true}}});
+ assert.equal(saved.statusCode,200,saved.body);
+ const granted=await f.app.inject({method:'PUT',url:'/api/action-capability-grants',headers:headers(),payload:{operationId:randomUUID(),expectedRevision:0,id:randomUUID(),draftId:saved.json().id,draftRevision:saved.json().revision,plugin:provider().identity,acknowledgeCalendarWrites:true}});
+ assert.equal(granted.statusCode,200,granted.body);
+ current=await projection();assert.equal(current.authorized,true);assert.equal(current.available,true);assert.equal(current.waitingDevice,false);
+
+ // The previous connection generation disappears from every live check, but
+ // the owner's authorization stays present instead of collapsing into state.
+ const beat={deviceId:'generated-phone',deviceName:'Generated phone',platform:'android',status:'capturing',queueDepth:0};
+ assert.equal((await f.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:headers(mac.token),payload:beat})).statusCode,200,'the current generation writes its observation once');
+ await f.connections.revoke(mac.credentialId);await f.connections.revoke(tablet.credentialId);
+ const stored=f.store.devices();
+ const late=await f.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:headers(mac.token),payload:beat});
+ assert.ok([401,403].includes(late.statusCode),late.body);
+ const cross=await f.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:headers(mac.token),payload:{...beat,deviceId:'generated-other-device'}});
+ assert.ok([401,403].includes(cross.statusCode),cross.body);
+ assert.deepEqual(f.store.devices(),stored,'late old-generation heartbeats do not revive device state or rebind another device');
+ current=await projection();
+ assert.equal(current.installed,true);assert.equal(current.available,false);assert.equal(current.authorized,true);assert.equal(current.waitingDevice,true);assert.equal(current.grant,'unavailable');
+
+ const invite=await f.app.inject({method:'POST',url:'/api/connections/collector-invitations',headers:headers(),payload:{serverUrl:'https://generated.invalid',label:'Generated replacement',deviceId:'generated-phone'}});
+ assert.equal(invite.statusCode,200,invite.body);
+ const replacement=await f.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId:'generated-phone',deviceName:'Generated replacement',platform:'android'}});
+ assert.equal(replacement.statusCode,200,replacement.body);
+ const redeclared=await f.app.inject({method:'POST',url:'/api/device-action-capabilities',headers:headers(replacement.json().token),payload:{...kotlinBody,operationId:randomUUID(),deviceId:'generated-phone',expectedRevision:1,calendars:[{id:'generated-calendar',title:'Generated calendar'}]}});
+ assert.equal(redeclared.statusCode,200,redeclared.body);
+ current=await projection();
+ assert.equal(current.installed,true);assert.equal(current.available,true);assert.equal(current.authorized,false,'the old revision cannot authorize the replacement pairing');assert.equal(current.waitingDevice,false);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:headers(mac.token),payload:beat})).statusCode,401,'the old generation stays fenced after replacement');
+});
+
 test('the desktop declaration consumer uses real paired HTTP, preserves stable revisions and publishes permission loss',async t=>{
  const {publishCalendarCapability}=await import('../../desktop/src/calendar-capabilities.js');
  const f=await fixture(t),paired=await f.pair();const origin=await f.app.listen({host:'127.0.0.1',port:0});
  const request=async(path:string,body?:unknown)=>{const response=await fetch(origin+path,{method:body?'POST':'GET',headers:{...headers(paired.token),'content-type':'application/json'},body:body?JSON.stringify(body):undefined});assert.equal(response.status,200);return response.json();};
  const raw={permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar',writable:true},{id:'readonly',title:'Read only',writable:false}]};
- const first=await publishCalendarCapability('generated-phone',raw,request);assert.equal(first.revision,1);assert.deepEqual(first.calendars,[{id:'generated-calendar',title:'Generated calendar'}]);
- assert.equal((await publishCalendarCapability('generated-phone',raw,request)).revision,1,'polling unchanged calendars must not invalidate a grant revision');
- const denied=await publishCalendarCapability('generated-phone',{permission:'required',calendars:[]},request);assert.equal(denied.revision,2);assert.deepEqual(denied.calendars,[]);assert.equal(denied.permission,'required');
- const restored=await publishCalendarCapability('generated-phone',raw,request);assert.equal(restored.revision,3,'restored permission is a new declaration, not an inherited grant');
+ const first=await publishCalendarCapability('generated-phone',raw,request);assert.equal(first!.declaration.revision,1);assert.deepEqual(first!.declaration.calendars,[{id:'generated-calendar',title:'Generated calendar'}]);assert.equal(first!.projection.grant,'granted');assert.equal(first!.projection.available,true);assert.equal(first!.projection.authorized,false);
+ assert.equal((await publishCalendarCapability('generated-phone',raw,request))!.declaration.revision,1,'polling unchanged calendars must not invalidate a grant revision');
+ const denied=await publishCalendarCapability('generated-phone',{permission:'required',calendars:[]},request);assert.equal(denied!.declaration.revision,2);assert.deepEqual(denied!.declaration.calendars,[]);assert.equal(denied!.declaration.permission,'required');assert.equal(denied!.projection.grant,'required');assert.equal(denied!.projection.available,false);
+ const restored=await publishCalendarCapability('generated-phone',raw,request);assert.equal(restored!.declaration.revision,3,'restored permission is a new declaration, not an inherited grant');
  const inventory=(await f.app.inject({url:'/api/action-capabilities',headers:headers()})).json();assert.deepEqual(inventory.drafts,[]);assert.equal(inventory.executionEnabled,false);
 });
