@@ -6,7 +6,7 @@ import type {QueryResult} from '@mote/shared';
 import {MemoryPipeline,type MemoryPhasePorts,type MemoryPipelineOptions} from '../memory-pipeline.js';
 import {reviewMemory,type MemoryDraftOrigin} from '../memory-review.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
-import type {MemoryDeletions} from '../memory-deletions.js';
+import type {MemoryDeletions} from './memory-deletions.js';
 import type {MemoryReviewStrategy} from '../memory-strategy-contract.js';
 import {StoreError} from '../store.js';
 import {centralServices} from './central-contracts.js';

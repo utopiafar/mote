@@ -3,7 +3,7 @@ import type {QueryResult} from '@mote/shared';
 import {MemoryOutputValidationError,MEMORY_ADMISSION_PROMPT} from './memory.js';
 import {StoreError,sha256} from './store.js';
 import type {MemoryReviewReceipt} from './memory-schema.js';
-import type {MemoryDeletions} from './memory-deletions.js';
+import type {MemoryDeletions} from './plugins/memory-deletions.js';
 import type {MemoryReviewCache} from './memory-review-cache.js';
 import {defaultMemoryReviewStrategy} from './memory-review-policy.js';
 import {memoryReviewStrategySchema,memoryStrategyPin,memoryCandidateOutputContract,type MemoryWorkContract,type MemoryReviewStrategy} from './memory-strategy-contract.js';
