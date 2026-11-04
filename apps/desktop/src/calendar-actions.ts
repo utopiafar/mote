@@ -1,4 +1,4 @@
-import {publishCalendarCapability} from './calendar-capabilities';
+import {publishCalendarCapability} from './plugins/capability-publisher';
 import { connectionToken, requireConnectionToken } from './login-session';
 import { moteText } from '@mote/shared/i18n';
 import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';

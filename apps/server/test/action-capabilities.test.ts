@@ -107,7 +107,7 @@ test('replacement pairing cannot inherit an old connection declaration or silent
 
 
 test('Mac and Kotlin publisher payloads keep installed, available, authorized and waiting-device separate; old connection heartbeats cannot revive or rebind',async t=>{
- const {publishCalendarCapability}=await import('../../desktop/src/calendar-capabilities.js');
+ const {publishCalendarCapability}=await import('../../desktop/src/plugins/capability-publisher.js');
  const f=await fixture(t),mac=await f.pair('generated-phone'),tablet=await f.pair('generated-tablet');
  const origin=await f.app.listen({host:'127.0.0.1',port:0});
  const requestFor=(token:string)=>async(path:string,body?:unknown)=>{const response=await fetch(origin+path,{method:body?'POST':'GET',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});assert.equal(response.status,200,path);return response.json();};
@@ -164,7 +164,7 @@ test('Mac and Kotlin publisher payloads keep installed, available, authorized an
 });
 
 test('the desktop declaration consumer uses real paired HTTP, preserves stable revisions and publishes permission loss',async t=>{
- const {publishCalendarCapability}=await import('../../desktop/src/calendar-capabilities.js');
+ const {publishCalendarCapability}=await import('../../desktop/src/plugins/capability-publisher.js');
  const f=await fixture(t),paired=await f.pair();const origin=await f.app.listen({host:'127.0.0.1',port:0});
  const request=async(path:string,body?:unknown)=>{const response=await fetch(origin+path,{method:body?'POST':'GET',headers:{...headers(paired.token),'content-type':'application/json'},body:body?JSON.stringify(body):undefined});assert.equal(response.status,200);return response.json();};
  const raw={permission:'granted',calendars:[{id:'generated-calendar',title:'Generated calendar',writable:true},{id:'readonly',title:'Read only',writable:false}]};
