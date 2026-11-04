@@ -36,4 +36,12 @@ Dev 分支构建保存 Actions Artifact；Android / Desktop Dev 从可信 main �
 
 未来 iOS 或新硬件实现只需新增产品组、安装身份和对应平台的协议测试。中央插件沿用现有 manifest、权限与宿主 capability 契约，在可独立加载升级之前仍随 Central 构建；本次不引入插件市场或承诺插件热更新。外部社区设备、SDK 或插件有独立维护与授权需求时，再考虑单独仓库。
 
+默认插件组合的候选产物由手选脚本验证，不进入普通测试或现有发布 workflow：
+
+```sh
+node scripts/plugin-distribution.mjs all --package-mac
+```
+
+脚本把 Central、Web、Mac、Android 的构建结果和 `plugin-distribution.json` 写到被忽略的 `artifacts/plugin-distribution/`，检查各端默认包/feature/依赖与内置 owner，故意用不匹配的插件契约版本确认返回具体 `version_mismatch` 而不是假成功；随后把 Central 产物复制到临时干净目录启动，验证完整默认 feature、生成笔记读回，并从打包 SDK 创建、构建、安装样例。Android 需要 JDK 17–24 与 SDK 36，Mac 打包需要 macOS。产物只作构建/阶段验收证据，不签名、不发布，实际发布仍走上表 workflow。
+
 实际操作见 [发布流程](releasing.md)，保留本地配置的升级步骤见 [更新说明](updating.md)。
