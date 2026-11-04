@@ -17,6 +17,9 @@ export interface ConnectorInstanceScope {
 export type ConnectorScopeFactory=(manifest:ConnectorManifest,instanceId:string)=>ConnectorInstanceScope;
 export interface ConnectorHostAdapterOptions {
   readonly manifests:readonly ConnectorManifest[];
+  /** Deployment modules whose initialization must fail the whole startup; an
+   * ordinary built-in failure only marks that instance failed. */
+  readonly required?:readonly string[];
   /** Private trusted assembly context for existing built-in connectors. */
   readonly context:ConnectorContext;
   readonly dispatcher:DynamicHttpDispatcher;
@@ -47,6 +50,7 @@ export interface ConnectorHostAdapter {
 const descriptorKey=(descriptor:SourceCapabilityDescriptor)=>JSON.stringify([descriptor.lifecycle,descriptor.discovery,descriptor.listening,descriptor.readOriginal,descriptor.synchronization,descriptor.externalWrite]);
 export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):ConnectorHostAdapter {
   const scopes=new Map<string,ConnectorInstanceScope>(),capabilityUsers=new Map<string,number>(),ownedKinds=new Set<string>(),ownedDescriptors=new Map<string,SourceCapabilityDescriptor>();
+  const required=new Set(options.required??[]);
   const installedDescriptor=(kind:string):SourceCapabilityDescriptor=>{
     const value=options.context.sources.capabilities.describe({kind:kind as never,platform:'macos',retention:'snapshot'});
     return {lifecycle:value.lifecycle,discovery:value.discovery,listening:value.listening,readOriginal:value.readOriginal,synchronization:value.synchronization,externalWrite:value.externalWrite};
@@ -209,7 +213,15 @@ export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):
             try{await registry.startInstance(manifest,scope.scope);}
             catch(error){
               scopes.delete(manifest.id);
-              try{await closeScope(scope);}catch(cleanup){registry.recordFailure(manifest,cleanup);}
+              const cleanupErrors:unknown[]=[];
+              try{await closeScope(scope);}catch(cleanup){cleanupErrors.push(cleanup);}
+              // A deployment module is explicit trusted startup input: its
+              // failure aborts startup instead of serving a partial node.
+              if(required.has(manifest.id)){
+                if(cleanupErrors.length)throw connectorCleanupFailure([error,...cleanupErrors]);
+                throw error;
+              }
+              if(cleanupErrors.length)registry.recordFailure(manifest,cleanupErrors[0]);
             }
           }
           if(closed)throw Error('Connector host adapter is closed');

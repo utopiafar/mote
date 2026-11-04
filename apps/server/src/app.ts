@@ -242,7 +242,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const {insightRuns,featureServices:insightRunsFeatureServices}=assembleInsightRuns({store,resources,executor,evidenceReader});
-  const {workflows,processing,resolveFileModel,mediaModelAuthority,featureServices:processingFeatureServices}=await assembleProcessing({store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider});
+  const {workflows,processing,resolveFileModel,mediaModelAuthority,featureServices:processingFeatureServices,processingServices}=await assembleProcessing({bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider});
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
   const withMediaOwnerIntent=<T>(id:string,task:()=>Promise<T>|T)=>modelAuthorizationHost.manual('owner-media:'+randomUUID(),availableModelConnections(),async()=>task(),undefined,'manual',[captureModelIdentity(id)]);
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
@@ -489,13 +489,18 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,delegation,queryRuns,queryRunServices};
+  return {app,bootstrap,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working,activity,activityServices,conversations,delegation,queryRuns,queryRunServices};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();
     if(startupApp)try{await startupApp.close();}catch(cleanup){failures.push(cleanup);}
     try{await resources.close();}catch(cleanup){failures.push(cleanup);}
-    if(failures.length)throw new AggregateError([error,...failures],'Server initialization and disposal failed',{cause:error});
+    if(failures.length){
+      // A failing subsystem may already report the [cause, ...cleanup] aggregate
+      // shape. Extend that list so startup cleanup never hides the original cause.
+      const startup=error instanceof AggregateError&&error.cause!==undefined?error:undefined;
+      throw new AggregateError([...(startup?startup.errors:[error]),...failures],'Server initialization and disposal failed',{cause:startup?startup.cause:error});
+    }
     throw error;
   }
 }

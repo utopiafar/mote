@@ -11,7 +11,7 @@ import {
 import {ToolRegistry, diffToolSnapshots} from '../dist/tools/registry.js';
 import {toCodexTools, toRuntimeToolDefinitions, toolInputSchema} from '../dist/tools/runtime-schema.js';
 import {CONTEXT_TOOLS} from '../dist/context-tools.js';
-import {codexContextTools} from '../dist/codex-agent.js';
+import {codexContextTools} from '../dist/runtime/codex/tools.js';
 
 const port = (calls = {asserts: 0}) => ({
   calls,

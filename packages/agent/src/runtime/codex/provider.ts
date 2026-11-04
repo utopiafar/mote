@@ -12,7 +12,7 @@ import {runtimeService, type HostRunPort, type ModelLease, type ResolvedRuntimeP
 import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
 
 export const CODEX_RUNTIME_ID = 'mote.runtime.codex';
-export type CodexModelAdapter = Pick<AgentOptions, 'model' | 'reasoningEffort' | 'serviceTier'>;
+export type CodexModelAdapter = Pick<AgentOptions, 'model' | 'reasoningEffort' | 'serviceTier' | 'authorizeModelRequest'>;
 
 export class CodexProfileError extends Error {
   constructor(readonly code: 'codex_profile_invalid') {
@@ -30,6 +30,7 @@ function validatePreparation(profile: ResolvedRuntimeProfile<RuntimeProfileConfi
       host.identity.runtime.id !== profile.runtimeId || host.identity.runtime.profileId !== profile.profileId || host.identity.runtime.profileRevision !== profile.profileRevision ||
       host.identity.runtime.assemblyFingerprint !== profile.assemblyFingerprint || profile.taskKind !== 'query' || !isDeepStrictEqual(model.selection, host.identity.model) ||
       model.selection.transport !== 'codex-app-server' || model.value.model !== model.selection.modelId || !model.value.model?.trim() ||
+      model.value.authorizeModelRequest !== undefined && typeof model.value.authorizeModelRequest !== 'function' ||
       typeof host.systemPrompt !== 'string' || !host.systemPrompt.trim()) invalidProfile();
   const configuration = profile.configuration;
   if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) invalidProfile();
@@ -80,8 +81,8 @@ export function createCodexRuntimeProvider() {
             return send(content);
           });
         };
-        const session = new CodexSession({model: model.value.model, reasoningEffort: model.value.reasoningEffort, serviceTier: model.value.serviceTier, agentTimeoutMs: null, codex: profile.configuration.launch},
-          deliver, undefined, usage => { if (active) host.emit({type: 'usage', usage}, active); });
+        const session = new CodexSession({model: model.value.model, reasoningEffort: model.value.reasoningEffort, serviceTier: model.value.serviceTier, agentTimeoutMs: null, codex: profile.configuration.launch, authorizeModelRequest: model.value.authorizeModelRequest},
+          deliver, event => host.observe?.(event), usage => { if (active) host.emit({type: 'usage', usage}, active); });
         const closeResources = () => closed ??= (async () => {
           released = true;
           host.signal.removeEventListener('abort', abort);
