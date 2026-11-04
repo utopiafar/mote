@@ -11,7 +11,7 @@ import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {ContentStorageService} from '../src/content-storage.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
-import {decodeMemoryBatch,decodeMemoryJob,encodeMemoryBatch} from '../src/memory-private-storage.js';
+import {decodeMemoryBatch,decodeMemoryJob,encodeMemoryBatch} from '../src/plugins/memory-private-storage.js';
 
 const marker='GENERATED_PRIVATE_WORK_PROSE';
 test('private work prose, coverage feedback and drafts obey encryption, owner reads and key retirement',async t=>{

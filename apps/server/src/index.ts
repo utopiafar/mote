@@ -2,11 +2,18 @@ import { configFromFile,configFromDocument,registerBuiltinDomains,ConfigError } 
 import { buildApp } from './app.js';
 import {defaultDistribution} from './distribution/default.js';
 import { readFileSync,writeFileSync,unlinkSync,existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join,resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { writeRuntimeListener, cleanupRuntimeListener } from './runtime-listener.js';
 import { ConfigService } from './config-service.js';
-async function main() {
+
+export interface ServerStartOptions {
+  /** Trusted assembly inputs supplied by the private plugin-dev host. */
+  dependencies?: Parameters<typeof buildApp>[1];
+}
+
+export async function startServer(options: ServerStartOptions = {}) {
 const selected=configFromFile(undefined,{initializeCredentials:false});
 const configService=new ConfigService({path:selected.configuration.configFile!});
 registerBuiltinDomains(configService);
@@ -27,7 +34,7 @@ if(existsSync(pidPath)) {
 }
 writeFileSync(pidPath,String(process.pid),{mode:0o600,flag:'wx'});
 process.on('exit',()=>{try{if(existsSync(pidPath)&&readFileSync(pidPath,'utf8').trim()===String(process.pid))unlinkSync(pidPath);}catch{/* Never print a filesystem exception containing private paths. */}});
-const {app}=await buildApp(config,{backgroundWorker:true,configService,distribution:defaultDistribution});
+const {app}=await buildApp(config,{...options.dependencies,backgroundWorker:true,configService,distribution:defaultDistribution});
 app.addHook('onSend',async(req,reply,payload)=>{if(req.routeOptions.url==='/api/health')reply.header('X-Mote-Runtime-Instance',instanceId);return payload;});
 try{
   await app.listen({host:config.host,port:config.port});
@@ -39,8 +46,11 @@ try{
 let closing=false;
 for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,async()=>{if(closing)return;closing=true;try{await app.close();console.info(JSON.stringify({event:'server.stopped'}));process.exit(0);}catch{console.error(JSON.stringify({event:'server.stop_failed',category:'shutdown'}));process.exit(1);}});
 }
-void main().catch(error=>{
-  const code=(error as {code?:unknown})?.code;
-  const category=code==='MOTE_DATA_IN_USE'?'data_directory_in_use':code==='EADDRINUSE'?'port_in_use':code==='EACCES'||code==='EPERM'?'permission':'startup';
-  console.error(JSON.stringify({event:'server.start_failed',category:error instanceof ConfigError?'configuration':category,...(error instanceof ConfigError?{field:error.field}:{})}));process.exitCode=1;
-});
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void startServer().catch(error=>{
+    const code=(error as {code?:unknown})?.code;
+    const category=code==='MOTE_DATA_IN_USE'?'data_directory_in_use':code==='EADDRINUSE'?'port_in_use':code==='EACCES'||code==='EPERM'?'permission':'startup';
+    console.error(JSON.stringify({event:'server.start_failed',category:error instanceof ConfigError?'configuration':category,...(error instanceof ConfigError?{field:error.field}:{})}));process.exitCode=1;
+  });
+}

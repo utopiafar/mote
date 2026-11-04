@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
@@ -11,7 +11,8 @@ import {FileProcessorRuntime} from '../src/file-processors.js';
 
 test('a separately installed module shares the durable DAG, cache, lineage and unload boundary',async()=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-community-plugin-')),store=new Store(directory),workflows=new ProcessingRuntime(store);
- const plugins=new FileProcessorRuntime(undefined,[],[fileURLToPath(new URL('../../../examples/plugins/text-normalization.mjs',import.meta.url))],workflows.registry);
+ const textNormalization=(await import(pathToFileURL(fileURLToPath(new URL('../../../examples/text-normalization-plugin/plugin.mjs',import.meta.url))).href)).default;
+ const plugins=new FileProcessorRuntime(undefined,[textNormalization],[],workflows.registry);
  try{
   await plugins.ready;const id=randomUUID();await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-08-01T00:00:00Z',durationMs:0,ocrText:'First\r\nSecond'});
   const graph=[{name:'normalize',processor:'community.text-normalization',inputs:[id]}];const jobs=workflows.enqueue(graph);await workflows.tick();

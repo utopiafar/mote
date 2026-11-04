@@ -1,14 +1,13 @@
 import {forgetRetiredConversationRoots} from './conversation-retention.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
-import {InstallationEpochs} from './installation-epochs.js';
 import {z} from 'zod';
 import {MaterialMemoryWork,type MaterialMemoryRunner,type MaterialMemoryPlanner,type MemoryWorkProposal,type MemoryWorkCandidate} from './material-memory-work.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
+import {PluginResourceScope,PluginEpochs,type HostScope} from '@mote/plugin-host';
 import type {SourceConnection,SourceItem} from '@mote/shared';
 import {materialId,type CodingArchiveSnapshot,type MaterialAppendDraft,type MaterialDraft,type MaterialStore} from './materials.js';
 import {SourceArchive,archiveHash} from './source-archive.js';
 import {StoreError,type Store} from './store.js';
-import {BackendPluginScope} from './backend-plugin-scope.js';
 import {SourceRecipeExecutor,type RecipeSnapshot} from './source-recipe-executor.js';
 import {recipeFingerprint} from './recipe-contract.js';
 import type {InstalledRecipe} from './recipe-registry.js';
@@ -43,8 +42,9 @@ export interface SourcePipeline {
 export class SourcePipelineRegistry {
   private entries=new Map<string,SourcePipeline>();
   private admissions=new Map<string,boolean>();
-  readonly epochs=new InstallationEpochs();
+  readonly epochs:PluginEpochs;
   private declaredKinds=new Set<string>();
+  constructor(scope?:HostScope){this.epochs=new PluginEpochs(scope);}
   register(pipeline:SourcePipeline){
     if(!/^[a-z0-9.-]+$/.test(pipeline.id)||!pipeline.version||this.entries.has(pipeline.id)||!pipeline.sourceKinds.length||pipeline.modelInput!=='material'||!['records','archive'].includes(pipeline.storage)||!['none','material'].includes(pipeline.index)||pipeline.storage==='archive'&&!pipeline.recipe)throw Error('Invalid source pipeline');
     if([...this.entries.values()].some(p=>(p.priority??0)===(pipeline.priority??0)&&p.sourceKinds.some(kind=>pipeline.sourceKinds.includes(kind))))throw Error('Ambiguous source pipeline');
@@ -63,7 +63,8 @@ declare module '@deepseek-ai/cordis' {interface Context {moteSourcePipelines:Sou
 /** Cordis owns installation; host owns receipts, durable work and atomic publication.
  * There is one work row per logical group, never one SQL row per raw event. */
 export class SourcePipelineRuntime {
-  readonly registry=new SourcePipelineRegistry();readonly recipes=new SourceRecipeExecutor();readonly context:Context;readonly archive:SourceArchive;private readonly pluginScope:BackendPluginScope;
+  readonly registry:SourcePipelineRegistry;readonly recipes:SourceRecipeExecutor;readonly context:Context;readonly archive:SourceArchive;
+  private readonly resources:PluginResourceScope;
   readonly engine:ExecutionEngine;private readonly ownsEngine:boolean;private readonly unregisterHandler:()=>Promise<void>;private closing?:Promise<void>;private stopped=false;private accepting=true;private initializing=true;
   // Engine cancellation fences publication before an uncooperative plugin exits.
   private tasks=new Set<Promise<unknown>>();
@@ -71,11 +72,16 @@ export class SourcePipelineRuntime {
   readonly ready:Promise<void>;
   private productConsumer?:{observeProducts:(ref:string,bindingIds:readonly string[])=>void};
   setProductConsumer(consumer:{observeProducts:(ref:string,bindingIds:readonly string[])=>void}){this.productConsumer=consumer;}
-  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],root?:Context,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork,handlers?:Pick<ExecutionEngine,'register'>){
-    this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
+  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],scope?:HostScope,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork,handlers?:Pick<ExecutionEngine,'register'>){
+    this.resources=new PluginResourceScope(undefined,'Source pipeline plugin scope disposal failed');
+    this.registry=new SourcePipelineRegistry(scope);this.recipes=new SourceRecipeExecutor(scope);
+    this.context=scope?.cordis.root??new Context();
+    if(!scope)this.resources.retire(()=>this.context.fiber.dispose());
+    if(scope)scope.defer(()=>this.resources.close());
+    const provide=(name:string,value:unknown)=>{const remove=this.context.provide(name,value);this.resources.retire(()=>remove());};
     this.engine=executor??new ExecutionEngine(store);this.ownsEngine=!executor;
     materials.bindIndexEngine(this.engine);
-    this.archive=new SourceArchive(store);this.pluginScope.provide('moteSourcePipelines',this.registry);this.pluginScope.provide('moteSourceRecipes',this.recipes);this.pluginScope.provide('moteMaterialCatalog',materials.catalog.registry);
+    this.archive=new SourceArchive(store);provide('moteSourcePipelines',this.registry);provide('moteSourceRecipes',this.recipes);provide('moteMaterialCatalog',materials.catalog.registry);
     store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL,storage TEXT);
       CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,memory_trigger TEXT NOT NULL,
         recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
@@ -86,8 +92,12 @@ export class SourcePipelineRuntime {
       validate:step=>this.validWork(step),admit:step=>this.admitWork(step),
       execute:(step,signal)=>{const task=this.organizeGroup(step,signal);this.tasks.add(task);void task.finally(()=>this.tasks.delete(task)).catch(()=>{});return task;},commit:(step,result)=>this.publishGroup(step,result as PreparedGroup),
       project:step=>this.projectWork(step),classify:()=>new ExecutionFailure('permanent','organization_failed')});
-    const pluginScope=this.pluginScope;
-    this.ready=(async()=>{try{for(const plugin of plugins)await pluginScope.install(plugin);}finally{this.initializing=false;}})();
+    const install=async(plugin:Plugin)=>{
+      const fiber=this.context.plugin(plugin);
+      this.resources.defer(()=>fiber.dispose());
+      await this.resources.join((async()=>{try{await fiber;}catch(error){try{await fiber.dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Source pipeline plugin initialization and disposal failed',{cause:error});}throw error;}})());
+    };
+    this.ready=(async()=>{try{for(const plugin of plugins)await install(plugin);}finally{this.initializing=false;}})();
   }
   private assertAccepting(){if(!this.accepting||this.stopped||this.initializing)throw new StoreError('Source pipeline unavailable',409);}
   start(){if(this.stopped)throw new StoreError('Source pipeline unavailable',409);this.accepting=true;}
@@ -419,9 +429,9 @@ export class SourcePipelineRuntime {
     if(this.closing)return this.closing;this.stopped=true;this.accepting=false;
     // Remove receipt/model admission and the local execution lease before waiting
     // for readers or plugin startup. Retain all archive checkpoints and jobs.
-    const unregister=this.unregisterHandler(),plugins=this.initializing?this.pluginScope.close():undefined;
-    void plugins?.catch(()=>{});
-    this.closing=(async()=>{await this.ready.catch(()=>{});try{await unregister;await Promise.allSettled([...this.tasks]);}finally{try{if(this.ownsEngine)await this.engine.close();}finally{await (plugins??this.pluginScope.close());}}})();return this.closing;
+    const unregister=this.unregisterHandler(),resources=this.initializing?this.resources.close():undefined;
+    void resources?.catch(()=>{});
+    this.closing=(async()=>{await this.ready.catch(()=>{});try{await unregister;await Promise.allSettled([...this.tasks]);}finally{try{if(this.ownsEngine)await this.engine.close();}finally{await (resources??this.resources.close());}}})();return this.closing;
   }
 }
 

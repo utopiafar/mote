@@ -12,7 +12,7 @@
 
 自动分离的标签是未经确认的声纹簇，不代表已经确认的人数。保留模型输出的全部匿名标签，标签和区间共用既有 100,000 个区间的有界输出预算；试听片段独立限制为前 16 个标签中有足够独立发言的片段。超过试听额度时保留全部区间并显示限制，不合并、改名或丢弃后续发言。标签过多可能意味着分离效果需要核听；扩大可容纳的输出不等于证明识别准确。默认聚类阈值沿用官方示例，实际适用性需要校准，参见 [sherpa-onnx 示例](https://github.com/k2-fsa/sherpa-onnx/blob/master/python-api-examples/offline-speaker-diarization.py)。
 
-ASR 句子与词级时间由模型独立给出。词级时间略超出所属句子但仍在录音范围内时，原始文字和时间原样保存；对齐使用整句并明确标记说话人不确定，避免丢掉完整转写或移动词级时间。负数、倒序、反向区间及超过录音既有容差的输出仍拒绝。此契约由 `mote.transcript@2`、`mote.align@2` 和 `mote.audio-dialogue@2` 固定；当前 MVP 只注册这套转写、对齐与录音配方；图片和文字提取也使用 `mote.transcript@2`。旧转写与录音配方不再读取或选择，旧库由 epoch 4 边界拒绝。安装修复不会自动重算已完成的历史文件。 图片的显式“继续处理”会为当前计划的未完成步骤重置执行预算，成功 OCR 产物保留；过期窗口不再使手动请求立即重新失败，自动恢复策略不变。生成回归与验证边界见 [录音输出与问答依赖恢复](validation/audio-output-and-query-lineage-2026-10-08.md)。
+ASR 句子与词级时间由模型独立给出。词级时间略超出所属句子但仍在录音范围内时，原始文字和时间原样保存；对齐使用整句并明确标记说话人不确定，避免丢掉完整转写或移动词级时间。负数、倒序、反向区间及超过录音既有容差的输出仍拒绝。此契约由 `mote.transcript@2`、`mote.align@2` 和 `mote.audio-dialogue@2` 固定；当前 MVP 只注册这套转写、对齐与录音配方；图片和文字提取也使用 `mote.transcript@2`。旧转写与录音配方不再读取或选择，旧库由 epoch 6 边界拒绝。安装修复不会自动重算已完成的历史文件。 图片的显式“继续处理”会为当前计划的未完成步骤重置执行预算，成功 OCR 产物保留；过期窗口不再使手动请求立即重新失败，自动恢复策略不变。生成回归与验证边界见 [录音输出与问答依赖恢复](validation/audio-output-and-query-lineage-2026-10-08.md)。
 
 不同来源可以覆盖默认方式；精确 MIME 或 `audio/*` 等类型规则由文件策略设置。普通文件图片默认仅归档；截图的中央 OCR 由独立的「中央感知」设置处理。UTF-8 文本内置提取。Shadow 不下载内容、不创建处理任务。
 
@@ -103,10 +103,10 @@ ASR 原始片段允许时间重叠。若某句的词级开始时间晚于下一�
 
 文件处理和查询 Harness 使用同一 `@deepseek-ai/cordis` 框架。文件处理使用中央常驻 Context，避免一次查询结束就销毁文件任务。查询仍由 Harness 执行，工具仅能读上下文。
 
-通过受信任的部署配置装载模块（重启生效）：
+通过受信任的插件包装配处理贡献；`plugin-dev` 在私有开发 profile 中按 Manifest 安装：
 
-```dotenv
-MOTE_FILE_PROCESSOR_PLUGINS=["/opt/mote/plugins/custom-audio.mjs"]
+```sh
+node scripts/mote.mjs plugin-dev dev --plugin /absolute/my-plugin --once
 ```
 
 ```js

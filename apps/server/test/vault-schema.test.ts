@@ -57,7 +57,7 @@ test('current vault schema can be installed repeatedly and restarted without cha
  assert.deepEqual(restartedMemories.get(memory.id),savedMemory);
  assert.deepEqual(restartedConversations.get(conversation.conversationId),savedConversation);
  assert.deepEqual(store.insights(),savedInsights);assert.equal(savedInsights.items.length,1);
- assert.equal(store.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value,'5');
- assert.equal(store.db.prepare('PRAGMA user_version').get()?.user_version,5);
+ assert.equal(store.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value,'6');
+ assert.equal(store.db.prepare('PRAGMA user_version').get()?.user_version,6);
  assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
 });

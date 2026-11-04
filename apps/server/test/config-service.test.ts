@@ -130,15 +130,15 @@ test('registered plugin defaults, validation, apply, secret redaction and dispos
   await unregister(); await assert.rejects(service.update('plugin.fixture', { interval: 2 }, 1), { code: 'config_invalid' });
 });
 
-test('registering a plugin retains pending module changes and only publishes its own effective namespace', async t => {
+test('registering a plugin retains pending restart fields and only publishes its own effective namespace', async t => {
   const directory = await fs.mkdtemp(join(tmpdir(), 'mote-config-plugin-registration-'));
-  const service = new ConfigService({ path: join(directory, 'mote.yaml'), watch: false, initialDocument: { version: 1, revision: 0, plugins: { backendModules: [], configuration: {} } } });
+  const service = new ConfigService({ path: join(directory, 'mote.yaml'), watch: false, initialDocument: { version: 1, revision: 0, plugins: { deployments: [], configuration: {} } } });
   t.after(async () => { await service.close(); await fs.rm(directory, { recursive: true, force: true }); });
-  service.register({ id: 'plugins', schema: z.object({ backendModules: z.array(z.string()), configuration: z.record(z.unknown()) }), defaultValue: { backendModules: [], configuration: {} }, restartRequired: true, fields: [{ path: 'backendModules', effect: 'restart' }], resolve: raw => raw });
-  await service.initialize(); await service.update('plugins', { backendModules: ['pending-plugin.mjs'] }, 0);
+  service.register({ id: 'plugins', schema: z.object({ deployments: z.array(z.string()), configuration: z.record(z.unknown()) }), defaultValue: { deployments: [], configuration: {} }, restartRequired: true, fields: [{ path: 'deployments', effect: 'restart' }], resolve: raw => raw });
+  await service.initialize(); await service.update('plugins', { deployments: ['pending-deployment'] }, 0);
   await service.registerPlugin({ id: 'added', schema: z.object({ interval: z.number().default(3) }), defaultValue: {} });
-  assert.deepEqual(service.current('plugins'), { backendModules: [], configuration: { added: { interval: 3 } } });
-  assert.deepEqual(service.saved('plugins'), { backendModules: ['pending-plugin.mjs'], configuration: { added: { interval: 3 } } });
+  assert.deepEqual(service.current('plugins'), { deployments: [], configuration: { added: { interval: 3 } } });
+  assert.deepEqual(service.saved('plugins'), { deployments: ['pending-deployment'], configuration: { added: { interval: 3 } } });
   assert.equal(service.view().domains.find(domain => domain.id === 'plugins')?.status, 'restart-required');
   await service.update('plugin.added', { interval: 3 }, 1); assert.equal(service.revision, 1);
 });

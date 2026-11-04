@@ -17,7 +17,7 @@ import type {ContextQuery} from '../src/context-query.js';
 import type {EvidenceReader} from '../src/evidence-reader.js';
 import type {registerEvidenceRoutes} from '../src/evidence-routes.js';
 import type {registerMemoryRoutes} from '../src/memory-routes.js';
-import type {MemoryOwnerPublication} from '../src/memory-publication-contract.js';
+import type {MemoryOwnerPublication} from '../src/plugins/memory-publication-contract.js';
 import * as contractExports from '../src/plugins/central-contracts.js';
 import {featureServiceMembers} from '../src/feature-services.js';
 
