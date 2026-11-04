@@ -2,7 +2,7 @@ import type {Store} from './store.js';
 import type {MemoryPipeline,MemoryJob} from './memory-pipeline.js';
 import type {MemoryLifecycle} from './memory-lifecycle.js';
 import type {ExecutionEngine} from './execution-engine.js';
-import type {MemoryPublication} from './memory-publication.js';
+import type {MemoryPublication} from './plugins/memory-publication.js';
 import type {MemoryAutomaticWorkCounts} from './memory-automation.js';
 
 export interface MemoryControl {
