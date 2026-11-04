@@ -1,5 +1,5 @@
 import {resolve} from 'node:path';
-import {larkRecordingAuthorization} from './recording-authorization.js';
+import {larkRecordingAuthorization} from '../plugins/recording-authorization.js';
 import {z} from 'zod';
 import {FILE_MAX_BYTES} from '@mote/shared';
 import {ExecutionFailure} from '../execution-engine.js';
