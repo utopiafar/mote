@@ -11,7 +11,7 @@ import {OAuth2Client} from 'google-auth-library';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {registerConnectors} from '../src/connectors/index.js';
-import {ConnectorRegistry} from '../src/connectors/registry.js';
+import {connectorRegistryHost} from './fixtures/connector-host.js';
 import {GoogleCalendarConnector,type GoogleDependencies} from '../src/connectors/google.js';
 import {GmailConnector,gmailScope} from '../src/connectors/gmail.js';
 import {LarkConnector,LARK_SCOPES} from '../src/connectors/lark.js';
@@ -105,11 +105,11 @@ test('registry applies intervals to built-ins and opt-in deployment plugins thro
 });
 
 test('registry interval configured before start is available during plugin initialization',async t=>{
-  const {ctx}=await fixture(t),app=Fastify(),registry=new ConnectorRegistry(app,ctx);let initial:number|undefined;
-  registry.register({apiVersion:1,id:'generated-interval-plugin',sourceKinds:[],create:context=>({init:async()=>{initial=context.config.connectors?.syncIntervalMs;}})});
-  registry.configureSyncInterval(180000);await registry.start();
-  t.after(async()=>{await registry.close();await app.close();});
-  assert.equal(initial,180000);assert.throws(()=>registry.configureSyncInterval(Number.NaN));assert.equal(ctx.config.connectors?.syncIntervalMs,180000);
+  const {ctx}=await fixture(t),app=Fastify();let initial:number|undefined;
+  const host=connectorRegistryHost(app,ctx,[{apiVersion:1,id:'generated-interval-plugin',sourceKinds:[],create:context=>({init:async()=>{initial=context.config.connectors?.syncIntervalMs;}})}]);
+  host.registry.configureSyncInterval(180000);await host.registry.start();
+  t.after(async()=>{await host.close();await app.close();});
+  assert.equal(initial,180000);assert.throws(()=>host.registry.configureSyncInterval(Number.NaN));assert.equal(ctx.config.connectors?.syncIntervalMs,180000);
 });
 
 for(const kind of ['google-calendar','gmail'] as const)test(`${kind} interval reload lets an in-flight fixture sync finish and uses the new cadence afterwards`,async t=>{

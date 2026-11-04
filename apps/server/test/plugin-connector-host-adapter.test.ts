@@ -349,6 +349,25 @@ test('initial start init failure leaves siblings serving',async t=>{
   await adapter.close();
 });
 
+test('an initial init failure clears that activation timer while siblings serve',async t=>{
+  const f=await fixture(t),scopes:TestScope[]=[];t.mock.timers.enable({apis:['setInterval']});
+  let ticks=0;
+  const statusScope=instanceScope('status');scopes.push(statusScope);
+  const adapter=createConnectorHostAdapter({manifests:[
+    manifest('generated-timer-ok',{statusKey:'ok'}),
+    manifest('generated-timer-fail',{statusKey:'fail',onInit:async()=>{throw new Error('generated timer init failure');}}),
+  ],context:f.context,dispatcher:f.dispatcher,statusScope:statusScope.scope,
+    scopeFor:m=>{const scope=instanceScope(m.id);if(m.id==='generated-timer-fail')scope.resources.every(1000,()=>{ticks++;});scopes.push(scope);return scope;}});
+  t.after(async()=>{for(const scope of scopes)await scope.close().catch(()=>{});});
+  await adapter.start();
+  t.mock.timers.tick(5000);
+  assert.equal(ticks,0,'the failed connector scope cleared its timer');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-timer-ok',headers})).body,'generated-timer-ok');
+  assert.equal((await f.app.inject({url:'/api/connectors/generated-timer-fail',headers})).statusCode,404);
+  assert.equal(adapter.inventory().find(item=>item.id==='generated-timer-fail')?.state,'failed');
+  await adapter.close();
+});
+
 test('initial start with all failures keeps diagnostic inventory and a restartable container',async t=>{
   const f=await fixture(t),scopes:TestScope[]=[],statusScope=instanceScope('status');scopes.push(statusScope);
   let attempts=0;

@@ -10,7 +10,7 @@ import type {ActivityProjection} from './activity.js';
 import type {DelegationRuntime} from './delegation-runtime.js';
 import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
-import type {ConnectorRegistry} from './connectors/registry.js';
+import type {ConnectorHostAdapter} from './plugins/connector-host-adapter.js';
 import type {FileProcessing} from './file-processing.js';
 import type {ExecutionEngine} from './execution-engine.js';
 import type {Actions} from './actions.js';
@@ -83,7 +83,7 @@ export interface FeatureServices {
   delegation:DelegationRuntime;
   memoryIntegrationSettings:MemoryIntegrationSettings;
   memoryRecipeSettings:MemoryRecipeSettings;
-  connectors:ConnectorRegistry;
+  connectors:ConnectorHostAdapter;
   processing:FileProcessing;
   executor:ExecutionEngine;
   actions:Actions;
