@@ -1,4 +1,4 @@
-import {decodeMemoryJob,decodeMemoryBatch} from './memory-private-storage.js';
+import {decodeMemoryJob,decodeMemoryBatch} from './plugins/memory-private-storage.js';
 import {queryWorkProgress,type WorkActivity,type WorkActivityPage,type WorkArtifact,type WorkBranch,type WorkEvent,type WorkProgress,type WorkState,type WorkQueryEvent,type OperationSummary} from '@mote/shared';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';

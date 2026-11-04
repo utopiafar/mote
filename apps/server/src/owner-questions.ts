@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ownerQuestionProviderRefSchema,ownerQuestionReplySchema,ownerQuestionSchema,ownerQuestionStateSchema,type OwnerQuestion,type OwnerQuestionPage,type OwnerQuestionProviderRef,type OwnerQuestionReply} from '@mote/shared';
 import {StoreError,sha256,type Store} from './store.js';
-import {decodeMemoryPrivate,encodeMemoryPrivate} from './memory-private-storage.js';
+import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {moteText} from './i18n.js';
 import {ownerQuestionAnswerSchema,ownerQuestionCreateSchema,ownerQuestionProviderInstallationSchema,type OwnerQuestionAnswer,type OwnerQuestionCreate,type OwnerQuestionProvider,type OwnerQuestionRecord,type ResolvedOwnerQuestionReply} from './owner-question-contract.js';
 

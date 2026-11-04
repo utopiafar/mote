@@ -4,11 +4,12 @@ import {mkdtempSync,rmSync,mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
-import {AgentYieldError} from '@mote/agent';
+import {AgentYieldError,HOST_DELEGATION_CONTROL_DEFINITIONS} from '@mote/agent';
 import {ContentStorageService} from '../src/content-storage.js';
 import {Store} from '../src/store.js';
 import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
-import {DelegationRuntime,DelegationPlanningError,registerQueryDelegation,DELEGATION_CONTROL_DEFINITIONS,type DelegationCoordinatorContext} from '../src/delegation-runtime.js';
+import {createAgentDelegationPlugin,registerQueryDelegation} from '../src/agent-delegation-plugin.js';
+import {DelegationRuntime,DelegationPlanningError,type DelegationCoordinatorContext} from '../src/delegation-runtime.js';
 
 function fixture(t:any,concurrency=2,options:ConstructorParameters<typeof Store>[1]={}){const directory=mkdtempSync(join(tmpdir(),'mote-delegation-')),store=new Store(directory,options),engine=new ExecutionEngine(store),runtime=new DelegationRuntime(store,engine,{concurrency:()=>concurrency,autoPump:false});t.after(async()=>{await runtime.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});return {store,engine,runtime};}
 const proposal=(id:string,capabilityId='fixture',extra:Record<string,unknown>={})=>({id,capabilityId,title:'Generated branch '+id,goal:'Inspect generated evidence',input:{id},...extra});
@@ -62,11 +63,16 @@ test('a terminal coordinator releases running child slots and retains local retr
 test('immutable unit IDs, scope narrowing and DAG validation reject forged submissions atomically',async t=>{
  const {runtime}=fixture(t);let captured!:DelegationCoordinatorContext;let finish!:()=>void;
  runtime.register({id:'fixture',version:'1',description:'Generated fixture',execute:async()=>({value:'fixture'})});
+ assert.throws(()=>runtime.register({id:'fixture',version:'1',description:'Generated duplicate',execute:async()=>({value:null})}),/Duplicate delegation capability/);
+ assert.throws(()=>runtime.register({id:'delegation.second-level',version:'1',maxDepth:2,description:'Generated second level',execute:async()=>({value:null})}),/Invalid delegation capability/);
  runtime.registerCoordinator({id:'coordinator',execute:async context=>{captured=context;await new Promise<void>(resolve=>finish=resolve);return 'done';}});
  runtime.start({id:'bounded-work',profileId:'coordinator',goal:'Generated task',input:{},scope:{deviceId:'selected',after:'2026-01-02T00:00:00Z',before:'2026-02-01T00:00:00Z',evidenceIds:['authorized']},allowedCapabilities:['fixture']});await new Promise(resolve=>setImmediate(resolve));t.after(()=>finish?.());
  await assert.rejects(captured.controls.execute('delegation_submit',{units:[proposal('bad','fixture',{scope:{deviceId:'other'}})]}),/scope exceeds/);
+ await assert.rejects(captured.controls.execute('delegation_submit',{units:[proposal('bad','fixture',{scope:{after:'2026-01-01T00:00:00Z'}})]}),/scope exceeds/);
+ await assert.rejects(captured.controls.execute('delegation_submit',{units:[proposal('bad','fixture',{scope:{before:'2026-03-01T00:00:00Z'}})]}),/scope exceeds/);
  await assert.rejects(captured.controls.execute('delegation_submit',{units:[proposal('bad','fixture',{scope:{evidenceIds:['forged']}})]}),/evidence exceeds/);
  await assert.rejects(captured.controls.execute('delegation_submit',{units:[proposal('bad','fixture',{scope:{evidenceIds:null}})]}),/cannot remove/);
+ await assert.rejects(captured.controls.execute('delegation_submit',{units:[proposal('bad','unknown-capability')]}),/allowed capabilityId/);
  await assert.rejects(captured.controls.execute('delegation_submit',{units:[proposal('a','fixture',{dependencies:['b']}),proposal('b','fixture',{dependencies:['a']})]}),/acyclic/);
  assert.equal(runtime.get('bounded-work').units.length,0);
  await captured.controls.execute('delegation_submit',{units:[proposal('a'),proposal('b','fixture',{dependencies:['a']})]});
@@ -115,7 +121,7 @@ test('formal anchor invalidation removes private delegated replay context before
 
 test('query workers receive no controls and independent scoped contexts',async t=>{
  const {runtime}=fixture(t);const seen:Parameters<Parameters<typeof registerQueryDelegation>[1]['query']>[0][]=[],answer={answer:'Generated answer',citations:[],trace:[],runId:'fixture'};
- registerQueryDelegation(runtime,{query:async input=>{seen.push(input);if(input.hostControlChannel&&seen.length===1){await input.hostControlChannel.execute('delegation_submit',{units:[{...proposal('a','context.research'),input:{question:'Generated subquestion'}}]});await input.hostControlChannel.execute('delegation_yield',{});throw new AgentYieldError();}return answer;}});
+ createAgentDelegationPlugin(runtime,{query:async input=>{seen.push(input);if(input.hostControlChannel&&seen.length===1){await input.hostControlChannel.execute('delegation_submit',{units:[{...proposal('a','context.research'),input:{question:'Generated subquestion'}}]});await input.hostControlChannel.execute('delegation_yield',{});throw new AgentYieldError();}return answer;}}).register();
  runtime.start({id:'query-work',profileId:'query',goal:'Generated task',input:{question:'Generated question',conversation:{turns:[],omittedTurns:0},taskContext:{turns:[]}},scope:{deviceId:'selected'},allowedCapabilities:['context.research']});await settle(runtime,'query-work');assert.equal(seen.length,3);assert.equal(seen[1].hostControlChannel,undefined);assert.equal(seen[1].conversation,undefined);assert.equal(seen[1].taskContext,undefined);assert.equal(seen[1].deviceId,'selected');assert.equal(seen[1].question,'Generated subquestion');
 });
 
@@ -168,7 +174,7 @@ test('artifact summaries stay behind dependency validation even when no original
 });
 
 
-test('every durable host control contract compiles for the actual SDK and Codex adapters',()=>{for(const control of DELEGATION_CONTROL_DEFINITIONS)assert.doesNotThrow(()=>parameterSchemaSpecToJsonSchema(control.fields as any),control.name);});
+test('every durable host control contract compiles for the actual SDK and Codex adapters',()=>{for(const control of HOST_DELEGATION_CONTROL_DEFINITIONS)assert.doesNotThrow(()=>parameterSchemaSpecToJsonSchema(control.fields as any),control.name);});
 
 
 test('older pending external work completes behind more than one history page and remains addressable',async t=>{

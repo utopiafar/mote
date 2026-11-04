@@ -16,7 +16,7 @@ test('create copies the source template without scanning a vault or configuring 
   try {
     const created = JSON.parse(run(['create', join(directory, 'plugin')]));
     assert.equal(created.created, join(directory, 'plugin'));
-    for (const file of ['source.mjs', 'seed.mjs', 'package.json', 'README.md']) assert.ok(readFileSync(join(directory, 'plugin', file)));
+    for (const file of ['plugin.mjs', 'source.mjs', 'seed.mjs', 'mote-plugin.json', 'scripts/pack.mjs', 'package.json', 'README.md']) assert.ok(readFileSync(join(directory, 'plugin', file)));
     assert.doesNotMatch(readFileSync(join(directory, 'plugin', 'source.mjs'), 'utf8'), /apps\/|apps\\|@mote\/shared/);
     assert.match(readFileSync(join(directory, 'plugin', 'README.md'), 'utf8'), /plugin-dev dev/);
   } finally { rmSync(directory, {recursive: true, force: true}); }
@@ -24,7 +24,7 @@ test('create copies the source template without scanning a vault or configuring 
 
 test('create copies each runnable template and rejects an unknown template', () => {
   const expected = {
-    connector: ['source.mjs', 'seed.mjs', 'package.json', 'README.md'],
+    connector: ['plugin.mjs', 'source.mjs', 'seed.mjs', 'mote-plugin.json', 'scripts/pack.mjs', 'package.json', 'README.md'],
     worker: ['main.mjs', 'mote-plugin.json', 'scripts/pack.mjs', 'package.json', 'README.md'],
     domain: ['plugin.mjs', 'domain.mjs', 'port.mjs', 'source.mjs', 'seed.mjs', 'mote-plugin.json', 'web/index.html', 'scripts/pack.mjs', 'package.json', 'README.md'],
   };

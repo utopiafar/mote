@@ -11,6 +11,7 @@ import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {createDynamicHttpDispatcher} from '../src/plugins/dynamic-http-dispatcher.js';
 import {createConnectorHostAdapter,type ConnectorInstanceScope} from '../src/plugins/connector-host-adapter.js';
+import {Context} from '@deepseek-ai/cordis';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
@@ -19,9 +20,11 @@ const capabilities:SourceCapabilityDescriptor={lifecycle:'one-shot',discovery:'e
 type TestScope=ConnectorInstanceScope&{resources:PluginResourceScope};
 function instanceScope(name:string):TestScope {
   const resources=new PluginResourceScope(undefined,'generated connector scope disposal failed');
+  const cordis=new Context();
+  resources.retire(()=>cordis.fiber.dispose());
   const scope:HostScope=Object.freeze({
     identity:{packageId:'generated.connector',installationId:'generated-install',instanceId:name,activationId:'generated-'+name,host:{kind:'central' as const,id:'generated-host'}},
-    signal:resources.signal,
+    signal:resources.signal,cordis,
     assertCurrent:()=>resources.assertCurrent(),
     defer:dispose=>resources.defer(dispose),
     run:work=>resources.run(work),

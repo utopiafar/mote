@@ -266,7 +266,7 @@ async function ensurePortFree(p) {
     server.listen(p.port, p.env.MOTE_HOST || '127.0.0.1', () => server.close(resolvePromise));
   });
 }
-export async function startNative(p, foreground = false) {
+export async function startNative(p, foreground = false, options = {}) {
   await assertLogRetentionCompatible(p);
   const current = await nativeIdentity(p);
   if (current.running) {
@@ -282,11 +282,11 @@ export async function startNative(p, foreground = false) {
       finally { process.off('SIGTERM', forward); process.off('SIGINT', forward); }
     } };
   }
-  const entry = join(resolve(p.meta.release), 'apps/server/dist/index.js');
+  const entry = options.entry ?? join(resolve(p.meta.release), 'apps/server/dist/index.js');
   await stat(entry).catch(() => { throw Error('Central build is missing. Run npm ci, build:libs, and build server/web in the selected release'); });
   await ensurePortFree(p);
   const marker = randomUUID(); await mkdir(join(p.directory, 'logs'), { recursive: true, mode: 0o700 });
-  const child = spawn(process.execPath, [join(repository, 'scripts/central-runner.mjs'), entry, join(resolve(p.directory, p.env.MOTE_LOG_DIR || 'logs'), 'central.log'), `--mote-instance=${marker}`], { cwd: resolve(p.meta.release), env: isolatedEnvironment(p), detached: !foreground, stdio: foreground ? 'inherit' : 'ignore' });
+  const child = spawn(process.execPath, [join(repository, 'scripts/central-runner.mjs'), entry, join(resolve(p.directory, p.env.MOTE_LOG_DIR || 'logs'), 'central.log'), `--mote-instance=${marker}`], { cwd: resolve(p.meta.release), env: isolatedEnvironment(p, options.env), detached: !foreground, stdio: foreground ? 'inherit' : 'ignore' });
   let failure; child.once('error', error => { failure = error; });
   const exited = new Promise(resolvePromise => child.once('close', (code, signal) => resolvePromise({ code, signal })));
   if (!child.pid) throw Error('Could not start central process');
@@ -420,7 +420,7 @@ export async function verifiedBackup(backup) {
   if ((await stat(manifestPath)).size > 16 * 1024 * 1024) throw Error('Backup manifest exceeds 16 MiB');
   const manifest = await readJson(manifestPath);
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
-  if (manifest.storageEpoch !== 5) throw Error('Unsupported backup storage epoch; restore older backups with their matching older binary');
+  if (manifest.storageEpoch !== 6) throw Error('Unsupported backup storage epoch; restore older backups with their matching older binary');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
     const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})(?:\.plain|\.aes)$/.exec(name);
     const sourceBatch=/^source-archive\/[a-f0-9]{64}\/[a-f0-9]{64}(?:\.plain|\.aes)$/.test(name);
@@ -432,7 +432,7 @@ export async function verifiedBackup(backup) {
   const db = new DatabaseSync(join(directory, 'mote.sqlite'), { readOnly: true });
   try {
     const settings=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
-    if (!settings || db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value !== '5') throw Error('Unsupported backup database epoch; existing destination data was not changed');
+    if (!settings || db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value !== '6') throw Error('Unsupported backup database epoch; existing destination data was not changed');
   } finally { db.close(); }
   return { directory, names: Object.keys(manifest.checksums), checksums: manifest.checksums };
 }

@@ -1,5 +1,6 @@
 import type {SourceConnection,SourceItem} from '@mote/shared';
 import type {Context} from '@deepseek-ai/cordis';
+import type {HostScope} from '@mote/plugin-host';
 import type {CodingAppendBase,MaterialAppendDraft,MaterialDraft} from './materials.js';
 import type {SourceArchive} from './source-archive.js';
 import type {RawReader} from './raw-reader.js';
@@ -38,8 +39,9 @@ export interface PublishInput {
 
 /** Trusted executable counterparts of declarative recipe IDs. */
 export class SourceRecipeExecutor {
-  readonly registry=new RecipeRegistry();
+  readonly registry:RecipeRegistry;
   private readonly handlers=new Map<string,Handler>();
+  constructor(scope?:HostScope){this.registry=new RecipeRegistry(scope);}
 
   private register(component:RecipeComponentManifest,handler?:Handler):()=>void {
     if(handler&&handler.kind!==component.kind)throw Error(`Recipe handler kind mismatch: ${component.id}`);

@@ -3,15 +3,18 @@ import assert from 'node:assert/strict';
 import {request as httpRequest} from 'node:http';
 import Fastify,{type FastifyReply,type FastifyRequest} from 'fastify';
 import {ZodError} from 'zod';
+import {Context} from '@deepseek-ai/cordis';
 import {PluginResourceScope} from '@mote/plugin-host';
 import type {HostScope} from '@mote/plugin-host';
 import {createDynamicHttpDispatcher,DynamicHttpError,type DynamicHttpDispatcher} from '../src/plugins/dynamic-http-dispatcher.js';
 
 function fixtureScope(name:string){
   const resources=new PluginResourceScope(undefined,'generated scope disposal failed');
+  const cordis=new Context();
+  resources.retire(()=>cordis.fiber.dispose());
   const scope:HostScope=Object.freeze({
     identity:{packageId:'generated.dynamic-http',installationId:'generated-install',instanceId:name,activationId:'generated-activation',host:{kind:'central' as const,id:'generated-host'}},
-    signal:resources.signal,
+    signal:resources.signal,cordis,
     assertCurrent:()=>resources.assertCurrent(),
     defer:dispose=>resources.defer(dispose),
     run:work=>resources.run(work),

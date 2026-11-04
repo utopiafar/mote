@@ -1,4 +1,4 @@
-import {encodeMemoryPrivate,decodeMemoryPrivate} from './memory-private-storage.js';
+import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import type {QueryResult} from '@mote/shared';
 import type {Store} from './store.js';
 import {retainedMemoryReadReceipt} from './memory-read-context.js';

@@ -50,8 +50,8 @@ function BuildStatus({builds}:{builds:PluginBuildView[]}){
    const running=build.active??undefined,candidate=build.desired,requiresBuild=hasRequiresBuild(build.blockers);
    const differs=Boolean(candidate&&running&&(candidate.packageId!==running.packageId||candidate.version!==running.version||candidate.configurationRevision!==running.configurationRevision));
    const failed=build.observed==='blocked'||Boolean(differs&&build.blockers.length);
-   return <article className="plugin-build" key={build.id} data-build-id={build.id}>
-    <div className="section-heading"><div><h3>{build.id}</h3><small>{build.packageId} · {moteText('配置版本 {0}',build.revision)}</small></div><span className={'badge '+(build.observed==='active'?'green':'muted')}>{buildObservedLabel(build.observed)}</span></div>
+   return <article className="plugin-build" key={build.id} data-build-id={build.id} data-build-runtime={build.runtime??'host'}>
+    <div className="section-heading"><div><h3>{build.name??build.id}</h3><small>{build.packageId}{build.version?'@'+build.version:''} · {build.runtime==='worker'?moteText('中央 Worker')+' · ':''}{moteText('配置版本 {0}',build.revision)}</small></div><span className={'badge '+(build.observed==='active'?'green':'muted')}>{buildObservedLabel(build.observed)}</span></div>
     <dl className="plugin-facts">
      <div><dt>{moteText('候选版本')}</dt><dd>{candidate?buildSelectionLabel(candidate):moteText('已选择停用')}</dd></div>
      <div><dt>{moteText('当前版本')}</dt><dd>{running?buildSelectionLabel(running):moteText('没有正在运行的版本')}</dd></div>

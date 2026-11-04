@@ -23,8 +23,8 @@ const {configFromFile}=await import('../apps/server/src/config.ts'),{buildApp}=a
 // The selected YAML owns model settings; only the isolated experiment runtime is overridden.
 const config=configFromFile(resolve(values['config-file']),{initializeCredentials:false});
 Object.assign(config,{dataDir,tokenPath:join(dataDir,'access-token'),profile:'quality',token:randomBytes(32).toString('hex'),host:'127.0.0.1',port:47852,
-  logDirectory:join(dataDir,'logs'),logLevel:'info',agentTraceEnabled:true,retentionDays:0,insightIntervalHours:0,embeddingModel:'',fileProcessorModules:[],backendPluginModules:[]});
-config.connectors={...config.connectors,directory:join(dataDir,'.quality-empty-connectors'),modules:[],mcpEnabled:false,mcpWriteEnabled:false};
+  logDirectory:join(dataDir,'logs'),logLevel:'info',agentTraceEnabled:true,retentionDays:0,insightIntervalHours:0,embeddingModel:''});
+config.connectors={...config.connectors,directory:join(dataDir,'.quality-empty-connectors'),mcpEnabled:false,mcpWriteEnabled:false};
 const output=resolve(values.output),report={version:1,strategy:values.strategy,contextTime,dataDir,startedAt:new Date().toISOString(),cases:[]};
 await mkdir(dirname(output),{recursive:true,mode:0o700});
 const save=()=>writeFile(output,JSON.stringify(report,null,2)+'\n',{mode:0o600});

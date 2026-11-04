@@ -6,7 +6,8 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
-import {DelegationRuntime,registerQueryDelegation} from '../src/delegation-runtime.js';
+import {DelegationRuntime} from '../src/delegation-runtime.js';
+import {registerQueryDelegation} from '../src/agent-delegation-plugin.js';
 function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-query-workspace-')),store=new Store(directory),engine=new ExecutionEngine(store),runtime=new DelegationRuntime(store,engine,{autoPump:false});
  t.after(async()=>{await runtime.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});

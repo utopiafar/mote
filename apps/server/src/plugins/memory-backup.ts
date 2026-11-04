@@ -1,16 +1,20 @@
 import {createHash} from 'node:crypto';
-import type {MemoryBindings} from './memory-bindings.js';
-import {MemoryProviderError,memoryProviderRecordSchema,memoryProviderNamespaceSchema,memoryBodyDigest,withMemoryHostState} from './memory-provider-contract.js';
-import {memorySchema,type Memory} from './memory-schema.js';
-import {StoreError} from './store.js';
+import type {MemoryBindings} from '../memory-bindings.js';
+import {MemoryProviderError,memoryProviderRecordSchema,memoryProviderNamespaceSchema,memoryBodyDigest,withMemoryHostState} from '../memory-provider-contract.js';
+import {memorySchema,type Memory} from '../memory-schema.js';
+import {StoreError} from '../store.js';
 
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const revision=(snapshot:ReturnType<MemoryBindings['retainSnapshot']>)=>digest({binding:snapshot.binding,catalog:snapshot.catalog,recordDigests:snapshot.recordDigests,metadata:snapshot.metadata});
 
+/** The backup reads one pinned provider snapshot; publication never exposes
+ * the full binding object it mutates. */
+export type MemoryBackupBindingPort=Pick<MemoryBindings,'retainSnapshot'|'provider'>;
+
 /** Portable Mote bodies, resolved from the actual binding. Native provider
  * databases, retained SDK history and deployment credentials need their own
  * complete backup; this exporter makes no physical-erasure or restore claim. */
-export async function exportBoundMemories(bindings:MemoryBindings):Promise<Memory[]>{
+export async function exportBoundMemories(bindings:MemoryBackupBindingPort):Promise<Memory[]>{
   const snapshot=bindings.retainSnapshot();
   try{
     const selected=new Map<string,Memory>();
@@ -32,4 +36,14 @@ export async function exportBoundMemories(bindings:MemoryBindings):Promise<Memor
     const current=bindings.retainSnapshot();try{if(revision(current)!==revision(snapshot))throw new StoreError('Memory changed during export; retry the archive',409);}finally{current.release();}
     return Object.keys(snapshot.catalog).map(id=>selected.get(id)!);
   }catch(error){if(error instanceof MemoryProviderError)throw new StoreError(error.message,error.code==='invalid_record'||error.code==='conflict'?502:503);throw error;}finally{snapshot.release();}
+}
+
+/** C24's backup contribution: the exact portable bodies a restore consumes,
+ * resolved through the same binding snapshot as owner reads. */
+export interface MemoryBackup {
+  export():Promise<Memory[]>;
+}
+
+export function createMemoryBackup(bindings:MemoryBackupBindingPort):MemoryBackup{
+  return Object.freeze({export:()=>exportBoundMemories(bindings)});
 }
