@@ -112,13 +112,13 @@ export const dshImportCapabilityDescriptor=defineImportCapabilityDescriptor({
   create:(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch)=>createDshImportAgent(options,prepareLaunch),
 });
 
-const defaultCapabilities=new ImportCapabilityRegistry();
-defaultCapabilities.register(dshImportCapabilityDescriptor);
-defaultCapabilities.register(codexImportCapabilityDescriptor);
+export const defaultImportCapabilities=new ImportCapabilityRegistry();
+defaultImportCapabilities.register(dshImportCapabilityDescriptor);
+defaultImportCapabilities.register(codexImportCapabilityDescriptor);
 
 /** Fixed-settings facade. Host transport configuration selects the registered
  * implementation; captured content and model output never choose a capability. */
 export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch):ImportCapability {
   validateModelOptions(options);
-  return defaultCapabilities.create(options,prepareLaunch);
+  return defaultImportCapabilities.create(options,prepareLaunch);
 }
