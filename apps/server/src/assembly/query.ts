@@ -268,7 +268,6 @@ export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly backendContext:Context;
   readonly resources:ServerResources;
-  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'>;
   readonly availableModelConnections:()=>ModelConnection[];
 }
 
