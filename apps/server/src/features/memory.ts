@@ -1,5 +1,4 @@
 import {installMemoryOwnerQuestions} from '../memory-owner-questions.js';
-import {recoverableMemoryJobs} from '../lifecycle-extensions.js';
 import type {ServerFeatureScope} from '../feature-host.js';
 import type { FastifyInstance } from 'fastify';
 import type { FeatureServices } from '../feature-services.js';
@@ -11,12 +10,10 @@ export function register(app:FastifyInstance,{modelAuthorizationHost,availableMo
  const disposeQuestions=installMemoryOwnerQuestions({questions:ownerQuestions,continuations:memoryPipeline.ownerContinuations,materials,store,query:input=>queryAgent(input,'query','memories')});scope?.defer(disposeQuestions);
  if(automaticMemoryScheduling)scope?.every(5000,async()=>{await sourcePipelines.drainMemory(memoryPipeline,agent.configured);
    await memoryPipeline.tickInputs();
-   for(const id of recoverableMemoryJobs(store,lifecycle))void scope.run(()=>memoryPipeline.run(id));
  });
- if(automaticMemoryScheduling)scope?.every(60000,()=>lifecycle.tick());scope?.defer(()=>memoryDelegation.close());scope?.defer(()=>memoryPipeline.close());scope?.defer(()=>lifecycle.close());
- // Recovery resumes persisted activation, including manual work. Unstarted
- // create-only jobs stay dormant regardless of model readiness at startup.
- app.addHook('onReady',async()=>{for(const id of recoverableMemoryJobs(store,lifecycle))void scope?.run(()=>memoryPipeline.run(id));});
+ // C22B owns the lifecycle poll and explicit job recovery; closing it first
+ // still stops that work before the pipeline's own scope is released.
+ scope?.defer(()=>memoryDelegation.close());scope?.defer(()=>memoryPipeline.close());scope?.defer(()=>lifecycle.close());
 registerMemoryRoutes(app,{ownerPublication:memoryPublication,modelAuthorizationHost,availableModelConnections,memoryIntegrationSettings:memoryStrategySettings.integration,memoryRecipeSettings:memoryStrategySettings.recipes,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query:input=>queryAgent(input,'query','memories'),reviewExtraction});
 }
 
