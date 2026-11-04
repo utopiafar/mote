@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {planComposition} from '@mote/plugin-host';
 
-const manifest=(id,{version='1.0.0',runtime='worker',trust='official',contributions=[],dependencies=[]}={})=>({
+const manifest=(id,{version='1.0.0',runtime='worker',trust='official',contributions=[],dependencies=[],capabilities=[]}={})=>({
   schemaVersion:1,id,name:id,version,trust,runtime,entry:'main.mjs',
-  archive:{asset:'package.zip',sha256:'a'.repeat(64)},contributions,capabilities:[],
+  archive:{asset:'package.zip',sha256:'a'.repeat(64)},contributions,capabilities,
   configuration:[],dependencies,access:['generated fixture only'],
 });
 const source={id:'fixture.source',version:'1',surface:'ingress',runtime:'worker',entry:'source.mjs'};
@@ -66,6 +66,26 @@ test('client hosts activate their own contributions even when the package entry 
   assert.equal(planComposition({revision:1,host:'mac',packages:[manifest('fixture.client',{contributions:[native]})]}).ok,true);
   assert.equal(planComposition({revision:1,host:'android',packages:[manifest('fixture.client',{contributions:[native]})]}).ok,true);
   assert.deepEqual(invalid(planComposition({revision:1,host:'web',packages:[manifest('fixture.client',{contributions:[source]})]})).map(value=>value.code),['unsupported_runtime']);
+});
+
+test('an omitted capability or dependency declaration names the missing item and its fix',()=>{
+  const declared=manifest('fixture.capable',{capabilities:['retrieval'],contributions:[{...reader,capabilities:['retrieval']}]});
+  assert.equal(planComposition({revision:1,host:'central',packages:[declared]}).ok,true);
+  const undeclared=invalid(planComposition({revision:1,host:'central',packages:[
+    manifest('fixture.capable',{contributions:[{...reader,capabilities:['retrieval']}]}),
+  ]}));
+  assert.deepEqual(undeclared.map(value=>value.code),['undeclared_capability']);
+  assert.equal(undeclared[0].capability,'retrieval');
+  assert.equal(undeclared[0].packageId,'fixture.capable');
+  assert.equal(undeclared[0].contributionId,'fixture.reader');
+  assert.match(undeclared[0].message,/retrieval/);
+  assert.match(undeclared[0].remediation,/"capabilities"/);
+  const missing=invalid(planComposition({revision:1,host:'central',packages:[manifest('fixture.package',{contributions:[processor]})]}));
+  assert.equal(missing[0].code,'missing_dependency');
+  assert.equal(missing[0].contributionId,'fixture.processor');
+  assert.deepEqual(missing[0].dependency,{kind:'service',id:'fixture.reader',version:'1'});
+  assert.match(missing[0].message,/"fixture\.reader"/);
+  assert.match(missing[0].remediation,/"fixture\.reader"/);
 });
 
 test('host distribution dependencies require exact host capabilities',()=>{

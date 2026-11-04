@@ -1,24 +1,21 @@
-import type {ServerFeatureScope} from '../feature-host.js';
-import type { FastifyInstance } from 'fastify';
-import type { FeatureServices } from '../feature-services.js';
-import {registerOwnerLibraryBrowse} from '../owner-library-browse.js';
-import { registerMaterialRoutes } from '../material-routes.js';
-import { registerSourceMaterialView } from '../source-material-view.js';
+import type {FastifyInstance} from 'fastify';
+import type {FeatureServices} from '../feature-services.js';
+import type {ServerFeatureHost,ServerFeatureScope} from '../feature-host.js';
 import type {ServerFeatureAdapter} from './index.js';
 
-/** materials: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{materialOrganizer,materials,evidenceReader}:Pick<FeatureServices,"materialOrganizer"|"materials"|"evidenceReader">,scope?:ServerFeatureScope){
- scope?.every(5000,()=>materialOrganizer.tick(200));scope?.defer(()=>materials.index?.close());scope?.defer(()=>materialOrganizer.close());
-app.addHook('onReady',async()=>{void scope?.run(()=>materialOrganizer.tick(200));});
-registerMaterialRoutes(app,materials,materialOrganizer);
-registerOwnerLibraryBrowse(app,materials,evidenceReader);
-registerSourceMaterialView(app,materials);
+/** Pre-H14 mount point. The materials route table belongs to the material-context
+ * plugin; this adapter keeps feature-scoped revocation, inventory and Agent-tool
+ * disposal until the host mounts domain contributions natively. */
+export function register(app:FastifyInstance,{materialOrganizer}:Pick<FeatureServices,'materialOrganizer'>,scope:ServerFeatureScope|undefined,host:ServerFeatureHost){
+ scope?.every(5000,()=>materialOrganizer.tick(200));
+ app.addHook('onReady',async()=>{void scope?.run(()=>materialOrganizer.tick(200));});
+ host.mountDomainRoutes('mote.materials',app);
 }
 
 export const adapter:ServerFeatureAdapter={
   descriptor:{id:'mote.materials',version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,services)=>{
+  factory:(app,scope,services,host)=>{
     scope.retire(()=>services.agentFeatures.dispose('mote.materials'));
-    register(app,services,scope);
+    register(app,services,scope,host);
   },
 };

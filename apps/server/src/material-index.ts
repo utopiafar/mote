@@ -16,11 +16,13 @@ const runtimes=new WeakMap<ExecutionEngine,MaterialIndexRuntime>();
  * their own operation and never invalidate an already published revision. */
 export function materialIndexRuntime(materials:MaterialStore,engine:ExecutionEngine){
   let runtime=runtimes.get(engine);
-  if(!runtime){runtime=new MaterialIndexRuntime(materials,engine);runtimes.set(engine,runtime);}
+  // A closed runtime is fenced by its own flag; rebinding after the owner's
+  // stop creates a fresh registration instead of reviving stale admission.
+  if(!runtime||runtime.closed){runtime=new MaterialIndexRuntime(materials,engine);runtimes.set(engine,runtime);}
   return runtime;
 }
 export class MaterialIndexRuntime {
-  private closed=false;
+  closed=false;
   private closing?:Promise<void>;
   private unregister:()=>Promise<void>;
   constructor(readonly materials:MaterialStore,readonly engine:ExecutionEngine){

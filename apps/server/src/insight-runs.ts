@@ -22,6 +22,8 @@ export interface InsightRun {
 export class InsightRuns {
   private execution:RunExecution;
   private commitGuards=new Map<string,()=>void>();
+  private paused=false;
+  private closed=false;
   constructor(private readonly store:Store,private readonly options:RunExecutionOptions&{evidenceReader?:Pick<MaterialRead,'materialCatalog'>}={}){
     store.db.exec('CREATE TABLE IF NOT EXISTS insight_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
     this.execution=new RunExecution(store,'insight',{
@@ -49,6 +51,7 @@ export class InsightRuns {
     return {...run,...(row?{result:JSON.parse(row.json)}:{})};
   }
   start(id:string,input:Scope&{prompt?:string},work:(observe:(event:AgentProgress)=>void,signal:AbortSignal,snapshot:InsightSnapshot)=>Promise<QueryResult>,deadline:RunDeadline={}):InsightRun{
+    if(this.paused)throw new StoreError('Feature is closed',503);
     const hash=createHash('sha256').update(JSON.stringify(input)).digest('hex'),existing=this.store.db.prepare('SELECT request_hash FROM insight_runs WHERE id=?').get(id);
     if(existing){if(existing.request_hash!==hash)throw new StoreError('Run ID already belongs to another request',409);return this.get(id);}
     const {prompt:_,...scope}=input,at=new Date().toISOString(),run:InsightRun={id,operationId:`insight:${id}`,status:'running',createdAt:at,updatedAt:at,scope,events:[{stage:'starting',at}]};
@@ -67,6 +70,10 @@ export class InsightRuns {
     await this.execution.wait(id);if(this.get(id).status==='completed'&&result)return result;throw error??new StoreError(this.get(id).error?.message??'Review did not complete',this.get(id).error?.code==='timeout'?504:409);
     }finally{this.commitGuards.delete(id);}
   }
-  async close(){await this.execution.close();}
-  async stop(){await this.execution.stop();}
+  /** A disabled activation stops admitting reviews without discarding the
+   * durable manager; re-enabling resumes the same receipts and fences. */
+  pause(){this.paused=true;}
+  resume(){if(this.closed||this.execution.engine.closed)throw new StoreError('Feature is closed',503);this.paused=false;}
+  async close(){this.closed=true;this.paused=true;await this.execution.close();}
+  async stop(){this.closed=true;this.paused=true;await this.execution.stop();}
 }

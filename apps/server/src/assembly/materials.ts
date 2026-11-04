@@ -6,7 +6,7 @@ import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {Config} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
-import {sha256,type Store} from '../store.js';
+import type {Store} from '../store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {UsageLedger} from '../usage.js';
 import type {FileStore} from '../files.js';
@@ -15,18 +15,20 @@ import type {SourceStore} from '../sources.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
-import {modelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {MaterialStore} from '../materials.js';
 import {MaterialMemoryWork} from '../material-memory-work.js';
-import {Indexer} from '../indexer.js';
 import {MaterialOrganizerRuntime} from '../material-organizers.js';
 import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
+import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
 import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
+import {createMaterialRetrievalIndex,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,materialRetrievalIndexReplacement} from '../plugins/material-retrieval-index.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement},
+  {contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement},
+  {contribution:materialContextContribution,declaration:materialContextDeclaration,replacement:materialContextReplacement},
 ]);
 
 export interface MaterialInputDependencies {
@@ -79,23 +81,16 @@ export interface MaterialsAssemblyDependencies {
   readonly disableCatalogChanges:()=>void;
 }
 
-/** Indexer, material organizers and the shared evidence-context reader — the
- * materials read tail the sources domain feeds — plus their close hooks. */
+/** Retrieval index, material organizers and the shared evidence-context
+ * reader — the materials read tail the sources domain feeds — plus their close
+ * hooks. The retrieval-index domain plugin owns the Indexer, the bound
+ * material index runtime and the shared engine's embedding/index timer. */
 export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
   const {store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence}=dependencies;
-  const indexer=new Indexer(store,config,diagnostics,files,input=>{
-    const operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=config.embeddingModel;
-    const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
-    return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');}};
-  },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId,
-    assertModel:()=>modelAuthorization.assertCurrent(modelConnection('embedding:central',{model:config.embeddingModel,baseUrl:config.embeddingBaseUrl,apiKey:config.embeddingApiKey})),
-    authorize:(id,signal,task)=>{
-      const roots=modelAuthorizationHost.evidenceTriggers([id]);
-      const work='automatic-embedding:'+sha256(JSON.stringify(roots));
-      return modelAuthorizationHost.automatic(work,'embedding',roots,authorizedSignal=>{modelAuthorizationHost.assertEvidence([id]);return task(authorizedSignal);},signal);
-    },
-  });
-  resources.defer(()=>indexer.close());
+  const retrievalIndex=createMaterialRetrievalIndex({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,files,materials});
+  resources.defer(()=>retrievalIndex.close());
+  retrievalIndex.prepare();retrievalIndex.start();
+  const indexer=retrievalIndex.retrievalIndex;
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
   resources.defer(()=>materialOrganizer.close());
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
@@ -107,7 +102,16 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
     sourceItemRecipes:materialOrganizer.sourceItemRecipes,materialMemoryReady:ref=>materialMemoryWork.readyForMemory(ref),sourceContexts});
   resources.defer(()=>evidenceContext.dispose());
   const contextTrees=evidenceContext.assembly.contextTrees,evidenceReader=evidenceContext.assembly.reader;
+  const materialContext=createMaterialContext({materials,organizer:materialOrganizer,reader:evidenceReader});
+  resources.defer(()=>materialContext.close());
+  materialContext.prepare();materialContext.start();
   resources.beforeClose(()=>dependencies.disableCatalogChanges());
   backendContext.provide('moteContextTrees',contextTrees);
-  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts});
+  // The pre-H14 feature bridge mounts these before listen; each route table
+  // dispatches against this activation instead of installing a second handler.
+  backendContext.provide('moteDomainRoutes',Object.freeze({
+    'mote.materials':Object.freeze({mount:(app:Parameters<typeof materialContext.routes>[0])=>materialContext.routes(app)}),
+    'mote.context':Object.freeze({mount:(app:Parameters<typeof evidenceContext.routes>[0])=>evidenceContext.routes(app)}),
+  }));
+  return Object.freeze({indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext});
 }

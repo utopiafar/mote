@@ -48,17 +48,26 @@ internal class MemoryTopicNavigation {
         require(MemoryTopicCatalog.validId(tree) && (node == null || MemoryTopicCatalog.validId(node)))
         treeId = tree; nodeId = node; selectedMemory = null; cursors.clear(); cursors.add(null); scroll = 0
     }
-    fun selectMemory(id: String) { require(UUID.matches(id)); selectedMemory = id }
+    fun selectMemory(id: String) { selectedMemory = requireNotNull(MoteLink.uuidId(id)) }
     fun returnToList() { selectedMemory = null }
     fun next(cursor: String) { require(cursor.isNotBlank() && cursor.length <= 8192); cursors.add(cursor); scroll = 0 }
     fun previous() { if (canGoBack) cursors.removeAt(cursors.lastIndex); scroll = 0 }
     fun first() { cursors.clear(); cursors.add(null); scroll = 0 }
     fun valid(catalog: MemoryTopicCatalog) = nodeId == null || catalog.trees.any { it.id == treeId && it.nodes.any { node -> node.id == nodeId } }
     fun path(): String = (nodeId?.let { "/api/context-trees/${enc(treeId)}/nodes/${enc(it)}" } ?: "/api/memories") + "?limit=30" + (cursors.last()?.let { "&cursor=${enc(it)}" } ?: "")
-    fun save(): JSONObject = JSONObject().put("tree", treeId).put("node", nodeId).put("memory", selectedMemory).put("cursors", JSONArray(cursors.map { it.orEmpty() })).put("scroll", scroll)
+    /** The selected Memory as the shared reference route, if one is open. */
+    fun link(origin: String): MoteLink.Link? = selectedMemory?.let { id ->
+        val reference = requireNotNull(MoteLink.reference("memory:$id"))
+        val scope = requireNotNull(MoteLink.scopeOrigin(origin))
+        MoteLink.Link(MoteLink.Scope(scope), MoteLink.Route.Reference(reference))
+    }
+    fun save(): JSONObject = JSONObject().put("tree", treeId).put("node", nodeId)
+        .put("memory", selectedMemory?.let { requireNotNull(MoteLink.reference("memory:$it")) })
+        .put("cursors", JSONArray(cursors.map { it.orEmpty() })).put("scroll", scroll)
     fun restore(value: JSONObject) {
         choose(value.optString("tree").takeIf(MemoryTopicCatalog::validId) ?: "topics", value.optString("node").takeIf(MemoryTopicCatalog::validId))
-        value.optString("memory").takeIf(UUID::matches)?.let(::selectMemory)
+        value.optString("memory").takeIf(String::isNotBlank)?.let { MoteLink.reference(it) }
+            ?.takeIf { it.startsWith("memory:") }?.removePrefix("memory:")?.let(::selectMemory)
         val saved = value.optJSONArray("cursors")
         if (saved != null && saved.length() in 1..100) {
             val entries = (0 until saved.length()).map { saved.optString(it) }
@@ -67,7 +76,6 @@ internal class MemoryTopicNavigation {
         scroll = value.optInt("scroll").coerceAtLeast(0)
     }
     companion object {
-        private val UUID = Regex("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$")
         private fun enc(value: String) = URLEncoder.encode(value, "UTF-8")
     }
 }

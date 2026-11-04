@@ -12,6 +12,8 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.*
 import android.view.WindowManager
+import dev.mote.collector.plugins.CaptureControllers
+import dev.mote.collector.plugins.CapturePlugin
 import java.time.Instant
 import kotlin.math.roundToInt
 
@@ -19,6 +21,8 @@ class ProjectionService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var settings: Settings
     private var pipeline: CapturePipeline? = null
+    private var captureOwner: CaptureControllers? = null
+    private data class Prepared(val settings: Settings, val config: CollectorConfig, val owner: CaptureControllers, val pipeline: CapturePipeline)
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
@@ -55,6 +59,10 @@ class ProjectionService : Service() {
     private val tick = object : Runnable {
         override fun run() {
             if (closed || ending || !::settings.isInitialized) return
+            if (captureOwner?.active != true || CapturePlugin.controllers() !== captureOwner) {
+                projectionEnded(MoteI18n.text("采集已停止"))
+                stopSelf(); return
+            }
             if (ConnectionGuard.reconfiguring()) { handler.postDelayed(this, 1000); return }
             val c = config ?: return
             if (!settings.enabled) { stopSelf(); return }
@@ -63,7 +71,7 @@ class ProjectionService : Service() {
                 stopSelf(); return
             }
             if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
-                generation++; ending = true; clearPending(); pipeline?.close(); pipeline = null
+                generation++; ending = true; clearPending(); closePipeline()
                 state.execute { if (instanceGeneration == instances.get()) { settings.enabled = false; settings.status("permission_required", MoteI18n.text("通知权限关闭，采集已停止")) } }
                 stopSelf(); return
             }
@@ -134,17 +142,24 @@ class ProjectionService : Service() {
                     val opened = Settings(this)
                     val current = opened.read().also { it.validate() }
                     check(opened.enabled && expectedStamp == current.captureStamp() && current.screenCollectionEnabled && current.effectiveMode() == "projection")
-                    val ready = CapturePipeline(this)
-                    try { check(opened.enabled && opened.read().sameCaptureConfiguration(current)); Triple(opened, current, ready) }
-                    catch (error: Exception) { ready.close(); throw error }
+                    val owner = checkNotNull(CapturePlugin.controllers()) { "capture plugin is inactive" }
+                    val ready = checkNotNull(owner.openPipeline(this)) { "capture plugin is inactive" }
+                    try {
+                        check(opened.enabled && opened.read().sameCaptureConfiguration(current) && owner.active && CapturePlugin.controllers() === owner)
+                        Prepared(opened, current, owner, ready)
+                    } catch (error: Exception) { owner.closePipeline(ready); throw error }
                 }
                 handler.post {
                     if (closed || ending || ticket != generation || instanceGeneration != instances.get()) {
-                        prepared.getOrNull()?.third?.close(); return@post
+                        prepared.getOrNull()?.let { it.owner.closePipeline(it.pipeline) }; return@post
                     }
                     starting = false
-                    prepared.onSuccess { (opened, current, readyPipeline) ->
-                        if (ConnectionGuard.changing() || !opened.enabled) { readyPipeline.close(); stopSelf(); return@onSuccess }
+                    prepared.onSuccess { ready ->
+                        if (ConnectionGuard.changing() || !ready.settings.enabled || !ready.owner.active || CapturePlugin.controllers() !== ready.owner) {
+                            ready.owner.closePipeline(ready.pipeline); stopSelf(); return@onSuccess
+                        }
+                        val opened = ready.settings; val current = ready.config; val readyPipeline = ready.pipeline
+                        captureOwner = ready.owner
                         runCatching {
                             settings = opened; config = current; pipeline = readyPipeline
                             projection = getSystemService(MediaProjectionManager::class.java).getMediaProjection(Activity.RESULT_OK, data)
@@ -250,7 +265,8 @@ class ProjectionService : Service() {
         clearPending()
         display?.resize(displayWidth, displayHeight, resources.displayMetrics.densityDpi)
     }
-    fun pauseForConfiguration() { generation++; checking = null; clearPending(); pipeline?.close(); pipeline = null; lastTick = 0 }
+    private fun closePipeline() { captureOwner?.closePipeline(pipeline) ?: pipeline?.close(); pipeline = null }
+    fun pauseForConfiguration() { generation++; checking = null; clearPending(); closePipeline(); lastTick = 0 }
     fun applyConfiguration(next: CollectorConfig) {
         check(!closed && projection != null && display != null)
         config = next; lastTick = 0
@@ -260,17 +276,21 @@ class ProjectionService : Service() {
             val prepared = runCatching {
                 val current = settings.read()
                 check(settings.enabled && current == next && current.screenCollectionEnabled && current.effectiveMode() == "projection")
-                val ready = CapturePipeline(this)
-                try { check(settings.enabled && settings.read().sameCaptureConfiguration(next)); ready }
-                catch (error: Exception) { ready.close(); throw error }
+                val owner = checkNotNull(CapturePlugin.controllers()) { "capture plugin is inactive" }
+                val ready = checkNotNull(owner.openPipeline(this)) { "capture plugin is inactive" }
+                try {
+                    check(settings.enabled && settings.read().sameCaptureConfiguration(next) && owner.active && CapturePlugin.controllers() === owner)
+                    Prepared(settings, next, owner, ready)
+                } catch (error: Exception) { owner.closePipeline(ready); throw error }
             }
             handler.post {
                 if (closed || ending || ticket != generation || projection == null || display == null) {
-                    prepared.getOrNull()?.close(); return@post
+                    prepared.getOrNull()?.let { it.owner.closePipeline(it.pipeline) }; return@post
                 }
                 prepared.onSuccess { ready ->
-                    if (ConnectionGuard.changing() || !settings.enabled) { ready.close(); stopSelf() }
-                    else { pipeline?.close(); pipeline = ready }
+                    if (ConnectionGuard.changing() || !settings.enabled || !ready.owner.active || CapturePlugin.controllers() !== ready.owner) {
+                        ready.owner.closePipeline(ready.pipeline); stopSelf()
+                    } else { closePipeline(); captureOwner = ready.owner; pipeline = ready.pipeline }
                 }.onFailure { projectionEnded(MoteI18n.text("无法启动投屏，请重新点击开始并授予屏幕共享权限")); stopSelf() }
             }
         }
@@ -279,7 +299,7 @@ class ProjectionService : Service() {
     private fun projectionEnded(message: String) {
         if (closed || ending) return
         ending = true; generation++; if (instanceGeneration == instances.get()) running = false
-        clearPending(); pipeline?.close(); pipeline = null; handler.removeCallbacks(tick)
+        clearPending(); closePipeline(); handler.removeCallbacks(tick)
         state.execute {
             if (instanceGeneration != instances.get()) return@execute
             runCatching {
@@ -297,7 +317,7 @@ class ProjectionService : Service() {
         if (!closed) {
             closed = true; generation++; if (instanceGeneration == instances.get()) running = false; if (instance === this) instance = null
             handler.removeCallbacks(tick); pixels.shutdown()
-            pipeline?.close(); pipeline = null
+            closePipeline()
             clearPending(); display?.release(); display = null
             projection?.unregisterCallback(callback); projection?.stop(); projection = null
             stopForeground(STOP_FOREGROUND_DETACH)

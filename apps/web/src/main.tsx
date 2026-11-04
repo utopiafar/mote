@@ -1,6 +1,6 @@
 import {associateChatScope,clearChatReloadDraft} from './plugins/ask/chat-drafts';
 import {installGlobalErrorLogging,log} from './logger';
-import { ClientLoginApproval } from './ClientLoginApproval';
+import { ClientLoginApproval } from './plugins/agent-access/ClientLoginApproval';
 import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';
 import { getLocale,moteText } from '@mote/shared/i18n';
 import {
@@ -53,6 +53,7 @@ import { GlobalRetrieval } from './plugins/search';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { pageLabels,readPage,routes,type Page } from './navigation';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';
+import { webViewPage } from './deep-link';
 import { isSettingsContext,primaryDestination,WorkspaceNavigation } from './WorkspaceNavigation';
 import { readResource,resources } from './resource-cache';
 import { intakePlugin } from './plugins/intake';
@@ -115,7 +116,7 @@ function App() {
   const [quickNoteApi,setQuickNoteApi]=useState<ReturnType<typeof createApi>|null>(null);
   const closeQuickNote=useCallback(()=>setQuickNoteApi(null),[]);
   const collectionIds = () => webFeatures.collections().map(entry=>entry.id);
-  const initialRoute = useRef(readWorkspaceRoute(location.hash,readPage,collectionIds()));
+  const initialRoute = useRef(readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage));
   const [page, setPage] = useState<Page>(initialRoute.current.page);
   const [routeHash,setRouteHash]=useState(()=>location.hash);
   const settingsContext = isSettingsContext(page);
@@ -126,7 +127,7 @@ function App() {
   const pageRef = useRef(page); pageRef.current = page;
   useEffect(() => {
     const navigate = () => {
-      const next = readWorkspaceRoute(location.hash,readPage,collectionIds());
+      const next = readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);
       const allowed=allowedImportHash.current===location.hash;allowedImportHash.current=undefined;
       if (location.hash !== currentHash.current && !allowed && !confirmNavigation()) {
         const owner=apiRef.current,parent=owner&&readPage(currentHash.current)==='imports'?importOrigin(owner,history.state,'moteImportParent'):undefined;
@@ -253,7 +254,7 @@ function App() {
       if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||!(event.target instanceof Element))return;
       const anchor=event.target.closest<HTMLAnchorElement>('a[href]');if(!anchor||anchor.target&&anchor.target!=='_self'||anchor.hasAttribute('download'))return;
       const target=new URL(anchor.href,location.href);if(target.origin!==location.origin||target.pathname!==location.pathname||readPage(target.hash)!=='imports'||readPage(currentHash.current)==='imports')return;
-      const route=readWorkspaceRoute(currentHash.current,readPage,collectionIds());
+      const route=readWorkspaceRoute(currentHash.current,readPage,collectionIds(),webViewPage);
       preparedImport.current={api,origin:rememberImportOrigin(api,currentHash.current,window.scrollY,anchor,route.page==='archive'&&['materials','records','memories'].includes(route.collection)&&!hasUnsavedChanges())};
     };
     document.addEventListener('click',capture,true);return()=>document.removeEventListener('click',capture,true);
@@ -439,7 +440,7 @@ function App() {
             )}
           </div>
           </div>
-      {clientLogin&&api&&verified&&<ClientLoginApproval id={clientLogin} api={api} done={()=>{removeLoginParameter('loginRequest');setClientLogin(undefined);setNotice(moteText('客户端已登录，可返回客户端继续。'));}}/>}
+      {clientLogin&&api&&verified&&<ClientLoginApproval id={clientLogin} api={api} done={outcome=>{removeLoginParameter('loginRequest');setClientLogin(undefined);setNotice(outcome==='approved'?moteText('客户端已登录，可返回客户端继续。'):moteText('已拒绝这次客户端登录。'));}}/>}
           {notice && (
             <div className="notice" role="status">
               <Info size={17} />

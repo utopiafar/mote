@@ -1,9 +1,11 @@
 package dev.mote.collector
 
 import android.app.Application
+import dev.mote.collector.plugins.CapturePlugin
 import dev.mote.collector.plugins.DurableTransportPlugin
 import dev.mote.collector.plugins.NativePluginHost
 import dev.mote.collector.plugins.NativePluginRegistry
+import dev.mote.collector.plugins.SourceProviderPlugin
 import dev.mote.collector.plugins.SystemEntriesPlugin
 import dev.mote.collector.plugins.registerBuiltinPlugins
 import java.util.concurrent.Executors
@@ -34,6 +36,11 @@ class MoteApplication : Application() {
             QueueStorage.recoveryFailure = error.message ?: MoteI18n.text("本机存储恢复失败")
             return
         }
+        val sources = try { SourceProviderPlugin.start(this, pluginHost) } catch (error: Exception) {
+            QueueStorage.recoveryFailure = error.message ?: MoteI18n.text("插件不可用")
+            return
+        }
+        runCatching { CapturePlugin.start(pluginHost) }
         HttpJson.onUnauthorized = { url, token -> Settings(this).rejectCredential(url, token) }
         HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
         HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
@@ -89,7 +96,7 @@ class MoteApplication : Application() {
                     local.pruneUploaded()
                     RetentionWorker.schedule(this@MoteApplication)
                     transport.scheduleUpload(current)
-                    SourceWork.schedule(this@MoteApplication)
+                    sources.schedule()
                 } catch (error: Exception) {
                     SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
                     if (QueueStorage.recovering) {

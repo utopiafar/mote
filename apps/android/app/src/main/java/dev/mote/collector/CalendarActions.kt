@@ -6,15 +6,22 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
+import dev.mote.collector.plugins.ManagedCalendarJournalStore
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
-import java.io.FileOutputStream
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
+
+/** One delivery decision per received action. A revoked calendar permission
+ * blocks every new write; only an already retained external event id may be
+ * reconciled so a lost acknowledgement never hides a completed native write. */
+internal object CalendarDeliveryPolicy {
+    fun mayExecute(permissionGranted: Boolean, retained: String?): Boolean =
+        permissionGranted || (retained != null && retained != "attempting")
+}
 
 object CalendarActionRules {
     fun mutationAllowed(action: JSONObject, previous: String?): Boolean = action.optBoolean("mutationAllowed", false) && previous == null
@@ -31,7 +38,14 @@ object CalendarActionRules {
     fun description(id: String, event: JSONObject, operation: String? = null) = MoteI18n.text("{0}\n\n#Mote · 由 Mote 创建\n{1}", event.getString("description"), marker(id) + (operation?.let { "\n[Mote-operation:${UUID.fromString(it)}]" } ?: "")).trim()
 }
 
-class CalendarActions(private val context: Context, private val foreground: Boolean = false, private val sessionIdentity: Pair<String, Long>? = null) {
+internal class CalendarActions(
+    private val context: Context,
+    private val foreground: Boolean = false,
+    private val sessionIdentity: Pair<String, Long>? = null,
+    private val scheduleDelivery: () -> Unit = { CalendarActionWorker.schedule(context) },
+    private val journalStore: ManagedCalendarJournalStore = ManagedCalendarJournalStore(context),
+    private val capabilityPublisher: (String, (String, JSONObject?) -> JSONObject) -> CalendarCapabilityPublisher = { deviceId, transport -> CalendarCapabilityPublisher(deviceId, transport) },
+) {
     companion object { private val executionLock = Any() }
     private val settings = Settings(context)
     private val selectedClient = sessionIdentity?.let { expected -> CentralAccess.resolve(context).also { check((it.server to it.generation) == expected) }.client }
@@ -69,17 +83,16 @@ class CalendarActions(private val context: Context, private val foreground: Bool
         } ?: error(MoteI18n.text("无法读取已有日历"))
         return result
     }
-    private fun declareCapability(available: JSONArray?) = CalendarCapabilityPublisher(settings.deviceId, ::deviceRequest).publish(available)
+    private fun declareCapability(available: JSONArray?) = capabilityPublisher(settings.deviceId, ::deviceRequest).publish(available)
     fun connect(): JSONArray = ConnectionGuard.sync {
         val calendars = calendars()
         declareCapability(calendars)
         if (request("/api/connections/self").getJSONObject("credential").optString("scope") != "collector") request("/api/actions/targets", JSONObject().put("deviceId", settings.deviceId).put("deviceName", settings.read().deviceName).put("calendars", calendars))
-        CalendarActionWorker.schedule(context)
+        scheduleDelivery()
         calendars
     } ?: error(MoteI18n.text("连接正在切换"))
-    private fun journalRoot(): File = File(context.noBackupFilesDir, "calendar-actions/${SourceRules.hash(settings.read().server.trimEnd('/') + settings.deviceId)}").apply { mkdirs() }
-    private fun journalRead(key: String): String? { val file = File(journalRoot(), key); return if (file.exists()) String(context.secretBox().open(file.readBytes()), Charsets.UTF_8) else null }
-    private fun journalWrite(key: String, value: String) { val root = journalRoot(); val temp = File(root, "$key.tmp"); FileOutputStream(temp).use { it.write(context.secretBox().seal(value.toByteArray(Charsets.UTF_8))); it.fd.sync() }; check(temp.renameTo(File(root, key))) }
+    private fun journalRead(key: String): String? = journalStore.read(key)
+    private fun journalWrite(key: String, value: String) = journalStore.write(key, value)
     fun deliver() {
         val ready = ConnectionGuard.sync { val available = if (permissions()) calendars() else null; declareCapability(available); available != null } ?: return
         val paired = ConnectionGuard.sync { !deviceRequest("/api/connections/self").getJSONObject("credential").optString("deviceId", "").isEmpty() } ?: return
@@ -87,7 +100,7 @@ class CalendarActions(private val context: Context, private val foreground: Bool
             val managed = ConnectionGuard.sync { request("/api/managed-calendar-deliveries") } ?: return
             val items = managed.getJSONArray("items")
             for (i in 0 until items.length()) { val item = items.getJSONObject(i); val operation = UUID.fromString(item.getString("operationId")).toString(); val retained = journalRead(operation)
-                if (ready || retained != null && retained != "attempting") execute(item.getString("id"), operation)
+                if (CalendarDeliveryPolicy.mayExecute(ready, retained)) execute(item.getString("id"), operation)
             }
             if (!managed.optBoolean("manualReviewAllowed", false)) return
         }
@@ -106,7 +119,7 @@ class CalendarActions(private val context: Context, private val foreground: Bool
         UUID.fromString(id)
         val route = if (managedOperationId == null) "actions" else "managed-calendar"
         managedOperationId?.let { UUID.fromString(it) }
-        val journal = ManagedCalendarJournal(settings.deviceId, ::request, ::journalRead, ::journalWrite)
+        val journal = journalStore.journal(settings.deviceId, ::request)
         fun requirePermission() { check(permissions()) { MoteI18n.text("日历权限不可用，请先连接日历") } }
         val action = if (managedOperationId != null) journal.claim(id, managedOperationId, ::requirePermission) ?: return@sync
             else { requirePermission(); request("/api/actions/$id/claim", JSONObject().put("deviceId", settings.deviceId)) }
