@@ -27,7 +27,7 @@ test('public selected evidence persists through runs, restart and inherited foll
  const id=randomUUID(),payload={id,input:{question:'Generated selected original question',evidenceIds:[selected.id]}};
  const admitted=await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload});assert.equal(admitted.statusCode,202,admitted.body);const first=await completed(f.node,id);assert.equal(first.status,'completed',JSON.stringify(first));
  assert.deepEqual(seen[0].evidenceIds,[selected.id]);assert.deepEqual(seen[0].openingMemories,[]);assert.deepEqual(seen[0].contextEvidenceDependencies?.ids,[selected.id]);assert.ok(seen[0].processingEvidence?.[selected.id]);assert.ok(!seen[0].contextEvidenceDependencies?.ids.includes(other.id));
- assert.deepEqual(f.node.featureServices.delegation.get('query:'+id).scope.evidenceIds,[selected.id]);
+ assert.deepEqual(f.node.delegation.get('query:'+id).scope.evidenceIds,[selected.id]);
  const conversation=(await f.node.app.inject({url:'/api/conversations/'+first.conversationId,headers})).json();assert.deepEqual(conversation.scope.evidenceIds,[selected.id]);assert.deepEqual(conversation.turns[0].scope.evidenceIds,[selected.id]);assert.ok(conversation.turns[0].result.evidenceDependencies.ids.includes(selected.id),'host selection lineage survives a model boundary omitting an optional receipt');
  assert.equal((await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload})).statusCode,202);assert.equal(seen.length,1);
  await f.restart();
@@ -91,7 +91,7 @@ test('record anchors retain archive retrieval, persist across restart and follow
  const first=await completed(f.node,id);assert.equal(first.status,'completed',JSON.stringify(first));
  assert.deepEqual(seen[0].anchorEvidenceIds,[anchor.id]);assert.equal(seen[0].evidenceIds,undefined);assert.ok(seen[0].processingEvidence?.[anchor.id]);
  assert.ok(seen[0].contextEvidenceDependencies?.ids.includes(anchor.id),'the anchor is a revocable dependency even before its body is read');
- assert.deepEqual(f.node.featureServices.delegation.get('query:'+id).scope.anchorEvidenceIds,[anchor.id]);
+ assert.deepEqual(f.node.delegation.get('query:'+id).scope.anchorEvidenceIds,[anchor.id]);
  const conversation=()=>f.node.app.inject({url:'/api/conversations/'+first.conversationId,headers});
  const saved=(await conversation()).json();assert.deepEqual(saved.scope.anchorEvidenceIds,[anchor.id]);assert.deepEqual(saved.turns[0].scope.anchorEvidenceIds,[anchor.id]);
  assert.deepEqual(new Set(saved.turns[0].result.evidenceDependencies.ids),new Set([anchor.id,other.id]),'host anchor lineage survives a model receipt listing only its other cited original');
@@ -136,7 +136,7 @@ test('deleting an anchor or cancelling its run fences a controlled late answer a
   if(mode==='delete')assert.equal((await f.node.app.inject({method:'DELETE',url:'/api/notes/'+anchor.id,headers})).statusCode,200);else assert.equal((await f.node.app.inject({method:'POST',url:'/api/query-runs/'+id+'/cancel',headers,payload:{}})).statusCode,200);
   release();await modelReturned;await new Promise<void>(resolve=>setImmediate(resolve));const run=await completed(f.node,id);assert.notEqual(run.status,'completed',JSON.stringify(run));assert.equal(run.turnId,undefined,'a retired background run cannot publish a late conversation turn');
   const history=(await f.node.app.inject({url:'/api/conversations',headers})).json();for(const summary of history.items){const conversation=(await f.node.app.inject({url:'/api/conversations/'+summary.id,headers})).json();assert.ok(!JSON.stringify(conversation).includes('Generated late anchor answer'));}
-  assert.notEqual(f.node.featureServices.delegation.get('query:'+id).status,'succeeded');
+  assert.notEqual(f.node.delegation.get('query:'+id).status,'succeeded');
  });
 });
 
@@ -148,7 +148,7 @@ test('query preparation rolls back dependency pins when saving its prepared chec
  const accepted=await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated checkpoint rollback',evidenceIds:[selected.id]}}});assert.equal(accepted.statusCode,202,accepted.body);
  const failed=await completed(f.node,id);assert.equal(failed.status,'failed',JSON.stringify(failed));assert.equal(calls,0,'failed preparation must never reach the model');
  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM delegation_dependencies WHERE work_id=?').get('query:'+id)!.n,0,'dependency writes and prepared checkpoint share one transaction');
- const saved=f.node.featureServices.delegation.journal.payload<{prepared?:unknown}>('query:'+id);assert.equal(saved.prepared,undefined);
+ const saved=f.node.delegation.journal.payload<{prepared?:unknown}>('query:'+id);assert.equal(saved.prepared,undefined);
  f.node.store.db.exec('DROP TRIGGER fixture_prepared_checkpoint_failure');
  const retry=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated valid subsequent preparation',evidenceIds:[selected.id]}});assert.equal(retry.statusCode,200,retry.body);assert.equal(calls,1);
 });

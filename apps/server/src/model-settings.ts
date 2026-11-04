@@ -157,7 +157,7 @@ export class ModelSettingsStore {
     const wasInitialized=this.initialized;
     const candidate=await this.prepare(state,previous);
     return {applyOrder:1000,apply:()=>{},publish:()=>{candidate.activate();this.initialized=true;},
-      ...(candidate.rollback?{rollback:()=>{candidate.rollback!();this.initialized=wasInitialized;}}:{}),
+      ...(candidate.rollback?{rollback:()=>{try{candidate.rollback!();}finally{this.initialized=wasInitialized;}}}:{}),
       ...(candidate.complete?{complete:()=>candidate.complete!()}:{}),dispose:()=>candidate.dispose()};
   }
 

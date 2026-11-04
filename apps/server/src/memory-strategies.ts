@@ -7,6 +7,61 @@ import {RANGE_SELECTION_PERSONAL_RECIPE,RANGE_SELECTION_CODING_RECIPE,RANGE_SELE
 const key=(ref:MemoryStrategyRef)=>`${ref.id}@${ref.version}`;
 export type ResolvedMemoryRecipe={binding:MemoryRecipeBinding;extract:MemoryExtractionStrategy;review:MemoryReviewStrategy};
 
+/** One plugin's immutable strategy data. The plugin activation registers it and
+ * removes exactly these definitions when the contribution is withdrawn. */
+export interface MemoryStrategyContribution {
+  readonly id:string;
+  readonly extractions?:readonly unknown[];
+  readonly reviews?:readonly unknown[];
+  readonly recipes?:readonly unknown[];
+  readonly integrations?:readonly unknown[];
+  readonly integrationRecipes?:readonly unknown[];
+}
+
+/** The built-in product policies are one contribution, not a registry side
+ * effect. An activation may install additional contributions before use. */
+export const defaultMemoryStrategyContribution:MemoryStrategyContribution=Object.freeze({
+  id:'mote.builtin-memory-strategies',
+  extractions:Object.freeze([rangeSelectionPersonalExtractionStrategy,rangeSelectionContextExtractionStrategy,rangeSelectionDailyExtractionStrategy]),
+  reviews:Object.freeze([rangeSelectionPersonalReviewStrategy,rangeSelectionCodingReviewStrategy,rangeSelectionDailyReviewStrategy,defaultMemoryIntegrationReview]),
+  recipes:Object.freeze([
+    {...RANGE_SELECTION_PERSONAL_RECIPE,workContract:'range-evaluation@1',extract:{id:rangeSelectionPersonalExtractionStrategy.id,version:rangeSelectionPersonalExtractionStrategy.version},review:{id:rangeSelectionPersonalReviewStrategy.id,version:rangeSelectionPersonalReviewStrategy.version}},
+    {...RANGE_SELECTION_CODING_RECIPE,workContract:'range-evaluation@1',extract:{id:rangeSelectionContextExtractionStrategy.id,version:rangeSelectionContextExtractionStrategy.version},review:{id:rangeSelectionCodingReviewStrategy.id,version:rangeSelectionCodingReviewStrategy.version}},
+    {...RANGE_SELECTION_DAILY_RECIPE,workContract:'range-evaluation@1',requires:['daily-events'],extract:{id:rangeSelectionDailyExtractionStrategy.id,version:rangeSelectionDailyExtractionStrategy.version},review:{id:rangeSelectionDailyReviewStrategy.id,version:rangeSelectionDailyReviewStrategy.version}},
+  ]),
+  integrations:Object.freeze([defaultMemoryIntegrationStrategy]),
+  integrationRecipes:Object.freeze([{...defaultMemoryIntegrationRecipe,integrate:{id:defaultMemoryIntegrationStrategy.id,version:defaultMemoryIntegrationStrategy.version},review:{id:defaultMemoryIntegrationReview.id,version:defaultMemoryIntegrationReview.version}}]),
+});
+
+/** Install one contribution atomically: a rejected definition leaves none of
+ * that contribution's components installed. Duplicate IDs never overwrite the
+ * already installed definition. */
+export function installMemoryStrategyContribution(strategies:MemoryStrategies,contribution:MemoryStrategyContribution):()=>void {
+  const disposers:(()=>void)[]=[];
+  try{
+    for(const value of contribution.extractions??[])disposers.push(strategies.registerExtraction(value));
+    for(const value of contribution.reviews??[])disposers.push(strategies.registerReview(value));
+    for(const value of contribution.recipes??[])disposers.push(strategies.registerRecipe(value));
+    for(const value of contribution.integrations??[])disposers.push(strategies.registerIntegration(value));
+    for(const value of contribution.integrationRecipes??[])disposers.push(strategies.registerIntegrationRecipe(value));
+  }catch(error){
+    for(const dispose of disposers.reverse()){try{dispose();}catch{}}
+    throw error;
+  }
+  return ()=>{for(const dispose of disposers.reverse())dispose();};
+}
+
+export function installMemoryStrategyContributions(strategies:MemoryStrategies,contributions:readonly MemoryStrategyContribution[]):()=>void {
+  const disposers:(()=>void)[]=[];
+  try{
+    for(const contribution of contributions)disposers.push(installMemoryStrategyContribution(strategies,contribution));
+  }catch(error){
+    for(const dispose of disposers.reverse()){try{dispose();}catch{}}
+    throw error;
+  }
+  return ()=>{for(const dispose of disposers.reverse())dispose();};
+}
+
 /** Deployment-scoped trusted definitions. Installation never schedules work. */
 export class MemoryStrategies {
   private extracts=new Map<string,MemoryExtractionStrategy>();
@@ -15,19 +70,8 @@ export class MemoryStrategies {
   private integrators=new Map<string,MemoryIntegrationStrategy>();
   private integrationRecipes=new Map<string,ReturnType<typeof memoryIntegrationRecipeSchema.parse>>();
   private identities=new Map<string,string>();
-  constructor(){
-    this.registerExtraction(rangeSelectionPersonalExtractionStrategy);
-    this.registerReview(rangeSelectionPersonalReviewStrategy);
-    this.registerRecipe({...RANGE_SELECTION_PERSONAL_RECIPE,workContract:'range-evaluation@1',extract:{id:rangeSelectionPersonalExtractionStrategy.id,version:rangeSelectionPersonalExtractionStrategy.version},review:{id:rangeSelectionPersonalReviewStrategy.id,version:rangeSelectionPersonalReviewStrategy.version}});
-    this.registerExtraction(rangeSelectionContextExtractionStrategy);
-    this.registerReview(rangeSelectionCodingReviewStrategy);
-    this.registerRecipe({...RANGE_SELECTION_CODING_RECIPE,workContract:'range-evaluation@1',extract:{id:rangeSelectionContextExtractionStrategy.id,version:rangeSelectionContextExtractionStrategy.version},review:{id:rangeSelectionCodingReviewStrategy.id,version:rangeSelectionCodingReviewStrategy.version}});
-    this.registerExtraction(rangeSelectionDailyExtractionStrategy);
-    this.registerReview(rangeSelectionDailyReviewStrategy);
-    this.registerRecipe({...RANGE_SELECTION_DAILY_RECIPE,workContract:'range-evaluation@1',requires:['daily-events'],extract:{id:rangeSelectionDailyExtractionStrategy.id,version:rangeSelectionDailyExtractionStrategy.version},review:{id:rangeSelectionDailyReviewStrategy.id,version:rangeSelectionDailyReviewStrategy.version}});
-    this.registerReview(defaultMemoryIntegrationReview);
-    this.registerIntegration(defaultMemoryIntegrationStrategy);
-    this.registerIntegrationRecipe({...defaultMemoryIntegrationRecipe,integrate:{id:defaultMemoryIntegrationStrategy.id,version:defaultMemoryIntegrationStrategy.version},review:{id:defaultMemoryIntegrationReview.id,version:defaultMemoryIntegrationReview.version}});
+  constructor(contributions:readonly MemoryStrategyContribution[]=[defaultMemoryStrategyContribution]){
+    for(const contribution of contributions)installMemoryStrategyContribution(this,contribution);
   }
   private install<T extends MemoryStrategyRef>(kind:string,map:Map<string,T>,value:T):()=>void {
     const id=key(value),identity=kind+':'+id,fingerprint=recipeFingerprint(value);
@@ -73,5 +117,9 @@ export class MemoryStrategies {
   }
   list(){return [...this.recipes.values()].map(recipe=>{try{return {...recipe,available:true,binding:this.resolve(recipe).binding};}catch{return {...recipe,available:false};}});}
 }
+
+/** Consumer-facing registry surface. A plugin activation fences registration
+ * after quiesce; reads keep serving already pinned work. */
+export type MemoryStrategiesPort=Pick<MemoryStrategies,'registerExtraction'|'registerReview'|'registerRecipe'|'registerIntegration'|'registerIntegrationRecipe'|'resolve'|'resolvePinned'|'resolveIntegration'|'resolvePinnedIntegration'|'list'|'listIntegrations'>;
 
 declare module '@deepseek-ai/cordis' {interface Context {moteMemoryStrategies:MemoryStrategies;}}

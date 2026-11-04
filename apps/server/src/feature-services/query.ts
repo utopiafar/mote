@@ -1,13 +1,6 @@
-import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
-import type {DelegationRuntime} from '../delegation-runtime.js';
-import type {queryWithAttachmentsSchema} from '../query-request.js';
-
-/** C27 query members. */
+/** C27 query members. Delegation and query runs are owned by the Ask plugin (ASK02). */
 export interface QueryFeatureServices {
-  delegation:DelegationRuntime;
-  queryRuns:DelegatedQueryRuns;
-  queryWithAttachmentsSchema:typeof queryWithAttachmentsSchema;
   jobId:(params:unknown)=>string;
 }
 
-export const queryFeatureServiceMembers = ['delegation','queryRuns','queryWithAttachmentsSchema','jobId'] as const satisfies readonly (keyof QueryFeatureServices)[];
+export const queryFeatureServiceMembers = ['jobId'] as const satisfies readonly (keyof QueryFeatureServices)[];

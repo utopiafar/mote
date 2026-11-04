@@ -1,6 +1,6 @@
-import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
+import type {MemoryIntegrationSettingsPort} from './memory-integration-settings.js';
 import {MemoryIntegrationSelectionError,requestMemoryIntegration} from './memory-integration.js';
-import {memoryRecipeSettingsQuery,type MemoryRecipeSettings} from './memory-recipe-settings.js';
+import {memoryRecipeSettingsQuery,type MemoryRecipeSettingsPort} from './memory-recipe-settings.js';
 import type {FastifyInstance} from 'fastify';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -22,7 +22,7 @@ import type {ModelAuthorizationHost} from './model-authorization-host.js';
 import type {ModelConnection} from './background-model-authorization.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
-export function registerMemoryRoutes(app:FastifyInstance,{ownerPublication,modelAuthorizationHost,availableModelConnections,memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{ownerPublication?:MemoryOwnerPublication;modelAuthorizationHost:ModelAuthorizationHost;availableModelConnections:()=>ModelConnection[];memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:MemoryInputSelection;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:import('./memory-strategy-contract.js').MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>Promise<QueryResult>}){
+export function registerMemoryRoutes(app:FastifyInstance,{ownerPublication,modelAuthorizationHost,availableModelConnections,memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{ownerPublication?:MemoryOwnerPublication;modelAuthorizationHost:ModelAuthorizationHost;availableModelConnections:()=>ModelConnection[];memoryIntegrationSettings:MemoryIntegrationSettingsPort;memoryRecipeSettings:MemoryRecipeSettingsPort;store:Store;files:FileStore;evidenceReader:MemoryInputSelection;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:import('./memory-strategy-contract.js').MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return ownerPublication?ownerPublication.withOwnerWork(()=>ownerPublication!.publish((req.params as {id:string}).id,body.version)):memories.publish((req.params as {id:string}).id,body.version);});
   app.post('/api/memories/:id/correct',async req=>ownerPublication?ownerPublication.withOwnerWork(()=>ownerPublication!.correct((req.params as {id:string}).id,req.body)):memories.correct((req.params as {id:string}).id,req.body));
