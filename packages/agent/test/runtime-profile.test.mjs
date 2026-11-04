@@ -19,7 +19,7 @@ const reference = value => ({service: value.service, revision: value.revision,
 function provider(id, transport = 'openai-responses') {
   return {id, binding: binding(id), availability: {state: 'active'}, capabilities: {
     modelTransports: [transport], taskKinds: ['query', 'import'], tools: true, images: true, importWorkspace: true,
-    hostDelegation: true, recovery: 'none', replacement: 'restart',
+    hostDelegation: true, nativeDelegation: false, recovery: 'none', replacement: 'restart',
   }};
 }
 function profile(value) {

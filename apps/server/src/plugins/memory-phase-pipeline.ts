@@ -6,15 +6,14 @@ import type {QueryResult} from '@mote/shared';
 import {MemoryPipeline,type MemoryPhasePorts,type MemoryPipelineOptions} from '../memory-pipeline.js';
 import {reviewMemory,type MemoryDraftOrigin} from '../memory-review.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
-import type {MemoryDeletions} from '../memory-deletions.js';
+import type {MemoryDeletions} from './memory-deletions.js';
 import type {MemoryReviewStrategy} from '../memory-strategy-contract.js';
-import type {OwnerQuestions} from '../owner-questions.js';
 import type {MaterialStore} from '../materials.js';
 import {installMemoryOwnerQuestions} from '../memory-owner-questions.js';
 import {registerMemoryDelegation,type MemoryDelegationOptions} from '../memory-delegation.js';
 import type {MemoryOwnerContinuationPort,MemoryOwnerWorkView} from '../memory-owner-continuation.js';
 import {StoreError} from '../store.js';
-import {centralServices} from './central-contracts.js';
+import {centralServices,type OwnerQuestionsPort} from './central-contracts.js';
 
 /** C22A owns the durable extraction/review phases and the bounded independent
  * review cache. The pipeline is the only writer of phase checkpoints; review
@@ -47,9 +46,9 @@ export interface MemoryPhaseReviewDependencies {
 export interface MemoryPhasePipelineDependencies {
   readonly pipeline:MemoryPhasePipelineOptions;
   readonly review:MemoryPhaseReviewDependencies;
-  /** The shared owner-question ledger is read through its current pre-ACV03
-   * interface. Declarations remain a Material concern. */
-  readonly ownerQuestions?:OwnerQuestions;
+  /** The shared owner-question ledger is read through its current port.
+   * Declarations remain a Material concern. */
+  readonly ownerQuestions?:OwnerQuestionsPort;
   readonly materials?:MaterialStore;
 }
 export type MemoryPhaseReview=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:MemoryDraftOrigin)=>Promise<QueryResult>;

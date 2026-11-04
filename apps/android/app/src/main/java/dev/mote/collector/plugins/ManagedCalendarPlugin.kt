@@ -4,7 +4,6 @@ import android.content.Context
 import dev.mote.collector.CalendarActionPresentation
 import dev.mote.collector.CalendarActionWorker
 import dev.mote.collector.CalendarActions
-import dev.mote.collector.CalendarCapabilityPublisher
 import dev.mote.collector.ManagedCalendarJournal
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.Settings
@@ -35,6 +34,16 @@ internal object ManagedCalendarPlugin {
 
     fun requirement() = NativeRequirement(CAPABILITY, API_VERSION)
 
+    /** The action surface only exists while the provider is registered in this
+     * build; build removal is `requires-build`, never a stale enabled state. */
+    internal fun availability(host: NativePluginHost?): PluginAvailability =
+        host?.registry?.availability(requirement()) ?: PluginAvailability.UNAVAILABLE
+
+    internal fun availability(context: Context): PluginAvailability {
+        val host = (context.applicationContext as? MoteApplication)?.let { runCatching { it.pluginHost }.getOrNull() }
+        return availability(host)
+    }
+
     /** Start the application-scoped owner once per process. The first calendar
      * entry opens it; unrelated pages never pay for the scope. */
     internal fun owner(context: Context): ManagedCalendarOwner {
@@ -48,7 +57,8 @@ internal object ManagedCalendarPlugin {
 
     private fun open(app: Context): ManagedCalendarOwner {
         val host = (app as? MoteApplication)?.let { runCatching { it.pluginHost }.getOrNull() }
-            ?: return ManagedCalendarOwner(null, app)
+            ?: return ManagedCalendarOwner(null, app, running = false)
+        if (availability(host) != PluginAvailability.ACTIVE) return ManagedCalendarOwner(null, app, running = false)
         // A scope without a live cached owner is stale (an earlier failed start
         // or an explicitly stopped plugin); admit a fresh instance instead of
         // reusing it.
@@ -58,7 +68,7 @@ internal object ManagedCalendarPlugin {
             PluginInstanceDescriptor(identity, setOf(CAPABILITY), requires = listOf(requirement())),
         )) {
             is PluginResult.Ok -> admitted.value
-            is PluginResult.Failed -> return ManagedCalendarOwner(null, app)
+            is PluginResult.Failed -> return ManagedCalendarOwner(null, app, running = false)
         }
         return when (val started = host.startPlugin(scope) { session -> ManagedCalendarOwner(session, app) }) {
             is PluginResult.Ok -> started.value
@@ -95,6 +105,7 @@ internal object ManagedCalendarPlugin {
 internal class ManagedCalendarOwner internal constructor(
     private val scope: PluginOwnerSession?,
     private val context: Context?,
+    private val running: Boolean = true,
 ) {
     @Volatile private var closed = false; private set
 
@@ -106,7 +117,7 @@ internal class ManagedCalendarOwner internal constructor(
         scope?.defer { close() }
     }
 
-    internal val active get() = !closed && scope?.revoked != true
+    internal val active get() = running && !closed && scope?.revoked != true
 
     internal fun controller(context: Context, foreground: Boolean = false, sessionIdentity: Pair<String, Long>? = null): ManagedCalendarController {
         check(active) { "Managed calendar plugin is stopped" }
@@ -116,6 +127,7 @@ internal class ManagedCalendarOwner internal constructor(
                 scheduleDelivery = ::schedule,
                 journalStore = journalStore(context),
                 capabilityPublisher = ::publisher,
+                provider = ::providerAvailability,
             ),
             context,
         )
@@ -124,7 +136,7 @@ internal class ManagedCalendarOwner internal constructor(
     internal fun deliver() {
         check(active) { "Managed calendar plugin is stopped" }
         val app = requireNotNull(context) { "Calendar delivery requires an application context" }
-        CalendarActions(app, scheduleDelivery = ::schedule, journalStore = journalStore(app), capabilityPublisher = ::publisher).deliver()
+        CalendarActions(app, scheduleDelivery = ::schedule, journalStore = journalStore(app), capabilityPublisher = ::publisher, provider = ::providerAvailability).deliver()
     }
 
     internal fun schedule() {
@@ -136,9 +148,15 @@ internal class ManagedCalendarOwner internal constructor(
      * Central origin and device id, it never follows another owner session. */
     internal fun journalStore(context: Context): ManagedCalendarJournalStore = ManagedCalendarJournalStore(context)
 
-    /** The plugin owns capability publication; callers only pass device facts. */
-    internal fun publisher(deviceId: String, transport: (String, JSONObject?) -> JSONObject): CalendarCapabilityPublisher =
-        CalendarCapabilityPublisher(deviceId, transport)
+    /** The plugin owns capability publication; callers only pass device facts.
+     * Provider absence is a build fact and blocks the write before transport. */
+    internal fun publisher(deviceId: String, transport: (String, JSONObject?) -> JSONObject): NativeCapabilityPublisher =
+        NativeCapabilityPublisher(deviceId, transport, availability = ::providerAvailability)
+
+    private fun providerAvailability(): PluginAvailability {
+        val registered = scope?.host?.registry?.availability(ManagedCalendarPlugin.requirement()) ?: PluginAvailability.UNAVAILABLE
+        return if (registered == PluginAvailability.ACTIVE && active) PluginAvailability.ACTIVE else registered
+    }
 
     internal fun close() {
         if (closed) return

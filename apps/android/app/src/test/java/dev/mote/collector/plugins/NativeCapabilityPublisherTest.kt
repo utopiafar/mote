@@ -1,11 +1,11 @@
-package dev.mote.collector
+package dev.mote.collector.plugins
 
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 
-class CalendarCapabilityPublisherTest {
+class NativeCapabilityPublisherTest {
     private fun projection(declaration: JSONObject?): JSONObject {
         val granted = declaration?.optBoolean("connectionActive") == true && declaration.optString("permission") == "granted"
         return JSONObject().put("id", "calendar.manage").put("version", 1).put("installed", true)
@@ -37,23 +37,23 @@ class CalendarCapabilityPublisherTest {
                 else -> error("Unexpected execution or review request: $path")
             }
         }
-        assertThrows(IllegalStateException::class.java) { CalendarCapabilityPublisher("generated-device", transport).publish(calendars) }
-        CalendarCapabilityPublisher("generated-device", transport).publish(calendars)
+        assertThrows(IllegalStateException::class.java) { NativeCapabilityPublisher("generated-device", transport).publish(calendars) }
+        NativeCapabilityPublisher("generated-device", transport).publish(calendars)
         assertEquals(1, writes)
-        CalendarCapabilityPublisher("generated-device", transport).publish(null)
+        NativeCapabilityPublisher("generated-device", transport).publish(null)
         assertEquals(2, writes)
         assertEquals("required", declaration!!.getString("permission"))
         assertEquals(0, declaration!!.getJSONArray("calendars").length())
-        CalendarCapabilityPublisher("generated-device", transport).publish(calendars)
+        NativeCapabilityPublisher("generated-device", transport).publish(calendars)
         assertEquals(3, writes)
     }
 
     @Test fun unboundOwnerCannotDeclareAndForeignDeviceIdentityIsRejected() {
         var device: String? = null
-        val publisher = CalendarCapabilityPublisher("generated-device") { path, _ ->
+        val publisher = NativeCapabilityPublisher("generated-device", { path, _ ->
             assertEquals("/api/connections/self", path)
             JSONObject().put("credential", JSONObject().put("scope", "owner").apply { device?.let { put("deviceId", it) } })
-        }
+        })
         publisher.publish(JSONArray())
         device = "foreign-device"
         assertThrows(IllegalArgumentException::class.java) { publisher.publish(JSONArray()) }
