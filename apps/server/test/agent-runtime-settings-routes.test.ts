@@ -7,7 +7,7 @@ import type {ModelSettingsInput,ModelSettingsView} from '@mote/shared/models';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
-import type {AgentRuntimeSettingsView} from '../src/agent-runtime-settings-routes.js';
+import type {AgentRuntimeSettingsView} from '../src/plugins/agent-runtime-settings-routes.js';
 
 const owner='synthetic-agent-runtime-owner';
 const headers={authorization:`Bearer ${owner}`};

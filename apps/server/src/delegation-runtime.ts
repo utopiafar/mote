@@ -273,6 +273,14 @@ export class DelegationRuntime {
  cancelUnit(id:string){const unit=this.unit(id);if(unit.status==='succeeded'||unit.status==='cancelled')return;this.capabilities.get(unit.capabilityId)?.cancel?.(unit,this.get(unit.workId));this.engine.cancel(unit.stepId);unit.status='cancelled';this.saveUnit(unit);this.event(unit.workId,'branch_cancelled',undefined,id);}
  retryUnit(id:string){const unit=this.unit(id);if(!['failed','blocked','stale'].includes(unit.status))throw new StoreError('Only a failed branch can be retried',409);this.capabilities.get(unit.capabilityId)?.retry?.(unit,this.get(unit.workId));if(unit.artifactId)this.store.db.prepare('DELETE FROM delegation_artifacts WHERE id=?').run(unit.artifactId);this.store.db.prepare('DELETE FROM delegation_source_context_dependencies WHERE work_id=? AND unit_id=?').run(unit.workId,unit.id);delete unit.artifactId;delete unit.error;unit.status='waiting';this.saveUnit(unit);this.engine.retry(unit.stepId);this.event(unit.workId,'branch_retried',undefined,id);}
  cancel(id:string){this.transaction(()=>{const work=this.raw(id);if(terminal(work.status))return;work.status='cancelled';delete work.wait;this.save(work);for(const unit of work.units)if(!terminal(unit.status))this.cancelUnit(unit.id);this.engine.cancel(work.id);for(const stepId of this.activeExecutionIds(work.operationId))this.engine.cancel(stepId);this.event(id,'cancelled');});return this.get(id);}
+ /** Stop recovered work whose pinned generation is unavailable; this is an
+  * explicit block, not a user cancellation or a retryable failure. */
+ block(id:string,error:string){this.transaction(()=>{
+  const work=this.raw(id);if(!activeWork(work.status))return;
+  work.status='blocked';work.error=error;delete work.wait;this.save(work);
+  for(const stepId of this.activeExecutionIds(work.operationId))this.engine.fail(stepId,error);
+  for(const unit of work.units){const step=this.engine.get(unit.stepId);if(step&&activeWork(step.state))this.engine.fail(unit.stepId,error);}
+ });return this.get(id);}
  retry(id:string){this.transaction(()=>{const work=this.raw(id);if(!['failed','blocked'].includes(work.status))throw new StoreError('Only failed work can be retried',409);delete work.error;this.enqueueCoordinator(work);});void this.tick().catch(()=>{});return this.get(id);}
  /** Rejoin an independently retried product without rerunning its coordinator. */
  resumeExternalUnit(workId:string,unitId:string){this.transaction(()=>{

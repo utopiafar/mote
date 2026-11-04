@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {RecordingConnector,type RecordingBindingGrant,type RecordingProvider} from '../src/connectors/recordings.js';
-import {RecordingAuthorization} from '../src/connectors/recording-authorization.js';
+import {RecordingAuthorization} from '../src/plugins/recording-authorization.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
 function deferred<T=void>(){let resolve!:(value:T)=>void;return {promise:new Promise<T>(done=>resolve=done),resolve};}
 async function fixture(t:import('node:test').TestContext){const directory=await mkdtemp(join(tmpdir(),'mote-binding-lifecycle-')),store=new Store(directory),sources=new SourceStore(store),state={account:'generated-one',held:undefined as Promise<void>|undefined,entered:undefined as (()=>void)|undefined};

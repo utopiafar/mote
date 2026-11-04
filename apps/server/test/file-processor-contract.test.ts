@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import {fileProcessingSchema} from '@mote/shared';
-import {HttpTranscriptionProvider,ProcessorRegistry,type FileProcessor} from '../src/file-processors.js';
+import {HttpTranscriptionProvider,ProcessorRegistry,installFileProcessorContributions,type FileProcessor} from '../src/file-processors.js';
 
 test('offline transcription uses explicit transport constraints with an unrelated processor name',async t=>{
  const seen:string[]=[];let confirmsLocal=true;
@@ -26,4 +26,17 @@ test('processor registration rejects contradictory or malformed capability decla
  assert.throws(()=>registry.register({...base,reuseByContent:'yes' as any}),/reuse capability/);
  assert.doesNotThrow(()=>registry.register({...base,localOnly:true,allowSummary:true,dependencies:{settings:[]}}));
  assert.equal(registry.list()[0].localOnly,true);
+});
+
+test('a duplicate processor contribution fails atomically and never replaces the installed definition',()=>{
+ const registry=new ProcessorRegistry(),base:FileProcessor={id:'fixture.contribution',name:'Generated original',version:'1',stage:'extract',mediaTypes:['text/'],process:async()=>({durationMs:0,segments:[]})};
+ const remove=installFileProcessorContributions(registry,[{id:'generated.first',processors:[base]}]);
+ assert.throws(()=>installFileProcessorContributions(registry,[{id:'generated.second',processors:[
+  {...base,id:'fixture.rolled-back',name:'Generated rolled back'},
+  {...base,name:'Generated replacement'},
+ ]}]),/duplicate file processor/);
+ assert.equal(registry.get('fixture.contribution').name,'Generated original','the existing processor keeps its definition');
+ assert.throws(()=>registry.get('fixture.rolled-back'),/unavailable/,'a rejected contribution installs none of its processors');
+ remove();
+ assert.throws(()=>registry.get('fixture.contribution'),/unavailable/);
 });

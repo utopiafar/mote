@@ -44,8 +44,14 @@ export class ImageRecipeRegistry {
 }
 export const DEFAULT_IMAGE_RECIPE={id:'mote.image',version:'1'};
 export function installImageRecipes(registry:ImageRecipeRegistry){
- const stop=[registry.registerStage({id:'mote.image-ocr',version:'1',kind:'ocr',reuseByContent:true,run:input=>input.ocr()}),registry.registerStage({id:'mote.image-understanding',version:'1',kind:'understanding',run:input=>input.understand()}),
- registry.registerRecipe({...DEFAULT_IMAGE_RECIPE,steps:[{name:'ocr',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]},{name:'understanding',stage:{id:'mote.image-understanding',version:'1'},dependsOn:['ocr'],optionalDependencies:['ocr'],when:'understanding'}]})];
+ const stop:(()=>void)[]=[];
+ try{
+  stop.push(registry.registerStage({id:'mote.image-ocr',version:'1',kind:'ocr',reuseByContent:true,run:input=>input.ocr()}),registry.registerStage({id:'mote.image-understanding',version:'1',kind:'understanding',run:input=>input.understand()}),
+  registry.registerRecipe({...DEFAULT_IMAGE_RECIPE,steps:[{name:'ocr',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]},{name:'understanding',stage:{id:'mote.image-understanding',version:'1'},dependsOn:['ocr'],optionalDependencies:['ocr'],when:'understanding'}]}));
+ }catch(error){
+  for(const dispose of stop.reverse()){try{dispose();}catch{}}
+  throw error;
+ }
  return ()=>stop.reverse().forEach(dispose=>dispose());
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteImageRecipes:ImageRecipeRegistry;}}

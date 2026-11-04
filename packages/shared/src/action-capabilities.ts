@@ -19,3 +19,49 @@ export type ActionDeviceDeclaration=z.infer<typeof actionDeviceDeclarationSchema
 export type ActionCapabilityDraftInput=z.infer<typeof actionCapabilityDraftSchema>;
 export type ActionCapabilityDraft=Omit<ActionCapabilityDraftInput,'operationId'|'expectedRevision'>&{revision:number;state:'draft'|'revoked';executionEnabled:false;createdAt:string;updatedAt:string};
 export type ActionDeviceCapability=Omit<ActionDeviceDeclaration,'operationId'|'expectedRevision'>&{revision:number;connectionId:string;declaredAt:string;connectionActive:boolean};
+
+/** Device-published capability facts. `grant` is the device/OS grant, never the
+ * owner's execution authorization. Installation, live availability, owner
+ * authorization and a missing device stay separate fields so no client can
+ * collapse one fact into another. */
+export const deviceCapabilityGrantSchema=z.enum(['granted','required','unavailable']);
+const deviceCapabilityDeviceSchema=z.object({
+  deviceId:identity,revision:z.number().int().positive(),connectionActive:z.boolean(),
+  grant:deviceCapabilityGrantSchema,available:z.boolean(),authorized:z.boolean(),waitingDevice:z.boolean(),
+}).strict();
+export const deviceCapabilityProjectionSchema=z.object({
+  id:identity,version:z.number().int().positive(),installed:z.boolean(),
+  grant:deviceCapabilityGrantSchema,available:z.boolean(),authorized:z.boolean(),waitingDevice:z.boolean(),
+  devices:z.array(deviceCapabilityDeviceSchema).max(500),
+}).strict();
+export type DeviceCapabilityDevice=z.infer<typeof deviceCapabilityDeviceSchema>;
+export type DeviceCapabilityProjection=z.infer<typeof deviceCapabilityProjectionSchema>;
+type DeviceCapabilityDeclarationFact=Pick<ActionDeviceCapability,'deviceId'|'revision'|'connectionActive'|'permission'|'calendars'>;
+type DeviceCapabilityGrantFact={state:'active'|'revoked';authorized:boolean;target:{deviceId:string}};
+
+/** Pure projection over stored declarations, providers and grants. A live
+ * declaration means the device is present even when permission is missing;
+ * waiting-device is reserved for an installed capability with no live device. */
+export function projectDeviceCapability(input:{
+  readonly id:string;
+  readonly version:number;
+  readonly installed:boolean;
+  readonly declarations:readonly DeviceCapabilityDeclarationFact[];
+  readonly grants:readonly DeviceCapabilityGrantFact[];
+}):DeviceCapabilityProjection{
+  const live=input.declarations.filter(value=>value.connectionActive);
+  const usable=(value:DeviceCapabilityDeclarationFact)=>value.connectionActive&&value.permission==='granted'&&value.calendars.length>0;
+  const authorized=(deviceId?:string)=>input.grants.some(grant=>grant.state==='active'&&grant.authorized&&(deviceId===undefined||grant.target.deviceId===deviceId));
+  const grant=live.some(value=>value.permission==='granted')?'granted' as const:live.some(value=>value.permission==='required')?'required' as const:'unavailable' as const;
+  const available=input.declarations.some(usable);
+  return {
+    id:input.id,version:input.version,installed:input.installed,grant,available,
+    authorized:authorized(),waitingDevice:input.installed&&!available&&live.length===0,
+    devices:[...input.declarations].sort((a,b)=>a.deviceId.localeCompare(b.deviceId)).map(value=>({
+      deviceId:value.deviceId,revision:value.revision,connectionActive:value.connectionActive,
+      grant:value.connectionActive?value.permission:'unavailable',
+      available:usable(value),authorized:authorized(value.deviceId),
+      waitingDevice:input.installed&&!usable(value)&&!value.connectionActive,
+    })),
+  };
+}

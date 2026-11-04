@@ -1,6 +1,5 @@
 import {EXECUTION_POLICIES} from '../execution-policy.js';
 import {recordingResources,type RecordingContext} from './recording-context.js';
-import {initializeRecordingMedia} from './recording-state.js';
 import {z} from 'zod';
 import {StoreError} from '../store.js';
 import {createHash,randomUUID} from 'node:crypto';
@@ -8,8 +7,7 @@ import {recordingSelectionSchema,type RecordingSelection,type RecordingStatus,ty
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep,type ExecutionGrant} from '../execution-engine.js';
 import {PrivateFile} from './private-file.js';
 import {ConnectorError,type ConnectorContext} from './types.js';
-import {RecordingAuthorization,type RecordingAuthorizationPort} from './recording-authorization.js';
-import type {ConnectorManifest} from './registry.js';
+import type {RecordingAuthorizationPort} from '../plugins/recording-authorization.js';
 
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export interface RecordingAccount {id:string;name?:string;profile?:string}
@@ -243,27 +241,3 @@ export class RecordingConnector extends RecordingRuntime {
   this.engine=resources.engine;
  }
 }
-
-/** New providers use this same manifest; no new owner transport or task engine. */
-export function recordingManifest(id:string,create:(ctx:ConnectorContext)=>RecordingProvider,options:Pick<RecordingStatus,'label'|'setup'>={}):ConnectorManifest{return {
- apiVersion:1,id:`${id}-recordings`,statusKey:`${id}-recordings`,sourceKinds:[{kind:`${id}.recordings`,capabilities:{lifecycle:'continuous',discovery:'provider-list',listening:'polling',readOriginal:'explicit-provider-read',synchronization:'revisions',externalWrite:false}}],
- create:ctx=>{
-  initializeRecordingMedia(ctx.store);
-  const provider=create(ctx);if(provider.id!==id)throw Error('Recording manifest and provider identity differ');const connector=new RecordingConnector(ctx,provider),authorization=provider.authorization?new RecordingAuthorization(connector,provider.authorization):undefined,status=()=>({...connector.status(),...(authorization?{authorization:authorization.status()}:{}),category:'recordings' as const,...options});return {status,init:()=>connector.init(),configureSyncInterval:interval=>connector.configureSyncInterval(interval),close:async()=>{await authorization?.close();await connector.close();},configure:host=>{
-   const path=`/api/connectors/${id}-recordings` as const;
-   host.ownerRoute({method:'GET',path,handler:status});
-   host.ownerRoute({method:'GET',path:`${path}/items`,handler:req=>connector.items(z.object({includeExports:z.enum(['true','false']).optional()}).strict().parse(req.query).includeExports==='true')});
-   host.ownerRoute({method:'GET',path:`${path}/steps`,handler:req=>connector.steps(z.object({cursor:z.coerce.number().int().positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query))});
-   if(authorization){
-    host.ownerRoute({method:'POST',path:`${path}/check`,handler:async()=>{await authorization.check();return status();}});
-    for(const kind of ['setup','configure','login'] as const)host.ownerRoute({method:'POST',path:`${path}/${kind}`,handler:req=>{authorization.start(kind,req.body);return status();}});
-    host.ownerRoute({method:'POST',path:`${path}/authorization/cancel`,handler:async req=>{await authorization.cancel(z.object({taskId:z.string().uuid(),expectedRevision:z.string().uuid()}).strict().parse(req.body));return status();}});
-   }
-   host.ownerRoute({method:'POST',path:`${path}/connect`,handler:()=>connector.connect()});
-   host.ownerRoute({method:'PUT',path:`${path}/selection`,handler:req=>connector.select(req.body)});
-   host.ownerRoute({method:'POST',path:`${path}/sync`,handler:()=>connector.sync()});
-   host.ownerRoute({method:'POST',path:`${path}/retry`,handler:()=>connector.retry()});
-   host.ownerRoute({method:'DELETE',path,handler:async()=>{await authorization?.cancel();return connector.disconnect();}});
-  }};
- },
-};}
