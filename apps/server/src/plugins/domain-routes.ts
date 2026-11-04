@@ -1,11 +1,12 @@
 import type {FastifyInstance} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
+import type {FeatureServices} from '../feature-services.js';
 
 /** A domain-owned HTTP contribution mounted by its feature bridge before listen.
  * The contribution dispatches against its current activation, so disabling and
  * re-enabling the owner never installs a second route table. */
 export interface DomainRouteContribution {
-  mount(app: FastifyInstance): void;
+  mount(app:FastifyInstance,services?:FeatureServices):void;
 }
 
 /** Feature id -> route contribution. The trusted assembly provides this once on

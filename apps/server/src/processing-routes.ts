@@ -1,12 +1,11 @@
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import type {ImageProcessing} from './image-processing.js';
-import type {MediaPreparation} from './media-preparation.js';
 import type {MediaAssets} from './media-assets.js';
 import {mediaRuntimeSettings,type MediaRuntimeSettings} from './media-configuration.js';
-/** Perception and managed-media routes. C17 job storage, submission and
- * receipts are contributed by the processing-services plugin. */
-export function registerProcessingRoutes(app:FastifyInstance,{perception,mediaAssets,mediaPreparation,media:mediaInput,withOwnerIntent=async(_id,task)=>task(),withOwnerBatch=async(_ids,task)=>task()}:{perception:ImageProcessing;mediaAssets:MediaAssets;mediaPreparation?:MediaPreparation;media?:Partial<MediaRuntimeSettings>;withOwnerBatch?:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;withOwnerIntent?:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>}){
+/** Perception and managed-model routes. C17 jobs and C18B preparation have
+ * separate plugin-owned route contributions. */
+export function registerProcessingRoutes(app:FastifyInstance,{perception,mediaAssets,media:mediaInput,withOwnerIntent=async(_id,task)=>task(),withOwnerBatch=async(_ids,task)=>task()}:{perception:ImageProcessing;mediaAssets:MediaAssets;media?:Partial<MediaRuntimeSettings>;withOwnerBatch?:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;withOwnerIntent?:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>}){
   const media=mediaRuntimeSettings(mediaInput);
   app.get('/api/perception',async()=>perception.view());
   app.get('/api/images/:id',async req=>perception.detail(z.object({id:z.string().uuid()}).parse(req.params).id));
@@ -16,12 +15,6 @@ export function registerProcessingRoutes(app:FastifyInstance,{perception,mediaAs
   app.post('/api/perception/:id/retry',async req=>{const {id}=z.object({id:z.string().uuid()}).parse(req.params);z.object({kind:z.literal('ocr')}).strict().parse(req.body);return withOwnerIntent(id,()=>perception.retry(id));});
   app.post('/api/perception/ocr/historical-preview',async req=>perception.previewHistoricalOcr(req.body??{}));
   app.post('/api/perception/ocr/historical-process',async req=>withOwnerBatch(perception.historicalOcrTargets(req.body),()=>perception.processHistoricalOcr(req.body)));
-  if(mediaPreparation){
-    const roleOf=(params:unknown)=>z.object({role:z.enum(['ocr','dialogue','speaker-wespeaker'])}).strict().parse(params).role;
-    app.get('/api/media-preparation',async()=>mediaPreparation.statuses());
-    app.post('/api/media-preparation/:role',async(req,reply)=>{z.object({}).strict().parse(req.body??{});return reply.code(202).send(await mediaPreparation.start(roleOf(req.params)));});
-    app.post('/api/media-preparation/:role/cancel',async(req)=>{z.object({}).strict().parse(req.body??{});return mediaPreparation.cancel(roleOf(req.params));});
-  }
   app.get('/api/media-models',async()=>{
     const status=mediaAssets.statuses(),token=media.workerToken;
     const probe=async(url:string)=>{if(!token)return null;try{const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(1200)});return response.ok?await response.json():null;}catch{return null;}};
