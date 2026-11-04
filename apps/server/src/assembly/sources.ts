@@ -1,7 +1,4 @@
 import {randomUUID} from 'node:crypto';
-import type {Context} from '@deepseek-ai/cordis';
-import {PluginResourceScope} from '@mote/plugin-host';
-import type {PluginScope} from '@mote/plugin-api/contracts';
 import type {Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
@@ -14,10 +11,9 @@ import type {ExecutionPlatform} from '../plugins/execution-platform.js';
 import {SourceStore} from '../sources.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import {MaterialNoteDeletion} from '../material-note-deletion.js';
-import {codingSourcePlugin} from '../coding-source-plugin.js';
 import {closeSourcePlatforms} from '../platform-close-order.js';
 import {registerFileRoutes} from '../file-routes.js';
-import {createSourceRuntime,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
+import {createSourceRuntime,createSourceRuntimeFactory,sourceRuntimeContribution,sourceRuntimeDeclaration,sourceRuntimeReplacement} from '../plugins/source-runtime.js';
 import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSourceReplacement} from '../plugins/files-source.js';
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
 import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSourceReplacement} from '../plugins/notes-source.js';
@@ -43,21 +39,17 @@ export interface SourcesAssemblyDependencies {
   readonly executionPlatform:ExecutionPlatform;
   readonly authorizationPlatform:AuthorizationPlatform;
   readonly diagnostics:Pick<ServerDiagnostics,'measure'>;
-  readonly backendContext:Context;
   readonly resources:ServerResources;
 }
 
 /** SourceRuntime, SourceStore, Files, Capture and Notes construction plus the
  * source-facing platform close order app.ts previously held inline. */
 export async function assembleSources(dependencies:SourcesAssemblyDependencies){
-  const {bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,backendContext,resources}=dependencies;
-  const sourceScopeResources=new PluginResourceScope(()=>{},'Source runtime scope disposal failed');
-  const sourceScope:PluginScope={identity:{packageId:'mote.roots',installationId:'build',instanceId:'source-runtime',activationId:randomUUID(),host:bootstrap.snapshot().host},signal:sourceScopeResources.signal,
-    assertCurrent:()=>sourceScopeResources.assertCurrent(),defer:dispose=>sourceScopeResources.defer(dispose)};
-  resources.defer(()=>sourceScopeResources.close());
-  const sourceRuntime=createSourceRuntime({plugins:[codingSourcePlugin]},{store,materials,execution:executionPlatform,memoryWork:materialMemoryWork,context:backendContext});
-  resources.defer(()=>sourceRuntime.close());
-  await sourceRuntime.prepare(sourceScope);sourceRuntime.start();
+  const {bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources}=dependencies;
+  const sourceRuntime=createSourceRuntime({},{store,materials,execution:executionPlatform,memoryWork:materialMemoryWork});
+  const sourceRuntimeOwner=await bootstrap.host.install({identity:{packageId:'mote.source-runtime',installationId:'build:source-runtime@1.0.0',instanceId:'source-runtime',activationId:randomUUID(),host:bootstrap.snapshot().host},
+    contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(sourceRuntime)});
+  resources.defer(()=>sourceRuntimeOwner.close('disabled'));
   const sourcePipelines=sourceRuntime.runtimeForAssembly;
   const sources=new SourceStore(store,sourcePipelines);
   let filesForAccess:FileStore|undefined;

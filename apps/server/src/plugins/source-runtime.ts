@@ -1,10 +1,11 @@
-import type {Plugin,Context} from '@deepseek-ai/cordis';
+import type {Plugin} from '@deepseek-ai/cordis';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {StoreError,type Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
+import {codingSourcePlugin} from '../coding-source-plugin.js';
 import {SourcePipelineRuntime} from '../source-pipelines.js';
 import {centralServices} from './central-contracts.js';
 import type {ExecutionPlatform} from './execution-platform.js';
@@ -12,7 +13,7 @@ import type {ExecutionPlatform} from './execution-platform.js';
 export interface SourceRuntimeOptions {readonly plugins?:readonly Plugin[];}
 export interface SourceRuntimeDependencies {
   readonly store:Store;readonly materials:MaterialStore;readonly execution:ExecutionPlatform;
-  readonly memoryWork:MaterialMemoryWork;readonly context?:Context;
+  readonly memoryWork:MaterialMemoryWork;
 }
 /** Compiled trusted local factory, not a second package/archive Manifest. Intake
  * is the existing SourceStore -> receive transaction, authorized by C04/C10.
@@ -25,7 +26,10 @@ export const sourceRuntimeReplacement='hot' as const;
 const unavailable=()=>new StoreError('Source runtime is unavailable',503);
 
 export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:SourceRuntimeDependencies){
-  const plugins=[...(options.plugins??[])];let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
+  // Recipe components and the default Coding recipe are owned by this plugin
+  // activation, never registered by the server assembly.
+  const plugins=[codingSourcePlugin,...(options.plugins??[])];
+  let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let runtime:SourcePipelineRuntime|undefined,handlers:ReturnType<ExecutionPlatform['handlersForAssembly']>|undefined,closing:Promise<void>|undefined;
   function close(){
     if(closing)return closing;phase='stopped';
@@ -41,7 +45,7 @@ export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:So
         if(!dependencies.memoryWork)throw new StoreError('Shared source memory receipts are required',503);
         if(engine.store!==dependencies.store||dependencies.materials.store!==dependencies.store)throw new StoreError('Source runtime repository mismatch',503);
         handlers=dependencies.execution.handlersForAssembly(scope);
-        runtime=new SourcePipelineRuntime(dependencies.store,dependencies.materials,plugins,dependencies.context,engine,dependencies.memoryWork,handlers);
+        runtime=new SourcePipelineRuntime(dependencies.store,dependencies.materials,plugins,undefined,engine,dependencies.memoryWork,handlers);
         runtime.quiesce();await runtime.ready;scope.assertCurrent();if(phase!=='preparing')throw unavailable();phase='prepared';
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Source runtime preparation and cleanup failed',{cause:error});}throw error;}
     },

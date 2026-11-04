@@ -117,7 +117,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   backendContext.provide('moteConfig',configService);
   backendContext.provide('moteExecution',executor);
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
-  const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,backendContext,resources});
+  const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
   const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker});
   const admittedUsageFactory=(route?:{mode:()=>AgentRunFinalizer|undefined;host?:()=>ReturnType<typeof observabilityAssembly.admittedUsage>|undefined})=>(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;

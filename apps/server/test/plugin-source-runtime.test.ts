@@ -17,7 +17,6 @@ import {SourceItemRecipeCatalog} from '../src/source-item-recipe.js';
 import {materialId} from '../src/materials.js';
 import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
-import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import {createExecutionPlatform,createExecutionHandlersFactory} from '../src/plugins/execution-platform.js';
@@ -35,7 +34,7 @@ async function fixture(t:TestContext){
     const vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();const store=vault.store,materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials);
     const authorization=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});await authorization.prepare();
     const execution=createExecutionPlatform({store,settings,modelAuthorization:authorization.assembly.modelAuthorization});await execution.prepare();execution.start();const host=new PluginHost({kind:'central',id:'generated-source-host'});
-    const dependencies={store,materials,execution,memoryWork},platform=createSourceRuntime({plugins:[codingSourcePlugin,lowPriority]},dependencies);
+    const dependencies={store,materials,execution,memoryWork},platform=createSourceRuntime({plugins:[lowPriority]},dependencies);
     const owner=await host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(platform)}),runtime=platform.runtimeForAssembly;
     const sources=new SourceStore(store,runtime),files=new FileStore(store,sources);authorization.bindRepositories({sources,files,materials,memoryInputs:memoryWork.inputs,memoryWork});await authorization.start();
     return {vault,store,materials,memoryWork,authorization,execution,host,platform,owner,runtime,sources,files,dependencies};
@@ -98,10 +97,10 @@ for(const mode of ['quiesce','stop'] as const)test(`H04 source ${mode} refuses r
 test('failed H04 source initialization releases scoped registration and keeps borrowed execution and archive usable',async t=>{
   const f=await fixture(t),s=f.state;await f.receive(event());await s.owner.close('restart');
   const fail:Plugin=()=>{throw new Error('Generated recipe install failure');};
-  const bad=createSourceRuntime({plugins:[codingSourcePlugin,fail]},s.dependencies);
+  const bad=createSourceRuntime({plugins:[fail]},s.dependencies);
   await assert.rejects(s.host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(bad)}),/Generated recipe install failure/);
   assert.equal(s.store.db.isOpen,true);assert.equal(s.execution.assembly.executor.closed,false);assert.equal(s.store.db.prepare('SELECT count(*) n FROM source_archive_versions').get()!.n,1);assert.deepEqual(sourceRuntimeContribution.provides,[]);
-  const restored=createSourceRuntime({plugins:[codingSourcePlugin]},s.dependencies),handle=await s.host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(restored)});await restored.runtimeForAssembly.tick();assert.equal(s.materials.list().items.length,1);await handle.close('disabled');assert.equal(s.store.db.isOpen,true);
+  const restored=createSourceRuntime({},s.dependencies),handle=await s.host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(restored)});await restored.runtimeForAssembly.tick();assert.equal(s.materials.list().items.length,1);await handle.close('disabled');assert.equal(s.store.db.isOpen,true);
 });
 
 
