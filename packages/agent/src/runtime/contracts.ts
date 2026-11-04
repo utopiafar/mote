@@ -1,6 +1,6 @@
 import type {Cancellation, ServiceBinding, ServiceContract, ServiceLease} from '@mote/plugin-api/contracts';
 import type {ProviderFailureDetails, TokenUsage} from '@mote/shared';
-import type {AgentProgress} from '../query-contracts.js';
+import type {AgentProgress, AgentTraceEvent} from '../query-contracts.js';
 
 export const RUNTIME_API_VERSION = '1';
 
@@ -95,6 +95,10 @@ export interface HostRunPort {
   readonly systemPrompt: string;
   readonly signal: AbortSignal;
   readonly tools: HostToolPort;
+  /** Host-owned diagnostic sink for provider protocol observations. It grants
+   * nothing, is dropped after a controlled cancellation and cannot change
+   * execution, authorization or product output. */
+  observe?(event: AgentTraceEvent): void;
   assertCurrent(): void;
   /** Host admission runs outside active-time accounting; all repairs share one active budget.
    * A10 additionally fences each observable DSH HTTP attempt. Codex internal retries are not observable. */
