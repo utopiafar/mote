@@ -1,4 +1,4 @@
-import type {EvidenceDeletion} from './evidence-deletion.js';
+import type {EvidenceDeletion} from './plugins/evidence-deletion.js';
 import {storedCaptureLibraryVersion,materialEvidenceLibraryVersion} from './capture-library-version.js';
 import {CaptureTimeline,type TimelineRange} from './capture-timeline.js';
 import {registerDeviceLibrary} from './device-library.js';
@@ -27,7 +27,7 @@ const timelineRange=z.object(timelineFields).strict().refine(validTimelineRange,
 const timelineMemberRange=z.object({...timelineFields,group:z.string().min(1).max(8192)}).strict().refine(validTimelineRange,{message:'Select up to 32 days for time browsing'});
 const update=z.object({status:z.enum(['completed','failed']),ocrText:z.string().max(100000)}).strict();
 
-export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;evidenceReader:EvidenceReader;connections:Connections;credential:(req:FastifyRequest)=>ConnectionCredential|undefined;deletion:EvidenceDeletion}) {
+export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;evidenceReader:EvidenceReader;connections:Connections;credential:(req:FastifyRequest)=>ConnectionCredential|undefined;deletion:Pick<EvidenceDeletion,'capability'|'delete'>}) {
   const {store,connections,credential,evidenceReader,deletion}=context;
   const timeline=new CaptureTimeline(store);
   registerDeviceLibrary(app,context);

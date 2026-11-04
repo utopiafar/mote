@@ -7,10 +7,14 @@ import {StoreError} from '../store.js';
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const revision=(snapshot:ReturnType<MemoryBindings['retainSnapshot']>)=>digest({binding:snapshot.binding,catalog:snapshot.catalog,recordDigests:snapshot.recordDigests,metadata:snapshot.metadata});
 
+/** The backup reads one pinned provider snapshot; publication never exposes
+ * the full binding object it mutates. */
+export type MemoryBackupBindingPort=Pick<MemoryBindings,'retainSnapshot'|'provider'>;
+
 /** Portable Mote bodies, resolved from the actual binding. Native provider
  * databases, retained SDK history and deployment credentials need their own
  * complete backup; this exporter makes no physical-erasure or restore claim. */
-export async function exportBoundMemories(bindings:MemoryBindings):Promise<Memory[]>{
+export async function exportBoundMemories(bindings:MemoryBackupBindingPort):Promise<Memory[]>{
   const snapshot=bindings.retainSnapshot();
   try{
     const selected=new Map<string,Memory>();
@@ -40,6 +44,6 @@ export interface MemoryBackup {
   export():Promise<Memory[]>;
 }
 
-export function createMemoryBackup(bindings:MemoryBindings):MemoryBackup{
+export function createMemoryBackup(bindings:MemoryBackupBindingPort):MemoryBackup{
   return Object.freeze({export:()=>exportBoundMemories(bindings)});
 }

@@ -22,7 +22,7 @@ import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextTreeRegistry} from '../context-trees.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from '../memory.js';
-import type {ConversationRepository as Conversations} from '../plugins/central-contracts.js';
+import type {ConversationRepository as Conversations,OwnerQuestionsPort} from '../plugins/central-contracts.js';
 import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import {memoryIntegrationImageInputs} from '../memory-image-grants.js';
 import type {MemoryStrategies} from '../memory-strategies.js';
@@ -32,6 +32,8 @@ import {createMemoryAutomationAdmission,memoryAutomationAdmissionContribution,me
 import {createMemoryProviderAdapters,memoryProviderAdaptersContribution,memoryProviderAdaptersDeclaration,memoryProviderAdaptersReplacement} from '../plugins/memory-provider-adapters.js';
 import {createMemoryStrategySettings,memoryStrategySettingsContribution,memoryStrategySettingsDeclaration,memoryStrategySettingsReplacement,type MemoryStrategySettingsPlatform} from '../plugins/memory-strategy-settings.js';
 import {createMemoryPublication,memoryPublicationContribution,memoryPublicationDeclaration,memoryPublicationReplacement} from '../plugins/memory-publication.js';
+import {registerEvidenceDeletionForAssembly} from '../plugins/evidence-deletion.js';
+import {MaterialNoteDeletion} from '../material-note-deletion.js';
 import type {MemoryPipeline,MemoryModelSelection,MemoryPhasePorts} from '../memory-pipeline.js';
 import {memoryReadRanges} from '../memory-read-context.js';
 import {createMemoryPhasePipeline,memoryPhasePipelineContribution,memoryPhasePipelineDeclaration,memoryPhasePipelineReplacement,type MemoryPhasePipelineOptions,type MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
@@ -130,7 +132,7 @@ export interface MemoryRuntimeDependencies {
   readonly memoryStrategySettings:MemoryStrategySettingsPlatform;
   readonly memoryAutomation:MemoryAutomation;
   /** Shared owner-question ledger; the phase plugin owns the Memory provider. */
-  readonly ownerQuestions:OwnerQuestions;
+  readonly ownerQuestions:OwnerQuestionsPort;
   readonly pluginCenter:PluginCenter;
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
@@ -173,9 +175,11 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   memoryProviderAdapters.prepare();memoryProviderAdapters.start();
   const memoryAdapters=memoryProviderAdapters.adapters;
   memoryBindings.providerFactory=(id,namespace)=>memoryProviderAdapters.port.provider(id,namespace);
-  const memoryPublicationPlatform=createMemoryPublication({store,memories,bindings:memoryBindings,executor,revokeEvidence:ids=>memoryProviderAdapters.port.erasePreparedEvidence(ids)});
+  const memoryPublicationPlatform=createMemoryPublication({store,memories,bindings:memoryBindings,executor,revokeEvidence:ids=>memoryProviderAdapters.port.erasePreparedEvidence(ids),
+    evidenceDeletion:evidenceReader.files?{captures:store,files:evidenceReader.files,aliases:new MaterialNoteDeletion(store,materials)}:undefined});
   resources.defer(()=>memoryPublicationPlatform.close());
   memoryPublicationPlatform.prepare();memoryPublicationPlatform.start();
+  registerEvidenceDeletionForAssembly(store,()=>memoryPublicationPlatform.evidenceDeletion);
   const memoryPublication=memoryPublicationPlatform.publication;
   const memoryPipelineOptions:MemoryPhasePipelineOptions={onPublished:(step,items,job)=>topics.current?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublicationPlatform.port.stage,ownerPublication:memoryPublicationPlatform.port.owner,assertNewManualWork:()=>memoryBindings.assertNewManualWork(),nativeStages:{settle:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryProviderAdapters.port.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},prepare:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryProviderAdapters.port.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
     const engineProfile=pluginCenter.instanceView(namespace.instanceId).configuration.modelProfileId;if(typeof engineProfile!=='string')throw new StoreError('Native Memory model profile is missing',409);

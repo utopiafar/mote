@@ -1,19 +1,50 @@
 import {randomUUID} from 'node:crypto';
+import type {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
 import {AgentTimeoutError,type QueryInput} from '@mote/agent';
-import {withExecutionCancellation} from './execution-cancellation.js';
+import {withExecutionCancellation} from '../execution-cancellation.js';
 import {sourceContentTime,sourceIdSchema,type CaptureRecord,type QueryResult} from '@mote/shared';
-import {Store,StoreError,sha256} from './store.js';
-import {memoryDeletionDependencyBytes} from './storage-ledger.js';
-import {memoryRelationSchema,type Memory} from './memory-schema.js';
+import {StoreError,sha256} from '../store.js';
+import {memoryDeletionDependencyBytes} from '../storage-ledger.js';
+import {memoryRelationSchema,type Memory} from '../memory-schema.js';
 
 export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000),sourceLineageComplete:z.boolean()}).strict();
 type Rejection=z.infer<typeof memoryDeletionSchema>;
 type Candidate={title:string;statement:string;uncertainty:string;evidenceIds:string[];evidence?:{id:string;quote?:string;image?:{originalSha256:string;viewId:string}}[]};
+/** Canonical original reads stay a host port; the ledger never reaches through
+ * a domain feature bag or constructs its own storage reader. */
+export interface MemoryDeletionRecordPort {read(ids:readonly string[]):CaptureRecord[];}
+/** The active Memory binding pins the provider identity a deletion decision was
+ * made against. Publication supplies this port; a binding change invalidates a
+ * prepared deletion snapshot instead of silently carrying it to another namespace. */
+export interface MemoryDeletionBindingPort {
+  current():{planId:string;generation:number;namespace?:{ownerId:string;instanceId:string;bindingRevision:number}};
+}
+/** The deletion ledger only needs the vault's SQL handle and quota guard; it
+ * never receives the Store object or another domain's feature bag. */
+export interface MemoryDeletionStore {readonly db:DatabaseSync; reserveMetadata(bytes:number):void;}
+export interface MemoryDeletionPorts {
+  readonly records:MemoryDeletionRecordPort;
+  readonly binding?:MemoryDeletionBindingPort;
+  /** Explicit caller/test cap for one semantic review. */
+  readonly reviewTimeoutMs?:number|null;
+}
+/** C24 owns the durable owner-rejection ledger and its schema. The record
+ * storage opens this plugin factory so extraction and publication share one
+ * ledger instance; publication later attaches the live binding port. */
+export function openMemoryDeletions(store:MemoryDeletionStore,ports:MemoryDeletionPorts):MemoryDeletions{return new MemoryDeletions(store,ports);}
+export function exportMemoryDeletions(store:MemoryDeletionStore,records:MemoryDeletionRecordPort){return openMemoryDeletions(store,{records}).export();}
+export function restoreMemoryDeletions(store:MemoryDeletionStore,records:MemoryDeletionRecordPort,raw:unknown){openMemoryDeletions(store,{records}).restore(raw);}
 /** A user's deletion constrains regeneration, not original-evidence retention.
  * Content/provenance identity is deterministic; only a model compares meaning. */
 export class MemoryDeletions {
-  constructor(private store:Store,private read:(ids:string[])=>CaptureRecord[],private reviewTimeoutMs:number|null=null){
+  private readonly read:(ids:string[])=>CaptureRecord[];
+  private readonly reviewTimeoutMs:number|null;
+  private binding?:MemoryDeletionBindingPort;
+  constructor(private store:MemoryDeletionStore,ports:MemoryDeletionPorts){
+    this.read=ids=>ports.records.read(ids);
+    this.reviewTimeoutMs=ports.reviewTimeoutMs??null;
+    this.binding=ports.binding;
     store.db.exec(`CREATE TABLE IF NOT EXISTS memory_deletions(id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_deletion_dependencies(deletion_id TEXT NOT NULL REFERENCES memory_deletions(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,origin_keys TEXT NOT NULL DEFAULT '[]',lineage_keys TEXT NOT NULL DEFAULT '[]',PRIMARY KEY(deletion_id,evidence_id));
       CREATE INDEX IF NOT EXISTS memory_deletion_evidence ON memory_deletion_dependencies(evidence_id);`);
@@ -63,7 +94,10 @@ export class MemoryDeletions {
       UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','memory_deleted') WHERE id IN (SELECT id FROM affected) AND id!=?`).run(memoryId,memoryId);
     return Number(this.store.db.prepare('DELETE FROM memories WHERE id=?').run(memoryId).changes);
   }
-  snapshot(){return sha256(JSON.stringify(this.store.db.prepare('SELECT id,json FROM memory_deletions ORDER BY id').all()));}
+  /** Publication attaches the live binding before accepting work and clears it
+   * when the activation stops; direct record-level fixtures keep no binding. */
+  attachBinding(binding:MemoryDeletionBindingPort|undefined){this.binding=binding;}
+  snapshot(){return sha256(JSON.stringify({deletions:this.store.db.prepare('SELECT id,json FROM memory_deletions ORDER BY id').all(),binding:this.binding?.current()??null}));}
   private origins(id:string,seen=new Set<string>()):string[]{
     if(seen.has(id))return [];seen.add(id);
     const file=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(id);
