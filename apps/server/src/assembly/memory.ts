@@ -16,6 +16,7 @@ import type {BackgroundModelAuthorization,ModelConnection} from '../background-m
 import {agentModelConnection,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ExecutionSettings} from '../execution-settings.js';
 import type {MaterialStore} from '../materials.js';
+import type {FileStore} from '../files.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {EvidenceReader} from '../evidence-reader.js';
@@ -34,8 +35,9 @@ import {createMemoryPublication,memoryPublicationContribution,memoryPublicationD
 import type {MemoryPipeline,MemoryModelSelection,MemoryPhasePorts} from '../memory-pipeline.js';
 import {memoryReadRanges} from '../memory-read-context.js';
 import {createMemoryPhasePipeline,memoryPhasePipelineContribution,memoryPhasePipelineDeclaration,memoryPhasePipelineReplacement,type MemoryPhasePipelineOptions,type MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
-import {WorkingMemory} from '../working-memory.js';
-import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,MemoryLifecycle,type LifecycleSettings} from '../memory-lifecycle.js';
+import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,type LifecycleSettings,type LifecycleExtension} from '../memory-lifecycle.js';
+import {createMemoryLifecycleService,memoryLifecycleServiceContribution,memoryLifecycleServiceDeclaration,memoryLifecycleServiceReplacement} from '../plugins/memory-lifecycle-service.js';
+import type {InsightRuns} from '../insight-runs.js';
 import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,memoryRecordRepositoryReplacement} from '../plugins/memory-record-repository.js';
 import {createMemoryTopicsService,memoryTopicsServiceContribution,memoryTopicsServiceDeclaration,memoryTopicsServiceReplacement} from '../plugins/memory-topics-service.js';
 import {createMemoryBindingControl,memoryBindingControlContribution,memoryBindingControlDeclaration,memoryBindingControlReplacement,type MemoryBindingControlPlatform} from '../plugins/memory-binding-control.js';
@@ -46,7 +48,8 @@ import type {FeatureServices} from '../feature-services.js';
  * distribution concatenates each domain's list into one selected table.
  * Includes MEM01/C21A strategy settings, MEM02 memoryRecordRepository,
  * MEM03/C21C automation admission, MEM04/C21D binding control, MEM05/C22A
- * phase/review/cache, MEM09/C23 provider adapters, MEM10/C24 publication. */
+ * phase/review/cache, MEM06/C22B lifecycle/extensions/working,
+ * MEM09/C23 provider adapters and MEM10/C24 publication. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryStrategySettingsContribution,declaration:memoryStrategySettingsDeclaration,replacement:memoryStrategySettingsReplacement},
   {contribution:memoryRecordRepositoryContribution,declaration:memoryRecordRepositoryDeclaration,replacement:memoryRecordRepositoryReplacement},
@@ -54,6 +57,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryTopicsServiceContribution,declaration:memoryTopicsServiceDeclaration,replacement:memoryTopicsServiceReplacement},
   {contribution:memoryBindingControlContribution,declaration:memoryBindingControlDeclaration,replacement:memoryBindingControlReplacement},
   {contribution:memoryPhasePipelineContribution,declaration:memoryPhasePipelineDeclaration,replacement:memoryPhasePipelineReplacement},
+  {contribution:memoryLifecycleServiceContribution,declaration:memoryLifecycleServiceDeclaration,replacement:memoryLifecycleServiceReplacement},
   {contribution:memoryProviderAdaptersContribution,declaration:memoryProviderAdaptersDeclaration,replacement:memoryProviderAdaptersReplacement},
   {contribution:memoryPublicationContribution,declaration:memoryPublicationDeclaration,replacement:memoryPublicationReplacement},
 ]);
@@ -67,6 +71,19 @@ export function lateBinding<T>():LateBinding<T>{return {current:undefined};}
 export interface MemoryInputStageDependencies {
   readonly store:Store;
   readonly configService:ConfigService;
+}
+
+/** Execution/model hooks owned by the app shell but consumed only inside the
+ * C22B lifecycle activation. */
+export interface MemoryLifecycleRuntimeDependencies {
+  readonly automatic:boolean;
+  readonly whenReady?:(task:()=>void)=>void;
+  readonly semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
+  readonly providerCooldownCheck?:()=>void;
+  readonly insights?:InsightRuns;
+  readonly insightTimeout?:()=>number|null;
+  readonly query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;
+  readonly replacements?:readonly LifecycleExtension[];
 }
 
 /** Memory strategies, recipe settings, automation and binding control inputs
@@ -101,6 +118,7 @@ export interface MemoryRuntimeDependencies {
   readonly usageLedger:UsageLedger;
   readonly memories:MemoryStore;
   readonly conversations:Conversations;
+  readonly files:FileStore;
   readonly materials:MaterialStore;
   readonly materialMemoryWork:MaterialMemoryWork;
   readonly sourcePipelines:SourcePipelineRuntime;
@@ -121,6 +139,8 @@ export interface MemoryRuntimeDependencies {
   readonly runModelFor:(settings:ModelSettings,connection?:ModelConnection)=>NonNullable<AgentOptions['runModel']>;
   readonly memoryConfiguration:NonNullable<MemoryModelSelection['configuration']>;
   readonly semanticContextTime?:()=>string;
+  /** Extension inputs and optional test replacements registered by C22B. */
+  readonly lifecycle:MemoryLifecycleRuntimeDependencies;
   /** Binding control minted by the inputs stage; this stage prepares and starts it. */
   readonly memoryBindingControl:MemoryBindingControlPlatform;
   /** The topics slot is assigned by this stage. */
@@ -137,7 +157,7 @@ export interface MemoryRuntimeDependencies {
  * the automatic topics host — the Memory runtime app.ts previously wired
  * inline. Memory objects keep their relative defer/beforeClose order. */
 export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
-  const {store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
+  const {store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory,runModelFor,memoryConfiguration,memoryBindingControl,topics,lifecycle:lifecycleRuntime,understand,query,withQueryModelAuthority,assertModelEvidence}=dependencies;
   // The plugin constructs the binding; its disposer is registered by app.ts at
   // the original shutdown slot. Runtime collaborators are resolved when the
   // binding and later control projections actually run.
@@ -177,9 +197,17 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
-  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,executor,dependencies.semanticContextTime,configService);
-  resources.defer(()=>lifecycle.close());
-  const working=new WorkingMemory(store,conversations);
+  const memoryLifecycleService=createMemoryLifecycleService({
+    store,configService,executor,semanticContextTime:dependencies.semanticContextTime,configured:()=>agent.configured,conversations,
+    files,memories,pipeline:memoryPipeline,integrationSettings:memoryStrategySettings.integration,
+    semanticArtifacts:lifecycleRuntime.semanticArtifacts,providerCooldownCheck:lifecycleRuntime.providerCooldownCheck,
+    insights:lifecycleRuntime.insights,insightTimeout:lifecycleRuntime.insightTimeout,query:lifecycleRuntime.query,
+    model:()=>modelSettings.select('memory').settings.model,extensions:lifecycleRuntime.replacements,
+    automatic:lifecycleRuntime.automatic,whenReady:lifecycleRuntime.whenReady,
+  });
+  memoryLifecycleService.prepare();memoryLifecycleService.start();
+  resources.defer(()=>memoryLifecycleService.close());
+  const lifecycle=memoryLifecycleService.lifecycle,working=memoryLifecycleService.working;
   memoryBindingControl.start();
   const memoryControl=memoryBindingControl.control;
   const memoryIntegrationSettings=memoryStrategySettings.integration;
