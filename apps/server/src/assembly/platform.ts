@@ -93,7 +93,7 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
     modelAuthorization,availableModelConnections:()=>dependencies.availableModelConnections(),
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,
     // observability slice; the host keeps its runtime projection.
-    diagnostics,serverVersion:dependencies.serverVersion,
+    diagnostics,serverVersion:dependencies.serverVersion,featureInventory:bootstrap.featureInventory,
   }) satisfies Partial<FeatureServices>;
   return Object.freeze({authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync,featureServices});
 }

@@ -121,7 +121,7 @@ test('the plugin route publishes one real run snapshot into report history',asyn
   assert.equal(saved.usage.operation,'personal-insight');
   assert.equal((await node.app.inject({url:'/api/insights/'+completed.resultRunId,headers})).json().runId,completed.resultRunId);
   const inventory=(await node.app.inject({url:'/api/features',headers})).json();
-  assert.ok(inventory.capabilities.some((item:{featureId:string;id:string})=>item.featureId==='mote.insights'&&item.id==='http:GET:/api/insights'));
+  assert.ok(inventory.capabilities.some((item:{featureId:string;id:string;state:string})=>item.featureId==='mote.query-runs'&&item.id==='query-runs'&&item.state==='active'));
   assert.equal((await node.app.inject({method:'POST',url:'/api/insight-runs',headers,payload})).statusCode,202);
   assert.equal(calls,1,'a repeated request reuses the fenced receipt instead of calling the model twice');
   assert.equal(node.store.insights().items.length,1);

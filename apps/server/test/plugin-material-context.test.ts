@@ -33,8 +33,8 @@ test('material and context routes stay plugin-owned and never expose deleted ori
   assert.deepEqual(Object.keys(list.json()).sort(),['items','nextCursor']);
   assert.ok(list.json().items.some((item:{ref:string})=>item.ref===published.ref));
   const inventory=(await node.app.inject({url:'/api/features',headers})).json();
-  assert.ok(inventory.capabilities.some((item:any)=>item.featureId==='mote.materials'&&item.id==='http:GET:/api/materials'),
-    'the plugin contribution remains visible through the feature inventory');
+  assert.ok(inventory.capabilities.some((item:any)=>item.featureId==='mote.material-repository'&&item.id==='material-repository'&&item.state==='active'),
+    'the host plugin contribution remains visible through the feature inventory');
   const search=await node.app.inject({url:'/api/context/search?query=Generated',headers});assert.equal(search.statusCode,200,search.body);
   assert.deepEqual(Object.keys(search.json()).sort(),['coverage','items','nextCursor','truncated']);
   assert.ok(search.json().items.length>0);

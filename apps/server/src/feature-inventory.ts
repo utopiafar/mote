@@ -1,115 +1,41 @@
 import {createHash} from 'node:crypto';
-import type {FeatureInventory,FeatureCapability,FeatureManifest,FeatureRequirement,FeatureSurface} from '@mote/shared';
-import type {ContributionIdentity,PluginSnapshot} from '@mote/plugin-api/contracts';
-import type {ServerFeatureHost} from './feature-host.js';
-import type {FeatureServices} from './feature-services.js';
+import type {FeatureCapability,FeatureInventory,FeatureManifest,FeatureRequirement} from '@mote/shared';
+import type {ManifestContribution} from '@mote/plugin-api';
+import type {PluginSnapshot} from '@mote/plugin-api/contracts';
 
-/** The frozen ContributionIdentity identifies one exact scope/activation; the
- * host snapshot supplies availability, while this descriptor supplies the
- * inventory surface/feature grouping the snapshot does not carry. */
-export type HostContributionDescriptor = ContributionIdentity & {
-  readonly featureId: string;
-  readonly featureVersion: string;
-  readonly version: string;
-  readonly surface: FeatureSurface;
-  readonly requires?: readonly FeatureRequirement[];
-};
+export type HostContributionDescriptor=ManifestContribution&{readonly featureVersion:string};
 
-export interface HostInventoryProjection {
-  readonly snapshot: PluginSnapshot;
-  readonly descriptors: readonly HostContributionDescriptor[];
+function requirements(contribution:ManifestContribution):FeatureRequirement[]{
+  return (contribution.requires??[]).filter(dependency=>dependency.kind==='contribution'&&dependency.required!==false).map(({id,version})=>({id,version}));
 }
 
-function sameContribution(a: ContributionIdentity, b: ContributionIdentity): boolean {
-  const x = a.scope, y = b.scope;
-  return a.contributionId === b.contributionId
-    && x.packageId === y.packageId && x.installationId === y.installationId && x.instanceId === y.instanceId
-    && x.activationId === y.activationId && x.host.kind === y.host.kind && x.host.id === y.host.id;
-}
-
-/** Inputs from the actual host registry and the existing domain ports. This is
- * one projection, not a second inventory authority; revision is a content
- * digest for consumers and never a command CAS revision. */
-export interface FeatureInventoryParts {
-  server: FeatureInventory;
-  agent: FeatureInventory;
-  connectors: readonly {id: string; version: string; active: boolean}[];
-  pipelines: readonly FeatureCapability[];
-  processing: readonly FeatureCapability[];
-  workflows: readonly FeatureCapability[];
-  host?: HostInventoryProjection;
-}
-
-export function projectFeatureInventory(parts: FeatureInventoryParts): FeatureInventory {
-  const connectorCapabilities: FeatureCapability[] = parts.connectors.map(c => ({
-    id: 'connector:' + c.id, featureId: 'mote.connector.' + c.id, version: c.version, surface: 'ingress', state: c.active ? 'active' : 'unavailable',
-  }));
-  const hostCapabilities = new Map<string, FeatureCapability>();
-  const hostFeatures: FeatureManifest[] = [];
-  for (const descriptor of parts.host?.descriptors ?? []) {
-    const contribution = parts.host?.snapshot.contributions.find(value => sameContribution(value.identity, descriptor));
-    const availability = contribution?.availability;
-    const active = availability?.state === 'active';
-    const capability: FeatureCapability = {
-      id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface, featureId: descriptor.featureId,
-      ...(descriptor.requires?.length ? {requires: [...descriptor.requires]} : {}),
-      state: active ? 'active' : 'unavailable',
-      ...(active ? {} : {reason: availability ? availability.reason : 'dependency_unavailable'}),
-    };
-    const key = descriptor.featureId + '\0' + descriptor.contributionId;
-    // The consumer DTO cannot distinguish two scopes with the same public key.
-    // Trusted assembly must choose the current instance; reject ambiguity.
-    if (hostCapabilities.has(key)) throw new Error('Ambiguous host inventory descriptor: ' + descriptor.featureId + ':' + descriptor.contributionId);
-    hostCapabilities.set(key, capability);
-    hostFeatures.push({
-      id: descriptor.featureId, version: descriptor.featureVersion,
-      components: [{id: descriptor.contributionId, version: descriptor.version, surface: descriptor.surface, ...(descriptor.requires?.length ? {requires: [...descriptor.requires]} : {})}],
+/** Project the selected package metadata through the common host's live state.
+ * Revision is a content digest for consumers, never a command CAS revision. */
+export function featureInventory(snapshot:PluginSnapshot,contributions:readonly HostContributionDescriptor[]):FeatureInventory{
+  const descriptors=new Map<string,HostContributionDescriptor>();
+  for(const descriptor of contributions){
+    if(descriptors.has(descriptor.id))throw new Error('Ambiguous host inventory descriptor: '+descriptor.id);
+    descriptors.set(descriptor.id,descriptor);
+  }
+  const capabilities:FeatureCapability[]=[],capabilityIds=new Set<string>(),featureVersions=new Map<string,string>();
+  for(const contribution of snapshot.contributions){
+    const id=contribution.identity.contributionId,descriptor=descriptors.get(id);
+    if(!descriptor)throw new Error('Unknown host inventory contribution: '+id);
+    if(capabilityIds.has(id))throw new Error('Ambiguous host inventory contribution: '+id);
+    capabilityIds.add(id);
+    const featureId=contribution.identity.scope.packageId,version=featureVersions.get(featureId);
+    if(version!==undefined&&version!==descriptor.featureVersion)throw new Error('Conflicting feature version for '+featureId);
+    featureVersions.set(featureId,descriptor.featureVersion);
+    const requires=requirements(descriptor),active=contribution.availability.state==='active';
+    capabilities.push({
+      id,version:descriptor.version,surface:descriptor.surface,featureId,
+      ...(requires.length?{requires}:{}),state:active?'active':'unavailable',
+      ...(active?{}:{reason:contribution.availability.reason}),
     });
   }
-  const capabilities = [
-    ...connectorCapabilities,
-    ...parts.server.capabilities,
-    ...parts.agent.capabilities,
-    ...parts.pipelines,
-    ...parts.processing,
-    ...parts.workflows,
-    ...hostCapabilities.values(),
-  ];
-  const featureMap = new Map<string, FeatureManifest>();
-  for (const feature of [
-    ...parts.server.features,
-    ...parts.agent.features,
-    ...parts.connectors.map(c => ({id: 'mote.connector.' + c.id, version: c.version, components: []})),
-    ...hostFeatures,
-  ]) {
-    const existing = featureMap.get(feature.id);
-    if (existing && existing.version !== feature.version) throw new Error('Conflicting feature version for ' + feature.id);
-    featureMap.set(feature.id, existing ? {...existing, components: [...existing.components, ...feature.components]} : feature);
-  }
-  const features: FeatureManifest[] = [...featureMap.values()].map(f => ({
-    ...f,
-    components: capabilities.filter(c => c.featureId === f.id).map(({featureId: _, state: _state, reason: _reason, ...descriptor}) => descriptor),
+  const features:FeatureManifest[]=[...featureVersions].map(([id,version])=>({
+    id,version,components:capabilities.filter(capability=>capability.featureId===id).map(({featureId:_,state:_state,reason:_reason,...descriptor})=>descriptor),
   }));
-  const revision = parseInt(createHash('sha256').update(JSON.stringify({features, capabilities})).digest('hex').slice(0, 12), 16);
-  return {schemaVersion: 1, revision, features, capabilities};
-}
-
-/** Read actual independent runtime registries, never claim declared work executed. */
-export function featureInventory(host: ServerFeatureHost, services: Pick<FeatureServices, 'connectors' | 'agentFeatures' | 'sourcePipelines' | 'processing' | 'workflows'>, hostProjection?: HostInventoryProjection): FeatureInventory {
-  const pipelines: FeatureCapability[] = services.sourcePipelines.registry.list().map(p => {
-    let available = true;
-    try { if (p.recipe) services.sourcePipelines.recipes.resolve(p.recipe.id, p.recipe.version); } catch { available = false; }
-    return {id: 'pipeline:' + p.id, version: p.version, surface: 'processing' as const, featureId: p.featureId ?? 'mote.sources', state: available ? 'active' as const : 'unavailable' as const, ...(!available ? {reason: 'recipe_unavailable'} : {})};
-  });
-  const processing: FeatureCapability[] = services.processing.runtime.registry.list().map(p => ({id: 'file-processor:' + p.id, version: p.version, surface: 'processing' as const, featureId: 'mote.files', state: 'active' as const}));
-  const workflows: FeatureCapability[] = services.workflows.registry.list().map(p => ({id: 'context-processor:' + p.id, version: p.version, surface: 'processing' as const, featureId: 'mote.processing', state: 'active' as const}));
-  return projectFeatureInventory({
-    server: host.registry.inventory(),
-    agent: services.agentFeatures.registry.inventory(),
-    connectors: services.connectors.inventory(),
-    pipelines,
-    processing,
-    workflows,
-    ...(hostProjection ? {host: hostProjection} : {}),
-  });
+  const revision=parseInt(createHash('sha256').update(JSON.stringify({features,capabilities})).digest('hex').slice(0,12),16);
+  return {schemaVersion:1,revision,features,capabilities};
 }
