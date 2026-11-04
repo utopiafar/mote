@@ -32,7 +32,7 @@ export interface ServerFeatureAdapter {
 }
 const domainRouteContribution=(id:string):ServerFeatureAdapter=>({
   descriptor:{id,version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,_services,host)=>{scope.assertCurrent();host.mountDomainRoutes(id,app);},
+  factory:(app,scope,services,host)=>{scope.assertCurrent();host.mountDomainRoutes(id,app,services);},
 });
 export const serverFeatureAdapters:readonly ServerFeatureAdapter[]=Object.freeze([
   activityAdapter,

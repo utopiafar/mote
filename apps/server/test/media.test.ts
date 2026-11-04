@@ -137,6 +137,9 @@ test('media API allows full client reads and writes with explicit device filters
   const {disclosureDependencies,...agentResult}=await withFixtureOwnerModelWork(node,()=>reader!.mediaActivity!({deviceId:'phone'}));
   assert.deepEqual(agentResult,scoped);
   assert.deepEqual(disclosureDependencies,{version:1,complete:true,ids:[own.id]});
+  const limitedInvitation=node.connections.invite({serverUrl:'https://fixture.invalid',label:'Generated limited collector'},'collector');
+  const limited=await node.connections.redeem({code:limitedInvitation.invitation.code,deviceId:'limited-phone',deviceName:'Generated limited collector',platform:'android'});
+  assert.equal((await app.inject({url:'/api/media-activity?deviceId=phone',headers:{authorization:`Bearer ${limited.token}`}})).statusCode,403,'a collector cannot read another device’s media statistics');
   await app.inject({method:'DELETE',url:'/api/connections/'+paired.credentialId,headers:owner});
   assert.equal((await app.inject({url:'/api/media-activity?deviceId=phone',headers:collector})).statusCode,401);
 });

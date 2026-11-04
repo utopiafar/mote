@@ -7,9 +7,9 @@ import type {ServerFeatureAdapter} from './index.js';
 
 /** processing: owns perception/media transport while the processing-services
  * plugin contributes the job receipt and command table. */
-export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,config,credential,mediaAssets,mediaPreparation,perception,store}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|'config'|'credential'|'mediaAssets'|'mediaPreparation'|'perception'|'store'>,scope?:ServerFeatureScope){
+export function register(app:FastifyInstance,{withMediaOwnerBatch,withMediaOwnerIntent,config,credential,mediaAssets,perception,store}:Pick<FeatureServices,'withMediaOwnerBatch'|'withMediaOwnerIntent'|'config'|'credential'|'mediaAssets'|'perception'|'store'>,scope?:ServerFeatureScope){
 registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
-registerProcessingRoutes(app,{withOwnerBatch:withMediaOwnerBatch,withOwnerIntent:withMediaOwnerIntent,perception,mediaAssets,mediaPreparation,media:config.media});
+registerProcessingRoutes(app,{withOwnerBatch:withMediaOwnerBatch,withOwnerIntent:withMediaOwnerIntent,perception,mediaAssets,media:config.media});
 }
 
 export const adapter:ServerFeatureAdapter={
