@@ -7,6 +7,8 @@ import {randomUUID} from 'node:crypto';
 import {setImmediate} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
+import type {RecordingProvider} from '../src/connectors/recordings.js';
+import {feishuTranscript} from '../src/connectors/recording-formats.js';
 import {generatedRecordingCli} from './fixtures/recording-authorization-cli.js';
 
 for(const provider of ['feishu','dingtalk'] as const)test(provider+' owner HTTP authorizes via generated real CLI and archives recording without host login',async t=>{
@@ -29,4 +31,34 @@ for(const provider of ['feishu','dingtalk'] as const)test(provider+' owner HTTP 
  const archived=await request('GET');assert.equal(archived.counts.transcripts,1,JSON.stringify(archived.steps));assert.equal(archived.counts.audio,1);const items=await request('GET','/items');assert.equal(items.items.length,1);assert.ok(items.items[0].audio);
  if(provider==='feishu'){const login=(await cli.commands()).find(args=>args.includes('--no-wait'))!;assert.equal(login[login.indexOf('--scope')+1],'minutes:minutes.basic:read minutes:minutes.artifacts:read minutes:minutes.media:export minutes:minutes.search:read');}
  assert.ok(!(await readFile(join(directory,'connectors',provider+'-recordings.json'),'utf8')).includes('GENERATED_DEVICE_CODE'));
+});
+
+test('revoking an in-flight recording binding is idempotent, stops staged publication and a replacement account cannot revive it',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-recording-revocation-')),token='generated-recording-revocation-owner';
+ const config:Config={dataDir:directory,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxStorageBytes:50000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ let account='generated-one',transcriptStarted=false,loginCalls=0,release!:()=>void;
+ const held=new Promise<void>(resolve=>release=resolve);
+ const raw='Generated diary export\n\nOwner 00:00:00.000\nGenerated revocation transcript.\n';
+ const provider:RecordingProvider={id:'feishu',version:'generated-revocation@1',authorization:{check:async()=>({installed:true,version:'generated@1',configured:true}),login:async()=>{loginCalls++;}},account:async()=>({id:account}),discover:async()=>({ids:['generated-recording']}),metadata:async()=>({id:'generated-recording',title:'Generated revocation recording',durationMs:5000,recordedAt:'2026-09-20T00:00:00Z'}),transcript:async()=>{transcriptStarted=true;await held;return {rawText:raw,transcript:feishuTranscript(raw,5000)};},media:async()=>{await held;return {mimeType:'audio/wav',bytes:Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)])};}};
+ const node=await buildApp(config,{backgroundWorker:false,connectorTesting:{recordings:[provider]},agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model belongs in generated recording revocation');}}});await node.app.ready();
+ t.after(async()=>{release();await node.app.close();await rm(directory,{recursive:true,force:true});});
+ const path='/api/connectors/feishu-recordings',request=async(method:'GET'|'POST'|'PUT'|'DELETE',suffix='',payload?:unknown)=>{const response=await node.app.inject({method,url:path+suffix,headers:{authorization:'Bearer '+token},...(payload?{payload}:{})});assert.equal(response.statusCode,200,method+' '+suffix+': '+response.body);return response.json();};
+ const until=async(predicate:()=>boolean)=>{for(let i=0;i<1000;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,3));}assert.fail('Generated recording revocation state did not settle');};
+ await request('POST','/connect');await request('PUT','/selection',{enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-10-01T00:00:00Z',autoSync:false,backupAudio:true});await request('POST','/sync');
+ await until(()=>transcriptStarted);
+ const processing=await request('GET'),sourceId=processing.sourceId!;assert.equal(processing.counts.transcripts,0);
+ const revoked=await request('DELETE');assert.equal(revoked.connected,false);assert.equal(node.sources.getSource(sourceId).enabled,false,'revocation pauses the bound source');
+ assert.equal(node.materials.list({sourceId}).items.length,0,'staged work is not published');assert.equal(node.store.db.prepare('SELECT count(*) n FROM file_heads WHERE source_id=?').get(sourceId)!.n,0);
+ const sources=JSON.stringify(node.sources.listSources());
+ const repeated=await request('DELETE');assert.equal(repeated.connected,false);assert.equal(repeated.sourceId,undefined);assert.equal(repeated.selection.enabled,false);assert.equal(JSON.stringify(node.sources.listSources()),sources,'repeated revocation is idempotent');
+ const binding=JSON.parse(await readFile(join(directory,'connectors','feishu-recordings.json'),'utf8'));assert.equal(binding.account,undefined);assert.equal(binding.selection.enabled,false);
+ release();await until(()=>!node.store.db.prepare("SELECT 1 FROM execution_steps WHERE kind LIKE 'recording.feishu.%' AND state='running'").get());
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM file_heads WHERE source_id=?').get(sourceId)!.n,0,'late staged work cannot publish after revocation');assert.equal(node.materials.list({sourceId}).items.length,0);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM recording_media WHERE source_id=?').get(sourceId)!.n,0,'staged audio waits for the same revoked binding');
+ account='generated-two';const connected=await request('POST','/connect'),connectedStatus=await request('GET');assert.equal(connected.connected,true);assert.equal(connected.selection.enabled,false);assert.notEqual(connected.sourceId,sourceId);assert.notEqual(connectedStatus.authorization.revision,processing.authorization.revision);
+ const stale=await node.app.inject({method:'POST',url:path+'/login',headers:{authorization:'Bearer '+token},payload:{operationId:randomUUID(),expectedRevision:processing.authorization.revision}});assert.equal(stale.statusCode,409);assert.equal(stale.json().error,'recording_authorization_changed');assert.equal(loginCalls,0);
+ assert.equal(node.sources.getSource(sourceId).enabled,false,'a replacement account does not revive the old source');assert.equal(node.sources.getSource(connected.sourceId).enabled,false);
+ await request('PUT','/selection',{enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-10-01T00:00:00Z',autoSync:false,backupAudio:true});await request('POST','/sync');
+ await until(()=>Number(node.store.db.prepare('SELECT count(*) n FROM file_heads WHERE source_id=?').get(connected.sourceId)!.n)===1);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM file_heads WHERE source_id=?').get(sourceId)!.n,0);assert.equal(node.materials.list({sourceId}).items.length,0,'old authorization evidence remains unreadable after re-enable with a new identity');
 });
