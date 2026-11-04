@@ -1,36 +1,31 @@
 import {randomUUID} from 'node:crypto';
+import type {FeatureServices} from '../feature-services.js';
+import type {FastifyInstance} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import {centralServices} from '../plugins/central-contracts.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createConversations,createConversationsFactory,createConversationRoutes,conversationsContribution,conversationsDeclaration,conversationsReplacement,type ConversationsBindings} from '../plugins/conversations.js';
+import {createQueryRunsFactory,createQueryRunsPlatform,queryRunsContribution,queryRunsDeclaration,queryRunsReplacement,type QueryRunDependencies,type QueryRunsStarted} from '../plugins/query-runs.js';
+import {registerQueryRunRoutes} from '../features/ask/query-runs.js';
 import {AgentNotConfiguredError,AgentYieldError,type AgentProgress,type AgentTraceEvent,type ContextReader,type QueryInput} from '@mote/agent';
-import {ProviderFailure,formatEvidenceRef,type InsightSnapshot,type QueryResult} from '@mote/shared';
+import {ProviderFailure,type InsightSnapshot,type QueryResult} from '@mote/shared';
 import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
 import type {Store} from '../store.js';
 import {StoreError} from '../store.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
-import {safeError,type AgentTraceContext} from '../diagnostics.js';
+import type {AgentTraceContext} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
 import type {ServerLifecycle} from './lifecycle.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import {ExecutionFailure} from '../execution-engine.js';
-import type {ExecutionObservability} from '../execution-observability.js';
 import type {ConcurrencyGate} from '../concurrency.js';
-import type {UsageLedger} from '../usage.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ExecutionSettings} from '../execution-settings.js';
 import {modelConfiguration} from '../model-configuration.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
-import type {BackgroundModelAuthorization,AutomaticModelPurpose} from '../background-model-authorization.js';
+import type {BackgroundModelAuthorization,AutomaticModelPurpose,ModelConnection} from '../background-model-authorization.js';
 import {sourceModelIdentity,type ModelAuthorizationHost} from '../model-authorization-host.js';
-import type {EvidenceReader} from '../evidence-reader.js';
-import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import type {SourceContextStore} from '../source-context.js';
-import type {FileStore} from '../files.js';
-import type {ConversationRepository as Conversations} from '../plugins/central-contracts.js';
-import type {WorkingMemory} from '../working-memory.js';
-import {freezeSemanticContextTime,type LifecycleSettings} from '../memory-lifecycle.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 import {contextFailure} from '../model-evidence-authority.js';
 import {createMemoryModelAuthorityJobReader} from '../memory-model-authority.js';
@@ -41,18 +36,14 @@ import {resolveDependencies,combineDependencies} from '../conversation-lineage.j
 import {assertSourceContextDependencies,combineSourceContextDependencies} from '../source-context-lineage.js';
 import {moteText,requestLocale} from '../i18n.js';
 import {insightResult,validateInsightOutput} from '../insights.js';
-import {DelegationRuntime} from '../delegation-runtime.js';
-import {DelegatedQueryRuns} from '../delegated-query-runs.js';
-import {createQueryPreparation,type SavedQuery} from '../query-preparation.js';
-import {queryWithAttachmentsSchema} from '../query-request.js';
 import type {QueryScope} from '../query-scope.js';
-import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityCheckpoint} from '../query-quality-experiment.js';
 import type {ObservabilityAssembly} from '../plugins/observability-platform.js';
 import type {AdmittedUsageMeter as ObservabilityUsageMeter} from '../plugins/observability-platform.js';
 import type {AdmittedUsageMeter} from './processing.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:conversationsContribution,declaration:conversationsDeclaration,replacement:conversationsReplacement},
+  {contribution:queryRunsContribution,declaration:queryRunsDeclaration,replacement:queryRunsReplacement},
 ]);
 
 export interface ConversationInputDependencies {
@@ -270,109 +261,32 @@ export function assembleQueryRuntime(dependencies:QueryRuntimeDependencies){
     signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
 
-  return Object.freeze({activeQueries,withQueryModelAuthority,queryAgent,insight});
+  return Object.freeze({activeQueries,withQueryModelAuthority,queryAgent,insight,featureServices:Object.freeze({queryAgent,insight}) satisfies Partial<FeatureServices>});
 }
 
-export interface DelegationAssemblyDependencies {
-  readonly store:Store;
+export interface QueryRunsAssemblyDependencies extends QueryRunDependencies {
+  readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
+  readonly backendContext:Context;
   readonly resources:ServerResources;
-  readonly executor:ExecutionEngine;
-  readonly executionObserver:Pick<ExecutionObservability,'hostTick'>;
-  readonly runtimeSettings:Pick<ExecutionSettings,'execution'>;
-  readonly evidenceReader:EvidenceReader;
-  readonly sourceContexts:SourceContextStore;
-  readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
-  readonly files:FileStore;
-  readonly conversations:Conversations;
-  readonly working:Pick<WorkingMemory,'prepare'>;
-  readonly lifecycleSettings:()=>LifecycleSettings;
-  readonly archiveReader:ContextReader;
-  readonly agent:Pick<AgentRuntimeRegistry,'configured'>;
-  readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
-  readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
-  readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
-  readonly qualityStrategy?:QueryQualityStrategy;
-  readonly semanticContextTime?:()=>string;
-  readonly usageLedger:UsageLedger;
+  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'>;
+  readonly availableModelConnections:()=>ModelConnection[];
 }
 
-/** DelegationRuntime, delegated query preparation and the durable
- * DelegatedQueryRuns — construction and close hooks app.ts previously held
- * inline. */
-export function assembleDelegation(dependencies:DelegationAssemblyDependencies){
-  const {store,resources,executor,executionObserver,runtimeSettings,evidenceReader,sourceContexts,assertModelEvidence,files,conversations,working,lifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryAgent,qualityStrategy,semanticContextTime,usageLedger}=dependencies;
-  const delegation=new DelegationRuntime(store,executor,{observePump:()=>executionObserver.hostTick(),concurrency:()=>runtimeSettings.execution().agentConcurrency,interactiveConcurrency:()=>runtimeSettings.execution().interactiveConcurrency,
-    validateDependencies:ids=>assertModelEvidence({question:'',contextEvidenceDependencies:{version:1,complete:true,ids:[...ids]}}),
-    validateSourceContextDependencies:pins=>assertSourceContextDependencies(sourceContexts,pins),
-    revalidateEvidence:async receipts=>{
-      const ids=[...new Set(receipts.map(receipt=>receipt.id))],policy=new EvidenceExposurePolicy();
-      if(ids.some(id=>!evidenceReader.deletionContextAllowed(id,policy)))throw contextFailure('context_evidence_restricted');
-      const originals=evidenceReader.context(evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id))));
-      if(originals.length!==ids.length)throw contextFailure('context_evidence_restricted');
-      return originals;
-    },
+/** Install C27's delegation runtime and replayable Ask receipts, then mount its
+ * command routes once against the current activation. The durable journal,
+ * execution slots and model profile of an accepted run are owned inside the
+ * plugin scope; a stopped activation fences late commits. */
+export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencies){
+  const platform=createQueryRunsPlatform(dependencies);
+  let started:QueryRunsStarted|undefined;
+  const handle=await dependencies.bootstrap.host.install({
+    identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.query-runs',installationId:'build:query-runs@1.0.0',instanceId:'query',activationId:randomUUID()},
+    contributions:[queryRunsDeclaration],factory:createQueryRunsFactory(platform,value=>{started=value;}),
   });
-  resources.defer(()=>delegation.close());
-  const {prepare:prepareDelegatedQuery}=createQueryPreparation({store,files,conversations,delegation,executor,modelSettings,working,lifecycleSettings,archiveReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
-    query:input=>queryAgent(input,'query','conversations'),qualityStrategy});
-  function qualityCheckpoint(input:QueryInput):QueryQualityCheckpoint|undefined{
-    if(!qualityStrategy||!input.hostControlChannel)return;
-    const work=delegation.get(input.traceContext!.operationId!),stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
-    const assertCurrent=()=>{
-      input.signal?.throwIfAborted();
-      if(!fence||!executor.isCurrentInputGrant(stepId,fence))throw new StoreError('Query stage grant expired',409);
-      const saved=delegation.journal.payload<SavedQuery>(work.id);
-      if(saved.qualityStrategy!==qualityStrategy)throw new StoreError('Query experiment strategy changed',409);
-      const selected=modelSettings.select('chat',saved.prepared!.modelProfileId),current=modelConfiguration(selected.id,{...selected.settings,model:saved.prepared!.modelOverride??selected.settings.model},modelSettings.view().revision);
-      if(saved.configurationFingerprint!==current.fingerprint)throw new StoreError('Query model configuration changed',409);
-      assertModelEvidence(saved.prepared);
-    };
-    const assertResult=(result:QueryResult)=>{assertModelEvidence({...delegation.journal.payload<SavedQuery>(work.id).prepared!,contextEvidenceDependencies:result.evidenceDependencies});assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);};
-    return {assertCurrent,read:stage=>{
-      assertCurrent();const result=delegation.journal.payload<SavedQuery>(work.id).qualityStages?.[stage];if(result)assertResult(result);return result;
-    },write:(stage,result)=>{
-      const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');
-      try{
-        assertCurrent();assertResult(result);
-        delegation.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
-        delegation.recordSourceContextDependencies(work.id,result.sourceContextDependencies??[]);
-        const saved=delegation.journal.payload<SavedQuery>(work.id);saved.qualityStages={...saved.qualityStages,[stage]:result};delegation.journal.savePayload(work.id,saved);
-        if(own)store.db.exec('COMMIT');
-      }catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
-    }};
-  }
-  const queryRuns=new DelegatedQueryRuns(store,delegation,{
-    contextTime:()=>freezeSemanticContextTime(semanticContextTime),
-    resolveInput:raw=>{
-      const input=queryWithAttachmentsSchema.parse(raw);
-      const previous=input.conversationId?conversations.get(input.conversationId).scope:undefined;
-      // Freeze resolved selection in the accepted run, before asynchronous preparation.
-      const selected=input.evidenceIds?{...input,anchorEvidenceIds:null,anchorMaterialRef:null}:
-        input.anchorEvidenceIds?{...input,evidenceIds:null,anchorMaterialRef:null}:
-        input.anchorMaterialRef?{...input,evidenceIds:null,anchorEvidenceIds:null}:
-        {...input,...(input.evidenceIds===undefined&&previous?.evidenceIds?{evidenceIds:[...previous.evidenceIds]}:{}),...(input.anchorEvidenceIds===undefined&&previous?.anchorEvidenceIds?{anchorEvidenceIds:[...previous.anchorEvidenceIds]}:{}),...(input.anchorMaterialRef===undefined&&previous?.anchorMaterialRef?{anchorMaterialRef:previous.anchorMaterialRef}:{})};
-      if(selected.anchorMaterialRef&&!evidenceReader.queryMaterialReference(selected.anchorMaterialRef,{
-        ...(selected.after?{after:selected.after}:{}),...(selected.before?{before:selected.before}:{}),...(selected.deviceId?{deviceId:selected.deviceId}:{})
-      }))throw Object.assign(new StoreError(moteText('参考原件暂不可用，请清除参考后继续。'),409),{code:'context_evidence_restricted'});
-      return selected;
-    },
-    prepare:prepareDelegatedQuery,
-    query:input=>runQueryQualityExperiment(input,qualityStrategy??'base',(next,stage)=>queryAgent({...next,traceContext:{...next.traceContext,phase:'quality.'+stage}},'query',stage==='base'?'conversations':'query.'+stage),qualityCheckpoint(input)),
-    operationUsage:(operationId,createdAt,finishedAt)=>usageLedger.operation(operationId,createdAt,finishedAt),
-    commit:(body,result,work)=>{
-      const {conversationId,question,attachmentIds=[]}=queryWithAttachmentsSchema.parse(body),saved=delegation.journal.payload<SavedQuery>(work.id),prepared=saved.prepared!;
-      assertModelEvidence(prepared);
-      assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);
-      delegation.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
-      const previous=conversationId?conversations.get(conversationId):undefined,scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone','evidenceIds','anchorEvidenceIds','anchorMaterialRef'] as const)if(prepared[key]!==undefined)Object.assign(scope,{[key]:prepared[key]});
-      if(prepared.historicalSelection)Object.assign(scope,prepared.historicalSelection);
-      return conversations.append(previous,{question,...scope,attachments:prepared.directImages?.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result);
-    },
-    failure:(body,error)=>{
-      const {conversationId,question,evidenceIds,anchorEvidenceIds,anchorMaterialRef,...selected}=queryWithAttachmentsSchema.parse(body),scope:QueryScope={...(evidenceIds?{evidenceIds}:{}),...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{})};for(const key of ['after','before','deviceId','timeZone'] as const)if(selected[key]!==undefined&&selected[key]!==null)scope[key]=selected[key]!;
-      const failure=safeError(error);return conversations.appendFailure(conversationId?conversations.get(conversationId):undefined,{question,...scope},{code:failure.category,message:failure.message});
-    },
-  });
-  resources.defer(()=>queryRuns.close());
-  return Object.freeze({delegation,queryRuns});
+  dependencies.resources.defer(()=>handle.close('shutdown'));
+  contributeDomainRoutes(dependencies.backendContext,{'mote.ask':{mount:(app:FastifyInstance)=>registerQueryRunRoutes(app,{
+    queryRuns:()=>platform.port,modelAuthorizationHost:dependencies.modelAuthorizationHost,
+    availableModelConnections:dependencies.availableModelConnections,modelSettings:dependencies.modelSettings,agent:dependencies.agent,
+  })}});
+  return Object.freeze({delegation:started!.delegation,queryRuns:started!.queryRuns,queryRunServices:platform});
 }

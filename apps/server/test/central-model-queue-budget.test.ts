@@ -30,7 +30,7 @@ for(const entry of ['ask','insight'] as const)test(`the real Central ${entry} en
  t.mock.timers.tick(5001);await turn();assert.equal(gate.snapshot().waiting,1,'model capacity waiting is not task processing');assert.equal(calls,0);
  held.resolve();await blocker;const completed=await result;
  assert.equal(completed.statusCode,200,completed.body);assert.equal(calls,1);
- assert.equal(entry==='ask'?node.featureServices.queryRuns.list()[0].status:node.insightRuns.list()[0].status,'completed');
+ assert.equal(entry==='ask'?node.queryRuns.list()[0].status:node.insightRuns.list()[0].status,'completed');
 });
 
 for(const stage of ['semantic grouping','summary'] as const)test(`the real Central file ${stage} waits beyond the file transport timeout for a model slot`,async t=>{

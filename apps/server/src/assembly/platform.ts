@@ -4,6 +4,7 @@ import {AgentYieldError} from '@mote/agent';
 import type {QueryInput} from '@mote/agent';
 import type {Config} from '../config.js';
 import type {Connections} from '../connections.js';
+import type {FeatureServices} from '../feature-services.js';
 import {StoreError,type Store} from '../store.js';
 import {moteText} from '../i18n.js';
 import {defaultLogMaxBytes} from '../log-retention-config.mjs';
@@ -48,8 +49,6 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   resources.defer(()=>authorizationPlatform.close());
   await authorizationPlatform.prepare();
   const modelAuthorization=authorizationPlatform.assembly.modelAuthorization;
-  // MVP cut-over is explicit: never silently keep the old Coding event indexes live.
-  if(store.db.prepare("SELECT 1 FROM captures WHERE json_extract(json,'$.provenance.document.coding') IS NOT NULL LIMIT 1").get()){throw new Error('Legacy Coding event vault: back up and use a fresh data directory for the source-pipeline architecture. No automatic migration is performed.');}
   const runtimeSettings=bootstrap.configurationPlatform.runtimeSettings;
   const observability=await bootstrap.installObservabilityPlatform({
     logDirectory:config.logDirectory??join(config.dataDir,'logs'),
@@ -88,5 +87,13 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   const observeMemory=<T>(input:QueryInput|undefined,name:ObservationName,work:()=>T):T=>input?.responseMode==='memory-extraction'?executionObserver.sync(name,observationIdentity(input),work):work();
   const observeMemoryAsync=<T>(input:QueryInput|undefined,name:ObservationName,work:()=>Promise<T>):Promise<T>=>input?.responseMode==='memory-extraction'?executionObserver.async(name,observationIdentity(input),work):work();
   executor.bindObserver(value=>executionObserver.lease(value),()=>executionObserver.enabled());
-  return Object.freeze({authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync});
+  // configuration, authorization and execution slices.
+  const featureServices=Object.freeze({
+    configService:bootstrap.configService,runtimeSettings,config,
+    modelAuthorization,availableModelConnections:()=>dependencies.availableModelConnections(),
+    executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,
+    // observability slice; the host keeps its runtime projection.
+    diagnostics,serverVersion:dependencies.serverVersion,
+  }) satisfies Partial<FeatureServices>;
+  return Object.freeze({authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync,featureServices});
 }

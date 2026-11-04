@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,mkdir,writeFile,readFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import type {Config} from '../src/config.js';
@@ -48,6 +48,43 @@ async function fixture(t:import('node:test').TestContext,createProvider?:(direct
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  return {get node(){return node;},config,directory,state,calls,models,request,flush,async connect(){await request('POST','/connect');return request('PUT','/selection',selection);},async restart(){await node.app.close();node=await buildApp(config,deps);await node.app.ready();},async memory(){await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));}};
 }
+
+test('the recording source plugin binds the provider account, transcript revision and audio bytes exactly to its source and material',async t=>{
+ const f=await fixture(t);await f.connect();await f.flush();
+ const status=await f.request('GET'),sourceId='feishu-recordings-'+createHash('sha256').update(JSON.stringify('generated-owner')).digest('hex').slice(0,24);
+ assert.equal(status.sourceId,sourceId);assert.equal(status.connected,true);
+ const source=f.node.sources.getSource(sourceId);assert.equal(source.kind,'feishu.recordings');assert.equal(source.deviceId,sourceId);assert.equal(source.enabled,true);
+ const head=f.node.sources.getItem(sourceId,'r1')!;assert.equal(head.document?.contentRole,'transcript');assert.equal(head.document?.recordedAt,'2026-09-20T00:00:00Z');assert.equal(head.layer,'original');
+ const history=f.node.sources.history(sourceId,'r1');assert.equal(history.length,1);assert.equal(history[0].revision,head.revision);assert.match(head.revision,/^[a-f0-9]{64}$/);
+ const material=f.node.materials.list({sourceId}).items[0];assert.ok(material);assert.equal(material.origin.sourceId,sourceId);assert.ok(f.node.materials.members(material.ref).items.some(member=>member.id===head.captureId&&member.ref==='capture:'+head.captureId));
+ const archived=new ArchivedFileStore(f.node.store).listForCapture(head.captureId);assert.equal(archived.length,1);assert.deepEqual(new ArchivedFileStore(f.node.store).read(archived[0].id),wav);
+ await f.memory();const memories=f.node.memoryPipeline.list().map(job=>f.node.memoryPipeline.get(job.id)).flatMap(job=>job.memoryIds);assert.ok(memories.length);
+ for(const id of memories)for(const evidence of f.node.memories.get(id).evidence){assert.equal(evidence.sourceId,sourceId);assert.equal(evidence.externalId,material.id);assert.ok(evidence.revision);}
+});
+
+test('stopping and re-enabling the recording instance preserves cursor and binding without duplicating polling or Memory strategies',async t=>{
+ const f=await fixture(t);await f.request('POST','/connect');await f.request('PUT','/selection',{...selection,autoSync:true});await f.flush();
+ const initial=await f.request('GET'),sourceId=initial.sourceId!;
+ const bindingPath=join(f.directory,'connectors','feishu-recordings.json'),binding=await readFile(bindingPath,'utf8');
+ const cursor=()=>f.node.store.db.prepare('SELECT * FROM recording_cursors WHERE source_id=?').get(sourceId);
+ const strategies=()=>f.node.memoryStrategies.list().filter(recipe=>recipe.id===recordingMemoryRecipe.id);
+ const discoveries=()=>f.calls.filter(call=>call.phase==='discover').length;
+ const firstCursor=cursor();assert.ok(firstCursor);assert.equal(strategies().length,1);
+ f.node.featureServices.connectors.configureSyncInterval(1000);
+ await f.node.featureServices.connectors.stop('feishu-recordings');
+ assert.equal((await f.node.app.inject({method:'GET',url:'/api/connectors/feishu-recordings',headers:{authorization:'Bearer '+f.config.token}})).statusCode,404);
+ assert.equal(await readFile(bindingPath,'utf8'),binding);assert.deepEqual(cursor(),firstCursor);
+ await f.node.featureServices.connectors.restart('feishu-recordings');
+ const revived=await f.request('GET');assert.equal(revived.connected,true);assert.equal(revived.sourceId,sourceId);assert.deepEqual(revived.selection,initial.selection);
+ assert.equal(await readFile(bindingPath,'utf8'),binding);assert.deepEqual(cursor(),firstCursor);assert.equal(strategies().length,1);
+ const before=discoveries();for(let n=0;n<400&&discoveries()===before;n++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(discoveries(),before+1,'re-enable starts exactly one poll');await f.flush();
+ assert.equal((await f.request('GET')).connected,true);
+ const captureId=f.node.sources.getItem(sourceId,'r1')!.captureId;
+ await f.restart();assert.equal((await f.request('GET')).sourceId,sourceId);assert.equal(strategies().length,1);
+ assert.equal(await readFile(bindingPath,'utf8'),binding);assert.deepEqual(cursor(),firstCursor);
+ assert.equal(f.node.sources.getItem(sourceId,'r1')!.captureId,captureId);
+});
 
 test('media backup survives missing transcripts and restart; later transcript attaches the existing original without downloading again',async t=>{
  const f=await fixture(t);f.state.transcriptFails=true;await f.connect();await f.flush();

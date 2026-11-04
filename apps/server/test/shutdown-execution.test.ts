@@ -115,12 +115,12 @@ test('app.close interrupts a child, keeps completed extraction and unknown reque
 test('app.close preserves durable query work while keeping user cancellation terminal',async t=>{
  const f=await fixture(t),held=deferred(),entered=deferred(),ids=Array.from({length:6},()=>randomUUID());
  const node=await f.start({configured:true,close:async()=>{},query:async input=>{entered.resolve();await Promise.race([held.promise,new Promise(resolve=>input.signal!.addEventListener('abort',resolve,{once:true}))]);return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}});
- for(const id of ids)await withFixtureOwnerModelWork(node,async()=>node.featureServices.queryRuns.start(id,{question:'Generated durable shutdown query'}));
+ for(const id of ids)await withFixtureOwnerModelWork(node,async()=>node.queryRuns.start(id,{question:'Generated durable shutdown query'}));
  await entered.promise;
- node.featureServices.queryRuns.cancel(ids[5]);await yieldTurn();assert.equal(node.featureServices.queryRuns.get(ids[4]).status,'running');
+ node.queryRuns.cancel(ids[5]);await yieldTurn();assert.equal(node.queryRuns.get(ids[4]).status,'running');
  await node.app.close();held.resolve();await yieldTurn();
- for(const id of ids.slice(0,5))assert.equal(node.featureServices.queryRuns.get(id).status,'running');
- assert.equal(node.featureServices.queryRuns.get(ids[5]).status,'cancelled');
+ for(const id of ids.slice(0,5))assert.equal(node.queryRuns.get(id).status,'running');
+ assert.equal(node.queryRuns.get(ids[5]).status,'cancelled');
 });
 
 test('app.close retains import admission blocks instead of cancelling inactive imports',async t=>{

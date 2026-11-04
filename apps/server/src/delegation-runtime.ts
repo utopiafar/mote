@@ -76,6 +76,7 @@ export class DelegationRuntime {
  private unregister:(()=>void|Promise<void>)[]=[];
  private timer?:ReturnType<typeof setInterval>;
  private closed=false;
+ private admitting=true;
  constructor(readonly store:Store,readonly engine:ExecutionEngine,private options:{concurrency?:()=>number;interactiveConcurrency?:()=>number;revalidateEvidence?:(records:readonly ContextRecord[],scope:DelegationScope)=>Promise<readonly ContextRecord[]>;validateDependencies?:(ids:readonly string[])=>void;validateSourceContextDependencies?:(pins:readonly SourceContextDeclaration[])=>void;autoPump?:boolean;observePump?:()=>void}={}){
   assertCurrentDelegationSchema(store);
   this.journal=new DelegationStore(store);
@@ -153,7 +154,7 @@ export class DelegationRuntime {
  async wait(id:string,signal?:AbortSignal){for(;;){signal?.throwIfAborted();if(this.closed||this.engine.closed)throw new StoreError('Delegation execution is stopping',503);const work=this.get(id);if(terminal(work.status))return work;await new Promise<void>(resolve=>{const timer=setTimeout(resolve,100);timer.unref();});}}
  artifactMetadata(workId:string){return this.store.db.prepare('SELECT metadata FROM delegation_artifacts WHERE work_id=? ORDER BY rowid').all(workId).map(row=>(String(row.metadata).startsWith('aes:')||String(row.metadata).startsWith('json:')?this.journal.decodePrivate(String(row.metadata)):JSON.parse(String(row.metadata))) as {id:string;workId:string;unitId:string;summary?:string;coverage?:unknown});}
  start(request:DelegationStart){
-  if(this.closed)throw new StoreError('Delegation runtime is closed',503);
+  if(this.closed||!this.admitting)throw new StoreError('Delegation runtime is closed',503);
   if(!request.id||request.id.length>150||!request.goal.trim()||request.goal.length>20000||!this.coordinators.has(request.profileId)||request.allowedCapabilities.some(id=>!this.capabilities.has(id)))throw new StoreError('Invalid delegated work',400);
   const hash=digest(request),prior=this.store.db.prepare('SELECT 1 FROM delegation_works WHERE id=?').get(request.id);
   if(prior){const work=this.get(request.id);if(work.requestHash!==hash)throw new StoreError('Work ID belongs to another request',409);return work;}
@@ -294,7 +295,9 @@ export class DelegationRuntime {
  }
  recordEvidence(workId:string,ids:readonly string[]){for(const id of new Set(ids)){if(this.store.db.prepare('SELECT 1 FROM delegation_dependencies WHERE work_id=? AND evidence_id=?').get(workId,id))continue;this.store.reserveMetadata(Buffer.byteLength(workId)+Buffer.byteLength(id)+128);this.store.db.prepare('INSERT INTO delegation_dependencies VALUES(?,?)').run(workId,id);}}
  async tick(){if(this.closed)return;for(const id of this.activeIds()){const work=this.get(id);if(this.engine.cancellationAliasRevoked(work.id)&&activeWork(this.raw(work.id).status))this.cancel(work.id);if(work.status==='stale'||work.status==='cancelled'){this.engine.cancel(work.id);for(const stepId of this.activeExecutionIds(work.operationId))this.engine.cancel(stepId);for(const unit of work.units)if(this.engine.get(unit.stepId)&&activeWork(this.engine.get(unit.stepId)!.state)){this.capabilities.get(unit.capabilityId)?.cancel?.(unit,work);this.engine.cancel(unit.stepId);}continue;}if(work.status==='failed'||work.status==='blocked')this.failUnfinishedChildren(work);for(const unit of work.units)if(unit.external){const step=this.engine.get(unit.stepId);if(step&&unit.status!==step.state)this.projectUnit({...step,input:{...step.input,unitId:unit.id}});}const current=this.raw(work.id);if(current.status==='waiting'&&current.planningComplete&&!current.wait){const state=this.externalCompletionState(current);if(state!=='waiting'){current.status=state;if(state==='failed')current.error='delegated_product_failed';this.save(current);this.event(current.id,current.status==='succeeded'?'completed':'work.failed');}}else {this.wake(work.id);}}await this.engine.tick();}
- async close(){this.closed=true;clearInterval(this.timer);await Promise.all(this.unregister.map(unregister=>unregister()));}
+ /** Stop admitting new work while already accepted work may still drain. */
+ quiesce(){this.admitting=false;}
+ async close(){this.closed=true;this.admitting=false;clearInterval(this.timer);await Promise.all(this.unregister.map(unregister=>unregister()));}
 }
 
 /** Existing model adapters receive this exact host channel. A child only receives

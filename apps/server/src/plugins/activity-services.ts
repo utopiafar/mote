@@ -5,11 +5,13 @@ import type {HostPluginContext} from '@mote/plugin-host';
 import {ActivityProjection,registerActivity,type ActivityDelegationReader} from '../activity.js';
 import {AutomaticActivity} from '../automatic-activity.js';
 import {StoreError} from '../store.js';
+import {registerAgentViewRoutes,type AgentViewRouteDependencies} from './agent-view-routes.js';
 import {centralServices} from './central-contracts.js';
 
 /** C26A owns the Activity read projection, the automatic-activity handler/timer
- * and the work-activity plus automatic-activity HTTP table. Execution receipts
- * stay owned by C05; this plugin only reads them and registers its own handler. */
+ * and the work-activity plus automatic-activity HTTP table. C26's Agent view
+ * read routes are contributed by the same activation. Execution receipts stay
+ * owned by C05; this plugin only reads them and registers its own handler. */
 export const activityServicesContribution={
   id:'activity-services',version:'1.0.0',surface:'data',runtime:'host',
   requires:[
@@ -32,6 +34,8 @@ export interface ActivityServicesDependencies {
   readonly config:ConstructorParameters<typeof AutomaticActivity>[3];
   readonly options:ConstructorParameters<typeof AutomaticActivity>[4];
   readonly isCollector:(request:FastifyRequest)=>boolean;
+  /** The Agent read projection is part of the same C26 activation. */
+  readonly agentView:AgentViewRouteDependencies;
   /** Defaults to the previous processing-feature poll interval. */
   readonly pollIntervalMs?:number;
 }
@@ -39,8 +43,10 @@ export interface ActivityServicesDependencies {
 export interface ActivityServices extends PluginLifecycle {
   readonly activity:ActivityProjection;
   readonly automaticActivity:AutomaticActivity;
-  /** Mount the owned HTTP table once, before Fastify listen. */
+  /** Mount the owned activity HTTP table once, before Fastify listen. */
   routes(app:FastifyInstance):void;
+  /** Mount the Agent view table once; it shares this activation and gate. */
+  agentViewRoutes(app:FastifyInstance):void;
   tick():Promise<void>;
   close():Promise<void>;
 }
@@ -57,7 +63,7 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let projection:ActivityProjection|undefined,automatic:AutomaticActivity|undefined,poll:ReturnType<typeof setInterval>|undefined,runningPoll=false;
   let closing:Promise<void>|undefined;
-  const mounted=new WeakSet<FastifyInstance>();
+  const mounted=new WeakSet<FastifyInstance>(),agentViewMounted=new WeakSet<FastifyInstance>();
   const prepared=()=>{
     if(!projection||!automatic||phase==='created'||phase==='stopped'||phase==='disposed')throw unavailable();
     return {projection,automatic};
@@ -153,6 +159,19 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
         child.put('/api/processing/activity',async request=>prepared().automatic.save(request.body));
       });
     },
+    /** Mounted once by the mote.agent-view bridge but still owned by this
+     * activation, so stopping the activity plugin fences Agent browsing too. */
+    agentViewRoutes(app:FastifyInstance){
+      if(agentViewMounted.has(app))throw new StoreError('Agent view routes are already installed',409);
+      if(phase==='created'||phase==='stopped'||phase==='disposed')throw unavailable();
+      agentViewMounted.add(app);
+      app.register(async child=>{
+        child.addHook('onRequest',async(_request,reply)=>{
+          if(phase!=='active')return reply.code(503).send({error:'feature_unavailable'});
+        });
+        registerAgentViewRoutes(child,dependencies.agentView);
+      });
+    },
   });
 }
 export type ActivityServicesPlatform=ReturnType<typeof createActivityServices>;
@@ -160,11 +179,11 @@ export type ActivityServicesPlatform=ReturnType<typeof createActivityServices>;
 /** Native host factory. The pre-H14 bridge mounts the same route contribution
  * through `moteDomainRoutes`; both paths share one actual service instance. */
 export function createActivityServicesFactory(dependencies:ActivityServicesDependencies){
-  return (context:HostPluginContext):PluginLifecycle&{routes:ActivityServices['routes']}=>{
+  return (context:HostPluginContext):PluginLifecycle&{routes:ActivityServices['routes'];agentViewRoutes:ActivityServices['agentViewRoutes']}=>{
     const service=createActivityServices(dependencies);
     context.scope.defer(()=>service.close());
     return Object.freeze({
-      prepare:service.prepare,start:service.start,quiesce:service.quiesce,stop:service.stop,dispose:service.dispose,routes:service.routes,
+      prepare:service.prepare,start:service.start,quiesce:service.quiesce,stop:service.stop,dispose:service.dispose,routes:service.routes,agentViewRoutes:service.agentViewRoutes,
     });
   };
 }

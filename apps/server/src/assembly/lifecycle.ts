@@ -10,17 +10,20 @@ import type {ExecutionEngine} from '../execution-engine.js';
 import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {ActivityServices} from '../plugins/activity-services.js';
 import type {MemoryPublication} from '../memory-publication.js';
+import type {FeatureServices} from '../feature-services.js';
 
 /** Shared shutdown latch. Admission paths poll it while handlers still run;
  * the close-order hooks set it before interrupting transports. */
 export interface ServerLifecycle {
   readonly isClosing:()=>boolean;
   readonly markClosing:()=>void;
+  readonly featureServices:Pick<FeatureServices,'isClosing'>;
 }
 
 export function createServerLifecycle():ServerLifecycle{
   let closing=false;
-  return Object.freeze({isClosing:()=>closing,markClosing:()=>{closing=true;}});
+  const isClosing=()=>closing;
+  return Object.freeze({isClosing,markClosing:()=>{closing=true;},featureServices:Object.freeze({isClosing})});
 }
 
 export interface ServerLifecycleHookDependencies {

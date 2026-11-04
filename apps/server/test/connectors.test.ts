@@ -28,6 +28,9 @@ import type {ConnectorManifest} from '../src/connectors/registry.js';
 import {connectorRegistryHost} from './fixtures/connector-host.js';
 import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
+import {gmailScope} from '../src/connectors/gmail.js';
+import type {LarkRunner} from '../src/connectors/lark-cli.js';
+import {MemoryInputAuthorization} from '../src/memory-input-authorization.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
 import {connectorReader} from './fixtures/connector-reader.js';
@@ -580,6 +583,198 @@ test('Google disconnect waits for token-refresh work and cannot resurrect creden
   await connector.init();t.after(()=>connector.close());await authorize();block=true;
   const reading=connector.calendars();await started;const disconnect=connector.disconnect();release();await reading;await disconnect;
   assert.equal(connector.status().connected,false);await assert.rejects(readFile(join(directory,'private/google-calendar.json')),{code:'ENOENT'});
+});
+
+test('stopping the Google instance mid-poll drops late results, restart replays them and Gmail keeps working',async t=>{
+  const {ctx,sources,directory}=await fixture(t),event=googleEvent('late-page','Generated late page');
+  let gated=true,entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(resolve=>entered=resolve),hold=new Promise<void>(resolve=>release=resolve);
+  const googleOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  googleOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-refresh-private',access_token:'synthetic-access-private',scope:'https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly'}})) as never;
+  googleOauth.getAccessToken=(async()=>({token:'synthetic-access-private'})) as never;
+  const google:GoogleDependencies={oauthFactory:()=>googleOauth,fetch:(async(input,init)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/calendarList'))return Response.json({items:[calendar]});
+    if(gated){
+      entered();
+      await new Promise<void>((resolve,reject)=>{
+        init?.signal?.addEventListener('abort',()=>reject(new DOMException('The operation was aborted.','AbortError')),{once:true});
+        void hold.then(resolve);
+      });
+    }
+    return Response.json({items:[event],nextSyncToken:'generated-replay'});
+  }) as typeof fetch};
+  const gmailOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  gmailOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-gmail-refresh',access_token:'synthetic-gmail-access',scope:gmailScope}})) as never;
+  gmailOauth.getAccessToken=(async()=>({token:'synthetic-gmail-access'})) as never;
+  const gmail:GoogleDependencies={oauthFactory:()=>gmailOauth,fetch:(async(input)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/profile'))return Response.json({emailAddress:'generated@example.invalid',historyId:'1'});
+    if(url.pathname.endsWith('/messages'))return Response.json({messages:[{id:'generated-message'}]});
+    if(url.pathname.endsWith('/messages/generated-message'))return Response.json({id:'generated-message',threadId:'generated-thread',historyId:'1',internalDate:'1767225600000',payload:{mimeType:'text/plain',headers:[{name:'subject',value:'Generated gmail evidence'}],body:{data:Buffer.from('Generated gmail body').toString('base64url')}}});
+    throw Error('Unexpected Gmail fixture URL: '+url.pathname);
+  }) as typeof fetch};
+  const app=Fastify(),connectors=await registerConnectors(app,ctx,{google,gmail});
+  t.after(async()=>{await connectors.close();await app.close();});
+  const headers={authorization:`Bearer ${owner}`};
+  const started=await app.inject({method:'POST',url:'/api/connectors/google/start',headers});
+  const state=new URL(started.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${state}&code=generated-code`})).statusCode,200);
+  assert.equal((await app.inject({method:'PUT',url:'/api/connectors/google/calendars',headers,payload:{calendarIds:[calendar.id]}})).statusCode,200);
+  const source=sources.listSources().find(s=>s.kind==='google-calendar')!;
+  const syncing=app.inject({method:'POST',url:'/api/connectors/google/sync',headers});
+  await waiting;
+  await connectors.stop('google-calendar');
+  gated=false;release();
+  assert.equal((await syncing).statusCode,502);
+  assert.equal(sources.listItems({sourceId:source.id}).items.length,0,'a stopped poll never commits its late results');
+  assert.equal(JSON.parse(await readFile(join(directory,'private/google-calendar.json'),'utf8')).checkpoints[calendar.id],undefined,'the stopped poll cannot skip unpublished items');
+  const gmailStart=await app.inject({method:'POST',url:'/api/connectors/gmail/start',headers});
+  const gmailState=new URL(gmailStart.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${gmailState}&code=generated-code`})).statusCode,200);
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).json(),{imported:1,duplicates:0,hasMore:false});
+  const gmailSource=sources.listSources().find(s=>s.kind==='gmail')!;
+  assert.equal(sources.getItem(gmailSource.id,'generated-message:0')!.text,'Generated gmail body');
+  await connectors.restart('google-calendar');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:1,duplicates:0,calendars:1});
+  assert.equal(sources.getItem(source.id,event.id)!.text,'Generated late page');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:0,duplicates:1,calendars:1},'the replayed page dedupes instead of archiving twice');
+});
+
+test('stopping the Gmail instance mid-page drops the late response, restart resumes the confirmed cursor and Google keeps working',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-connectors-')),store=new Store(join(directory,'vault'));
+  const sources=new SourceStore(store,undefined,new MemoryInputAuthorization(store,()=>true));
+  const ctx:ConnectorContext={store,sources,evidenceReader:connectorReader(store,sources),config:{dataDir:join(directory,'vault'),token:owner,allowedOrigins:['https://synthetic.invalid'],connectors:{directory:join(directory,'private'),googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
+  t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
+  const gmailMessage=(id:string)=>({id,threadId:`generated-thread-${id}`,historyId:'9',internalDate:'1767225600000',labelIds:['INBOX'],payload:{mimeType:'text/plain',headers:[{name:'subject',value:`Generated ${id}`}],body:{data:Buffer.from(`Generated ${id} body`).toString('base64url')}}});
+  let gated=true,entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(resolve=>entered=resolve),hold=new Promise<void>(resolve=>release=resolve);
+  const pageTokens:(string|null)[]=[];
+  const gmailOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  gmailOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-gmail-refresh',access_token:'synthetic-gmail-access',scope:gmailScope}})) as never;
+  gmailOauth.getAccessToken=(async()=>({token:'synthetic-gmail-access'})) as never;
+  const gmail:GoogleDependencies={oauthFactory:()=>gmailOauth,fetch:(async(input,init)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/profile'))return Response.json({emailAddress:'generated@example.invalid',historyId:'7'});
+    if(url.pathname.endsWith('/messages')){
+      pageTokens.push(url.searchParams.get('pageToken'));
+      return url.searchParams.get('pageToken')==='generated-page-2'?Response.json({messages:[]}):Response.json({messages:[{id:'generated-message'},{id:'late-message'}],nextPageToken:'generated-page-2'});
+    }
+    if(url.pathname.endsWith('/messages/late-message')){
+      if(gated){entered();await hold;assert.equal(init?.signal?.aborted,true,'the late response must arrive after the stopped instance cancelled its request');}
+      return Response.json(gmailMessage('late-message'));
+    }
+    if(url.pathname.endsWith('/messages/generated-message'))return Response.json(gmailMessage('generated-message'));
+    throw Error('Unexpected Gmail fixture URL: '+url.pathname);
+  }) as typeof fetch};
+  const googleOauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:ctx.config.connectors!.googleRedirectUri});
+  googleOauth.getToken=(async()=>({tokens:{refresh_token:'synthetic-refresh-private',access_token:'synthetic-access-private',scope:'https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly'}})) as never;
+  googleOauth.getAccessToken=(async()=>({token:'synthetic-access-private'})) as never;
+  const event=googleEvent('generated-sibling','Generated sibling event');
+  const google:GoogleDependencies={oauthFactory:()=>googleOauth,fetch:(async(input)=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith('/calendarList'))return Response.json({items:[calendar]});
+    return Response.json({items:[event],nextSyncToken:'generated-replay'});
+  }) as typeof fetch};
+  const app=Fastify(),connectors=await registerConnectors(app,ctx,{google,gmail});
+  t.after(async()=>{await connectors.close();await app.close();});
+  const headers={authorization:`Bearer ${owner}`};
+  const started=await app.inject({method:'POST',url:'/api/connectors/gmail/start',headers});
+  const state=new URL(started.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${state}&code=generated-code`})).statusCode,200);
+  const gmailSource=sources.listSources().find(s=>s.kind==='gmail')!;
+  const grants=()=>store.db.prepare('SELECT * FROM memory_input_authorizations WHERE source_id=? ORDER BY input_key').all(gmailSource.id);
+  const syncing=app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers});
+  await waiting;
+  const stopping=connectors.stop('gmail');
+  gated=false;release();
+  await stopping;
+  assert.equal((await syncing).statusCode,503,'a stopped poll reports its cancellation, never a partial page');
+  assert.equal(sources.getItem(gmailSource.id,'generated-message:0')!.text,'Generated generated-message body');
+  assert.equal(sources.getItem(gmailSource.id,'late-message:0'),undefined,'a stopped poll never commits its late response');
+  assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,1,'the late response archived nothing');
+  assert.equal(grants().length,1,'no semantic admission was minted for the dropped response');
+  const saved=JSON.parse(await readFile(join(directory,'private/gmail.json'),'utf8'));
+  assert.equal(saved.historyId,undefined);assert.equal(saved.full.pageToken,undefined,'the failed page cannot skip unconfirmed mail');
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).statusCode,404,'a stopped instance releases its routes');
+  const googleStart=await app.inject({method:'POST',url:'/api/connectors/google/start',headers});
+  const googleState=new URL(googleStart.json().authorizationUrl).searchParams.get('state')!;
+  assert.equal((await app.inject({url:`/oauth/google/callback?state=${googleState}&code=generated-code`})).statusCode,200);
+  assert.equal((await app.inject({method:'PUT',url:'/api/connectors/google/calendars',headers,payload:{calendarIds:[calendar.id]}})).statusCode,200);
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/google/sync',headers})).json(),{imported:1,duplicates:0,calendars:1},'Google keeps syncing while Gmail is stopped');
+  const prior=sources.getItem(gmailSource.id,'generated-message:0')!;
+  await connectors.restart('gmail');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).json(),{imported:1,duplicates:1,hasMore:true});
+  assert.deepEqual(sources.getItem(gmailSource.id,'generated-message:0'),prior,'the replayed page keeps the confirmed source revision');
+  const late=sources.getItem(gmailSource.id,'late-message:0')!;
+  assert.equal(late.text,'Generated late-message body');
+  assert.equal(late.document?.originalMetadata?.messageId,'late-message');
+  assert.equal(late.document?.originalMetadata?.threadId,'generated-thread-late-message');
+  assert.match(late.revision,/^[0-9a-f]{64}$/);
+  assert.equal(grants().length,2,'replaying the confirmed page mints no duplicate model admission');
+  assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,2);
+  assert.equal(JSON.parse(await readFile(join(directory,'private/gmail.json'),'utf8')).full.pageToken,'generated-page-2','the confirmed cursor advanced exactly one page');
+  assert.deepEqual((await app.inject({method:'POST',url:'/api/connectors/gmail/sync',headers})).json(),{imported:0,duplicates:0,hasMore:false});
+  assert.equal(JSON.parse(await readFile(join(directory,'private/gmail.json'),'utf8')).historyId,'7');
+  assert.deepEqual(pageTokens,[null,null,'generated-page-2'],'the restart resumed the page at the last confirmed cursor');
+});
+
+test('cancelling or stopping the Lark instance mid-fetch drops late CLI results and restart resumes sync',async t=>{
+  const {ctx,sources}=await fixture(t),app=Fastify();
+  let gated=true,fetches=0,aborts=0;
+  const body=JSON.stringify({data:{document:{document_id:'GeneratedDoc123',revision_id:1,title:'Generated document',content:'Generated late body'}}});
+  const lark:LarkRunner=async(command,options={})=>{
+    switch(command.kind){
+      case 'version':return 'lark-cli version 1.0.85';
+      case 'status':return JSON.stringify({appId:'cli_generated',identities:{user:{available:true,openId:'generated-lark-owner',userName:'Generated owner',scope:'docx:document:readonly wiki:wiki:readonly search:docs:read drive:drive:readonly'}}});
+      case 'login':return JSON.stringify({verification_url:'https://accounts.feishu.cn/authorize?generated=fixture',device_code:'generated-device-code',expires_in:600});
+      case 'complete':return '{}';
+      case 'document':
+        fetches++;
+        if(gated)return new Promise<string>(resolve=>{
+          // The abort kills the child process, but a stale buffered result may
+          // still resolve the runner late; the connector fence must drop it.
+          options.signal?.addEventListener('abort',()=>{aborts++;setImmediate(()=>resolve(body));},{once:true});
+        });
+        return body;
+      default:return '{}';
+    }
+  };
+  const connectors=await registerConnectors(app,ctx,{lark});
+  t.after(async()=>{await connectors.close();await app.close();});
+  const headers={authorization:`Bearer ${owner}`};
+  const status=async()=>(await app.inject({method:'GET',url:'/api/connectors/lark',headers})).json();
+  const settle=async()=>{for(let i=0;i<300;i++){const view=await status();if(!['waiting','running'].includes(view.job?.state??''))return view;await new Promise(resolve=>setTimeout(resolve,2));}throw Error('Generated lark job did not settle');};
+  const fetchEntered=async(count:number)=>{for(let i=0;i<300&&fetches<count;i++)await new Promise(resolve=>setTimeout(resolve,2));assert.equal(fetches,count);};
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/lark/check',headers})).statusCode,200);
+  assert.equal((await app.inject({method:'POST',url:'/api/connectors/lark/login',headers})).statusCode,200);
+  assert.equal((await settle()).job?.state,'completed');
+  const selection={documents:['https://fixture.feishu.cn/docx/GeneratedDoc123'],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false};
+  assert.equal((await app.inject({method:'PUT',url:'/api/connectors/lark/selection',headers,payload:selection})).statusCode,200);
+  const source=sources.listSources().find(value=>value.kind==='lark-docs')!;
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  await fetchEntered(1);
+  await app.inject({method:'POST',url:'/api/connectors/lark/cancel',headers});
+  assert.equal((await settle()).job?.state,'cancelled');
+  assert.equal(aborts,1,'cancel must close the gated CLI child');
+  assert.equal(sources.listItems({sourceId:source.id}).items.length,0,'a CLI result arriving after cancel must not commit');
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  await fetchEntered(2);
+  await connectors.stop('lark');
+  assert.equal(aborts,2,'stopping the instance must close the gated CLI child');
+  assert.equal(sources.listItems({sourceId:source.id}).items.length,0,'a CLI result arriving after stop must not commit');
+  assert.equal((await app.inject({method:'GET',url:'/api/connectors/lark',headers})).statusCode,404);
+  gated=false;
+  await connectors.restart('lark');
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  const synced=await settle();
+  assert.equal(synced.job?.state,'completed');assert.equal(synced.job?.result?.imported,1);
+  const item=sources.getItem(source.id,'GeneratedDoc123')!;
+  assert.equal(item.text,'Generated late body');assert.equal(fetches,3);
+  await app.inject({method:'POST',url:'/api/connectors/lark/sync',headers});
+  assert.equal((await settle()).job?.result?.duplicates,1);
+  assert.equal(sources.getItem(source.id,'GeneratedDoc123')!.revision,item.revision,'an unchanged provider revision must not move the material revision');
+  assert.equal(sources.history(source.id,'GeneratedDoc123').length,1,'the replayed fetch dedupes instead of archiving twice');
 });
 
 test('Google real provider timestamps remain distinct from observation and metadata-only changes create revisions',async t=>{

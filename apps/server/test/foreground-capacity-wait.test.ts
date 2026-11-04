@@ -24,7 +24,7 @@ for(const feature of ['query','insight'] as const)for(const mode of ['worker-bus
  await node.app.listen({host:'127.0.0.1',port:0});
  const headers={authorization:'Bearer '+config.token,'content-type':'application/json'},path=feature==='query'?'/api/query':'/api/insights';let settled=false;
  const response=fetch(new URL(path,node.app.listeningOrigin),{method:'POST',headers,body:JSON.stringify(feature==='query'?{question:'Generated capacity question'}:{}),signal:AbortSignal.timeout(12000)}).then(value=>{settled=true;return value;});
- const waiting=await until(()=>feature==='query'?node.featureServices.queryRuns.list()[0]:node.insightRuns.list()[0],run=>Boolean(run?.execution?.status==='retry_wait'));
+ const waiting=await until(()=>feature==='query'?node.queryRuns.list()[0]:node.insightRuns.list()[0],run=>Boolean(run?.execution?.status==='retry_wait'));
  assert.ok(waiting);assert.equal(waiting.status,'running');assert.equal(waiting.error,undefined);assert.equal(waiting.execution!.attempts,0);assert.equal(settled,false);
  assert.equal(calls,mode==='worker-busy'?1:0);assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversation_turns').get()!.n,0);assert.equal(node.store.db.prepare('SELECT count(*) n FROM insights').get()!.n,0);
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM model_usage').get()!.n,calls,'a host cooldown cannot invent a failed model-call receipt');
@@ -37,7 +37,7 @@ for(const feature of ['query','insight'] as const)for(const mode of ['worker-bus
  await delay(Math.max(0,step.availableAt-Date.now())+20);await node.executor.tick();
  const completed=await response;assert.equal(completed.status,200,await completed.clone().text());
  const result=await completed.json();assert.equal(feature==='query'?result.answer:result.artifact.title,feature==='query'?'Generated answer.':'Generated review');
- const run=feature==='query'?node.featureServices.queryRuns.get(waiting.id):node.insightRuns.get(waiting.id);assert.equal(run.status,'completed');assert.equal(run.error,undefined);assert.equal(run.execution!.attempts,1);
+ const run=feature==='query'?node.queryRuns.get(waiting.id):node.insightRuns.get(waiting.id);assert.equal(run.status,'completed');assert.equal(run.error,undefined);assert.equal(run.execution!.attempts,1);
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversations').get()!.n,feature==='query'?1:0);
  assert.equal(calls,mode==='worker-busy'?2:1);assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversation_turns').get()!.n,feature==='query'?1:0);assert.equal(node.store.db.prepare('SELECT count(*) n FROM insights').get()!.n,feature==='insight'?1:0);
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM model_usage').get()!.n,calls);assert.equal(node.store.db.prepare("SELECT count(*) n FROM model_usage WHERE json_extract(json,'$.status')='completed'").get()!.n,1);

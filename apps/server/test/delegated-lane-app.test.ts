@@ -14,7 +14,7 @@ const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'
 async function until<T>(read:()=>T|undefined,describe?:()=>unknown):Promise<T>{for(let n=0;n<200;n++){const result=read();if(result!==undefined)return result;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated lane fixture did not settle'+(describe?': '+JSON.stringify(describe()):''));}
 
 function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
- const run=node.featureServices.queryRuns.get(id),work=node.featureServices.delegation.get('query:'+id);
+ const run=node.queryRuns.get(id),work=node.delegation.get('query:'+id);
  return {run:{status:run.status,error:run.error,execution:run.execution},work:{status:work.status,revision:work.revision,units:work.units.map(unit=>({status:unit.status,attempts:unit.attempts,error:unit.error}))},pool:node.executor.poolSnapshot('delegated-agents'),gate:node.featureServices.agentGate.snapshot(),steps:node.store.db.prepare('SELECT e.id,e.state,e.error,a.work_id FROM execution_steps e LEFT JOIN background_model_step_authority a ON a.step_id=e.id WHERE e.operation_id=?').all('query:'+id)};
 }
 
@@ -27,7 +27,7 @@ test('production app reserves Ask and inherited research capacity while backgrou
   if(input.executionLane!=='interactive'){calls++;entered();await held;}
   else if(!input.hostControlChannel){
    // Finish the child after the parent's yielded fragment has really committed.
-   await until(()=>node.featureServices.delegation.get('query:'+id).status==='waiting'&&node.executor.get('query:'+id+':coordinator:1')?.state==='succeeded'?true:undefined,()=>snapshot(node,id));
+   await until(()=>node.delegation.get('query:'+id).status==='waiting'&&node.executor.get('query:'+id+':coordinator:1')?.state==='succeeded'?true:undefined,()=>snapshot(node,id));
   }
   else if(input.hostControlChannel){
    const work=input.taskContext!.delegation as {units:{artifactId?:string}[]};
@@ -38,19 +38,19 @@ test('production app reserves Ask and inherited research capacity while backgrou
  }}});
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.app.ready();
- node.featureServices.delegation.registerCoordinator({id:'generated.background',execute:async({signal})=>node.featureServices.queryAgent({question:'Generated background task',executionLane:'background',signal})});
- await withFixtureOwnerModelWork(node,async()=>node.featureServices.delegation.start({id:'generated-background',profileId:'generated.background',goal:'Generated background workload',input:{executionLane:'interactive'},allowedCapabilities:[]}));
+ node.delegation.registerCoordinator({id:'generated.background',execute:async({signal})=>node.featureServices.queryAgent({question:'Generated background task',executionLane:'background',signal})});
+ await withFixtureOwnerModelWork(node,async()=>node.delegation.start({id:'generated-background',profileId:'generated.background',goal:'Generated background workload',input:{executionLane:'interactive'},allowedCapabilities:[]}));
  await started;
  // Admit through owner HTTP, then pump from an ordinary worker context.
  // A timer must not accidentally borrow the HTTP caller's model authority.
  const scheduled=t.mock.method(node.executor,'tick',async()=>{});
  const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated Ask research'}}});scheduled.mock.restore();assert.equal(accepted.statusCode,202,accepted.body);
  void node.executor.tick();
- await until(()=>node.featureServices.queryRuns.get(id).status==='completed'?true:undefined,()=>snapshot(node,id));
+ await until(()=>node.queryRuns.get(id).status==='completed'?true:undefined,()=>snapshot(node,id));
  assert.equal(calls,1);assert.deepEqual(order,['background','interactive','interactive','interactive']);
- assert.equal(node.featureServices.delegation.get('generated-background').status,'running','Ask does not preempt background');
+ assert.equal(node.delegation.get('generated-background').status,'running','Ask does not preempt background');
  assert.deepEqual(node.executor.poolSnapshot('delegated-agents'),{background:{limit:1,running:1,waiting:0},interactive:{limit:2,running:0,waiting:0}});
- node.featureServices.delegation.cancel('generated-background');release();
+ node.delegation.cancel('generated-background');release();
  await until(()=>node.featureServices.agentGate.snapshot().active===0?true:undefined);
- assert.equal(node.featureServices.delegation.get('generated-background').status,'cancelled');assert.equal(node.featureServices.delegation.result('generated-background'),undefined);
+ assert.equal(node.delegation.get('generated-background').status,'cancelled');assert.equal(node.delegation.result('generated-background'),undefined);
 });
