@@ -38,7 +38,22 @@ export interface AgentRuntimeRegistryDependencies {
   readonly recordTiming:(input:QueryInput,timing:{lane:'interactive'|'background';queueWaitMs:number;durationMs:number;status:'completed'|'failed'|'yielded'})=>void;
 }
 
-type Generation = { agent: QueryAgent; active: number; retired: boolean; closing?: Promise<void> };
+type Generation = { id:number; agent: QueryAgent; active: number; retired: boolean; closing?: Promise<void> };
+
+/** Safe control projection. Counts and identifiers only; no agent, credential,
+ * endpoint or arbitrary error text crosses this boundary. */
+export interface AgentRuntimeGenerationStatus {
+  readonly closed:boolean;
+  readonly configured:boolean;
+  readonly generation:number;
+  readonly activeRuns:number;
+  /** Replaced or unactivated generations that still have to finish closing. */
+  readonly retiringGenerations:number;
+  readonly releasedGenerations:number;
+  readonly preparedGenerations:number;
+  readonly closeErrors:number;
+  readonly lastCloseError?:{readonly name:string;readonly code?:string};
+}
 
 /** One reloadable query generation. A committed setting only changes
  * subsequent requests; accepted requests keep the generation they leased. */
@@ -48,14 +63,26 @@ export class ReloadableAgent implements QueryAgent {
   private readonly candidates = new Set<Generation>();
   private closed = false;
   private closing?: Promise<void>;
-  constructor(private readonly onCloseError: () => void = () => {}) {}
+  private nextGeneration = 0;
+  private activeRuns = 0;
+  private releasedGenerations = 0;
+  private closeErrors = 0;
+  private lastCloseError?: {name:string;code?:string};
+  constructor(private readonly onCloseError: (error?:unknown) => void = () => {}) {}
   get isClosed(): boolean { return this.closed; }
   get configured(): boolean { return !this.closed && Boolean(this.current?.agent.configured); }
   configuredFor(id:string):boolean { return !this.closed && Boolean(this.current?.agent.configuredFor?.(id)??this.current?.agent.configured); }
 
+  /** Actual runtime state for owner control; it never exposes the agent object. */
+  status(): AgentRuntimeGenerationStatus {
+    return Object.freeze({closed:this.closed,configured:this.configured,generation:this.current?.id??0,activeRuns:this.activeRuns,
+      retiringGenerations:this.retiringCount(),releasedGenerations:this.releasedGenerations,preparedGenerations:this.candidates.size,
+      closeErrors:this.closeErrors,...(this.lastCloseError?{lastCloseError:{...this.lastCloseError}}:{})});
+  }
+
   async prepare(agent: QueryAgent, activateConfig: () => void, rollbackConfig: () => void = () => {}): Promise<PreparedModelSettings> {
     if (this.closed) { await agent.close(); throw new Error('Agent is closed'); }
-    const generation: Generation = { agent, active: 0, retired: false };
+    const generation: Generation = { id:++this.nextGeneration, agent, active: 0, retired: false };
     this.candidates.add(generation);
     let activated = false,completed=false,rolledBack=false;
     let previous:Generation|undefined;
@@ -69,8 +96,14 @@ export class ReloadableAgent implements QueryAgent {
       },
       rollback:()=>{
         if(!activated||completed||rolledBack)return;
-        rolledBack=true;this.current=previous;rollbackConfig();generation.retired=true;
-        if(!generation.active)void this.retire(generation);
+        rolledBack=true;this.current=previous;
+        try{rollbackConfig();}
+        finally{
+          // A rollback callback failure must not leak the candidate generation
+          // or leave the new generation serving requests.
+          generation.retired=true;
+          if(!generation.active)void this.retire(generation);
+        }
       },
       complete:()=>{
         if(!activated||completed||rolledBack)return;
@@ -89,15 +122,29 @@ export class ReloadableAgent implements QueryAgent {
     const generation = this.current;
     if (this.closed) throw new Error('Agent is closed');
     if (!generation) throw new AgentNotConfiguredError();
-    generation.active++;
+    generation.active++;this.activeRuns++;
     try { return await generation.agent.query(args, lease); }
-    finally { generation.active--; if (generation.retired && !generation.active) void this.retire(generation); }
+    finally { generation.active--;this.activeRuns--; if (generation.retired && !generation.active) void this.retire(generation); }
+  }
+
+  private retiringCount():number {
+    let count=0;
+    for(const generation of new Set([...this.generations,...this.candidates]))if(generation.retired||generation.closing)count++;
+    return count;
   }
 
   /** Release a candidate or a retired generation exactly once. */
   private retire(generation: Generation): Promise<void> {
-    return generation.closing ??= Promise.resolve().then(() => generation.agent.close())
-      .catch(() => this.onCloseError()).finally(() => { this.generations.delete(generation);this.candidates.delete(generation); });
+    if(generation.closing)return generation.closing;
+    generation.closing = Promise.resolve().then(() => generation.agent.close())
+      .catch(error => {
+        this.closeErrors++;
+        const value=error as {name?:unknown;code?:unknown}|undefined;
+        this.lastCloseError={...(typeof value?.name==='string'?{name:value.name}:{name:'Error'}),...(typeof value?.code==='string'?{code:value.code}:{})};
+        this.onCloseError(error);
+      })
+      .finally(() => { this.generations.delete(generation);this.candidates.delete(generation);this.releasedGenerations++; });
+    return generation.closing;
   }
 
   close(): Promise<void> {
@@ -106,6 +153,13 @@ export class ReloadableAgent implements QueryAgent {
       await Promise.all([...new Set([...this.candidates,...this.generations])].map(generation => this.retire(generation)));
     })();
   }
+}
+
+export interface AgentRuntimeRegistryStatus extends AgentRuntimeGenerationStatus {
+  readonly preparedAgents:number;
+  readonly pendingPreparations:number;
+  readonly pendingCleanupFailures:number;
+  readonly shuttingDown:boolean;
 }
 
 /** The single owner of the Agent runtime generation: it builds wrapped
@@ -119,9 +173,14 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
   private readonly preparing=new Set<Promise<QueryAgent>>();
   private readonly lateCleanupErrors:unknown[]=[];
   private closeTask?:Promise<void>;
-  constructor(private readonly dependencies:AgentRuntimeRegistryDependencies,onCloseError?:()=>void){super(onCloseError);}
+  constructor(private readonly dependencies:AgentRuntimeRegistryDependencies,onCloseError?:(error?:unknown)=>void){super(onCloseError);}
 
   private assertOpen(){if(this.shuttingDown||this.isClosed)throw new StoreError('Agent runtime registry is closed',503);}
+
+  status():AgentRuntimeRegistryStatus {
+    return Object.freeze({...super.status(),preparedAgents:this.agents.size,pendingPreparations:this.preparing.size,
+      pendingCleanupFailures:this.lateCleanupErrors.length,shuttingDown:this.shuttingDown});
+  }
 
   readonly factory:ModelAgentFactory=(settings,reader,_hooks,identity)=>{
     this.assertOpen();
