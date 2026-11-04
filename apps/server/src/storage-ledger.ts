@@ -3,96 +3,80 @@ import type {DatabaseSync} from 'node:sqlite';
 /** Keep reservations aligned with the dependency expression below. */
 export const memoryDeletionDependencyBytes=(deletionId:string,evidenceId:string,originKeys:string,lineageKeys:string)=>Buffer.byteLength(deletionId)+Buffer.byteLength(evidenceId)+Buffer.byteLength(originKeys)+Buffer.byteLength(lineageKeys)+128;
 
-/** Transactional logical payload accounting. SQLite indexes/WAL are physical overhead,
- * intentionally reported separately. Newly installed plugin tables join on next read. */
+/** One registered table and the logical-byte expression its plugin declared. */
+export interface StorageMeterEntry {readonly name:string;readonly bytes:number}
+export interface StorageMeterGroup {readonly plugin:string;readonly bytes:number;readonly tables:readonly StorageMeterEntry[]}
+export interface StorageMeterBreakdown {readonly bytes:number;readonly plugins:readonly StorageMeterGroup[]}
+export type StorageMeters=Readonly<Record<string,string>>;
+
+const identifier=/^[a-z_][a-z0-9_]*$/;
+
+/** Transactional logical payload accounting. SQLite indexes/WAL are physical
+ * overhead, intentionally reported separately. The ledger owns no domain table
+ * names: the vault and each domain plugin register the durable tables they
+ * create. Registrations are persisted so a stopped/absent plugin still has its
+ * retained rows counted and attributed on later reads and restarts. */
 export class StorageLedger {
   private schemaVersion=-1;
-  constructor(private db:DatabaseSync){db.exec('CREATE TABLE IF NOT EXISTS storage_ledger(name TEXT PRIMARY KEY,bytes INTEGER NOT NULL)');
-
+  /** `excluded` names remain metered rows (and stay visible in `stats()`), but
+   * the vault decides which physical object stores are not logical payload. */
+  constructor(private db:DatabaseSync,private excluded:readonly string[]=[]) {
+    db.exec(`CREATE TABLE IF NOT EXISTS storage_ledger(name TEXT PRIMARY KEY,bytes INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS storage_ledger_meters(name TEXT PRIMARY KEY,plugin TEXT NOT NULL,expression TEXT NOT NULL);`);
+  }
+  /** Register or re-declare the tables one plugin owns. A changed expression
+   * rebuilds that table's row/triggers on the next read. */
+  register(plugin:string,meters:StorageMeters){this.registerAll({[plugin]:meters});}
+  /** Install several plugin declarations in one boundary (fixed startup inventory). */
+  registerAll(groups:Readonly<Record<string,StorageMeters>>){
+    const db=this.db,ownTransaction=!db.isTransaction;if(ownTransaction)db.exec('BEGIN IMMEDIATE');
+    try{
+      for(const [plugin,meters] of Object.entries(groups)){
+        if(typeof plugin!=='string'||!plugin.trim())throw Error('Storage meter plugin is required');
+        for(const [name,expression] of Object.entries(meters)){
+          if(!identifier.test(name)||typeof expression!=='string'||!expression.trim())throw Error('Invalid storage meter');
+          const prior=db.prepare('SELECT expression FROM storage_ledger_meters WHERE name=?').get(name) as {expression:string}|undefined;
+          if(prior&&String(prior.expression)!==expression){
+            db.exec(`DROP TRIGGER IF EXISTS ledger_${name}_insert;DROP TRIGGER IF EXISTS ledger_${name}_delete;DROP TRIGGER IF EXISTS ledger_${name}_update;`);
+            db.prepare('DELETE FROM storage_ledger WHERE name=?').run(name);
+          }
+          db.prepare('INSERT INTO storage_ledger_meters(name,plugin,expression) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET plugin=excluded.plugin,expression=excluded.expression').run(name,plugin,expression);
+        }
+      }
+      if(ownTransaction)db.exec('COMMIT');
+    }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+    this.schemaVersion=-1;
   }
   bytes(){
-    const version=Number(this.db.prepare('PRAGMA schema_version').get()!.schema_version);
-    if(version!==this.schemaVersion)this.refresh();
-    return Number(this.db.prepare("SELECT COALESCE(SUM(bytes),0) AS n FROM storage_ledger WHERE name NOT IN ('blobs','file_blobs','file_objects')").get()!.n);
+    this.refresh();
+    const filter=this.excluded.length?`name NOT IN (${this.excluded.map(()=>'?').join(',')})`:'1=1';
+    return Number(this.db.prepare(`SELECT COALESCE(SUM(bytes),0) AS n FROM storage_ledger WHERE ${filter}`).get(...this.excluded)!.n);
+  }
+  /** Durable per-table accounting with its owning plugin, including plugins that
+   * are not active in this process. Physical blob/object rows stay in `stats()`. */
+  breakdown():StorageMeterBreakdown{
+    this.refresh();
+    const filter=this.excluded.length?`AND m.name NOT IN (${this.excluded.map(()=>'?').join(',')})`:'';
+    const rows=this.db.prepare(`SELECT m.plugin AS plugin,m.name AS name,COALESCE(l.bytes,0) AS bytes FROM storage_ledger_meters m
+      LEFT JOIN storage_ledger l ON l.name=m.name WHERE 1=1 ${filter} ORDER BY m.plugin,m.name`).all(...this.excluded) as {plugin:string;name:string;bytes:number}[];
+    const groups=new Map<string,{plugin:string;bytes:number;tables:{name:string;bytes:number}[]}>();
+    for(const row of rows){
+      const plugin=String(row.plugin),group=groups.get(plugin)??{plugin,bytes:0,tables:[]};
+      const bytes=Number(row.bytes);group.bytes+=bytes;group.tables.push({name:String(row.name),bytes});groups.set(plugin,group);
+    }
+    return {bytes:[...groups.values()].reduce((sum,group)=>sum+group.bytes,0),plugins:[...groups.values()].sort((a,b)=>b.bytes-a.bytes||a.plugin.localeCompare(b.plugin))};
   }
   private refresh(){
-    const jsonTables=['import_uploads','todos','perception_results','captures','memories','memory_deletions','memory_input_plans','source_connections','conversations','conversation_turns','memory_jobs','memory_batches','memory_extraction_drafts','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_effective','memory_recipe_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets','context_contents','context_artifacts','processing_jobs','coding_conversation_contexts','delegation_works','delegation_units','delegation_payloads','delegation_results'];
-    const expressions:Record<string,string>=Object.fromEntries(jsonTables.map(t=>[t,'length(CAST(json AS BLOB))']));
-    expressions.context_topic_batches='length(CAST(json AS BLOB))+length(CAST(operation_id AS BLOB))+128';
-    expressions.conversation_retired_roots='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128';
-    expressions.conversation_retired_turn_roots='length(CAST(conversation_id AS BLOB))+length(CAST(turn_id AS BLOB))+length(CAST(evidence_id AS BLOB))+length(CAST(result_run_id AS BLOB))+128';
-    expressions.context_topic_heads='length(CAST(snapshot_key AS BLOB))+length(CAST(operation_id AS BLOB))+128';
-    expressions.memory_phase_outputs='length(CAST(json AS BLOB))+256';
-    expressions.media_execution_calls='length(CAST(input AS BLOB))+coalesce(length(CAST(fact AS BLOB)),0)+1024';
-    expressions.media_execution_instance='length(CAST(nonce AS BLOB))+128';
-    expressions.background_model_authorization='length(CAST(json AS BLOB))+128';
-    expressions.background_model_receipts='length(CAST(identity AS BLOB))+128';
-    expressions.background_model_lineage='length(CAST(identity AS BLOB))+length(CAST(original AS BLOB))+64';
-    expressions.background_model_work='length(CAST(id AS BLOB))+length(CAST(json AS BLOB))+128';
-    expressions.background_model_trigger_claims='length(CAST(original AS BLOB))+length(CAST(purpose AS BLOB))+length(CAST(work_id AS BLOB))+64';
-    expressions.background_model_connections_used='length(CAST(work_id AS BLOB))+length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+64';
-    expressions.background_model_step_authority='length(CAST(step_id AS BLOB))+length(CAST(work_id AS BLOB))+64';
-    expressions.image_backfill_items='length(CAST(batch_id AS BLOB))+length(CAST(capture_id AS BLOB))+coalesce(length(CAST(intent_id AS BLOB)),0)+128';
-    expressions.media_model_intents='length(CAST(capture_id AS BLOB))+length(CAST(phase AS BLOB))+length(CAST(intent_id AS BLOB))+128';
-    expressions.owner_questions='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(identity AS BLOB))+256';
-    expressions.owner_question_dependencies='length(CAST(question_id AS BLOB))+length(CAST(evidence_id AS BLOB))+64';
-    expressions.owner_question_replies='length(CAST(question_id AS BLOB))+length(CAST(request_id AS BLOB))+length(CAST(request_hash AS BLOB))+128';
-    expressions.material_owner_declarations='length(CAST(json AS BLOB))+length(CAST(material_id AS BLOB))+length(CAST(id AS BLOB))+128';
-    expressions.image_products='length(CAST(json AS BLOB))+length(CAST(fingerprint AS BLOB))+256';
-    expressions.image_inputs='coalesce(length(CAST(policy_json AS BLOB)),0)+512';
-    expressions.image_attachment_intents='256';expressions.image_intake_overrides='192';expressions.image_backfills='length(CAST(query AS BLOB))+256';
-    expressions.file_semantic_withdrawals='128';expressions.file_semantic_calls='128';
-    expressions.file_summary_pages='length(CAST(json AS BLOB))+length(CAST(capture_id AS BLOB))+length(CAST(fingerprint AS BLOB))+128';
-    expressions.processor_cooldowns='length(CAST(scope AS BLOB))+128';
-    expressions.file_snapshot_inputs='256';expressions.file_snapshot_text='192';
-    expressions.mcp_import_manifests='length(CAST(source_id AS BLOB))+length(CAST(identity AS BLOB))+length(CAST(members AS BLOB))+128';
-    expressions.material_index_requests='length(CAST(material_id AS BLOB))+length(CAST(revision AS BLOB))+length(CAST(state AS BLOB))+coalesce(length(CAST(error AS BLOB)),0)+128';
-    expressions.file_snapshot_index='length(CAST(json AS BLOB))+128';
-    expressions.material_index_garbage='64';
-    expressions.import_owner_declarations='length(CAST(json AS BLOB))+256';
-    expressions.source_context_declarations='length(CAST(json AS BLOB))+length(CAST(source_id AS BLOB))+256';
-    expressions.record_context_declarations='length(CAST(json AS BLOB))+length(CAST(capture_id AS BLOB))+256';
-    expressions.capture_import_declarations='256';
-    expressions.memory_integration_deliveries='length(CAST(json AS BLOB))+length(CAST(operation_id AS BLOB))+length(CAST(inputs_hash AS BLOB))+coalesce(length(CAST(step_id AS BLOB)),0)+128';
-    expressions.memory_deletion_dependencies='length(CAST(deletion_id AS BLOB))+length(CAST(evidence_id AS BLOB))+length(CAST(origin_keys AS BLOB))+length(CAST(lineage_keys AS BLOB))+128';
-    expressions.delegation_artifacts='length(CAST(json AS BLOB))+length(CAST(metadata AS BLOB))+256';
-    expressions.delegation_events='coalesce(length(CAST(message AS BLOB)),0)+length(CAST(work_id AS BLOB))+coalesce(length(CAST(unit_id AS BLOB)),0)+128';
-    expressions.delegation_dependencies='length(CAST(work_id AS BLOB))+length(CAST(evidence_id AS BLOB))+128';
-    expressions.delegation_source_context_dependencies='length(CAST(work_id AS BLOB))+length(CAST(unit_id AS BLOB))+length(CAST(source_id AS BLOB))+256';
-    expressions.execution_cancellation_aliases='length(CAST(alias_id AS BLOB))+length(CAST(step_id AS BLOB))+128';
-    expressions.execution_failures='length(CAST(json AS BLOB))+length(CAST(step_id AS BLOB))+128';
-    expressions.activity_memory_jobs='length(CAST(id AS BLOB))+coalesce(length(CAST(import_id AS BLOB)),0)+192';
-    expressions.activity_memory_continuations='length(CAST(job_id AS BLOB))+length(CAST(parent_id AS BLOB))+length(CAST(root_id AS BLOB))+96';
-    expressions.activity_memory_sources='length(CAST(job_id AS BLOB))+length(CAST(source_id AS BLOB))+64';
-    expressions.activity_memory_source_nodes='length(CAST(source_id AS BLOB))+64';
-    expressions.activity_memory_source_links='length(CAST(first_source AS BLOB))+length(CAST(second_source AS BLOB))+64';
-    expressions.activity_memory_items='length(CAST(job_id AS BLOB))+length(CAST(ref AS BLOB))+length(CAST(item_key AS BLOB))+64';
-    expressions.activity_memory_coverage='length(CAST(batch_id AS BLOB))+length(CAST(job_id AS BLOB))+length(CAST(ref AS BLOB))+length(CAST(state AS BLOB))+64';
-    expressions.activity_memory_outputs='length(CAST(job_id AS BLOB))+length(CAST(memory_id AS BLOB))+64';
-    expressions.memory_feedback_plans='length(CAST(work_id AS BLOB))+length(CAST(job_id AS BLOB))+length(CAST(batch_id AS BLOB))+96';
-    expressions.memory_job_dependencies='length(CAST(job_id AS BLOB))+length(CAST(evidence_id AS BLOB))+64';
-    // Plugin control and provider journals are durable vault metadata. Their
-    // private bodies must obey the same logical quota as canonical Memory.
-    for(const name of ['plugin_control_receipts','plugin_build_instances','plugin_release_previews','memory_automation','memory_plan_binding','memory_preparation','memory_provider_receipts','memory_publication_outputs','memory_provider_model_snapshots','memory_provider_configurations'])expressions[name]='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128';
-    expressions.plugin_instance_state="bytes+length(CAST(key AS BLOB))+length(CAST(package_id AS BLOB))+length(CAST(installation_id AS BLOB))+length(CAST(instance_id AS BLOB))+length(CAST(updated_at AS BLOB))+32";
-    for(const name of ['memory_publications','memory_owner_mutations','memory_provider_erases','memory_engine_stage_cleanups'])expressions[name]='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+128';
-    expressions.memory_provider_writes='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(parent_id AS BLOB))+length(CAST(state AS BLOB))+136';
-    expressions.memory_provider_evidence_revocations='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(state AS BLOB))+136';
-    expressions.memory_engine_stage_drafts='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+coalesce(length(CAST(checkpoint_id AS BLOB)),0)+128';
-    for(const name of ['plugin_commands','memory_binding_commands'])expressions[name]='length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+128';
-    expressions.memory_control_commands='length(CAST(operation_id AS BLOB))+length(CAST(fingerprint AS BLOB))+136';
-    expressions.memory_publication_dependencies='length(CAST(operation_id AS BLOB))+length(CAST(kind AS BLOB))+length(CAST(dependency_id AS BLOB))+64';
-    expressions.memory_publication_retirements='length(CAST(operation_id AS BLOB))+64';
-    expressions.plugin_center='144';
-    expressions.action_device_capabilities='length(CAST(json AS BLOB))+length(CAST(device_id AS BLOB))+128';
-    expressions.action_capability_grants='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+256';
-    expressions.action_capability_drafts='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128';
-    expressions.action_capability_commands='length(CAST(receipt AS BLOB))+length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+128';
-    expressions.activity_memory_batches='length(CAST(id AS BLOB))+length(CAST(job_id AS BLOB))+64';
-    Object.assign(expressions,{memory_input_authorizations:'length(CAST(source_id AS BLOB))+length(CAST(input_key AS BLOB))+length(CAST(scope AS BLOB))+COALESCE(length(CAST(binding_json AS BLOB)),0)+256',material_memory_requests:'length(CAST(required_json AS BLOB))+COALESCE(length(CAST(binding_json AS BLOB)),0)+512',material_block_payloads:'length(CAST(text AS BLOB))',material_revisions:'length(CAST(manifest AS BLOB))+256',material_blocks:'256',material_block_versions:'256',material_coding_snapshots:'256',material_members:'256',material_evidence:'128',material_evidence_context:'length(CAST(json AS BLOB))+128',material_evidence_dependencies:'128',source_archive_sizes:'bytes',source_archive_indexed_sources:'128',source_archive_groups:'length(CAST(group_key AS BLOB))+256',source_archive_versions:'512',source_archive_heads:'384',source_archive_batches:'128',source_archive_recovery_groups:'128',run_execution_owners:'128',operation_parents:'length(CAST(parent_id AS BLOB))+length(CAST(child_id AS BLOB))+256',file_configuration_snapshots:'length(CAST(receipt AS BLOB))+128',provider_cooldowns:'length(CAST(code AS BLOB))+128',operation_progress:'length(CAST(id AS BLOB))+256',operation_changes:'length(CAST(operation_id AS BLOB))+32',execution_steps:'length(CAST(input AS BLOB))+512',execution_resources:'length(CAST(resource_key AS BLOB))+64',import_upload_parts:'bytes',assets:'bytes',blobs:'bytes',file_blobs:'bytes',file_objects:'bytes',file_chunks:'length(CAST(text AS BLOB))+COALESCE(length(embedding),0)',file_versions:'length(CAST(manifest AS BLOB))',file_uploads:'length(CAST(manifest AS BLOB))',file_parts:'bytes'});
+    const version=Number(this.db.prepare('PRAGMA schema_version').get()!.schema_version);
+    if(version!==this.schemaVersion)this.install();
+    this.schemaVersion=Number(this.db.prepare('PRAGMA schema_version').get()!.schema_version);
+  }
+  private install(){
+    const meters=this.db.prepare('SELECT name,expression FROM storage_ledger_meters ORDER BY name').all() as {name:string;expression:string}[];
+    if(!meters.length)return;
     const tables=new Set(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r=>String(r.name)));
     const ownTransaction=!this.db.isTransaction;if(ownTransaction)this.db.exec('BEGIN IMMEDIATE');
-    try{for(const [name,expression] of Object.entries(expressions)){
+    try{for(const {name,expression} of meters){
       if(!tables.has(name)||this.db.prepare('SELECT 1 FROM storage_ledger WHERE name=?').get(name))continue;
       const columns=this.db.prepare(`PRAGMA table_info(${name})`).all().map(r=>String(r.name));
       const qualify=(prefix:string)=>expression.replace(/\b[a-z_]+\b/g,word=>columns.includes(word)?`${prefix}.${word}`:word);
@@ -103,6 +87,5 @@ export class StorageLedger {
     }
     if(ownTransaction)this.db.exec('COMMIT');
     }catch(error){if(ownTransaction)this.db.exec('ROLLBACK');throw error;}
-    this.schemaVersion=Number(this.db.prepare('PRAGMA schema_version').get()!.schema_version);
   }
 }

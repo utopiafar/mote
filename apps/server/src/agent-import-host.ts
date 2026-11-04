@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import type {AsyncLocalStorage} from 'node:async_hooks';
-import {AgentNotConfiguredError,createImportAgent,type AgentOptions,type ImportAgentInput} from '@mote/agent';
+import {AgentNotConfiguredError,createImportAgent,type AgentOptions,type ImportAgentInput,type ImportCapability} from '@mote/agent';
 import type {ModelSettings} from '@mote/shared/models';
 import type {AgentRuntimeRegistry} from './agent-runtime-registry.js';
 import type {AdmittedUsageMeter} from './assembly/processing.js';
@@ -14,8 +14,7 @@ import {agentModelConnection} from './model-authorization-host.js';
 import type {ProviderAdmission} from './provider-admission.js';
 import {StoreError} from './store.js';
 
-type ImportRuntime=ReturnType<typeof createImportAgent>;
-export type ImportCapability=Pick<ImportRuntime,'prepare'|'close'>;
+export type {ImportCapability};
 export type ImportCapabilityFactory=(options:Omit<AgentOptions,'reader'>)=>ImportCapability;
 
 export interface AgentImportHostDependencies {

@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import {Store} from '../src/store.js';
 import {UsageLedger} from '../src/usage.js';
+import {hostRun} from './fixtures/host-run.js';
 
 test('current application omits budget endpoints while queries and actual cost accounting continue',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-continuity-api-')),headers={authorization:'Bearer generated-owner'};
@@ -14,8 +15,10 @@ test('current application omits budget endpoints while queries and actual cost a
   const previous=new Store(directory),ledger=new UsageLedger(previous);
   ledger.setPrice({provider:'custom',model:'fixture',currency:'USD',input:1,output:2,cacheRead:1,cacheWrite:1});previous.close();
   let calls=0;
-  const node=await buildApp(config,{agent:{configured:true,close:async()=>{},query:async input=>{
-    calls++;input.onUsage?.({requests:1,reportedRequests:1,inputTokens:200000,outputTokens:50000,totalTokens:250000,cacheReadTokens:0,cacheWriteTokens:0});
+  const node=await buildApp(config,{agent:{configured:true,close:async()=>{},query:async(input,lease)=>{
+    lease?.onFinalizer?.('host');
+    calls++;const usage={requests:1,reportedRequests:1,inputTokens:200000,outputTokens:50000,totalTokens:250000,cacheReadTokens:0,cacheWriteTokens:0};
+    input.onUsage?.(usage);hostRun(input,{usage});
     return {runId:randomUUID(),answer:'Generated response',citations:[],trace:[]};
   }}});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   for(const method of ['GET','PUT'] as const){const response=await node.app.inject({method,url:'/api/model-budgets',headers,...(method==='PUT'?{payload:{revision:1,limits:{dailyTokens:1}}}:{})});assert.equal(response.statusCode,404,response.body);}

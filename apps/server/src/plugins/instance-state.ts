@@ -26,6 +26,7 @@ export function installInstanceStateSchema(store: Store) {
   ) WITHOUT ROWID`);
   // Creates the StorageLedger row/triggers for this new table before the
   // first quota check.
+  store.registerStorage('plugin-control',{plugin_instance_state:"bytes+length(CAST(key AS BLOB))+length(CAST(package_id AS BLOB))+length(CAST(installation_id AS BLOB))+length(CAST(instance_id AS BLOB))+length(CAST(updated_at AS BLOB))+32"});
   store.logicalBytes();
 }
 

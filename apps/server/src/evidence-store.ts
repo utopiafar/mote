@@ -6,7 +6,8 @@ import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limit
 import {AssetStore} from './assets.js';
 import {archivedTodoSchema} from './todos.js';
 import {EvidenceArchive} from './evidence-archive.js';
-import {StorageLedger} from './storage-ledger.js';
+import {StorageLedger,type StorageMeterBreakdown,type StorageMeters} from './storage-ledger.js';
+import {vaultStorageMeters} from './vault-storage-meters.js';
 import {isStateExtension,samples as stateSamples} from '@mote/shared/state-series';
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
@@ -87,7 +88,8 @@ export class EvidenceStore {
     this.contentEncryption=new ContentEncryption(directory,this.db,options);
     this.assets=new AssetStore(this);
     this.archive=new EvidenceArchive(this);
-    this.ledger=new StorageLedger(this.db);
+    this.ledger=new StorageLedger(this.db,['blobs','file_blobs','file_objects']);
+    this.ledger.registerAll(vaultStorageMeters);
     this.ledger.bytes();
     if(!priorTable)this.db.exec('COMMIT');
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
@@ -575,6 +577,10 @@ export class EvidenceStore {
   }
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() { return this.ledger.bytes(); }
+  /** A domain plugin declares the durable tables it owns; registrations persist
+   * outside the activating process so retained rows stay counted. */
+  registerStorage(plugin:string,meters:StorageMeters){this.ledger.register(plugin,meters);}
+  storageBreakdown():StorageMeterBreakdown{return this.ledger.breakdown();}
   stats() {
     const counts=this.db.prepare("SELECT coalesce(sum(n),0) captures,coalesce(sum(n*has_image),0) imageCaptures,coalesce(sum(CASE WHEN source='activity' THEN n ELSE 0 END),0) activityEvents,coalesce(sum(CASE WHEN source='media' THEN n ELSE 0 END),0) mediaEvents FROM capture_counts").get() as {captures:number;imageCaptures:number;activityEvents:number;mediaEvents:number};
     const times={firstCaptureAt:this.db.prepare('SELECT captured_at FROM captures ORDER BY captured_at LIMIT 1').get()?.captured_at??null,lastCaptureAt:this.db.prepare('SELECT captured_at FROM captures ORDER BY captured_at DESC LIMIT 1').get()?.captured_at??null};

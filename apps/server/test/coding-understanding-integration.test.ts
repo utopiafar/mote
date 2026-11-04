@@ -12,6 +12,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {MemoryWorkPackage} from '../src/memory-work-contract.js';
 import {StoreError} from '../src/store.js';
+import {hostRun} from './fixtures/host-run.js';
 
 // All conversation content and model results below are generated local fixtures.
 type Node=Awaited<ReturnType<typeof buildApp>>;
@@ -28,7 +29,13 @@ function event(id:string,role:string,text:string):SourceItem{return {externalId:
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
- const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>fixtureTopicResult(input)??fixtureMemoryWorkResult(input,await query(input,reader))})});
+ const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+  lease?.onFinalizer?.('host');
+  let usage:TokenUsage|undefined;
+  const observed={...input,onUsage:(sample:TokenUsage)=>{usage=sample;input.onUsage?.(sample);}};
+  try{const result=fixtureTopicResult(observed)??fixtureMemoryWorkResult(observed,await query(observed,reader));hostRun(observed,{usage});return result;}
+  catch(error){hostRun(observed,{usage,terminal:'failed'});throw error;}
+ }})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const settings=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...settings,consolidation:{...settings.consolidation,enabled:false},insights:{...settings.insights,enabled:false},working:{...settings.working,enabled:false}}});
  node.sources.register({id:'coding',kind:'coding-agent',name:'Generated coding',deviceId:'fixture',platform:'macos'});

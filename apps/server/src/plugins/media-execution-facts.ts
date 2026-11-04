@@ -21,6 +21,10 @@ export class MediaExecutionCalls {
   store.db.exec(`CREATE TABLE IF NOT EXISTS media_execution_instance(id INTEGER PRIMARY KEY CHECK(id=1),nonce TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS media_execution_calls(request_id TEXT PRIMARY KEY,scope TEXT NOT NULL,capture_id TEXT NOT NULL,step_id TEXT NOT NULL,input TEXT NOT NULL,generation TEXT NOT NULL,configuration TEXT NOT NULL,stage TEXT NOT NULL,issued_attempt INTEGER NOT NULL,supported INTEGER NOT NULL DEFAULT -1,fact TEXT,state TEXT NOT NULL DEFAULT 'issued');
    CREATE INDEX IF NOT EXISTS media_execution_pending ON media_execution_calls(state);`);
+  store.registerStorage('media-processing',{
+    media_execution_calls:'length(CAST(input AS BLOB))+coalesce(length(CAST(fact AS BLOB)),0)+1024',
+    media_execution_instance:'length(CAST(nonce AS BLOB))+128',
+  });
   store.db.prepare('INSERT OR IGNORE INTO media_execution_instance VALUES(1,?)').run(randomUUID()+randomUUID());
   this.nonce=String(store.db.prepare('SELECT nonce FROM media_execution_instance WHERE id=1').get()!.nonce);
  }

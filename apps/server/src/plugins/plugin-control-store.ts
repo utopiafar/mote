@@ -38,7 +38,13 @@ export class PluginControlStore {
     CREATE TABLE IF NOT EXISTS plugin_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS plugin_control_receipts(id TEXT PRIMARY KEY,json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS plugin_build_instances(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-  `);}
+  `);
+  store.registerStorage('plugin-control',{
+    plugin_center:'144',
+    plugin_commands:'length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+128',
+    plugin_control_receipts:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+    plugin_build_instances:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
+  });}
   revision(){return Number(this.store.db.prepare('SELECT revision FROM plugin_center WHERE id=1').get()!.revision);}
   bump(){this.store.db.prepare('UPDATE plugin_center SET revision=revision+1 WHERE id=1').run();}
   command(kind:string,input:PluginCommand,revision:()=>number,apply:()=>void){

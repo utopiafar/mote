@@ -1,35 +1,40 @@
 import type {TokenUsage} from '@mote/shared';
 import {CodexSession} from './codex-session.js';
-import {ImportTaskContractError,importSkillDescriptor,importTaskDescriptor,resolveImportRecordsPath} from './tasks/import.js';
+import {IMPORT_CAPABILITY_API_VERSION,defineImportCapabilityDescriptor,importRepairPrompt,importRequestPayload,parseImportPreview,type ImportAgentInput,type ImportAgentLaunch,type ImportAgentObserver,type ImportAgentResult,type ImportCapability} from './runtime/import-capability.js';
+import {importSkillDescriptor} from './tasks/import.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
-import type {ImportAgentInput,ImportAgentResult,ImportAgentObserver} from './import-agent.js';
 
 const importAnswerSchema={
  type:'object',properties:{summary:{type:'string'},recordsPath:{type:['string','null']},warnings:{type:'array',items:{type:'string'}},reviewDecision:{type:['object','null'],properties:{confidence:{type:'string',enum:['high','low','unknown']},ambiguous:{type:'boolean'},reason:{type:'string'}},required:['confidence','ambiguous','reason'],additionalProperties:false}},required:['summary','recordsPath','warnings','reviewDecision'],additionalProperties:false,
 };
 
-/** Import has a dedicated writable staging workspace. It never receives archive tools. */
-export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
+/** Codex transport for the same writable Import capability. It receives only
+ * the import workspace, and returns the shared preview contract instead of
+ * archive tools or a model-authored artifact claim. */
+export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>):ImportCapability {
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<ImportAgentResult>>();
   async function execute(input:ImportAgentInput,onUsage?:(usage:TokenUsage)=>void):Promise<ImportAgentResult>{
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
     const session=new CodexSession(options,async()=>{throw new AgentProviderError();},undefined,onUsage);sessions.add(session);
     try{
       await session.start(importSkillDescriptor.content,[],input.workspace);
-      let text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:importSkillDescriptor.id,taskId:importTaskDescriptor.id,taskVersion:importTaskDescriptor.version,importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),importAnswerSchema);
+      let text=await session.run(importRequestPayload(input),importAnswerSchema);
       for(let repair=0;;repair++){
-        try{
-         if(text.length>64000)throw new AgentResponseError('Import response exceeds its limit');
-         let result:ImportAgentResult;try{result=JSON.parse(text);}catch{throw new AgentResponseError('Import response is not valid JSON');}
-         if(!result||typeof result.summary!=='string'||(result.recordsPath!=null&&typeof result.recordsPath!=='string')||(result.warnings!==undefined&&(!Array.isArray(result.warnings)||result.warnings.some(w=>typeof w!=='string'))))throw new AgentResponseError('Import response has an invalid shape');
-         try{resolveImportRecordsPath(input.workspace,result.recordsPath??undefined);}catch(error){if(error instanceof ImportTaskContractError)throw new AgentResponseError(error.message);throw error;}
-         return {...result,recordsPath:result.recordsPath??undefined,reviewDecision:result.reviewDecision??undefined};
-        }catch(error){
-         if(!(error instanceof AgentResponseError)||repair>=MAX_OUTPUT_REPAIRS)throw error;
-         text=await session.run(JSON.stringify({instruction:'Using only the analysis already completed in this session, return a complete JSON import preview with summary, recordsPath, warnings and reviewDecision. Correct the validation error. Do not repeat analysis, run tools, rewrite files, or invent artifacts. Preserve uncertainty and reported limitations.',validationError:error.message}),importAnswerSchema);
+        try{return parseImportPreview(text,input.workspace);}
+        catch(error){
+          if(!(error instanceof AgentResponseError)||repair>=MAX_OUTPUT_REPAIRS)throw error;
+          text=await session.run(importRepairPrompt(error.message),importAnswerSchema);
         }
       }
     }finally{await session.close();sessions.delete(session);}
   }
   return {prepare(input:ImportAgentInput,_observer?:ImportAgentObserver,onUsage?:(usage:TokenUsage)=>void){const task=execute(input,onUsage);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};
 }
+
+export const codexImportCapabilityDescriptor=defineImportCapabilityDescriptor({
+  apiVersion:IMPORT_CAPABILITY_API_VERSION,
+  id:'codex-import',
+  version:'1.0.0',
+  protocols:['codex-app-server'],
+  create:(options:Omit<AgentOptions,'reader'>,_prepareLaunch?:ImportAgentLaunch)=>createCodexImportAgent(options),
+});

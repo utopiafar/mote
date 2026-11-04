@@ -19,9 +19,7 @@ import {registerMemoryExtensions} from '../src/lifecycle-extensions.js';
 import {ExecutionFailure} from '../src/execution-engine.js';
 import {ProviderFailure} from '@mote/shared';
 import Fastify from 'fastify';
-import {registerMemoryRoutes} from '../src/memory-routes.js';
-import {MemoryIntegrationSettings} from '../src/memory-integration-settings.js';
-import {MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
+import {registerMemoryRuntimeRoutes} from '../src/features/memory/runtime.js';
 function fixture(t:TestContext,clock=Date.now){const directory=mkdtempSync(join(tmpdir(),'mote-lifecycle-execution-')),store=new Store(directory),engine=new ExecutionEngine(store,clock);const closers:(()=>Promise<unknown>)[]=[];t.after(async()=>{for(const close of closers.reverse())await close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});return {store,engine,closers};}
 function deferred(){let resolve!:()=>void;const promise=new Promise<void>(r=>resolve=r);return {promise,resolve};}
 function event(store:Store){store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(randomUUID(),new Date().toISOString());}
@@ -186,7 +184,7 @@ test('a permanent artifact extraction failure stops once across restart and resu
  for(let attempt=2;attempt<=3;attempt++){now+=3600000;await lifecycle.tick();assert.equal(calls,1);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.failures,1);}
  const exhausted=lifecycle.view().extensions.find(e=>e.id==='extraction')!;assert.equal(exhausted.status,'failed');assert.equal(exhausted.retryAt,undefined);assert.equal(exhausted.cursor,0);
  now+=86400000;await lifecycle.tick();await lifecycle.tick();assert.equal(calls,1,'automatic ticks cannot purchase another permanent failure');
- const app=Fastify();closers.push(()=>app.close());registerMemoryRoutes(app,{store,files,memories,memoryPipeline:pipeline,lifecycle,memoryIntegrationSettings:new MemoryIntegrationSettings(store,pipeline.strategies),memoryRecipeSettings:new MemoryRecipeSettings(store,pipeline.strategies),evidenceReader:{} as never,modelSettings:{} as never,query:async()=>{throw Error('Unexpected query');},reviewExtraction:async(_input,result)=>result});
+ const app=Fastify();closers.push(()=>app.close());registerMemoryRuntimeRoutes(app,{store,files,memories,pipeline:()=>pipeline,lifecycle:()=>lifecycle,evidenceReader:{} as never,modelSettings:{} as never,modelAuthorizationHost:{} as never,availableModelConnections:()=>[],readable:()=>true,writable:()=>true});
  const status=await app.inject({method:'GET',url:'/api/memory-settings'});assert.equal(status.statusCode,200);assert.equal(status.json().extensions.find((item:{id:string})=>item.id==='extraction').status,'failed','the API must not mask the terminal lifecycle state with a child job status');
  const stale=await app.inject({method:'POST',url:'/api/memory-settings/extraction/'+randomUUID()+'/retry'});assert.equal(stale.statusCode,409);assert.equal(calls,1);
  fail=false;const resumed=await app.inject({method:'POST',url:'/api/memory-settings/extraction/'+exhausted.active!.id+'/retry'});assert.equal(resumed.statusCode,202,resumed.body);await lifecycle.tick();assert.equal(calls,2);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.active,undefined);
