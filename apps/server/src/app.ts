@@ -1,9 +1,5 @@
-import {createMemoryModelAuthorityJobReader} from './memory-model-authority.js';
-import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
-import {createModelEvidenceAuthority,contextFailure} from './model-evidence-authority.js';
-import type {QueryAgent,AgentRunFinalizer,QueryRunLease} from './query-agent.js';
-import {createHostRunUsageObserver} from './agent-runtime-events.js';
-import {AgentRuntimeHost} from './agent-runtime-host.js';
+import {createModelEvidenceAuthority} from './model-evidence-authority.js';
+import type {QueryAgent,AgentRunFinalizer} from './query-agent.js';
 import type {FeatureServices} from './feature-services.js';
 import {queryWithAttachmentsSchema,insightRequestSchema} from './query-request.js';
 import {ServerResources} from './server-resources.js';
@@ -13,15 +9,19 @@ import {assembleSources} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
 import {assembleMedia,assemblePerception,assembleProcessing} from './assembly/processing.js';
 import {memoryInputs,memoryRuntime} from './assembly/memory.js';
+import {agentInputs,assembleAgent} from './assembly/agent.js';
+import {assembleQueryRuntime,assembleDelegation} from './assembly/query.js';
+import {workInputs,assembleInsightRuns,assembleActions,assembleActivity} from './assembly/work.js';
+import {assembleImports} from './assembly/imports.js';
+import {assembleConnectors} from './assembly/connectors.js';
+import {createServerLifecycle,installServerLifecycleHooks} from './assembly/lifecycle.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
-import {modelConnection,type ModelConnection,type AutomaticModelPurpose} from './background-model-authorization.js';
-import {agentModelConnection,captureModelIdentity,sourceModelIdentity} from './model-authorization-host.js';
-import {MODEL_FEATURES,DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
+import {modelConnection,type ModelConnection} from './background-model-authorization.js';
+import {agentModelConnection,captureModelIdentity} from './model-authorization-host.js';
+import {MODEL_FEATURES} from '@mote/shared/models';
 import type {ObservationName} from './execution-observability.js';
 import {assertMemoryImageGrants} from './memory-image-grants.js';
 import {memoryReadRanges} from './memory-read-context.js';
-import {retainFailureContext} from './execution-failures.js';
-import {OwnerQuestions} from './owner-questions.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,formatEvidenceRef} from '@mote/shared';
 import {imageOutput} from './evidence-image.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
@@ -29,7 +29,7 @@ import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limit
 import { Context } from '@deepseek-ai/cordis';
 import cors from '@fastify/cors';
 import staticFiles from '@fastify/static';
-import { AgentNotConfiguredError,AgentYieldError,originalEvidenceReceipt,createImportAgent,type AgentTraceEvent,type ContextReader,type QueryInput } from '@mote/agent';
+import { originalEvidenceReceipt,type ContextReader,type QueryInput } from '@mote/agent';
 import { ProviderFailure,captureSchema,type CaptureInput,type CaptureRecord,type QueryResult } from '@mote/shared';
 import { negotiateLocale } from '@mote/shared/i18n';
 import Fastify,{ type FastifyInstance,type FastifyReply,type FastifyRequest } from 'fastify';
@@ -38,23 +38,16 @@ import { existsSync,readFileSync } from 'node:fs';
 import { join,relative,sep } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
-import { Actions } from './actions.js';
-import { ActivityProjection } from './activity.js';
-import { assertCurrentDelegationSchema,DelegationRuntime } from './delegation-runtime.js';
-import { DelegatedQueryRuns } from './delegated-query-runs.js';
-import {runQueryQualityExperiment,type QueryQualityStrategy,type QueryQualityCheckpoint} from './query-quality-experiment.js';
+import { assertCurrentDelegationSchema } from './delegation-runtime.js';
+import type {QueryQualityStrategy} from './query-quality-experiment.js';
 import { registerMemoryDelegation } from './memory-delegation.js';
-import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
 import type {RequestAuthority} from './plugins/central-contracts.js';
-import { registerConnectors } from './connectors/index.js';
-import { Conversations } from './conversations.js';
-import { combineDependencies,resolveDependencies } from './conversation-lineage.js';
-import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
-import { safeError,type AgentTraceContext } from './diagnostics.js';
+import { resolveDependencies } from './conversation-lineage.js';
+import { safeError } from './diagnostics.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import { ExecutionFailure } from './execution-engine.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
@@ -64,27 +57,21 @@ import type { TranscriptionProvider } from './file-processing.js';
 import {fileOriginalRawRef } from './file-raw-reader.js';
 import { registerFileRoutes } from './file-routes.js';
 import { moteText,requestLocale } from './i18n.js';
-import { prepareImportInput } from './import-runtime.js';
-import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
+import type { ImportPreparation,ImportPreparationResult } from './imports.js';
 import { INGRESS_PROTOCOL_VERSION,collectorIngressWrite } from './ingress.js';
-import { InsightRuns } from './insight-runs.js';
-import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
 import {installCaptureMemoryIntake} from './capture-memory-intake.js';
-import {AutomaticActivity} from './automatic-activity.js';
-import { freezeSemanticContextTime,type LifecycleExtension } from './memory-lifecycle.js';
+import type {LifecycleExtension } from './memory-lifecycle.js';
 import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import {PluginCenter} from './plugin-center.js';
 import {GitHubPluginReleases} from './plugin-release.js';
 import {registerPluginRoutes} from './plugin-routes.js';
 import { reviewMemory } from './memory-review.js';
-import { ReloadableAgent,applyModelSettings,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity } from './model-agent.js';
+import type { ModelAgentFactory } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
 import { ModelSettingsError } from './model-settings.js';
 import { linkOperationParent } from './operation-projection.js';
-import { PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput } from './python-source-pack-executor.js';
-import type {QueryScope} from './query-scope.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
 import { semanticProcessor } from './semantic-extraction.js';
 import { conversationUnderstandingProcessor } from './conversation-understanding.js';
@@ -113,7 +100,6 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   config=bootstrap.config;
   const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store;
   assertCurrentDelegationSchema(store);
-  const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   let availableModelConnections=():ModelConnection[]=>[];
   const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
     bootstrap,config,store,resources,serverVersion,
@@ -160,15 +146,13 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   let catalogChangesEnabled=false;
   const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts}=assembleMaterials({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
-  const memories=evidenceReader.memories,conversations=new Conversations(store);
-  conversations.onTurnReceived=turnId=>modelAuthorizationHost.conversation(turnId);
+  const memories=evidenceReader.memories,{conversations}=agentInputs({store,modelAuthorizationHost});
   const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
   resources.beforeClose(()=>pluginCenter.close());
   // Bindings are built by memoryRuntime below, but their disposer keeps its
   // original slot: released after active queries, connectors and the agent.
   resources.defer(()=>bindings.current?.close());
-  const ownerQuestions=new OwnerQuestions(store);
-  backendContext.provide('moteOwnerQuestions',ownerQuestions);
+  const {ownerQuestions}=workInputs({store,backendContext});
   const archivedFiles=bootstrap.vault.archivedFiles;
   const contentStorage=bootstrap.vault.attachContent(files,configService,enabled=>{config.contentEncryptionEnabled=enabled;});
   const connections=authorizationPlatform.assembly.connections!;
@@ -190,7 +174,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const modelEvidenceAuthority=createModelEvidenceAuthority({resolveLineage:value=>resolveDependencies(store,value),
     assertImageGrants:(materialInputs,images)=>assertMemoryImageGrants(store,materialInputs,images),reader:evidenceReader,conversations,sourceContexts,
     authorization:modelAuthorization,host:modelAuthorizationHost,readEvidence:ids=>memories.readEvidence(ids)});
-  const {contextDependencies,sourceContextDependencies,pinProcessingEvidence}=modelEvidenceAuthority;
+  const {pinProcessingEvidence}=modelEvidenceAuthority;
   const assertModelEvidence=(input:QueryInput|undefined)=>observeMemory(input,'query_assert',()=>modelEvidenceAuthority.assert(input));
   const assertModelEvidenceAsync=(input:QueryInput)=>observeMemoryAsync(input,'query_assert',()=>modelEvidenceAuthority.assertAsync(input));
   // Owner inspection and external read-only clients do not send to our model.
@@ -240,30 +224,12 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     ...(baseReader.readImage?{readImage:observeRead('reader_image',baseReader.readImage)}:{}),
     ...(baseReader.memories?{memories:observeRead('reader_memories',baseReader.memories)}:{}),
   };
-  const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
-  resources.defer(()=>agent.close());
-  const codex={executable:config.codexBin,home:config.codexHome};
-  const runtimeHost:AgentRuntimeHost=new AgentRuntimeHost({
-    codex,createModelAgent:dependencies?.createModelAgent,authorization:modelAuthorization,admission:providerAdmission,
+  const {agent,factory,codex}=await assembleAgent({
+    config,resources,diagnostics,configurationPlatform,reader,modelAuthorizationHost,
+    createModelAgent:dependencies?.createModelAgent,authorization:modelAuthorization,admission:providerAdmission,
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
-    agentGate,interactiveGate,modelContext,modelOperation,archiveImagesEnabled:()=>perception.settings().allowQueryImages,
-    retainSnapshot:input=>observeMemory(input,'catalog_snapshot',()=>evidenceReader.retainMemorySnapshot(input)),
-    releaseSnapshot:input=>evidenceReader.releaseMemorySnapshot(input),agentStarted:()=>queryAccounting.getStore()?.agentStarted(),
-    recordTiming:(input,timing)=>diagnostics.record('agent.fragment_timing',{jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,unit:'agent_fragment',...timing},'info'),
-  });
-  resources.defer(()=>runtimeHost.close());
-  const factory:ModelAgentFactory=runtimeHost.factory;
-  let initialAgent=dependencies?.agent?runtimeHost.wrap(dependencies.agent,modelSettingsFromConfig(config),{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
-  await configurationPlatform.bindModels({
-    codex,
-    prepare:async (settings,profiles,defaultProfileId,previousSettings)=>{
-      const candidate=await createModelRegistry(profiles,reader,factory,initialAgent,defaultProfileId);initialAgent=undefined;
-      return agent.prepare(candidate,()=>applyModelSettings(config,settings),()=>applyModelSettings(config,previousSettings??settings));
-    },
-    probe:settings=>testModelConnection(settings,async(selected,reader)=>{
-      const id=randomUUID(),identity:ModelAgentIdentity={kind:'probe',id},candidate=await factory(selected,reader,undefined,identity),connection=agentModelConnection(identity,selected);
-      return {...candidate,query:input=>modelAuthorizationHost.manual('model-probe:'+id,[connection],signal=>candidate.query({...input,signal}),input.signal,'probe')};
-    }),
+    agentGate,interactiveGate,modelContext,modelOperation,queryAccounting,
+    allowQueryImages:()=>perception.settings().allowQueryImages,observeMemory,evidenceReader,agent:dependencies?.agent,
   });
   const modelSettings=configurationPlatform.modelSettings;
   let additionalModelConnections=():ModelConnection[]=>[];
@@ -274,9 +240,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   };
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
-  let queryRuns:DelegatedQueryRuns;
-  const insightRuns=new InsightRuns(store,{executor,evidenceReader});
-  resources.defer(()=>insightRuns.close());
+  const {insightRuns}=assembleInsightRuns({store,resources,executor,evidenceReader});
   const {workflows,processing,resolveFileModel,mediaModelAuthority}=await assembleProcessing({store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider});
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
   const withMediaOwnerIntent=<T>(id:string,task:()=>Promise<T>|T)=>modelAuthorizationHost.manual('owner-media:'+randomUUID(),availableModelConnections(),async()=>task(),undefined,'manual',[captureModelIdentity(id)]);
@@ -285,7 +249,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   const {perception}=assemblePerception({store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
   additionalModelConnections=()=>[...processing.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
-  workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
+  workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return queryRuntime.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
   workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
     resolveMemoryPreparation:contract=>memoryPipeline.conversationPreparation(contract),
     selection:config=>{const selected=modelSettings.select('memory',typeof config?.profileId==='string'?config.profileId:undefined);
@@ -294,7 +258,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
       ranges:page.spans.map(span=>({id:span.evidenceId!,offset:span.evidenceOffset!,length:span.pageRange.end-span.pageRange.start}))}),
     // The processor owns one receipt through model, parsing and publication.
     // Keep queryAgent admission/diagnostics without metering the same run twice.
-    query:input=>queryAgent(input,'query','memories','caller'),
+    query:input=>queryRuntime.queryAgent(input,'query','memories','caller'),
   }));
   const semanticArtifacts=async(ids:string[],operationId?:string,mode?:'lifecycle')=>{
     const ready:string[]=[];
@@ -373,12 +337,8 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     if(error instanceof ConfigServiceError)return reply.code(error.statusCode).send({error:error.code,message:error.code==='config_conflict'?moteText('配置已发生变化，请刷新后重试。'):moteText('配置未能应用，请检查配置状态后重试。'),requestId:req.id});
     reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
-  const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured,{semanticArtifacts,executor,configService});
-
-  resources.defer(()=>actions.close());
-  const connectors=await registerConnectors(app,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,ownerAuthorization:header=>{if(validBearer({headers:{authorization:header}}))return true;const c=connections.authenticate(header);return !!c&&connections.isOwner(c);},mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)},dependencies?.connectorTesting);
-
-  resources.defer(()=>connectors.close());
+  const {actions}=assembleActions({store,files,resources,agent,executor,configService,semanticArtifacts,queryAgent:(input,operation,moduleId,usageOwner)=>queryRuntime.queryAgent(input,operation,moduleId,usageOwner)});
+  const {connectors}=await assembleConnectors({app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,connectorTesting:dependencies?.connectorTesting});
   // Bounded transport batch with independent durable acknowledgements. Validate the
   // entire envelope and credential scope before writing any member of the batch.
 
@@ -392,161 +352,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     screenLocked:z.enum(['true','false']).transform(value=>value==='true').optional(),playbackType:z.enum(['local','remote','unknown']).optional(),
   }).strict().refine(value=>!value.after||!value.before||Date.parse(value.after)<Date.parse(value.before),{message:'Invalid time range'});
 
-  let closing=false;
-  const activeQueries=new Set<Promise<QueryResult>>();
-  resources.defer(async()=>{closing=true;await Promise.allSettled([...activeQueries]);});
-  function withQueryModelAuthority<T>(input:QueryInput,moduleId:string,task:(signal:AbortSignal)=>Promise<T>){
-    const job=input.traceContext?.jobId?memoryModelAuthorityJobs.modelAuthorityJob(input.traceContext.jobId):undefined;
-    const grants=job?.automaticGrants??[];
-    const candidates=()=>grants.length?grants.map(grant=>sourceModelIdentity(grant.sourceId,grant.inputKey)):job?modelAuthorizationHost.evidenceTriggers(job.evidenceIds):modelAuthorizationHost.queryTriggers(input);
-    // Each owner-selected recipe is an independent prospective consumer. Its
-    // immutable input grant scope prevents one sibling from consuming another's
-    // trigger, without letting retries mint a new purpose from their job ID.
-    const memoryScope=grants[0]?.scope;
-    if(memoryScope&&grants.some(grant=>grant.scope!==memoryScope))throw new StoreError('Memory job mixes recipe authorization scopes',409);
-    const purpose:AutomaticModelPurpose=moduleId==='memories'&&memoryScope?`memory:${memoryScope}`:moduleId==='activity'?'activity':moduleId==='actions'?'actions':moduleId==='insights'?'insight':moduleId==='memories'?'memory':moduleId==='semantic'?'semantic':'working';
-    const id=job?'automatic-memory:'+job.id:'automatic-'+moduleId+':'+(input.traceContext?.operationId??randomUUID());
-    return modelAuthorizationHost.automatic(id,purpose,candidates,signal=>{
-      const batch=input.traceContext?.batchId?executor.get(input.traceContext.batchId):undefined;
-      if(job&&batch?.kind==='memory.batch'&&batch.input.jobId===job.id)modelAuthorization.bindCurrentStep(batch);
-      return task(signal);
-    },input.signal);
-  }
-  function queryAgent(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations',usageOwner:'query'|'caller'='query') {
-    return withQueryModelAuthority(input,moduleId,signal=>queryAgentAuthorized({...input,signal},operation,moduleId,usageOwner));
-  }
-  function queryAgentAuthorized(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations',usageOwner:'query'|'caller'='query') {
-    if(closing)throw new StoreError('Central node is shutting down',503);
-    input=pinProcessingEvidence(input);
-    if(input.skill==='personal-insight'&&!input.validateOutput)input={...input,validateOutput:validateInsightOutput};
-    const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
-    input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
-    if(input.contextEvidenceDependencies)input={...input,contextEvidenceDependencies:resolveDependencies(store,input.contextEvidenceDependencies)};
-    const configuration=modelConfiguration(profile.id,{...profile.settings,model:input.modelOverride!},modelSettings.view().revision);
-    const traceContext:AgentTraceContext={...input.traceContext,traceId:randomUUID(),requestId:diagnostics.requestId(),operation,moduleId,profileId:profile.id,provider:profile.settings.provider,protocol:profile.settings.protocol,model:input.modelOverride??profile.settings.model};
-    const startedAt=Date.now();let lastActivity=startedAt,failureRunId:string|undefined;
-    const trace=(event:AgentTraceEvent)=>{
-      if(event.runId)failureRunId=event.runId;
-      lastActivity=Date.now();diagnostics.agentTrace(event,traceContext);
-      if(event.type==='tool.rejected'){
-        const payload=(event.payload??{}) as Record<string,unknown>;
-        diagnostics.record('agent.tool_rejected',{requestId:traceContext.requestId,jobId:traceContext.jobId,batchId:traceContext.batchId,batchIndex:traceContext.batchIndex,attempt:traceContext.attempt,runId:event.runId,
-          toolErrorCode:typeof payload.code==='string'?payload.code:undefined,
-          remainingCalls:typeof payload.remainingCalls==='number'?payload.remainingCalls:undefined,
-          remainingCharacters:typeof payload.remainingCharacters==='number'?payload.remainingCharacters:undefined,
-          repeatCount:typeof payload.repeatCount==='number'?payload.repeatCount:undefined},'warn');
-      }
-      input.onTrace?.(event);
-    };
-    trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,evidenceReadRanges:input.evidenceReadRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
-    const revision=store.deletionRevision();
-    const usageAttribution={agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()};
-    // Trusted per-query run accounting. Only app callbacks mutate this state and
-    // none of them throw: observation isolation must not govern execution.
-    const runState:{mode?:AgentRunFinalizer;runId?:string;hostEvents:boolean;hostTerminal:boolean;violation?:string}={hostEvents:false,hostTerminal:false};
-    // The Host path owns usage through one C06 receipt; capture its terminal
-    // receipt so the response reports the finalized sample without a second
-    // finalize. Constructing this meter writes nothing until a model starts.
-    const hostMeterBase=usageOwner==='query'?observabilityAssembly.admittedUsage(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
-    let hostReceipt:import('@mote/shared').UsageReceipt|undefined;
-    const hostMeter=hostMeterBase&&{...hostMeterBase,complete:()=>hostReceipt=hostMeterBase.complete(),fail:()=>hostReceipt=hostMeterBase.fail()};
-    const meter=usageOwner==='query'?admittedUsageFactory({mode:()=>runState.mode,host:()=>hostMeterBase})(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,usageAttribution):undefined;
-    let hostObserver:ReturnType<typeof createHostRunUsageObserver>|undefined;
-    // Latch violations always reject. A missing Host terminal is only a success
-    // gap: the leaf reports host before any Host session exists, so an early
-    // failure or pre-cancel must keep its original error instead of being
-    // rewritten into a terminal gap.
-    const runViolation=()=>runState.violation?new StoreError('Agent run accounting contradiction',409):undefined;
-    const runSuccessGap=()=>runState.mode==='host'&&!runState.hostTerminal?new StoreError('Agent run terminal is missing',409):undefined;
-    const runLease:QueryRunLease={onFinalizer:mode=>{
-      if(runState.mode!==undefined&&runState.mode!==mode){runState.violation??='finalizer_mode_contradiction';return;}
-      runState.mode=mode;
-    }};
-    // Agent implementations account admitted model/tool/repair work. A second
-    // wall-clock deadline here would charge host resource-gate waiting again.
-    const deadline=agentDeadline(input.signal,null),taskSignal=deadline.signal;
-    let disclosedSourcePins=sourceContextDependencies(input);
-    const disclosedProcessingIds:string[]=[],processingIds=new Set<string>();
-    const observed:QueryInput&{processingDisclosedEvidenceIds?:string[]}={...input,contextSourceContextDependencies:disclosedSourcePins,signal:taskSignal,traceContext,
-      ...(input.responseMode==='memory-extraction'&&input.evidenceIds!==undefined?{processingDisclosedEvidenceIds:disclosedProcessingIds,onEvidence:(records:readonly import('@mote/agent').ContextRecord[])=>{
-        for(const record of records)if(!processingIds.has(record.id)){processingIds.add(record.id);disclosedProcessingIds.push(record.id);}
-        input.onEvidence?.(records);
-      }}:{}),
-      onSourceContextDependencies:pins=>{
-        const next=combineSourceContextDependencies([disclosedSourcePins,pins]);
-        assertSourceContextDependencies(sourceContexts,next);
-        disclosedSourcePins=next;observed.contextSourceContextDependencies=next;
-        input.onSourceContextDependencies?.(pins);
-      },
-      onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,
-      onUsage:(tokens:import('@mote/shared').TokenUsage)=>{if(runState.mode!=='host')meter?.update(tokens);input.onUsage?.(tokens);},
-      onHostRunEvent:(envelope)=>{
-        // Bind only after the chosen leaf declared host and only from the first
-        // trusted Host identity; never infer the mode from an event.
-        if(runState.mode!=='host'){runState.violation??='host_event_without_host_mode';return;}
-        const identity=envelope?.identity;
-        const runId=identity&&typeof identity==='object'&&typeof identity.runId==='string'?identity.runId:undefined;
-        if(!runId){runState.violation??='invalid_host_identity';return;}
-        if(runState.runId===undefined)runState.runId=runId;
-        else if(runState.runId!==runId){runState.violation??='run_identity_contradiction';return;}
-        runState.hostEvents=true;
-        if(envelope.event.type==='run.terminal')runState.hostTerminal=true;
-        if(hostMeter)(hostObserver??=createHostRunUsageObserver({runId,meter:hostMeter,diagnostics}))(envelope);
-      }};
-    const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
-    const promise=diagnostics.measure('agent',operation,()=>(meter?meter.run(()=>agent.query(observed,runLease)):agent.query(observed,runLease)).then(result=>{
-      taskSignal?.throwIfAborted();
-      assertModelEvidence(observed);
-      if(observed.executionLane==='interactive'&&observed.evidenceIds&&result.citations.some(citation=>![...observed.evidenceIds!,...(observed.directImages?.map(image=>image.id)??[])].includes(citation.id)))throw contextFailure('context_evidence_restricted');
-      const selectedDependencies=observed.executionLane==='interactive'&&observed.evidenceIds?{version:1 as const,complete:true,ids:[...observed.evidenceIds,...(observed.directImages?.map(image=>image.id)??[])]}:undefined;
-      const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies??selectedDependencies]));
-      // Metadata/declaration reads also pin their original Material lineage.
-      // They need correction fences even when no original quote was expanded.
-      if(evidenceDependencies){
-        const historicalIds=new Set([...(input.conversation?.historyContext?input.conversation.evidenceDependencies?.ids??[]:[]),...(input.historyContext?input.contextEvidenceDependencies?.ids??[]:[])]);
-        assertModelEvidence({question:'',contextEvidenceDependencies:{...evidenceDependencies,ids:evidenceDependencies.ids.filter(id=>!historicalIds.has(id))}});
-      }
-      const sourcePins=combineSourceContextDependencies([disclosedSourcePins,result.sourceContextDependencies]);
-      assertSourceContextDependencies(sourceContexts,sourcePins);
-      // A long-running review may overlap routine imports and derived-layer updates.
-      // Only an original actually disclosed to this run being deleted can make
-      // its answer unsafe to publish; other archive changes belong to later runs.
-      if(store.deletionRevision()!==revision){
-        const used=new Set([...(input.derivedContextEvidenceIds??[]),...(contextDependencies(input)?.ids??[]),...(evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
-        for(const row of store.db.prepare("SELECT id FROM changes WHERE seq>? AND operation='delete'").iterate(revision)){
-          if(!evidenceDependencies?.complete||used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
-        }
-      }
-      // A contradiction or a Host success without its terminal latches before
-      // any success finalize or product commit.
-      const accounting=runViolation()??runSuccessGap();
-      if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
-      trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
-      const completedUsage=runState.mode==='host'?hostReceipt:meter?.completed();
-      return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
-    }).catch(error=>{
-      // The Host path finalizes only through its observer's run terminal; the
-      // legacy path keeps its existing finalizers. A latched contradiction
-      // replaces the outcome after the legacy finalizer has settled its row.
-      if(error instanceof AgentYieldError){
-        // Accounting is decided before the yield finalizer: a contradiction
-        // must fail the started legacy receipt rather than complete it.
-        const accounting=runViolation();
-        if(accounting){if(runState.mode!=='host')meter?.failed(accounting);throw accounting;}
-        const gap=runSuccessGap();
-        if(gap){if(runState.mode!=='host')meter?.failed(gap);throw gap;}
-        if(runState.mode!=='host')meter?.completed();
-        trace({type:'query.yielded',status:'waiting'});throw error;
-      }
-      const wait=error instanceof ProviderFailure&&(error.details.admissionWaiting===true||error.details.category==='transient'&&error.details.code==='rate_limited')?{code:error.details.code,retryAfterMs:error.details.retryAfterMs}:error instanceof ExecutionFailure&&error.category==='waiting'?{code:error.code,retryAfterMs:error.retryAfterMs}:undefined;
-      if(runState.mode!=='host')meter?.failed(error);
-      const accounting=runViolation();
-      if(accounting)throw accounting;
-      retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId});
-      trace(wait?{type:'query.waiting',status:'waiting',payload:wait}:{type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;
-    }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
-    activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
-  }
+  const serverLifecycle=createServerLifecycle();
+  const queryRuntime=assembleQueryRuntime({store,resources,lifecycle:serverLifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,admittedUsageFactory,modelEvidenceAuthority,assertModelEvidence,sourceContexts});
+  const {activeQueries,withQueryModelAuthority,queryAgent,insight}=queryRuntime;
   const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
     draftOrigin,strategy,deletions:memories.deletions,authorizeDeletionEvidence:ids=>memoryPipeline.inputs.assertDeletion(ids,input.modelProfileId),cache:memoryReviews,snapshot:()=>{
       const ids=input.evidenceReadRanges?[...new Set([...(input.evidenceIds??[]),...memoryReadRanges(result,input.evidenceRanges??[],input.evidenceReadRanges).map(range=>range.id)])]:input.evidenceIds??[];
@@ -579,123 +387,17 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
   };
-  const {memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryIntegrationSettings,memoryTopics}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,bindings,topics,integrationSettings,topicsCanPublish:()=>catalogChangesEnabled&&!closing,review:reviewExtraction,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
+  const {memoryBindings,memoryAdapters,memoryReviews,memoryPublication,memoryPipeline,lifecycle,working,memoryIntegrationSettings,memoryTopics}=memoryRuntime({store,resources,configService,diagnostics,executor,usageLedger,memories,conversations,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryAutomation,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,bindings,topics,integrationSettings,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),review:reviewExtraction,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
 
-  const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
-  resources.defer(async()=>{await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));await Promise.allSettled([...importTasks.values()]);});
-  const sourcePacks=new Map((config.importPythonPacks??[]).map(spec=>{
-    const executor=new PythonSourcePackExecutor<PythonImportOutput>({...spec,outputSchema:pythonImportOutputSchema});
-    return [spec.id,{revision:sha256(JSON.stringify(spec)),prepare:pythonImportPreparation(executor)}] as const;
-  }));
-  const imports=new ImportStore(store,archivedFiles,sources,{executor,intake:processing.runtime.intake,fileStore:files,
-    sourcePacks,
-    bindPhaseAuthority:step=>{
-      // Only this import's explicit owner action may fill a missing binding.
-      // An already-bound step keeps its original durable authority on retries.
-      if(modelAuthorization.ownerIntent(step.operationId)&&!modelAuthorization.stepAuthority(step.id))modelAuthorization.bindCurrentStep(step);
-    },
-    prepare:dependencies?.prepareImport??(async input=>{
-      if(!agent.configured)throw new AgentNotConfiguredError();
-      const selected=modelSettings.select('import');if(!agent.configuredFor(selected.id))throw new AgentNotConfiguredError();
-      const settings=selected.settings,connection=agentModelConnection({kind:'profile',id:selected.id},settings),prepared=await prepareImportInput(input);modelAuthorization.assertCurrent(connection);
-      const meter=admittedUsage(settings.provider,settings.model,'document-import',{agentId:'document-import',moduleId:'imports',skillId:'document-import',operationId:input.operationId});
-      const operationId=input.operationId??'import:'+randomUUID();
-      let runtime:ReturnType<typeof createImportAgent>|undefined;const abort=()=>{void runtime?.close();};input.signal?.addEventListener('abort',abort,{once:true});
-      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings,connection),authorizeModelRequest:()=>{modelAuthorization.assertCurrent(connection);authorizeModelRequest();}});importAgents.add(runtime);const {signal:_signal,operationId:_operationId,...request}=prepared;const result=await meter.run(()=>agentGate.run(()=>modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>meter.update(usage)))),input.signal,input.operationId));input.signal?.throwIfAborted();modelAuthorization.assertCurrent(connection);meter.completed();return result;}
-      catch(error){meter.failed(error);throw error;}finally{input.signal?.removeEventListener('abort',abort);try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
-    }),
-    // Each original receipt owns its automatic authorization. Ready materials
-    // enter the shared rolling queue; import completion must not create a second job.
-    onImported:async()=>({}),
-  });
-  resources.defer(()=>imports.stop());
-  const launchOwnerImport=(id:string,task:()=>Promise<unknown>)=>{const work='owner-import:'+randomUUID();modelAuthorization.manual(work,'manual',['import:'+id],availableModelConnections());launchImport(id,()=>modelAuthorization.run(work,task));};
+  const {imports,importTasks,launchImport,launchOwnerImport}=assembleImports({app,store,resources,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
   const withMediaOwnerBatch=async<T>(ids:readonly string[],task:()=>T)=>modelAuthorization.manualCommand('owner-media-batch:'+randomUUID(),ids.map(captureModelIdentity),availableModelConnections(),task);
-  function launchImport(id:string,task:()=>Promise<unknown>){
-    if(closing)throw new StoreError('Central node is shutting down',503);
-    if(importTasks.has(id))return;
-    const promise=Promise.resolve().then(()=>closing?undefined:task());
-    importTasks.set(id,promise);
-    void promise.finally(()=>importTasks.delete(id)).catch(()=>{diagnostics.record('agent.failed',{category:'internal'},'error');});
-  }
   const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
 
-  const delegation=new DelegationRuntime(store,executor,{observePump:()=>executionObserver.hostTick(),concurrency:()=>runtimeSettings.execution().agentConcurrency,interactiveConcurrency:()=>runtimeSettings.execution().interactiveConcurrency,
-    validateDependencies:ids=>assertModelEvidence({question:'',contextEvidenceDependencies:{version:1,complete:true,ids:[...ids]}}),
-    validateSourceContextDependencies:pins=>assertSourceContextDependencies(sourceContexts,pins),
-    revalidateEvidence:async receipts=>{
-      const ids=[...new Set(receipts.map(receipt=>receipt.id))],policy=new EvidenceExposurePolicy();
-      if(ids.some(id=>!evidenceReader.deletionContextAllowed(id,policy)))throw contextFailure('context_evidence_restricted');
-      const originals=evidenceReader.context(evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id))));
-      if(originals.length!==ids.length)throw contextFailure('context_evidence_restricted');
-      return originals;
-    },
-  });
-  resources.defer(()=>delegation.close());
-  const {prepare:prepareDelegatedQuery}=createQueryPreparation({store,files,conversations,delegation,executor,modelSettings,working,
-    lifecycleSettings:()=>lifecycle.settings(),archiveReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
-    query:input=>queryAgent(input,'query','conversations'),qualityStrategy:dependencies?.queryQualityExperiment});
-  function qualityCheckpoint(input:QueryInput):QueryQualityCheckpoint|undefined{
-    if(!dependencies?.queryQualityExperiment||!input.hostControlChannel)return;
-    const work=delegation.get(input.traceContext!.operationId!),stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
-    const assertCurrent=()=>{
-      input.signal?.throwIfAborted();
-      if(!fence||!executor.isCurrentInputGrant(stepId,fence))throw new StoreError('Query stage grant expired',409);
-      const saved=delegation.journal.payload<SavedQuery>(work.id);
-      if(saved.qualityStrategy!==dependencies.queryQualityExperiment)throw new StoreError('Query experiment strategy changed',409);
-      const selected=modelSettings.select('chat',saved.prepared!.modelProfileId),current=modelConfiguration(selected.id,{...selected.settings,model:saved.prepared!.modelOverride??selected.settings.model},modelSettings.view().revision);
-      if(saved.configurationFingerprint!==current.fingerprint)throw new StoreError('Query model configuration changed',409);
-      assertModelEvidence(saved.prepared);
-    };
-    const assertResult=(result:QueryResult)=>{assertModelEvidence({...delegation.journal.payload<SavedQuery>(work.id).prepared!,contextEvidenceDependencies:result.evidenceDependencies});assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);};
-    return {assertCurrent,read:stage=>{
-      assertCurrent();const result=delegation.journal.payload<SavedQuery>(work.id).qualityStages?.[stage];if(result)assertResult(result);return result;
-    },write:(stage,result)=>{
-      const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');
-      try{
-        assertCurrent();assertResult(result);
-        delegation.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
-        delegation.recordSourceContextDependencies(work.id,result.sourceContextDependencies??[]);
-        const saved=delegation.journal.payload<SavedQuery>(work.id);saved.qualityStages={...saved.qualityStages,[stage]:result};delegation.journal.savePayload(work.id,saved);
-        if(own)store.db.exec('COMMIT');
-      }catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
-    }};
-  }
-  queryRuns=new DelegatedQueryRuns(store,delegation,{
-    contextTime:()=>freezeSemanticContextTime(dependencies?.semanticContextTime),
-    resolveInput:raw=>{
-      const input=queryWithAttachmentsSchema.parse(raw);
-      const previous=input.conversationId?conversations.get(input.conversationId).scope:undefined;
-      // Freeze resolved selection in the accepted run, before asynchronous preparation.
-      const selected=input.evidenceIds?{...input,anchorEvidenceIds:null,anchorMaterialRef:null}:
-        input.anchorEvidenceIds?{...input,evidenceIds:null,anchorMaterialRef:null}:
-        input.anchorMaterialRef?{...input,evidenceIds:null,anchorEvidenceIds:null}:
-        {...input,...(input.evidenceIds===undefined&&previous?.evidenceIds?{evidenceIds:[...previous.evidenceIds]}:{}),...(input.anchorEvidenceIds===undefined&&previous?.anchorEvidenceIds?{anchorEvidenceIds:[...previous.anchorEvidenceIds]}:{}),...(input.anchorMaterialRef===undefined&&previous?.anchorMaterialRef?{anchorMaterialRef:previous.anchorMaterialRef}:{})};
-      if(selected.anchorMaterialRef&&!evidenceReader.queryMaterialReference(selected.anchorMaterialRef,{
-        ...(selected.after?{after:selected.after}:{}),...(selected.before?{before:selected.before}:{}),...(selected.deviceId?{deviceId:selected.deviceId}:{})
-      }))throw Object.assign(new StoreError(moteText('参考原件暂不可用，请清除参考后继续。'),409),{code:'context_evidence_restricted'});
-      return selected;
-    },
-    prepare:prepareDelegatedQuery,
-    query:input=>runQueryQualityExperiment(input,dependencies?.queryQualityExperiment??'base',(next,stage)=>queryAgent({...next,traceContext:{...next.traceContext,phase:'quality.'+stage}},'query',stage==='base'?'conversations':'query.'+stage),qualityCheckpoint(input)),
-    operationUsage:(operationId,createdAt,finishedAt)=>usageLedger.operation(operationId,createdAt,finishedAt),
-    commit:(body,result,work)=>{
-      const {conversationId,question,attachmentIds=[]}=queryWithAttachmentsSchema.parse(body),saved=delegation.journal.payload<SavedQuery>(work.id),prepared=saved.prepared!;
-      assertModelEvidence(prepared);
-      assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);
-      delegation.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
-      const previous=conversationId?conversations.get(conversationId):undefined,scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone','evidenceIds','anchorEvidenceIds','anchorMaterialRef'] as const)if(prepared[key]!==undefined)Object.assign(scope,{[key]:prepared[key]});
-      if(prepared.historicalSelection)Object.assign(scope,prepared.historicalSelection);
-      return conversations.append(previous,{question,...scope,attachments:prepared.directImages?.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result);
-    },
-    failure:(body,error)=>{
-      const {conversationId,question,evidenceIds,anchorEvidenceIds,anchorMaterialRef,...selected}=queryWithAttachmentsSchema.parse(body),scope:QueryScope={...(evidenceIds?{evidenceIds}:{}),...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{})};for(const key of ['after','before','deviceId','timeZone'] as const)if(selected[key]!==undefined&&selected[key]!==null)scope[key]=selected[key]!;
-      const failure=safeError(error);return conversations.appendFailure(conversationId?conversations.get(conversationId):undefined,{question,...scope},{code:failure.category,message:failure.message});
-    },
-  });
-  resources.defer(()=>queryRuns.close());
+  const {delegation,queryRuns}=assembleDelegation({store,resources,executor,executionObserver,runtimeSettings,evidenceReader,sourceContexts,assertModelEvidence,files,conversations,working,
+    lifecycleSettings:()=>lifecycle.settings(),archiveReader,agent,modelEvidenceAuthority,modelSettings,queryAgent,
+    qualityStrategy:dependencies?.queryQualityExperiment,semanticContextTime:dependencies?.semanticContextTime,usageLedger});
   const memoryDelegation=registerMemoryDelegation({runtime:delegation,pipeline:memoryPipeline,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
     const input=materialMemoryWork.planningInput(candidate);
     if(!input?.ready||input.fingerprint!==candidate.fingerprint||!materialMemoryWork.inputs.available(candidate.sourceId,candidate.inputKey,undefined,candidate.scope)||!sourcePipelines.memoryAllowed(candidate.sourceId))throw new StoreError('Memory sample authorization changed',409);
@@ -704,16 +406,9 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
 
   resources.defer(()=>memoryDelegation.close());
 
-  async function insight(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId='insight:'+randomUUID(),snapshot?:import('@mote/shared').InsightSnapshot) {
-    if(!agent.configured)throw new AgentNotConfiguredError();
-    const {prompt,...scope}=range;
-    const result=insightResult(await queryAgent({question:prompt||moteText("请回顾这段时间的个人上下文，选择有证据支撑的发现。区分事实、推断与信息缺口，保留来源引用，用 personal-insight Skill 生成完整文字报告和静态 HTML 展示。"),skill:'personal-insight',...scope,...(snapshot?{...snapshot.scope,contextTime:snapshot.asOf,insightSnapshot:snapshot}:{}),onProgress,signal,traceContext:{operationId}},'insight','insights'));
-    signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
-  }
-
   function diagnosticSnapshot() {
     const counts=store.indexCounts(),devices=store.devices(),storage=store.stats();
-    return {version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot(),execution:{failureReceipts:executor.failureDiagnostics(),agents:agentGate.snapshot(),llm:llmGate.snapshot(),interactive:interactiveGate.snapshot(),interactiveHarness:interactiveModelGate.snapshot(),delegated:executor.poolSnapshot('delegated-agents')},services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:activeQueries.size,closing},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,maxBytes:storage.maxBytes,imagesEncrypted:storage.imagesEncrypted}};
+    return {version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot(),execution:{failureReceipts:executor.failureDiagnostics(),agents:agentGate.snapshot(),llm:llmGate.snapshot(),interactive:interactiveGate.snapshot(),interactiveHarness:interactiveModelGate.snapshot(),delegated:executor.poolSnapshot('delegated-agents')},services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:activeQueries.size,closing:serverLifecycle.isClosing()},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,maxBytes:storage.maxBytes,imagesEncrypted:storage.imagesEncrypted}};
   }
 
   const web=dependencies?.webRoot??join(repositoryRoot,'apps/web/dist');
@@ -742,14 +437,12 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   // C02 stops the worker before content accessors; DB remains alive until every
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
-  const activity=new ActivityProjection(store,executionPlatform.assembly.operations,{delegation});
+  const {activity,automaticActivity}=assembleActivity({store,resources,operations:executionPlatform.assembly.operations,delegation,materials,executor,configService,modelSettings,agent,workflows,queryAgent});
   const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(value));
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
-  const automaticActivity=new AutomaticActivity(store,materials,executor,configService,{query:input=>queryAgent(input,'query','activity'),selection:profileId=>{const selected=modelSettings.select('chat',profileId);return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},lane:()=>workflows.settings().semantic});
-  resources.defer(()=>automaticActivity.close());
-  const featureServices={pluginCenter,withMediaOwnerBatch,launchOwnerImport,withMediaOwnerIntent,modelAuthorization,modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),contextTrees,automaticActivity,configService,memoryBindings,memoryPublication,ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlatform.assemblyForRoutes().playback},notesSource:notesSource.assemblyForRoutes(),notesCapture:{authority:authorizationPlatform,route:{request:request=>pins.get(request)},intake:captureIntake.ports.captureIntake},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaPreparation,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows} satisfies FeatureServices;
+  const featureServices={pluginCenter,withMediaOwnerBatch,launchOwnerImport,withMediaOwnerIntent,modelAuthorization,modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),contextTrees,automaticActivity,configService,memoryBindings,memoryPublication,ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlatform.assemblyForRoutes().playback},notesSource:notesSource.assemblyForRoutes(),notesCapture:{authority:authorizationPlatform,route:{request:request=>pins.get(request)},intake:captureIntake.ports.captureIntake},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>serverLifecycle.isClosing(),actions,agent,agentGate,archivedFiles,codex,config,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaPreparation,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows} satisfies FeatureServices;
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   resources.defer(()=>featureHost.close());
   registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
@@ -757,28 +450,7 @@ export async function buildApp(config:Config,dependencies?:{distribution?:Centra
   resources.defer(()=>memoryTopics.close());
   await configurationPlatform.start();
   diagnostics.record('server.started');
-  app.addHook('onReady',async()=>{
-    for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
-  });
-  app.addHook('preClose',async()=>{
-    closing=true;
-    // Stop watcher/subscriptions and join accepted configuration transactions
-    // while execution/model consumers are still alive; a config-service failure
-    // must not abort the remaining cleanup. Bootstrap retains final close.
-    let configDrainFailure:unknown;
-    try{await configurationPlatform.quiesce('shutdown');}catch(error){configDrainFailure=error;}
-    try{featureHost.stop();
-    // Polling/admission stops without retiring the runtime's Memory authority;
-    // the runtime closes only after accepted engine work is interrupted/drained.
-    sourcePipelines.quiesce();
-    executionPlatform.quiesce('shutdown');
-    executor.bindObserver(undefined);eventLoop.disable();queryRuns.interrupt();
-    automaticActivity.stop();memoryPublication.stop();
-    // Interrupt transports while handlers, checkpoints and storage remain live.
-    await resources.stop();
-    }finally{if(configDrainFailure)try{diagnostics.record('config.shutdown_drain_failed',{category:'internal'},'error');}catch{/* cleanup continues */}}
-  });
-  app.addHook('onClose',async()=>resources.close());
+  installServerLifecycleHooks(app,{lifecycle:serverLifecycle,configurationPlatform,featureHost,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,automaticActivity,memoryPublication,resources,diagnostics});
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
