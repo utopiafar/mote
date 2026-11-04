@@ -73,3 +73,7 @@ export class MemoryRecipeSettings {
     this.onApplied?.();return this.view(input.sourceId,input.scope);
   }
 }
+
+/** Consumer-facing selection surface. The owner installs cross-domain change
+ * callbacks; consumers only read or configure the durable selection. */
+export type MemoryRecipeSettingsPort=Pick<MemoryRecipeSettings,'onChange'|'onApplied'|'selection'|'enabled'|'available'|'view'|'configure'>;

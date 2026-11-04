@@ -206,6 +206,8 @@ export class DelegatedQueryRuns {
     }finally{this.foreground.delete(id);this.foregroundRequests.delete(id);this.results.delete(id);this.errors.delete(id);}
   }
   async close(){clearInterval(this.timer);for(const id of this.waiters.keys())this.notify(id);}
+  /** Stop admitting new receipts while accepted runs keep their fixed runtime. */
+  quiesce(){this.stopped=true;}
   interrupt(){this.interrupted=true;for(const id of this.waiters.keys())this.notify(id);}
   async stop(){this.stopped=true;if(!this.runtime.engine.closed)for(const run of this.list())if(run.status==='running')this.cancel(run.id);await this.close();}
 }

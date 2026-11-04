@@ -33,6 +33,9 @@ import type {AutomaticTopics} from '../automatic-topics.js';
 import type {OwnerQuestions} from '../owner-questions.js';
 import type {MemoryBindings} from '../memory-bindings.js';
 import type {MemoryAdapters} from '../memory-adapters.js';
+import type {MemoryStrategiesPort} from '../memory-strategies.js';
+import type {MemoryRecipeSettingsPort} from '../memory-recipe-settings.js';
+import type {MemoryIntegrationSettingsPort} from '../memory-integration-settings.js';
 import {featureServiceMembers} from '../feature-services.js';
 
 /** Central-local capabilities. These handles/callbacks are never serialized to Web/Kotlin.
@@ -190,6 +193,9 @@ export const centralServices = {
   usage: serviceContract<UsageRecording>('mote.central.usage-recording', '1'),
   pluginControlRead: serviceContract<PluginControlRead>('mote.central.plugin-control-read', '1'),
   memoryAdmission: serviceContract<MemoryAdmission>('mote.central.memory-admission', '1'),
+  memoryStrategies: serviceContract<MemoryStrategiesPort>('mote.central.memory-strategies', '1'),
+  memoryRecipeSettings: serviceContract<MemoryRecipeSettingsPort>('mote.central.memory-recipe-settings', '1'),
+  memoryIntegrationSettings: serviceContract<MemoryIntegrationSettingsPort>('mote.central.memory-integration-settings', '1'),
   memoryBindingControl: serviceContract<MemoryBindingControl>('mote.central.memory-binding-control', '1'),
   memoryProviderAdapters: serviceContract<MemoryProviderAdapters>('mote.central.memory-provider-adapters', '1'),
   processing: serviceContract<ProcessingSubmission>('mote.central.processing-submission', '1'),
@@ -270,7 +276,7 @@ export const centralServiceOwners = {
   materialRepository:'materials', materialPublication:'materials', materialRead:'materials',
   retrievalIndex:'materials', materialIndex:'materials',
   fileOriginalRead:'files', execution:'execution', executionHandlers:'execution',
-  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', processing:'processing',
+  configuration:'configuration', usage:'observability', pluginControlRead:'control', memoryAdmission:'memoryControl', memoryStrategies:'memoryControl', memoryRecipeSettings:'memoryControl', memoryIntegrationSettings:'memoryControl', memoryBindingControl:'memoryControl', memoryProviderAdapters:'memoryProviders', processing:'processing',
   memoryCandidates:'materials', memoryRead:'materials', memorySnapshots:'materials', memoryInputSelection:'materials',
   memoryRecords:'memoryRecords', memoryRecordSnapshots:'memoryRecords',
   memoryStagePublication:'publication', memoryOwnerPublication:'publication', memoryTopics:'memoryRuntime', ownerQuestions:'activity', mediaAssetsRead:'media', conversations:'query',

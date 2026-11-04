@@ -27,7 +27,7 @@ async function reset(){
  const started=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:randomUUID(),input:{question:active.workTitle,conversationId:active.conversationId}}});
  if(started.statusCode!==202)throw Error(started.body);
  const runId=started.json().id,deadline=Date.now()+20_000;
- for(;;){const run=node.featureServices.queryRuns.get(runId);if(run.status==='completed')break;if(run.status==='failed'||Date.now()>deadline)throw Error(JSON.stringify(run));await new Promise(resolve=>setTimeout(resolve,25));}
+ for(;;){const run=node.queryRuns.get(runId);if(run.status==='completed')break;if(run.status==='failed'||Date.now()>deadline)throw Error(JSON.stringify(run));await new Promise(resolve=>setTimeout(resolve,25));}
 }
 await reset();
 function state(){return {generatedOnly:true,address,controlAddress:address+'/api/__fixture/history',token,restrictedToken,...active};}

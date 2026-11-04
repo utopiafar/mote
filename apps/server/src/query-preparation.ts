@@ -47,8 +47,10 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     signal.throwIfAborted();if(!configured())throw new AgentNotConfiguredError();
     const saved=delegation.journal.payload<SavedQuery>(work.id);
     if(saved.prepared){
-      const selected=modelSettings.select('chat',saved.prepared.modelProfileId),current=modelConfiguration(selected.id,{...selected.settings,model:saved.prepared.modelOverride??selected.settings.model},modelSettings.view().revision);
-      if(saved.configurationFingerprint!==current.fingerprint)throw new StoreError('Query model configuration changed',409);
+      // An accepted run keeps the model identity pinned by its first
+      // preparation. An ordinary model-settings switch affects only new runs;
+      // the preparation fingerprint stays for the explicit quality-experiment
+      // checkpoint, not a transport fence on the durable run.
       assertModelEvidence(saved.prepared);return {...saved.prepared,signal,onProgress};
     }
     const {conversationId,question,modelProfileId,modelOverride,evidenceIds:selectedIds,anchorEvidenceIds:anchorIds,anchorMaterialRef,attachmentIds=[],...selected}=queryWithAttachmentsSchema.parse(body);

@@ -79,7 +79,7 @@ test('HTTP execution timeout still returns 504 and cannot commit a late answer o
   await finished;await new Promise<void>(resolve=>setImmediate(resolve));
   assert.equal(calls,1);const receipts=f.receipts();assert.equal(receipts.length,1);assert.equal(receipts[0].status,'failed');
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM conversation_turns').get()!.n,0);
-  assert.equal(f.featureServices.queryRuns.list()[0].status,'failed');assert.equal(f.featureServices.queryRuns.list()[0].error?.code,'timeout');
+  assert.equal(f.queryRuns.list()[0].status,'failed');assert.equal(f.queryRuns.list()[0].error?.code,'timeout');
 });
 
 test('an earlier caller cancellation keeps its exact reason through the real host',async t=>{

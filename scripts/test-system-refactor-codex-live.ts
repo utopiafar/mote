@@ -69,7 +69,7 @@ async function ask(question:string,label:string,selectedArm:'catalog'|'all-nativ
   const run=await until(()=>request('GET','/api/query-runs/'+id),value=>['completed','failed','interrupted','cancelled'].includes(value.status),label,300000);
   assert.equal(run.status,'completed',JSON.stringify(run));
   const conversation=await request('GET','/api/conversations/'+run.conversationId),result=conversation.turns.find((turn:any)=>turn.id===run.turnId)?.result??conversation.turns.at(-1).result as QueryResult;
-  const work=node!.featureServices.delegation.get('query:'+id);
+  const work=node!.delegation.get('query:'+id);
   report.queries.push({id,label,arm:selectedArm,durationMs:Date.now()-at,fragments:report.calls.length-before,workers:work.units.length,answer:result.answer,citations:result.citations,tools:result.trace.map((item:any)=>item.tool)});await save();progress('query-complete',{label,arm:selectedArm,workers:work.units.length,durationMs:Date.now()-at});return {id,result,work};
 }
 try{
