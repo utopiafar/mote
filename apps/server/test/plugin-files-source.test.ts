@@ -11,8 +11,8 @@ import {Store,StoreError,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
-import {ServerFeatureScope} from '../src/feature-host.js';
-import {register as registerFilesFeature} from '../src/features/files.js';
+import {FeatureScope} from '../src/features/index.js';
+import {filesFeature} from '../src/features/files.js';
 import {IngressService} from '../src/ingress.js';
 import type {FileProcessing} from '../src/file-processing.js';
 import {registerFileRoutes} from '../src/file-routes.js';
@@ -259,16 +259,16 @@ test('import upload transport refuses a late final after its owner closes withou
 
 test('mote.files feature registration never closes the plugin-owned FileStore and retires its bypass on scope stop',async t=>{
   const f=fixture(t);await f.source.prepare();f.source.start();
-  const app=Fastify(),scope=new ServerFeatureScope();t.after(async()=>{await app.close();});
+  const app=Fastify(),scope=new FeatureScope();t.after(async()=>{await app.close();});
   let playback:(req:unknown)=>boolean=()=>true;
-  registerFilesFeature(app,{
+  filesFeature({
     processing:{prepare(){},close(){}} as any,ingress:{} as any,
     sourceOwner:()=>{},credential:()=>undefined,evidenceReader:{evidence:()=>[{}]} as any,
-    executor:{tick:()=>0} as any,withMediaOwnerIntent:async(_id:string,task:()=>unknown)=>task(),
+    diagnostics:{} as any,withMediaOwnerIntent:async(_id:string,task:()=>unknown)=>task(),
     withMediaOwnerBatch:async(_ids:readonly string[],task:()=>unknown)=>task(),
     setPlaybackAuthorization:(value:(req:unknown)=>boolean)=>{playback=value;},
     filesSource:{playback:f.source.assemblyForRoutes().playback},
-  } as any,scope);
+  }).mount(app,scope);
   await app.ready();
   await scope.close();
   const request={routeOptions:{url:'/api/files/:id/content'},method:'GET',params:{id:'00000000-0000-4000-8000-000000000000'},headers:{}};

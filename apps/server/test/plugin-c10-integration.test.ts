@@ -22,7 +22,8 @@ import {EvidenceReader} from '../src/evidence-reader.js';
 import {MaterialNoteDeletion} from '../src/material-note-deletion.js';
 import {createEvidenceDeletion} from '../src/plugins/evidence-deletion.js';
 import {registerCaptureBrowser} from '../src/capture-browser.js';
-import {register as registerNotes} from '../src/features/notes.js';
+import {notesFeature} from '../src/features/notes.js';
+import {FeatureScope} from '../src/features/index.js';
 import {createNotesSource} from '../src/plugins/notes-source.js';
 import {createDevicesSource} from '../src/plugins/devices-source.js';
 import {firstDeviceData} from '../src/first-device-data.js';
@@ -73,7 +74,7 @@ async function fixture(t:TestContext){
     const credential=(req:FastifyRequest)=>{authorization.requests.assertCurrent(pins.get(req)!);const c=connections.authenticate(req.headers.authorization);return c&&!connections.isOwner(c)?c:undefined;};
     const route={request:(req:FastifyRequest)=>pins.get(req)};
     capture.routes(child,route);devices.routes(child,route);
-    registerNotes(child,{store,sources,files,materials,diagnostics,connections,credential,assertRequestActive:req=>authorization.requests.assertCurrent(pins.get(req)!),ingress:capture.ingress,notesSource:notes.assemblyForRoutes(),notesCapture:{authority:authorization,route,intake:capture.ports.captureIntake}});
+    notesFeature({assertRequestActive:req=>authorization.requests.assertCurrent(pins.get(req)!),connections,credential,diagnostics,files,ingress:capture.ingress,notesSource:notes.assemblyForRoutes(),notesCapture:{authority:authorization,route,intake:capture.ports.captureIntake}}).mount(child,new FeatureScope());
     registerCaptureBrowser(child,{store,evidenceReader:reader,connections,credential,deletion:createEvidenceDeletion({captures:store,files,aliases:noteDeletion})});
   });
   await app.listen({host:'127.0.0.1',port:0});const address=app.server.address();assert.ok(address&&typeof address==='object');const url='http://127.0.0.1:'+address.port;

@@ -123,7 +123,7 @@ for(const stage of ['summary','semantic grouping'] as const)test(`file ${stage} 
   node.processing.runtime.registry.register({id:'fixture.repair-diarizer',version:'1',name:'Generated diarization',stage:'diarize',localOnly:true,mediaTypes:['audio/'],process:async()=>({durationMs:1000,engine:'generated',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[]})});
  }
  const settings={...node.processing.currentSettings(),enabled:true,summarize:stage==='summary',...(stage==='semantic grouping'?{audioProcessor:'fixture.repair-audio',diarizationProcessor:'fixture.repair-diarizer',semanticTurns:true}:{})};await node.processing.save({revision:node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,node.processing.runtime.registry)});
- await authorizeFixtureModels(node);node.featureHost.stop();
+ await authorizeFixtureModels(node);node.featureRoutes.stop();
  node.sources.register({id:'generated-summary-repair',name:'Generated summary repair',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
  const bytes=Buffer.from('Generated cited summary evidence'),upload=node.files.begin({sourceId:'generated-summary-repair',item:{externalId:stage==='summary'?'generated.txt':'generated.wav',revision:'1',observedAt:'2026-10-15T00:00:00Z',kind:'file',layer:'original',text:'',mimeType:stage==='summary'?'text/plain':'audio/wav'},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
  node.files.part(upload.uploadId,0,bytes,()=>{});const original=await node.files.commit(upload.uploadId,()=>{});

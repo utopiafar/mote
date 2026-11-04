@@ -11,7 +11,6 @@ import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
 import {StoreError,type Store} from '../store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
-import type {FeatureServices} from '../feature-services.js';
 import type {UsageLedger} from '../usage.js';
 import type {MaterialStore} from '../materials.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
@@ -29,7 +28,7 @@ import type {ModelProcessingAuthority} from '../model-processing-authority.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {CentralDomainPlugin,bootstrapCentral} from '../bootstrap.js';
 import {createMediaAssetsService,mediaAssetsServiceContribution,mediaAssetsServiceDeclaration,mediaAssetsServiceReplacement} from '../plugins/media-assets-service.js';
-import {createOcrAsrReadiness,createOcrAsrReadinessFactory,createOcrAsrReadinessRoutes,ocrAsrReadinessContribution,ocrAsrReadinessDeclaration,ocrAsrReadinessForAssembly,ocrAsrReadinessReplacement,registerOcrAsrReadinessForAssembly} from '../plugins/ocr-asr-readiness.js';
+import {createOcrAsrReadiness,createOcrAsrReadinessFactory,ocrAsrReadinessContribution,ocrAsrReadinessDeclaration,ocrAsrReadinessForAssembly,ocrAsrReadinessReplacement,registerOcrAsrReadinessForAssembly} from '../plugins/ocr-asr-readiness.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {vaultStorageRoutes} from '../plugins/vault-storage-routes.js';
 import {createProcessingServices,createProcessingServicesFactory,processingServicesContribution,processingServicesDeclaration,processingServicesReplacement,type ProcessingServicesStarted} from '../plugins/processing-services.js';
@@ -76,8 +75,7 @@ export function assembleMedia(dependencies:MediaAssemblyDependencies){
   const mediaAssets=mediaAssetsService.assetsForAssembly;
   const readiness=createOcrAsrReadiness({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets,configService,backgroundWorker:dependencies.backgroundWorker});
   registerOcrAsrReadinessForAssembly(readiness,mediaAssets);resources.defer(()=>readiness.close());
-  const featureServices=Object.freeze({mediaAssets}) satisfies Partial<FeatureServices>;
-  return Object.freeze({mediaAssets,mediaPreparation:readiness.port,featureServices});
+  return Object.freeze({mediaAssets,mediaPreparation:readiness.port});
 }
 
 export interface ProcessingAssemblyDependencies {
@@ -94,6 +92,11 @@ export interface ProcessingAssemblyDependencies {
   readonly files:FileStore;
   readonly sourceContexts:SourceContextStore;
   readonly mediaAssets:MediaAssets;
+  readonly archivedFiles:import('../archived-files.js').ArchivedFileStore;
+  readonly evidenceReader:import('../evidence-reader.js').EvidenceReader;
+  readonly indexer:import('../plugins/central-contracts.js').RetrievalIndex;
+  readonly withMediaOwnerBatch:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;
+  readonly withMediaOwnerIntent:<T>(id:string,task:()=>Promise<T>|T)=>Promise<T>;
   readonly plugins?:readonly Plugin[];
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
@@ -106,7 +109,7 @@ export interface ProcessingAssemblyDependencies {
 /** ProcessingRuntime, the media work authority and FileProcessing, plus their
  * close hooks. */
 export async function assembleProcessing(dependencies:ProcessingAssemblyDependencies){
-  const {bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage}=dependencies;
+  const {bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,archivedFiles,evidenceReader,indexer,withMediaOwnerBatch,withMediaOwnerIntent,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage}=dependencies;
   const mediaModelAuthority:ModelProcessingAuthority=async(request,signal,task)=>{
     const original=captureModelIdentity(request.captureId);
     const execute=async(authorizedSignal:AbortSignal)=>{
@@ -160,13 +163,12 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
     catch(error){meter.failed(error);throw error;}finally{await model?.close();}
   };
   const semanticFingerprint=()=>{const selected=modelSettings.select('memory');return modelConfiguration(selected.id,selected.settings,modelSettings.view().revision).fingerprint;};
-  const readiness=ocrAsrReadinessForAssembly(mediaAssets),readinessRoutes=createOcrAsrReadinessRoutes();
+  const readiness=ocrAsrReadinessForAssembly(mediaAssets);
   const readinessHandle=await bootstrap.host.install({
     identity:{host:bootstrap.snapshot().host,packageId:'mote.ocr-asr-readiness',installationId:'build:ocr-asr-readiness@1.0.0',instanceId:'media-readiness',activationId:randomUUID()},
-    contributions:[ocrAsrReadinessDeclaration],factory:createOcrAsrReadinessFactory(readiness,()=>{readinessRoutes.activate(readiness.port);}),
+    contributions:[ocrAsrReadinessDeclaration],factory:createOcrAsrReadinessFactory(readiness),
   });
   resources.defer(()=>readinessHandle.close('shutdown'));
-  contributeDomainRoutes(backendContext,{'mote.media':readinessRoutes});
   const platform=createProcessingServices({
     store,files,configService,diagnostics,executor,backendContext,materials,sourcePipelines,mediaAssets,
     ...(dependencies.transcriptionProvider?{transcriptionProvider:dependencies.transcriptionProvider}:{}),
@@ -181,7 +183,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   });
   resources.defer(()=>handle.close('shutdown'));
   const {workflows,processing}=started!;
-  const imageRoutes=createImageProcessingRoutes();
+  const imageRoutes=createImageProcessingRoutes({withMediaOwnerBatch,withMediaOwnerIntent});
   const imageService=createImageProcessingService({
     store,processing,executor,configService,materials,mediaAssets,media:config.media,modelAuthority:mediaModelAuthority,
     modelSettings,resolveFileModel,factory,admittedUsage,
@@ -195,10 +197,9 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   contributeDomainRoutes(backendContext,{'mote.media':imageRoutes});
   // The vault owns content storage and its storage transport; this assembly
   // only wires the already-prepared activation into the shared route table.
-  contributeDomainRoutes(backendContext,{'mote.storage':vaultStorageRoutes(()=>bootstrap.vault.contentStorage)});
+  contributeDomainRoutes(backendContext,{'mote.storage':vaultStorageRoutes(()=>bootstrap.vault.contentStorage,{archivedFiles,config,diagnostics,evidenceReader,files,indexer,store})});
   registerImageProcessingServiceForAssembly(imageService,processing);
-  const featureServices=Object.freeze({processing,workflows}) satisfies Partial<FeatureServices>;
-  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,featureServices,processingServices:platform,imageProcessingService:imageService});
+  return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,processingServices:platform,imageProcessingService:imageService});
 }
 
 export interface PerceptionAssemblyDependencies {
@@ -224,6 +225,5 @@ export function assemblePerception(dependencies:PerceptionAssemblyDependencies){
   const service=imageProcessingServiceForAssembly(dependencies.processing);
   service.bindAgent(id=>dependencies.agent.configuredFor(id));
   const perception=service.perceptionForAssembly;
-  const featureServices=Object.freeze({}) satisfies Partial<FeatureServices>;
-  return Object.freeze({perception,featureServices});
+  return Object.freeze({perception});
 }

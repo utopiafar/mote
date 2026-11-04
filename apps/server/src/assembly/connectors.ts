@@ -13,7 +13,6 @@ import type {MaterialStore} from '../materials.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {MaterialOrganizerRuntime} from '../material-organizers.js';
 import type {ProcessingRuntime} from '../processing-runtime.js';
-import type {FeatureServices} from '../feature-services.js';
 import {registerConnectors,type ConnectorTestDependencies} from '../connectors/index.js';
 import type {ConnectorManifest} from '../connectors/registry.js';
 import {ConnectorError} from '../connectors/types.js';
@@ -54,5 +53,5 @@ export async function assembleConnectors(dependencies:ConnectorsAssemblyDependen
   });
   const connectors=await registerConnectors(app,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config,ownerAuthorization,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)},dependencies.connectorTesting,additionalManifests,dispatcher);
   resources.defer(()=>connectors.close());
-  return Object.freeze({connectors,featureServices:Object.freeze({connectors}) satisfies Partial<FeatureServices>});
+  return Object.freeze({connectors});
 }

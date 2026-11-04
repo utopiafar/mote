@@ -44,6 +44,6 @@ test('material and context routes stay plugin-owned and never expose deleted ori
     'a revoked source cannot be read through a retained Material revision');
   const read=await node.app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:['capture:'+captureId]}});
   assert.equal(read.statusCode,200,read.body);assert.deepEqual(read.json().items,[],'withdrawn original text is not returned through the context cursor');
-  await node.featureHost.dispose('mote.materials');assert.equal((await node.app.inject({url:'/api/materials',headers})).statusCode,503);
-  await node.featureHost.dispose('mote.context');assert.equal((await node.app.inject({url:'/api/context/search?query=Generated',headers})).statusCode,503);
+  await node.featureRoutes.dispose('mote.materials');assert.equal((await node.app.inject({url:'/api/materials',headers})).statusCode,503);
+  await node.featureRoutes.dispose('mote.context');assert.equal((await node.app.inject({url:'/api/context/search?query=Generated',headers})).statusCode,503);
 });

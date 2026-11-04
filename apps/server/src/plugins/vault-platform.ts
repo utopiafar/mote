@@ -10,8 +10,6 @@ import {ArchivedFileStore} from '../archived-files.js';
 import {ContentStorageService} from '../content-storage.js';
 import type {ConfigService} from '../config-service.js';
 import {MaintenanceWorker} from '../maintenance.js';
-import {contributeDomainRoutes} from './domain-routes.js';
-import {vaultStorageRoutes} from './vault-storage-routes.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization,type VaultTransactions,type MaterialRepositoryRead,type MaterialPublication,type ArchivedContentRead} from './central-contracts.js';
 
 /** Private host configuration, never a Manifest configuration value or a wire DTO. */
@@ -243,9 +241,6 @@ export function createVaultPlatformFactory(options:VaultPlatformOptions,authoriz
       quiesce:(reason)=>platform.quiesce(reason),stop:(reason)=>platform.stop(reason),dispose:()=>platform.dispose(),
       start:async()=>{
         await platform.start();const access=platform.repositoriesForAssembly(context.scope);
-        // The vault owns the storage transport; the mounted table resolves the
-        // current activation instead of installing a second copy on re-enable.
-        contributeDomainRoutes(context.scope.cordis,{'mote.storage':vaultStorageRoutes(()=>platform.contentStorage)});
         context.provide(vaultPlatformContribution.id,centralServices.contentRead,Object.freeze({get:access.originals.get,read:access.originals.read,listForCapture:access.originals.listForCapture}));
       },
     };

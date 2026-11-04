@@ -1,13 +1,12 @@
 import type {FastifyInstance} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
-import type {FeatureServices} from '../feature-services.js';
-import type {ServerFeatureScope} from '../feature-host.js';
+import type {PluginResourceScope} from '@mote/plugin-host';
 
-/** A domain-owned HTTP contribution mounted by its feature bridge before listen.
- * The contribution dispatches against its current activation, so disabling and
- * re-enabling the owner never installs a second route table. */
+/** A domain-owned HTTP contribution mounted once before listen. The contribution
+ * dispatches against its current activation, so disabling and re-enabling the
+ * owner never installs a second route table. */
 export interface DomainRouteContribution {
-  mount(app:FastifyInstance,services?:FeatureServices,scope?:ServerFeatureScope):void;
+  mount(app:FastifyInstance,scope?:PluginResourceScope):void;
 }
 
 /** Feature id -> route contribution. The trusted assembly provides this once on
@@ -21,7 +20,7 @@ export function contributeDomainRoutes(context:Context,contributions:DomainRoute
   const table=context.get('moteDomainRoutes')??{},merged:{[id:string]:DomainRouteContribution}={...table};
   for(const [id,contribution] of Object.entries(contributions)){
     const existing=merged[id];
-    merged[id]=!existing||existing===contribution?contribution:Object.freeze({mount(app:FastifyInstance,services?:FeatureServices,scope?:ServerFeatureScope){existing.mount(app,services,scope);contribution.mount(app,services,scope);}});
+    merged[id]=!existing||existing===contribution?contribution:Object.freeze({mount(app:FastifyInstance,scope?:PluginResourceScope){existing.mount(app,scope);contribution.mount(app,scope);}});
   }
   const frozen=Object.freeze(merged);
   if(context.get('moteDomainRoutes'))context.set('moteDomainRoutes',frozen);

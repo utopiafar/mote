@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import {defaultDistribution,defaultPlugins,storageProvider} from '../src/distribution/default.js';
+import {defaultDistribution,defaultFeatures,defaultPlugins,storageProvider} from '../src/distribution/default.js';
 import {plugins as platformPlugins} from '../src/assembly/platform.js';
 import {plugins as sourcePlugins} from '../src/assembly/sources.js';
 import {plugins as materialPlugins} from '../src/assembly/materials.js';
@@ -16,7 +16,6 @@ import {plugins as queryPlugins} from '../src/assembly/query.js';
 import {plugins as agentPlugins} from '../src/assembly/agent.js';
 import {plugins as workPlugins} from '../src/assembly/work.js';
 import {plugins as importPlugins} from '../src/assembly/imports.js';
-import {serverFeatureAdapters} from '../src/features/index.js';
 import type {CentralDistribution,FoundationProvider} from '../src/bootstrap.js';
 import type {Config} from '../src/config.js';
 
@@ -35,7 +34,9 @@ const assemblyPlugins=[...platformPlugins,...sourcePlugins,...materialPlugins,..
 
 test('default distribution is the exact, duplicate-free selection built from every domain-owned plugin list',()=>{
   assert.deepEqual(defaultDistribution.foundations.map(provider=>provider.kind).sort(),['authorization','configuration','storage']);
-  assert.deepEqual(defaultDistribution.features,serverFeatureAdapters);
+  assert.equal(defaultDistribution.features,defaultFeatures);
+  assert.equal(new Set(defaultFeatures).size,defaultFeatures.length);
+  assert.ok(defaultFeatures.includes('mote.memory')&&defaultFeatures.includes('mote.ask'));
   assert.equal(defaultDistribution.plugins,defaultPlugins);
   assert.deepEqual(defaultPlugins.map(plugin=>plugin.contribution.id),assemblyPlugins.map(plugin=>plugin.contribution.id));
   assert.equal(new Set(assemblyPlugins.map(plugin=>plugin.contribution.id)).size,assemblyPlugins.length);
@@ -69,18 +70,12 @@ test('[K] the real default manifest discovers every feature, connector, processo
   assert.equal(inventory.schemaVersion,1);
   assert.equal(typeof inventory.revision,'number');
 
-  // Handoff count: the plan baseline had 25 adapters; ACT/MEM/SYS moved two
-  // route tables to domain-owned contributions, leaving 23 installed adapters.
-  // SYS01 also folded Usage and Diagnostics into the system host routes; both
-  // remain discoverable even though they are no longer separate features.
-  assert.equal(serverFeatureAdapters.length+2,25);
   assert.equal((await node.app.inject({url:'/api/usage?from=2026-11-01&to=2026-11-03',headers})).statusCode,200);
   assert.equal((await node.app.inject({url:'/api/diagnostics',headers})).statusCode,200);
-  assert.equal(serverFeatureAdapters.length,23);
-  for(const {descriptor} of serverFeatureAdapters){
-    const feature=inventory.features.find((value:{id:string})=>value.id===descriptor.id);
-    assert.ok(feature,`missing default feature ${descriptor.id}`);
-    assert.ok(inventory.capabilities.some((value:{featureId:string;state:string})=>value.featureId===descriptor.id&&value.state==='active'),`default feature ${descriptor.id} has no active capability`);
+  for(const id of defaultFeatures){
+    const feature=inventory.features.find((value:{id:string})=>value.id===id);
+    assert.ok(feature,`missing default feature ${id}`);
+    assert.ok(inventory.capabilities.some((value:{featureId:string;state:string})=>value.featureId===id&&value.state==='active'),`default feature ${id} has no active capability`);
   }
 
   const connectors=inventory.features.filter((feature:{id:string})=>feature.id.startsWith('mote.connector.'));
@@ -121,11 +116,8 @@ test('[M] removing an ordinary business plugin leaves its feature unavailable, r
   await full.app.close();
 
   const reduced:CentralDistribution={...defaultDistribution,
-    features:defaultDistribution.features.filter(entry=>entry.descriptor.id!=='mote.notes'),
+    features:defaultDistribution.features.filter(id=>id!=='mote.notes'),
     plugins:defaultDistribution.plugins.filter(plugin=>plugin.contribution.id!=='notes-source')};
-  const pluginOnly:CentralDistribution={...defaultDistribution,
-    plugins:defaultDistribution.plugins.filter(plugin=>plugin.contribution.id!=='notes-source')};
-  await assert.rejects(buildApp(config,{agent,backgroundWorker:false,distribution:pluginOnly}),/notes-source is not selected for mote\.notes/);
   const partial=await buildApp(config,{agent,backgroundWorker:false,distribution:reduced});t.after(()=>partial.app.close());
   const inventory=(await partial.app.inject({url:'/api/features',headers})).json();
   assert.ok(!inventory.features.some((feature:{id:string})=>feature.id==='mote.notes'),'the removed feature must not be synthesized from the old adapter list');
@@ -164,4 +156,20 @@ test('[M] a same-contract replacement provider is selected on restart and the pr
   assert.equal((await second.app.inject({url:`/api/notes/${input.id}`,headers})).json().ocrText,input.text);
   assert.equal((await second.app.inject({method:'POST',url:'/api/notes',headers,payload:note()})).statusCode,201);
   assert.deepEqual(writes,{first:1,second:1});
+});
+
+test('[M] disabling Memory or Ask surfaces keeps capture and legitimate reads live',async t=>{
+  const {config,headers}=fixture(t),input=note();
+  const reduced:CentralDistribution={...defaultDistribution,features:defaultFeatures.filter(id=>id!=='mote.memory'&&id!=='mote.ask'&&id!=='mote.insights'&&id!=='mote.agent-view')};
+  const node=await buildApp(config,{agent,backgroundWorker:false,distribution:reduced});t.after(()=>node.app.close());await node.app.ready();
+  assert.equal((await node.app.inject({method:'POST',url:'/api/notes',headers,payload:input})).statusCode,201);
+  assert.equal((await node.app.inject({url:`/api/notes/${input.id}`,headers})).json().ocrText,input.text);
+  assert.equal((await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:randomUUID(),deviceId:'generated-reduced-device',deviceName:'Generated reduced fixture',platform:'macos',source:'activity',capturedAt:'2026-11-02T13:00:00.000Z',durationMs:0,appId:'generated',appName:'Generated',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}}})).statusCode,201);
+  const inventory=(await node.app.inject({url:'/api/features',headers})).json();
+  for(const id of ['mote.memory','mote.ask','mote.insights','mote.agent-view']){
+    assert.ok(!inventory.capabilities.some((capability:{featureId:string;id:string})=>capability.featureId===id&&capability.id.startsWith('http:')),`disabled feature ${id} must not mount HTTP routes`);
+  }
+  assert.equal((await node.app.inject({url:'/api/memory-jobs',headers})).statusCode,404);
+  assert.equal((await node.app.inject({url:'/api/query-runs',headers})).statusCode,404);
+  assert.equal((await node.app.inject({url:'/api/context/search?query=Generated',headers})).statusCode,200);
 });

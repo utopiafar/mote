@@ -1,18 +1,18 @@
-import type { FastifyInstance } from 'fastify';
-import type { FeatureServices } from '../feature-services.js';
-import type {ServerFeatureAdapter} from './index.js';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
+import type {Config} from '../config.js';
+import type {ConnectionCredential,Connections} from '../connections.js';
+import type {FeatureRoute} from './index.js';
 
-/** Pre-H14 mount point. The routes, LoginHandoffs and credential lifecycle belong
- * to the authorization platform contribution; this adapter only installs them in
- * the feature host's HTTP scope. */
-export function register(app:FastifyInstance,{config,connections,connectionIdentity,serverVersion}:Pick<FeatureServices,"config"|"connections"|"connectionIdentity"|"serverVersion">){
-  connections.routes(app,{serverVersion,profile:config.profile,identity:connectionIdentity});
+export interface ConnectionsFeatureDependencies {
+  readonly config:Config;
+  readonly connections:Connections;
+  readonly connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
+  readonly serverVersion:string;
 }
 
-export const adapter:ServerFeatureAdapter={
-  descriptor:{id:'mote.connections',version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,services)=>{
-    scope.retire(()=>services.agentFeatures.dispose('mote.connections'));
-    register(app,services);
-  },
-};
+/** Credential and login transport owned by the authorization platform. */
+export function connectionsFeature(dependencies:ConnectionsFeatureDependencies):FeatureRoute {
+  return Object.freeze({id:'mote.connections',mount(app:FastifyInstance){
+    dependencies.connections.routes(app,{serverVersion:dependencies.serverVersion,profile:dependencies.config.profile,identity:dependencies.connectionIdentity});
+  }});
+}

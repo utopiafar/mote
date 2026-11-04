@@ -14,7 +14,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
 import {Context} from '@deepseek-ai/cordis';
-import {ServerFeatureHost,ServerFeatureScope} from '../src/feature-host.js';
+import {FeatureRoutes,FeatureScope} from '../src/features/index.js';
 import {buildApp} from '../src/app.js';
 import {createInsightSnapshot} from '../src/insight-snapshots.js';
 import {contextBundle} from '../src/context-bundle.js';
@@ -22,8 +22,8 @@ import type {Config} from '../src/config.js';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 test('server feature disposal revokes routes without deleting retained data',async t=>{
-  const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app);let retained=1;
-  const fiber=await host.install({id:'fixture.feature',version:'1',components:[]},server=>server.get('/fixture',async()=>({retained})));
+  const app=Fastify(),root=new Context(),host=new FeatureRoutes(root,app);let retained=1;
+  const fiber=await host.install({id:'fixture.feature',version:'1',mount:server=>server.get('/fixture',async()=>({retained}))});
   t.after(async()=>{await app.close();await root.fiber.dispose();});
   assert.equal((await app.inject('/fixture')).json().retained,1);
   assert.ok(host.registry.inventory().capabilities.some(c=>c.id==='http:GET:/fixture'));
@@ -78,12 +78,12 @@ test('small Coding upload flows through feature routes to pinned owner and real 
   assert.equal(bulk.statusCode,200,bulk.body);assert.equal(bulk.json().results.length,500);assert.ok(bulk.json().results.every((row:{status:number})=>row.status===201));
   await call('/api/source-pipelines/fixture-coding','DELETE');
   assert.equal((await call('/api/agent-view/materials')).json().items.length,0);
-  await node.featureHost.dispose('mote.materials');assert.equal((await call('/api/materials')).statusCode,503);await assert.rejects(async()=>node.featureServices.archiveReader.materialCatalog!({}),{statusCode:503});
+  await node.featureRoutes.dispose('mote.materials');assert.equal((await call('/api/materials')).statusCode,503);await assert.rejects(async()=>node.featureServices.archiveReader.materialCatalog!({}),{statusCode:503});
 });
 
 test('feature scope stops recurring work and releases resources exactly once',async t=>{
- const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app);let ticks=0,closes=0;
- await host.install({id:'fixture.lifecycle',version:'1',components:[]},(server,scope)=>{scope.every(5,()=>{ticks++;});scope.defer(()=>{closes++;});server.get('/lifecycle',async()=>({ticks}));});
+ const app=Fastify(),root=new Context(),host=new FeatureRoutes(root,app);let ticks=0,closes=0;
+ await host.install({id:'fixture.lifecycle',version:'1',mount:(server,scope)=>{scope.every(5,()=>{ticks++;});scope.defer(()=>{closes++;});server.get('/lifecycle',async()=>({ticks}));}});
  await app.ready();t.after(async()=>{await host.close();await app.close();await root.fiber.dispose();});
  await new Promise(resolve=>setTimeout(resolve,25));assert.ok(ticks>0);
  host.stop();const stopped=ticks;await new Promise(resolve=>setTimeout(resolve,25));
@@ -92,7 +92,7 @@ test('feature scope stops recurring work and releases resources exactly once',as
 });
 
 test('stopping a feature blocks admission but keeps resources until disposal',async()=>{
- const scope=new ServerFeatureScope();let work=0,disposed=0;
+ const scope=new FeatureScope();let work=0,disposed=0;
  scope.defer(()=>{disposed++;});scope.stop();
  await scope.run(()=>{work++;});assert.equal(work,0);assert.equal(disposed,0);
  await Promise.all([scope.close(),scope.close()]);assert.equal(disposed,1);
@@ -111,10 +111,7 @@ test('Ask plugin stop cancels owned execution while feature disposal and Insight
  node.insightRuns.start(insightId,{},async(_observe,signal)=>{insightSignal=signal;await held;return {runId:randomUUID(),answer:'Generated late report',citations:[],trace:[]};});
  const imported=await node.imports.create({files:[{name:'generated.txt',dataBase64:Buffer.from('Generated input').toString('base64')}],instruction:'Generate a preview',processing:'preview'});
  const preparing=node.imports.prepare(imported.id);await started;await new Promise(resolve=>setImmediate(resolve));
- await Promise.all(['mote.ask','mote.insights','mote.imports'].map(feature=>node.featureHost.dispose(feature)));
- // A feature bridge only revokes its HTTP contribution; the Ask plugin's durable receipt keeps running.
- assert.equal(querySignal?.aborted,false);assert.equal(node.queryRuns.get(queryId).status,'running');
- await node.queryRunServices.stop('disabled');
+ await Promise.all([node.queryRunServices.stop('disabled'),node.insightServices.stop('disabled'),node.importServices.stop('disabled')]);
  assert.equal(querySignal?.aborted,true);assert.equal(insightSignal?.aborted,true);assert.equal(importSignal?.aborted,true);
  assert.equal(node.queryRuns.get(queryId).status,'cancelled');assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
  assert.throws(()=>node.queryRuns.start(randomUUID(),{question:'Generated closed query'}),{statusCode:503});
@@ -137,7 +134,7 @@ test('Import scope cancels initial container expansion and removes late temporar
    const path=join(output,'late.txt');writeFileSync(path,'Generated late expanded content');settled();return {files:[{name:'late.txt',path,bytes:31}]};}});
  const creating=node.imports.create({files:[{name:'generated.container',dataBase64:Buffer.from('Generated original container').toString('base64')}],processing:'preview'});
  const rejected=assert.rejects(creating,{name:'AbortError'});await started;
- await node.featureHost.dispose('mote.imports');await rejected;
+ await node.importServices.close();await rejected;
  assert.equal(signal?.aborted,true);assert.equal(node.imports.list()[0]?.status,'cancelled');
  assert.equal(node.imports.list()[0]?.archive.files,1,'the explicitly uploaded original stays archived');
  assert.equal(existsSync(output),false);release();await finished;await yieldTurn();
@@ -156,7 +153,7 @@ test('Import scope disposes a running binary-upload worker and retains resumable
  const originals=node.featureServices.archivedFiles,putUpload=originals.putUpload.bind(originals);
  originals.putUpload=async(...args)=>{signal=args[4];entered();return putUpload(...args);};
  const committing=node.app.inject({url:`/api/import-uploads/${begun.id}/commit`,method:'POST',headers});await started;
- await node.featureHost.dispose('mote.imports');const response=await committing;
+ await node.importServices.close();const response=await committing;
  assert.equal(signal?.aborted,true);assert.notEqual(response.statusCode,200);
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,0);
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM asset_pins').get()!.n,0);
@@ -166,7 +163,7 @@ test('Import scope disposes a running binary-upload worker and retains resumable
 
 
 test('feature close waits for work, retires capabilities last, and attempts every failing disposer',async()=>{
- const scope=new ServerFeatureScope(),events:string[]=[];
+ const scope=new FeatureScope(),events:string[]=[];
  let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
  const work=scope.run(async()=>{events.push('running');await held;events.push('settled');});await Promise.resolve();
  scope.defer(()=>{events.push('first');throw Error('generated first cleanup failure');});
@@ -195,8 +192,8 @@ for(const boundary of ['connections','connector','feature','watcher'] as const)t
    connectorManifests=[(await import(module)).default];
  }
  if(boundary==='feature'){
-   const install=ServerFeatureHost.prototype.install;let count=0;
-   t.mock.method(ServerFeatureHost.prototype,'install',async function(this:ServerFeatureHost,...args:Parameters<typeof install>){if(++count===3)throw failure;return install.apply(this,args);});
+   const install=FeatureRoutes.prototype.install;let count=0;
+   t.mock.method(FeatureRoutes.prototype,'install',async function(this:FeatureRoutes,...args:Parameters<typeof install>){if(++count===3)throw failure;return install.apply(this,args);});
  }
  if(boundary==='watcher'){
    const watch=ConfigService.prototype.startWatching;
@@ -233,11 +230,11 @@ test('server shutdown reports disposer failures after closing SQLite and every r
 
 const containsFailure=(error:unknown,failure:Error):boolean=>error===failure||error instanceof AggregateError&&error.errors.some(item=>containsFailure(item,failure));
 for(const method of ['dispose','close'] as const)test(`feature host ${method} reports scope failures that Cordis effect cleanup would otherwise swallow`,async t=>{
- const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app),events:string[]=[],failure=Error('Generated feature cleanup failure');
+ const app=Fastify(),root=new Context(),host=new FeatureRoutes(root,app),events:string[]=[],failure=Error('Generated feature cleanup failure');
  t.after(async()=>{await Promise.allSettled([host.close(),app.close()]);await root.fiber.dispose();});
- await host.install({id:'fixture.failing-scope',version:'1',components:[]},(child,scope)=>{
+ await host.install({id:'fixture.failing-scope',version:'1',mount:(child,scope)=>{
    scope.defer(()=>{events.push('released');});scope.defer(()=>{events.push('failed');throw failure;});child.get('/failing-scope',async()=>({ok:true}));
- });
+ }});
  assert.equal((await app.inject('/failing-scope')).statusCode,200);
  const closing=method==='dispose'?host.dispose('fixture.failing-scope'):host.close();
  assert.equal(method==='dispose'?host.dispose('fixture.failing-scope'):host.close(),closing);
@@ -248,7 +245,7 @@ for(const method of ['dispose','close'] as const)test(`feature host ${method} re
 test('app close reports an installed feature scope cleanup failure and still releases SQLite and diagnostics',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-feature-cleanup-failure-')),failure=Error('Generated installed feature cleanup failure');
  t.after(()=>rmSync(directory,{recursive:true,force:true}));const node=await buildApp(startupConfig(directory));
- await node.featureHost.install({id:'fixture.app-close-failure',version:'1',components:[]},(child,scope)=>{scope.defer(()=>{throw failure;});child.get('/fixture-close',async()=>({ok:true}));});
+ await node.featureRoutes.install({id:'fixture.app-close-failure',version:'1',mount:(child,scope)=>{scope.defer(()=>{throw failure;});child.get('/fixture-close',async()=>({ok:true}));}});
  assert.equal((await node.app.inject({url:'/fixture-close',headers:{authorization:'Bearer '+startupConfig(directory).token}})).statusCode,200);
  await assert.rejects(node.app.close(),error=>containsFailure(error,failure));
  assert.throws(()=>node.store.db.prepare('SELECT 1').get(),/not open/);assert.equal(existsSync(join(directory,'logs','central.lock')),false);

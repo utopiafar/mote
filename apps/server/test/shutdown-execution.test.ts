@@ -46,7 +46,7 @@ test('app.close stops publication polling before executor disposal and retains p
  const close=node.app.close();await entered.promise;assert.throws(()=>node.executor.enqueue('late-reconcile','memory.provider-reconcile',{}),{statusCode:503});
  assert.doesNotThrow(()=>t.mock.timers.tick(6000),'publication timer must not enqueue after the executor has closed');finish.resolve();await close;
  assert.equal(f.store.db.prepare("SELECT state FROM memory_provider_erases WHERE id='generated-pending'").get()!.state,'submitted');
- const next=await f.start({configured:false,query:async()=>{throw Error('No model in generated restart fixture');},close:async()=>{}});next.featureHost.stop();
+ const next=await f.start({configured:false,query:async()=>{throw Error('No model in generated restart fixture');},close:async()=>{}});next.featureRoutes.stop();
  await next.executor.tick();assert.equal(f.store.db.prepare("SELECT state FROM memory_provider_erases WHERE id='generated-pending'").get()!.state,'submitted','unknown provider outcome remains durable and is not marked erased');
  assert.ok(next.executor.list({kind:'memory.provider-reconcile',limit:100}).items.length>0,'fresh process schedules retained reconciliation');
 });
@@ -57,7 +57,7 @@ test('app.close preserves 180 model waits, queues, retry deadlines and explicit 
  let ready=false,calls=0;
  const f=await fixture(t,[{id:'fixture.audio',name:'Generated model wait',version:'1',stage:'extract',serviceKind:'asr',localOnly:true,managedModel:'dialogue',mediaTypes:['audio/'],async process(){calls++;return transcript;}}]);
  const start=async()=>{const node=await f.start();node.featureServices.mediaAssets.ready=()=>ready;return node;};
- const node=await start();node.featureHost.stop();await configure(node,{audioProcessor:'fixture.audio'});const missing:string[]=[];
+ const node=await start();node.featureRoutes.stop();await configure(node,{audioProcessor:'fixture.audio'});const missing:string[]=[];
  for(let i=0;i<180;i++)missing.push(await upload(node,`missing-${i}.wav`));
  while(node.processing.prepare().length)await node.executor.tick();
  assert.equal(calls,0);for(const id of missing){assert.equal(fileStep(node,id).state,'blocked');assert.equal(fileStep(node,id).error,'model_missing');assert.equal(fileStep(node,id).attempts,0);}
@@ -70,7 +70,7 @@ test('app.close preserves 180 model waits, queues, retry deadlines and explicit 
  assert.deepEqual(f.store.db.prepare("SELECT * FROM execution_steps WHERE kind IN ('files.pipeline','files.summary') ORDER BY id").all(),before);
  assert.deepEqual(f.store.db.prepare('SELECT * FROM file_jobs ORDER BY capture_id').all(),jobs);
  assert.throws(()=>node.executor.enqueue('late','files.pipeline',{}),{statusCode:503});assert.deepEqual(node.processing.prepare(),[]);
- ready=true;const next=await start();next.featureHost.stop();
+ ready=true;const next=await start();next.featureRoutes.stop();
  // tick() admits new work without waiting for older work. Include the separate
  // text task, which can already own the file pool before model waits resume.
  await next.executor.drain([...next.processing.prepare(),fileStep(next,queued).id]);await next.processing.tick();await next.processing.tick();

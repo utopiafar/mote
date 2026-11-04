@@ -17,7 +17,8 @@ import {
   createObservabilityPlatform,createObservabilityPlatformFactory,observabilityPlatformContribution,
   observabilityPlatformDeclaration,observabilityPlatformReplacement,type ObservabilityRouteViews,
 } from '../src/plugins/observability-platform.js';
-import {registerBootstrapHealth} from '../src/features/system.js';
+import {healthFeature} from '../src/features/system.js';
+import {FeatureScope} from '../src/features/index.js';
 import type {ReleaseCheck} from '../src/updates.js';
 
 const secret='GENERATED_OBSERVABILITY_PRIVATE_BODY_AND_TOKEN';
@@ -176,7 +177,7 @@ test('sanitized reads stay flat, a write failure is visible, and disposal still 
 test('minimal health stays a host primitive while system, update, usage and diagnostics are platform route contributions',async t=>{
   const f=await fixture(t);await f.platform.prepare();await f.platform.start();
   const app=Fastify();
-  registerBootstrapHealth(app,{serverVersion:'0.4.0'} as never);
+  healthFeature('0.4.0').mount(app,new FeatureScope());
   f.platform.routes(app,f.owner.scope,routeViews({status:{generated:'status'},updates:{items:[],next:null}}));
   const health=await app.inject('/api/health');assert.deepEqual(health.json(),{ok:true,version:'0.4.0',protocol:health.json().protocol});
   assert.deepEqual((await app.inject('/api/status')).json(),{generated:'status'});
@@ -184,7 +185,7 @@ test('minimal health stays a host primitive while system, update, usage and diag
   const update=await app.inject('/api/software-update');assert.equal(update.statusCode,200);assert.equal(update.json().currentVersion,'0.4.0');assert.equal(update.json().state,'idle');
   assert.deepEqual((await app.inject('/api/build-info')).json(),{serverVersion:'0.4.0',webVersion:'0.4.0',consistent:true});
   const diagnostics=await app.inject('/api/diagnostics');assert.equal(diagnostics.statusCode,200);assert.equal(diagnostics.json().scope,'central-safe-diagnostics');
-  const isolated=Fastify();registerBootstrapHealth(isolated,{serverVersion:'0.4.0'} as never);
+  const isolated=Fastify();healthFeature('0.4.0').mount(isolated,new FeatureScope());
   assert.equal((await isolated.inject('/api/status')).statusCode,404,'health bootstrap exposes no business view');
   await app.close();await isolated.close();
 });

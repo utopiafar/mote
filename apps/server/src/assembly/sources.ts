@@ -8,7 +8,6 @@ import type {ServerResources} from '../server-resources.js';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {AuthorizationPlatform} from '../plugins/authorization-platform.js';
 import type {ExecutionPlatform} from '../plugins/execution-platform.js';
-import type {FeatureServices} from '../feature-services.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import {closeSourcePlatforms} from '../platform-close-order.js';
 import {registerFileRoutes} from '../file-routes.js';
@@ -20,6 +19,7 @@ import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSo
 import {c10IntegrationContribution,c10IntegrationDeclaration,c10IntegrationReplacement} from '../plugins/c10-integration.js';
 import {devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacement} from '../plugins/devices-source.js';
 import {openMaterialNoteDeletion} from '../plugins/material-repository.js';
+import type {FeatureRoute} from '../features/index.js';
 
 /** Declared build-time domain plugins the sources assembly wires; the
  * distribution concatenates each domain's list into one selected table. */
@@ -54,7 +54,7 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   resources.defer(()=>sourceRuntimeOwner.close('disabled'));
   const sourcePipelines=sourceRuntime.runtimeForAssembly;
   const sources=openSourceStore(store,sourcePipelines);
-  const codingRoutes=createCodingSourceRoutes(sourcePipelines);
+  const codingRoutes=createCodingSourceRoutes(sourcePipelines),codingFeature:FeatureRoute={id:'mote.coding',mount:app=>codingRoutes.mount(app)};
   const codingSourceOwner=await bootstrap.host.install({identity:{packageId:'mote.coding-source',installationId:'build:coding-source@1.0.0',instanceId:'coding-source',activationId:randomUUID(),host:bootstrap.snapshot().host},
     contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime:sourcePipelines,sources,store},codingRoutes)});
   resources.defer(()=>codingSourceOwner.close('disabled'));
@@ -81,9 +81,5 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   await notesSource.prepare();notesSource.start();resources.defer(()=>notesSource.close());
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
   // sourceRuntime, capture and files slices.
-  const featureServices=Object.freeze({
-    sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,
-    filesSource:{playback:filesAssembly.playback},
-  }) satisfies Partial<FeatureServices>;
-  return Object.freeze({sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,featureServices});
+  return Object.freeze({sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback:filesAssembly.playback,codingFeature});
 }

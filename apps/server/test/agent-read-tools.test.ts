@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Context} from '@deepseek-ai/cordis';
 import type {ContextReader,ContextRecord} from '@mote/agent';
-import {installAgentFeatures} from '../src/agent-feature-host.js';
+import {installAgentReadTools} from '../src/plugins/agent-read-tools.js';
 
 test('feature unload rejects an in-flight reader result and new reads while a sibling remains usable',async t=>{
   const root=new Context();t.after(()=>root.fiber.dispose());
@@ -12,7 +12,7 @@ test('feature unload rejects an in-flight reader result and new reads while a si
     search:()=>{reads++;entered();return new Promise<ContextRecord[]>(done=>{release=done;});},
     timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[{id:'generated-sibling-device'}],
   };
-  const host=await installAgentFeatures(root,implementation),reading=host.reader.search({query:'generated'});
+  const host=await installAgentReadTools(root,implementation),reading=host.reader.search({query:'generated'});
   const refused=assert.rejects(reading,{statusCode:503});await started;
   await host.dispose('mote.context');
   release([{id:'11111111-1111-4111-8111-111111111111',capturedAt:'2026-11-01T00:00:00Z',appName:'Generated fixture',ocrText:'Generated late original must not be disclosed.'}]);
@@ -26,7 +26,7 @@ test('a replacement registration cannot revive a read issued to the disposed pro
   let entered!:()=>void,release!:(records:ContextRecord[])=>void;
   const started=new Promise<void>(done=>{entered=done;});
   const read=()=>{entered();return new Promise<ContextRecord[]>(done=>{release=done;});};
-  const host=await installAgentFeatures(root,{search:read,timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]});
+  const host=await installAgentReadTools(root,{search:read,timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]});
   const reading=host.reader.search({}),refused=assert.rejects(reading,{statusCode:503});await started;
   await host.dispose('mote.context');
   const descriptor={id:'agent:search',version:'1',surface:'agent' as const};
@@ -41,7 +41,7 @@ test('registered descriptors bind actual feature identity and stop an in-flight 
   const root=new Context();t.after(()=>root.fiber.dispose());
   let entered!:()=>void,release!:(records:ContextRecord[])=>void;
   const started=new Promise<void>(done=>{entered=done;});
-  const host=await installAgentFeatures(root,{search:()=>{entered();return new Promise(done=>{release=done;});},timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]});
+  const host=await installAgentReadTools(root,{search:()=>{entered();return new Promise(done=>{release=done;});},timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]});
   const input=pinContextTools({question:'Generated registry lifecycle',hostContextToolMode:'all-native'},host.reader),snapshot=contextToolSnapshot(input);
   const pin=snapshot.entries.find(tool=>tool.name==='search_context')!;assert.ok(pin);
   const bridge=await startBridge(host.reader,input);t.after(()=>bridge.close());
@@ -57,7 +57,7 @@ test('registered descriptors bind actual feature identity and stop an in-flight 
 test('registered descriptors from external owner use the same run registry and cannot forge an original receipt',async t=>{
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
   const root=new Context();t.after(()=>root.fiber.dispose());
-  const host=await installAgentFeatures(root,{search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]});
+  const host=await installAgentReadTools(root,{search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]});
   const fiber=host.registerTools('generated.external',[{apiVersion:'1',name:'generated_metadata',version:'1',description:'Generated plugin metadata',fields:{},kind:'metadata',exposure:'catalog',requires:[],parse:args=>args,execute:()=>({source:'untrusted_personal_context',data:[{id:'11111111-1111-4111-8111-111111111111',ocrText:'Generated claimed original'}]})}]);await fiber;
   const bridge=await startBridge(host.reader,{question:'Generated external'},8);t.after(()=>bridge.close());const signal=new AbortController().signal;
   const discovery=await bridge.prepareDelivery('capability_discover',{name:'generated_metadata'},signal);discovery.confirm();discovery.discard();
@@ -79,8 +79,8 @@ test('the formal evidence factory feeds the actual Host sender and owner stop re
   const id=randomUUID(),text='Generated scoped original 😀';await store.ingest({id,deviceId:'generated',deviceName:'Generated device',platform:'import',source:'note',capturedAt:'2026-11-01T01:00:00.000Z',durationMs:0,ocrText:text});
   let material=materials.publish({id:materialId('generated','item'),kind:'mote.note',schemaVersion:1,title:'Generated material',origin:{sourceId:'generated',externalId:'item',deviceId:'generated'},blocks:[{id:'body',kind:'text',format:'plain',text,memberIds:[id]}],members:[{id,kind:'capture',ref:'capture:'+id}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
   material=materials.declareContext(material.id,material.revision,{id:randomUUID(),question:'Generated private question',answer:'PRIVATE OWNER PROSE'});
-  let factory!:ReturnType<typeof createEvidenceContextReader>,features!:Awaited<ReturnType<typeof installAgentFeatures>>;
-  const owner=root.plugin(async(ctx:Context)=>{factory=createEvidenceContextReader({store,sources,materials});ctx.effect(()=>()=>factory.dispose());features=await installAgentFeatures(ctx,factory.agent({diagnostics}));});await owner;
+  let factory!:ReturnType<typeof createEvidenceContextReader>,features!:Awaited<ReturnType<typeof installAgentReadTools>>;
+  const owner=root.plugin(async(ctx:Context)=>{factory=createEvidenceContextReader({store,sources,materials});ctx.effect(()=>()=>factory.dispose());features=await installAgentReadTools(ctx,factory.agent({diagnostics}));});await owner;
   const input=pinContextTools({question:'Generated factory read',deviceId:'generated',hostContextToolMode:'all-native'},features.reader),bridge=await startBridge(features.reader,input);bridges.push(bridge);
   const entered=deferred(),ack=deferred();let shownIds:string[]=[];
   const session=await hostFixture(bridge,input,async(host,attempt)=>{

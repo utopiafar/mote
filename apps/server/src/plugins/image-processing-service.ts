@@ -198,7 +198,7 @@ export type ImageProcessingPlatform=ReturnType<typeof createImageProcessingServi
 
 /** Stable pre-H14 image routes. A new activation replaces the current port
  * without mounting a second table; stopped or missing activations return 503. */
-export function createImageProcessingRoutes(){
+export function createImageProcessingRoutes(owner?:{readonly withMediaOwnerBatch?:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;readonly withMediaOwnerIntent?:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>}){
   let current:ImageProcessingPort|undefined;
   const mounted=new WeakSet<FastifyInstance>();
   const required=()=>{
@@ -208,10 +208,10 @@ export function createImageProcessingRoutes(){
   return Object.freeze({
     activate(port:ImageProcessingPort){current=port;},
     deactivate(){current=undefined;},
-    mount(app:FastifyInstance,services?:{readonly withMediaOwnerBatch?:<T>(ids:readonly string[],task:()=>T)=>Promise<T>;readonly withMediaOwnerIntent?:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>}){
+    mount(app:FastifyInstance){
       if(mounted.has(app))throw new StoreError('Image processing routes are already installed',409);
       mounted.add(app);
-      const withOwnerIntent=services?.withMediaOwnerIntent??(async(_id,task)=>task()),withOwnerBatch=services?.withMediaOwnerBatch??(async(_ids,task)=>task());
+      const withOwnerIntent=owner?.withMediaOwnerIntent??(async(_id,task)=>task()),withOwnerBatch=owner?.withMediaOwnerBatch??(async(_ids,task)=>task());
       app.register(async child=>{
         child.addHook('onRequest',async(request,reply)=>{
           const write=['POST','PUT','PATCH','DELETE'].includes(request.method);

@@ -1,20 +1,23 @@
 import {registerLibrarySourceView} from '../library-source-view.js';
-import type {ServerFeatureScope} from '../feature-host.js';
-import type { FastifyInstance } from 'fastify';
-import type { FeatureServices } from '../feature-services.js';
-import type {ServerFeatureAdapter} from './index.js';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
+import type {ConnectionCredential} from '../connections.js';
+import type {EvidenceReader} from '../evidence-reader.js';
+import type {MaterialStore} from '../materials.js';
+import type {SourceStore} from '../sources.js';
+import type {Store} from '../store.js';
+import type {FeatureRoute} from './index.js';
 
-/** sources: retains polling and the library view; C10 owns source transport. */
-export function register(app:FastifyInstance,{sourcePipelines,credential,evidenceReader,sources,store,materials}:Pick<FeatureServices,"sourcePipelines"|"credential"|"evidenceReader"|"sources"|"store"|"materials">,scope?:ServerFeatureScope){
- scope?.every(5000,()=>sourcePipelines.tick());scope?.defer(()=>sourcePipelines.close());
-app.addHook('onReady',async()=>{void scope?.run(()=>sourcePipelines.tick());});
-registerLibrarySourceView(app,{store,sources,materials,evidenceReader,credential});
+export interface SourcesFeatureDependencies {
+  readonly credential:(request:FastifyRequest)=>ConnectionCredential|undefined;
+  readonly evidenceReader:EvidenceReader;
+  readonly sources:SourceStore;
+  readonly store:Store;
+  readonly materials:MaterialStore;
 }
 
-export const adapter:ServerFeatureAdapter={
-  descriptor:{id:'mote.sources',version:'1',surface:'data',runtime:'host'},
-  factory:(app,scope,services)=>{
-    scope.retire(()=>services.agentFeatures.dispose('mote.sources'));
-    register(app,services,scope);
-  },
-};
+/** sources: retains the library view; C09 owns source polling and transport. */
+export function sourcesFeature(dependencies:SourcesFeatureDependencies):FeatureRoute {
+  return Object.freeze({id:'mote.sources',mount(app:FastifyInstance){
+    registerLibrarySourceView(app,{store:dependencies.store,sources:dependencies.sources,materials:dependencies.materials,evidenceReader:dependencies.evidenceReader,credential:dependencies.credential});
+  }});
+}

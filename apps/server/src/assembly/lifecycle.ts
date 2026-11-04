@@ -4,32 +4,28 @@ import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
 import type {ConfigurationPlatform} from '../plugins/configuration-platform.js';
 import type {ExecutionPlatform} from '../plugins/execution-platform.js';
-import type {ServerFeatureHost} from '../feature-host.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {ActivityServices} from '../plugins/activity-services.js';
 import type {MemoryPublication} from '../plugins/memory-publication.js';
-import type {FeatureServices} from '../feature-services.js';
 
 /** Shared shutdown latch. Admission paths poll it while handlers still run;
  * the close-order hooks set it before interrupting transports. */
 export interface ServerLifecycle {
   readonly isClosing:()=>boolean;
   readonly markClosing:()=>void;
-  readonly featureServices:Pick<FeatureServices,'isClosing'>;
 }
 
 export function createServerLifecycle():ServerLifecycle{
   let closing=false;
   const isClosing=()=>closing;
-  return Object.freeze({isClosing,markClosing:()=>{closing=true;},featureServices:Object.freeze({isClosing})});
+  return Object.freeze({isClosing,markClosing:()=>{closing=true;}});
 }
 
 export interface ServerLifecycleHookDependencies {
   readonly lifecycle:ServerLifecycle;
   readonly configurationPlatform:ConfigurationPlatform;
-  readonly featureHost:ServerFeatureHost;
   readonly sourcePipelines:SourcePipelineRuntime;
   readonly executionPlatform:ExecutionPlatform;
   readonly executor:ExecutionEngine;
@@ -45,7 +41,7 @@ export interface ServerLifecycleHookDependencies {
  * quiesce platforms, interrupt polling and transports while handlers and
  * stores are still live, then release every registered resource. */
 export function installServerLifecycleHooks(app:FastifyInstance,dependencies:ServerLifecycleHookDependencies){
-  const {lifecycle,configurationPlatform,featureHost,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,resources,diagnostics}=dependencies;
+  const {lifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,resources,diagnostics}=dependencies;
   app.addHook('preClose',async()=>{
     lifecycle.markClosing();
     // Stop watcher/subscriptions and join accepted configuration transactions
@@ -53,7 +49,7 @@ export function installServerLifecycleHooks(app:FastifyInstance,dependencies:Ser
     // must not abort the remaining cleanup. Bootstrap retains final close.
     let configDrainFailure:unknown;
     try{await configurationPlatform.quiesce('shutdown');}catch(error){configDrainFailure=error;}
-    try{featureHost.stop();
+    try{
     // Polling/admission stops without retiring the runtime's Memory authority;
     // the runtime closes only after accepted engine work is interrupted/drained.
     sourcePipelines.quiesce();
