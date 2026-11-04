@@ -8,7 +8,7 @@ import {DelegationRuntime,type DelegationWork} from '../delegation-runtime.js';
 import {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {RunDeadline} from '../run-execution.js';
 import {StoreError} from '../store.js';
-import type {ExecutionEngine} from '../execution-engine.js';
+import {ExecutionFailure,type ExecutionEngine} from '../execution-engine.js';
 import type {ExecutionObservability} from '../execution-observability.js';
 import type {ExecutionSettings} from '../execution-settings.js';
 import type {EvidenceReader} from '../evidence-reader.js';
@@ -21,6 +21,8 @@ import {freezeSemanticContextTime,type LifecycleSettings} from '../memory-lifecy
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 import {contextFailure} from '../model-evidence-authority.js';
 import type {ModelSettingsStore} from '../model-settings.js';
+import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
+import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelConfiguration} from '../model-configuration.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
@@ -67,6 +69,7 @@ export interface QueryRunDependencies {
   readonly qualityStrategy?:QueryQualityStrategy;
   readonly semanticContextTime?:()=>string;
   readonly usageLedger:UsageLedger;
+  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'>};
 }
 
 interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns}
@@ -106,7 +109,15 @@ function delegationOptions(dependencies:QueryRunDependencies){
 /** Callbacks captured by one DelegatedQueryRuns generation. A stopped
  * activation never installs another runtime's callbacks as its own. */
 function createRunCallbacks(dependencies:QueryRunDependencies,runtime:DelegationRuntime,queryRuntime:QueryRuntime):ConstructorParameters<typeof DelegatedQueryRuns>[2]{
-  const {store,files,conversations,executor,modelSettings,working,lifecycleSettings,archiveReader,agent,modelEvidenceAuthority,qualityStrategy,semanticContextTime,usageLedger,sourceContexts,assertModelEvidence,evidenceReader}=dependencies;
+  const {store,files,conversations,executor,modelSettings,working,lifecycleSettings,archiveReader,agent,modelEvidenceAuthority,qualityStrategy,semanticContextTime,usageLedger,sourceContexts,assertModelEvidence,evidenceReader,modelAuthorizationHost}=dependencies;
+  const pinnedConfigurationCurrent=(prepared:QueryInput,fingerprint:string)=>{
+    const profile=modelSettings.select('chat',prepared.modelProfileId),model=prepared.modelOverride??profile.settings.model;
+    return modelConfiguration(profile.id,{...profile.settings,model},modelSettings.view().revision).fingerprint===fingerprint;
+  };
+  const assertModelWork=(work:DelegationWork)=>{
+    const id=work.id.slice('query:'.length),states=['owner-query:'+id,'automatic-conversations:'+work.operationId].map(workId=>modelAuthorizationHost.control.workState(workId));
+    if(states.includes('revoked'))throw new ExecutionFailure('stale','ask_revoked');
+  };
   const prepareDelegatedQuery=createQueryPreparation({store,files,conversations,delegation:runtime,executor,modelSettings,working,lifecycleSettings,archiveReader,configured:()=>agent.configured,authority:modelEvidenceAuthority,
     query:input=>queryRuntime.queryAgent(input,'query','conversations'),qualityStrategy});
   function qualityCheckpoint(input:QueryInput):QueryQualityCheckpoint|undefined{
@@ -153,6 +164,8 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
     prepare:prepareDelegatedQuery.prepare,
     query:(input:QueryInput)=>runQueryQualityExperiment(input,qualityStrategy??'base',(next,stage)=>queryRuntime.queryAgent({...next,traceContext:{...next.traceContext,phase:'quality.'+stage}},'query',stage==='base'?'conversations':'query.'+stage),qualityCheckpoint(input)),
     operationUsage:(operationId:string,createdAt:string,finishedAt:string)=>usageLedger.operation(operationId,createdAt,finishedAt),
+    pinnedConfigurationCurrent,
+    assertModelWork,
     commit:(body:unknown,result:QueryResult,work:DelegationWork)=>{
       const {conversationId,question,attachmentIds=[]}=queryWithAttachmentsSchema.parse(body),saved=runtime.journal.payload<SavedQuery>(work.id),prepared=saved.prepared!;
       assertModelEvidence(prepared);
