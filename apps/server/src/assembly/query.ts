@@ -28,6 +28,7 @@ import type {EvidenceReader} from '../evidence-reader.js';
 import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import type {SourceContextStore} from '../source-context.js';
 import type {FileStore} from '../files.js';
+import type {FeatureServices} from '../feature-services.js';
 import type {ConversationRepository as Conversations} from '../plugins/central-contracts.js';
 import type {WorkingMemory} from '../working-memory.js';
 import {freezeSemanticContextTime,type LifecycleSettings} from '../memory-lifecycle.js';
@@ -270,7 +271,7 @@ export function assembleQueryRuntime(dependencies:QueryRuntimeDependencies){
     signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
 
-  return Object.freeze({activeQueries,withQueryModelAuthority,queryAgent,insight});
+  return Object.freeze({activeQueries,withQueryModelAuthority,queryAgent,insight,featureServices:Object.freeze({queryAgent,insight}) satisfies Partial<FeatureServices>});
 }
 
 export interface DelegationAssemblyDependencies {
@@ -374,5 +375,5 @@ export function assembleDelegation(dependencies:DelegationAssemblyDependencies){
     },
   });
   resources.defer(()=>queryRuns.close());
-  return Object.freeze({delegation,queryRuns});
+  return Object.freeze({delegation,queryRuns,featureServices:Object.freeze({delegation,queryRuns}) satisfies Partial<FeatureServices>});
 }

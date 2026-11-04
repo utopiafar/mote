@@ -6,6 +6,7 @@ import {DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
 import type {Config} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
+import type {FeatureServices} from '../feature-services.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ObservationName} from '../execution-observability.js';
 import type {ConfigurationPlatform} from '../plugins/configuration-platform.js';
@@ -60,5 +61,5 @@ export async function assembleAgent(dependencies:AgentAssemblyDependencies){
       return {...candidate,query:input=>dependencies.modelAuthorizationHost.manual('model-probe:'+id,[connection],signal=>candidate.query({...input,signal}),input.signal,'probe')};
     }),
   });
-  return Object.freeze({agent:runtime,factory,codex});
+  return Object.freeze({agent:runtime,factory,codex,featureServices:Object.freeze({agent:runtime,codex}) satisfies Partial<FeatureServices>});
 }
