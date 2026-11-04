@@ -11,7 +11,7 @@ import type {ConnectorHostAdapter} from './plugins/connector-host-adapter.js';
 import type {FileProcessing} from './file-processing.js';
 import type {ExecutionEngine} from './execution-engine.js';
 import type {ActionsServicesAssembly} from './plugins/actions-services.js';
-import type {ReloadableAgent} from './model-agent.js';
+import type {AgentRuntimeRegistry} from './agent-runtime-registry.js';
 import type {ArchivedFileStore} from './archived-files.js';
 import type {Config} from './config.js';
 import type {Connections} from './connections.js';
@@ -77,7 +77,7 @@ export interface FeatureServices {
   processing:FileProcessing;
   executor:ExecutionEngine;
   actionsServices:ActionsServicesAssembly;
-  agent:ReloadableAgent;
+  agent:AgentRuntimeRegistry;
   archivedFiles:ArchivedFileStore;
   config:Config;
   connections:Connections;

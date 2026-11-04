@@ -16,7 +16,8 @@ import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {SourceContextStore} from '../source-context.js';
 import type {FileStore} from '../files.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ModelAgentFactory,ModelAgentIdentity,ReloadableAgent} from '../model-agent.js';
+import type {ModelAgentFactory,ModelAgentIdentity} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
 import {captureModelIdentity,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import {modelConfiguration} from '../model-configuration.js';
@@ -178,7 +179,7 @@ export interface PerceptionAssemblyDependencies {
   readonly resolveFileModel:FileModelResolver;
   readonly modelSettings:ModelSettingsStore;
   readonly factory:ModelAgentFactory;
-  readonly agent:ReloadableAgent;
+  readonly agent:AgentRuntimeRegistry;
   readonly admittedUsage:AdmittedUsageMeter;
 }
 

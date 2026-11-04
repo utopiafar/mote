@@ -11,7 +11,7 @@ import type {ExecutionEngine} from '../execution-engine.js';
 import type {UsageLedger} from '../usage.js';
 import type {PluginCenter} from '../plugin-center.js';
 import type {ModelSettingsStore} from '../model-settings.js';
-import type {ReloadableAgent} from '../model-agent.js';
+import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import type {BackgroundModelAuthorization,ModelConnection} from '../background-model-authorization.js';
 import {agentModelConnection,type ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ExecutionSettings} from '../execution-settings.js';
@@ -103,7 +103,7 @@ export interface MemoryRuntimeDependencies {
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
   readonly modelSettings:ModelSettingsStore;
-  readonly agent:ReloadableAgent;
+  readonly agent:AgentRuntimeRegistry;
   readonly runtimeSettings:ExecutionSettings;
   readonly codex:{executable?:string;home?:string};
   readonly instancesDirectory:string;
