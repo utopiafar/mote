@@ -11,23 +11,23 @@ import type {Config} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {MemoryStrategies} from '../src/memory-strategies.js';
 import {MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
-import {DAILY_EVENT_RECIPE} from '../src/daily-event-memory-policy.js';
+import {RANGE_SELECTION_DAILY_RECIPE} from '../src/memory-range-selection-policy.js';
 import {uiPageCaptureSource} from '../src/capture-memory-source.js';
 import {screenImageSource} from '../src/image-inputs.js';
 import {sha256} from '../src/store.js';
 import {dailyEventFixtures} from './fixtures/daily-events.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 
-const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'2'};
+const personal={id:'mote.personal-memory',version:'5'},coding={id:'mote.coding-memory',version:'3'};
 test('capture defaults preserve explicit selections, only authorize future input, and retain an owner-disabled event recipe after restart',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-daily-defaults-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   let store=new Store(dir),strategies=new MemoryStrategies(),settings=new MemoryRecipeSettings(store,strategies);
   const sourceId=uiPageCaptureSource('generated'),screenId=screenImageSource('generated',sha256);
   for(const id of [sourceId,screenId,'ordinary'])store.db.prepare('INSERT INTO source_connections VALUES(?,?)').run(id,JSON.stringify({id,deviceId:'generated'}));
   assert.deepEqual(settings.selection().map(b=>b.recipe.id),[personal.id]);
-  for(const id of [sourceId,screenId])assert.deepEqual(settings.selection(id).map(b=>b.recipe.id),[personal.id,DAILY_EVENT_RECIPE.id]);
+  for(const id of [sourceId,screenId])assert.deepEqual(settings.selection(id).map(b=>b.recipe.id),[personal.id,RANGE_SELECTION_DAILY_RECIPE.id]);
   assert.deepEqual(settings.selection('ordinary').map(b=>b.recipe.id),[personal.id]);
-  settings.configure({sourceId,recipes:[coding]});settings.configure({scope:'capture',recipes:[DAILY_EVENT_RECIPE]});
+  settings.configure({sourceId,recipes:[coding]});settings.configure({scope:'capture',recipes:[RANGE_SELECTION_DAILY_RECIPE]});
   assert.deepEqual(settings.selection(sourceId).map(b=>b.recipe.id),[coding.id],'capture defaults never replace a saved source override');
   settings.configure({scope:'capture',recipes:[personal]});store.close();
   store=new Store(dir);t.after(()=>store.close());strategies=new MemoryStrategies();settings=new MemoryRecipeSettings(store,strategies);
@@ -58,7 +58,7 @@ test('generated screenshot and field HTTP intake runs daily extraction/review, s
   await publish();await run();
   const jobs=node.memoryPipeline.list().map(job=>node.memoryPipeline.get(job.id));assert.ok(jobs.every(job=>job.status==='completed'),JSON.stringify(jobs));
   const events=node.memories.list({layer:'observation',level:'detail'});assert.ok(events.length>=data.all.length);
-  assert.ok(events.every(event=>event.strategy?.recipe.id===DAILY_EVENT_RECIPE.id&&event.reviewReceipt?.decision==='independent'));
+  assert.ok(events.every(event=>event.strategy?.recipe.id===RANGE_SELECTION_DAILY_RECIPE.id&&event.reviewReceipt?.decision==='independent'));
   assert.ok(calls.some(call=>call.traceContext?.phase==='extract'&&call.question.includes('daily event history')));assert.ok(calls.some(call=>call.traceContext?.phase==='review'&&call.question.includes('daily-event policy')));
   const reader=node.featureServices.evidenceReader.agent({diagnostics:node.diagnostics,currentGrantContext:()=>grant}),grant={};
   const screenshot=data.all.find(capture=>capture.imageBase64)!;

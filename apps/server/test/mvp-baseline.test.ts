@@ -22,7 +22,7 @@ test('epoch 3 is rejected before schema or originals are changed',t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-old-baseline-')),path=join(directory,'mote.sqlite'),db=new DatabaseSync(path);
  db.exec("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);INSERT INTO settings VALUES('backend_epoch','3');CREATE TABLE preserved(body TEXT);INSERT INTO preserved VALUES('Generated old fixture');");db.close();
  t.after(()=>rmSync(directory,{recursive:true,force:true}));const before=readFileSync(path);
- assert.throws(()=>new Store(directory),/epoch 4/);assert.deepEqual(readFileSync(path),before);assert.equal(existsSync(join(directory,'files')),false);assert.equal(existsSync(join(directory,'blobs')),false);
+ assert.throws(()=>new Store(directory),/epoch 5/);assert.deepEqual(readFileSync(path),before);assert.equal(existsSync(join(directory,'files')),false);assert.equal(existsSync(join(directory,'blobs')),false);
 });
 
 test('fresh app installs current defaults and intake projections before receiving originals',async t=>{

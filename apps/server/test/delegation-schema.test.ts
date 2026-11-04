@@ -90,6 +90,6 @@ test('fresh and repeated current delegation initialization retain kind-qualified
   const restoredSources = new SourceStore(restored);
   assert.deepEqual(restoredSources.contexts.current('generated-source'), second);
   assert.equal(restoredSources.contexts.getAtVersion('generated-source', first.version, first.fingerprint)?.description, first.description);
-  assert.equal(restored.db.prepare('PRAGMA user_version').get()!.user_version, 4);
-  assert.equal(restored.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()!.value, '4');
+  assert.equal(restored.db.prepare('PRAGMA user_version').get()!.user_version, 5);
+  assert.equal(restored.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()!.value, '5');
 });

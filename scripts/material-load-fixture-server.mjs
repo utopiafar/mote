@@ -52,7 +52,7 @@ function controlDraft(record){const c=fixture.control;return {id:c.materialId,ki
 if(interactive){
  const c=fixture.control;
  node.materialOrganizer.registry.register({id:'fixture.ui-controlled',version:'1',slot:'source-item',priority:100,exclusive:true,select:r=>r.provenance?.sourceId===c.sourceId?{sourceId:c.sourceId,externalId:c.externalId}:undefined,identity:()=>c.materialId,build:reader=>{const r=reader.sourceHead();return r?controlDraft(r):undefined;}});
- for(const [id,requires] of [['fixture.body-memory',['source-body']],['fixture.transcript-memory',['extracted-text']]])node.memoryStrategies.registerRecipe({id,version:'1',requires,extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'}});
+ for(const [id,requires] of [['fixture.body-memory',['source-body']],['fixture.transcript-memory',['extracted-text']]])node.memoryStrategies.registerRecipe({id,version:'1',workContract:'range-evaluation@1',requires,extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:'mote.personal-review',version:'5'}});
  if(recovery){const existing=node.sources.getItem(c.sourceId,c.externalId);assert.ok(existing,'Existing control head required');assert.equal(existing.text,c.body+' '+c.transcript);assert.equal(existing.revision,'1');controlRecord={id:existing.captureId};assert.equal(node.materials.get(c.materialId).artifacts.find(a=>a.key==='extracted-text').state,'pending');}
  else{node.sources.register({id:c.sourceId,name:'生成的受控处理资料',kind:'custom',deviceId:c.deviceId,platform:'import'});
  controlRecord=await node.sources.upsert(c.sourceId,{externalId:c.externalId,revision:'1',observedAt:c.observedAt,title:c.title,kind:'message',layer:'original',text:c.body+' '+c.transcript});}

@@ -76,7 +76,7 @@ test('five stub calls share frozen generation/review/Ask times and preserve real
   },()=>{samples++;return semantic;});node=f.node;
   record=await note(node,'Generated dial alpha. Generated access expires at '+expiry+'. Generated dial beta replaces alpha.');
   realTime(record.receivedAt,start);
-  const request={evidenceIds:[record.id],recipes:[{id:'mote.personal-memory',version:'2'}],contextTime:early};
+  const request={evidenceIds:[record.id],recipes:[{id:'mote.personal-memory',version:'5'}],contextTime:early};
   const job=await withFixtureOwnerModelWork(node,async()=>node.memoryPipeline.run(node.memoryPipeline.create(request).id));
   assert.equal(job.status,'completed');assert.equal(job.totalBatches,1);assert.equal(calls.length,2);assert.equal(samples,0);
   const cards=job.memoryIds.map(id=>node.memories.get(id));oldId=cards.find(m=>m.title==='Generated alpha')!.id;timedId=cards.find(m=>m.title==='Generated access')!.id;

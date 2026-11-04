@@ -17,7 +17,7 @@ import {MaterialStore} from '../src/materials.js';
 import {OwnerQuestions} from '../src/owner-questions.js';
 import {installMemoryOwnerQuestions} from '../src/memory-owner-questions.js';
 import {reviewMemory} from '../src/memory-review.js';
-import {memoryWorkCandidateLimit,type MemoryWorkMember} from '../src/memory-work-contract.js';
+import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
 // Real durable pipeline/reviewer/question host and restart ordering. Discovery,
 // native preparation and model transport are generated fixtures, not a native
@@ -71,7 +71,7 @@ for(const legacyVerified of [false,true])test(`raw-original reviewed owner quest
     // The reviewed zero-candidate envelope was valid; only its Material-bound
     // continuation was missing, so no canonical external body is written.
     const batch=decodeMemoryBatch<any>(f.store,String(f.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(batchId)!.json)),workContract=batch.evaluation.workContract;
-    await f.publication.stageExtract(batchId,output.result,'generated-model',{workContract,maxCandidates:workContract==='range-evaluation@1'?undefined:memoryWorkCandidateLimit(batch.chunks.length),profile:'personal',requireAdmission:true,reviewReceipt:output.reviewReceipt,evidenceRanges:batch.evidenceRanges,expectedFingerprints:Object.fromEntries(batch.chunks.map((chunk:{id:string;fingerprint:string})=>[chunk.id,chunk.fingerprint]))},()=>{});
+    await f.publication.stageExtract(batchId,output.result,'generated-model',{workContract,profile:'personal',requireAdmission:true,reviewReceipt:output.reviewReceipt,evidenceRanges:batch.evidenceRanges,expectedFingerprints:Object.fromEntries(batch.chunks.map((chunk:{id:string;fingerprint:string})=>[chunk.id,chunk.fingerprint]))},()=>{});
     assert.equal(f.store.db.prepare('SELECT state FROM memory_publications WHERE id=?').get(batchId)!.state,'verified');
   }
   await f.restart();assert.deepEqual(f.phaseCheckpoints(batchId),checkpoints,'restart preserves the complete private native proposal and independent review');

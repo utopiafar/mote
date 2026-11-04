@@ -81,7 +81,7 @@ try{
    const evidence=node!.memories.readEvidence(input.evidenceIds??[]);for(const r of evidence)for(const needle of forbidden)assert.ok(!r.ocrText.includes(needle));
    console.log(JSON.stringify({stage:'model',call:calls,phase:input.traceContext?.phase??'understanding',rangeCharacters:ranges.reduce((n,r)=>n+r.length,0)}));return query(input);};
   const material=node.materials.list({kind:'mote.coding-session'}).items.find(m=>m.origin.sourceId==='real-claude');assert.ok(material);
-  const ids=node.materials.evidenceIds(material.ref),recipes=[{id:'mote.personal-memory',version:'2'},{id:'mote.coding-memory',version:'2'}];
+  const ids=node.materials.evidenceIds(material.ref),recipes=[{id:'mote.personal-memory',version:'5'},{id:'mote.coding-memory',version:'3'}];
   const created=recipes.map(recipe=>node!.memoryPipeline.create({evidenceIds:ids,recipes:[recipe],contextTime:new Date().toISOString(),batchCharacters:12000}));
   const jobs=await Promise.all(created.map(j=>node!.memoryPipeline.run(j.id)));
   report.jobs=jobs.map(j=>({status:j.status,batches:j.totalBatches,failed:j.failedBatches,memories:j.memoryIds.length,error:j.errorCode}));

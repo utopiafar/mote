@@ -7,7 +7,7 @@ import {randomBytes,createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../apps/server/src/app.js';
 import type {Config} from '../apps/server/src/config.js';
-import {DAILY_EVENT_RECIPE} from '../apps/server/src/daily-event-memory-policy.js';
+import {RANGE_SELECTION_DAILY_RECIPE} from '../apps/server/src/memory-range-selection-policy.js';
 import {dailyEventFixtures} from '../apps/server/test/fixtures/daily-events.js';
 
 const output=await mkdtemp(join(tmpdir(),'mote-daily-events-live-')),token=randomBytes(32).toString('hex'),data=await dailyEventFixtures();
@@ -30,8 +30,8 @@ try{
   };
   const base=await node.app.listen({host:'127.0.0.1',port:0});
   const request=async(method:string,path:string,payload?:unknown)=>{const response=await fetch(base+path,{method,headers:{authorization:'Bearer '+token,...(payload===undefined?{}:{'content-type':'application/json'})},...(payload===undefined?{}:{body:JSON.stringify(payload)})});const result=await response.json();assert.ok(response.ok,`${method} ${path}: ${response.status} ${JSON.stringify(result)}`);return result;};
-  await request('PUT','/api/memory-recipe-settings',{scope:'capture',recipes:[DAILY_EVENT_RECIPE]});
-  report.binding=node.memoryStrategies.resolve(DAILY_EVENT_RECIPE).binding;
+  await request('PUT','/api/memory-recipe-settings',{scope:'capture',recipes:[RANGE_SELECTION_DAILY_RECIPE]});
+  report.binding=node.memoryStrategies.resolve(RANGE_SELECTION_DAILY_RECIPE).binding;
   for(const capture of data.all)await request('POST','/api/captures',capture);
   // Production background workers are used. Only settle timestamps are expedited.
   const deadline=Date.now()+12*60*1000;

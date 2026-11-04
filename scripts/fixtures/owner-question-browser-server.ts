@@ -27,7 +27,7 @@ for(const index of [0,1]){
  const response=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:original,document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});assert.equal(response.statusCode,200,response.body);
  await node.materialOrganizer.tick();await node.sourcePipelines.tick();
  const material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId===externalId)!;assert.ok(material);
- const started=await api('POST','/api/memory-jobs',{evidenceIds:node.materials.evidenceIds(material.ref),recipes:[{id:'mote.personal-memory',version:'2'}]});assert.equal(started.statusCode,202,started.body);
+ const started=await api('POST','/api/memory-jobs',{evidenceIds:node.materials.evidenceIds(material.ref),recipes:[{id:'mote.personal-memory',version:'5'}]});assert.equal(started.statusCode,202,started.body);
  const job=await node.memoryPipeline.run(started.json().id);assert.equal(job.status,'waiting_for_input');
  const page=await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id));assert.equal(page.statusCode,200,page.body);
  const question=page.json().items[0];assert.ok(question);questions.push({id:question.id,materialId:question.materialId,materialRef:question.materialRef,operationId:question.operationId,workId:question.workId});

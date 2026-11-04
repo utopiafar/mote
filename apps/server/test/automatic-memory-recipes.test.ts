@@ -13,7 +13,7 @@ import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {memoryRecipeScope,MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
 
-const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'2'};
+const personal={id:'mote.personal-memory',version:'5'},coding={id:'mote.coding-memory',version:'3'};
 const body='I felt proud of finishing the prototype. For the prototype retry path I prevented duplicate writes with an idempotency key and verified the retry.';
 const understanding=(input:QueryInput)=>input.question.includes('FINAL UNIFIED RESPONSE CONTRACT:\nInterpret every supplied part');
 async function fixture(t:import('node:test').TestContext){
@@ -58,84 +58,27 @@ test('owner-selected automatic recipes share one generation, support source over
   await f.configure([personal,coding]);f.source('diary');f.source('coding-source',true);
   const override=await f.configure([coding],'coding-source');assert.equal(override.inherited,false);
   await f.add('diary','first');await f.add('coding-source','second',true);await f.publish();await f.run();
-  assert.equal(f.count('extract'),2,'the two diary reviewers share a draft; Coding understanding supplies the complete candidate artifact');assert.equal(f.count('review'),3);
+  assert.equal(f.count('extract'),3,'each current recipe uses its own fixed extractor');assert.equal(f.count('review'),3);
   const jobs=f.jobs();assert.equal(jobs.length,2);assert.ok(jobs.every(j=>j.status==='completed'));assert.equal(jobs.reduce((sum,j)=>sum+(j.automaticGrants?.length??0),0),3);
   const shared=jobs.filter(j=>j.automaticGrants!.some(grant=>grant.sourceId==='diary'));assert.equal(new Set(shared.flatMap(j=>j.workPackage!.inputs!.filter(input=>input.sourceId==='diary').map(input=>input.contextTime))).size,1,'the same diary receipt keeps its semantic time across transport packages');
   const products=jobs.flatMap(j=>j.memoryIds.map(id=>f.node.memories.get(id)));assert.equal(products.length,3);
   const one=products.find(m=>m.domain==='personal')!;f.node.memories.publish(one.id);
-  await f.restart();await f.publish();await f.run();assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
+  await f.restart();await f.publish();await f.run();assert.equal(f.count('extract'),3);assert.equal(f.count('review'),3);
   await f.configure([coding]);assert.equal(f.node.memories.get(one.id).status,'published','disabling does not erase confirmed products');
   const inherited=await f.configure(null,'coding-source');assert.equal(inherited.inherited,true);assert.equal(inherited.items[0].binding.recipe.id,coding.id);
   const material=f.node.materials.list({sourceId:'diary'}).items[0];
   const inputKey=shared[0].automaticGrants![0].inputKey;
-  f.node.materialMemoryWork.observe(material.id,['source-body'],{inputKey,change:'rebuild'});await f.run();assert.equal(f.calls.length,5,'changing selection or rebuilding does not backfill');
+  f.node.materialMemoryWork.observe(material.id,['source-body'],{inputKey,change:'rebuild'});await f.run();assert.equal(f.calls.length,6,'changing selection or rebuilding does not backfill');
 });
 
-test('built-in default upgrade finishes a preexisting v2 receipt and uses v3 only for future intake without backfill',async t=>{
-  const f=await fixture(t);await f.configure([personal]);f.source('diary');
-  await f.add('diary','old-receipt');await f.publish();await f.queue();
-  const before=f.jobs();assert.equal(before.length,1);assert.equal(before[0].recipes![0].version,'2');
-  // Reproduce an installation predating this named migration, retaining actual
-  // production intake receipts and queued jobs rather than synthesizing grants.
-  f.node.store.db.prepare("DELETE FROM memory_recipe_default_upgrades WHERE id='bounded-personal@3'").run();
-  await f.restart();assert.equal(f.node.memoryRecipeSettings.selection()[0].recipe.version,'3');
-  await f.run();assert.equal(f.node.memoryPipeline.get(before[0].id).status,'completed');
-  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);
-  await f.add('diary','fresh-receipt');await f.publish();await f.run();
-  assert.deepEqual(f.jobs().map(j=>j.recipes![0].version).sort(),['2','3']);
-  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2,'v3 has its own fixed extractor');
-  const ids=f.jobs().map(j=>j.id);await f.restart();await f.publish();await f.run();
-  assert.deepEqual(f.jobs().map(j=>j.id),ids);assert.equal(f.calls.length,4,'restart does not replay either version');
-});
-
-test('v4 built-in default upgrade preserves a queued v3 receipt and selects v4 only for future intake',async t=>{
-  const f=await fixture(t),v3={id:personal.id,version:'3'};
-  await f.configure([v3]);f.source('diary');
-  await f.add('diary','old-v3-receipt');await f.publish();await f.queue();
-  const before=f.jobs();assert.equal(before.length,1);assert.equal(before[0].recipes![0].version,'3');
-  // Keep the accepted v3 intake and queued work while reproducing startup before
-  // the separate named v4 migration. No synthetic receipt or backfill is used.
-  f.node.store.db.prepare("DELETE FROM memory_recipe_default_upgrades WHERE id='context-reading-personal@4'").run();
-  await f.restart();assert.equal(f.node.memoryRecipeSettings.selection()[0].recipe.version,'4');
-  await f.run();assert.equal(f.node.memoryPipeline.get(before[0].id).status,'completed');
-  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);
-  await f.add('diary','fresh-v4-receipt');await f.publish();await f.run();
-  assert.deepEqual(f.jobs().map(j=>j.recipes![0].version).sort(),['3','4']);
-  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2,'v4 uses its own immutable extractor and reviewer');
-  const ids=f.jobs().map(j=>j.id);await f.restart();await f.publish();await f.run();
-  assert.deepEqual(f.jobs().map(j=>j.id),ids);assert.equal(f.calls.length,4,'restart does not replay either version');
-});
-
-test('range-evaluation default upgrade drains an already authorized personal-v4 receipt and gives only future intake personal-v5 authority',async t=>{
- const f=await fixture(t),legacyPersonal={id:'mote.personal-memory',version:'4'};
- await f.configure([legacyPersonal]);f.source('generated-range-upgrade');await f.add('generated-range-upgrade','authorized-before-upgrade');await f.publish();await f.queue();
- const old=f.jobs()[0];assert.ok(old);assert.equal(old.recipes![0].version,'4');assert.equal(old.batches[0].strategy!.workContract,undefined);
- const oldBinding=JSON.stringify(old.batches[0].strategy),oldGrant=JSON.stringify(old.automaticGrants);
- assert.equal(f.calls.length,0,'queued authority is a saved real receipt, without a model run');
- f.node.store.db.prepare("DELETE FROM memory_recipe_default_upgrades WHERE id='range-evaluation@1'").run();
- await f.restart();assert.equal(f.node.memoryRecipeSettings.selection()[0].recipe.version,'5');assert.deepEqual(f.jobs().map(job=>job.id),[old.id],'restart may resume the already authorized queued job, without granting another historical job');
- await f.run();const completed=f.node.memoryPipeline.get(old.id);assert.equal(completed.status,'completed');assert.equal(JSON.stringify(completed.batches[0].strategy),oldBinding);assert.equal(JSON.stringify(completed.automaticGrants),oldGrant);
- assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);
- await f.add('generated-range-upgrade','authorized-after-upgrade');await f.publish();await f.run();
- const jobs=f.jobs();assert.deepEqual(jobs.map(job=>job.recipes![0].version).sort(),['4','5']);const fresh=jobs.find(job=>job.recipes![0].version==='5')!;
- assert.equal(fresh.status,'completed');assert.ok(fresh.batches.every(batch=>batch.strategy!.workContract==='range-evaluation@1'));
- const freshCalls=f.calls.filter(call=>call.traceContext?.jobId===fresh.id);assert.equal(freshCalls.length,2);assert.ok(freshCalls.every(call=>(call.taskContext!.memoryWork as {workContract?:string;maxCandidates?:number}).workContract==='range-evaluation@1'&&(call.taskContext!.memoryWork as {maxCandidates?:number}).maxCandidates===undefined));
- const before=f.calls.length,ids=jobs.map(job=>job.id);await f.restart();await f.publish();await f.run();assert.equal(f.calls.length,before);assert.deepEqual(f.jobs().map(job=>job.id),ids);
-
-});
-
-test('explicit source inheritance after default upgrade revokes its old receipt without cancelling other sources',async t=>{
-  const f=await fixture(t);await f.configure([personal]);f.source('ordinary');f.source('override');await f.configure([personal],'override');
+test('explicit source inheritance withdraws its prior receipt without cancelling other sources',async t=>{
+  const f=await fixture(t);await f.configure([personal]);f.source('ordinary');f.source('override');await f.configure([coding],'override');
   let entered!:()=>void,release!:()=>void;const reached=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
   f.control.duringReview=async input=>{if(f.node.memoryPipeline.get(input.traceContext!.jobId!).automaticGrants?.some(grant=>grant.sourceId==='override')){entered();await held;}};
   t.after(()=>release());
   await f.add('ordinary','default-receipt');await f.publish();await f.queue();
   await f.add('override','override-receipt');await f.publish();await f.queue();
   const jobs=f.jobs();assert.equal(jobs.length,2);
-  f.node.store.db.prepare("DELETE FROM memory_recipe_default_upgrades WHERE id='bounded-personal@3'").run();
-  new MemoryRecipeSettings(f.node.store,f.node.memoryStrategies);
-  assert.equal(f.node.memoryRecipeSettings.selection('ordinary')[0].recipe.version,'3');
-  assert.equal(f.node.memoryRecipeSettings.selection('override')[0].recipe.version,'2');
   const running=f.run();await reached;
   try{
     await f.configure(null,'override');
@@ -153,7 +96,7 @@ test('explicit source inheritance after default upgrade revokes its old receipt 
   assert.equal(f.calls.length,4,'restart never replays the withdrawn or completed work');
 });
 
-test('receipt pins scopes before publication; later enablement, version replacement and duplicate delivery do not backfill',async t=>{
+test('receipt pins scopes before publication; later enablement and duplicate delivery do not backfill',async t=>{
   const f=await fixture(t);f.source('diary');
   const denied=await f.add('diary','disabled');
   // Seed a durable denial. Later choices cannot broaden that receipt's
@@ -161,15 +104,13 @@ test('receipt pins scopes before publication; later enablement, version replacem
   f.node.store.db.prepare('UPDATE memory_input_authorizations SET authorized=0 WHERE capture_id=?').run(denied.id);await f.configure([personal,coding]);await f.publish();await f.run();assert.equal(f.calls.length,0);
   assert.equal((await f.add('diary','disabled')).duplicate,true);await f.publish();await f.run();assert.equal(f.calls.length,0);
   assert.ok(f.node.materials.list({sourceId:'diary'}).items.some(m=>f.node.materialMemoryWork.readyForMemory(m.ref)));
-  await f.add('diary','pinned');
-  const current=f.node.memoryStrategies.resolve(personal).binding;
-  f.node.memoryStrategies.registerRecipe({id:personal.id,version:'generated-replacement',extract:{id:current.extract.id,version:current.extract.version},review:{id:current.review.id,version:current.review.version}});
-  await f.configure([{id:personal.id,version:'generated-replacement'},coding]);await f.publish();await f.run();
-  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);assert.equal(f.jobs()[0].recipes![0].id,coding.id);
+  await f.add('diary','pinned');await f.publish();await f.run();
+  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2);
+  assert.equal(f.jobs().length,2);
   const grants=f.node.store.db.prepare('SELECT binding_json,revoked_at FROM memory_input_authorizations WHERE capture_id!=? AND authorized=1').all(denied.id);
-  assert.equal(grants.length,2);assert.equal(grants.filter(g=>g.revoked_at!==null).length,1);
-  await f.configure([personal,coding]);await f.run();assert.equal(f.calls.length,2,'reenabling cannot restore a revoked receipt');
-  await f.add('diary','fresh');await f.publish();await f.run();assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
+  assert.equal(grants.length,2);assert.ok(grants.every(g=>g.revoked_at===null));
+  const before=f.calls.length;await f.configure([personal,coding]);await f.run();assert.equal(f.calls.length,before,'reenabling cannot restore a revoked receipt or create new work');
+  await f.add('diary','fresh');await f.publish();await f.run();assert.equal(f.count('extract'),4);assert.equal(f.count('review'),4);
   const disabledMaterial=f.node.materials.list({sourceId:'diary'}).items.find(m=>m.origin.externalId==='disabled')!;
   const explicit=f.node.memoryPipeline.create({evidenceIds:f.node.materials.evidenceIds(disabledMaterial.ref),recipes:[personal]});
   assert.equal((await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(explicit.id))).status,'completed','explicit owner work may process the otherwise unauthorized history');
@@ -178,11 +119,11 @@ test('receipt pins scopes before publication; later enablement, version replacem
 test('one automatic reviewer failure preserves the other product and retries only the failed review after restart',async t=>{
   const f=await fixture(t);f.source('diary');await f.configure([personal,coding]);f.control.failCoding=true;
   await f.add('diary','first');await f.publish();await f.run();
-  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),2);
+  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2);
   const failed=f.jobs().find(j=>j.status==='failed')!,completed=f.jobs().find(j=>j.status==='completed')!;
   assert.equal(failed.recipes![0].id,coding.id);const original=f.node.memories.get(completed.memoryIds[0]);
   await f.restart();f.control.failCoding=false;
-  assert.equal((await f.node.memoryPipeline.retry(failed.id)).status,'completed');assert.equal(f.count('extract'),1);assert.equal(f.count('review'),3);
+  assert.equal((await f.node.memoryPipeline.retry(failed.id)).status,'completed');assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
   assert.deepEqual(f.node.memories.get(original.id),original);
 });
 
@@ -203,7 +144,7 @@ test('unavailable selected definitions preserve their pinned receipt and do not 
   const f=await fixture(t);f.source('diary');const definition={id:'generated.review',version:'1',input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy:'Generated reviewer'};
   const stop=f.node.memoryStrategies.registerReview(definition);
   const custom={id:'generated.recipe',version:'1'};
-  f.node.memoryStrategies.registerRecipe({...custom,extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:definition.id,version:definition.version}});
+  f.node.memoryStrategies.registerRecipe({...custom,workContract:'range-evaluation@1',extract:{id:'mote.selected-context-extraction',version:'1'},review:{id:definition.id,version:definition.version}});
   await f.configure([custom,personal]);await f.add('diary','first');stop();await f.publish();await f.run();
   assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);
   const view=f.node.memoryRecipeSettings.view();assert.equal(view.items.find(i=>i.binding.recipe.id===custom.id)!.available,false);
@@ -211,31 +152,6 @@ test('unavailable selected definitions preserve their pinned receipt and do not 
   const pending=f.node.store.db.prepare('SELECT job_id,error FROM material_memory_requests WHERE scope=?').get(scope);
   assert.equal(pending!.job_id,null);assert.equal(pending!.error,'memory_enqueue_failed');
   assert.equal(f.jobs().length,1,'no fallback policy is silently substituted');
-});
-
-for(const mutation of ['delete','prune','revise'] as const)test(`a cancelled automatic producer preserves a shared stage for an authorized sibling across restart; ${mutation} still invalidates it`,async t=>{
-  const f=await fixture(t);f.source('diary');await f.configure([personal,coding]);const original=await f.add('diary','first');await f.publish();await f.queue();
-  const producer=f.jobs().find(j=>j.recipes![0].id===personal.id)!;
-  let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>enter=r),held=new Promise<void>(r=>release=r);
-  f.control.duringReview=async()=>{enter();await held;};const running=f.node.memoryPipeline.run(producer.id);await entered;
-  const draft=f.node.store.db.prepare('SELECT batch_id,input_hash,json FROM memory_extraction_drafts WHERE shared=1').get()!;
-  assert.ok(producer.batches.some(b=>b.id===draft.batch_id),'the cancelled job actually produced the shared draft');
-  await f.configure([coding]);release();assert.equal((await running).status,'cancelled');
-  assert.equal(f.node.memories.list().length,0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
-  assert.deepEqual(f.node.store.db.prepare('SELECT batch_id,input_hash,json FROM memory_extraction_drafts WHERE shared=1').get(),draft);
-  await f.restart();f.control.duringReview=undefined;await f.run();
-  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),2);
-  const sibling=f.jobs().find(j=>j.recipes![0].id===coding.id)!;assert.equal(sibling.status,'completed');assert.equal(sibling.memoryIds.length,1);
-  const memory=f.node.memories.get(sibling.memoryIds[0]);assert.equal(memory.domain,'coding');
-  assert.equal(memory.reviewReceipt!.draftRunId,JSON.parse(String(draft.json)).runId);
-  assert.equal(f.node.memoryPipeline.get(producer.id).status,'cancelled');
-  if(mutation==='delete')assert.equal(f.node.store.delete(original.id).deleted,1);
-  else if(mutation==='prune')assert.ok(f.node.store.prune('2021-01-01T00:00:00Z')>=1);
-  else await f.node.sources.upsert('diary',{externalId:'first',revision:'2',observedAt:'2020-01-02T00:00:00Z',kind:'message',layer:'original',text:'A corrected original.',document:{contentRole:'authored'}});
-  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
-  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
-  if(mutation==='revise'){assert.equal(f.node.memories.get(memory.id).status,'stale');assert.equal(f.node.store.evidence([original.id]).length,1,'revision keeps historical original');}
-  else assert.throws(()=>f.node.memories.get(memory.id),{statusCode:404});
 });
 
 test('automatic source jobs use the owner batch limit and keep existing ranges through setting changes and restart',async t=>{

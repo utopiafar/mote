@@ -1,7 +1,7 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {codingProjectContext} from './coding-project.js';
 import {uiPageCaptureSource} from './capture-memory-source.js';
-import {DAILY_EVENT_RECIPE} from './daily-event-memory-policy.js';
+import {RANGE_SELECTION_DAILY_RECIPE} from './memory-range-selection-policy.js';
 import {createHash} from 'node:crypto';
 import {sourceContentTime,imageLocationSchema,type CaptureRecord,type Transcript} from '@mote/shared';
 import {materialId,MaterialStore,type MaterialDraft,type MaterialEvidenceContext} from './materials.js';
@@ -795,16 +795,16 @@ export class MaterialOrganizerRuntime {
             const activity=Boolean(prepared.pinnedSourceHead&&capture(store,prepared.pinnedSourceHead)?.provenance?.document?.activity);
             if(prepared.pinnedSourceHead)this.memoryWork?.observe(input.materialId,activity?['daily-events']:selected,{
               inputKey:prepared.pinnedSourceHead,change:input.sourceChanged?'source':'rebuild',
-              ...(activity?{recipeIds:[DAILY_EVENT_RECIPE.id]}:{excludeRecipeIds:[DAILY_EVENT_RECIPE.id]}),
+              ...(activity?{recipeIds:[RANGE_SELECTION_DAILY_RECIPE.id]}:{excludeRecipeIds:[RANGE_SELECTION_DAILY_RECIPE.id]}),
             });
           }else if(input.organizerId===uiPageObject.id){
             const last=prepared.draft.members.at(-1)?.id;
-            if(last)this.memoryWork?.observe(input.materialId,['source-body'],{inputKey:last,change:input.sourceChanged?'source':'rebuild',excludeRecipeIds:[DAILY_EVENT_RECIPE.id]},15000);
+            if(last)this.memoryWork?.observe(input.materialId,['source-body'],{inputKey:last,change:input.sourceChanged?'source':'rebuild',excludeRecipeIds:[RANGE_SELECTION_DAILY_RECIPE.id]},15000);
           }else if(input.organizerId===screenGroup.id){
             const last=prepared.draft.members.at(-1)?.id;
-            if(last)this.memoryWork?.observe(input.materialId,this.claimedImageRequirements(input.materialId,last,prepared.draft.artifacts?.some(item=>item.key==='image-original')?['image-original',...(prepared.draft.artifacts?.some(item=>item.key==='image-ocr')?['image-ocr']:[])]:['ocr']),{inputKey:last,change:input.sourceChanged?'source':'rebuild',excludeRecipeIds:[DAILY_EVENT_RECIPE.id]},15000);
+            if(last)this.memoryWork?.observe(input.materialId,this.claimedImageRequirements(input.materialId,last,prepared.draft.artifacts?.some(item=>item.key==='image-original')?['image-original',...(prepared.draft.artifacts?.some(item=>item.key==='image-ocr')?['image-ocr']:[])]:['ocr']),{inputKey:last,change:input.sourceChanged?'source':'rebuild',excludeRecipeIds:[RANGE_SELECTION_DAILY_RECIPE.id]},15000);
           }else if(input.organizerId===captureEvent.id){
-            this.memoryWork?.observe(input.materialId,['daily-events'],{inputKey:input.group.captureId,change:input.sourceChanged?'source':'rebuild',recipeIds:[DAILY_EVENT_RECIPE.id]},15000);
+            this.memoryWork?.observe(input.materialId,['daily-events'],{inputKey:input.group.captureId,change:input.sourceChanged?'source':'rebuild',recipeIds:[RANGE_SELECTION_DAILY_RECIPE.id]},15000);
           }
         }else if(!other){
           const prior=materials.get(input.materialId);if(prior)materials.retire(input.materialId,{expectedRevision:prior.revision});

@@ -44,14 +44,14 @@ test('large shared products stay expandable under the ordinary detail response b
  const f=await fixture(t),id='e'.repeat(64);f.store.archive.save(id,id,id,{kind:'semantic',text:'Generated event summary',metadata:{productsVersion:1,events:Array.from({length:12},()=>({statement:'x'.repeat(1200)})),memoryCandidates:Array.from({length:8},()=>({statement:'m'.repeat(3000)})),actionCues:Array.from({length:8},()=>({event:{description:'a'.repeat(2000)}})),evidenceRanges:[{id:f.id,offset:0,length:text.length}],citations:[f.id],complete:true}},[],'fixture','1','fixture',[],[{id:f.segment.id,revision:f.segment.revision}]);const page=f.store.archive.page({id});assert.equal(page.items.length,1);assert.equal(page.items[0].metadata.productBodiesOmitted,true);assert.deepEqual(page.items[0].metadata.productCounts,{workRecords:0,events:12,memoryCandidates:8,actionCues:8,evidenceRanges:1});assert.ok(page.characters<24000);assert.equal((f.store.archive.get(id)!.metadata.actionCues as unknown[]).length,8);
 });
 
-for(const productsVersion of [2,3])test(`version ${productsVersion} product navigation hides candidate accounting while retaining exact original references`,async t=>{
- const f=await fixture(t),id=String(productsVersion).repeat(64),parent={id:f.segment.id,revision:f.segment.revision};
- const metadata={productsVersion,...(productsVersion===3?{workContract:'range-evaluation@1'}:{}),memoryCandidates:Array.from({length:80},()=>({statement:'Generated private proposal '.repeat(100)})),memoryCoverage:[{key:'a'.repeat(64),state:'checked',candidateIndexes:Array.from({length:80},(_,index)=>index)}],memoryCapacity:{saturated:true},evidenceRanges:[{id:f.id,offset:0,length:text.length}],citations:[f.id],complete:true};
+test('version 3 product navigation hides candidate accounting while retaining exact original references',async t=>{
+ const f=await fixture(t),id='3'.repeat(64),parent={id:f.segment.id,revision:f.segment.revision};
+ const metadata={productsVersion:3,workContract:'range-evaluation@1',memoryCandidates:Array.from({length:80},()=>({statement:'Generated private proposal '.repeat(100)})),memoryCoverage:[{key:'a'.repeat(64),state:'checked',candidateIndexes:Array.from({length:80},(_,index)=>index)}],evidenceRanges:[{id:f.id,offset:0,length:text.length}],citations:[f.id],complete:true};
  f.store.archive.save(id,id,id,{kind:'semantic',text:'Generated readable summary and source navigation.',metadata},[],'fixture','1','fixture',[],[parent]);
  const listing=f.store.archive.page({query:'Generated readable summary'});assert.equal(listing.items[0].metadata.detail,id);
  const page=f.store.archive.page({id});assert.equal(page.items.length,1);const detail=page.items[0];
  assert.equal(detail.text,'Generated readable summary and source navigation.');assert.equal(detail.textRange.complete,true);assert.deepEqual(detail.parents,[parent]);assert.deepEqual(detail.metadata.citations,[f.id]);assert.equal(detail.metadata.productBodiesOmitted,true);
- for(const field of ['memoryCandidates','memoryCoverage','memoryCapacity','evidenceRanges'])assert.equal(detail.metadata[field],undefined,'read-only navigation omits '+field);
+ for(const field of ['memoryCandidates','memoryCoverage','evidenceRanges'])assert.equal(detail.metadata[field],undefined,'read-only navigation omits '+field);
  assert.equal((detail.metadata.productCounts as {memoryCandidates:number}).memoryCandidates,80);assert.ok(page.characters<24000);
  const original=f.store.archive.get(detail.parents![0].id)!;assert.ok(original.members.includes(f.id));assert.equal(f.store.evidence(detail.metadata.citations as string[])[0].ocrText,text);
  assert.deepEqual(f.store.archive.get(id)!.metadata,metadata,'navigation leaves the immutable consumer products intact');

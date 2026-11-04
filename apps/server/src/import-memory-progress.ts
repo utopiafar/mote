@@ -18,8 +18,8 @@ function memberProgress(job:Job,batches:Batch[],checkpoints:Set<string>,sourceId
   const committed=leaves.filter(batch=>batch.status==='completed').flatMap(batch=>batch.chunks.filter(chunk=>checkpoints.has(chunk.key)&&batch.coverage?.some(member=>member.id===chunk.id&&member.offset===chunk.offset&&member.length===chunk.length&&member.fingerprint===chunk.fingerprint&&member.inputKey===inputKey&&member.scope===scope&&(member.state==='checked'||member.state==='no_candidates'))));
   const complete=targets.every(target=>{
     if(checkpoints.has(target.key))return true;
-    // A saturated source range can be split repeatedly. Require its complete
-    // interval, never merely a successful sibling or a superseded parent.
+    // A reviewed child can cover a subrange. Require its complete interval,
+    // never merely a successful sibling or a superseded parent.
     let end=target.offset;
     for(const chunk of committed.filter(chunk=>chunk.id===target.id&&chunk.fingerprint===target.fingerprint).sort((a,b)=>a.offset-b.offset)){
       if(chunk.offset>end)break;

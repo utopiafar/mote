@@ -26,7 +26,7 @@ async function fixture(t:{after(fn:()=>Promise<void>|void):void},organize=true){
     privacy:{excluded:false,redacted:false,mode:'none'}});
   if(organize)await organizers.tick();
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,undefined,organizers.sourceItemRecipes);
-  const strategy=new MemoryStrategies().resolve({id:'mote.personal-memory',version:'2'}).binding;
+  const strategy=new MemoryStrategies().resolve({id:'mote.personal-memory',version:'5'}).binding;
   return {store,sources,materials,organizers,reader,originalId,deviceId,strategy,pipelines};
 }
 
@@ -66,7 +66,7 @@ test('current built-in authored Material is admitted once, without a second raw 
     model:()=>'',configured:()=>false},phases:{query:async()=>{throw Error('Fake model must not run');},
     review:async()=>{throw Error('Fake review must not run');}}});
   f.pipelines.push(pipeline);
-  const job=pipeline.create({manualPlans:selected.manualPlans,recipes:[{id:'mote.personal-memory',version:'2'}],evidenceIds:[]});
+  const job=pipeline.create({manualPlans:selected.manualPlans,recipes:[{id:'mote.personal-memory',version:'5'}],evidenceIds:[]});
   assert.equal(job.inputPlans?.total,1);
   assert.equal(job.inputPlans?.blocked,0);
   assert.equal(job.totalBatches,1);
@@ -126,7 +126,7 @@ async function historicalDuplicate(t:TestContext){
     review:(input,result,strategy)=>reviewMemory(input,result,async()=>({...result,runId:'generated-review-'+ ++control.reviews}),{strategy})}});
   f.pipelines.push(pipeline);
   // Separate raw intake and pinned Material inputs require their own model reads.
-  const job=pipeline.create({manualPlans:selected.manualPlans,recipes:[{id:'mote.personal-memory',version:'2'}],
+  const job=pipeline.create({manualPlans:selected.manualPlans,recipes:[{id:'mote.personal-memory',version:'5'}],
     evidenceIds:[f.originalId],modelProfileId:'generated-profile'});
   const first=await pipeline.run(job.id);
   return {f,material,pipeline,job,first,control};

@@ -1,5 +1,4 @@
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
-import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readMemoryWorkCoverage,memoryWorkInstruction,type MemoryWorkMember,type MemoryOwnerQuestion} from '../src/memory-work-contract.js';
@@ -11,10 +10,10 @@ const member:MemoryWorkMember={key:'a'.repeat(64),id:'generated-evidence',offset
 const question:MemoryOwnerQuestion={prompt:'Are you the person describing pressure at work, the person responding, or neither?',choices:[{id:'describing',label:'Describing the pressure',answer:'I am the person describing the pressure.'},{id:'responding',label:'Responding',answer:'I am the person responding.'},{id:'neither',label:'Neither',answer:'I did not participate.'}],evidence:[{id:member.id,quote:'I felt pressured at work.'}],reason:'The transcript mixes both roles under one label and does not establish owner correspondence.'};
 const output=(coverage:unknown,memories:unknown[]=[]):QueryResult=>({runId:'generated-run',answer:JSON.stringify({memories,coverage,capacity:{saturated:false}}),citations:[],trace:[]});
 const ownerRow=(changes:Record<string,unknown>={})=>({key:member.key,state:'needs_owner_input',candidateIndexes:[],question,...changes});
-const read=(result:QueryResult,members=[member])=>readMemoryWorkCoverage(result,members,8,id=>id===member.id?original:undefined);
+const read=(result:QueryResult,members=[member])=>readMemoryWorkCoverage(result,members,id=>id===member.id?original:undefined);
 
 test('a reviewed owner question accounts for its inspected range without claiming completion',()=>{
- const parsed=read(output([ownerRow()]));assert.equal(parsed.incomplete,true);assert.deepEqual(parsed.missing,[]);assert.deepEqual(parsed.needsOwnerInput[0].question,question);assert.equal(parsed.saturated,false);
+ const parsed=read(output([ownerRow()]));assert.equal(parsed.incomplete,true);assert.deepEqual(parsed.missing,[]);assert.deepEqual(parsed.needsOwnerInput[0].question,question);
 });
 
 test('independent observed context may survive an owner question in the same range',()=>{
@@ -38,7 +37,7 @@ for(const invalid of ['missing-question','question-on-completed','duplicate-choi
 test('a named participant without owner correspondence asks about the relationship, not another name search',()=>{
  const named={...question,prompt:'Are you the participant who introduced themself as Rowan?',choices:[],evidence:[{id:member.id,quote:'My name is Rowan.'}],reason:'The participant name is stated, but the archive does not establish that Rowan is the owner.'};
  assert.equal(read(output([ownerRow({question:named})])).needsOwnerInput[0].question?.prompt,named.prompt);
- const instruction=memoryWorkInstruction([member],8);assert.match(instruction,/participant's name or role does not establish/);assert.match(instruction,/both sides of a conversation/);assert.match(instruction,/previously examined exact target\/context vectors/);
+ const instruction=memoryWorkInstruction([member]);assert.match(instruction,/participant's name or role does not establish/);assert.match(instruction,/both sides of a conversation/);assert.match(instruction,/previously examined exact target\/context vectors/);
 });
 
 test('useful additional evidence remains separate from owner-only information and completed uncertainty',()=>{
@@ -82,7 +81,7 @@ async function httpFixture(t:TestContext){
     const index=memories.length;memories.push({domain:'personal',title:text.includes('I felt proud of my prototype.')?'Generated prototype pride':'Generated work pressure',statement:`${text.includes('I felt proud of my prototype.')?'The owner felt proud of the prototype':'The owner felt pressured at work'} [${target.id}]`,uncertainty:'This generated record only.',admission:{layer:'memory',reason:'An expressed personally meaningful experience',scope:'Generated prototype',attribution:'user'},evidenceIds:[target.id],evidence:[{id:target.id,quote:text.includes('I felt proud of my prototype.')?'I felt proud of my prototype.':'I felt pressured at work.'}]});coverage.push({key:target.key,state:'checked',candidateIndexes:[index]});
    }else {const candidateIndexes:number[]=[];if(control.ownerObservation){candidateIndexes.push(memories.length);memories.push({domain:'personal',title:'Generated conversation context',statement:`A participant described work pressure [${target.id}]`,uncertainty:'The participant is not identified as the owner.',admission:{layer:'observation',reason:'A useful generated conversational context',scope:'This conversation only',attribution:'observed'},evidenceIds:[target.id],evidence:[{id:target.id,quote:'I felt pressured at work.'}]});}coverage.push({key:target.key,state:'needs_owner_input',candidateIndexes,question:{...question,evidence:[{id:target.id,quote:'I felt pressured at work.'}]}});}
   }
-  return {runId:'generated-http-'+calls.length,answer:JSON.stringify({memories,coverage,...fixtureMemoryCapacity(input)}),citations:memories.flatMap(memory=>memory.evidenceIds.map((id:string)=>({id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:''}))),trace:[]};
+  return {runId:'generated-http-'+calls.length,answer:JSON.stringify({memories,coverage}),citations:memories.flatMap(memory=>memory.evidenceIds.map((id:string)=>({id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:''}))),trace:[]};
  };
  const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})};
  let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
@@ -93,7 +92,7 @@ async function httpFixture(t:TestContext){
   if(!node.sources.listSources().some(source=>source.id==='generated-dialogues')){const response=await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});assert.equal(response.statusCode,200,response.body);}
   const response=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text,document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});assert.equal(response.statusCode,200,response.body);await node.materialOrganizer.tick();await node.sourcePipelines.tick();const id=response.json().id as string,material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId===externalId)!;assert.ok(material);anchors.set(id,node.materials.evidenceIds(material.ref));return id;
  };
- const start=async(ids:string[],recipe={id:'mote.personal-memory',version:'2'})=>{const response=await api('POST','/api/memory-jobs',{evidenceIds:ids.flatMap(id=>anchors.get(id)??[id]),recipes:[recipe]});assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);};
+ const start=async(ids:string[],recipe={id:'mote.personal-memory',version:'5'})=>{const response=await api('POST','/api/memory-jobs',{evidenceIds:ids.flatMap(id=>anchors.get(id)??[id]),recipes:[recipe]});assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);};
  return {get node(){return node;},api,add,start,calls,control,async questions(workId?:string){const response=await api('GET','/api/owner-questions'+(workId?'?operationId='+encodeURIComponent('memory:'+workId):''));assert.equal(response.statusCode,200,response.body);return response.json().items as any[];},async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();await disable();}};
 }
 
@@ -172,9 +171,9 @@ test('supported context in the questioned range commits without a full-range che
 });
 
 test('removing the selected recipe prevents an old owner question from creating a continuation',{timeout:30000},async t=>{
- const f=await httpFixture(t),id=await f.add('anonymous'),base=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'2'}),review={id:'generated.owner-review',version:'1'},recipe={id:'generated.owner-recipe',version:'1'};
+ const f=await httpFixture(t),id=await f.add('anonymous'),base=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'5'}),review={id:'generated.owner-review',version:'1'},recipe={id:'generated.owner-recipe',version:'1'};
  const removeReview=f.node.memoryStrategies.registerReview({...review,input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy:'Independently review this wholly generated conversation and its owner question.'});
- const removeRecipe=f.node.memoryStrategies.registerRecipe({...recipe,extract:{id:base.extract.id,version:base.extract.version},review});t.after(()=>{removeRecipe();removeReview();});
+ const removeRecipe=f.node.memoryStrategies.registerRecipe({...recipe,workContract:'range-evaluation@1',extract:{id:base.extract.id,version:base.extract.version},review});t.after(()=>{removeRecipe();removeReview();});
  const job=await f.start([id],recipe),[pending]=await f.questions(job.id);assert.ok(pending);removeRecipe();const before=f.calls.length;
  const response=await f.api('POST','/api/owner-questions/'+pending.id+'/reply',{requestId:randomUUID(),expectedRevision:pending.revision,action:'answer',choiceId:'describing'});assert.equal(response.statusCode,409,response.body);assert.equal(f.calls.length,before);assert.equal(f.node.memoryPipeline.list().length,1);
 });
@@ -194,14 +193,13 @@ test('managed decryption converts owner questions and declarations before retiri
  const reopened=new Store(directory);try{assert.deepEqual(new MaterialStore(reopened).get(material.id)?.attributionContext?.ownerStatements,[declaration]);assert.equal(new OwnerQuestions(reopened).get(pending.id).prompt,question.prompt);assert.match(String(reopened.db.prepare('SELECT json FROM owner_questions').get()!.json),/json:/);}finally{reopened.close();}
 });
 
-for(const version of ['2','4','5'])test(`mixed owner questions and actual context gaps preserve independent results and plan only the evidence gap under personal-v${version}`,{timeout:30000},async t=>{
+for(const version of ['5'])test(`mixed owner questions and actual context gaps preserve independent results and plan only the evidence gap under personal-v${version}`,{timeout:30000},async t=>{
  const f=await httpFixture(t),settings=f.node.lifecycle.settings();settings.batchCharacters=600;await f.node.lifecycle.save({revision:f.node.configService.revision,settings});const owner=await f.add('anonymous',original+' Generated fixture padding.'.repeat(12)),context=await f.add('dependent','Wholly generated requires background: that earlier trial supplies the referent.'+' Generated fixture padding.'.repeat(12)),background=await f.add('background','Wholly generated independent record: I felt proud of my prototype.'+' Generated fixture padding.'.repeat(12)),job=await f.start([owner,context,background],{id:'mote.personal-memory',version});assert.equal(job.status,'waiting_for_input');assert.equal((await f.questions(job.id)).length,1);assert.equal(job.memoryIds.length,1);
  const planning=f.calls.filter(input=>input.traceContext?.phase==='feedback-planning');assert.equal(planning.length,1);const request=(planning[0].taskContext!.memoryWork as {feedback:MemoryFeedbackRequest}).feedback;assert.equal(request.targets.length,1);assert.ok(f.node.memories.readEvidence([request.targets[0].id])[0].ocrText.includes('Wholly generated requires background'));
  const extracts=f.calls.filter(input=>input.traceContext?.phase==='extract');assert.equal(extracts.length,4,'three independent batches plus the scoped followup, without an intermediate extraction');assert.ok((planning[0].taskContext!.memoryWork as {feedback:MemoryFeedbackRequest}).feedback.history?.some(inspection=>inspection.targets.some(target=>target.state==='needs_context')));assert.ok((extracts.at(-1)!.taskContext!.memoryWork as {history?:unknown[]}).history?.length);const followup=extracts.find(input=>Boolean((input.taskContext!.memoryWork as {contextMembers?:MemoryWorkMember[]}).contextMembers?.length))!,targets=(followup.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members;assert.equal(targets.length,1);assert.equal(targets[0].id,request.targets[0].id);
  const unresolved=job.batches.flatMap(batch=>batch.coverage??[]).filter(target=>target.state==='needs_owner_input');assert.ok(unresolved.length);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2,'only independently completed and resolved-context ranges receive checkpoints');
  const stored=f.node.store.db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(job.id).map(row=>JSON.parse(String(row.json))),feedback=stored.find(batch=>batch.feedbackOnly);assert.ok(feedback,'the committed reviewed context gap enters its dedicated feedback child');const parent=stored.find(batch=>batch.contextFeedbackChildId===feedback.id);assert.ok(parent);assert.deepEqual(feedback.evidenceRanges,parent.evidenceRanges);
- if(version==='5'){assert.equal(feedback.workContract,'range-evaluation@1');assert.ok(stored.filter(batch=>batch.replanRound).every(batch=>batch.workContract==='range-evaluation@1'));assert.equal((followup.taskContext!.memoryWork as {workContract?:string}).workContract,'range-evaluation@1');}
- else{assert.equal(feedback.workContract,undefined);assert.equal((followup.taskContext!.memoryWork as {workContract?:string}).workContract,undefined);}
+ assert.equal(feedback.workContract,'range-evaluation@1');assert.ok(stored.filter(batch=>batch.replanRound).every(batch=>batch.workContract==='range-evaluation@1'));assert.equal((followup.taskContext!.memoryWork as {workContract?:string}).workContract,'range-evaluation@1');
  const before=f.calls.length;await f.node.memoryPipeline.retry(job.id);assert.equal(f.calls.length,before);assert.equal(f.node.memories.list().length,1);
 });
 

@@ -17,7 +17,7 @@ import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 
 const token='generated-page-memory-owner-token-000000',headers={authorization:`Bearer ${token}`};
-const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'2'};
+const personal={id:'mote.personal-memory',version:'5'},coding={id:'mote.coding-memory',version:'3'};
 function record(kind:'article'|'product'='article',deviceId='generated-phone'):CaptureInput{
   const at='2026-10-10T00:00:00.000Z';
   const page:UiPageV3={version:3,scope:'visible_window',adapterId:'generated.fields',adapterVersion:'1',appVersion:'1',activity:'fixture.Page',status:'ok',truncated:false,

@@ -1,4 +1,5 @@
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
+import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -42,12 +43,12 @@ test('host review deadline reaches the Memory pipeline as provider_timeout witho
       throw reviewReason;
     }
     const id=input.evidenceIds![0];
-    return {answer:JSON.stringify({memories:[{title:'Generated experience',statement:`A generated activity was proposed [${id}]`,uncertainty:'Outcome unknown',admission:{layer:'observation',attribution:'user',reason:'Generated source record',scope:'Generated activity'},evidenceIds:[id],evidence:[{id,quote:'Generated activity proposed.'}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:'Generated activity proposed.'}],trace:[],runId:randomUUID()};
+    return {answer:generatedMemoryOutput(input,[{title:'Generated experience',statement:`A generated activity was proposed [${id}]`,uncertainty:'Outcome unknown',admission:{layer:'observation',attribution:'user',reason:'Generated source record',scope:'Generated activity'},evidenceIds:[id],evidence:[{id,quote:'Generated activity proposed.'}]}]),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:'Generated activity proposed.'}],trace:[],runId:randomUUID()};
   });
   const id=randomUUID();await f.store.ingest({id,deviceId:'generated-device',deviceName:'Generated device',platform:'import',capturedAt:'2026-01-01T00:00:00Z',source:'note',ocrText:'Generated activity proposed.',durationMs:0});
   // This deadline regression keeps its original pinned extraction contract;
   // selection and target accounting are covered by the public Memory journeys.
-  const failed=await withFixtureOwnerModelWork(f,async()=>{const job=f.memoryPipeline.create({evidenceIds:[id],recipes:[{id:'mote.personal-memory',version:'2'}]});return f.memoryPipeline.run(job.id);});
+  const failed=await withFixtureOwnerModelWork(f,async()=>{const job=f.memoryPipeline.create({evidenceIds:[id],recipes:[{id:'mote.personal-memory',version:'5'}]});return f.memoryPipeline.run(job.id);});
   assert.equal(calls,2);assert.equal(failed.status,'failed');assert.equal(failed.batches[0].phase,'review');
   assert.equal(failed.batches[0].errorCode,'provider_timeout');assert.ok(reviewReason instanceof AgentTimeoutError);
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);

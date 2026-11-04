@@ -81,7 +81,7 @@ async function ingest(record:z.infer<typeof recordSchema>){
   const saved={...record,id:ack.id,materialRef:material.ref,evidenceIds:ids,formalTextSha256:sha256(evidence[0].ocrText)};report.records.push(saved);await save();return saved;
 }
 async function extract(key:string,evidenceIds:string[]){
-  const job=await request('POST','/api/memory-jobs',{evidenceIds,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime:fixture.contextTime,timeZone:'Asia/Shanghai'});report.steps[key]={jobId:job.id,startedAt:new Date().toISOString()};await save();
+  const job=await request('POST','/api/memory-jobs',{evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}],contextTime:fixture.contextTime,timeZone:'Asia/Shanghai'});report.steps[key]={jobId:job.id,startedAt:new Date().toISOString()};await save();
   const done=await node!.memoryPipeline.run(job.id);report.steps[key].job=done;await save();return done;
 }
 function cardsFor(key:string){const record=report.records.find((item:any)=>item.key===key);assert.ok(record);return report.memories.filter((m:Memory)=>m.admission?.layer==='memory'&&m.status!=='stale'&&!m.supersededBy&&m.evidenceIds.some(id=>record.evidenceIds.includes(id))) as Memory[];}

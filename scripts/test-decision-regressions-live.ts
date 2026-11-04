@@ -31,7 +31,7 @@ try{
  await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);
  assert.ok(material.textLength<12000,'process padding must be removed before model admission');
  let calls=0;const query=node.agent.query.bind(node.agent);node.agent.query=async input=>{assert.ok(++calls<=24,'bounded live model call budget');console.log(JSON.stringify({stage:'model',call:calls,phase:input.traceContext?.phase??(input.question.startsWith('Build a running overview')?'overview':'understanding')}));return query(input);};
- const created=node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime:'2026-01-02T00:00:00Z',timeZone:'UTC',batchCharacters:12000});
+ const created=node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'5'}],contextTime:'2026-01-02T00:00:00Z',timeZone:'UTC',batchCharacters:12000});
  const job=await node.memoryPipeline.run(created.id);report.job={status:job.status,batches:job.totalBatches,memories:job.memoryIds.length};
  assert.equal(job.status,'completed',JSON.stringify({status:job.status,errorCode:job.errorCode,batches:job.batches.map(b=>({status:b.status,error:b.errorCode}))}));
  assert.equal(job.totalBatches,1);
