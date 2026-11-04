@@ -10,7 +10,7 @@ import {ExecutionEngine,type ExecutionHandler} from '../src/execution-engine.js'
 import {Operations,registerOperations} from '../src/operations.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {memorySchema} from '../src/memory-schema.js';
-import {registerMemoryRoutes} from '../src/memory-routes.js';
+import {registerMemoryOwnerRoutes} from '../src/features/memory/publication.js';
 import {ContextTreeRegistry} from '../src/context-trees.js';
 import {AutomaticTopics} from '../src/automatic-topics.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
@@ -107,9 +107,9 @@ test('real memory mutations publish memory change ids through the operations end
  const evidenceId=randomUUID();await store.ingest({id:evidenceId,deviceId:'generated-device',deviceName:'Generated',platform:'import',source:'message',capturedAt:at,durationMs:0,appId:'generated',appName:'Generated',ocrText:'Generated topic input original.',privacy:{excluded:false,redacted:false,mode:'none'}});
  const seed=(title:string)=>{const memory=memorySchema.parse({id:randomUUID(),version:1,title,statement:'Generated topic input body.',uncertainty:'Generated only',status:'published',domain:'personal',tier:'episode',kind:'episodic',createdAt:at,evidenceIds:[evidenceId],evidence:[],model:'fixture',runId:'fixture',fingerprint:memoryEvidenceFingerprint(store.evidence([evidenceId])[0]),admission:{layer:'memory',reason:'Generated',scope:'Generated fixture',attribution:'observed'}});store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memory.id,at,JSON.stringify(memory));store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memory.id,evidenceId);return memory;};
  const app=Fastify();t.after(()=>app.close());
- // Only delete/correct reach the memory store; the remaining route dependencies
- // stay unused behind the production registrations.
- registerMemoryRoutes(app,{memories,store} as Parameters<typeof registerMemoryRoutes>[1]);registerOperations(app,operations,()=>false);
+ // Only delete/correct reach the memory store; the owner port supplies the
+ // same store-backed operations the publication plugin exposes.
+ registerMemoryOwnerRoutes(app,{owner:{publish:(id,version)=>memories.publish(id,version),correct:(id,input)=>memories.correct(id,input),delete:id=>memories.delete(id),withOwnerWork:work=>work()},readable:()=>true,writable:()=>true});registerOperations(app,operations,()=>false);
  const changed=async()=>((await app.inject({url:'/api/operations/changes?since=0'})).json() as {ids:string[]}).ids;
  const deleted=seed('Generated deleted topic input');
  assert.equal((await app.inject({url:'/api/memories/'+deleted.id,method:'DELETE'})).statusCode,200);

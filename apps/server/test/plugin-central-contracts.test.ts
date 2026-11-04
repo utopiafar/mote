@@ -16,7 +16,7 @@ import type {IngressService} from '../src/ingress.js';
 import type {ContextQuery} from '../src/context-query.js';
 import type {EvidenceReader} from '../src/evidence-reader.js';
 import type {registerEvidenceRoutes} from '../src/evidence-routes.js';
-import type {registerMemoryRoutes} from '../src/memory-routes.js';
+import type {MemoryExtractRouteDependencies,MemoryOwnerRouteDependencies} from '../src/features/memory/publication.js';
 import type {MemoryOwnerPublication} from '../src/plugins/memory-publication-contract.js';
 import * as contractExports from '../src/plugins/central-contracts.js';
 import {featureServiceMembers} from '../src/feature-services.js';
@@ -326,8 +326,8 @@ function checkContextReadTypes(exact: CaptureRead, browse: CaptureContextRead, i
 void checkContextReadTypes;
 
 function checkMemoryReadTypes(selection: MemoryInputSelection, owner: MemoryOwnerPublication) {
-  const routeSelection: Parameters<typeof registerMemoryRoutes>[1]['evidenceReader'] = selection;
-  const routeOwner: NonNullable<Parameters<typeof registerMemoryRoutes>[1]['ownerPublication']> = owner;
+  const routeSelection: MemoryExtractRouteDependencies['evidenceReader'] = selection;
+  const routeOwner: MemoryOwnerRouteDependencies['owner'] = owner;
   // @ts-expect-error input selection does not grant Memory publication
   selection.publish;
   void [routeSelection,routeOwner];
