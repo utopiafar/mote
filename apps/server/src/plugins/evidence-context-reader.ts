@@ -31,7 +31,7 @@ export const evidenceContextReaderContribution={
     centralServices.captureRead,centralServices.captureContextRead,
     centralServices.contextNavigationRead,centralServices.contextTreesRead,
     centralServices.materialRead,centralServices.memoryRead,
-    centralServices.memorySnapshots,centralServices.memoryInputSelection,
+    centralServices.memorySnapshots,
   ].map(service=>({kind:'service' as const,id:service.id,apiVersion:service.apiVersion,cardinality:'single' as const})),
 } as const satisfies ManifestContribution;
 export const evidenceContextReaderDeclaration={id:evidenceContextReaderContribution.id,apiVersion:'1'} as const;

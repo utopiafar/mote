@@ -17,16 +17,18 @@ import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {MaterialStore} from '../materials.js';
-import {MaterialMemoryWork} from '../material-memory-work.js';
+import type {MaterialMemoryWork} from '../material-memory-work.js';
 import {MaterialOrganizerRuntime} from '../material-organizers.js';
 import {createEvidenceContextReader} from '../plugins/evidence-context-reader.js';
 import {centralServices,type CommitAuthorization} from '../plugins/central-contracts.js';
 import {createMaterialContext,materialContextContribution,materialContextDeclaration,materialContextReplacement} from '../plugins/material-context.js';
+import {createMaterialMemoryIntake,createMaterialMemoryIntakeFactory,materialMemoryIntakeContribution,materialMemoryIntakeDeclaration,materialMemoryIntakeReplacement,type MaterialMemoryIntakeBindings} from '../plugins/material-memory-intake.js';
 import {createMaterialRepository,createMaterialRepositoryFactory,materialRepositoryContribution,materialRepositoryDeclaration,materialRepositoryReplacement,type MaterialRepositoryBindings} from '../plugins/material-repository.js';
 import {createMaterialRetrievalIndex,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,materialRetrievalIndexReplacement} from '../plugins/material-retrieval-index.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:materialRepositoryContribution,declaration:materialRepositoryDeclaration,replacement:materialRepositoryReplacement},
+  {contribution:materialMemoryIntakeContribution,declaration:materialMemoryIntakeDeclaration,replacement:materialMemoryIntakeReplacement},
   {contribution:materialRetrievalIndexContribution,declaration:materialRetrievalIndexDeclaration,replacement:materialRetrievalIndexReplacement},
   {contribution:materialContextContribution,declaration:materialContextDeclaration,replacement:materialContextReplacement},
 ]);
@@ -55,7 +57,18 @@ export async function prepareMaterials(dependencies:MaterialInputDependencies){
   const lease=await dependencies.bootstrap.host.acquire(centralServices.materialRepository,bindings!.repository);
   dependencies.resources.defer(()=>lease.release());
   const materials=lease.value as MaterialStore;
-  const materialMemoryWork=new MaterialMemoryWork(dependencies.store,materials,Date.now,()=>true,dependencies.memoryRecipeSettings,dependencies.newInputAdmission);
+  // C19E owns the candidate ledger and capture receipt intake. The root still
+  // passes the actual capture hook from app.ts until K04 moves that call site.
+  const intake=createMaterialMemoryIntake({store:dependencies.store,materials,recipes:dependencies.memoryRecipeSettings,newInputAdmission:dependencies.newInputAdmission});
+  let intakeBindings:MaterialMemoryIntakeBindings|undefined;
+  const intakeHandle=await dependencies.bootstrap.host.install({
+    identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.material-memory-intake',installationId:'build:material-memory-intake@1.0.0',instanceId:'materials',activationId:randomUUID()},
+    contributions:[materialMemoryIntakeDeclaration],requires:[bindings!.repository],factory:createMaterialMemoryIntakeFactory(intake,value=>{intakeBindings=value;}),
+  });
+  dependencies.resources.defer(()=>intakeHandle.close('shutdown'));
+  const candidates=await dependencies.bootstrap.host.acquire(centralServices.memoryCandidates,intakeBindings!.memoryCandidates);
+  dependencies.resources.defer(()=>candidates.release());
+  const materialMemoryWork=intake.workForAssembly;
   return Object.freeze({materials,materialMemoryWork});
 }
 
@@ -102,6 +115,7 @@ export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
     sourceItemRecipes:materialOrganizer.sourceItemRecipes,materialMemoryReady:ref=>materialMemoryWork.readyForMemory(ref),sourceContexts});
   resources.defer(()=>evidenceContext.dispose());
   const contextTrees=evidenceContext.assembly.contextTrees,evidenceReader=evidenceContext.assembly.reader;
+  materialMemoryWork.bindSelection(evidenceContext.ports.memoryInputSelection);
   const materialContext=createMaterialContext({materials,organizer:materialOrganizer,reader:evidenceReader});
   resources.defer(()=>materialContext.close());
   materialContext.prepare();materialContext.start();
