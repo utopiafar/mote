@@ -42,8 +42,14 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(await js('document.querySelector("dialog").open'), false, 'Native Chromium dialog lifecycle still runs');
     window.webContents.sendInputEvent({ type: 'mouseWheel', x: 300, y: 350, deltaY: -300, deltaX: 0, canScroll: true });
-    await new Promise(resolve => setTimeout(resolve, 150));
-    assert(await js('scrollY > 0'), 'Hidden renderer accepts real wheel input');
+    // Wheel scrolling is applied asynchronously by the compositor; a loaded CI
+    // runner can need longer than one fixed delay, so wait (bounded) for it.
+    let scrolled = false;
+    for (const deadline = Date.now() + 3000; !scrolled && Date.now() < deadline;) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      scrolled = await js('scrollY > 0');
+    }
+    assert(scrolled, 'Hidden renderer accepts real wheel input');
     assert.equal((await window.webContents.capturePage()).isEmpty(), false, 'Generated page can still be captured');
     assert.equal(window.isVisible(), false); assert.equal(window.isFocused(), false);
     await new Promise(resolve => { window.once('closed', resolve); window.close(); });
