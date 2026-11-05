@@ -8,6 +8,7 @@ import MoteStorage
 
 struct EditorFlowView: View {
     @StateObject private var model: EditorModel
+    @StateObject private var recording: RecordingController
     @State private var didLoad = false
     private let fixtureName: String?
     private let descriptionExpanded: Bool
@@ -18,9 +19,12 @@ struct EditorFlowView: View {
         store: EditorDraftStore,
         arguments: [String],
         intent: HomeDestination.EditorIntent = .record,
+        recording: RecordingController? = nil,
         onClose: (() -> Void)? = nil
     ) {
-        _model = StateObject(wrappedValue: EditorModel(store: store))
+        let controller = recording ?? RecordingController(store: store, arguments: arguments)
+        _recording = StateObject(wrappedValue: controller)
+        _model = StateObject(wrappedValue: controller.model ?? EditorModel(store: store))
         fixtureName = Self.argument("-MoteEditorFixture", in: arguments)
         descriptionExpanded = Self.argument("-MoteEditorDescribe", in: arguments) == "true"
         self.intent = intent
@@ -30,7 +34,7 @@ struct EditorFlowView: View {
     var body: some View {
         Group {
             if model.isEditorVisible {
-                EditorView(model: model, intent: intent, onClose: onClose)
+                EditorView(model: model, recording: recording, intent: intent, onClose: onClose)
             } else {
                 EditorHomeView(model: model)
             }
@@ -40,6 +44,7 @@ struct EditorFlowView: View {
             guard !didLoad else { return }
             didLoad = true
             model.load(fixtureName: fixtureName, descriptionExpanded: descriptionExpanded)
+            model.isEditorVisible = true
         }
     }
 
@@ -69,6 +74,7 @@ private struct EditorHomeView: View {
 
 private struct EditorView: View {
     @ObservedObject var model: EditorModel
+    @ObservedObject var recording: RecordingController
     let intent: HomeDestination.EditorIntent
     let onClose: (() -> Void)?
     @StateObject private var audioPlayer = EditorAudioPlayer()
@@ -76,6 +82,7 @@ private struct EditorView: View {
     @State private var isCameraPresented = false
     @State private var isFileImporterPresented = false
     @State private var didStartIntentCapture = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
@@ -90,6 +97,7 @@ private struct EditorView: View {
                 .lineSpacing(7)
                 .tint(MoteDesignTokens.accent.color)
                 .foregroundStyle(MoteDesignTokens.ink.color)
+                .frame(maxWidth: recording.isActive ? 334 : .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
                 .padding(.top, 6)
                 .accessibilityLabel("记录")
@@ -106,12 +114,13 @@ private struct EditorView: View {
                     }
                 }
 
-                if model.hasDraft {
+                if model.hasDraft && !recording.isActive {
                     attachmentStack
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 0)
-            if let errorMessage = model.errorMessage {
+            if let errorMessage = recording.errorMessage ?? model.errorMessage {
                 Text(errorMessage)
                     .font(MoteFont.secondary)
                     .foregroundStyle(MoteDesignTokens.danger.color)
@@ -126,7 +135,14 @@ private struct EditorView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 14)
             }
-            toolbar
+            if recording.isActive {
+                RecordingPanel(recording: recording) {
+                    model.back()
+                    onClose?()
+                }
+            } else {
+                toolbar
+            }
         }
         .background(MoteDesignTokens.background.color)
         .statusBarHidden(true)
@@ -135,6 +151,9 @@ private struct EditorView: View {
         }
         .onAppear {
             startIntentCapture()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { startIntentCapture() }
         }
         .onChange(of: photoItem) { _, item in
             Task { @MainActor in
@@ -166,7 +185,7 @@ private struct EditorView: View {
                 onClose?()
             }
             Spacer()
-            if model.hasDraft {
+            if model.hasDraft && !recording.isActive {
                 Button("清空") {
                     audioPlayer.stop()
                     model.clear()
@@ -328,7 +347,7 @@ private struct EditorView: View {
                     Text("录音")
                         .font(MoteFont.action)
                         .foregroundStyle(MoteDesignTokens.ink.color)
-                    Text(Self.duration(attachment.duration ?? 0))
+                    Text(Self.duration(attachment.duration ?? ((try? AVAudioPlayer(contentsOf: model.store.fileURL(for: attachment)).duration) ?? 0)))
                         .font(MoteFont.secondary)
                         .foregroundStyle(MoteDesignTokens.muted.color)
                 }
@@ -367,10 +386,8 @@ private struct EditorView: View {
         .accessibilityIdentifier("mote-file-attachment")
     }
 
-    /// Home's 拍照/录音 entries pass their capture mode in; the editor opens
-    /// first and starts that mode once. Recording itself belongs to IOS09.
     private func startIntentCapture() {
-        guard !didStartIntentCapture else { return }
+        guard !didStartIntentCapture, scenePhase == .active else { return }
         didStartIntentCapture = true
         switch intent {
         case .record:
@@ -378,7 +395,7 @@ private struct EditorView: View {
         case .camera:
             startCamera()
         case .microphone:
-            break
+            Task { await recording.start() }
         }
     }
 
@@ -400,7 +417,10 @@ private struct EditorView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("照片")
-            MoteIconButton(icon: .mic, label: "录音") {}
+            MoteIconButton(icon: .mic, label: "录音") {
+                audioPlayer.stop()
+                Task { await recording.start() }
+            }
             MoteIconButton(icon: .file, label: "文件") {
                 isFileImporterPresented = true
             }
