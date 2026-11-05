@@ -100,11 +100,19 @@ fun Activity.openGeneratedAdd(action: MoteAddAction) {
             val source = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
                 .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<SourcesActivity>().singleOrNull()
             if (source == null) { check(SystemClock.elapsedRealtime() < deadline) { "Actual source list did not open" }; handler.postDelayed(this,40); return }
-            views(source.window.decorView).single { it.tag == "sources-add" }.performClick()
-            val key = when (action) { MoteAddAction.FILE -> "导入文件"; MoteAddAction.FOLDER -> "同步文件夹"; MoteAddAction.FEISHU -> "连接飞书文档"; else -> error("Unexpected action") }
-            val list = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views).filterIsInstance<android.widget.ListView>().single { it.isShown }
-            val position = (0 until list.adapter.count).single { list.adapter.getItem(it).toString() == MoteI18n.text(key) }
-            list.performItemClick(list.getChildAt(position),position,list.adapter.getItemId(position))
+            val row = views(source.window.decorView).firstOrNull { it.tag == "sources-add" }
+            if (row == null) { check(SystemClock.elapsedRealtime() < deadline) { "Actual source list did not render" }; handler.postDelayed(this,40); return }
+            row.performClick()
+            val key = when (action) { MoteAddAction.FILE -> "FILE"; MoteAddAction.FOLDER -> "FOLDER"; MoteAddAction.FEISHU -> "CLOUD"; else -> error("Unexpected action") }
+            val sheetDeadline = SystemClock.elapsedRealtime() + 5_000
+            val pick = object : Runnable {
+                override fun run() {
+                    val row = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views).singleOrNull { it.isShown && it.tag == "add-source:$key" }
+                    if (row == null) { check(SystemClock.elapsedRealtime() < sheetDeadline) { "Actual add-source sheet did not open" }; handler.postDelayed(this, 40); return }
+                    row.performClick()
+                }
+            }
+            handler.post(pick)
         }
     }
     handler.post(choose)
