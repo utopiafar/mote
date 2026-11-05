@@ -3978,6 +3978,7 @@
   "把你选择的生活线索，收进同一份档案": "Reunir los rastros de vida elegidos en un mismo archivo",
   "已支持的来源": "Fuentes compatibles",
   "屏幕与应用活动": "Actividad de pantalla y aplicaciones",
+  "屏幕 · 应用活动": "Pantalla · Actividad de apps",
   "采集来源、频率与电量策略": "Fuentes de captura, frecuencia y política de batería",
   "应用采集规则": "Reglas de captura por aplicación",
   "为普通与系统应用设置记录方式": "Elegir cómo se registran las aplicaciones normales y del sistema",
@@ -10135,5 +10136,7 @@
   "失联": "Sin contacto",
   "采集中 · 待同步 {0} 条": "Capturando · Pendientes: {0}",
   "采集中 · 发送已暂停": "Capturando · Envío en pausa",
-  "采集中 · 发送需要处理": "Capturando · El envío requiere atención"
+  "采集中 · 发送需要处理": "Capturando · El envío requiere atención",
+  "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
+  "发送失败": "Error al enviar"
 }

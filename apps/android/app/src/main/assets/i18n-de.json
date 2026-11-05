@@ -3978,6 +3978,7 @@
   "把你选择的生活线索，收进同一份档案": "Ausgewählte Spuren des Lebens in einem Archiv sammeln",
   "已支持的来源": "Unterstützte Quellen",
   "屏幕与应用活动": "Bildschirm- und App-Aktivität",
+  "屏幕 · 应用活动": "Bildschirm · App-Aktivität",
   "采集来源、频率与电量策略": "Erfassungsquellen, -frequenz und Akkurichtlinie",
   "应用采集规则": "App-Erfassungsregeln",
   "为普通与系统应用设置记录方式": "Festlegen, wie normale und System-Apps aufgezeichnet werden",
@@ -10135,5 +10136,7 @@
   "失联": "Kein Kontakt",
   "采集中 · 待同步 {0} 条": "Erfassung läuft · Ausstehend: {0}",
   "采集中 · 发送已暂停": "Erfassung läuft · Senden pausiert",
-  "采集中 · 发送需要处理": "Erfassung läuft · Senden erfordert Aufmerksamkeit"
+  "采集中 · 发送需要处理": "Erfassung läuft · Senden erfordert Aufmerksamkeit",
+  "新的记录暂时无法保存": "Neue Aufzeichnungen können derzeit nicht gespeichert werden",
+  "发送失败": "Senden fehlgeschlagen"
 }
