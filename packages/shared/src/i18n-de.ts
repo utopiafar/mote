@@ -10120,6 +10120,7 @@ export const german: Readonly<Record<string, string>> = {
   "等你补充": "Wartet auf Ihre Angaben",
   "暂停全部采集": "Gesamte Erfassung pausieren",
   "暂停屏幕采集": "Bildschirmerfassung pausieren",
+  "恢复屏幕采集": "Bildschirmerfassung fortsetzen",
   "索引处理完成": "Indexverarbeitung abgeschlossen",
   "仍在运行的版本：{0}": "Weiterhin laufende Version: {0}",
   "候选版本": "Kandidatenversion",

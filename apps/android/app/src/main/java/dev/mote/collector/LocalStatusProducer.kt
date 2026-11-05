@@ -53,12 +53,15 @@ class LocalStatusProducer internal constructor(context: Context) {
                         else Triple(version, activeQueue.inventory(), quarantineQueue.inventory())
                     }
                     val settings = Settings(app)
+                    var folders = 0
                     LocalStateSnapshot(revision, active, pending, captureState = settings.state(), captureMessage = settings.message(),
                         syncMessage = settings.uploadStatus(), checkedAt = System.currentTimeMillis()).withSources {
+                        val sources = app.localSources().sources()
+                        folders = sources.count { it.tree && it.enabled }
                         val issues = SyncHealth.sourceAttentionCount(app)
                         val count = app.localSources().pendingSync().count + app.fileArchives().pendingSync().count
                         count to issues
-                    }
+                    }.copy(folders = folders)
                 } catch (error: Exception) {
                     previous.copy(revision = LocalStateChanges.revisions.value, error = error.message ?: MoteI18n.text("本机状态暂不可读取"))
                 }

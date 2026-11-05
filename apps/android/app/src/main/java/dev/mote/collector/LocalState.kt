@@ -33,7 +33,8 @@ data class LocalStateSnapshot(
     val error: String? = null,
     val checkedAt: Long = 0,
     val sourceIssues: Int? = null,
-    val sourceError: Boolean = false
+    val sourceError: Boolean = false,
+    val folders: Int = 0
 ) {
     val captureLabel: String get() = if (captureState == "capturing") MoteI18n.text("正在采集") else captureMessage
     val totalImages: Int? get() = active?.let { a -> quarantine?.let { a.images + it.images } }

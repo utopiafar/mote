@@ -36,12 +36,20 @@ class SystemEntriesPluginTest {
         assertTrue(active.active)
         assertEquals(MoteQuickEntry.entries, SystemEntriesPlugin.quickEntries(active))
         assertEquals(
-            listOf(SystemEntriesPlugin.Action.PAUSE_SCREEN, SystemEntriesPlugin.Action.RECORD),
-            SystemEntriesPlugin.notificationActions(active, screenCapturing = true),
+            listOf(SystemEntriesPlugin.Action.RECORD, SystemEntriesPlugin.Action.PAUSE_SCREEN, SystemEntriesPlugin.Action.STOP_CAPTURE),
+            SystemEntriesPlugin.notificationActions(active, screenCapturing = true, screenPaused = false, needsAction = false),
         )
         assertEquals(
-            listOf(SystemEntriesPlugin.Action.STOP_CAPTURE, SystemEntriesPlugin.Action.RECORD),
-            SystemEntriesPlugin.notificationActions(active, screenCapturing = false),
+            listOf(SystemEntriesPlugin.Action.RECORD, SystemEntriesPlugin.Action.STOP_CAPTURE),
+            SystemEntriesPlugin.notificationActions(active, screenCapturing = false, screenPaused = false, needsAction = false),
+        )
+        assertEquals(
+            listOf(SystemEntriesPlugin.Action.RECORD, SystemEntriesPlugin.Action.RESUME_SCREEN, SystemEntriesPlugin.Action.STOP_CAPTURE),
+            SystemEntriesPlugin.notificationActions(active, screenCapturing = false, screenPaused = true, needsAction = false),
+        )
+        assertEquals(
+            listOf(SystemEntriesPlugin.Action.ATTENTION, SystemEntriesPlugin.Action.RECORD, SystemEntriesPlugin.Action.STOP_CAPTURE),
+            SystemEntriesPlugin.notificationActions(active, screenCapturing = true, screenPaused = false, needsAction = true),
         )
         assertEquals(
             setOf("system-entries.notifications", "system-entries.quick", "system-entries.app-capture"),
@@ -56,8 +64,8 @@ class SystemEntriesPluginTest {
         assertTrue(stopped.reason.orEmpty().contains("快捷入口"))
         assertTrue(owner.closed)
         assertTrue(SystemEntriesPlugin.quickEntries(stopped).isEmpty())
-        assertTrue(SystemEntriesPlugin.notificationActions(stopped, screenCapturing = true).isEmpty())
-        assertTrue(SystemEntriesPlugin.notificationActions(stopped, screenCapturing = false).isEmpty())
+        assertTrue(SystemEntriesPlugin.notificationActions(stopped, screenCapturing = true, screenPaused = false, needsAction = false).isEmpty())
+        assertTrue(SystemEntriesPlugin.notificationActions(stopped, screenCapturing = false, screenPaused = true, needsAction = true).isEmpty())
         assertEquals("Generated capture status\n" + stopped.reason, SystemEntriesPlugin.surfaceText(stopped, "Generated capture status"))
         assertEquals("Generated capture status", SystemEntriesPlugin.surfaceText(active, "Generated capture status"))
     }
@@ -67,7 +75,7 @@ class SystemEntriesPluginTest {
         assertFalse(missing.active)
         assertTrue(missing.reason.orEmpty().isNotBlank())
         assertTrue(SystemEntriesPlugin.quickEntries(missing).isEmpty())
-        assertTrue(SystemEntriesPlugin.notificationActions(missing, screenCapturing = true).isEmpty())
+        assertTrue(SystemEntriesPlugin.notificationActions(missing, screenCapturing = true, screenPaused = false, needsAction = true).isEmpty())
 
         val unloaded = SystemEntriesPlugin.availability(null)
         assertFalse(unloaded.active)
