@@ -32,6 +32,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios
         CODE_SIGN_ENTITLEMENTS: App/Mote.entitlements
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
   MoteUITests:
     type: com.apple.product-type.bundle.ui-testing

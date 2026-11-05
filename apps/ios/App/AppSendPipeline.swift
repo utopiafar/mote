@@ -1,4 +1,5 @@
 import MoteCentral
+import MoteCore
 import MoteStorage
 import OSLog
 
@@ -15,7 +16,7 @@ final class AppSendPipeline {
     }
 
     func reconcileAndSend() async {
-        guard let pipeline else { return }
+        guard !MoteSendPause.isPaused(), let pipeline else { return }
         do {
             try await pipeline.reconcileAndSend()
         } catch {
