@@ -1,10 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
-  "网页": "Página web",
   "截图与照片": "Capturas de pantalla y fotos",
   "网页与文件": "Páginas web y archivos",
   "按时间回看": "Explorar por fecha",
-  "昨天": "Ayer",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "Por ejemplo: estas son mis conversaciones de desarrollo de proyectos con un agente de código, incluidos los registros de herramientas.",
   "查看已生效日程和设备写入状态": "Ver eventos vigentes y el estado de escritura del dispositivo",
   "例如：这是我的工作日历，日程不代表实际参加。": "Por ejemplo: este es mi calendario de trabajo; un evento no demuestra que haya asistido.",
@@ -243,7 +241,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "保存分享": "Guardar contenido compartido",
   "引用与我的补充分开保存": "El original citado y mi comentario se guardan por separado",
   "未保存的草稿": "Borrador sin guardar",
-  "离开页面会停止录音，并保留草稿。": "Al salir de esta página se detiene la grabación y se conserva el borrador.",
   "连接管理": "Gestión de conexiones",
   "检查结果": "Comprobar resultado",
   "先留下，再慢慢想。": "Guarda primero, piensa con calma.",
@@ -8857,6 +8854,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "目标节点已变化，请确认本机记录归属。": "El destino cambió. Confirma a dónde pertenece este registro local.",
   "权限未授予": "Permiso no otorgado",
   "播放": "Reproducir",
+  "录音失败": "Error de grabación",
   "停止录音": "Detener grabación",
   "文件与文件夹": "Archivos y carpetas",
   "本机日历与其他来源": "Calendarios locales y otras fuentes",

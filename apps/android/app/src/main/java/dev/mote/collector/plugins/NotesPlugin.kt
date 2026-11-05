@@ -18,6 +18,7 @@ import dev.mote.collector.UploadWorker
 import dev.mote.collector.EventCode
 import dev.mote.collector.EventStage
 import dev.mote.collector.queue
+import dev.mote.collector.recording.RecordingService
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -65,7 +66,12 @@ object NotesPlugin {
         }
         val started = host.startPlugin(scope) { session ->
             session.registerJob(PluginJob("notes.draft", durable = true))
-            NotesOwner(app, draft, home, executor, host, session)
+            NotesOwner(app, draft, home, executor, host, session).also { owner ->
+                session.defer {
+                    try { RecordingService.stopForScope(app) }
+                    finally { owners.remove(app.noBackupFilesDir.absolutePath, owner) }
+                }
+            }
         }
         return (started as? PluginResult.Ok)?.value ?: error((started as PluginResult.Failed).message)
     }
