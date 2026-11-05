@@ -4,14 +4,16 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import dev.mote.collector.CaptureAccessibilityService
+import dev.mote.collector.CaptureOverview
 import dev.mote.collector.CapturePipeline
 import dev.mote.collector.CaptureResume
 import dev.mote.collector.CollectorConfig
+import dev.mote.collector.LocalStateSnapshot
+import dev.mote.collector.LocalStatusProducer
 import dev.mote.collector.MediaCollectionService
 import dev.mote.collector.MoteI18n
 import dev.mote.collector.Notifications
 import dev.mote.collector.ProjectionConsentHandoff
-import dev.mote.collector.ProjectionService
 import dev.mote.collector.RuntimeSettings
 import dev.mote.collector.SendPauseControl
 import dev.mote.collector.Settings
@@ -234,17 +236,17 @@ internal class CaptureControlsController(private val active: () -> Boolean) {
         worker.execute { val result = runCatching { SendPauseControl.set(app, paused) }; main.post { finished(result) } }
     }
 
-    /** Read off the main thread: active means screen capture is selected and capture is on. */
-    fun screenState(context: Context, done: (active: Boolean, paused: Boolean, live: Boolean) -> Unit) {
-        if (!active()) { done(false, false, false); return }
+    /** The tile and status surfaces read the same overview facts the status panel and notification consume. */
+    fun overviewFacts(context: Context, done: (CaptureOverview.Facts?) -> Unit) {
+        if (!active()) { done(null); return }
         val app = context.applicationContext
         worker.execute {
             val read = runCatching {
                 val settings = Settings(app); val config = settings.read()
-                val live = config.screenCollectionEnabled && if (config.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected
-                Triple(settings.enabled && config.screenCollectionEnabled, settings.screenPausedAt() != null && !config.screenCollectionEnabled, live)
-            }.getOrDefault(Triple(false, false, false))
-            main.post { done(read.first, read.second, read.third) }
+                val local = runCatching { LocalStatusProducer.get(app).state.value }.getOrDefault(LocalStateSnapshot())
+                CaptureOverview.facts(app, settings, config, local)
+            }.getOrNull()
+            main.post { done(read) }
         }
     }
 }

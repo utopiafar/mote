@@ -3,6 +3,7 @@
     <string name="accessibility_name">Captura de pantalla Mote</string>
     <string name="accessibility_description">Solo recopila después de que pulses Iniciar. Lee la identidad de las aplicaciones para tus reglas de privacidad y captura pantallas. Lee el texto visible de la interfaz únicamente cuando activas explícitamente la recopilación de páginas y configuras reglas, filtrando contraseñas, campos de entrada y zonas ocultas. Nunca toca, desplaza ni ejecuta instrucciones de la página. Los registros se ponen en cola privada y se suben a tu nodo central configurado. Detén la recopilación en cualquier momento desde la app o la notificación.</string>
     <string name="tile_screen_capture">Captura de pantalla</string>
+    <string name="tile_send_pause">Pausar envío</string>
     <string name="widget_label">Accesos rápidos de Mote</string>
     <string name="widget_description">Pregunta y registra desde la pantalla de inicio</string>
     <string name="widget_ask">Preguntar…</string>

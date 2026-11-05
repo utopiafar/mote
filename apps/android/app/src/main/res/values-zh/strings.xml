@@ -3,6 +3,7 @@
     <string name="accessibility_name">Mote 屏幕采集</string>
     <string name="accessibility_description">仅在你点击开始后采集。读取应用身份以执行隐私规则，并按设置截图。只有明确开启页面采集并配置规则后，才读取可见控件文字；过滤密码、输入框与遮挡区域。不点击、不滚动、不执行页面中的指令。记录保存在私有队列，按策略上传到你配置的中央；可随时在应用或通知中停止。</string>
     <string name="tile_screen_capture">屏幕采集</string>
+    <string name="tile_send_pause">暂停发送</string>
     <string name="widget_label">Mote 快速记录</string>
     <string name="widget_description">在桌面直接问一问或记录</string>
     <string name="widget_ask">问一问…</string>

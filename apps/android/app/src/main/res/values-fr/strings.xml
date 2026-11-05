@@ -3,6 +3,7 @@
     <string name="accessibility_name">Capture d\'écran Mote</string>
     <string name="accessibility_description">Ne collecte qu\'après avoir touché Démarrer. Lit l\'identité des applications pour vos règles de confidentialité et prend des captures d\'écran. Lit le texte visible de l\'interface uniquement si vous activez explicitement la collecte de pages et configurez des règles, en excluant mots de passe, champs de saisie et zones masquées. Ne touche, ne fait défiler ni n\'exécute jamais d\'instructions de la page. Les enregistrements sont mis en file privée puis envoyés vers votre nœud central configuré. Arrêtez à tout moment dans l\'app ou depuis la notification.</string>
     <string name="tile_screen_capture">Capture d\'écran</string>
+    <string name="tile_send_pause">Suspendre l\'envoi</string>
     <string name="widget_label">Accès rapides Mote</string>
     <string name="widget_description">Demander et enregistrer depuis l\'écran d\'accueil</string>
     <string name="widget_ask">Demander…</string>
