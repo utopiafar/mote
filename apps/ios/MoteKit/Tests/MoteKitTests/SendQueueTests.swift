@@ -39,4 +39,15 @@ final class SendQueueTests: XCTestCase {
         try queue.acknowledge(id: second.id)
         XCTAssertEqual(try SendQueue(directoryURL: directoryURL).pending(), [])
     }
+
+    func testReusingAPendingIDCannotReplaceTheBodyBeingUploaded() throws {
+        let queue = SendQueue(directoryURL: directoryURL)
+        let first = try queue.enqueue(Data("original".utf8), id: "generated-send")
+        let body = try XCTUnwrap(queue.bodyFile(for: first))
+        XCTAssertThrowsError(try queue.enqueue(Data("different".utf8), id: first.id)) {
+            XCTAssertEqual($0 as? SendQueueError, .duplicateID)
+        }
+        XCTAssertEqual(try Data(contentsOf: body), first.payload)
+        XCTAssertEqual(try queue.pending(), [first])
+    }
 }
