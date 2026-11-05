@@ -20,6 +20,9 @@ struct MoteApp: App {
                 if arguments.contains("-MoteComponentPreview") {
                     ComponentPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteCaptureSyncPreview") {
+                    CaptureSyncPreview()
+                        .preferredColorScheme(previewScheme)
                 } else {
                     Color(uiColor: .systemBackground)
                         .ignoresSafeArea()
