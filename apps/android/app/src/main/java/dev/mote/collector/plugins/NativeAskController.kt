@@ -135,6 +135,11 @@ internal class NativeAskController(
 
     fun clearScope(): Boolean = NativeAskEvidenceScope.clear(state)
     fun scopeLabel(): String? = state.optString("scopeLabel").takeIf(String::isNotBlank)
+    /** Restored material scopes carry only the immutable ref; the screen resolves
+     * its readable title from the same Central origin before showing the chip. */
+    fun scopeLabel(value: String?) {
+        if (material() != null) putScopeLabel(value)
+    }
     private fun putScopeLabel(label: String?) {
         if (label.isNullOrBlank()) state.remove("scopeLabel") else state.put("scopeLabel", label)
     }

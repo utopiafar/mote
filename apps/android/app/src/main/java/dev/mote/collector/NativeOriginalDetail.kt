@@ -1,11 +1,20 @@
 package dev.mote.collector
 
+import android.app.Activity
+import android.app.Dialog
 import android.content.Context
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.view.Gravity
 import android.view.View
+import android.view.Window
+import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.MoteIconButtonStyle
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
@@ -33,8 +42,10 @@ internal object NativeOriginalDetail {
         val received = string(record, "receivedAt")
         val status = record.optString("indexingStatus")
         val organized = status == "indexed" || status == "text_ready"
+        val organizedAt = record.optJSONObject("ocr")?.optString("updatedAt")?.takeIf { it.isNotBlank() }
+            ?: record.optString("indexedAt").takeIf { it.isNotBlank() }
         val step = when {
-            organized -> OriginalReceiptStep("已整理，可搜索", null, true)
+            organized -> OriginalReceiptStep("已整理，可搜索", organizedAt, true)
             status == "failed" -> OriginalReceiptStep("整理未完成", null, false)
             else -> OriginalReceiptStep("正在整理", null, false)
         }
@@ -147,23 +158,54 @@ internal object NativeOriginalDetail {
         runCatching { clock.format(Instant.parse(it).atZone(ZoneId.systemDefault())) }.getOrNull()
     }
 
-    /** Shared 详情 panel body used by both original readers. */
-    fun view(context: Context, detail: OriginalDetailPresentation): View = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(context.moteDp(20), context.moteDp(8), context.moteDp(20), context.moteDp(20))
-        addView(MoteComponents.group(context).apply {
-            detail.timeline.forEach { step -> addView(timelineRow(context, step)) }
-        }, LinearLayout.LayoutParams(-1, -2))
-        addView(MoteComponents.group(context).apply {
-            addView(MoteComponents.row(context, title = MoteI18n.text("来源"), value = detail.source))
-            addView(MoteComponents.row(context, title = MoteI18n.text("引用它的对话"), value = detail.referenceCount?.toString() ?: "—"))
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.moteDp(12) })
+    /** Shared 详情 bottom sheet used by both original readers. */
+    fun show(activity: Activity, detail: OriginalDetailPresentation) {
+        val dialog = Dialog(activity).apply { requestWindowFeature(Window.FEATURE_NO_TITLE) }
+        val sheet = MoteComponents.sheet(activity).apply {
+            addView(titleBar(activity) { dialog.dismiss() }, LinearLayout.LayoutParams(-1, -2))
+            addView(MoteComponents.group(activity).apply {
+                detail.timeline.forEach { step -> addView(timelineRow(activity, step), LinearLayout.LayoutParams(-1, -2)) }
+            }, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = activity.moteDp(6); marginStart = activity.moteDp(20); marginEnd = activity.moteDp(20)
+            })
+            addView(MoteComponents.group(activity).apply {
+                addView(detailRow(activity, MoteI18n.text("来源"), detail.source, null), LinearLayout.LayoutParams(-1, -2))
+                addView(MoteComponents.divider(activity))
+                addView(detailRow(activity, MoteI18n.text("引用它的对话"), detail.referenceCount?.toString() ?: "—", MoteGlyph.CHEV),
+                    LinearLayout.LayoutParams(-1, -2))
+            }, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = activity.moteDp(12); marginStart = activity.moteDp(20); marginEnd = activity.moteDp(20)
+            })
+            addView(View(activity), LinearLayout.LayoutParams(-1, activity.moteDp(40)))
+        }
+        dialog.setContentView(sheet)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.BOTTOM)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.32f }
+        }
+        dialog.show()
+        dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+        MoteUi.styleTree(dialog.window?.decorView ?: sheet)
+    }
+
+    private fun titleBar(context: Context, close: () -> Unit): View = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        setPadding(context.moteDp(20), 0, context.moteDp(6), 0)
+        addView(TextView(context).apply {
+            text = MoteI18n.text("详情"); MoteUi.type(this, 20); setTypeface(Typeface.create(typeface, Typeface.BOLD))
+            MoteUi.textColor(this, NativeColorRole.INK)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(MoteComponents.iconButton(context, MoteGlyph.CLOSE, "关闭", MoteIconButtonStyle.MUTED) { close() },
+            LinearLayout.LayoutParams(context.moteDp(48), context.moteDp(48)))
     }
 
     private fun timelineRow(context: Context, step: OriginalReceiptStep): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         minimumHeight = context.moteDp(44)
-        setPadding(context.moteDp(14), context.moteDp(10), context.moteDp(14), context.moteDp(10))
+        setPadding(context.moteDp(14), 0, context.moteDp(14), 0)
         addView(View(context).apply {
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
@@ -171,10 +213,26 @@ internal object NativeOriginalDetail {
             }
         }, LinearLayout.LayoutParams(context.moteDp(8), context.moteDp(8)).apply { marginEnd = context.moteDp(12) })
         addView(TextView(context).apply {
-            text = MoteI18n.text(step.title); MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.INK)
+            text = MoteI18n.text(step.title); MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         addView(TextView(context).apply {
-            text = time(step.at) ?: "—"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED)
+            text = time(step.at) ?: "—"; MoteUi.type(this, 13); MoteUi.textColor(this, NativeColorRole.MUTED)
         }, LinearLayout.LayoutParams(-2, -2))
+    }
+
+    private fun detailRow(context: Context, title: String, value: String, chevron: MoteGlyph?): View = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = context.moteDp(44)
+        setPadding(context.moteDp(14), 0, context.moteDp(14), 0)
+        addView(TextView(context).apply {
+            text = title; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(TextView(context).apply {
+            text = value; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.MUTED); maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(-2, -2))
+        chevron?.let {
+            addView(MoteComponents.icon(context, it, NativeColorRole.MUTED, 16), LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(6) })
+        }
     }
 }

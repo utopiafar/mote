@@ -113,10 +113,29 @@ class HomeNavigationInstrumentedTest {
             }
             settings.save(settings.read().copy(server = "", token = "", debugHttp = false), confirmCentralEndpoint = true)
         }
+        // The no-draft first-use capture must not inherit a retained draft from a previous journey.
+        context.recordDraftStore().edit("", JSONArray(), JSONObject().put("kind", "manual"))
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            waitFor(scenario, "First use without a draft shows the record action") { activity ->
+                shown(activity).any { it.tag == "home-first-use-guide" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
+            }
+            screenshot(scenario, "home-first-use")
+            MoteAppearance.select(context, AppearancePreference.DARK)
+            scenario.recreate(); scenario.awaitMainUi()
+            waitFor(scenario, "First use without a draft keeps the record action in dark") { activity ->
+                shown(activity).any { it.tag == "home-first-use-guide" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
+            }
+            screenshot(scenario, "home-first-use-dark")
+            MoteAppearance.select(context, AppearancePreference.LIGHT)
+        }
         context.recordDraftStore().edit("生成的本机草稿", JSONArray(), JSONObject().put("kind", "manual"))
         try { ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             waitFor(scenario, "Unconnected local drafts remain available") { shown(it).any { row -> row.contentDescription == "继续草稿" } }
             screenshot(scenario, "home-first-use-draft")
+            MoteAppearance.select(context, AppearancePreference.DARK)
+            scenario.recreate(); scenario.awaitMainUi()
+            waitFor(scenario, "The first-use home keeps the draft label in dark") { shown(it).any { row -> row.contentDescription == "继续草稿" } }
+            screenshot(scenario, "home-first-use-draft-dark")
             scenario.onActivity { activity ->
                 assertFalse(Settings(activity).enabled)
                 assertTrue(shown(activity).any { it.tag == "home-ask-action" })
@@ -159,7 +178,7 @@ class HomeNavigationInstrumentedTest {
             settings.save(settings.read().copy(server = fixture.origin, token = "generated-home-owner-token-1234567890", debugHttp = true, syncMode = "manual", authSignedOut = false), confirmCentralEndpoint = true)
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario,"Confirmed empty connected archive shows its welcome") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "先记下一件事。" } }
+                    waitFor(scenario,"Confirmed empty connected archive shows its first-use guide") { shown(it).any { row -> row.tag == "home-first-use-guide" } }
                     scenario.onActivity { activity ->
                         assertTrue(shown(activity).filterIsInstance<TextView>().any { it.text.toString() == "已连接你的 Mote" })
                         assertFalse(shown(activity).filterIsInstance<TextView>().any { it.text.toString() == "还没有自己的 Mote？" })
@@ -171,7 +190,7 @@ class HomeNavigationInstrumentedTest {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     waitFor(scenario,"History read completed") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "还没有对话。" } }
                     scenario.onActivity { activity ->
-                        assertFalse("An unavailable inventory must not be declared empty",shown(activity).filterIsInstance<TextView>().any { it.text.toString() == "先记下一件事。" })
+                        assertFalse("An unavailable inventory must not be declared empty",shown(activity).any { it.tag == "home-first-use-guide" })
                         assertFalse(settings.enabled)
                     }
                 }

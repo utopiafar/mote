@@ -1,10 +1,14 @@
 package dev.mote.collector
 
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
+import android.text.style.ReplacementSpan
 import android.widget.*
 import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeAskPlugin
@@ -54,12 +58,12 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private var runStatus: TextView? = null
     private var askFailureAction: TextView? = null
     private var askFailureDialog: android.app.AlertDialog? = null
-    private var send: Button? = null
+    private var send: android.view.View? = null
     private var stop: Button? = null
     private var checkRun: Button? = null
     private var retryRun: Button? = null
     private var askImagesView: LinearLayout? = null
-    private var addAskImage: Button? = null
+    private var addAskImage: android.view.View? = null
     private var noteText: EditText? = null
     private var noteMood: EditText? = null
     private var noteDraft = JSONObject().put("text", "").put("mood", "").put("attachments", JSONArray())
@@ -122,9 +126,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
     fun refresh() { if (currentPage == "insights") insights.returnFromEvidence(); ui.navigate(currentPage) }
     fun showOriginalDetail(detail: OriginalDetailPresentation) {
-        MoteDialogBuilder(ui).setTitle(MoteI18n.text("详情"))
-            .setView(ScrollView(ui).apply { addView(NativeOriginalDetail.view(ui, detail)) })
-            .setPositiveButton(MoteI18n.text("关闭"), null).show()
+        NativeOriginalDetail.show(ui.hostActivity(), detail)
     }
     fun insightRequest(prompt: String): JSONObject = CentralDraftWrites.barrier {
         val saved = insightStore.read()
@@ -238,21 +240,30 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private fun buildAsk(history: JSONObject) {
         askHistory = history
         body.removeAllViews()
-        body.setPadding(ui.moteDp(20), ui.moteDp(25), ui.moteDp(20), ui.moteDp(28))
+        body.setPadding(ui.moteDp(20), ui.moteDp(18), ui.moteDp(20), ui.moteDp(24))
         messages = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
         runStatus = ui.text("", parent = messages!!).apply { visibility = android.view.View.GONE; setPadding(0,0,0,0) }
-        if (askState.optString("conversationId").isBlank()) ui.text(MoteI18n.text("想从留下的内容里找什么？"), NativeFontRole.TITLE_MOBILE, messages!!)
-        ui.askConversationActions(askState.optString("conversationId").isNotBlank())
+        val conversation = askState.optString("conversationId").isNotBlank()
+        ui.askConversationVisible(conversation)
+        ui.askBackToHistory = if (conversation) { { if (currentPage == "ask" && messages != null) { showAskHistory(); true } else false } } else null
+        if (!conversation) ui.text(MoteI18n.text("想从留下的内容里找什么？"), NativeFontRole.TITLE_MOBILE, messages!!)
+        ui.askConversationActions(false)
         val compose = ui.askComposer()
         askImagesView=LinearLayout(ui).apply { orientation=LinearLayout.VERTICAL }.also(compose::addView)
-        scopeBox = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }.also(compose::addView)
-        scopeChip = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }.also { scopeBox!!.addView(it, LinearLayout.LayoutParams(-2,-2)) }
+        scopeBox = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL }.also(compose::addView)
+        val chipFrame = android.widget.FrameLayout(ui).apply {
+            minimumHeight = ui.moteDp(48)
+        }
+        scopeChip = LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            minimumHeight = ui.moteDp(30); setPadding(ui.moteDp(12), 0, ui.moteDp(4), 0)
+        }.also { chipFrame.addView(it, android.widget.FrameLayout.LayoutParams(-2, ui.moteDp(30)).apply { gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL }) }
         scopeIcon = MoteComponents.icon(ui, MoteGlyph.FILE, NativeColorRole.ACCENT, 16).also {
             scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2).apply { marginEnd = ui.moteDp(6) })
         }
         scopeLabel = TextView(ui).apply {
-            MoteUi.type(this, NativeFontRole.SUPPORT)
-            minHeight = ui.moteDp(48); gravity = android.view.Gravity.CENTER_VERTICAL; isFocusable = true
+            MoteUi.type(this, 13)
+            gravity = android.view.Gravity.CENTER_VERTICAL; isFocusable = true
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = ui.moteDp(220)
             setOnClickListener {
                 if(ui.isWorking)return@setOnClickListener
@@ -276,53 +287,77 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             if(ask.clearScope()) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。"))
         }.apply {
             tag="scope-clear"
+            minimumWidth=ui.moteDp(26); minimumHeight=ui.moteDp(30); scaleType=android.widget.ImageView.ScaleType.CENTER
             NativePresentationStyles.bind(this, "scope-clear-tint") { value ->
                 (value as ImageButton).imageTintList = android.content.res.ColorStateList.valueOf(MoteUi.accent)
             }
-        }.also { scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2)) }
-        scopeBox!!.addView(android.view.View(ui), LinearLayout.LayoutParams(0,1,1f))
+        }.also { scopeChip!!.addView(it, LinearLayout.LayoutParams(ui.moteDp(26), ui.moteDp(30))) }
+        scopeBox!!.addView(chipFrame, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
         updateScope()
-        val entry = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; background = MoteUi.shape(ui, NativeColorRole.SURFACE_RAISED, 7, true); setPadding(ui.moteDp(12),ui.moteDp(10),ui.moteDp(12),ui.moteDp(8)) }
-        compose.addView(entry)
-        question = EditText(ui).apply {
-            hint = MoteI18n.text("想找回什么？"); contentDescription = MoteI18n.text("你的问题"); isSaveEnabled = false
-            MoteUi.textInput(this, android.text.InputType.TYPE_CLASS_TEXT, multiline = true); MoteUi.field(this)
-            filters = arrayOf(InputFilter.LengthFilter(8000)); setText(askState.optString("question"))
-            NativePresentationStyles.bind(this, "ask-question") { (it as EditText).apply { minLines = 2; maxLines = 4; textSize = 13f; background = null; setPadding(0,0,0,ui.moteDp(6)) } }
-        }.also { entry.addView(it, LinearLayout.LayoutParams(-1,-2)) }
-        watch(question!!) { askState.put("question", question!!.text.toString()); persistAsk(); controlsAsk() }
-        val actions = LinearLayout(ui).apply { gravity = android.view.Gravity.CENTER_VERTICAL }; entry.addView(actions)
-        fun action(label: String, description: String = label, onClick: () -> Unit): Button = MoteUi.action(Button(ui).apply {
-            text = label; contentDescription = MoteI18n.text(description); setOnClickListener { if (!ui.isWorking) onClick() }
-        }, MoteUi.ButtonRole.TEXT).also { button ->
-            NativePresentationStyles.bind(button, "ask-compose-action") { (it as Button).apply { minWidth = 0; minimumWidth = 0; minHeight = ui.moteDp(42); minimumHeight = minHeight; setPadding(ui.moteDp(8),0,ui.moteDp(8),0); textSize = 10f } }
-            actions.addView(button, LinearLayout.LayoutParams(-2,ui.moteDp(42)))
-        }
-        addAskImage=action("▧", "添加图片") { if (!askBusy() && ask.imageCount()<4) ui.pickAttachment(chat = true) }
-        val modelBox = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
-        action("▸ " + MoteI18n.text("本次模型"), "本次模型") { modelBox.visibility = if (modelBox.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE }
-        actions.addView(android.view.View(ui), LinearLayout.LayoutParams(0,1,1f))
-        send = action("↑", "发送") { submitAsk() }.apply {
-            MoteUi.action(this,MoteUi.ButtonRole.PRIMARY)
-            NativePresentationStyles.bind(this, "ask-send") { (it as Button).apply { minimumWidth = ui.moteDp(42); minWidth = minimumWidth; minimumHeight = ui.moteDp(42); minHeight = minimumHeight; setPadding(0,0,0,0); textSize = 18f } }
-        }
-        entry.addView(modelBox)
-        val profiles = modelSettings.optJSONArray("profiles") ?: JSONArray()
-        val storedProfile = askState.optString("modelProfileId")
-        val knownProfiles = (0 until profiles.length()).map { profiles.getJSONObject(it).getString("id") }
-        val missingSelection = storedProfile.isNotBlank() && storedProfile !in knownProfiles
-        val ids = listOf("") + knownProfiles + if (missingSelection) listOf(storedProfile) else emptyList()
-        val names = listOf(MoteI18n.text("跟随功能默认")) + (0 until profiles.length()).map { profiles.getJSONObject(it).getString("name") } + if (missingSelection) listOf(storedProfile) else emptyList()
-        ui.text(MoteI18n.text("模型预设"), NativeFontRole.SUPPORT, modelBox)
-        preset = Spinner(ui).apply {
-            adapter = MoteUi.choiceAdapter(ui, names); setSelection(ids.indexOf(askState.optString("modelProfileId")).coerceAtLeast(0))
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { askState.put("modelProfileId", ids[position]); persistAsk() }
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+
+        val pill = LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            minimumHeight = ui.moteDp(50)
+            setPadding(ui.moteDp(2), 0, ui.moteDp(4), 0)
+            NativePresentationStyles.bind(this, "ask-composer-pill") {
+                it.background = MoteUi.shape(ui, NativeColorRole.SURFACE, NativeRadiusRole.PILL, true, NativeColorRole.CONTROL_BORDER)
             }
-        }.also(modelBox::addView)
-        model = ui.field(MoteI18n.text("模型 ID（留空跟随预设）"), askState.optString("modelOverride"), parent = modelBox).apply { filters = arrayOf(InputFilter.LengthFilter(512)) }
-        watch(model!!) { askState.put("modelOverride", model!!.text.toString()); persistAsk() }
+        }
+        compose.addView(pill, LinearLayout.LayoutParams(-1, ui.moteDp(50)))
+        addAskImage = MoteComponents.iconButton(ui, MoteGlyph.PHOTO, "添加图片", MoteIconButtonStyle.MUTED) {
+            if (!askBusy() && ask.imageCount()<4) ui.pickAttachment(chat = true)
+        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(44), ui.moteDp(48))) }
+        question = EditText(ui).apply {
+            hint = MoteI18n.text(if (askState.optString("conversationId").isNotBlank()) "继续问" else "问一问")
+            contentDescription = MoteI18n.text("你的问题"); isSaveEnabled = false
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            MoteUi.textInput(this, android.text.InputType.TYPE_CLASS_TEXT, multiline = false)
+            filters = arrayOf(InputFilter.LengthFilter(8000)); setText(askState.optString("question"))
+            MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK); setTextColor(MoteTheme.ink); setHintTextColor(MoteTheme.muted)
+            background = null; setPadding(ui.moteDp(6), 0, ui.moteDp(6), 0); includeFontPadding = false
+            maxLines = 1; minLines = 1; setSingleLine(true); imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NONE
+        }.also { pill.addView(it, LinearLayout.LayoutParams(0, ui.moteDp(48), 1f)) }
+        send = MoteComponents.iconButton(ui, MoteGlyph.UP, "发送", MoteIconButtonStyle.SOLID) { submitAsk() }.apply {
+            tag = "ask-send"
+            NativePresentationStyles.bind(this, "ask-send") { (it as ImageButton).apply {
+                minimumWidth = ui.moteDp(40); minimumHeight = ui.moteDp(40)
+                background = MoteUi.clickable(ui, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL, false)
+            } }
+        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(40), ui.moteDp(40)).apply { marginStart = ui.moteDp(4) }) }
+        watch(question!!) { askState.put("question", question!!.text.toString()); persistAsk(); controlsAsk() }
+
+        if (!conversation) {
+            val meta = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }.also(compose::addView)
+            fun action(label: String, description: String = label): TextView = TextView(ui).apply {
+                text = label; contentDescription = MoteI18n.text(description); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)
+                isFocusable = true; minHeight = ui.moteDp(48); gravity = android.view.Gravity.CENTER; setPadding(ui.moteDp(8), 0, ui.moteDp(8), 0)
+            }
+            val modelRow = action("▸ " + MoteI18n.text("本次模型"), "本次模型")
+            meta.addView(modelRow, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
+            modelRow.setOnClickListener { modelBoxVisibility(label = modelRow) }
+            val box = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
+            modelBox = box
+            compose.addView(box, LinearLayout.LayoutParams(-1, -2))
+            val profiles = modelSettings.optJSONArray("profiles") ?: JSONArray()
+            val storedProfile = askState.optString("modelProfileId")
+            val knownProfiles = (0 until profiles.length()).map { profiles.getJSONObject(it).getString("id") }
+            val missingSelection = storedProfile.isNotBlank() && storedProfile !in knownProfiles
+            val ids = listOf("") + knownProfiles + if (missingSelection) listOf(storedProfile) else emptyList()
+            val names = listOf(MoteI18n.text("跟随功能默认")) + (0 until profiles.length()).map { profiles.getJSONObject(it).getString("name") } + if (missingSelection) listOf(storedProfile) else emptyList()
+            ui.text(MoteI18n.text("模型预设"), NativeFontRole.SUPPORT, box)
+            preset = Spinner(ui).apply {
+                adapter = MoteUi.choiceAdapter(ui, names); setSelection(ids.indexOf(askState.optString("modelProfileId")).coerceAtLeast(0))
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { askState.put("modelProfileId", ids[position]); persistAsk() }
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                }
+            }.also(box::addView)
+            model = ui.field(MoteI18n.text("模型 ID（留空跟随预设）"), askState.optString("modelOverride"), parent = box).apply { filters = arrayOf(InputFilter.LengthFilter(512)) }
+            watch(model!!) { askState.put("modelOverride", model!!.text.toString()); persistAsk() }
+        } else {
+            modelBox = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
+            preset = null; model = null
+        }
         renderAskImages()
         retryRun = ui.button(MoteI18n.text("重试同一请求"), parent = compose) { submitAsk() }
         checkRun = ui.button(MoteI18n.text("检查结果"), parent = compose) { pollAsk() }
@@ -333,6 +368,14 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         updateAskFailureAction()
         controlsAsk()
     }
+    private var modelBox: LinearLayout? = null
+    private fun modelBoxVisibility(label: TextView) {
+        val box = modelBox ?: return
+        val show = box.visibility != android.view.View.VISIBLE
+        box.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        label.text = (if (show) "▾ " else "▸ ") + MoteI18n.text("本次模型")
+    }
+
     private fun askBusy() = ask.busy()
     fun newConversation(discardConfirmed: Boolean = false) {
         if (askBusy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
@@ -459,6 +502,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         question?.isEnabled = !busy
         preset?.isEnabled = !busy; model?.isEnabled = !busy
         send?.isEnabled = !busy && (requested==null || askState.optString("conversationId")==requested) && ask.pendingImages().length()==0 && question?.text?.isNotBlank() == true
+        send?.visibility = if (!busy && question?.text?.isNotBlank() == true && ask.pendingImages().length()==0 && (requested==null || askState.optString("conversationId")==requested)) android.view.View.VISIBLE else android.view.View.GONE
         addAskImage?.isEnabled = !busy && ask.imageCount()<4
         askImagesView?.let { host -> fun update(view:android.view.View) { if(view is Button)view.isEnabled=!busy && (view.tag?.toString()?.startsWith("ask-image-remove:")==true || !ui.isWorking);if(view is android.view.ViewGroup)for(i in 0 until view.childCount)update(view.getChildAt(i)) };update(host) }
         retryRun?.visibility = if (askState.has("pending")) android.view.View.VISIBLE else android.view.View.GONE
@@ -472,13 +516,13 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val material=ask.material()
         val scoped = material != null || strict || anchored
         val fallback = when {
-            material != null -> MoteI18n.text("参考整份资料 · 版本 {0}", material.substringAfter('@').take(8))
+            material != null -> MoteI18n.text("参考整份资料")
             strict -> MoteI18n.text("仅查这条记录")
             anchored -> MoteI18n.text("参考这条记录，自动查找相关上下文")
             else -> "＋ " + MoteI18n.text("参考资料")
         }
         val label = if (scoped) ask.scopeLabel() ?: fallback else fallback
-        scopeBox?.visibility = android.view.View.VISIBLE
+        scopeBox?.visibility = if (scoped || askState.optString("conversationId").isBlank()) android.view.View.VISIBLE else android.view.View.GONE
         scopeChip?.let { chip ->
             NativePresentationStyles.bind(chip, "scope-chip") { value ->
                 (value as LinearLayout).apply {
@@ -566,59 +610,104 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
     private fun loadConversation(id: String, cursor: String? = null, afterLoad: (() -> Unit)? = null) {
         val api = client
-        ui.work(MoteI18n.text("正在读取对话…"), { api.get("/api/conversations/" + encode(id) + "?limit=20" + (cursor?.let { "&cursor=" + encode(it) } ?: "")) }) { conversation ->
+        ui.work(MoteI18n.text("正在读取对话…"), {
+            val conversation = api.get("/api/conversations/" + encode(id) + "?limit=20" + (cursor?.let { "&cursor=" + encode(it) } ?: ""))
+            val material = conversation.optJSONObject("scope")?.optString("anchorMaterialRef").orEmpty()
+                .takeIf { it.matches(Regex("^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$")) }
+            val label = material?.let { reference ->
+                val materialId = reference.substringAfter("material:").substringBefore('@')
+                runCatching { api.get("/api/materials/" + encode(materialId)).optString("title") }.getOrNull()
+            }
+            conversation to label
+        }) { (conversation, label) ->
             lastConversation = JSONObject(conversation.toString())
             lastConversationCursor = cursor
-            renderConversation(conversation)
+            renderConversation(conversation, label)
             afterLoad?.invoke()
         }
     }
-    private fun renderConversation(conversation: JSONObject) {
+    private fun renderConversation(conversation: JSONObject, materialLabel: String? = null) {
         val target = messages ?: return
         val id = conversation.getString("id")
-        ask.restoreScope(conversation); persistAsk(); updateScope()
+        ask.restoreScope(conversation); ask.scopeLabel(materialLabel); persistAsk(); updateScope()
         target.removeAllViews(); askFailureAction = null
         runStatus = ui.text("", parent = target).apply { visibility = android.view.View.GONE; setPadding(0,0,0,0) }
         val turns = conversation.getJSONArray("turns")
+        val citationNumbers = linkedMapOf<String, Int>()
+        val shownCitationIds = mutableSetOf<String>()
         for (i in 0 until turns.length()) {
             val turn = turns.getJSONObject(i)
-            ui.text(turn.getString("question"), NativeFontRole.SECTION, target).apply { textSize = 16f; setPadding(0,ui.moteDp(6),0,ui.moteDp(14)) }
+            questionBubble(target, turn.getString("question"))
             val presentation = ask.readTurn(turn)
             presentation.notice?.let { ui.text(it, NativeFontRole.SUPPORT, target) }
             presentation.result?.let { answer ->
                 val sourceCitations = answer.optJSONArray("citations") ?: JSONArray()
                 val citations = (0 until sourceCitations.length()).map { sourceCitations.getJSONObject(it) }.distinctBy { it.getString("id") }
-                val display = ask.formatAnswer(answer.optString("answer"), citations.map { it.getString("id") })
+                citations.forEach { citation -> val id = citation.getString("id"); if (id !in citationNumbers) citationNumbers[id] = citationNumbers.size + 1 }
+                val display = ask.formatAnswer(answer.optString("answer"), citationNumbers.keys.toList())
                 val styled = android.text.SpannableString(display.text)
-                var touchScroll: Int? = null
                 display.emphasis.forEach { span -> styled.setSpan(android.text.style.StyleSpan(if (span.bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.ITALIC), span.start, span.end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
-                display.citations.forEach { span -> styled.setSpan(object : android.text.style.ClickableSpan() {
-                    override fun onClick(widget: android.view.View) { val start = touchScroll; touchScroll = null; if (!ui.isWorking) openAskCitation(id,turn.getString("id"),span.id,start) }
-                    override fun updateDrawState(paint: android.text.TextPaint) { paint.color = MoteUi.accent; paint.isUnderlineText = false }
-                }, span.start, span.end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
-                ui.text("", parent = target).apply {
-                    tag = "ask-answer:" + turn.getString("id"); text = styled; textSize = 14f; setPadding(0,0,0,ui.moteDp(12)); setTextIsSelectable(true); movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                display.citations.forEach { span ->
+                    styled.setSpan(CitationChipSpan(ui, span.number), span.start, span.end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                var touchScroll: Int? = null
+                val answerView = ui.text("", parent = target).apply {
+                    tag = "ask-answer:" + turn.getString("id"); text = styled; MoteUi.type(this, 16); MoteUi.textColor(this, NativeColorRole.INK)
+                    setLineSpacing(ui.moteDp(6).toFloat(), 1.35f)
+                    setPadding(0,ui.moteDp(12),0,ui.moteDp(10)); setTextIsSelectable(true)
                     setOnTouchListener { view, event ->
                         when (event.actionMasked) {
                             android.view.MotionEvent.ACTION_DOWN -> touchScroll = ui.contentScroll()
                             android.view.MotionEvent.ACTION_CANCEL -> touchScroll = null
-                            android.view.MotionEvent.ACTION_UP -> view.post { touchScroll = null }
+                            android.view.MotionEvent.ACTION_UP -> {
+                                val start = touchScroll; touchScroll = null
+                                val textView = view as TextView
+                                val layout = textView.layout
+                                if (layout != null && !ui.isWorking) {
+                                    val offset = layout.getOffsetForHorizontal(
+                                        layout.getLineForVertical((event.y - textView.totalPaddingTop + textView.scrollY).toInt().coerceAtLeast(0)),
+                                        (event.x - textView.totalPaddingLeft + textView.scrollX).coerceAtLeast(0f),
+                                    )
+                                    display.citations.firstOrNull { offset in it.start until it.end }?.let { span ->
+                                        openAskCitation(id, turn.getString("id"), span.id, start)
+                                    }
+                                }
+                            }
                         }
                         false
                     }
                 }
                 if (citations.isNotEmpty()) {
-                    ui.text(MoteI18n.text("依据"), NativeFontRole.META, target)
-                    citations.forEachIndexed { index, citation -> citationRow(target, index + 1, citation) { openAskCitation(id,turn.getString("id"),citation.getString("id")) } }
-
+                    val newCitations = citations.filter { shownCitationIds.add(it.getString("id")) }
+                    if (newCitations.isNotEmpty()) citationCards(target, newCitations, citationNumbers) { citation -> openAskCitation(id,turn.getString("id"),citation.getString("id")) }
                 }
-                val actions = LinearLayout(ui).apply { gravity = android.view.Gravity.END; setPadding(0,ui.moteDp(8),0,ui.moteDp(18)) }.also(target::addView)
-                conversationAction(actions,"保存为记录") {
-                    val original = turn.getString("question") + "\n\n" + answer.optString("answer")
-                    if (original.length > 100000) ui.notice(MoteI18n.text("文字目前最多 100000 字符。"))
-                    else ui.recordConversation(original, id, turn.getString("id"), turn.getString("question"), citations.map { it.getString("id") })
+                val actions = LinearLayout(ui).apply { gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL; setPadding(0,ui.moteDp(4),0,ui.moteDp(20)) }.also(target::addView)
+                val save = TextView(ui).apply {
+                    text = MoteI18n.text("保存为记录"); contentDescription = text
+                    MoteUi.type(this, 13); MoteUi.textColor(this, NativeColorRole.ACCENT)
+                    setCompoundDrawablesWithIntrinsicBounds(MoteGlyph.MEMORY.drawable, 0, 0, 0)
+                    compoundDrawablePadding = ui.moteDp(6)
+                    setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(MoteUi.accent))
+                    minHeight = ui.moteDp(44); gravity = android.view.Gravity.CENTER; isFocusable = true
+                    setPadding(0, 0, ui.moteDp(14), 0)
+                    setOnClickListener {
+                        if (!ui.isWorking) {
+                            val original = turn.getString("question") + "\n\n" + answer.optString("answer")
+                            if (original.length > 100000) ui.notice(MoteI18n.text("文字目前最多 100000 字符。"))
+                            else ui.recordConversation(original, id, turn.getString("id"), turn.getString("question"), citations.map { it.getString("id") })
+                        }
+                    }
                 }
-                conversationAction(actions,"更多") { showTurnDetails(id,turn.getString("id"),answer,citations) }
+                actions.addView(save, LinearLayout.LayoutParams(-2, ui.moteDp(44)))
+                actions.addView(MoteComponents.iconButton(ui, MoteGlyph.COPY, "复制", MoteIconButtonStyle.MUTED) {
+                    if (!ui.isWorking) {
+                        val clipboard = ui.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(MoteI18n.text("回答"), answer.optString("answer")))
+                    }
+                }, LinearLayout.LayoutParams(ui.moteDp(44), ui.moteDp(44)))
+                actions.addView(MoteComponents.iconButton(ui, MoteGlyph.MORE, "更多", MoteIconButtonStyle.MUTED) {
+                    if (!ui.isWorking) showTurnDetails(id,turn.getString("id"),answer,citations)
+                }, LinearLayout.LayoutParams(ui.moteDp(44), ui.moteDp(44)))
             }
             turn.optJSONObject("error")?.let { error ->
                 ui.text(MoteI18n.text("回答未完成"),NativeFontRole.SUPPORT,target)
@@ -627,7 +716,70 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         }
         next(conversation)?.let { older -> ui.button(MoteI18n.text("加载更早的对话"), parent = target) { loadConversation(id, older) } }
         if(askBusy())updateAskFailureAction()
-        ui.askConversationActions(true)
+        ui.askConversationActions(false)
+    }
+    private fun questionBubble(parent: LinearLayout, question: String) {
+        val row = LinearLayout(ui).apply { gravity = android.view.Gravity.END; setPadding(0, ui.moteDp(6), 0, ui.moteDp(16)) }
+        val maxWidth = (ui.resources.displayMetrics.widthPixels * 0.78f).toInt()
+        row.addView(TextView(ui).apply {
+            text = question; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK)
+            this.maxWidth = (maxWidth - ui.moteDp(40)).coerceAtLeast(ui.moteDp(120)); setPadding(ui.moteDp(15), ui.moteDp(10), ui.moteDp(15), ui.moteDp(10))
+            NativePresentationStyles.bind(this, "ask-question-bubble") {
+                it.background = MoteUi.shape(ui, NativeColorRole.SURFACE, 20, true, NativeColorRole.HAIR)
+            }
+        }, LinearLayout.LayoutParams(-2, -2))
+        parent.addView(row, LinearLayout.LayoutParams(-1, -2))
+    }
+    private fun citationCards(parent: LinearLayout, citations: List<JSONObject>, numbers: Map<String, Int>, open: (JSONObject) -> Unit) {
+        val group = MoteComponents.group(ui)
+        citations.forEachIndexed { index, citation ->
+            if (index > 0) group.addView(MoteComponents.divider(ui))
+            val number = numbers[citation.getString("id")] ?: (index + 1)
+            val name = citation.optString("title").ifBlank { citation.optString("appName").ifBlank { MoteI18n.text("查看原文依据") } }
+            val row = LinearLayout(ui).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                minimumHeight = ui.moteDp(62); setPadding(ui.moteDp(14), ui.moteDp(9), ui.moteDp(14), ui.moteDp(9))
+                isFocusable = true; contentDescription = MoteI18n.text("查看引用 {0}", number) + " · " + name
+                background = MoteUi.clickable(ui, NativeColorRole.TRANSPARENT, 0, false)
+                setOnClickListener { if (!ui.isWorking) open(citation) }
+            }
+            row.addView(TextView(ui).apply {
+                text = number.toString(); gravity = android.view.Gravity.CENTER; MoteUi.type(this, 11, medium = true)
+                MoteUi.textColor(this, NativeColorRole.ACCENT)
+                background = MoteUi.shape(ui, NativeColorRole.TINT, NativeRadiusRole.PILL, false)
+            }, LinearLayout.LayoutParams(ui.moteDp(24), ui.moteDp(24)).apply { marginEnd = ui.moteDp(12) })
+            val labels = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+            labels.addView(TextView(ui).apply { text = name; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+            labels.addView(TextView(ui).apply {
+                text = citationSubtitle(citation); MoteUi.type(this, 13); MoteUi.textColor(this, NativeColorRole.MUTED)
+                setPadding(0, ui.moteDp(2), 0, 0)
+            })
+            row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+            group.addView(row, LinearLayout.LayoutParams(-1, -2))
+        }
+        parent.addView(group, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.moteDp(2) })
+    }
+    private fun citationSubtitle(citation: JSONObject): String {
+        citation.optString("location").takeIf(String::isNotBlank)?.let { return it }
+        val at = citation.optString("capturedAt")
+        val time = runCatching { NativeOriginalDetail.time(at) }.getOrNull()
+        val day = runCatching {
+            val zone = java.time.ZoneId.systemDefault()
+            val date = java.time.Instant.parse(at).atZone(zone).toLocalDate()
+            val today = java.time.LocalDate.now(zone)
+            when (date) {
+                today -> MoteI18n.text("今天")
+                today.minusDays(1) -> MoteI18n.text("昨天")
+                else -> MoteI18n.text("{0}月{1}日", date.monthValue, date.dayOfMonth)
+            }
+        }.getOrNull()
+        val suffix = when {
+            day != null && time != null -> " · $day $time"
+            day != null -> " · $day"
+            time != null -> " · $time"
+            else -> ""
+        }
+        return MoteI18n.text("记录") + suffix
     }
     private fun conversationAction(parent: LinearLayout, label: String, action: () -> Unit) = TextView(ui).apply {
         text = MoteI18n.text(label); contentDescription = text; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED)
@@ -947,5 +1099,34 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             "statistics" to "运行状态", "processing" to "处理任务", "plugins" to "插件", "settings" to "模型与服务",
             "usage" to "用量与费用", "vault" to "存储与索引", "developer" to "诊断与更新", "about" to "设置", "imports" to "导入", "help" to "帮助与反馈"
         )
+    }
+}
+
+/** Draws the verified citation marker as a compact tint chip while the stored
+ * answer keeps its exact `[n]` text for copy, save and accessibility. */
+internal class CitationChipSpan(private val context: android.content.Context, private val number: Int) : ReplacementSpan() {
+    private val density get() = context.resources.displayMetrics.density
+    private var measured = 0f
+    override fun getSize(paint: Paint, text: CharSequence, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int {
+        val oldSize = paint.textSize
+        paint.textSize = 11f * density
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        measured = paint.measureText(number.toString()) + 10f * density
+        paint.textSize = oldSize
+        return kotlin.math.ceil(measured.toDouble()).toInt()
+    }
+    override fun draw(canvas: Canvas, text: CharSequence, start: Int, end: Int, x: Float, top: Int, baseline: Int, bottom: Int, paint: Paint) {
+        val oldSize = paint.textSize; val oldColor = paint.color; val oldTypeface = paint.typeface; val oldStyle = paint.style
+        val label = number.toString()
+        paint.textSize = 11f * density
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        paint.style = Paint.Style.FILL
+        paint.color = MoteTheme.tint
+        val height = 18f * density
+        val chipTop = baseline - 14f * density
+        canvas.drawRoundRect(x, chipTop, x + measured, chipTop + height, 9f * density, 9f * density, paint)
+        paint.color = MoteTheme.accent
+        canvas.drawText(label, x + (measured - paint.measureText(label)) / 2f, baseline - 2f * density, paint)
+        paint.textSize = oldSize; paint.color = oldColor; paint.typeface = oldTypeface; paint.style = oldStyle
     }
 }

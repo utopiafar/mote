@@ -98,7 +98,7 @@ class QuickEntryWidget : android.appwidget.AppWidgetProvider() {
                 setOnClickPendingIntent(R.id.widget_ask, null)
                 return@apply
             }
-            setTextViewText(R.id.widget_ask, MoteI18n.text("问一问…"))
+            setTextViewText(R.id.widget_ask, MoteI18n.text("问一问"))
             setContentDescription(R.id.widget_ask, MoteQuickEntry.ASK.label)
             setOnClickPendingIntent(R.id.widget_ask, MoteQuickEntry.ASK.pendingIntent(context))
             listOf(R.id.widget_record to MoteQuickEntry.RECORD, R.id.widget_photo to MoteQuickEntry.PHOTO, R.id.widget_audio to MoteQuickEntry.AUDIO).forEach { (view, entry) ->

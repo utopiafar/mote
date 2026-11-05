@@ -127,6 +127,7 @@ internal class CentralContent(
     private lateinit var addAction: TextView
     private lateinit var status: TextView
     private lateinit var title: TextView
+    private lateinit var headerDivider: View
     private lateinit var collectionBar: LinearLayout
     private lateinit var composer: LinearLayout
     private var insightMoreAction: (() -> Unit)? = null
@@ -258,7 +259,8 @@ internal class CentralContent(
             header.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(6) })
         }
         shell.header(header)
-        shell.header(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER); layoutParams = LinearLayout.LayoutParams(-1,moteDp(1));if(embeddedActions)visibility=View.GONE })
+        headerDivider = View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER); layoutParams = LinearLayout.LayoutParams(-1,moteDp(1));if(embeddedActions)visibility=View.GONE }
+        shell.header(headerDivider)
         if(embeddedActions){require(initialPage=="actions");header.visibility=View.GONE}
         status = TextView(this).apply {
             tag = "central-status"
@@ -351,9 +353,11 @@ internal class CentralContent(
         state.putString("insightId", pendingInsightId); state.putString("insightOrigin", server)
         state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
+    var askBackToHistory: (() -> Boolean)? = null
     fun back(): Boolean {
         if (page == "files" && requestedFileId() != null) return false
         if (screens?.back() == true) { updateBackButton(); return true }
+        if (page == "ask" && askBackToHistory?.invoke() == true) { updateBackButton(); return true }
         if (page == "insights" && pageHistory.isEmpty()) return false
         val previous = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else MoteNavigation.centralParent(page)
         if (previous == null) return false
@@ -371,22 +375,32 @@ internal class CentralContent(
         newConversationAction.visibility = historyAction.visibility
         conversationMoreAction.visibility = View.GONE
     }
+    internal fun hostActivity(): MoteActivity = activity
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
-        composer.addView(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LinearLayout.LayoutParams(-1,moteDp(1)))
-        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(10),moteDp(20),moteDp(16)) }.also(composer::addView)
+        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(8),moteDp(20),moteDp(22)) }.also(composer::addView)
     }
     internal fun hideAskComposer() { composer.visibility = View.GONE }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
     internal fun askConversationActions(showMore: Boolean) { conversationMoreAction.visibility = if (showMore) View.VISIBLE else View.GONE }
-    internal fun detailTitle(value: String) { title.text = value; historyAction.visibility = View.GONE; newConversationAction.visibility = View.GONE; conversationMoreAction.visibility = View.GONE }
+    /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
+    internal fun askConversationVisible(visible: Boolean) {
+        title.visibility = if (visible) View.GONE else View.VISIBLE
+        headerDivider.visibility = if (visible || embeddedActions) View.GONE else View.VISIBLE
+        newConversationAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
+        conversationMoreAction.visibility = View.GONE
+        historyAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
+    }
+    internal fun detailTitle(value: String) { title.visibility = View.VISIBLE; title.text = value; historyAction.visibility = View.GONE; newConversationAction.visibility = View.GONE; conversationMoreAction.visibility = View.GONE }
 
 
     internal fun navigate(next: String, remember: Boolean = true) {
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
         page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
+        askBackToHistory = null
         updateCollectionBar(); updateBackButton()
+        title.visibility = View.VISIBLE
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
         screens?.show(next)

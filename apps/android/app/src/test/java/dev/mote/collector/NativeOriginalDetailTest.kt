@@ -34,6 +34,12 @@ class NativeOriginalDetailTest {
         assertEquals(0, detail.referenceCount)
     }
 
+    @Test fun `organized receipt keeps the recorded completion time`() {
+        val detail = NativeOriginalDetail.capture(record().put("ocr", JSONObject().put("status", "completed").put("updatedAt", "2026-11-06T06:25:00Z")), emptyList())
+        assertEquals("2026-11-06T06:25:00Z", detail.timeline[2].at)
+        assertEquals("2026-11-06T06:26:00Z", NativeOriginalDetail.capture(record("indexed").put("indexedAt", "2026-11-06T06:26:00Z"), emptyList()).timeline[2].at)
+    }
+
     @Test fun `an unfinished index never claims searchable receipts`() {
         assertEquals("正在整理", NativeOriginalDetail.capture(record("pending"), emptyList()).timeline[2].title)
         assertFalse(NativeOriginalDetail.capture(record("pending"), emptyList()).timeline[2].completed)

@@ -46,7 +46,7 @@ enum HomeDestination: Equatable, Identifiable {
     case search
     // Destination: IOS11 iOS 对话列表
     case ask(OriginalAskScope?)
-    // Destination: IOS08 iOS 编辑器；拍照直接进入编辑器，录音由 IOS09 接管
+    // Destination: iOS 编辑器，拍照与录音先打开编辑器。
     case editor(EditorIntent)
     // Destination: IOS07 iOS 连接
     case connection
@@ -98,7 +98,7 @@ enum HomeDestination: Equatable, Identifiable {
 
     var isFullScreen: Bool {
         switch self {
-        case .profile, .captureStatus, .editor, .ask(.none): true
+        case .profile, .captureStatus, .editor, .ask(.none), .connection: true
         default: false
         }
     }
@@ -107,6 +107,7 @@ enum HomeDestination: Equatable, Identifiable {
 struct HomeDestinationView: View {
     let destination: HomeDestination
     let editorStore: EditorDraftStore?
+    var recording: RecordingController? = nil
     let arguments: [String]
     let onAsk: (OriginalAskScope) -> Void
     let onClearScope: () -> Void
@@ -117,12 +118,14 @@ struct HomeDestinationView: View {
         switch destination {
         case .editor(let intent):
             if let editorStore {
-                EditorFlowView(store: editorStore, arguments: arguments, intent: intent) {
+                EditorFlowView(store: editorStore, arguments: arguments, intent: intent, recording: recording) {
                     dismiss()
                 }
             } else {
                 unavailable
             }
+        case .connection:
+            ConnectionView()
         case .original(let id):
             OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
         case .ask(.none):

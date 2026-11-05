@@ -1,6 +1,9 @@
+import type {UiDestination} from '@mote/shared';
 import {webFeatures} from './features/registry';
 /** Navigation is contributed by installed, trusted UI entries; never inferred from content. */
 export type Page=string;
+/** Shared destination identities map to the web workspace routes that render them. */
+export const destinationPages:Record<UiDestination,Page>={home:'overview',library:'archive',sources:'sources',connections:'connections',ask:'ask',activity:'activity'};
 function live<T extends object>(read:()=>T):T {return new Proxy({} as T,{get:(_target,key)=>Reflect.get(read(),key),ownKeys:()=>Reflect.ownKeys(read()),getOwnPropertyDescriptor:(_target,key)=>Object.getOwnPropertyDescriptor(read(),key)});}
 export const routes:Record<string,string>=live(()=>Object.fromEntries(webFeatures.pages().map(page=>[page.id,page.route??page.id])));
 export const pageLabels:Record<string,string>=live(()=>Object.fromEntries(webFeatures.pages().map(page=>[page.id,page.label??page.id])));

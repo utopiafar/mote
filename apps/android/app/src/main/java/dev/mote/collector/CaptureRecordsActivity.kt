@@ -524,9 +524,7 @@ class CaptureRecordsActivity : MoteActivity() {
                                     if (isDestroyed || !reading()) return@runOnUiThread
                                     val access=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
                                     if (selection==null || access==null || access.server!=selection.server || access.generation!=selection.generation) return@runOnUiThread
-                                    val dialog=MoteDialogBuilder(this@CaptureRecordsActivity).setTitle(MoteI18n.text("详情"))
-                                    dialog.setView(ScrollView(this@CaptureRecordsActivity).apply { addView(NativeOriginalDetail.view(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record, conversations))) })
-                                    dialog.setPositiveButton(MoteI18n.text("关闭"),null).show()
+                                    NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record, conversations))
                                 }
                             }
                         } }))
@@ -621,7 +619,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         return@runOnUiThread
                     }
                     text(content, CapturePreview.ocrLabel(record, remote), MoteTheme.fontBody.toFloat())
-                    if (bitmap != null) content.addView(ImageView(this).apply { setImageBitmap(bitmap); adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = MoteI18n.text("采集图片") }, LinearLayout.LayoutParams(-1, -2))
+                    if (bitmap != null) content.addView(ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = MoteI18n.text("采集图片") }, LinearLayout.LayoutParams(moteDp(240), moteDp(180)))
                     else text(content, MoteI18n.text("图片暂不可用。"), MoteTheme.fontBody.toFloat())
                     ownerDescription(); centralActions()
                     text(content, MoteI18n.text("识别文字"), MoteTheme.fontSection.toFloat())
