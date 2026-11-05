@@ -136,14 +136,14 @@ public struct CentralClient: Sendable {
         try await request("GET", "/api/memories/\(id.uuidString.lowercased())/evidence")
     }
 
-    private func request<Response: Decodable>(_ method: String, _ path: String,
-                                               query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> Response {
+    func request<Response: Decodable>(_ method: String, _ path: String,
+                                      query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> Response {
         try await perform(try makeRequest(method, path, query: query, authenticated: authenticated))
     }
 
-    private func request<Body: Encodable, Response: Decodable>(_ method: String, _ path: String,
-                                                                query: [URLQueryItem] = [], body: Body,
-                                                                authenticated: Bool = true) async throws -> Response {
+    func request<Body: Encodable, Response: Decodable>(_ method: String, _ path: String,
+                                                       query: [URLQueryItem] = [], body: Body,
+                                                       authenticated: Bool = true) async throws -> Response {
         var request = try makeRequest(method, path, query: query, authenticated: authenticated)
         request.httpBody = try JSONEncoder().encode(body)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
