@@ -1,6 +1,6 @@
 /* Authored interface messages only; never translate captured content. */
 export const japanese: Readonly<Record<string, string>> = {
-  "网页": "ウェブページ",
+  "网页": "ウェブ",
   "截图与照片": "スクリーンショットと写真",
   "网页与文件": "ウェブページとファイル",
   "按时间回看": "日付で振り返る",
@@ -10200,8 +10200,6 @@ export const japanese: Readonly<Record<string, string>> = {
   "已整理，可搜索": "整理済み、検索可能",
   "整理未完成": "整理未完了",
   "引用它的对话": "この資料を引用する会話",
-  "网页": "ウェブ",
   "参考整份资料": "資料全体",
-  "昨天": "昨日",
   "{0}月{1}日": "{0}月{1}日"
 };

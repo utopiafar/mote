@@ -1,6 +1,6 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
-  "网页": "Webseite",
+  "网页": "Web",
   "截图与照片": "Screenshots und Fotos",
   "网页与文件": "Webseiten und Dateien",
   "按时间回看": "Nach Datum ansehen",
@@ -10200,8 +10200,6 @@ export const german: Readonly<Record<string, string>> = {
   "已整理，可搜索": "Aufbereitet, durchsuchbar",
   "整理未完成": "Aufbereitung unvollständig",
   "引用它的对话": "Konversationen, die es zitieren",
-  "网页": "Web",
   "参考整份资料": "Gesamtes Material",
-  "昨天": "Gestern",
   "{0}月{1}日": "{1}.{0}."
 };
