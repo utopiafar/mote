@@ -84,6 +84,18 @@ public struct CentralClient: Sendable {
         try await request("GET", "/api/capture-browser/\(id.uuidString.lowercased())")
     }
 
+    @discardableResult
+    public func deleteOriginal(id: UUID, expectedKind: OriginalDeletionKind) async throws -> DeletionReceipt {
+        let pathID = id.uuidString.lowercased()
+        let current = try await original(id: id)
+        guard current.id == pathID, current.deletion?.available == true,
+              current.deletion?.kind == expectedKind
+        else { throw OriginalDeletionError.unavailable }
+        let receipt: DeletionReceipt = try await request("DELETE", "/api/captures/\(pathID)")
+        try OriginalDeletion.requireCompleted(receipt)
+        return receipt
+    }
+
     public func conversations(cursor: String? = nil, limit: Int = 30) async throws -> CentralPage<ConversationSummary> {
         var query = [URLQueryItem(name: "limit", value: String(limit))]
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
