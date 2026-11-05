@@ -172,8 +172,8 @@ class RemainingFinalUiInstrumentedTest {
             scenario.onActivity { val marker=views(it.window.decorView).filterIsInstance<TextView>().single { view->view.text.toString().contains(if(page=="memories")"当前筛选下没有匹配的记忆" else "当前范围内暂无条目") };marker.requestRectangleOnScreen(android.graphics.Rect(0,0,marker.width,marker.height),true) };settledFrames(scenario)
             scenario.onActivity { a->val marker=views(a.window.decorView).filterIsInstance<TextView>().single { view->view.text.toString().contains(if(page=="memories")"当前筛选下没有匹配的记忆" else "当前范围内暂无条目") };val actual=android.graphics.Rect();assertTrue(marker.getGlobalVisibleRect(actual));assertEquals("Empty-state text must actually be visible in its evidence",marker.height,actual.height());picture(a,"p11-empty-$page-message-dark") }
             if(page=="memories"){
-                click("更多  ›");until("actual More exposes existing memory management"){main { visible().any { it is android.widget.Spinner&&it.contentDescription=="浏览维度" } }}
-                scenario.onActivity { picture(it,"p11-memory-management-more-dark") };click("更多  ›")
+                scenario.manageMemories();until("memory filter exposes existing memory management"){main { visible().any { it is android.widget.Spinner&&it.contentDescription=="浏览维度" } }}
+                scenario.onActivity { picture(it,"p11-memory-management-more-dark") };scenario.manageMemories()
                 main { assertFalse(visible().any { it is android.widget.Spinner&&it.contentDescription=="浏览维度" }) }
                 click("手动提取记忆");until("existing memory jobs entry"){text("开始提取")};scenario.onActivity { picture(it,"p11-existing-extraction-entry-dark") }
                 click("返回上级");until("return to concise same memory page"){text("手动提取记忆")&&text("当前筛选下没有匹配的记忆")}
@@ -188,18 +188,24 @@ class RemainingFinalUiInstrumentedTest {
         context.queue().enqueue(event,null,16_000_000)
         try { ActivityScenario.launch<MainActivity>(Intent(context,MainActivity::class.java).putExtra("page","LIBRARY")).awaitMainUi().use { scenario->
             until("real local library row"){main{visible().any{it.tag=="library-record:"+id}}}
-            main{assertTrue(visible().single{it.tag=="library-locations:local"}.isSelected);assertTrue(visible().single{it.tag=="library-primary-views:materials"}.isSelected);assertTrue(visible().single{it.tag=="library-primary-views:materials"} is TextView);assertFalse(visible().single{it.tag=="library-primary-views:materials"} is android.widget.Button)}
+            fun openFilter() { click("筛选"); until("library filter sheet") { main { visible().any { it.tag == "library-location:local" } } } }
+            fun verifyLocation(value: String) { openFilter(); main { assertTrue(visible().single { it.tag == "library-location:$value" }.isSelected) }; tag("library-location:$value") }
+            fun chooseLocation(value: String) { openFilter(); tag("library-location:$value") }
+            verifyLocation("local")
+            main{assertTrue(visible().single{it.tag=="library-primary-views:materials"}.isSelected);assertTrue(visible().single{it.tag=="library-primary-views:materials"} is TextView);assertFalse(visible().single{it.tag=="library-primary-views:materials"} is android.widget.Button)}
             for(theme in listOf(AppearancePreference.LIGHT,AppearancePreference.DARK)){main{MoteAppearance.select(context,theme)};settledFrames(scenario);scenario.onActivity{picture(it,"gap-library-local-"+theme.value)}}
-            tag("library-locations:central");main{assertTrue(visible().single{it.tag=="library-locations:central"}.isSelected);assertFalse(visible().any{it.tag=="library-record:"+id})};scenario.onActivity{picture(it,"gap-library-central-unavailable-dark")}
-            tag("library-locations:local");until("same local original remains"){main{visible().any{it.tag=="library-record:"+id}}};tag("library-record:"+id)
+            chooseLocation("central");main{assertFalse(visible().any{it.tag=="library-record:"+id})};scenario.onActivity{picture(it,"gap-library-central-unavailable-dark")}
+            chooseLocation("local");until("same local original remains"){main{visible().any{it.tag=="library-record:"+id}}};tag("library-record:"+id)
             until("exact local record reader"){main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any{it is CaptureRecordsActivity}&&visible().filterIsInstance<TextView>().any{it.text.toString().contains(original)}}}
             main{val a=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single();assertTrue(a is CaptureRecordsActivity);picture(a,"gap-library-exact-original-dark")};click("返回上一页")
-            until("same location on return"){main{visible().any{it.tag=="library-locations:local"&&it.isSelected}}}
-            tag("library-primary-views:memories");until("source memory handoff"){text("查看中心整理的记忆。")};scenario.onActivity{picture(it,"gap-library-memory-handoff-dark")}
-            scenario.recreate();scenario.awaitMainUi();until("same memory tab after recreation"){main{visible().any{it.tag=="library-primary-views:memories"&&it.isSelected}}};click("查看我的记忆 ↗")
-            until("existing Central memory route"){main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any{it is CentralActivity&&it.intent.getStringExtra("page")=="memories"}}}
+            until("same location on return"){main{visible().any{it.tag=="library-filter"}}};verifyLocation("local")
+            tag("library-primary-views:memories")
+            until("memory segment opens the existing Central memory page"){main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any{it is CentralActivity&&it.intent.getStringExtra("page")=="memories"}}}
+            main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single{it is CentralActivity}.let{picture(it,"gap-library-memory-handoff-dark")}}
             main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single{it is CentralActivity}.finish()}
-            until("return to same handoff"){text("查看中心整理的记忆。")};assertNotNull(context.queue().capture(id));assertFalse(Settings(context).enabled)
+            until("return to the same local library"){main{visible().any{it.tag=="library-filter"}&&visible().any{it.tag=="library-record:"+id}}};verifyLocation("local")
+            scenario.recreate();scenario.awaitMainUi();until("same local location after recreation"){main{visible().any{it.tag=="library-filter"}&&visible().any{it.tag=="library-record:"+id}}};verifyLocation("local")
+            assertNotNull(context.queue().capture(id));assertFalse(Settings(context).enabled)
         }}finally{context.queue().acknowledge(id)}
     }
     @Test fun processingAndDiagnosticsKeepRealAdvancedDraftsAndVisibleRange() = fixture {

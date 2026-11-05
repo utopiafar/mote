@@ -310,13 +310,8 @@ class LibraryRecordsRefreshInstrumentedTest {
         val repository = LocalStatusProducer.get(context); repository.refresh()
         waitFor("paired generated inventory before opening the library") { repository.state.value.let { it.error == null && it.active?.records == 65 } }
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
-            scenario.onActivity { activity ->
-                val controls = views(activity.window.decorView)
-                if (controls.single { it.tag == "library-filters:content" }.visibility != View.VISIBLE)
-                    controls.single { it.tag == "library-filters" }.performClick()
-            }
             instrumentation.waitForIdleSync()
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
+            scenario.chooseLibraryLocation("")
             fun shown(text: String): Boolean { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains(text) } }; return found }
             fun rows(id: String): Int { var count = 0; scenario.onActivity { activity -> count = views(activity.window.decorView).count { it.isShown && it.tag == "library-record:$id" } }; return count }
             fun click(label: String) { scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text == MoteI18n.text(label) && it.isClickable }.performClick() } }
@@ -501,12 +496,12 @@ class LibraryRecordsRefreshInstrumentedTest {
                     readIdle() && remotes.all { rows(it) == 0 } && rows(offlineIds[0]) == 1 && rows(locals[50]) == 1 && shown("中央状态未知")
                 }
                 assertEquals("offline append preserves every pagination continuation", beforeOffline, paginationState())
-                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(2) }
+                scenario.chooseLibraryLocation("central")
                 waitFor("stale remote availability cannot appear in the Central-readable filter") { rows(locals[50]) == 0 && rows(offlineIds[0]) == 0 && remotes.all { rows(it) == 0 } }
             } finally {
                 api.post("/api/fixture/library-device-hold", JSONObject().put("action", "release"))
                 api.post("/api/fixture/library-denial", JSONObject().put("mode", "none"))
-                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
+                scenario.chooseLibraryLocation("")
             }
             waitFor("returning from the Central filter still keeps the local original") { rows(locals[50]) == 1 && rows(offlineIds[0]) == 1 }
             queue.enqueue(note(offlineIds[1], device, Instant.now(), "Generated recovered append"), null, 64_000_000)
@@ -592,7 +587,7 @@ class LibraryRecordsRefreshInstrumentedTest {
                 api.post("/api/fixture/library-denial", JSONObject().put("mode", "none"))
             }
 
-            click("刷新")
+            scenario.refreshLibrary()
             waitFor("fresh authorization restores the loaded generated Central range") { remotes.dropLast(1).all { rows(it) == 1 } && rows(locals[64]) == 1 && readIdle() }
 
             waitFor("mixed refresh has delivered before holding the next real request") { readIdle() }
@@ -639,12 +634,8 @@ class LibraryRecordsRefreshInstrumentedTest {
             val repository = LocalStatusProducer.get(context); repository.refresh()
             waitFor("the frontier fixture has exactly twenty local originals") { repository.state.value.let { it.error == null && it.active?.records == 20 } }
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
-                scenario.onActivity { activity ->
-                    val controls = views(activity.window.decorView)
-                    if (controls.single { it.tag == "library-filters:content" }.visibility != View.VISIBLE) controls.single { it.tag == "library-filters" }.performClick()
-                }
                 instrumentation.waitForIdleSync()
-                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
+                scenario.chooseLibraryLocation("")
                 fun rows(id: String): Int {
                     var count = 0
                     scenario.onActivity { activity -> count = views(activity.window.decorView).count { it.isShown && it.tag == "library-record:$id" } }

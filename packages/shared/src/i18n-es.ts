@@ -1,5 +1,10 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "网页": "Página web",
+  "截图与照片": "Capturas de pantalla y fotos",
+  "网页与文件": "Páginas web y archivos",
+  "按时间回看": "Explorar por fecha",
+  "昨天": "Ayer",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "Por ejemplo: estas son mis conversaciones de desarrollo de proyectos con un agente de código, incluidos los registros de herramientas.",
   "查看已生效日程和设备写入状态": "Ver eventos vigentes y el estado de escritura del dispositivo",
   "例如：这是我的工作日历，日程不代表实际参加。": "Por ejemplo: este es mi calendario de trabajo; un evento no demuestra que haya asistido.",
@@ -10188,6 +10193,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "有待发送记录，无法更换中央": "Los registros pendientes impiden cambiar de central",
   "扫描中央生成的连接二维码。": "Escanear el código QR de conexión generado por el central.",
   "本人设备": "Este dispositivo",
+  "管理记忆": "Gestionar recuerdos",
   "详情": "Detalles",
   "已整理，可搜索": "Organizado y se puede buscar",
   "整理未完成": "Organización incompleta",
