@@ -13,6 +13,7 @@ CREATE INDEX IF NOT EXISTS captures_vectors ON captures(embedding_model,captured
  CREATE INDEX IF NOT EXISTS captures_device_source_time ON captures(device_id,json_extract(json,'$.source'),captured_at DESC,id DESC);
  CREATE INDEX IF NOT EXISTS captures_app ON captures(json_extract(json,'$.appId'),captured_at DESC);
  CREATE INDEX IF NOT EXISTS captures_source ON captures(json_extract(json,'$.source'),captured_at DESC);
+ CREATE INDEX IF NOT EXISTS captures_ios_notification_key ON captures(device_id,json_extract(json,'$.metadata.notification.notificationKey')) WHERE json_extract(json,'$.platform')='ios' AND json_extract(json,'$.source')='notification';
  CREATE INDEX IF NOT EXISTS captures_collection ON captures(COALESCE(json_extract(json,'$.privacy.collection'),'content'),captured_at DESC);
  CREATE INDEX IF NOT EXISTS captures_ui_page_scope ON captures(device_id,json_extract(json,'$.appId'),json_extract(json,'$.metadata.uiPage.objects[0].kind'),captured_at DESC,id DESC) WHERE json_extract(json,'$.source')='ui_page' AND json_extract(json,'$.metadata.uiPage.version')=3;
  CREATE INDEX IF NOT EXISTS captures_coding_repository ON captures(json_extract(json,'$.provenance.document.coding.repositoryKey'),captured_at DESC);

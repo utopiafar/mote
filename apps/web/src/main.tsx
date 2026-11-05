@@ -304,7 +304,10 @@ function App() {
     // Independent collections must not block navigation when one endpoint fails.
     void Promise.allSettled([
       load<Status>("/api/status", value => {setStatus(value);}),
-      load<{items: Device[]}>("/api/devices", value => setDevices(value.items)),
+      load<{items: Device[];disconnectedDeviceIds?: string[]}>("/api/devices", value => {
+        const disconnected = new Set(value.disconnectedDeviceIds ?? []);
+        setDevices(value.items.map(device => ({...device,disconnected:disconnected.has(device.deviceId)})));
+      }),
       ...(page === "activity" ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
       ...(page === "overview" ? [load<{items: Answer[]}>(INSIGHT_HISTORY_PATH, value => setInsights(value.items))] : []),
     ]).then(results => {

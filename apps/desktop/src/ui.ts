@@ -20,6 +20,7 @@ import {createSyncHistoryUi} from './sync-history-ui';
 import {createDesktopPresentation} from './presentation';
 import {createWorkActivityUi} from './work-activity-ui';
 import {createPermissionsUi} from './permissions-ui';
+import {createCaptureSyncUi} from './capture-sync-ui';
 import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation, renderAskScope } from './ask-presentation';
 import {currentTurnCites,prependConversationTurns} from './ask-conversation';
@@ -72,6 +73,17 @@ const chromeCaptureUi=createChromeCaptureUi(desktopApi);
 const syncHistoryUi = createSyncHistoryUi(desktopApi, page => showPage(page));
 const workActivityUi=createWorkActivityUi(desktopApi,page=>showPage(page));
 const permissionsUi=createPermissionsUi(desktopApi);
+const captureSyncUi=createCaptureSyncUi(desktopApi,{
+  start:()=>byId('start').click(),
+  stop:()=>void desktopApi.stop().then(render).catch(error=>feedback((error as Error).message)),
+  addSource:()=>byId('source-add').click(),
+  openChrome:()=>showPage('chrome'),
+  openCalendar:()=>byId('source-calendar-choice-open').click(),
+  openSources:()=>showPage('sources'),
+  sendNow:()=>void perform(async()=>{render(await desktopApi.retry());feedback(currentStatus.sync.message,currentStatus.sync.state!=='error'&&currentStatus.sync.state!=='unconfigured');}),
+  setPaused:paused=>void perform(async()=>{render(await desktopApi.setSyncPaused(paused));}),
+  failure:message=>feedback(message),
+});
 const presentation=createDesktopPresentation({root:document.body,sidebar:document.querySelector<HTMLElement>('.sidebar')!,toolbar:document.querySelector<HTMLElement>('.workspace-toolbar')!,main:byId('main-content'),navigate:page=>{showPage(page);}},desktopAppearance);
 window.addEventListener('beforeunload',()=>{workActivityUi.dispose();permissionsUi.dispose();presentation.dispose();},{once:true});
 let setupReviewed = false;
@@ -105,7 +117,7 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false, refre
   if (currentPage === 'permissions' && page !== 'permissions') permissionsUi.hide();
   if (currentPage === 'content-reader' && page !== 'content-reader') libraryUi.close(false);
   workbenchUi.leave(page);
-  currentPage = page;
+  currentPage = page;document.body.dataset.workspacePage=page;
   if(initialized) renderOperations(currentStatus.operations??[]);
   if(page==='chrome')chromeCaptureUi.refresh();
   if (page === 'uploads') syncHistoryUi.show();
@@ -130,13 +142,14 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false, refre
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
   if (page === 'compression') {for(const [id,value] of [['compression-quality',currentStatus.config.jpegQuality],['compression-side',currentStatus.config.captureMaxSide]] as const){const select=byId<HTMLSelectElement>(id);if(!Array.from(select.options).some(option=>option.value===String(value)))select.add(new Option(String(value),String(value)));select.value=String(value);}invalidateCompression();}
   if (page === 'ask' && refreshAskOnEntry) {if(skipNextAskRefresh){skipNextAskRefresh=false;if(askConversation&&askReadingOnLeave)restoreAskReadingPosition(askReadingOnLeave,askConversation,askGeneration);}else void refreshAsk();}
+  if (page === 'capture-sync') captureSyncUi.show();
   if (page === 'permissions') permissionsUi.show();
   if (page === 'privacy'||page==='screen') void appCaptureUi.refreshApplications();
   if (page === 'statistics') void loadStorageStatistics();
   if (page === 'records' && !preserveContentPosition) { void loadRecords(); void refreshContent(); }
   if (page === 'overview' && initialized && !preserveContentPosition) { void libraryUi.refreshHome(); void refreshSources(); void workbenchUi.refresh(); }
   if (page === 'sources') void refreshSources();
-  if (page === 'overview' && initialized) { const epoch=statusReadEpoch; void desktopApi.status().then(status=>{if(epoch===statusReadEpoch&&!busy)render(status);}).catch(() => {if(epoch===statusReadEpoch&&!busy)feedback(moteText("状态读取失败，请重试。"));}); }
+  if (page === 'overview' && initialized) { const epoch=statusReadEpoch; void desktopApi.status().then(status=>{if(epoch===statusReadEpoch&&!busy)render(status);}).catch(() => {if(epoch===statusReadEpoch&&!busy)feedback(moteText("状态读取失败。"));}); }
   return true;
 }
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-nav]:not([data-presentation-nav])'))) button.addEventListener('click', () => {
@@ -409,7 +422,7 @@ function render(status: import('./contracts').Status): void {
     const retained=askDraftScopes.switch(currentStatus,status,snapshotAskDraft());
     askGeneration++;clearTimeout(askTimer);askConversation=undefined;askCursor=undefined;skipNextAskRefresh=false;byId('ask-more').hidden=true;byId('ask-history').replaceChildren();restoreScopedAskDraft(retained);renderAsk();setText('ask-login-status','');setText('ask-error','');
   }
-  currentStatus = status;workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status); renderStorage();appCaptureUi.setStatus(status);if(!quickNote)workbenchUi.update(status);
+  currentStatus = status;workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status);captureSyncUi.update(status,localSourceRows);renderStorage();appCaptureUi.setStatus(status);if(!quickNote)workbenchUi.update(status);
   askConnectionState();
   maybeRestoreAskConversation();
   updateTokenField();
@@ -830,7 +843,7 @@ async function refreshSources(): Promise<void> {
   sourcesReading = true;const generation=sourceReadGeneration;
   try {
   const rows = await desktopApi.sources();if(generation!==sourceReadGeneration)return;localSourceRows = rows;
-  sourceWorkspace.update(rows);workbenchUi.setHasSource(rows.some(row=>row.source.syncContinuously!==false));
+  sourceWorkspace.update(rows);if(currentStatus)captureSyncUi.update(currentStatus,rows);workbenchUi.setHasSource(rows.some(row=>row.source.syncContinuously!==false));
   } finally { sourcesReading = false; }
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
