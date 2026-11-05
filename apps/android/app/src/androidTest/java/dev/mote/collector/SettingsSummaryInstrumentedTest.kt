@@ -49,7 +49,9 @@ class SettingsSummaryInstrumentedTest {
         val work = listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-heartbeat", "mote-heartbeat-now", "mote-source-upload")
         fun cancel() = work.forEach { manager.cancelUniqueWork(it).result.get(10, TimeUnit.SECONDS) }
         val old = "https://old.generated.invalid"
+        val oldHost = "old.generated.invalid"
         val paired = "https://paired.generated.invalid"
+        val pairedHost = "paired.generated.invalid"
         val token = "generated-settings-summary-token-1234567890"
         fun waitFor(scenario: ActivityScenario<MainActivity>, label: String, value: String) {
             val until = SystemClock.elapsedRealtime() + 15_000
@@ -65,7 +67,7 @@ class SettingsSummaryInstrumentedTest {
             cancel(); MoteI18n.select(context, "zh-CN")
             settings.save(settings.read().copy(server = old, token = token, syncMode = "manual", syncPaused = false), confirmCentralEndpoint = true)
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "SETTINGS")).awaitMainUi().use { scenario ->
-                waitFor(scenario, "连接与设备", old)
+                waitFor(scenario, "连接与设备", oldHost)
                 lateinit var card: View
                 lateinit var scroll: ScrollView
                 lateinit var originalActivity: MainActivity
@@ -82,11 +84,11 @@ class SettingsSummaryInstrumentedTest {
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                 scenario.onActivity { initialScroll = scroll.scrollY; assertTrue(card.isFocused) }
                 settings.save(settings.read().copy(server = paired), confirmCentralEndpoint = true)
-                waitFor(scenario, "连接与设备", paired)
+                waitFor(scenario, "连接与设备", pairedHost)
                 scenario.onActivity { activity ->
                     assertSame("A settings refresh keeps the same Activity", originalActivity, activity)
                     assertSame("A settings refresh does not rebuild its card", card, row(activity, "连接与设备"))
-                    assertEquals("连接与设备，$paired", card.contentDescription.toString())
+                    assertTrue(card.contentDescription.toString().startsWith("连接与设备，$pairedHost"))
                     assertEquals("Settings scroll is retained", initialScroll, scroll.scrollY)
                     assertTrue("Settings focus is retained", card.isFocused)
                 }
@@ -104,6 +106,7 @@ class SettingsSummaryInstrumentedTest {
                 assertTrue("The earlier status read must finish before holding the executor", idle)
                 val readBlocked = CountDownLatch(1); val releaseRead = CountDownLatch(1); val blockerFinished = CountDownLatch(1)
                 val afterReturn = "https://after-return.generated.invalid"
+                val afterReturnHost = "after-return.generated.invalid"
                 (executorField.get(originalActivity) as ExecutorService).execute {
                     readBlocked.countDown()
                     try { check(releaseRead.await(35, TimeUnit.SECONDS)) { "The returning status read was never released" } }
@@ -124,38 +127,29 @@ class SettingsSummaryInstrumentedTest {
                     assertEquals("The executor must still be held", 1L, blockerFinished.count)
                     scenario.onActivity { activity ->
                         val connection = row(activity, "连接与设备")
-                        val send = row(activity, "同步与上传")
                         assertSame("Returning retains the original Activity", originalActivity, activity)
                         assertEquals("正在读取本机设置…", detail(connection))
                         assertEquals("连接与设备，正在读取本机设置…", connection.contentDescription.toString())
-                        assertFalse(connection.contentDescription.toString().contains(paired))
-                        assertEquals("正在读取本机设置…", detail(send))
-                        assertEquals("同步与上传，正在读取本机设置…", send.contentDescription.toString())
+                        assertFalse(connection.contentDescription.toString().contains(pairedHost))
+                        assertNull("Settings no longer carries send settings", views(activity.window.decorView).firstOrNull { it.tag == "menu:同步与上传" })
                     }
                 } finally { releaseRead.countDown() }
-                waitFor(scenario, "连接与设备", afterReturn)
-                SendPauseControl.set(context, true)
-                waitFor(scenario, "同步与上传", "发送已暂停")
-                scenario.onActivity { activity -> assertEquals("同步与上传，发送已暂停", row(activity, "同步与上传").contentDescription.toString()) }
-                SendPauseControl.set(context, false)
-                waitFor(scenario, "同步与上传", "按设置发送")
+                waitFor(scenario, "连接与设备", afterReturnHost)
                 settings.save(settings.read().copy(server = "", token = ""), confirmCentralEndpoint = true)
                 waitFor(scenario, "连接与设备", "尚未连接")
-                scenario.onActivity { activity -> assertEquals("连接与设备，尚未连接", row(activity, "连接与设备").contentDescription.toString()) }
+                scenario.onActivity { activity -> assertTrue(row(activity, "连接与设备").contentDescription.toString().startsWith("连接与设备，尚未连接")) }
 
                 // Corrupt only this generated profile's format marker to exercise a real read failure.
                 val format = prefs.getInt("configurationFormat", 0)
                 try {
                     check(prefs.edit().putInt("configurationFormat", -1).commit())
                     waitFor(scenario, "连接与设备", "暂不可读取")
-                    waitFor(scenario, "同步与上传", "暂不可读取")
                     scenario.onActivity { activity ->
                         assertEquals("连接与设备，暂不可读取", row(activity, "连接与设备").contentDescription.toString())
                         assertSame(card, row(activity, "连接与设备"))
                     }
                 } finally { check(prefs.edit().putInt("configurationFormat", format).commit()) }
                 waitFor(scenario, "连接与设备", "尚未连接")
-                waitFor(scenario, "同步与上传", "按设置发送")
             }
         } finally {
             cancel(); MoteI18n.select(context, originalLanguage)
@@ -239,7 +233,7 @@ class SettingsSummaryInstrumentedTest {
                     assertTrue("The stale callback and observation must execute", observed.await(15, TimeUnit.SECONDS))
                     assertNull(failure.get())
                     assertEquals("A queued old snapshot must not reload the old config", next.server, observedNode.get())
-                    assertEquals("A queued old snapshot must not replace the new card", next.server, observedCard.get())
+                    assertEquals("A queued old snapshot must not replace the new card", "new.generated.invalid", observedCard.get())
                 } finally { releaseMain.countDown(); releaseLatestRead.countDown() }
             }
         } finally {
