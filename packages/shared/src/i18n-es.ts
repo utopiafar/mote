@@ -10159,7 +10159,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "待同步 {0}": "Pendientes {0}",
   "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
   "发送失败": "Error al enviar",
-  "本人设备": "Este dispositivo",
   "连接时间": "Hora de conexión",
   "断开连接后停止发送，已有记录保留在本机。": "Al desconectar se detiene el envío. Los registros existentes permanecen en este dispositivo.",
   "已断开连接，已有记录保留在本机": "Desconectado. Los registros existentes permanecen en este dispositivo.",

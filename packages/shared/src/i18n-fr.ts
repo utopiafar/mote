@@ -10159,7 +10159,6 @@ export const french: Readonly<Record<string, string>> = {
   "待同步 {0}": "En attente {0}",
   "新的记录暂时无法保存": "Les nouveaux enregistrements ne peuvent pas être enregistrés pour le moment",
   "发送失败": "Échec de l’envoi",
-  "本人设备": "Cet appareil",
   "连接时间": "Heure de connexion",
   "断开连接后停止发送，已有记录保留在本机。": "La déconnexion arrête l'envoi. Les enregistrements existants restent sur cet appareil.",
   "已断开连接，已有记录保留在本机": "Déconnecté. Les enregistrements existants restent sur cet appareil.",

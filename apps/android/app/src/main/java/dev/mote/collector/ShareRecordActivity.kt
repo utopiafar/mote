@@ -60,7 +60,7 @@ open class ShareRecordActivity : MoteActivity() {
             description.visibility = if (expanded) View.VISIBLE else View.GONE
             descriptionToggle.visibility = if (expanded) View.GONE else View.VISIBLE
         }
-        if (saved) showSaved(false)
+        if (saved) showSaved(true)
         else if (state == null && request?.streamUris?.isNotEmpty() == true) stageUris(request!!.streamUris)
         else updateSubmit()
     }

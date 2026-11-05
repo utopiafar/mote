@@ -44,6 +44,7 @@ class ConversationRecordOriginInstrumentedTest {
         assumeTrue(InstrumentationRegistry.getArguments().getString("generatedQuoteFixture") == "true")
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.contains("emu64a"))
         require(!store.hasPrepared())
+        MoteI18n.select(context, "zh-CN")
         val old = store.draft(); val before = context.queue().dedupeIds().toSet(); val oldSettings = prepareConnection()
         try { body(); assertEquals("No preview or cancelled import saves a record", before, context.queue().dedupeIds().toSet()) }
         finally {

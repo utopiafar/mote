@@ -10159,7 +10159,6 @@ export const english: Readonly<Record<string, string>> = {
   "待同步 {0}": "Pending sync {0}",
   "新的记录暂时无法保存": "New records cannot be saved for now",
   "发送失败": "Sending failed",
-  "本人设备": "This device",
   "连接时间": "Connected at",
   "断开连接后停止发送，已有记录保留在本机。": "Disconnecting stops sending. Existing records stay on this device.",
   "已断开连接，已有记录保留在本机": "Disconnected. Existing records stay on this device.",

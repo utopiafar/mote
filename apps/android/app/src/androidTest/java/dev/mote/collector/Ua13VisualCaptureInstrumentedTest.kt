@@ -35,12 +35,21 @@ class Ua13VisualCaptureInstrumentedTest {
         assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS))
         scenario.onActivity { activity ->
             val root = activity.window.decorView
-            val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+            val panel = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
             try {
-                root.draw(Canvas(bitmap))
-                File(context.getExternalFilesDir(null), "ua13-visual").apply { mkdirs() }
-                    .resolve("$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            } finally { bitmap.recycle() }
+                root.draw(Canvas(panel))
+                // The bottom sheet window itself has no scrim; compose it over the canvas scrim at full device size.
+                val dark = MoteAppearance.preference() == AppearancePreference.DARK
+                val canvas = Bitmap.createBitmap(root.width, activity.resources.displayMetrics.heightPixels, Bitmap.Config.ARGB_8888)
+                try {
+                    Canvas(canvas).apply {
+                        drawColor(if (dark) 0xff0b0a0a.toInt() else 0xffa9a6a1.toInt())
+                        drawBitmap(panel, 0f, (canvas.height - panel.height).toFloat(), null)
+                    }
+                    File(context.getExternalFilesDir(null), "ua13-visual").apply { mkdirs() }
+                        .resolve("$name.png").outputStream().use { canvas.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                } finally { canvas.recycle() }
+            } finally { panel.recycle() }
         }
     }
     private fun image(name: String, color: Int): android.net.Uri {

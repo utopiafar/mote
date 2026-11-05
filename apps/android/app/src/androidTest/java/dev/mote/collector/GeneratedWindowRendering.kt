@@ -183,6 +183,7 @@ internal object GeneratedWindowRendering {
             "about-profile-light", "about-profile-dark", "about-profile-english-dark" -> Triple("about", "actual-build-profile", "Mote · ${RuntimeProfile.current.name}")
             "permissions-live-tint-dark", "permissions-live-tint-light" -> Triple("permissions", "actual-theme-role", "采集权限")
             "p06-microphone-denied-dark", "p06-camera-denied-dark", "p06-dark-restored-quote-and-supplement" -> Triple("record", "retained-shared-draft", "Generated retained personal supplement")
+            "p06-dark-share-panel" -> Triple("share", "retained-manual-draft", "Generated retained personal supplement")
             "p24-settings-top-dark", "p24-settings-bottom-dark" -> Triple("settings", "stopped", "偏好与本机维护")
             "p24-device_options-top-dark", "p24-device_options-bottom-dark" -> Triple("device-options", "stopped", "外观与语言")
             "p31-real-generated-calendar-picker-dark" -> Triple("sources", "real-calendar-picker", "Generated final picker calendar")
