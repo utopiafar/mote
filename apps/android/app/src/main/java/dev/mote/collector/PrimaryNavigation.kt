@@ -30,7 +30,7 @@ object MoteNavigation {
     fun centralAllowsAdd(@Suppress("UNUSED_PARAMETER") page: String): Boolean = false
     fun centralTab(page: String): MotePrimaryTab = when (page) {
         "overview", "actions" -> MotePrimaryTab.HOME
-        "ask" -> MotePrimaryTab.ASK
+        "ask", "conversations" -> MotePrimaryTab.ASK
         "sources", "devices", "connections", "lark" -> MotePrimaryTab.SOURCES
         "activity", "processing" -> MotePrimaryTab.ACTIVITY
         in libraryPages -> MotePrimaryTab.LIBRARY
@@ -50,6 +50,7 @@ object MoteNavigation {
         page == "processing" -> "activity"
         page in libraryPages -> "archive".takeUnless { page == it }
         page == "actions" -> "overview"
+        page == "conversations" -> "overview"
         page == "extensions" -> "about"
         page in groups.drop(2).flatMap { it.pages } -> "about".takeUnless { page == it }
         else -> null
