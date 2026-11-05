@@ -16,7 +16,11 @@ struct HomeRootView: View {
         .sheet(item: $router.destination, onDismiss: {
             Task { await model.refresh() }
         }) { destination in
-            HomeDestinationView(destination: destination)
+            HomeDestinationView(
+                destination: destination,
+                onAsk: { router.destination = .ask($0) },
+                onClearScope: { router.destination = .ask(nil) }
+            )
         }
         .task {
             await model.refresh()

@@ -438,6 +438,15 @@ public struct CapturePreview: Codable, Equatable, Sendable {
     public let sizeBytes: Int?
 }
 
+public enum OriginalDeletionKind: String, Codable, Sendable {
+    case capture, file
+}
+
+public struct OriginalDeletionCapability: Codable, Equatable, Sendable {
+    public let available: Bool
+    public let kind: OriginalDeletionKind?
+}
+
 public struct OriginalRecord: Codable, Equatable, Sendable {
     public let id: String
     public let capturedAt: String
@@ -456,6 +465,8 @@ public struct OriginalRecord: Codable, Equatable, Sendable {
     public let privacy: CapturePrivacy
     public let metadata: RecordMetadata?
     public let libraryVersion: String?
+    public let deletion: OriginalDeletionCapability?
+    public let memoryMaterialRef: String?
 }
 
 public struct CentralPage<Item: Codable & Sendable>: Codable, Sendable {
@@ -472,6 +483,17 @@ public struct ConversationScope: Codable, Equatable, Sendable {
     public let evidenceIds: [String]?
     public let anchorEvidenceIds: [String]?
     public let anchorMaterialRef: String?
+
+    public init(after: String? = nil, before: String? = nil, deviceId: String? = nil, timeZone: String? = nil,
+                evidenceIds: [String]? = nil, anchorEvidenceIds: [String]? = nil, anchorMaterialRef: String? = nil) {
+        self.after = after
+        self.before = before
+        self.deviceId = deviceId
+        self.timeZone = timeZone
+        self.evidenceIds = evidenceIds
+        self.anchorEvidenceIds = anchorEvidenceIds
+        self.anchorMaterialRef = anchorMaterialRef
+    }
 }
 
 public enum ConversationStatus: String, Codable, Sendable { case completed, failed }

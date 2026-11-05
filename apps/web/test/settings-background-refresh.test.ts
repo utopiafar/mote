@@ -37,7 +37,7 @@ test('source library and version records remain mounted while the same reads ref
  refreshing=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/source-items?')||path.includes('/history?')));
  assert.equal(library(d).querySelector('article'),card);assert.equal(d.querySelector('.source-history'),history);assert.doesNotMatch(d.body.textContent!,/正在读取/);
  await act(async()=>{refresh.reject(new Error('generated refresh unavailable'));historyRefresh.reject(new Error('generated history unavailable'));});
- assert.equal(library(d).querySelector('article'),card);assert.match(d.querySelector('[role=alert]')!.textContent!,/状态读取失败，请重试。/);
+ assert.equal(library(d).querySelector('article'),card);assert.match(d.querySelector('[role=alert]')!.textContent!,/状态读取失败。/);
  revoked=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/source-items?')||path.includes('/history?')));
  assert.equal(library(d).querySelector('article'),null);assert.equal(d.querySelector('.source-history'),null);assert.match(d.body.textContent!,/generated revoked/);
 });
