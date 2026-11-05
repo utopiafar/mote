@@ -1,5 +1,6 @@
 name: Mote
 options:
+  developmentLanguage: zh-Hans
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true
@@ -31,8 +32,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios
         CODE_SIGN_ENTITLEMENTS: App/Mote.entitlements
+        INFOPLIST_FILE: App/Info.plist
+        INFOPLIST_PREPROCESS: YES
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: 扫描中央生成的连接二维码，或拍摄照片并添加到当前草稿。
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+      configs:
+        Debug:
+          INFOPLIST_PREPROCESSOR_DEFINITIONS: MOTE_DEVELOPMENT=1
   MoteUITests:
     type: com.apple.product-type.bundle.ui-testing
     platform: iOS

@@ -13,8 +13,11 @@ struct OriginalPreview: View {
             if let destination {
                 HomeDestinationView(
                     destination: destination,
+                    editorStore: nil,
+                    arguments: arguments,
                     onAsk: { _ in },
-                    onClearScope: { self.destination = .ask(nil) }
+                    onClearScope: { self.destination = .ask(nil) },
+                    onOpenConnection: {}
                 )
             } else {
                 OriginalView(

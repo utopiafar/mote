@@ -91,12 +91,20 @@ class FinalUiLayoutInstrumentedTest {
         }
         ActivityScenario.launch<MainActivity>(Intent(context,MainActivity::class.java).putExtra("page","LIBRARY")).awaitMainUi().use { scenario ->
             scenario.onActivity { a ->
-                val filters = views(a.window.decorView).single { it.tag == "library-filters:content" }
-                assertEquals(View.GONE,filters.visibility)
-                views(a.window.decorView).single { it.tag == "library-filters" }.performClick(); assertEquals(View.VISIBLE,filters.visibility)
+                val filter = views(a.window.decorView).single { it.tag == "library-filter" }
+                assertTrue(filter.isShown)
+                filter.performClick()
+            }
+            until("actual Library filter sheet") { var ready = false; scenario.onActivity {
+                ready = android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it.isShown && it.hasWindowFocus() }.flatMap(::views)
+                    .filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("全部") }
+            }; ready }
+            scenario.onActivity {
+                android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it.isShown && it.hasWindowFocus() }.flatMap(::views)
+                    .single { it.isShown && it.contentDescription?.toString() == MoteI18n.text("关闭") }.performClick()
             }
             scenario.recreate(); scenario.awaitMainUi()
-            scenario.onActivity { a -> assertEquals(View.VISIBLE,views(a.window.decorView).single { it.tag == "library-filters:content" }.visibility); assertFalse(Settings(context).enabled) }
+            scenario.onActivity { a -> assertTrue(views(a.window.decorView).single { it.tag == "library-filter" }.isShown); assertFalse(Settings(context).enabled) }
         }
     }
     @Test fun sourceAddActionKeepsItsWholeBorderAcrossLanguageAndAppearance() {

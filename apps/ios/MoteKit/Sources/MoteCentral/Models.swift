@@ -48,13 +48,16 @@ public struct ConnectionInvitation: Codable, Equatable, Sendable {
     public let serverUrl: String
     public let code: String
     public let expiresAt: String
+    public let platforms: [CentralPlatform]?
 
-    public init(format: String = "mote.connection", version: Int = 1, serverUrl: String, code: String, expiresAt: String) {
+    public init(format: String = "mote.connection", version: Int = 1, serverUrl: String, code: String, expiresAt: String,
+                platforms: [CentralPlatform]? = nil) {
         self.format = format
         self.version = version
         self.serverUrl = serverUrl
         self.code = code
         self.expiresAt = expiresAt
+        self.platforms = platforms
     }
 
     public static func parse(_ input: String, now: Date = Date()) throws -> ConnectionInvitation {
@@ -79,8 +82,9 @@ public struct ConnectionInvitation: Codable, Equatable, Sendable {
             throw CentralError.invalidInvitation
         }
         let object = try JSONSerialization.jsonObject(with: data)
+        let requiredKeys: Set<String> = ["format", "version", "serverUrl", "code", "expiresAt"]
         guard let dictionary = object as? [String: Any],
-              Set(dictionary.keys) == ["format", "version", "serverUrl", "code", "expiresAt"]
+              Set(dictionary.keys) == requiredKeys || Set(dictionary.keys) == requiredKeys.union(["platforms"])
         else { throw CentralError.invalidInvitation }
         let invitation = try JSONDecoder().decode(ConnectionInvitation.self, from: data)
         guard invitation.format == "mote.connection", invitation.version == 1,
@@ -90,7 +94,16 @@ public struct ConnectionInvitation: Codable, Equatable, Sendable {
         else { throw CentralError.invalidInvitation }
         guard expires > now else { throw CentralError.invitationExpired }
         guard expires <= now.addingTimeInterval(24 * 3600) else { throw CentralError.invalidInvitation }
-        return ConnectionInvitation(serverUrl: try CentralEndpoint.normalize(invitation.serverUrl), code: invitation.code, expiresAt: invitation.expiresAt)
+        if let platforms = invitation.platforms {
+            let allowed: Set<CentralPlatform> = [.android, .macos, .ios, .windows, .linux]
+            guard !platforms.isEmpty, platforms.count <= allowed.count,
+                  Set(platforms).count == platforms.count, Set(platforms).isSubset(of: allowed)
+            else { throw CentralError.invalidInvitation }
+        } else if dictionary.keys.contains("platforms") {
+            throw CentralError.invalidInvitation
+        }
+        return ConnectionInvitation(serverUrl: try CentralEndpoint.normalize(invitation.serverUrl), code: invitation.code,
+                                    expiresAt: invitation.expiresAt, platforms: invitation.platforms)
     }
 }
 
@@ -340,14 +353,15 @@ public struct CaptureUpload: Codable, Equatable, Sendable {
     public let appName: String?
     public let windowTitle: String?
     public let ocrText: String?
+    public let imageBase64: String?
     public let mood: String?
     public let privacy: CapturePrivacy
     public let metadata: RecordMetadata?
 
     public init(id: UUID = UUID(), deviceId: String, deviceName: String, capturedAt: String,
                 source: CaptureSource, appId: String? = nil, appName: String? = nil,
-                windowTitle: String? = nil, ocrText: String? = nil, mood: String? = nil,
-                privacy: CapturePrivacy = CapturePrivacy(), metadata: RecordMetadata? = nil) {
+                windowTitle: String? = nil, ocrText: String? = nil, imageBase64: String? = nil,
+                mood: String? = nil, privacy: CapturePrivacy = CapturePrivacy(), metadata: RecordMetadata? = nil) {
         self.id = id.uuidString.lowercased()
         self.deviceId = deviceId
         self.deviceName = deviceName
@@ -359,6 +373,7 @@ public struct CaptureUpload: Codable, Equatable, Sendable {
         self.appName = appName
         self.windowTitle = windowTitle
         self.ocrText = ocrText
+        self.imageBase64 = imageBase64
         self.mood = mood
         self.privacy = privacy
         self.metadata = metadata

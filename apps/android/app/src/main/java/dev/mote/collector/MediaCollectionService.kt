@@ -85,14 +85,18 @@ class MediaCollectionService : NotificationListenerService() {
     }
     override fun onListenerConnected() {
         super.onListenerConnected()
-        worker.post { if (!destroyed && instanceGeneration == instances.get() && ::settings.isInitialized) { platformConnected = true; connected = true; refresh() } }
+        worker.post {
+            if (!destroyed && instanceGeneration == instances.get() && ::settings.isInitialized) {
+                platformConnected = true; connected = true; systemEntries().refresh(); refresh()
+            }
+        }
     }
     override fun onListenerDisconnected() {
         if (instance === this) { connected = false; MediaCollection.clear() }
         worker.post {
             if (destroyed || instanceGeneration != instances.get()) return@post
             platformConnected = false; connected = false
-            events?.reset(); systemEntries().showEvents(null)
+            events?.reset(); systemEntries().showEvents(null); systemEntries().refresh()
             detach(); timeline.reset(); publishUnavailable("unavailable")
         }
         super.onListenerDisconnected()
@@ -297,7 +301,7 @@ class MediaCollectionService : NotificationListenerService() {
             platformConnected = false; detach(); timeline.reset()
             events?.reset(); events = null; captureOwner = null
             if (instanceGeneration == instances.get()) {
-                publishUnavailable("unavailable"); MediaCollection.clear(); systemEntries().clearMedia(); systemEntries().showEvents(null)
+                publishUnavailable("unavailable"); MediaCollection.clear(); systemEntries().clearMedia(); systemEntries().showEvents(null); systemEntries().refresh()
             }
             thread.quitSafely()
         }

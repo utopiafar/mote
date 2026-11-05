@@ -43,7 +43,9 @@ class CentralDeletionTest {
     }
     @Test fun `zero lost response and current server rejection never count as successful removal`() {
         for(outcome in listOf("zero","timeout","conflict")) {
+            val calls=mutableListOf<String>()
             val client=CentralClient("http://127.0.0.1:49001","generated-owner-token",transport={method,_,_,_,_ ->
+                calls.add(method)
                 if(method=="GET") 200 to record() else when(outcome) {
                     "timeout" -> throw IOException("generated lost deletion ACK")
                     "conflict" -> 409 to JSONObject().put("error","capture_delete_unavailable")
@@ -51,7 +53,25 @@ class CentralDeletionTest {
                 }
             })
             assertThrows(Exception::class.java) { CentralDeletion.evidence(client,id,"capture") }
+            assertEquals("one capability read and one delete attempt, never an automatic retry",listOf("GET","DELETE"),calls)
         }
+    }
+    @Test fun `a positive receipt completes and closes only after the one delete response`() {
+        val calls=mutableListOf<String>()
+        val client=CentralClient("http://127.0.0.1:49001","generated-owner-token",transport={method,_,_,_,_ ->
+            calls.add(method)
+            if(method=="GET") 200 to record() else 200 to JSONObject().put("deleted",1)
+        })
+        assertEquals(1,CentralDeletion.evidence(client,id,"capture").getInt("deleted"))
+        assertEquals(listOf("GET","DELETE"),calls)
+    }
+    @Test fun `file deletion with an unconfirmed receipt is never retried`() {
+        val calls=mutableListOf<String>()
+        val client=CentralClient("http://127.0.0.1:49001","generated-owner-token",transport={method,_,_,_,_ ->
+            calls.add(method);200 to JSONObject().put("deleted",0)
+        })
+        assertThrows(IllegalStateException::class.java) { CentralDeletion.delete(client,"/api/files/"+id) }
+        assertEquals(listOf("DELETE"),calls)
     }
     @Test fun `an owner change during capability read prevents any write`() {
         var active=true;val calls=mutableListOf<String>()

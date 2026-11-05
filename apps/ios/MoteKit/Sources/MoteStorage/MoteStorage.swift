@@ -12,19 +12,36 @@ public enum MoteStorage {
         DraftStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Draft", isDirectory: true))
     }
 
+    public static func editorDraftStore(fileManager: FileManager = .default) throws -> EditorDraftStore {
+        EditorDraftStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Draft", isDirectory: true))
+    }
+
     public static func sendQueue(fileManager: FileManager = .default) throws -> SendQueue {
         SendQueue(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("SendQueue", isDirectory: true))
     }
 
     public static func connectionStore(fileManager: FileManager = .default) throws -> ConnectionStore {
-        ConnectionStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Connection", isDirectory: true))
+        #if DEBUG && targetEnvironment(simulator)
+        if let service = ProcessInfo.processInfo.environment["MOTE_TEST_CONNECTION_SERVICE"] {
+            let root = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                           appropriateFor: nil, create: true)
+            return ConnectionStore(directoryURL: root.appendingPathComponent("UITestConnection-\(service)", isDirectory: true),
+                                   fileManager: fileManager)
+        }
+        #endif
+        return ConnectionStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Connection", isDirectory: true))
     }
 
     private static func containerURL(fileManager: FileManager) throws -> URL {
-        guard let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: MoteCore.appGroupIdentifier) else {
-            throw MoteStorageError.appGroupUnavailable
+        if let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: MoteCore.appGroupIdentifier) {
+            return url
         }
-        return url
+        #if targetEnvironment(simulator)
+        return fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Shared", isDirectory: true)
+        #else
+        throw MoteStorageError.appGroupUnavailable
+        #endif
     }
 }
 
