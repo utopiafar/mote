@@ -37,7 +37,9 @@ class NativeAppShellKeyboardInstrumentedTest {
                 }
                 fun contentBottom() = (content.parent as View).top + content.bottom
                 layout(0)
-                assertEquals(height - navigationBar, navigation.bottom)
+                assertEquals("The dock surface reaches the bottom edge behind the navigation bar", height, navigation.bottom)
+                assertEquals("The navigation bar is inner dock padding", activity.moteDp(24) + navigationBar, navigation.paddingBottom)
+                assertEquals(0, shell.paddingBottom)
                 assertEquals(navigation.top, contentBottom())
                 val docked = navigation.top
                 layout(keyboard)
@@ -45,6 +47,12 @@ class NativeAppShellKeyboardInstrumentedTest {
                 assertEquals("Content ends at the keyboard top", height - keyboard, contentBottom())
                 layout(0)
                 assertEquals(navigation.top, contentBottom())
+                navigation.visibility = View.GONE
+                layout(0)
+                assertEquals("Pages without the dock pad the navigation bar themselves", navigationBar, shell.paddingBottom)
+                navigation.visibility = View.VISIBLE
+                layout(0)
+                assertEquals("The visible dock owns the navigation bar inset again", 0, shell.paddingBottom)
             }
         }
     }

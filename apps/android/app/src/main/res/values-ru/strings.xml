@@ -5,5 +5,5 @@
     <string name="tile_screen_capture">Захват экрана</string>
     <string name="widget_label">Быстрый доступ Mote</string>
     <string name="widget_description">Спрашивайте и записывайте с главного экрана</string>
-    <string name="widget_ask">Спросить…</string>
+    <string name="widget_ask">Спросить</string>
 </resources>
