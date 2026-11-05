@@ -1,3 +1,4 @@
+import MoteCore
 import SwiftUI
 
 /// The app's default root. The home owns reading local state; destinations
@@ -24,6 +25,10 @@ struct HomeRootView: View {
         }
         .task {
             await model.refresh()
+        }
+        .onOpenURL { url in
+            guard let entry = MoteEntry(url: url) else { return }
+            router.open(entry)
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
