@@ -16,7 +16,8 @@ struct OriginalPreview: View {
                     editorStore: nil,
                     arguments: arguments,
                     onAsk: { _ in },
-                    onClearScope: { self.destination = .ask(nil) }
+                    onClearScope: { self.destination = .ask(nil) },
+                    onOpenConnection: {}
                 )
             } else {
                 OriginalView(

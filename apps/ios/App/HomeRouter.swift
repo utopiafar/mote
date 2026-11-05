@@ -40,7 +40,7 @@ final class HomeRouter {
 }
 
 enum HomeDestination: Equatable, Identifiable {
-    // Destination: 我的 Mote（后续单元）
+    // Destination: 我的 Mote 菜单；其余条目由 IOS16 补齐
     case profile
     // Destination: 中央原文搜索（后续单元）
     case search
@@ -50,7 +50,7 @@ enum HomeDestination: Equatable, Identifiable {
     case editor(EditorIntent)
     // Destination: IOS07 iOS 连接
     case connection
-    // Destination: 采集状态（IOS09、IOS10 之后）
+    // Destination: IOS19 采集与同步
     case captureStatus
     case original(String)
     // Destination: 日程与待办、发现历史（后续单元）
@@ -95,6 +95,13 @@ enum HomeDestination: Equatable, Identifiable {
         case .highlight(.discovery, _): "发现"
         }
     }
+
+    var isFullScreen: Bool {
+        switch self {
+        case .profile, .captureStatus, .editor, .ask(.none): true
+        default: false
+        }
+    }
 }
 
 struct HomeDestinationView: View {
@@ -103,10 +110,12 @@ struct HomeDestinationView: View {
     let arguments: [String]
     let onAsk: (OriginalAskScope) -> Void
     let onClearScope: () -> Void
+    let onOpenConnection: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        if case .editor(let intent) = destination {
+        switch destination {
+        case .editor(let intent):
             if let editorStore {
                 EditorFlowView(store: editorStore, arguments: arguments, intent: intent) {
                     dismiss()
@@ -114,9 +123,23 @@ struct HomeDestinationView: View {
             } else {
                 unavailable
             }
-        } else if case .original(let id) = destination {
+        case .original(let id):
             OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
-        } else {
+        case .ask(.none):
+            // IOS11: 问一问 opens the conversation history; opening or sending
+            // a conversation is wired by the conversation unit (IOS10).
+            ConversationHistoryView(
+                model: .live(), now: Date(), calendar: .current,
+                onBack: { dismiss() },
+                onOpen: { _ in },
+                onSend: { _ in },
+                onAddImage: {}
+            )
+        case .profile:
+            ProfileMenuView(onOpenConnection: onOpenConnection)
+        case .captureStatus:
+            CaptureSyncScreen(onOpenConnection: onOpenConnection)
+        default:
             placeholder
         }
     }
