@@ -1,4 +1,5 @@
 import MoteCore
+import MoteStorage
 import SwiftUI
 
 /// The app's default root. The home owns reading local state; destinations
@@ -8,19 +9,17 @@ struct HomeRootView: View {
     @State private var model = HomeModel()
     @State private var router = HomeRouter()
     @Environment(\.scenePhase) private var scenePhase
+    var arguments: [String] = ProcessInfo.processInfo.arguments
+    var editorStore: EditorDraftStore? = try? MoteStorage.editorDraftStore()
 
     var body: some View {
         HomeView(presentation: model.presentation) { action in
             router.open(action)
         }
-        .sheet(item: sheetDestination, onDismiss: {
-            refresh()
-        }) { destination in
+        .sheet(item: sheetDestination, onDismiss: refresh) { destination in
             destinationView(destination)
         }
-        .fullScreenCover(item: fullScreenDestination, onDismiss: {
-            refresh()
-        }) { destination in
+        .fullScreenCover(item: fullScreenDestination, onDismiss: refresh) { destination in
             destinationView(destination)
         }
         .task {
@@ -36,8 +35,8 @@ struct HomeRootView: View {
         }
     }
 
-    /// The settings menu and capture screen fill the window like their
-    /// reference designs; the remaining destinations keep the home sheet.
+    /// The editor, settings menu and capture screen fill the window like
+    /// their reference designs; the remaining destinations keep the home sheet.
     private var sheetDestination: Binding<HomeDestination?> {
         Binding(
             get: { router.destination?.isFullScreen == true ? nil : router.destination },
@@ -55,6 +54,8 @@ struct HomeRootView: View {
     private func destinationView(_ destination: HomeDestination) -> some View {
         HomeDestinationView(
             destination: destination,
+            editorStore: editorStore,
+            arguments: arguments,
             onAsk: { router.destination = .ask($0) },
             onClearScope: { router.destination = .ask(nil) },
             onOpenConnection: { router.destination = .connection }

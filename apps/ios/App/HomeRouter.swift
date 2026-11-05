@@ -1,5 +1,6 @@
 import MoteCentral
 import MoteCore
+import MoteStorage
 import MoteDesign
 import Observation
 import SwiftUI
@@ -74,6 +75,11 @@ enum HomeDestination: Equatable, Identifiable {
         }
     }
 
+    var isEditor: Bool {
+        if case .editor = self { return true }
+        return false
+    }
+
     var title: String {
         switch self {
         case .profile: "我的 Mote"
@@ -92,7 +98,7 @@ enum HomeDestination: Equatable, Identifiable {
 
     var isFullScreen: Bool {
         switch self {
-        case .profile, .captureStatus: true
+        case .profile, .captureStatus, .editor: true
         default: false
         }
     }
@@ -100,6 +106,8 @@ enum HomeDestination: Equatable, Identifiable {
 
 struct HomeDestinationView: View {
     let destination: HomeDestination
+    let editorStore: EditorDraftStore?
+    let arguments: [String]
     let onAsk: (OriginalAskScope) -> Void
     let onClearScope: () -> Void
     let onOpenConnection: () -> Void
@@ -107,6 +115,14 @@ struct HomeDestinationView: View {
 
     var body: some View {
         switch destination {
+        case .editor(let intent):
+            if let editorStore {
+                EditorFlowView(store: editorStore, arguments: arguments, intent: intent) {
+                    dismiss()
+                }
+            } else {
+                unavailable
+            }
         case .original(let id):
             OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
         case .profile:
@@ -145,6 +161,24 @@ struct HomeDestinationView: View {
             .background(MoteDesignTokens.background.color)
             .navigationTitle(destination.title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var unavailable: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                MoteMark()
+                Text("草稿未能打开")
+                    .font(MoteFont.title)
+                    .foregroundStyle(MoteDesignTokens.danger.color)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(MoteDesignTokens.background.color)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("关闭") { dismiss() }
