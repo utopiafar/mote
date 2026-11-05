@@ -3979,6 +3979,7 @@ export const english: Readonly<Record<string, string>> = {
   "把你选择的生活线索，收进同一份档案": "Bring chosen traces of life into one archive",
   "已支持的来源": "Supported sources",
   "屏幕与应用活动": "Screen and app activity",
+  "屏幕 · 应用活动": "Screen · App activity",
   "采集来源、频率与电量策略": "Collection sources, frequency, and battery policy",
   "应用采集规则": "App collection rules",
   "为普通与系统应用设置记录方式": "Choose how ordinary and system apps are recorded",
