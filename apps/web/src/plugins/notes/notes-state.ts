@@ -80,7 +80,7 @@ export class NoteOutbox {
         if(note.client!=="web")throw new Error("Unsupported note identity");
         if (key !== `${this.prefix}event:${note.id}`) throw new Error('Mismatched event ID');
         items.push({ note, ...(typeof item.error === 'string' ? { error: item.error } : {}), ...(item.blocked === true ? { blocked: true } : {}), ...(item.unknown === true ? { unknown: true } : {}) });
-      } catch { throw new Error(moteText("本机待同步随手记存在损坏记录；原数据已保留，不能覆盖。")); }
+      } catch { throw new Error(moteText("本机待同步记录存在损坏记录；原数据已保留，不能覆盖。")); }
     }
     return items.sort((a, b) => a.note.capturedAt.localeCompare(b.note.capturedAt) || a.note.id.localeCompare(b.note.id));
   }
@@ -90,11 +90,11 @@ export class NoteOutbox {
     const key = `${this.prefix}event:${normalized.id}`;
     const existing = this.storage.getItem(key);
     if (existing) {
-      if (JSON.stringify(JSON.parse(existing).note) !== JSON.stringify(normalized)) throw new Error(moteText("随手记 ID 已用于另一条内容。"));
+      if (JSON.stringify(JSON.parse(existing).note) !== JSON.stringify(normalized)) throw new Error(moteText("记录 ID 已用于另一条内容。"));
       return;
     }
     const items = this.items();
-    if (items.length >= 100 || new TextEncoder().encode(JSON.stringify([...items, { note: normalized }])).length > MAX_QUEUED_BYTES) throw new Error(moteText("本机随手记待同步空间已满，请先同步或导出待传内容。"));
+    if (items.length >= 100 || new TextEncoder().encode(JSON.stringify([...items, { note: normalized }])).length > MAX_QUEUED_BYTES) throw new Error(moteText("本机记录待同步空间已满，请先同步或导出待传内容。"));
     this.storage.setItem(key, JSON.stringify({ note: normalized }));
   }
   mark(id: string, error: string, blocked: boolean, unknown = false): void {
@@ -103,7 +103,7 @@ export class NoteOutbox {
     if (previous) this.storage.setItem(key, JSON.stringify({ note: JSON.parse(previous).note, error, blocked, ...(unknown ? { unknown: true } : {}) }));
   }
   acknowledge(id: string, result: { id?: string }): void {
-    if (result.id !== id) throw new Error(moteText("中央节点确认的随手记 ID 不匹配；本机记录已保留。"));
+    if (result.id !== id) throw new Error(moteText("中央节点确认的记录 ID 不匹配；本机记录已保留。"));
     this.storage.removeItem(`${this.prefix}event:${id}`);
   }
   discard(id: string): void { this.storage.removeItem(`${this.prefix}event:${id}`); }

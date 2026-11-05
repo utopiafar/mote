@@ -103,7 +103,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             }, date.year, date.monthValue - 1, date.dayOfMonth).show()
         }
         if (day.isNotBlank()) ui.button(MoteI18n.text("全部日期"), parent = filters) { day = ""; body.removeAllViews(); rawArchive() }
-        val choices = listOf("" to "全部记录", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "随手记", "notification" to "通知", "file" to "文件")
+        val choices = listOf("" to "全部记录", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "记录", "notification" to "通知", "file" to "文件")
         val choice = Spinner(ui).apply { adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, choices.map { MoteI18n.text(it.second) })
             setSelection(choices.indexOfFirst { it.first == rawSource }.coerceAtLeast(0)) }; filters.addView(choice)
         ui.button(MoteI18n.text("搜索"), parent = filters) { query = search.text.toString(); rawSource = choices[choice.selectedItemPosition].first; body.removeAllViews(); rawArchive() }

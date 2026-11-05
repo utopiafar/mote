@@ -169,19 +169,19 @@ for (const empty of [false, true]) test(`notes keep their ${empty ? 'empty' : 'p
     const api = apiWith(path => { reads.push(path); return reads.length === 1 ? initial.promise : reads.length === 2 ? refresh.promise : older.promise; });
     const render = (revision: number) => act(async () => root.render(React.createElement(Notes, { api, namespace: 'generated-node', revision, onOpen: () => {}, onSaved: () => {} })));
     await render(0);
-    assert.match(d.querySelector('.notes-history')!.textContent!, /正在读取随手记/);
+    assert.match(d.querySelector('.notes-history')!.textContent!, /正在读取记录/);
     await act(async () => initial.resolve({ items: empty ? [] : [note], nextCursor: empty ? null : 'generated-older' }));
     const result = d.querySelector(empty ? '.notes-history .empty' : '.note-card');
     assert.ok(result);
     await render(1);
     assert.equal(d.querySelector(empty ? '.notes-history .empty' : '.note-card'), result);
-    assert.doesNotMatch(d.querySelector('.notes-history')!.textContent!, /正在读取随手记/);
+    assert.doesNotMatch(d.querySelector('.notes-history')!.textContent!, /正在读取记录/);
     assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.disabled, false, 'refresh does not lock the composer');
     await act(async () => refresh.resolve({ items: empty ? [] : [note], nextCursor: empty ? null : 'generated-older' }));
     if (!empty) {
-        const more = Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent === '加载更早的随手记')!;
+        const more = Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent === '加载更早的记录')!;
         await act(async () => more.click());
-        assert.match(d.querySelector('.notes-history')!.textContent!, /正在读取随手记/);
+        assert.match(d.querySelector('.notes-history')!.textContent!, /正在读取记录/);
         assert.ok(d.querySelector('.note-card'));
         assert.match(reads.at(-1)!, /cursor=generated-older/);
         await act(async () => older.resolve({ items: [], nextCursor: null }));
@@ -199,7 +199,7 @@ test('notes reload a changed local namespace and fence its previous history refr
     await render('generated-second-node', 1);
     assert.equal(reads, 3, 'a namespace change starts a replacement history read even at the same revision');
     assert.equal(d.querySelector('.note-card'), null);
-    assert.match(d.querySelector('.notes-history')!.textContent!, /正在读取随手记/);
+    assert.match(d.querySelector('.notes-history')!.textContent!, /正在读取记录/);
     await act(async () => next.resolve({ items: [], nextCursor: null }));
     assert.ok(d.querySelector('.notes-history .empty'));
     await act(async () => oldRefresh.resolve({ items: [note], nextCursor: null }));
@@ -218,10 +218,10 @@ for (const status of [401, 403, 404, 410, 503]) test(`notes ${status === 503 ? '
     assert.match(d.querySelector('.notes-history [role="alert"]')!.textContent!, /Generated history read failure/);
     const denied = status !== 503;
     assert.equal(Boolean(d.querySelector('.note-card')), !denied);
-    assert.equal(Boolean(Array.from(d.querySelectorAll('button')).find(item => item.textContent === '加载更早的随手记')), !denied);
+    assert.equal(Boolean(Array.from(d.querySelectorAll('button')).find(item => item.textContent === '加载更早的记录')), !denied);
     await act(async () => d.querySelector<HTMLButtonElement>('.notes-history .section-heading button')!.click());
     assert.equal(Boolean(d.querySelector('.note-card')), !denied, 'retry never restores withdrawn cached records before a successful read');
-    assert.equal(/正在读取随手记/.test(d.querySelector('.notes-history')!.textContent!), denied);
+    assert.equal(/正在读取记录/.test(d.querySelector('.notes-history')!.textContent!), denied);
     await act(async () => retry.resolve({ items: [], nextCursor: null }));
     assert.equal(d.querySelector('.note-card'), null);
     assert.ok(d.querySelector('.notes-history .empty'));

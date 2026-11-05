@@ -80,7 +80,7 @@ class SyncQueueActivity : MoteActivity() {
         task.start(MoteI18n.text("正在读取来源…"), { summary.text = it }, { localSources().sources() }) { result ->
             result.onSuccess {
                 sources = it
-                categories.adapter = MoteUi.choiceAdapter(this, listOf(MoteI18n.text("采集与随手记")) + it.map { source -> source.name + if (source.enabled) "" else MoteI18n.text("（已暂停）") })
+                categories.adapter = MoteUi.choiceAdapter(this, listOf(MoteI18n.text("采集与记录")) + it.map { source -> source.name + if (source.enabled) "" else MoteI18n.text("（已暂停）") })
                 intent.getStringExtra("sourceId")?.let { id -> sources.indexOfFirst { source -> source.id == id }.takeIf { it >= 0 }?.let { index -> categories.setSelection(index + 1) } }
                 categories.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                     override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -157,7 +157,7 @@ class SyncQueueActivity : MoteActivity() {
         speed.visibility = if (history) android.view.View.GONE else android.view.View.VISIBLE
     }
     private fun sourceLabel(source: String) = when (source) {
-        "screen" -> MoteI18n.text("屏幕采集"); "note" -> MoteI18n.text("随手记"); "activity" -> MoteI18n.text("应用活动"); "media" -> MoteI18n.text("媒体播放"); "notification" -> MoteI18n.text("通知"); "device_event" -> MoteI18n.text("设备事件"); else -> source
+        "screen" -> MoteI18n.text("屏幕采集"); "note" -> MoteI18n.text("记录"); "activity" -> MoteI18n.text("应用活动"); "media" -> MoteI18n.text("媒体播放"); "notification" -> MoteI18n.text("通知"); "device_event" -> MoteI18n.text("设备事件"); else -> source
     }
     private fun load() {
         if (task.busy) { refreshPending = true; return }

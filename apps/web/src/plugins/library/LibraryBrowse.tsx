@@ -26,7 +26,7 @@ import {captureImportSnapshot,importSnapshot} from '../../import-navigation';
 import {readPage} from '../../navigation';
 import { useMaterialPreview, useNearViewport } from '../../HomeMaterialRow';
 function libraryTypeLabel(value:string){
-    const labels:Record<LibraryMaterialType,string>={note:moteText('随手记'),document:moteText('文档'),image:moteText('图片'),coding:moteText('Coding 会话'),transcript:moteText('转写'),email:moteText('邮件'),calendar:moteText('日程'),reference:moteText('引用')};
+    const labels:Record<LibraryMaterialType,string>={note:moteText('记录'),document:moteText('文档'),image:moteText('图片'),coding:moteText('Coding 会话'),transcript:moteText('转写'),email:moteText('邮件'),calendar:moteText('日程'),reference:moteText('引用')};
     return labels[value as LibraryMaterialType]??value;
 }
 function validLibraryDay(value:string){
@@ -89,7 +89,7 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
     }
     const path=invalidDate?null:'/api/library/browse?' + query;
     const page = useResource<OwnerBrowsePage>(api,path,undefined,revision),returnReadReady=useImportReturnRead(api,path);
-    const activeFilters=([['origin',current.origin?moteText('随手记'):''],['sourceId',current.sourceId?sourceDisplay(current.sourceId,page.data?.sources.find(source=>source.id===current.sourceId)?.label):''],['deviceId',devices.find(device=>device.deviceId===current.deviceId)?.deviceName??current.deviceId],['type',current.type?libraryTypeLabel(current.type):''],['kind',current.kind?materialKind(current.kind,page.data?.types.find(type=>type.kind===current.kind)?.label):''],['after',current.after?moteText('从')+' '+current.after:''],['before',current.before?moteText('至')+' '+current.before:'']] as const).filter(([,label])=>label);
+    const activeFilters=([['origin',current.origin?moteText('记录'):''],['sourceId',current.sourceId?sourceDisplay(current.sourceId,page.data?.sources.find(source=>source.id===current.sourceId)?.label):''],['deviceId',devices.find(device=>device.deviceId===current.deviceId)?.deviceName??current.deviceId],['type',current.type?libraryTypeLabel(current.type):''],['kind',current.kind?materialKind(current.kind,page.data?.types.find(type=>type.kind===current.kind)?.label):''],['after',current.after?moteText('从')+' '+current.after:''],['before',current.before?moteText('至')+' '+current.before:'']] as const).filter(([,label])=>label);
     const kinds=[...new Map([...materialKindOptions(),...(page.data?.items.filter(item=>item.entryType==='material').map(item=>item.material).filter(item=>!materialKindOptions().some(type=>type.kind===item.kind)).map(item=>({kind:item.kind,label:materialKind(item.kind)}))??[]),...(page.data?.types??[])].map(type=>[type.kind,type])).values()];
     const groups=new Map<string,OwnerBrowseEntry[]>();
     for(const item of page.data?.items??[]){const at=item.contentAt;const day=at&&Number.isFinite(Date.parse(at))?new Date(at).toLocaleDateString(getLocale(),{year:'numeric',month:'long',day:'numeric'}):moteText('资料');groups.set(day,[...(groups.get(day)??[]),item]);}
