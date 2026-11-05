@@ -96,7 +96,7 @@ open class ShareRecordActivity : MoteActivity() {
         }
         bar.addView(TextView(this).apply {
             text = MoteI18n.text("取消"); contentDescription = text; tag = "share-cancel"; gravity = Gravity.CENTER
-            minWidth = moteDp(64); minHeight = moteDp(48); isFocusable = true
+            minWidth = moteDp(48); minHeight = moteDp(48); isFocusable = true
             MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.MUTED)
             background = MoteUi.clickable(this@ShareRecordActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.PILL, false)
             setOnClickListener { finish() }
@@ -106,8 +106,14 @@ open class ShareRecordActivity : MoteActivity() {
             MoteUi.type(this, 16, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         save = MoteComponents.button(this, MoteI18n.text("保存"), MoteUi.ButtonRole.PRIMARY) { submit() }.apply {
-            tag = "share-save"; contentDescription = MoteI18n.text("保存"); minimumHeight = moteDp(48); minHeight = minimumHeight
-            setPadding(moteDp(16), 0, moteDp(16), 0)
+            tag = "share-save"; contentDescription = MoteI18n.text("保存")
+            // The canvas header action is a compact 34dp capsule inside the 48dp bar.
+            MoteUi.type(this, 13, medium = true)
+            NativePresentationStyles.bind(this, "share-save") { view -> (view as Button).apply {
+                minWidth = 0; minimumWidth = 0
+                minHeight = moteDp(34); minimumHeight = minHeight
+                setPadding(moteDp(12), 0, moteDp(12), 0)
+            } }
         }
         bar.addView(save)
         sheet.addView(bar, LinearLayout.LayoutParams(-1, -2))
@@ -120,16 +126,26 @@ open class ShareRecordActivity : MoteActivity() {
         body.addView(preview)
         note = EditText(this).apply {
             tag = "share-note"; hint = MoteI18n.text(if (current?.answer == true) "我的补充" else "备注")
-            contentDescription = hint; gravity = Gravity.TOP; minHeight = moteDp(96); minLines = 3
+            contentDescription = hint; gravity = Gravity.TOP
             MoteUi.textInput(this, InputType.TYPE_CLASS_TEXT, multiline = true)
             filters = arrayOf(android.text.InputFilter.LengthFilter(100000)); MoteUi.field(this)
+            // The canvas area field keeps three lines of height and 12x10 inner padding.
+            NativePresentationStyles.bind(this, "share-note") { view -> (view as EditText).apply {
+                minHeight = moteDp(96); minimumHeight = minHeight; minLines = 3
+                setPadding(moteDp(12), moteDp(10), moteDp(12), moteDp(10))
+            } }
         }
         body.addView(note, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(12) })
         description = EditText(this).apply {
             tag = "record-description"; hint = MoteI18n.text("资料说明"); contentDescription = hint
-            gravity = Gravity.TOP; minHeight = moteDp(76); minLines = 2; visibility = View.GONE
+            gravity = Gravity.TOP; visibility = View.GONE
             MoteUi.textInput(this, InputType.TYPE_CLASS_TEXT, multiline = true)
             filters = arrayOf(android.text.InputFilter.LengthFilter(12000)); MoteUi.field(this)
+            // The canvas area field keeps two lines of height and 12x10 inner padding.
+            NativePresentationStyles.bind(this, "share-description") { view -> (view as EditText).apply {
+                minHeight = moteDp(76); minimumHeight = minHeight; minLines = 2
+                setPadding(moteDp(12), moteDp(10), moteDp(12), moteDp(10))
+            } }
         }
         descriptionToggle = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(48)
@@ -145,8 +161,8 @@ open class ShareRecordActivity : MoteActivity() {
                 visibility = View.GONE
             }
         }
-        body.addView(descriptionToggle, LinearLayout.LayoutParams(-2, -2))
-        body.addView(description, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(4) })
+        body.addView(descriptionToggle, LinearLayout.LayoutParams(-2, -2).apply { topMargin = moteDp(12) })
+        body.addView(description, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(12) })
         status = TextView(this).apply {
             tag = "share-status"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED)
             visibility = View.GONE; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
