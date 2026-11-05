@@ -340,14 +340,15 @@ public struct CaptureUpload: Codable, Equatable, Sendable {
     public let appName: String?
     public let windowTitle: String?
     public let ocrText: String?
+    public let imageBase64: String?
     public let mood: String?
     public let privacy: CapturePrivacy
     public let metadata: RecordMetadata?
 
     public init(id: UUID = UUID(), deviceId: String, deviceName: String, capturedAt: String,
                 source: CaptureSource, appId: String? = nil, appName: String? = nil,
-                windowTitle: String? = nil, ocrText: String? = nil, mood: String? = nil,
-                privacy: CapturePrivacy = CapturePrivacy(), metadata: RecordMetadata? = nil) {
+                windowTitle: String? = nil, ocrText: String? = nil, imageBase64: String? = nil,
+                mood: String? = nil, privacy: CapturePrivacy = CapturePrivacy(), metadata: RecordMetadata? = nil) {
         self.id = id.uuidString.lowercased()
         self.deviceId = deviceId
         self.deviceName = deviceName
@@ -359,6 +360,7 @@ public struct CaptureUpload: Codable, Equatable, Sendable {
         self.appName = appName
         self.windowTitle = windowTitle
         self.ocrText = ocrText
+        self.imageBase64 = imageBase64
         self.mood = mood
         self.privacy = privacy
         self.metadata = metadata
