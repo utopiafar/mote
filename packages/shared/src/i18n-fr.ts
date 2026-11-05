@@ -10128,5 +10128,15 @@ export const french: Readonly<Record<string, string>> = {
   "快捷入口不可用": "Entrées rapides indisponibles",
   "系统入口插件已停用；快捷入口和通知动作不可用。": "Le plugin des entrées système est arrêté ; les entrées rapides et les actions de notification sont indisponibles.",
   "系统入口插件未加载；快捷入口和通知动作不可用。": "Le plugin des entrées système n’est pas chargé ; les entrées rapides et les actions de notification sont indisponibles.",
-  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Le plugin des entrées système doit être reconstruit ; les entrées rapides et les actions de notification sont indisponibles."
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Le plugin des entrées système doit être reconstruit ; les entrées rapides et les actions de notification sont indisponibles.",
+  "蓝牙": "Bluetooth",
+  "复制": "Copier",
+  "存储": "Stockage",
+  "语言": "Langue",
+  "历史": "Historique",
+  "键盘": "Clavier",
+  "权限": "Autorisation",
+  "二维码": "Code QR",
+  "分享": "Partager",
+  "网络": "Réseau"
 };

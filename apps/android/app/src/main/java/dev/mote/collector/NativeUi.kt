@@ -8,7 +8,6 @@ import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -18,6 +17,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import dev.mote.collector.ui.MoteGlyph
 
 /** Shared, native presentation for the collector and its detail screens. */
 internal object MoteUi {
@@ -30,9 +30,9 @@ internal object MoteUi {
     val controlBorder get() = MoteTheme.controlBorder
     val divider get() = MoteTheme.divider
 
-    val containerRadius get() = MoteTheme.radiusContainer
+    val containerRadius get() = MoteTheme.radiusContainerMobile
     val readingRadius get() = MoteTheme.radiusReading
-    val actionRadius get() = MoteTheme.radiusControl
+    val actionRadius get() = MoteTheme.radiusPill
 
     /** Typography and color replay only authored roles; business controls keep identity and listeners. */
     fun type(view: TextView, role: NativeFontRole = NativeFontRole.BODY, medium: Boolean = false) = view.apply {
@@ -68,21 +68,22 @@ internal object MoteUi {
         ColorStateList.valueOf(Color.argb(32, Color.red(accent), Color.green(accent), Color.blue(accent))), shape(context, fill, radius, outline, strokeColor), shape(context, NativeColorRole.SURFACE, radius, false)
     )
 
-    enum class ButtonRole { PRIMARY, SECONDARY, TEXT }
+    enum class ButtonRole { PRIMARY, SECONDARY, DANGER, TEXT }
 
     fun button(button: Button, primary: Boolean = false, radius: Int = actionRadius) = action(button, if (primary) ButtonRole.PRIMARY else ButtonRole.SECONDARY, radius)
 
     fun action(button: Button, role: ButtonRole = ButtonRole.SECONDARY, radius: Int = actionRadius, applyPadding: Boolean = true): Button = button.apply {
-        NativePresentationStyles.remember(this, "action") { action(it as Button, role, MoteTheme.radiusControl, false) }
+        NativePresentationStyles.remember(this, "action") { action(it as Button, role, MoteTheme.radiusPill, false) }
         val primary = role == ButtonRole.PRIMARY
         isAllCaps = false; type(this, NativeFontRole.ACTION, medium = true); minHeight = context.moteDp(MoteTheme.controlHeight)
-        minimumHeight = minHeight
-        setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(muted, if (primary) MoteTheme.primaryInk else ink)))
+        minimumHeight = minHeight; elevation = 0f; stateListAnimator = null
+        val label = when (role) { ButtonRole.PRIMARY -> MoteTheme.primaryInk; ButtonRole.DANGER -> MoteTheme.danger; else -> ink }
+        setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(muted, label)))
         setTag(R.id.mote_primary, primary)
         setTag(R.id.mote_button_role, role)
         backgroundTintList = null; background = android.graphics.drawable.StateListDrawable().apply {
-            addState(intArrayOf(-android.R.attr.state_enabled), shape(context, if (role == ButtonRole.TEXT) Color.TRANSPARENT else MoteUi.background, radius, role != ButtonRole.TEXT, controlBorder))
-            addState(intArrayOf(), clickable(context, when (role) { ButtonRole.PRIMARY -> MoteTheme.primaryBackground; ButtonRole.SECONDARY -> MoteTheme.surface; ButtonRole.TEXT -> Color.TRANSPARENT }, radius, role == ButtonRole.SECONDARY, controlBorder))
+            addState(intArrayOf(-android.R.attr.state_enabled), shape(context, if (role == ButtonRole.TEXT) NativeColorRole.TRANSPARENT else NativeColorRole.FILL, radius, false))
+            addState(intArrayOf(), clickable(context, when (role) { ButtonRole.PRIMARY -> NativeColorRole.PRIMARY_BACKGROUND; ButtonRole.TEXT -> NativeColorRole.TRANSPARENT; else -> NativeColorRole.FILL }, radius, false))
         }
         if (applyPadding) setPadding(context.moteDp(MoteTheme.spacePanel), context.moteDp(MoteTheme.spaceInline), context.moteDp(MoteTheme.spacePanel), context.moteDp(MoteTheme.spaceInline))
     }
@@ -219,64 +220,18 @@ private class NativeSpinnerAdapter(private val delegate: SpinnerAdapter) : Spinn
 
 fun Context.moteDp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-/** Small stroke icons keep the navigation legible across system font and emoji versions. */
-class MoteNavigationIcon(context: Context, private val kind: String, private val active: Boolean) : Drawable() {
+/** Line icons come from the shared lucide-family vector set; tint follows the active role. */
+class MoteNavigationIcon(context: Context, kind: String, private val active: Boolean) : Drawable() {
     private val size = context.moteDp(23)
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (active) MoteUi.accent else MoteUi.muted
-        style = Paint.Style.STROKE; strokeWidth = 1.65f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
-    }
+    private val glyph = checkNotNull(context.getDrawable(MoteGlyph.forKind(kind).drawable))
     override fun getIntrinsicWidth() = size
     override fun getIntrinsicHeight() = size
     override fun draw(canvas: Canvas) {
-        paint.color = if (active) MoteTheme.accent else MoteTheme.muted
-        canvas.save(); canvas.translate(bounds.left.toFloat(), bounds.top.toFloat()); canvas.scale(bounds.width() / 24f, bounds.height() / 24f)
-        fun line(x: Float, y: Float, xx: Float, yy: Float) = canvas.drawLine(x, y, xx, yy, paint)
-        fun path(vararg points: Float) {
-            val p = Path(); p.moveTo(points[0], points[1]); var i = 2
-            while (i < points.size) { p.lineTo(points[i], points[i + 1]); i += 2 }; canvas.drawPath(p, paint)
-        }
-        when (kind) {
-            "dropdown" -> path(6f, 9f, 12f, 15f, 18f, 9f)
-            "overview" -> { path(3f, 11f, 12f, 3f, 21f, 11f); path(5f, 10f, 5f, 21f, 19f, 21f, 19f, 10f); path(10f, 21f, 10f, 14f, 14f, 14f, 14f, 21f) }
-            "notes", "note" -> { canvas.drawRoundRect(4f, 3f, 20f, 21f, 3f, 3f, paint); line(8f, 8f, 16f, 8f); line(8f, 12f, 16f, 12f); line(8f, 16f, 13f, 16f) }
-            "import" -> { path(13f, 3f, 5f, 3f, 5f, 21f, 19f, 21f, 19f, 9f, 13f, 3f, 13f, 9f, 19f, 9f); line(8f, 14f, 16f, 14f); path(13f, 11f, 16f, 14f, 13f, 17f) }
-            "folder" -> { path(3f, 7f, 3f, 20f, 21f, 20f, 21f, 7f, 3f, 7f, 3f, 4f, 10f, 4f, 13f, 7f) }
-            // Library and sources share glyph roles with Web and Mac: a database and a link.
-            "library" -> { canvas.drawOval(4f, 2f, 20f, 8f, paint); line(4f, 5f, 4f, 19f); line(20f, 5f, 20f, 19f); canvas.drawArc(4f, 9f, 20f, 15f, 0f, 180f, false, paint); canvas.drawArc(4f, 16f, 20f, 22f, 0f, 180f, false, paint) }
-            "sources" -> { canvas.drawRoundRect(2f, 8f, 13f, 16f, 4f, 4f, paint); canvas.drawRoundRect(11f, 8f, 22f, 16f, 4f, 4f, paint) }
-            "ask" -> { canvas.drawRoundRect(3f, 3f, 21f, 18f, 4f, 4f, paint); path(7f, 18f, 7f, 22f, 12f, 18f); line(7f, 8f, 17f, 8f); line(7f, 12f, 14f, 12f) }
-            "capture" -> { canvas.drawRoundRect(4f, 3f, 20f, 21f, 3f, 3f, paint); canvas.drawCircle(12f, 12f, 4f, paint); line(10f, 18f, 14f, 18f) }
-            "chart" -> { path(4f, 4f, 4f, 20f, 21f, 20f); path(8f, 15f, 12f, 10f, 16f, 13f, 21f, 5f) }
-            "activity" -> { line(5f, 20f, 5f, 11f); line(12f, 20f, 12f, 4f); line(19f, 20f, 19f, 13f) }
-            "shield" -> { path(12f, 2f, 21f, 6f, 20f, 15f, 17f, 19f, 12f, 22f, 7f, 19f, 4f, 15f, 3f, 6f, 12f, 2f); path(8f, 12f, 11f, 15f, 16f, 9f) }
-            "language" -> {
-                canvas.drawCircle(12f, 12f, 9f, paint); canvas.drawOval(8f, 3f, 16f, 21f, paint)
-                line(4f, 9f, 20f, 9f); line(4f, 15f, 20f, 15f)
-            }
-            "plugin" -> {
-                val p = Path().apply {
-                    moveTo(4f, 4f); lineTo(10f, 4f); cubicTo(10f, 1f, 15f, 1f, 15f, 4f)
-                    lineTo(20f, 4f); lineTo(20f, 10f); cubicTo(23f, 10f, 23f, 15f, 20f, 15f)
-                    lineTo(20f, 20f); lineTo(14f, 20f); cubicTo(14f, 17f, 9f, 17f, 9f, 20f)
-                    lineTo(4f, 20f); lineTo(4f, 14f); cubicTo(7f, 14f, 7f, 9f, 4f, 9f); close()
-                }; canvas.drawPath(p, paint)
-            }
-            "code" -> { path(7f, 6f, 2f, 12f, 7f, 18f); path(17f, 6f, 22f, 12f, 17f, 18f); line(14f, 4f, 10f, 20f) }
-            "sync" -> { canvas.drawArc(4f, 4f, 20f, 20f, 210f, 145f, false, paint); path(16f, 4f, 20f, 8f, 21f, 3f); canvas.drawArc(4f, 4f, 20f, 20f, 30f, 145f, false, paint); path(3f, 21f, 4f, 16f, 8f, 20f) }
-            "info" -> { canvas.drawCircle(12f, 12f, 9f, paint); line(12f, 11f, 12f, 17f); canvas.drawPoint(12f, 7f, paint) }
-            "camera" -> { path(3f, 8f, 7f, 8f, 9f, 5f, 15f, 5f, 17f, 8f, 21f, 8f, 21f, 19f, 3f, 19f, 3f, 8f); canvas.drawCircle(12f, 13f, 3.5f, paint) }
-            "microphone" -> { canvas.drawRoundRect(9f, 3f, 15f, 14f, 3f, 3f, paint); canvas.drawArc(5f, 4f, 19f, 18f, 0f, 180f, false, paint); line(12f, 18f, 12f, 21f) }
-            "search" -> { canvas.drawCircle(11f, 11f, 6.5f, paint); line(16f, 16f, 20f, 20f) }
-            "pause" -> { line(9f, 6f, 9f, 18f); line(15f, 6f, 15f, 18f) }
-            "warning" -> { path(12f, 4f, 21f, 20f, 3f, 20f, 12f, 4f); line(12f, 10f, 12f, 14f); canvas.drawPoint(12f, 17f, paint) }
-            "calendar" -> { canvas.drawRoundRect(4f, 5f, 20f, 20f, 2f, 2f, paint); line(4f, 10f, 20f, 10f); line(9f, 3f, 9f, 7f); line(15f, 3f, 15f, 7f) }
-            else -> { line(4f, 6f, 20f, 6f); line(4f, 12f, 20f, 12f); line(4f, 18f, 20f, 18f); line(9f, 3f, 9f, 9f); line(16f, 9f, 16f, 15f); line(10f, 15f, 10f, 21f) }
-        }
-        canvas.restore()
+        glyph.setTint(if (active) MoteTheme.accent else MoteTheme.muted)
+        glyph.bounds = bounds; glyph.draw(canvas)
     }
-    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
-    override fun setColorFilter(colorFilter: ColorFilter?) { paint.colorFilter = colorFilter }
+    override fun setAlpha(alpha: Int) { glyph.alpha = alpha }
+    override fun setColorFilter(colorFilter: ColorFilter?) { glyph.colorFilter = colorFilter }
     @Deprecated("Drawable opacity") override fun getOpacity() = PixelFormat.TRANSLUCENT
 }
 
@@ -288,7 +243,7 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
     init { setWillNotDraw(false); refreshPresentation() }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val line = Paint().apply { color = NativeColorRole.DIVIDER.color(); strokeWidth = resources.displayMetrics.density }
+        val line = Paint().apply { color = NativeColorRole.HAIR.color(); strokeWidth = resources.displayMetrics.density }
         canvas.drawLine(0f, 0f, width.toFloat(), 0f, line)
     }
     fun refreshPresentation() {
@@ -298,9 +253,9 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
         MoteUi.backgroundColor(this, NativeColorRole.BACKGROUND)
         contentDescription = MoteI18n.text("记录与提问")
         val ask = LinearLayout(activity).apply {
-            tag = "home-ask-action"; gravity = Gravity.CENTER_VERTICAL; minimumHeight = activity.moteDp(52)
+            tag = "home-ask-action"; gravity = Gravity.CENTER_VERTICAL; minimumHeight = activity.moteDp(MoteTheme.controlHeight)
             setPadding(activity.moteDp(16), 0, activity.moteDp(16), 0)
-            background = MoteUi.clickable(activity, NativeColorRole.SURFACE, 14, true, NativeColorRole.BORDER)
+            background = MoteUi.clickable(activity, NativeColorRole.FILL, NativeRadiusRole.PILL)
             contentDescription = MoteI18n.text("问一问"); isFocusable = true
             setOnClickListener { onSelect(MotePrimaryTab.ASK) }
         }
@@ -311,11 +266,11 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
         // Off-screen moments are recorded by hand; on-screen content is already covered by background capture.
         val actions = LinearLayout(activity).apply { orientation = HORIZONTAL; isBaselineAligned = false }
         record = TextView(activity).apply {
-            tag = "home-record-action"; gravity = Gravity.CENTER; minHeight = activity.moteDp(52)
+            tag = "home-record-action"; gravity = Gravity.CENTER; minHeight = activity.moteDp(MoteTheme.controlHeight)
             setPadding(activity.moteDp(12), 0, activity.moteDp(12), 0)
             MoteUi.type(this, NativeFontRole.ACTION, medium = true)
-            MoteUi.textColor(this, NativeColorRole.BACKGROUND)
-            background = MoteUi.clickable(activity, NativeColorRole.ACCENT, 12, false)
+            MoteUi.textColor(this, NativeColorRole.PRIMARY_INK)
+            background = MoteUi.clickable(activity, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL)
             isFocusable = true; setOnClickListener { activity.openRecordEditor() }
         }
         actions.addView(record, LayoutParams(0, -1, 1f))
@@ -326,9 +281,9 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
     }
     // The same entry definitions back the launcher shortcuts, notification and widget.
     private fun quickRecord(identity: String, icon: String, entry: MoteQuickEntry) = LinearLayout(activity).apply {
-        orientation = VERTICAL; gravity = Gravity.CENTER; tag = identity; minimumHeight = activity.moteDp(52)
+        orientation = VERTICAL; gravity = Gravity.CENTER; tag = identity; minimumHeight = activity.moteDp(MoteTheme.controlHeight)
         setPadding(0, activity.moteDp(6), 0, activity.moteDp(6))
-        background = MoteUi.clickable(activity, NativeColorRole.SIDEBAR, 12, false)
+        background = MoteUi.clickable(activity, NativeColorRole.FILL, NativeRadiusRole.PILL)
         contentDescription = entry.label; isFocusable = true; setOnClickListener { activity.openRecordEditor(media = entry.media) }
         addView(ImageView(activity).apply { setImageDrawable(MoteNavigationIcon(activity, icon, false)); importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO },
             LayoutParams(activity.moteDp(20), activity.moteDp(20)))
@@ -343,26 +298,6 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
         record.contentDescription = MoteI18n.text(if (value) "继续草稿" else "记录")
     }
     fun select(tab: MotePrimaryTab) { selected = tab; visibility = if (tab == MotePrimaryTab.HOME) VISIBLE else GONE }
-}
-
-/** The selected destination is indicated at its icon; the entire item remains one touch target. */
-private class MoteNavigationIndicator(context: Context, kind: String, private val active: Boolean) : Drawable() {
-    private val width = context.moteDp(64)
-    private val height = context.moteDp(32)
-    private val glyphSize = context.moteDp(23)
-    private val glyph = MoteNavigationIcon(context, kind, active)
-    private val indicator = MoteUi.shape(context, NativeColorRole.TINT, NativeRadiusRole.INDICATOR, false)
-    override fun getIntrinsicWidth() = width
-    override fun getIntrinsicHeight() = height
-    override fun draw(canvas: Canvas) {
-        if (active) { indicator.bounds = bounds; indicator.draw(canvas) }
-        val left = bounds.centerX() - glyphSize / 2
-        val top = bounds.centerY() - glyphSize / 2
-        glyph.setBounds(left, top, left + glyphSize, top + glyphSize); glyph.draw(canvas)
-    }
-    override fun setAlpha(alpha: Int) { indicator.alpha = alpha; glyph.alpha = alpha }
-    override fun setColorFilter(colorFilter: ColorFilter?) { glyph.colorFilter = colorFilter }
-    @Deprecated("Drawable opacity") override fun getOpacity() = PixelFormat.TRANSLUCENT
 }
 
 fun Activity.openMoteLocalPage(page: String) {
@@ -404,7 +339,7 @@ internal fun Activity.moteDetailPageContent(primary: MotePrimaryTab? = detailTab
     }, LinearLayout.LayoutParams(0, -2, 1f))
     headerAction?.let { header.addView(it, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = moteDp(20) }) }
     root.header(header)
-    root.header(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER); layoutParams = LinearLayout.LayoutParams(-1, moteDp(1)) })
+    root.header(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.HAIR); layoutParams = LinearLayout.LayoutParams(-1, moteDp(1)) })
     root.content(buildContent(body))
     setContentView(root)
     return body
@@ -418,7 +353,7 @@ class MoteDialogBuilder(context: Context) : android.app.AlertDialog.Builder(cont
         window.decorView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
         override fun onViewDetachedFromWindow(view: View) = Unit
         override fun onViewAttachedToWindow(view: View) {
-        window.setBackgroundDrawable(MoteUi.shape(context, NativeColorRole.SURFACE_RAISED, NativeRadiusRole.READING))
+        window.setBackgroundDrawable(MoteUi.shape(context, NativeColorRole.SURFACE_RAISED, NativeRadiusRole.PANEL))
         MoteUi.styleTree(window.decorView)
         // Some platform dialogs wrap stacked actions in a ScrollView whose
         // minimum height reserves only one action. Keep every styled action
@@ -465,7 +400,7 @@ class MoteDialogBuilder(context: Context) : android.app.AlertDialog.Builder(cont
                 var owner: Context = dialog.context
                 while (owner is android.content.ContextWrapper && owner !is Activity && owner.baseContext !== owner) owner = owner.baseContext
                 if (owner === activity) dialog.window?.let { window ->
-                    window.setBackgroundDrawable(MoteUi.shape(activity, NativeColorRole.SURFACE_RAISED, NativeRadiusRole.READING))
+                    window.setBackgroundDrawable(MoteUi.shape(activity, NativeColorRole.SURFACE_RAISED, NativeRadiusRole.PANEL))
                     NativePresentationStyles.refresh(window.decorView)
                 }
             }

@@ -10128,5 +10128,15 @@ export const german: Readonly<Record<string, string>> = {
   "快捷入口不可用": "Schnelleinstiege nicht verfügbar",
   "系统入口插件已停用；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin ist gestoppt; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
   "系统入口插件未加载；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin ist nicht geladen; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
-  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin muss neu gebaut werden; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar."
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin muss neu gebaut werden; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
+  "蓝牙": "Bluetooth",
+  "复制": "Kopieren",
+  "存储": "Speicher",
+  "语言": "Sprache",
+  "历史": "Verlauf",
+  "键盘": "Tastatur",
+  "权限": "Berechtigung",
+  "二维码": "QR-Code",
+  "分享": "Teilen",
+  "网络": "Netzwerk"
 };
