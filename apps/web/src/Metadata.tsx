@@ -2,7 +2,7 @@ import { moteText } from '@mote/shared/i18n';
 import type {RecordMetadata, SourceMetadata} from '@mote/shared';
 import {bytes, dateTime} from './api';
 
-export const sourceLabels: Record<string,string> = {ui_page:moteText("页面内容采集"),screen:moteText("屏幕采样"),activity:moteText("应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("随手记"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
+export const sourceLabels: Record<string,string> = {ui_page:moteText("页面内容采集"),screen:moteText("屏幕采样"),activity:moteText("应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("记录"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
 export const activityExplanation = moteText("这条记录仅包含前台应用与采样时长。截图和结构化内容按该应用的独立选项保存。时长存在采样空隙，不代表完整使用历史。");
 type Row = [string, string | number | boolean | undefined];
 const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? moteText("是") : moteText("否");
@@ -13,7 +13,7 @@ export function Metadata({metadata,source,modifiedAt,stateSeries}: {stateSeries?
   const d=metadata?.device,s=metadata?.state,c=metadata?.capture,f=source?.file;
   const network:Record<string,string>={none:moteText("无网络"),wifi:'Wi-Fi',cellular:moteText("移动网络"),ethernet:moteText("以太网"),other:moteText("其他"),unknown:moteText("未知")};
   const thermal:Record<string,string>={unknown:moteText("未知"),nominal:moteText("正常"),fair:moteText("略热"),serious:moteText("严重"),critical:moteText("临界")};
-  const methods:Record<string,string>={accessibility:moteText("无障碍采集"),media_projection:moteText("系统录屏"),screen_capture:moteText("系统屏幕采集"),media_session:moteText("系统媒体会话"),notification_listener:moteText("系统通知服务"),manual:moteText("主动记录"),file:moteText("文件同步"),calendar:moteText("日历同步"),mcp:'MCP',import:moteText("导入")};
+  const methods:Record<string,string>={accessibility:moteText("无障碍采集"),media_projection:moteText("系统录屏"),screen_capture:moteText("系统屏幕采集"),media_session:moteText("系统媒体会话"),notification_listener:moteText("系统通知服务"),manual:moteText("主动记录"),file:moteText("文件同步"),calendar:moteText("日历同步"),mcp:'MCP',shortcuts:moteText("快捷指令"),import:moteText("导入")};
   const n=metadata?.notification,e=metadata?.deviceEvent;
   const actions:Record<string,string>={posted:moteText("发布（首次观察）"),updated:moteText("更新"),removed:moteText("移除"),screen_on:moteText("亮屏"),screen_off:moteText("熄屏"),user_present:moteText("用户已解锁 / 在场"),state_observed:moteText("锁定状态观察")};
   const page=metadata?.uiPage;

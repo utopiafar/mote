@@ -120,7 +120,7 @@ class DurableQueueTest {
     }
     @Test fun `manual notes persist without fabricated image across restart and acknowledgement`() {
         val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
-        val note = event().put("source", "note").put("ocrText", "合成随手记：今天心情不错").put("mood", "平静")
+        val note = event().put("source", "note").put("ocrText", "合成记录：今天心情不错").put("mood", "平静")
         queue.enqueue(note, null, 100000)
         assertEquals(0, dir.listFiles()!!.count { it.extension == "blob" })
         val restarted = DurableQueue(dir, cipher); restarted.recoverOrphans()

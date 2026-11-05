@@ -141,7 +141,7 @@ internal class NotesOwner internal constructor(
             val event = draft.prepare(settings.dataOrigin()) { current ->
                 JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
                     .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)
-                    .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("随手记")).put("source", "note").put("ocrText", current.getString("text"))
+                    .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("记录")).put("source", "note").put("ocrText", current.getString("text"))
                     .put("metadata", JSONObject().put("version", 1).put("observedAt", Instant.now().toString()).put("noteOrigin", current.getJSONObject("origin")).also { metadata ->
                         current.optString("description").takeIf { it.isNotBlank() }?.let { metadata.put("ownerDescription", it) }
                     })
@@ -162,7 +162,7 @@ internal class NotesOwner internal constructor(
 
     private fun saveCurrent(text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String {
         val app = requireContext()
-        require(text.isNotBlank() && text.length <= 100_000) { MoteI18n.text("随手记须为 1..100000 字符") }
+        require(text.isNotBlank() && text.length <= 100_000) { MoteI18n.text("记录须为 1..100000 字符") }
         require(mood.length <= 80) { MoteI18n.text("心情最多 80 字符") }
         home.update(text, mood)
         val settings = Settings(app)
@@ -172,7 +172,7 @@ internal class NotesOwner internal constructor(
             val id = UUID.randomUUID().toString()
             val event = JSONObject().put("id", id).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
                 .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)
-                .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("随手记")).put("ocrText", text).put("source", "note")
+                .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("记录")).put("ocrText", text).put("source", "note")
                 .apply { if (config.metadataEnabled) put("metadata", dev.mote.collector.CollectorMetadata.snapshot(app, "manual")) }
                 .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
             if (mood.isNotBlank()) event.put("mood", mood)
@@ -183,8 +183,8 @@ internal class NotesOwner internal constructor(
         SupportEvents.record(app, EventStage.NOTE, EventCode.OK)
         try { scheduleUpload(config) } catch (_: Exception) {
             SupportEvents.record(app, EventStage.NOTE, EventCode.SCHEDULER)
-            settings.uploadStatus(MoteI18n.text("随手记已入队，同步调度未完成；草稿保持原提交 ID，可安全重试"))
-            throw IllegalStateException(MoteI18n.text("随手记已保存在队列；同步调度暂不可用，再次保存会重试同一条记录"))
+            settings.uploadStatus(MoteI18n.text("记录已入队，同步调度未完成；草稿保持原提交 ID，可安全重试"))
+            throw IllegalStateException(MoteI18n.text("记录已保存在队列；同步调度暂不可用，再次保存会重试同一条记录"))
         }
         home.clear()
         return event.getString("id")

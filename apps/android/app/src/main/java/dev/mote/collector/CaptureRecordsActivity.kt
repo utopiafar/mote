@@ -96,7 +96,7 @@ class CaptureRecordsActivity : MoteActivity() {
             }
         }
         val kinds = Spinner(this).apply {
-            adapter = MoteUi.choiceAdapter(this@CaptureRecordsActivity, listOf(MoteI18n.text("截图"), MoteI18n.text("媒体播放状态"), MoteI18n.text("通知事件"), MoteI18n.text("设备事件"), MoteI18n.text("随手记"), MoteI18n.text("应用活动"), MoteI18n.text("页面内容采集")))
+            adapter = MoteUi.choiceAdapter(this@CaptureRecordsActivity, listOf(MoteI18n.text("截图"), MoteI18n.text("媒体播放状态"), MoteI18n.text("通知事件"), MoteI18n.text("设备事件"), MoteI18n.text("记录"), MoteI18n.text("应用活动"), MoteI18n.text("页面内容采集")))
             setSelection(recordSources.indexOf(recordSource))
         }; filters.addView(kinds, if (compactFilters) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f))
         kinds.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -161,7 +161,7 @@ class CaptureRecordsActivity : MoteActivity() {
     }
     private fun updateRecordHeading() {
         val title = when (recordSource) {
-            "note" -> "随手记"
+            "note" -> "记录"
             "media" -> "媒体播放状态"
             "notification" -> "通知事件"
             "device_event" -> "设备事件"
@@ -274,7 +274,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         else MoteI18n.text("{0} · {1} 条 · 第 {2} 页", selected.optString("appName").ifBlank { selected.optString("appId").ifBlank { MoteI18n.text("系统画面") } }, total, pageNumber)
                     status.text = pageStatus + if (thumbnailCount > 0) MoteI18n.text(" · 正在加载缩略图（0/{0}）", thumbnailCount) else ""
                     if (records.isEmpty()) text(list, when {
-                        source == "note" -> MoteI18n.text("当天没有随手记。选择其他日期，或添加一条随手记。")
+                        source == "note" -> MoteI18n.text("当天没有记录。选择其他日期，或添加一条记录。")
                         source != "screen" -> MoteI18n.text("当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。")
                         remote -> MoteI18n.text("当天没有此设备的中央截图记录。")
                         else -> MoteI18n.text("当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。")
@@ -552,7 +552,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     val isNote = record.optString("source") == "note"
                     if (isNote && !direct) dialog.setTitle(MoteI18n.text("原文"))
                     val capturedAt = record.getString("capturedAt").let { runCatching { DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.MEDIUM).withLocale(MoteI18n.locale()).withZone(ZoneId.systemDefault()).format(Instant.parse(it)) }.getOrDefault(it) }
-                    val origin = record.optString("appName").ifBlank { record.optString("appId").ifBlank { if (isNote) MoteI18n.text("随手记") else if (record.optString("source") == "media") MoteI18n.text("媒体会话状态") else if (record.optString("source") == "device_event") MoteI18n.text("设备状态") else MoteI18n.text("桌面 / 系统画面") } }
+                    val origin = record.optString("appName").ifBlank { record.optString("appId").ifBlank { if (isNote) MoteI18n.text("记录") else if (record.optString("source") == "media") MoteI18n.text("媒体会话状态") else if (record.optString("source") == "device_event") MoteI18n.text("设备状态") else MoteI18n.text("桌面 / 系统画面") } }
                     text(content, "$capturedAt · ${if (remote) MoteI18n.text("中央归档") else MoteI18n.text("本机记录")}" + if (isNote) " · $origin" else "", MoteTheme.fontMeta.toFloat()).apply { MoteUi.textColor(this, NativeColorRole.MUTED) }
                     if (!isNote) text(content, origin, MoteTheme.fontBody.toFloat())
                     if (record.optString("source") in SystemEventRules.sources) {

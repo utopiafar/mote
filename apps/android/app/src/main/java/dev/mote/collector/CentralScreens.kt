@@ -670,7 +670,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
 
     private fun loadNotes() {
         val api = client
-        ui.work(MoteI18n.text("正在读取随手记…"), {
+        ui.work(MoteI18n.text("正在读取记录…"), {
             CentralDraftWrites.barrier { draftFailure.get()?.let { throw it }; noteStore.read() } to runCatching { api.get("/api/notes?limit=30") }
         }) { (state, history) ->
             noteDraft = state.getJSONObject("draft"); noteHistory = history.getOrDefault(JSONObject()); buildNotes(state, noteHistory)
@@ -701,15 +701,15 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             ui.text(note.optString("capturedAt"), NativeFontRole.SUPPORT, card); ui.text(note.optString("ocrText"), parent = card)
             ui.button(MoteI18n.text("查看原文"), parent = card) { library.captureEvidence(note.getString("id")) }
         }
-        next(history)?.let { cursor -> ui.button(MoteI18n.text("加载更早的随手记")) {
+        next(history)?.let { cursor -> ui.button(MoteI18n.text("加载更早的记录")) {
             val api = client
-            ui.work(MoteI18n.text("正在读取随手记…"), { api.get("/api/notes?limit=30&cursor=" + encode(cursor)) }) { noteHistory = it; buildNotes(state, it) }
+            ui.work(MoteI18n.text("正在读取记录…"), { api.get("/api/notes?limit=30&cursor=" + encode(cursor)) }) { noteHistory = it; buildNotes(state, it) }
         } }
     }
 
     private fun syncNotes(enqueue: Boolean) {
         val api = client
-        ui.work(MoteI18n.text("正在保存随手记…"), {
+        ui.work(MoteI18n.text("正在保存记录…"), {
             val state = CentralDraftWrites.barrier {
                 draftFailure.get()?.let { throw it }
                 if (enqueue) noteStore.enqueue(Settings(ui).deviceId, Settings(ui).read().deviceName)
@@ -892,7 +892,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
         fun next(value: JSONObject): String? = if (value.isNull("nextCursor") || !value.has("nextCursor")) null else value.opt("nextCursor").toString()
         val pages = listOf(
-            "overview" to "中央工作台", "archive" to "中央资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "activity" to "活动", "notes" to "随手记",
+            "overview" to "中央工作台", "archive" to "中央资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "activity" to "活动", "notes" to "记录",
             "materials" to "正式资料", "coding" to "Coding 会话同步状态", "timeline" to "片段", "files" to "文件与录音",
             "memories" to "记忆", "insights" to "洞察", "actions" to "行动", "agentView" to "Agent 视角",
             "sources" to "来源", "devices" to "设备", "connections" to "对外授权", "lark" to "飞书",

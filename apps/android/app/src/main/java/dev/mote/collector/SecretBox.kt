@@ -20,6 +20,8 @@ import javax.crypto.spec.SecretKeySpec
 interface ByteCipher {
     fun seal(bytes: ByteArray): ByteArray
     fun open(bytes: ByteArray): ByteArray
+    /** Streams one complete value; length-preserving ciphers override this to avoid buffering. */
+    fun seal(input: java.io.InputStream, output: java.io.OutputStream) { output.write(seal(input.readBytes())) }
 }
 
 /** The token remains part of the same atomic preference snapshot as its verified owner. */

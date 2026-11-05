@@ -46,6 +46,12 @@ try {
     code: invitation.json().invitation.code, deviceId: 'generated-kotlin-phone', deviceName: 'Generated phone', platform: 'android'}});
   assert.equal(granted.statusCode, 200, 'Generated collector redemption failed');
   assert.equal(granted.json().scope, 'collector');
+  const iosInvitation = await central.app.inject({method: 'POST', url: '/api/connections/collector-invitations',
+    headers: {authorization: 'Bearer ' + token}, payload: {serverUrl: origin, label: 'Generated iOS contract', deviceId: 'generated-iphone'}});
+  assert.equal(iosInvitation.statusCode, 200, 'Generated iOS invitation failed');
+  const iosGranted = await central.app.inject({method: 'POST', url: '/api/connections/redeem', payload: {
+    code: iosInvitation.json().invitation.code, deviceId: 'generated-iphone', deviceName: 'Generated iPhone', platform: 'ios'}});
+  assert.equal(iosGranted.statusCode, 200, 'Central must accept an iOS collector platform');
   if (interrupted) throw Error('Kotlin contract interrupted before Gradle started');
   const args = ['-p', 'apps/android', '--no-daemon', ':app:testDebugUnitTest', '--rerun',
     ...(all.length ? [] : ['--tests', 'dev.mote.collector.CentralProducerContractTest'])];

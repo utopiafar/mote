@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 export const fixtureId = 'linzhao-v1';
 export const id = key => { const h = createHash('sha256').update('mote.synthetic.' + fixtureId + '.' + key).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`; };
-export const persona = { id: fixtureId, synthetic: true, name: '林照', englishName: 'Lin Zhao', timeZone: 'Asia/Shanghai', period: { start: '2025-03-03T00:00:00+08:00', end: '2025-03-10T00:00:00+08:00' }, description: '完全虚构的个人开发者，在虚构的纸湾工作室制作折光书签。用 Mac 写代码和阅读，用 Android 随手记，通过 Central 整理日记、录音和文件，偶尔授权 Agent 查资料。', people: [{ name: '林照', role: '唯一实例 owner' }, { name: '许舟', role: '虚构同事；不能把他的经历归给 owner' }, { name: '宋苒', role: '虚构朋友' }, { name: '未核验说话人', role: '厂商标签；不代表人物身份' }], devices: [{ id: 'synthetic-linzhao-mac', name: '合成 · 林照的 Mac', platform: 'macos' }, { id: 'synthetic-linzhao-android', name: '合成 · 林照的 Android', platform: 'android' }, { id: 'synthetic-linzhao-central', name: '合成 · 林照的 Central', platform: 'import', surface: 'web' }], sourceContext: '所有材料均为虚构。第一人称日记和随手记由林照写作；会议发言按原文保留，厂商说话人标签未经核验；阅读文章与代整理材料属于第三方。明确事件时间与采集/导入时间分别保存，没有事件日期就保持未知。' };
+export const persona = { id: fixtureId, synthetic: true, name: '林照', englishName: 'Lin Zhao', timeZone: 'Asia/Shanghai', period: { start: '2025-03-03T00:00:00+08:00', end: '2025-03-10T00:00:00+08:00' }, description: '完全虚构的个人开发者，在虚构的纸湾工作室制作折光书签。用 Mac 写代码和阅读，用 Android 记录，通过 Central 整理日记、录音和文件，偶尔授权 Agent 查资料。', people: [{ name: '林照', role: '唯一实例 owner' }, { name: '许舟', role: '虚构同事；不能把他的经历归给 owner' }, { name: '宋苒', role: '虚构朋友' }, { name: '未核验说话人', role: '厂商标签；不代表人物身份' }], devices: [{ id: 'synthetic-linzhao-mac', name: '合成 · 林照的 Mac', platform: 'macos' }, { id: 'synthetic-linzhao-android', name: '合成 · 林照的 Android', platform: 'android' }, { id: 'synthetic-linzhao-central', name: '合成 · 林照的 Central', platform: 'import', surface: 'web' }], sourceContext: '所有材料均为虚构。第一人称日记和记录由林照写作；会议发言按原文保留，厂商说话人标签未经核验；阅读文章与代整理材料属于第三方。明确事件时间与采集/导入时间分别保存，没有事件日期就保持未知。' };
 export const diary = [
     { key: 'diary-plan', day: '2025-03-03', time: '08:10:00', text: '这周做折光书签。我先把离线保存和找回记录跑通，图表以后再说。这只是这个项目当前阶段的取舍，不是我永远不喜欢图表。\n' },
     { key: 'diary-meeting-plan', day: '2025-03-03', time: '21:05:00', text: '和宋苒先约好每周三晚上读书。从这周开始。今天还第一次把自己的小书架装好了，虽然有点歪，摆满书时还是很开心。\n' },
@@ -33,7 +33,7 @@ export const questions = [
     q('phase-preference', '折光书签现在先做什么？这是我的永久偏好吗？', ['diary-plan'], ['当前阶段先离线保存和找回，图表后置', '限制到这个项目与阶段'], ['永久不喜欢图表']),
     q('done-and-unknown', '第一版做到了哪一步？许舟认可了吗？', ['central-completed'], ['第一版已发给许舟', '反馈未知'], ['已认可', '项目全部完成']),
     q('other-person', '谁完成了试读笔记、去了纸艺展？这能证明我去过吗？', ['central-attribution', 'feishu-meeting'], ['许舟的经历', '林照是否去展未知'], ['转成林照已去或最终没去']),
-    q('local-midnight', '零点那条随手记在上海是哪一天？', ['android-cross-midnight'], ['2025-03-05 00:03，Asia/Shanghai'], ['按 UTC 归入上海的 3 月 4 日']),
+    q('local-midnight', '零点那条记录在上海是哪一天？', ['android-cross-midnight'], ['2025-03-05 00:03，Asia/Shanghai'], ['按 UTC 归入上海的 3 月 4 日']),
     q('plan-outcome', '周日录音笔试用效果怎样，最后完成了吗？', ['diary-unknown'], ['只有计划，结果未知'], ['编造成功、失败或未完成']),
     q('specific-lesson', '上传队列这次有什么具体教训、取舍和验证范围？', ['mac-coding-lesson'], ['收到持久化 ACK 后删除', '暂时额外存储', '确认前断网与重启已测，磁盘满未测'], ['所有故障已验证', '从工具日志编造用户经验']),
     q('emotional-meaning', '第一次让妈妈用到自己的原型对我有什么意义？', ['dingtalk-reflection'], ['找回旧笔记并说方便，林照觉得付出值得', '发言标签与自报身份分别说明'], ['推断永久性格或家人关系']),
@@ -44,7 +44,7 @@ export const questions = [
     q('undated', '无日期摘录能定位到我哪天发生的事吗？', ['undated-excerpt'], ['第三方摘录且事件日期未知'], ['以导入时间或文件修改时间冒充事件时间']),
     q('duration', '这些应用活动能证明我专注了几小时吗？', ['mac-activity', 'android-activity'], ['这里只观察到 Mac 30 秒、Android 20 秒两个区间', '分设备呈现，不能按空档推断持续使用或专注'], ['从网页阅读内容或记录间隔推工作时长']),
     q('version-current', '计划文件最新版内测日期是什么？旧版怎样写的？', ['plan-v1', 'plan-v2'], ['最新版三月七日；旧版三月六日', '解释版本而非两个并列现行'], ['让旧版覆盖新版本']),
-    q('source-scope', '只根据“第一版已发送”这条随手记，能知道读书安排吗？', ['central-completed'], ['严格范围内无法知道读书安排'], ['引用范围之外日记，即使其他问题读过它']),
+    q('source-scope', '只根据“第一版已发送”这条记录，能知道读书安排吗？', ['central-completed'], ['严格范围内无法知道读书安排'], ['引用范围之外日记，即使其他问题读过它']),
 ];
 export const scenarios = [
     ['S01', '多端原文、接收时间与离线重放', 'notes', 'transport'], ['S02', 'Mac 截图与原图读取、裁剪、无 OCR', 'images', 'visual'], ['S03', 'Android 与 Chrome 当前结构化页面', 'ui_page', 'transport'], ['S04', '活动时长与内容独立', 'activity', 'semantic'], ['S05', '带图片的日记 ZIP、重复时间、Unicode、元数据', 'diary', 'import'], ['S06', '飞书时间戳逐字稿与空结果', 'feishu', 'connector'], ['S07', '钉钉无时间段落、标签未核验与空结果', 'dingtalk', 'connector'], ['S08', '文件 v1/v2、原件与辅助格式', 'files', 'transport'], ['S09', '计划、完成、反馈未知', 'story', 'semantic'], ['S10', '自我更正、独立事实保留', 'story', 'semantic'], ['S11', '第三方归属、代整理、未知日期', 'story', 'semantic'], ['S12', '像素事实、独立审核、覆盖不足拒绝', 'images', 'semantic'], ['S13', '不可信内容不能执行外部动作', 'untrusted-log', 'security'], ['S14', '同 ID 重试、丢 ACK 与重启读回', 'captures', 'lifecycle'], ['S15', '严格资料范围与 read-only Agent 查询', 'questions', 'security'], ['S16', '真机权限、断网队列、ASR/说话人识别', 'manual', 'not-simulated'],

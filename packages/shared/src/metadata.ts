@@ -81,7 +81,7 @@ export const recordMetadataSchema = z.object({
   observedAt: timestamp,
   collector: z.object({
     version: label.optional(),
-    method: z.enum(['accessibility', 'browser_dom', 'media_projection', 'screen_capture', 'media_session', 'notification_listener', 'manual', 'file', 'calendar', 'mcp', 'import']).optional(),
+    method: z.enum(['accessibility', 'browser_dom', 'media_projection', 'screen_capture', 'media_session', 'notification_listener', 'manual', 'file', 'calendar', 'mcp', 'shortcuts', 'import']).optional(),
   }).strict().optional(),
   device: z.object({
     osVersion: label.optional(), osBuild: label.optional(), manufacturer: label.optional(),
