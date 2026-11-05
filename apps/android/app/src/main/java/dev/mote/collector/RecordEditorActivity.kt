@@ -35,8 +35,6 @@ open class RecordEditorActivity : MoteActivity() {
     private lateinit var describeToggle: TextView
     private lateinit var status: TextView
     private lateinit var attachmentsView: LinearLayout
-    private lateinit var originView: LinearLayout
-    private lateinit var titleView: TextView
     private lateinit var save: Button
     private lateinit var clearButton: Button
     private lateinit var microphone: ImageButton
@@ -49,7 +47,6 @@ open class RecordEditorActivity : MoteActivity() {
     private var undoArmed = false
     @Volatile private var clearedSnapshot: JSONObject? = null
     private var ready = false
-    private var originExpanded = true
     private var describeExpanded = false
     private lateinit var notes: NotesEditor
     private val io get() = notes.io
@@ -66,7 +63,6 @@ open class RecordEditorActivity : MoteActivity() {
         super.onCreate(state)
         notes = NotesPlugin.owner(applicationContext).view()
         cameraPath = state?.getString("cameraPath"); cameraResultReady = state?.getBoolean("cameraResultReady") ?: false
-        originExpanded = state?.getBoolean("originExpanded",true) ?: true
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         task = UiTask(this, io, ownsExecutor = false)
         attachmentTask = UiTask(this, io, ownsExecutor = false)
@@ -74,8 +70,7 @@ open class RecordEditorActivity : MoteActivity() {
 
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(MoteTheme.controlHeight); setPadding(moteDp(6), 0, moteDp(12), 0) }
         header.addView(MoteComponents.iconButton(this, MoteGlyph.BACK) { finish() })
-        titleView = TextView(this).apply { tag = "detail-title"; gravity = Gravity.CENTER; MoteUi.type(this, NativeFontRole.APPBAR, medium = true); MoteUi.textColor(this, NativeColorRole.INK); visibility = View.INVISIBLE }
-        header.addView(titleView, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(View(this), LinearLayout.LayoutParams(0, -2, 1f))
         clearButton = MoteComponents.button(this, MoteI18n.text("清空"), MoteUi.ButtonRole.TEXT) { clearDraft() }
         MoteUi.textColor(clearButton, NativeColorRole.MUTED)
         header.addView(clearButton)
@@ -86,8 +81,6 @@ open class RecordEditorActivity : MoteActivity() {
         root.header(header)
 
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, moteDp(6), 0, moteDp(16)) }
-        originView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        body.addView(originView, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = moteDp(16); rightMargin = moteDp(16) })
         field = EditText(this).apply {
             hint = MoteI18n.text("记录"); contentDescription = MoteI18n.text("正在想什么")
             gravity = Gravity.TOP; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -150,7 +143,6 @@ open class RecordEditorActivity : MoteActivity() {
         enabled(false)
         task.start("", {}, { notes.draft() }) { outcome -> outcome.onSuccess { draft ->
             attachments = draft.getJSONArray("attachments"); origin = draft.getJSONObject("origin"); originPresentation = draft.optJSONObject("originPresentation"); field.setText(draft.getString("text")); description.setText(draft.optString("description")); ready = true; enabled(!attachmentTask.busy); renderAttachments()
-            if (state == null) importIntent(intent)
             if (cameraResultReady) stageCamera() else if (state == null) recoverPendingMedia()
             // Home and launcher quick records add media to the same draft; saving remains an explicit tap.
             if (state == null && !attachmentTask.busy) when (intent.getStringExtra("startMedia")) {
@@ -220,7 +212,7 @@ open class RecordEditorActivity : MoteActivity() {
             }.onFailure { file.delete(); status.text = it.message } }
         }.onFailure { cameraPath?.let { File(it).delete() }; cameraPath = null; status.text = it.message }
     }
-    override fun onSaveInstanceState(out: Bundle) { cameraPath?.let { out.putString("cameraPath", it) }; out.putBoolean("cameraResultReady", cameraResultReady); out.putBoolean("originExpanded",originExpanded); super.onSaveInstanceState(out) }
+    override fun onSaveInstanceState(out: Bundle) { cameraPath?.let { out.putString("cameraPath", it) }; out.putBoolean("cameraResultReady", cameraResultReady); super.onSaveInstanceState(out) }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
         if (results.firstOrNull() != PackageManager.PERMISSION_GRANTED) { status.text = MoteI18n.text("权限未授予"); return }
@@ -306,25 +298,7 @@ open class RecordEditorActivity : MoteActivity() {
         save.isEnabled = ready && canSubmit() && !task.busy && !attachmentTask.busy
         renderDraftState()
         attachmentsView.removeAllViews()
-        originView.removeAllViews()
         var siblings = 0
-        val hasOrigin = origin.optString("text").isNotBlank()
-        field.hint = MoteI18n.text(if(hasOrigin) "我的补充" else "记录")
-        titleView.text = MoteI18n.text(if(hasOrigin) if(origin.optString("kind")=="conversation") "保存为记录" else "保存分享" else "")
-        titleView.visibility = if (hasOrigin) View.VISIBLE else View.INVISIBLE
-        if (hasOrigin) {
-            val title = MoteI18n.text(if (origin.optString("kind") == "conversation") "对话摘录" else "引用原文")
-            val quote = TextView(this).apply { tag = "record-origin-fulltext"; text = NativeConversationQuote.display(origin, originPresentation); MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this,NativeColorRole.INK); setTextIsSelectable(true); visibility = if(originExpanded) View.VISIBLE else View.GONE }
-            val separation = TextView(this).apply { text = MoteI18n.text("引用与我的补充分开保存"); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED); visibility = quote.visibility }
-            originView.addView(TextView(this).apply {
-                tag = "record-origin-toggle"; text = title + if(originExpanded) " ▾" else " ▸"; contentDescription = title
-                MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED)
-                minHeight = moteDp(48); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
-                setOnClickListener { originExpanded = !originExpanded; quote.visibility = if (originExpanded) View.VISIBLE else View.GONE; separation.visibility = quote.visibility; text = title + if (originExpanded) " ▾" else " ▸" }
-            })
-            originView.addView(quote)
-            originView.addView(separation)
-        }
         fun gap() = LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(if (siblings++ == 0) 0 else 10) }
         val pending = notes.pendingMedia()
         for (index in 0 until pending.length()) {
@@ -404,43 +378,6 @@ open class RecordEditorActivity : MoteActivity() {
         if (file == null) return
         if (stopped.isSuccess && file.length() > 0) stagePending(mediaDescriptor(file, "audio/mp4")) else { file.delete(); io.execute { notes.finishMedia(mediaDescriptor(file, "audio/mp4").getString("id")) } }
     }
-    private fun importIntent(value: Intent, replaceExisting: Boolean = false) {
-        val conversation = this is ConversationRecordEditorActivity && value.hasExtra("recordText")
-        if (!conversation && value.action !in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return
-        if (conversation && value.getStringExtra("recordText").orEmpty().length > 100000) {
-            status.text = MoteI18n.text("文字目前最多 100000 字符。"); return
-        }
-        if (conversation && listOf(value.getStringExtra("conversationId"), value.getStringExtra("turnId")).any { it.isNullOrBlank() || it.length > 200 }) {
-            status.text = MoteI18n.text("请求的资源不存在或已删除。"); return
-        }
-        if (conversation && (value.getStringExtra("quoteOrigin").isNullOrBlank() || value.getStringExtra("quoteQuestion") == null || value.getStringArrayListExtra("quoteCitations") == null || !value.getStringExtra("recordText").orEmpty().startsWith(value.getStringExtra("quoteQuestion").orEmpty() + "\n\n"))) {
-            status.text = MoteI18n.text("请求的资源不存在或已删除。"); return
-        }
-        val existing = field.text.isNotBlank() || description.text.isNotBlank() || attachments.length() > 0 || origin.optString("text").isNotBlank()
-        if (existing && !replaceExisting) {
-            MoteDialogBuilder(this).setTitle(MoteI18n.text("已有未保存草稿"))
-                .setNegativeButton(MoteI18n.text("继续编辑"), null)
-                .setPositiveButton(MoteI18n.text("替换草稿")) { _, _ -> importIntent(value, true) }.show()
-            return
-        }
-        ready = false; attachments = JSONArray(); originPresentation = null; originExpanded = true; field.setText(""); description.setText(""); ready = true
-        val text = if (conversation) value.getStringExtra("recordText").orEmpty() else value.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
-        if (conversation) {
-            origin = JSONObject().put("kind", "conversation").put("text", text).put("conversationId", value.getStringExtra("conversationId"))
-            origin.put("messageIds", JSONArray().put(value.getStringExtra("turnId")))
-            val question = value.getStringExtra("quoteQuestion")
-            val citations = value.getStringArrayListExtra("quoteCitations")
-            if (question != null && citations != null && text.startsWith(question + "\n\n")) originPresentation = NativeConversationQuote.snapshot(text, question, citations, origin.getString("conversationId"), origin.getJSONArray("messageIds").getString(0), requireNotNull(value.getStringExtra("quoteOrigin")))
-            field.setText("")
-        } else {
-            origin = JSONObject().put("kind", "share").put("text", text.take(100000))
-            callingPackage?.let { origin.put("app", it.take(300)) }
-            value.data?.takeIf { it.scheme in setOf("http", "https") }?.let { origin.put("url", it.toString().take(4000)) }
-        }
-        persist(); renderAttachments()
-        @Suppress("DEPRECATION") val uris = if (value.action == Intent.ACTION_SEND_MULTIPLE) value.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty() else listOfNotNull(value.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
-        stageUris(uris)
-    }
     private fun submit() {
         if (!ready || task.busy || attachmentTask.busy || recorder != null) return
         if (notes.pendingMedia().length() > 0) { status.text = MoteI18n.text("请先处理未保存的附件"); return }
@@ -452,9 +389,7 @@ open class RecordEditorActivity : MoteActivity() {
     override fun onPause() { if (recorder != null) stopRecording(); player?.release(); player = null; super.onPause() }
     override fun onDestroy() { notes.close(); super.onDestroy() }
 }
-/** Only the app can launch a conversation-origin editor; system sharing uses the exported base activity. */
-class ConversationRecordEditorActivity : RecordEditorActivity()
 internal fun android.app.Activity.openRecordEditor(text: String? = null, conversationId: String? = null, turnId: String? = null, question: String? = null, citations: List<String>? = null, quoteOrigin: String? = null, media: String? = null) {
-    val editor = if (text == null) RecordEditorActivity::class.java else ConversationRecordEditorActivity::class.java
-    startActivity(Intent(this, editor).apply { putExtra("firstUse",(this@openRecordEditor as? MainActivity)?.isFirstUseRecordEntry() ?: this@openRecordEditor.intent.getBooleanExtra("firstUse",false)); text?.let { putExtra("recordText", it) }; conversationId?.let { putExtra("conversationId", it) }; turnId?.let { putExtra("turnId", it) }; question?.let { putExtra("quoteQuestion", it) }; citations?.let { putStringArrayListExtra("quoteCitations", ArrayList(it)) }; quoteOrigin?.let { putExtra("quoteOrigin",it) }; media?.let { putExtra("startMedia", it) } })
+    val target = if (text == null) RecordEditorActivity::class.java else AnswerRecordActivity::class.java
+    startActivity(Intent(this, target).apply { putExtra("firstUse",(this@openRecordEditor as? MainActivity)?.isFirstUseRecordEntry() ?: this@openRecordEditor.intent.getBooleanExtra("firstUse",false)); text?.let { putExtra("recordText", it) }; conversationId?.let { putExtra("conversationId", it) }; turnId?.let { putExtra("turnId", it) }; question?.let { putExtra("quoteQuestion", it) }; citations?.let { putStringArrayListExtra("quoteCitations", ArrayList(it)) }; quoteOrigin?.let { putExtra("quoteOrigin",it) }; media?.let { putExtra("startMedia", it) } })
 }

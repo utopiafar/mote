@@ -8840,6 +8840,7 @@ export const german: Readonly<Record<string, string>> = {
   "来源需要处理": "Quellen erfordern Bearbeitung",
   "查看已保存记录": "Gespeicherte Aufzeichnung anzeigen",
   "保存为记录": "Als Aufzeichnung speichern",
+  "保存到 Mote": "In Mote speichern",
   "引用原文": "Zitiertes Original",
   "确认保存": "Speichern bestätigen",
   "个人上下文中心": "Persönliches Kontextzentrum",
@@ -10157,7 +10158,6 @@ export const german: Readonly<Record<string, string>> = {
   "待同步 {0}": "Ausstehend {0}",
   "新的记录暂时无法保存": "Neue Aufzeichnungen können derzeit nicht gespeichert werden",
   "发送失败": "Senden fehlgeschlagen",
-  "本人设备": "Dieses Gerät",
   "连接时间": "Verbindungszeit",
   "断开连接后停止发送，已有记录保留在本机。": "Beim Trennen wird das Senden beendet. Vorhandene Aufzeichnungen bleiben auf diesem Gerät.",
   "已断开连接，已有记录保留在本机": "Verbindung getrennt. Vorhandene Aufzeichnungen bleiben auf diesem Gerät.",
@@ -10175,5 +10175,6 @@ export const german: Readonly<Record<string, string>> = {
   "暂时无法读取": "Vorübergehend nicht lesbar",
   "设备名称无效": "Ungültiger Gerätename",
   "有待发送记录，无法更换中央": "Ausstehende Einträge verhindern den Wechsel der Zentrale",
-  "扫描中央生成的连接二维码。": "Den von der Zentrale erzeugten Verbindungs-QR-Code scannen."
+  "扫描中央生成的连接二维码。": "Den von der Zentrale erzeugten Verbindungs-QR-Code scannen.",
+  "本人设备": "Dieses Gerät"
 };

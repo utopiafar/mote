@@ -126,6 +126,29 @@ internal class NotesOwner internal constructor(
         return NotesEditor(this, session)
     }
 
+    private fun validateConversation(origin: JSONObject, presentation: JSONObject?, settings: Settings) {
+        if (origin.optString("kind") == "conversation") {
+            check(presentation?.optString("server") == settings.dataOrigin() && settings.dataOrigin().isNotBlank()) {
+                MoteI18n.text("访问凭据已失效，请重新连接。")
+            }
+        }
+    }
+
+    private fun recordEvent(text: String, origin: JSONObject, description: String, settings: Settings, config: CollectorConfig) =
+        JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
+            .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)
+            .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("记录")).put("source", "note").put("ocrText", text)
+            .put("metadata", JSONObject().put("version", 1).put("observedAt", Instant.now().toString()).put("noteOrigin", origin).also { metadata ->
+                description.takeIf { it.isNotBlank() }?.let { metadata.put("ownerDescription", it) }
+            })
+            .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
+
+    private fun receipt(id: String, firstUse: Boolean): String {
+        NativeRecordReceipt.recordId = id
+        NativeRecordReceipt.fromFirstUse = firstUse
+        return id
+    }
+
     internal fun submitRecord(text: String, attachments: JSONArray, origin: JSONObject, description: String, presentation: JSONObject?, firstUse: Boolean): String {
         val app = requireContext()
         val id = ConnectionGuard.sync {
@@ -133,19 +156,9 @@ internal class NotesOwner internal constructor(
             val settings = Settings(app)
             val config = settings.read()
             config.validate()
-            if (origin.optString("kind") == "conversation") {
-                check(presentation?.optString("server") == settings.dataOrigin() && settings.dataOrigin().isNotBlank()) {
-                    MoteI18n.text("访问凭据已失效，请重新连接。")
-                }
-            }
+            validateConversation(origin, presentation, settings)
             val event = draft.prepare(settings.dataOrigin()) { current ->
-                JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
-                    .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)
-                    .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("记录")).put("source", "note").put("ocrText", current.getString("text"))
-                    .put("metadata", JSONObject().put("version", 1).put("observedAt", Instant.now().toString()).put("noteOrigin", current.getJSONObject("origin")).also { metadata ->
-                        current.optString("description").takeIf { it.isNotBlank() }?.let { metadata.put("ownerDescription", it) }
-                    })
-                    .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
+                recordEvent(current.getString("text"), current.getJSONObject("origin"), current.optString("description"), settings, config)
             }
             app.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
             // The draft is retained with its prepared identity: only explicit Clear or an
@@ -153,9 +166,24 @@ internal class NotesOwner internal constructor(
             runCatching { UploadWorker.schedule(app, config) }
             event.getString("id")
         } ?: error(MoteI18n.text("请稍后重试"))
-        NativeRecordReceipt.recordId = id
-        NativeRecordReceipt.fromFirstUse = firstUse
-        return id
+        return receipt(id, firstUse)
+    }
+
+    internal fun submitStandalone(text: String, attachments: JSONArray, origin: JSONObject, description: String, presentation: JSONObject?): String {
+        val app = requireContext()
+        val id = ConnectionGuard.sync {
+            val settings = Settings(app)
+            val config = settings.read()
+            config.validate()
+            require(text.length <= 100000 && attachments.length() <= 10 && description.length <= 12000)
+            validateConversation(origin, presentation, settings)
+            val event = recordEvent(text, origin, description, settings, config)
+            draft.prepareSubmission(settings.dataOrigin(), event, attachments, presentation)
+            app.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+            runCatching { UploadWorker.schedule(app, config) }
+            event.getString("id")
+        } ?: error(MoteI18n.text("请稍后重试"))
+        return receipt(id, false)
     }
 
     internal fun saveQuickNote(text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String =
@@ -226,6 +254,8 @@ internal class NotesEditor internal constructor(private val owner: NotesOwner, p
     fun record(id: String): JSONObject? = owner.draft.record(id)
     fun submit(text: String, attachments: JSONArray, origin: JSONObject, description: String, presentation: JSONObject?, firstUse: Boolean): String =
         owner.submitRecord(text, attachments, origin, description, presentation, firstUse)
+    fun submitStandalone(text: String, attachments: JSONArray, origin: JSONObject, description: String, presentation: JSONObject?): String =
+        owner.submitStandalone(text, attachments, origin, description, presentation)
 }
 
 /** The local save receipt belongs to the plugin, not to an Activity instance. */
