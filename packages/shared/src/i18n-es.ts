@@ -10128,5 +10128,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "快捷入口不可用": "Accesos rápidos no disponibles",
   "系统入口插件已停用；快捷入口和通知动作不可用。": "El complemento de accesos del sistema está detenido; los accesos rápidos y las acciones de notificación no están disponibles.",
   "系统入口插件未加载；快捷入口和通知动作不可用。": "El complemento de accesos del sistema no está cargado; los accesos rápidos y las acciones de notificación no están disponibles.",
-  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "El complemento de accesos del sistema necesita recompilarse; los accesos rápidos y las acciones de notificación no están disponibles."
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "El complemento de accesos del sistema necesita recompilarse; los accesos rápidos y las acciones de notificación no están disponibles.",
+  "快捷指令": "Atajos"
 };

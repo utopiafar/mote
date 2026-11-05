@@ -22,6 +22,11 @@ test('wrong part or archive checksum never produces an attachment reference',asy
  const file=new File(['Generated'],'fixture.wav',{type:'audio/wav'}),part=fixture();part.badPart();await assert.rejects(uploadNoteAttachment(part.api,file,'fixture'),/does not match/);assert.equal(part.committed,false);
  const commit=fixture();commit.badCommit();await assert.rejects(uploadNoteAttachment(commit.api,file,'fixture'),/does not match/);
 });
+test('attachment boundary stays at 50 MiB per file',async()=>{
+  let called=false;const api={request:async()=>{called=true;throw Error('No transport for an oversized attachment');}} as unknown as Api;
+  const file={type:'audio/wav',size:50*1024*1024+1,name:'generated.wav',lastModified:0} as File;
+  await assert.rejects(uploadNoteAttachment(api,file,'fixture'),/50 MiB/);assert.equal(called,false);
+});
 test('cancellation stops transport without running any OCR or ASR',async()=>{
  const f=fixture(),controller=new AbortController();controller.abort();await assert.rejects(uploadNoteAttachment(f.api,new File(['Generated'],'a.wav',{type:'audio/wav'}),'fixture',controller.signal),{name:'AbortError'});assert.deepEqual(f.sent,[]);
 });
