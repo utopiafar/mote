@@ -10128,5 +10128,10 @@ export const french: Readonly<Record<string, string>> = {
   "快捷入口不可用": "Entrées rapides indisponibles",
   "系统入口插件已停用；快捷入口和通知动作不可用。": "Le plugin des entrées système est arrêté ; les entrées rapides et les actions de notification sont indisponibles.",
   "系统入口插件未加载；快捷入口和通知动作不可用。": "Le plugin des entrées système n’est pas chargé ; les entrées rapides et les actions de notification sont indisponibles.",
-  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Le plugin des entrées système doit être reconstruit ; les entrées rapides et les actions de notification sont indisponibles."
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Le plugin des entrées système doit être reconstruit ; les entrées rapides et les actions de notification sont indisponibles.",
+  "需要重新连接": "Reconnexion requise",
+  "失联": "Sans contact",
+  "采集中 · 待同步 {0} 条": "Collecte en cours · En attente : {0}",
+  "采集中 · 发送已暂停": "Collecte en cours · Envoi en pause",
+  "采集中 · 发送需要处理": "Collecte en cours · L’envoi nécessite une intervention"
 };

@@ -1,0 +1,572 @@
+[
+  {
+    "name": "capturing",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "capturing",
+      "level": "normal",
+      "home": null,
+      "notification": null,
+      "androidOngoing": "采集中",
+      "macIcon": "normal",
+      "central": {
+        "textKey": "正在采集",
+        "tone": "ok"
+      }
+    }
+  },
+  {
+    "name": "pending-sync",
+    "facts": {
+      "connection": "connected",
+      "syncState": "waiting",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 12
+    },
+    "expected": {
+      "id": "pending_sync",
+      "level": "normal",
+      "home": null,
+      "notification": null,
+      "androidOngoing": "采集中 · 待同步 {0} 条",
+      "macIcon": "normal",
+      "central": {
+        "textKey": "正在采集",
+        "tone": "ok"
+      }
+    }
+  },
+  {
+    "name": "screen-paused",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": true,
+      "screenPausedAt": "2026-11-06T06:20:00.000Z",
+      "pending": 0
+    },
+    "expected": {
+      "id": "screen_paused",
+      "level": "reminder",
+      "home": {
+        "titleKey": "屏幕采集已暂停",
+        "operation": "resume_capture"
+      },
+      "notification": null,
+      "androidOngoing": "屏幕采集已暂停",
+      "macIcon": "paused",
+      "central": {
+        "textKey": "正在采集",
+        "tone": "ok"
+      }
+    }
+  },
+  {
+    "name": "paused",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": false,
+      "captureLive": false,
+      "pending": 0
+    },
+    "expected": {
+      "id": "paused",
+      "level": "reminder",
+      "home": {
+        "titleKey": "采集已暂停",
+        "operation": "resume_capture"
+      },
+      "notification": null,
+      "androidOngoing": "采集已暂停",
+      "macIcon": "paused",
+      "central": {
+        "textKey": "已暂停",
+        "tone": "neutral"
+      }
+    }
+  },
+  {
+    "name": "send-paused",
+    "facts": {
+      "connection": "connected",
+      "syncState": "paused",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 3
+    },
+    "expected": {
+      "id": "send_paused",
+      "level": "reminder",
+      "home": {
+        "titleKey": "发送已暂停",
+        "operation": "resume_send"
+      },
+      "notification": null,
+      "androidOngoing": "采集中 · 发送已暂停",
+      "macIcon": "normal",
+      "central": null
+    }
+  },
+  {
+    "name": "local-only",
+    "facts": {
+      "connection": "unconfigured",
+      "syncState": "unconfigured",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "local_only",
+      "level": "reminder",
+      "home": null,
+      "notification": null,
+      "androidOngoing": "采集中",
+      "macIcon": "normal",
+      "central": null
+    }
+  },
+  {
+    "name": "reconnect",
+    "facts": {
+      "connection": "reconnect",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "reconnect",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "需要重新连接",
+        "operation": "reconnect"
+      },
+      "notification": {
+        "titleKey": "需要重新连接",
+        "operation": "reconnect",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "需要重新连接",
+      "macIcon": "alert",
+      "central": {
+        "textKey": "需要处理",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "storage-full",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": true,
+      "storageFull": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "storage_full",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "本机空间已满",
+        "operation": "open_storage"
+      },
+      "notification": {
+        "titleKey": "本机空间已满",
+        "operation": "open_storage",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "本机空间已满",
+      "macIcon": "alert",
+      "central": {
+        "textKey": "需要处理",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "interrupted",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": false,
+      "interrupted": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "interrupted",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "采集已中断",
+        "operation": "restart_capture"
+      },
+      "notification": {
+        "titleKey": "采集已中断",
+        "operation": "restart_capture",
+        "platforms": [
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": null,
+      "macIcon": "alert",
+      "central": {
+        "textKey": "需要处理",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "permission-missing",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": false,
+      "permission": "missing",
+      "pending": 0
+    },
+    "expected": {
+      "id": "permission",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "等待采集权限",
+        "operation": "open_permissions"
+      },
+      "notification": {
+        "titleKey": "等待采集权限",
+        "operation": "open_permissions",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "部分来源等待权限",
+      "macIcon": "alert",
+      "central": {
+        "textKey": "等待权限",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "send-attention",
+    "facts": {
+      "connection": "connected",
+      "syncState": "error",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "send_attention",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "发送需要处理",
+        "operation": "open_sync"
+      },
+      "notification": {
+        "titleKey": "发送需要处理",
+        "operation": "open_sync",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "采集中 · 发送需要处理",
+      "macIcon": "alert",
+      "central": null
+    }
+  },
+  {
+    "name": "disconnected",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": true,
+      "disconnected": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "disconnected",
+      "level": "needs_action",
+      "home": null,
+      "notification": null,
+      "androidOngoing": null,
+      "macIcon": null,
+      "central": {
+        "textKey": "失联",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "storage-full-beats-reminder-and-send",
+    "facts": {
+      "connection": "connected",
+      "syncState": "error",
+      "captureEnabled": true,
+      "captureLive": true,
+      "storageFull": true,
+      "screenPausedAt": "2026-11-06T06:20:00.000Z",
+      "pending": 12
+    },
+    "expected": {
+      "id": "storage_full",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "本机空间已满",
+        "operation": "open_storage"
+      },
+      "notification": {
+        "titleKey": "本机空间已满",
+        "operation": "open_storage",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "本机空间已满",
+      "macIcon": "alert",
+      "central": {
+        "textKey": "需要处理",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "send-paused-beats-pending",
+    "facts": {
+      "connection": "connected",
+      "syncState": "paused",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 12
+    },
+    "expected": {
+      "id": "send_paused",
+      "level": "reminder",
+      "home": {
+        "titleKey": "发送已暂停",
+        "operation": "resume_send"
+      },
+      "notification": null,
+      "androidOngoing": "采集中 · 发送已暂停",
+      "macIcon": "normal",
+      "central": null
+    }
+  },
+  {
+    "name": "partial-permission",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": true,
+      "permission": "partial",
+      "pending": 0
+    },
+    "expected": {
+      "id": "permission",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "等待采集权限",
+        "operation": "open_permissions"
+      },
+      "notification": {
+        "titleKey": "等待采集权限",
+        "operation": "open_permissions",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "部分来源等待权限",
+      "macIcon": "alert",
+      "central": {
+        "textKey": "等待权限",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "send-blocked",
+    "facts": {
+      "connection": "connected",
+      "syncState": "blocked",
+      "captureEnabled": true,
+      "captureLive": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "send_attention",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "发送需要处理",
+        "operation": "open_sync"
+      },
+      "notification": {
+        "titleKey": "发送需要处理",
+        "operation": "open_sync",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "采集中 · 发送需要处理",
+      "macIcon": "alert",
+      "central": null
+    }
+  },
+  {
+    "name": "interrupted-beats-permission",
+    "facts": {
+      "connection": "connected",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": false,
+      "interrupted": true,
+      "permission": "missing",
+      "pending": 0
+    },
+    "expected": {
+      "id": "interrupted",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "采集已中断",
+        "operation": "restart_capture"
+      },
+      "notification": {
+        "titleKey": "采集已中断",
+        "operation": "restart_capture",
+        "platforms": [
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": null,
+      "macIcon": "alert",
+      "central": {
+        "textKey": "需要处理",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "reconnect-beats-storage",
+    "facts": {
+      "connection": "reconnect",
+      "syncState": "idle",
+      "captureEnabled": true,
+      "captureLive": true,
+      "storageFull": true,
+      "pending": 0
+    },
+    "expected": {
+      "id": "reconnect",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "需要重新连接",
+        "operation": "reconnect"
+      },
+      "notification": {
+        "titleKey": "需要重新连接",
+        "operation": "reconnect",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "需要重新连接",
+      "macIcon": "alert",
+      "central": {
+        "textKey": "需要处理",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "disconnected-beats-local-facts",
+    "facts": {
+      "connection": "reconnect",
+      "syncState": "error",
+      "captureEnabled": true,
+      "captureLive": true,
+      "storageFull": true,
+      "disconnected": true,
+      "pending": 12
+    },
+    "expected": {
+      "id": "disconnected",
+      "level": "needs_action",
+      "home": null,
+      "notification": null,
+      "androidOngoing": null,
+      "macIcon": null,
+      "central": {
+        "textKey": "失联",
+        "tone": "warn"
+      }
+    }
+  },
+  {
+    "name": "permission-beats-send-error",
+    "facts": {
+      "connection": "connected",
+      "syncState": "error",
+      "captureEnabled": true,
+      "captureLive": false,
+      "permission": "missing",
+      "pending": 0
+    },
+    "expected": {
+      "id": "permission",
+      "level": "needs_action",
+      "home": {
+        "titleKey": "等待采集权限",
+        "operation": "open_permissions"
+      },
+      "notification": {
+        "titleKey": "等待采集权限",
+        "operation": "open_permissions",
+        "platforms": [
+          "ios",
+          "android",
+          "macos"
+        ]
+      },
+      "androidOngoing": "部分来源等待权限",
+      "macIcon": "alert",
+      "central": {
+        "textKey": "等待权限",
+        "tone": "warn"
+      }
+    }
+  }
+]
