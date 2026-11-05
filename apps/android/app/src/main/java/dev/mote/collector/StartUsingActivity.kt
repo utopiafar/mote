@@ -25,7 +25,7 @@ class StartUsingActivity : MoteActivity() {
             if(link) paintFlags=paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
             background=MoteUi.clickable(this@StartUsingActivity,NativeColorRole.BACKGROUND,0,false); setOnClickListener { run() }
         }.also { body.addView(it,android.widget.LinearLayout.LayoutParams(-1,-2)) }
-        text(MoteI18n.text("先准备你的中央档案"),NativeFontRole.TITLE_MOBILE)
+        text(MoteI18n.text("先准备你的资料库"),NativeFontRole.TITLE_MOBILE)
         text(MoteI18n.text("在电脑上请安装助手准备 Central。完成后，用它给出的地址打开工作台，再生成设备连接邀请。"))
         button(MoteI18n.text("复制给安装助手"),true) {
             getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Mote",NativeAdministrationPlugin.INSTALL_PROMPT))

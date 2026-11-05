@@ -134,7 +134,7 @@ export function safeError(error:unknown):{status:number;category:string;message:
 function describeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
   const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown;reason?:unknown}:{};
   if(e.name==='ZodError')return {status:400,category:'validation',message:moteText("输入格式无效，请检查必填项和取值范围。")};
-  if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:moteText("Agent 未配置，请在中央节点配置模型后重试。")};
+  if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:moteText("Agent 未配置。在中央配置模型后重试。")};
   if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:moteText("Agent 请求已超时，请稍后重试或缩小查询范围。")};
   if(e.code==='context_lineage_incomplete')return {status:409,category:'context_lineage_incomplete',message:moteText("这段历史的证据范围不完整，无法安全发送给远程模型。请新建对话，或改用本地模型并重新提供证据。")};
   if(e.code==='source_context_changed')return {status:409,category:'source_context_changed',message:moteText("资料状态已变化或当前配置不支持此操作，请刷新后重试。")};

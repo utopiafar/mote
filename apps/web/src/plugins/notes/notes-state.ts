@@ -103,7 +103,7 @@ export class NoteOutbox {
     if (previous) this.storage.setItem(key, JSON.stringify({ note: JSON.parse(previous).note, error, blocked, ...(unknown ? { unknown: true } : {}) }));
   }
   acknowledge(id: string, result: { id?: string }): void {
-    if (result.id !== id) throw new Error(moteText("中央节点确认的记录 ID 不匹配；本机记录已保留。"));
+    if (result.id !== id) throw new Error(moteText("中央确认的记录 ID 不匹配；本机记录已保留。"));
     this.storage.removeItem(`${this.prefix}event:${id}`);
   }
   discard(id: string): void { this.storage.removeItem(`${this.prefix}event:${id}`); }

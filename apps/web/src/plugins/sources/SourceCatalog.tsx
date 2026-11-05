@@ -61,4 +61,4 @@ function RecorderCard({statusKey,status}:{statusKey:string;status:RecordingStatu
  return <article className="source-catalog-entry"><DiscoveryLink className="panel discovery-source-card" disabledAs="div" target={{pageId:'recordings',href:'#/connections/recordings?provider='+encodeURIComponent(status.provider),requires:[{id:'connector:'+statusKey,version:'1',host:'server'}]}}>{content}</DiscoveryLink></article>;
 }
 
-function RecorderHelp({status}:{status:RecordingStatus}){return <><p>{moteText('选择首次历史范围和持续同步，归档转写并备份原始音频。')}</p><p>{status.provider==='dingtalk'?moteText('中央节点需 DWS CLI 授权；真实账号适配仍待验证。'):status.provider==='feishu'?moteText('中央节点需 Lark CLI 的妙记读取与媒体导出授权。'):moteText('按此来源说明完成中央账号授权。')}</p></>;}
+function RecorderHelp({status}:{status:RecordingStatus}){return <><p>{moteText('选择首次历史范围和持续同步，归档转写并备份原始音频。')}</p><p>{status.provider==='dingtalk'?moteText('中央需 DWS CLI 授权；真实账号适配仍待验证。'):status.provider==='feishu'?moteText('中央需 Lark CLI 的妙记读取与媒体导出授权。'):moteText('按此来源说明完成中央账号授权。')}</p></>;}

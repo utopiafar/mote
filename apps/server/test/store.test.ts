@@ -9,7 +9,7 @@ import { Store } from '../src/store.js';
 
 async function fixture(overrides:Record<string,unknown>={}) {
   const image=await sharp({create:{width:60,height:30,channels:3,background:'#83a69b'}}).png().toBuffer();
-  return {id:randomUUID(),deviceId:'fixture-device',deviceName:'合成测试设备',platform:'macos',capturedAt:'2026-09-12T01:00:00.000Z',durationMs:15000,appName:'合成笔记',appId:'fixture.notes',ocrText:'Mote 的资料保存在独立中央节点。Synthetic evidence, not personal data.',source:'screen',privacy:{excluded:false,redacted:false,mode:'local'},imageBase64:image.toString('base64'),imageMime:'image/png',...overrides};
+  return {id:randomUUID(),deviceId:'fixture-device',deviceName:'合成测试设备',platform:'macos',capturedAt:'2026-09-12T01:00:00.000Z',durationMs:15000,appName:'合成笔记',appId:'fixture.notes',ocrText:'Mote 的资料保存在独立中央。Synthetic evidence, not personal data.',source:'screen',privacy:{excluded:false,redacted:false,mode:'local'},imageBase64:image.toString('base64'),imageMime:'image/png',...overrides};
 }
 function vault(t:{after(fn:()=>void):void},options:ConstructorParameters<typeof Store>[1]={}) {
   const directory=mkdtempSync(join(tmpdir(),'mote-store-test-'));const store=new Store(directory,options);

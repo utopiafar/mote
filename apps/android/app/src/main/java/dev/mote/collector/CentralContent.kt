@@ -383,7 +383,7 @@ internal class CentralContent(
         insightMoreAction = null
         page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
         updateCollectionBar(); updateBackButton()
-        title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("中央资料库")
+        title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
         screens?.show(next)
     }
@@ -402,10 +402,10 @@ internal class CentralContent(
     private fun disconnected() {
         insightMoreAction = null
         composer.removeAllViews(); composer.visibility = View.GONE; updateBackButton()
-        title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("中央资料库")
+        title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         text(MoteI18n.text(when {
             page == "ask" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
-            MoteNavigation.libraryRoute(page) -> "中央资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
+            MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
             else -> "中央功能需要连接中央；文件和记录仍可在本机保存和查看。"
         }))
         connectionButton()
@@ -450,7 +450,7 @@ internal class CentralContent(
         collectionBar.visibility = View.VISIBLE
         val scope = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         scope.addView(TextView(this).apply {
-            text = MoteI18n.text("中央资料库"); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.ACCENT)
+            text = MoteI18n.text("资料库"); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.ACCENT)
             background = MoteUi.shape(this@CentralContent, NativeColorRole.TINT, 8); setPadding(moteDp(12), moteDp(8), moteDp(12), moteDp(8))
         }, LinearLayout.LayoutParams(0, -2, 1f))
         scope.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("本机保留"); setOnClickListener { localPage("LIBRARY") } }))
@@ -472,7 +472,7 @@ internal class CentralContent(
     }
     private fun login() {
         composer.removeAllViews(); composer.visibility = View.GONE; updateBackButton()
-        revision++; body.removeAllViews(); collectionBar.visibility = View.GONE; title.text = MoteI18n.text("登录中央节点")
+        revision++; body.removeAllViews(); collectionBar.visibility = View.GONE; title.text = MoteI18n.text("登录中央")
         text(server); text(MoteI18n.text("登录一次即可使用问答、资料库和同步等所有中央功能。"))
         val credential = field(MoteI18n.text("中央管理令牌"), password = true)
         text(MoteI18n.text("登录会话有效期"))
@@ -502,7 +502,7 @@ internal class CentralContent(
     private fun beginBrowserLogin(durationMs: Long) {
         val origin = server; val expected = accessGeneration
         val verifier = android.util.Base64.encodeToString(ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
-        work(MoteI18n.text("正在连接中央节点…"), {
+        work(MoteI18n.text("正在连接中央…"), {
             val config = Settings(this).read()
             val (code, value) = HttpJson.post(origin + "/api/login/requests", org.json.JSONObject().put("serverUrl", origin).put("deviceId", Settings(this).deviceId)
                 .put("deviceName", config.deviceName).put("platform", "android").put("challenge", SourceRules.hash(verifier)).put("durationMs", durationMs))
