@@ -11,7 +11,7 @@ import type {ConnectorConfig} from './connectors/types.js';
 
 const deviceId=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 const label=z.string().trim().min(1).max(120);
-const platform=z.enum(['android','macos','windows','linux','other']);
+const platform=z.enum(['android','macos','ios','windows','linux','other']);
 const timestamp=z.string().datetime();
 const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict().refine(c=>c.scope!=='collector'||Boolean(c.deviceId&&c.platform),'Collector credentials require a device and platform');
 const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema)}).strict();
