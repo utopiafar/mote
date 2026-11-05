@@ -60,7 +60,7 @@ class FirstDeviceDataInstrumentedTest {
     private fun clickText(label: String) = click("Reach native action $label") { it is TextView && (it.text.toString() == label || it.contentDescription?.toString() == label) }
     private fun screenshot(name: String) = main {
         val roots = WindowInspector.getGlobalWindowViews().filter { it.isShown && it.hasWindowFocus() && it.width > 0 && it.height > 0 }
-        val root = roots.firstOrNull { views(it).filterIsInstance<TextView>().any { label -> label.isShown && label.text.toString() == "基于这条记录提问" } } ?: activity().window.decorView
+        val root = roots.firstOrNull { views(it).filterIsInstance<TextView>().any { label -> label.isShown && label.text.toString() == "围绕这份资料提问" } } ?: activity().window.decorView
         val image = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
         root.draw(Canvas(image)) // Keep FLAG_SECURE; render only our generated app views.
         File(context.filesDir, "first-data-evidence").apply { mkdirs() }.resolve("$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -81,7 +81,7 @@ class FirstDeviceDataInstrumentedTest {
         until("The native original reader shows the saved text") { main {
             WindowInspector.getGlobalWindowViews().filter { it.hasWindowFocus() }.any { root ->
                 val labels = views(root).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
-                "原文" in labels && "基于这条记录提问" in labels && text in labels
+                "原文" in labels && "围绕这份资料提问" in labels && text in labels
             }
         } }
     }

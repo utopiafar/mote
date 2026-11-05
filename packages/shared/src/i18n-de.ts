@@ -10108,6 +10108,7 @@ export const german: Readonly<Record<string, string>> = {
   "当前显示本机副本；中央接收仍待确认。正文最多预览 100000 个字符。": "Die lokale Kopie wird angezeigt; der Empfang durch Central ist noch unbestätigt. Die Vorschau zeigt bis zu 100000 Zeichen.",
   "一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。": "Wählen Sie bis zu 4.000 Dateien gleichzeitig aus. Verwenden Sie für größere Sammlungen ein ZIP-Archiv oder importieren Sie sie in mehreren Chargen.",
   "当前默认": "Aktueller Standard",
+  "{0} 起暂停": "Pausiert seit {0}",
   "屏幕采集已暂停": "Bildschirmerfassung pausiert",
   "其他来源照常采集": "Andere Quellen erfassen weiter",
   "文件夹照常同步": "Ordner werden weiter synchronisiert",
@@ -10186,5 +10187,13 @@ export const german: Readonly<Record<string, string>> = {
   "设备名称无效": "Ungültiger Gerätename",
   "有待发送记录，无法更换中央": "Ausstehende Einträge verhindern den Wechsel der Zentrale",
   "扫描中央生成的连接二维码。": "Den von der Zentrale erzeugten Verbindungs-QR-Code scannen.",
-  "本人设备": "Dieses Gerät"
+  "本人设备": "Dieses Gerät",
+  "详情": "Details",
+  "已整理，可搜索": "Aufbereitet, durchsuchbar",
+  "整理未完成": "Aufbereitung unvollständig",
+  "引用它的对话": "Konversationen, die es zitieren",
+  "网页": "Web",
+  "参考整份资料": "Gesamtes Material",
+  "昨天": "Gestern",
+  "{0}月{1}日": "{1}.{0}."
 };
