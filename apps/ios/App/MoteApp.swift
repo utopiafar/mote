@@ -36,6 +36,9 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteReaderPreview") {
                     OriginalPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteCaptureSyncPreview") {
+                    CaptureSyncPreview()
+                        .preferredColorScheme(previewScheme)
                 } else {
                     HomeRootView(arguments: arguments, editorStore: editorStore)
                 }
