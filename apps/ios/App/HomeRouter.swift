@@ -1,5 +1,6 @@
 import MoteCore
 import MoteDesign
+import MoteStorage
 import Observation
 import SwiftUI
 
@@ -64,6 +65,11 @@ enum HomeDestination: Equatable, Identifiable {
         }
     }
 
+    var isEditor: Bool {
+        if case .editor = self { return true }
+        return false
+    }
+
     var title: String {
         switch self {
         case .profile: "我的 Mote"
@@ -83,9 +89,25 @@ enum HomeDestination: Equatable, Identifiable {
 
 struct HomeDestinationView: View {
     let destination: HomeDestination
+    let editorStore: EditorDraftStore?
+    let arguments: [String]
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        if case .editor(let intent) = destination {
+            if let editorStore {
+                EditorFlowView(store: editorStore, arguments: arguments, intent: intent) {
+                    dismiss()
+                }
+            } else {
+                unavailable
+            }
+        } else {
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
         NavigationStack {
             VStack(spacing: 12) {
                 MoteMark()
@@ -100,6 +122,24 @@ struct HomeDestinationView: View {
             .background(MoteDesignTokens.background.color)
             .navigationTitle(destination.title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var unavailable: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                MoteMark()
+                Text("草稿未能打开")
+                    .font(MoteFont.title)
+                    .foregroundStyle(MoteDesignTokens.danger.color)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(MoteDesignTokens.background.color)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("关闭") { dismiss() }

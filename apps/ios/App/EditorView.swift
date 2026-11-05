@@ -11,17 +11,26 @@ struct EditorFlowView: View {
     @State private var didLoad = false
     private let fixtureName: String?
     private let descriptionExpanded: Bool
+    private let intent: HomeDestination.EditorIntent
+    private let onClose: (() -> Void)?
 
-    init(store: EditorDraftStore, arguments: [String]) {
+    init(
+        store: EditorDraftStore,
+        arguments: [String],
+        intent: HomeDestination.EditorIntent = .record,
+        onClose: (() -> Void)? = nil
+    ) {
         _model = StateObject(wrappedValue: EditorModel(store: store))
         fixtureName = Self.argument("-MoteEditorFixture", in: arguments)
         descriptionExpanded = Self.argument("-MoteEditorDescribe", in: arguments) == "true"
+        self.intent = intent
+        self.onClose = onClose
     }
 
     var body: some View {
         Group {
             if model.isEditorVisible {
-                EditorView(model: model)
+                EditorView(model: model, intent: intent, onClose: onClose)
             } else {
                 EditorHomeView(model: model)
             }
@@ -60,10 +69,13 @@ private struct EditorHomeView: View {
 
 private struct EditorView: View {
     @ObservedObject var model: EditorModel
+    let intent: HomeDestination.EditorIntent
+    let onClose: (() -> Void)?
     @StateObject private var audioPlayer = EditorAudioPlayer()
     @State private var photoItem: PhotosPickerItem?
     @State private var isCameraPresented = false
     @State private var isFileImporterPresented = false
+    @State private var didStartIntentCapture = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -121,6 +133,9 @@ private struct EditorView: View {
         .onDisappear {
             audioPlayer.stop()
         }
+        .onAppear {
+            startIntentCapture()
+        }
         .onChange(of: photoItem) { _, item in
             Task { @MainActor in
                 await importPhoto(item)
@@ -148,6 +163,7 @@ private struct EditorView: View {
         HStack(spacing: 6) {
             MoteIconButton(icon: .back, label: "返回") {
                 model.back()
+                onClose?()
             }
             Spacer()
             if model.hasDraft {
@@ -351,14 +367,33 @@ private struct EditorView: View {
         .accessibilityIdentifier("mote-file-attachment")
     }
 
+    /// Home's 拍照/录音 entries pass their capture mode in; the editor opens
+    /// first and starts that mode once. Recording itself belongs to IOS09.
+    private func startIntentCapture() {
+        guard !didStartIntentCapture else { return }
+        didStartIntentCapture = true
+        switch intent {
+        case .record:
+            break
+        case .camera:
+            startCamera()
+        case .microphone:
+            break
+        }
+    }
+
+    private func startCamera() {
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            isCameraPresented = true
+        } else {
+            model.errorMessage = "此设备无法拍照"
+        }
+    }
+
     private var toolbar: some View {
         HStack(spacing: 2) {
             MoteIconButton(icon: .camera, label: "拍照") {
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    isCameraPresented = true
-                } else {
-                    model.errorMessage = "此设备无法拍照"
-                }
+                startCamera()
             }
             PhotosPicker(selection: $photoItem, matching: .images) {
                 photoPickerLabel
