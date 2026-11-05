@@ -494,7 +494,7 @@ internal class StorageBackupOwner internal constructor(
                 settings.read().maxQueueMiB * 1024L * 1024,
             )
             try {
-                if (staged.origin != settings.dataOrigin()) error(MoteI18n.text("备份属于不同中央节点，请先连接原节点"))
+                if (staged.origin != settings.dataOrigin()) error(MoteI18n.text("备份属于不同中央。先连接原节点"))
                 prepared = staged
                 preparedName = displayName(app, uri)
                 BackupOutcome.RestorePrepared(preparedName, staged.count, staged.origin)

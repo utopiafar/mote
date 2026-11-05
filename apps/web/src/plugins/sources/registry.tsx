@@ -153,7 +153,7 @@ const larkPlugin: SourcePlugin = {
   catalog: {
     title: () => moteText('飞书文档与日历'),
     body: () => moteText('选择账号、历史范围和持续同步'),
-    note: () => moteText('中央节点只读同步，默认回溯 30 天、每 15 分钟检查。与录音授权分开。'),
+    note: () => moteText('中央只读同步，默认回溯 30 天、每 15 分钟检查。与录音授权分开。'),
     state: context => sourcePluginStateLabel(larkPlugin, context),
     target: { pageId: 'lark', href: '#/connections/lark' },
     icon: FileText,

@@ -115,7 +115,7 @@ const connectionStage = (channel: string): EventStage | undefined =>
 
 const operationLabel = (channel: string): string | undefined => {
   if (channel === deviceSettingsChannels.configure) return moteText('正在应用设置或迁移存储');
-  if (channel === deviceSettingsChannels.connectionConfirm) return moteText('正在连接中央节点');
+  if (channel === deviceSettingsChannels.connectionConfirm) return moteText('正在连接中央');
   if (channel === deviceSettingsChannels.connectionTest) return moteText('正在测试连接');
   return undefined;
 };
@@ -301,7 +301,7 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
             if (relocating && changingConnection) throw new Error(moteText('请先保存截图位置，再单独保存节点连接；每次切换均会自动应用'));
             if (changingConnection && updated.token) {
               const identity = await testConnection(updated, fetch, false);
-              if (!identity.capabilities.archiveRead) throw new Error(moteText('请升级中央节点后再登录。'));
+              if (!identity.capabilities.archiveRead) throw new Error(moteText('升级中央后再登录'));
               if (identity.credential.id === 'owner' || identity.credential.deviceId !== updated.deviceId) {
                 const grant = await loginRequest(updated, '/api/login/session', {
                   serverUrl: updated.serverUrl, deviceId: updated.deviceId, deviceName: updated.deviceName,

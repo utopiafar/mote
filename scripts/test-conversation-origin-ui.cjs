@@ -26,7 +26,7 @@ const originHref=await js(`document.querySelector('.note-origin a').getAttribute
 await js(`document.querySelector('.note-origin nav button').click()`);await until(()=>js(`document.querySelector('[role=dialog]')?.innerText.includes(${JSON.stringify(f.sourceText)})`),'saved quote opens actual original');
 await click('关闭证据详情');
 // Independently enter the records collection and reload before reopening the saved record.
-await click('随手记');await until(()=>js(`document.querySelectorAll('.note-card').length>=2`),'notes collection');
+await click('记录');await until(()=>js(`document.querySelectorAll('.note-card').length>=2`),'notes collection');
 await wc.reload();await until(()=>js(`document.querySelectorAll('.note-card').length>=2`),'notes restored after refresh');
 await js(`(()=>{const b=[...document.querySelectorAll('.note-card')].find(e=>e.textContent.includes(${JSON.stringify(comment)}));if(!b)throw Error('saved note absent');b.click()})()`);
 await until(()=>js(`document.querySelector('.note-origin a')`),'source link after refresh');await js(`document.querySelector('.note-origin a').click()`);
@@ -35,7 +35,7 @@ assert.ok(await js(`document.querySelector('[data-source-turn=true]').innerText.
 await wc.reload();await until(()=>js(`document.querySelector('[data-source-turn=true]')?.id===${JSON.stringify('conversation-turn-'+f.messageId)}`),'source turn survives reload');
 await js(`document.querySelector('[data-source-turn=true] .citation').click()`);await until(()=>js(`document.querySelector('[role=dialog]')?.innerText.includes(${JSON.stringify(f.sourceText)})`),'returned source citation reads original');await click('关闭证据详情');
 // Refuse only the source-conversation HTTP boundary. The separately authorized saved note remains readable.
-await click('随手记');await until(()=>js(`document.querySelectorAll('.note-card').length>=2`),'records after denied source');
+await click('记录');await until(()=>js(`document.querySelectorAll('.note-card').length>=2`),'records after denied source');
 await js(`[...document.querySelectorAll('.note-card')].find(e=>e.textContent.includes(${JSON.stringify(comment)})).click()`);
 await until(()=>js(`document.querySelector('.note-origin a')`),'origin available before revoke');await request('/fixture/deny-origin',{});
 await until(()=>js(`document.querySelector('.note-origin')?.innerText.includes('原始对话或轮次暂不可读')`),'denied source status');

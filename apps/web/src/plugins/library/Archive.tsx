@@ -257,7 +257,7 @@ function RawRecordTimeline({api,devices,onOpen,revision,onBrowseChanged}:RecordT
             {moteText("清除筛选")}</button>)}
         <span className="filter-count">{visibleTotal === undefined ? moteText("已读取") + " " + visibleItems.length : moteText("共 {0} 条 · 本页 {1} 条", visibleTotal, visibleItems.length)}</span>
       </div>
-      <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；可刷新查看文字识别的最新状态与结果。")}</p>
+      <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央的记录；可刷新查看文字识别的最新状态与结果。")}</p>
       {error && (<ErrorNotice text={error} retry={() => void load(pageCursors[page], requestVersion.current, page)}/>)}
       {groups.map(([day, records]) => (<section className="timeline-group" key={day}>
           <h2>

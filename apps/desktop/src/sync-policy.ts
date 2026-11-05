@@ -7,7 +7,7 @@ export interface PendingSync { pendingRecords: number; pendingUpdates?: number; 
 export function decideSync(config: SyncSettings, pending: PendingSync, now = Date.now(), explicit = false): SyncStatus & { ready: boolean } {
   const base = { mode: config.syncMode ?? 'realtime', pendingRecords: pending.pendingRecords, lastUploadAt: pending.lastUploadAt };
   if (config.syncPaused) return {...base,state:'manual',message:moteText('全部发送已暂停；本机记录与来源检查继续'),ready:false};
-  if (!config.serverUrl || !connectionToken(config)) return { ...base, state: 'unconfigured', message: moteText("仅保存在本机；连接中央节点后可同步"), ready: false };
+  if (!config.serverUrl || !connectionToken(config)) return { ...base, state: 'unconfigured', message: moteText("仅保存在本机；连接中央后可同步"), ready: false };
   if (explicit) return { ...base, state: 'idle', message: moteText("准备同步本地记录"), ready: true };
   if (base.mode === 'manual') return { ...base, state: 'manual', message: pending.pendingRecords ? moteText("记录已保存在本机，等待手动同步") : moteText("手动同步已启用"), ready: false };
   if (!pending.pendingRecords && !pending.pendingUpdates) return { ...base, state: 'idle', message: moteText("已同步，等待新记录"), ready: false };

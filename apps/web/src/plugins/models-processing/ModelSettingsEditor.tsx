@@ -273,7 +273,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
           </details>
           {retainedCredentialsNeedConfirmation(draft, active.snapshot.settings) && <label className="model-credential-reuse"><input type="checkbox" checked={draft.allowCredentialReuse} onChange={e => change({ allowCredentialReuse: e.target.checked })}/><span><strong>{moteText("允许在更改后的服务地址复用已保存的凭据")}</strong><small>{moteText("这会把保留的 API key、请求头或高级参数发送到当前填写的地址。也可以改为填写新值或清除旧值。")}</small></span></label>}
         </fieldset>
-        <p className="fine-print model-test-explanation">{moteText("测试连接会由中央节点发送少量合成内容，最多等待 30 秒，可能产生少量费用；不会读取资料库。测试不会保存草稿。")}</p>
+        <p className="fine-print model-test-explanation">{moteText("测试连接会由中央发送少量合成内容，最多等待 30 秒，可能产生少量费用；不会读取资料库。测试不会保存草稿。")}</p>
         {probe && <div className={`notice ${probe.ok ? 'model-success' : 'error'}`} role="status">{probe.ok && <Check size={16}/>}<span>{probe.message}{Number.isFinite(probe.durationMs) ? moteText("（{0} 秒）", (probe.durationMs / 1000).toFixed(1)) : ''}{probe.ok && dirty && moteText("；保存后才会应用草稿。")}</span></div>}
         {notice && <p className="notice model-success" role="status"><Check size={16}/>{notice}</p>}
         <div className="config-draft-footer"><span>{dirty ? moteText("有未保存的修改，仅保留在当前页面") : moteText("当前没有未保存的修改")}</span><div>
@@ -284,7 +284,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
       </form>}
     </section>
     {active && saved && <details className="model-effective-disclosure" open={profileId===undefined?true:undefined}><summary>{moteText("当前生效值")}</summary><section className="panel effective-settings model-effective-settings" aria-label={moteText("当前生效模型配置")}>
-      <div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{active.latest.source === 'saved' ? moteText("来自页面保存的配置；重启中央节点后仍然保留。") : moteText("来自中央节点的配置文件；页面和手改文件使用同一份设置。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>
+      <div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{active.latest.source === 'saved' ? moteText("来自页面保存的配置；重启中央后仍然保留。") : moteText("来自中央的配置文件；页面和手改文件使用同一份设置。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>
       {([
                 [moteText("服务"), MODEL_PROVIDER_PRESETS.find(p => p.id === saved.provider)?.name || saved.provider], [moteText("模型"), saved.model || moteText("未设置（问答与模型回顾关闭）")],
                 [moteText("协议"), moteText(protocolNames[saved.protocol])], [moteText("服务地址"), saved.baseUrl], [moteText("推理强度"), moteText(reasoningNames[saved.reasoningEffort])],

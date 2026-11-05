@@ -373,7 +373,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       <button className="button subtle full new-conversation-button" disabled={busy} onClick={()=>startNew()}><Plus size={16}/>{moteText("新对话")}</button>
       <FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.ask.history',schemaVersion:1,representation:'workspace',ref:selectedOwnerQuestion??'',revision:'1',title:'',text:''}}/>
       {Boolean(historyError||history.error)&&<p className="notice error" role="alert">{historyError||conversationFailure(history.error)}</p>}
-      {history.data && !loadingPage && !historyError && !history.error && !items.length && <p className="fine-print">{moteText("回答会自动保存在中央节点，随时回来继续。")}</p>}
+      {history.data && !loadingPage && !historyError && !history.error && !items.length && <p className="fine-print">{moteText("回答会自动保存在中央，随时回来继续。")}</p>}
       <div className="conversation-list">{items.map(item => <button key={item.id} className={`conversation-item ${!selectedOwnerQuestion&&conversation?.id === item.id ? 'active' : ''} ${item.status === 'failed' ? 'failed' : ''}`} aria-current={!selectedOwnerQuestion&&conversation?.id === item.id ? 'true' : undefined} disabled={busy} onClick={() => void open(item.id)}>
         <strong>{item.title}</strong><span>{item.status === 'failed' ? <><AlertCircle size={12}/>{moteText("未完成")}{' · '}</> : null}{dateTime(item.updatedAt)} · {item.turnCount}{' '}{moteText("轮")}</span>
       </button>)}</div>
