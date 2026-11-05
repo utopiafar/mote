@@ -19,6 +19,7 @@ struct MoteApp: App {
 
     init() {
         editorStore = try? MoteStorage.editorDraftStore()
+        RecordingLiveActivity.initialize()
     }
 
     var body: some Scene {

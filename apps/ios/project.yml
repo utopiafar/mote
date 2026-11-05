@@ -19,6 +19,7 @@ targets:
     platform: iOS
     sources:
       - App
+      - LiveActivityShared
     dependencies:
       - package: MoteKit
         product: MoteDesign
@@ -28,6 +29,7 @@ targets:
         product: MoteCentral
       - package: MoteKit
         product: MoteStorage
+      - target: MoteLiveActivity
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios
@@ -41,6 +43,24 @@ targets:
       configs:
         Debug:
           INFOPLIST_PREPROCESSOR_DEFINITIONS: MOTE_DEVELOPMENT=1
+  MoteLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - LiveActivity
+      - LiveActivityShared
+    dependencies:
+      - package: MoteKit
+        product: MoteCore
+      - package: MoteKit
+        product: MoteDesign
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.live-activity
+        INFOPLIST_FILE: LiveActivity/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) MOTE_ACTIVITY_EXTENSION
   MoteUITests:
     type: com.apple.product-type.bundle.ui-testing
     platform: iOS
