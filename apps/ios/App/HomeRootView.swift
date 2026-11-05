@@ -17,22 +17,10 @@ struct HomeRootView: View {
             router.open(action)
         }
         .sheet(item: sheetDestination, onDismiss: refresh) { destination in
-            HomeDestinationView(
-                destination: destination,
-                editorStore: editorStore,
-                arguments: arguments,
-                onAsk: { router.destination = .ask($0) },
-                onClearScope: { router.destination = .ask(nil) }
-            )
+            destinationView(destination)
         }
-        .fullScreenCover(item: editorDestination, onDismiss: refresh) { destination in
-            HomeDestinationView(
-                destination: destination,
-                editorStore: editorStore,
-                arguments: arguments,
-                onAsk: { router.destination = .ask($0) },
-                onClearScope: { router.destination = .ask(nil) }
-            )
+        .fullScreenCover(item: fullScreenDestination, onDismiss: refresh) { destination in
+            destinationView(destination)
         }
         .task {
             await model.refresh()
@@ -47,19 +35,30 @@ struct HomeRootView: View {
         }
     }
 
-    /// The editor keeps the reference's full-screen presentation; the other
-    /// destinations stay in the home's existing sheets.
+    /// The editor, settings menu and capture screen fill the window like
+    /// their reference designs; the remaining destinations keep the home sheet.
     private var sheetDestination: Binding<HomeDestination?> {
         Binding(
-            get: { router.destination?.isEditor == true ? nil : router.destination },
+            get: { router.destination?.isFullScreen == true ? nil : router.destination },
             set: { router.destination = $0 }
         )
     }
 
-    private var editorDestination: Binding<HomeDestination?> {
+    private var fullScreenDestination: Binding<HomeDestination?> {
         Binding(
-            get: { router.destination?.isEditor == true ? router.destination : nil },
+            get: { router.destination?.isFullScreen == true ? router.destination : nil },
             set: { router.destination = $0 }
+        )
+    }
+
+    private func destinationView(_ destination: HomeDestination) -> some View {
+        HomeDestinationView(
+            destination: destination,
+            editorStore: editorStore,
+            arguments: arguments,
+            onAsk: { router.destination = .ask($0) },
+            onClearScope: { router.destination = .ask(nil) },
+            onOpenConnection: { router.destination = .connection }
         )
     }
 
