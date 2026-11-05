@@ -9,7 +9,7 @@ import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
 import { type SettingsWindow } from './permission-types';
 import { collectRecordMetadata } from './record-metadata';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, shell, systemPreferences, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, systemPreferences, Tray } from 'electron';
 import { DesktopPluginHost, electronIpcRouter } from './plugin-host/desktop-host';
 import { NativeProviderRegistry } from './plugin-host/native-registry';
 import { deviceSettingsChannels, hostChannels, pushChannels } from './desktop-ipc-channels';
@@ -42,10 +42,12 @@ import { failureCode, safeErrorName, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
 import { readFile, realpath, stat, writeFile, mkdir } from 'node:fs/promises';
 import { currentPlatform, type Collector } from './collector';
+import { CaptureNeedsActionNotifier, captureStatusRowFor, type CaptureNotification } from './capture-notification';
 import { signedOutConfig } from './config';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
 import type { Config, Status } from './contracts';
+import { trayIconName } from './tray-icon';
 
 const defaultDataDirectory = app.getPath('userData');
 const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
@@ -163,16 +165,31 @@ async function showCentral(page?: string, evidenceId?: string,workId?:string,con
   }, page, evidenceId, workId,conversationId);
 }
 function showWindow(): void { window?.show(); window?.focus(); }
-function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start'): void {
+function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start' | 'permissions' | 'storage' | 'sync' | 'connection'): void {
   if (page === 'notes') { void openQuickNote?.(); return; }
   showWindow(); window?.webContents.send(pushChannels.navigate, page);
 }
-function trayIcon(): Electron.NativeImage {
-  const bitmap = Buffer.alloc(20 * 20 * 4);
-  for (let y = 4; y < 16; y++) for (let x = 3; x < 17; x++) {
-    if (x < 6 || x > 13 || (y < 10 && (Math.abs(x - (y - 1)) <= 1 || Math.abs(x - (20 - y)) <= 1))) bitmap[(y * 20 + x) * 4 + 3] = 255;
-  }
-  const icon = nativeImage.createFromBitmap(bitmap, { width: 20, height: 20 });
+const captureNotifications = new CaptureNeedsActionNotifier();
+function showCaptureNotification(notice: CaptureNotification): void {
+  if (process.platform !== 'darwin' || !Notification.isSupported()) return;
+  const notification = new Notification({
+    title: notice.title, body: notice.body,
+    actions: notice.action ? [{ type: 'button' as const, text: notice.action }] : undefined,
+  });
+  const open = () => {
+    if (notice.operation === 'restart_capture') showClientPage('capture-start');
+    else if (notice.operation === 'open_permissions') showClientPage('permissions');
+    else if (notice.operation === 'open_storage') showClientPage('storage');
+    else if (notice.operation === 'open_sync') showClientPage('sync');
+    else if (notice.operation === 'reconnect') showClientPage('connection');
+    else showClientPage('overview');
+  };
+  notification.on('click', open);
+  notification.on('action', open);
+  notification.show();
+}
+function trayIcon(status: Status): Electron.NativeImage {
+  const icon = nativeImage.createFromPath(join(__dirname, 'resources', 'tray', trayIconName(status)));
   icon.setTemplateImage(true);
   return icon;
 }
@@ -180,6 +197,11 @@ function updateUi(status: Status): void {
   status = { ...includePreparedNote(status), operations: backgroundJobs.snapshot(), storage: storageStatus(), credentialStorage: developmentProfile ? 'json' : 'system', environment: { profile: profile.name, defaultProfile: profile.defaultProfile, dataDirectory: profile.dataDirectory } };
   if (window && !window.isDestroyed()) window.webContents.send(pushChannels.status, status);
   if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.webContents.send(pushChannels.status, status);
+  tray?.setImage(trayIcon(status));
+  let serverHost: string | undefined;
+  try { serverHost = status.config.serverUrl ? new URL(status.config.serverUrl).host : undefined; } catch { /* An invalid URL is already surfaced by connection settings. */ }
+  const notice = captureNotifications.update(captureStatusRowFor(status), { serverHost });
+  if (notice) showCaptureNotification(notice);
   tray?.setToolTip(moteText("Mote [{0}] · {1} · 待上传 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.queueDepth));
   tray?.setContextMenu(Menu.buildFromTemplate([
     { label: `Mote [${profile.name}] · ${status.running ? moteText("采集中") : moteText("已停止")}`, enabled: false },
@@ -492,7 +514,7 @@ else {
       if(![0,86400000,604800000,2592000000].includes(durationMs))throw Error('Invalid lifetime');
       const requested=settings;
       const identity=await testConnection({...requested,token},fetch,false);
-      if(!identity.capabilities.archiveRead)throw Error(moteText('请升级中央节点后再登录。'));
+      if(!identity.capabilities.archiveRead)throw Error(moteText('升级中央后再登录'));
       let credential=token,expiresAt=durationMs?Date.now()+durationMs:undefined;
       let minted=false;
       if(identity.credential.id==='owner'||identity.credential.deviceId!==requested.deviceId){
@@ -547,7 +569,7 @@ else {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
-    tray = new Tray(trayIcon());
+    tray = new Tray(trayIcon(clientStatus()));
     tray.on('click', showWindow);
     updateUi(clientStatus());
     await window.loadURL(pageUrl);

@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 /** Activity receipt → exact owner-authorized Memory → original activity. Generated loopback only. */
 @RunWith(AndroidJUnit4::class)
 class WorkMemoryJourneyInstrumentedTest {
+    private val memoryDeletePromise="原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。"
     private val instrumentation get()=InstrumentationRegistry.getInstrumentation()
     private val context get()=instrumentation.targetContext
     private fun <T> main(block:()->T):T { val result=AtomicReference<Result<T>>();instrumentation.runOnMainSync{result.set(runCatching(block))};return result.get().getOrThrow() }
@@ -122,11 +123,11 @@ class WorkMemoryJourneyInstrumentedTest {
             fun position():Pair<Int,Int> = main { val row=shown().single{it.tag=="work-memory:$first"};val location=IntArray(2);row.getLocationOnScreen(location);shown().filterIsInstance<android.widget.ScrollView>().first().scrollY to location[1] }
             val before=position();tag("work-memory:$first");until("Exact first-page Memory opens"){has(fake.statement(first))};assertFalse(has(fake.statement(fake.ids[18])));record("memory-first-page")
             click("查看原文依据 1");until("The selected Memory's exact original opens"){has("Generated exact Memory evidence")};scenario.onActivity{it.onBackPressed()};until("Original returns to the same Memory"){has(fake.statement(first))}
-            click("删除记忆");until("Delete confirmation") { has("删除后无法恢复。") };click("取消");until("Cancellation returns to the same Memory"){has(fake.statement(first))};assertEquals(0,fake.deletes.get())
+            click("删除记忆");until("Delete confirmation") { has(memoryDeletePromise) };click("取消");until("Cancellation returns to the same Memory"){has(fake.statement(first))};assertEquals(0,fake.deletes.get())
             scenario.onActivity{it.onBackPressed()};until("Same work and first result page return"){has(fake.goal)&&has(fake.title(first))};Thread.sleep(500);instrumentation.waitForIdleSync();assertEquals("Same result scroll returns",before.first,position().first);assertTrue("Same result row returns to the same screen position",kotlin.math.abs(before.second-position().second)<=2);assertFalse(has(fake.title(fake.ids[20])))
             click("下一页");until("Only the remaining Memory results appear"){has(fake.title(fake.ids[20]))&&has(fake.title(fake.ids.last()))};assertFalse(has(fake.title(fake.ids.first())))
             val second=fake.ids[20];tag("work-memory:$second");until("Exact second-page Memory opens"){has(fake.statement(second))}
-            click("删除记忆");until("Delete confirmation") { has("删除后无法恢复。") };click("确认");until("Deleted result disappears from the same activity page"){fake.deletes.get()==1&&has(fake.goal)&&!has(fake.title(second))&&has(fake.title(fake.ids.last()))};record("memory-second-page-after-delete")
+            click("删除记忆");until("Delete confirmation") { has(memoryDeletePromise) };click("确认");until("Deleted result disappears from the same activity page"){fake.deletes.get()==1&&has(fake.goal)&&!has(fake.title(second))&&has(fake.title(fake.ids.last()))};record("memory-second-page-after-delete")
             main{shown().filterIsInstance<Spinner>().single{it.contentDescription=="工作详情"}.setSelection(0)};until("Overview reflects the deletion"){has("22 项已保存成果")}
             assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
@@ -451,7 +452,7 @@ class WorkMemoryJourneyInstrumentedTest {
     }
     @Test fun removedResultBeforeDeleteConfirmationCannotWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
-            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has("删除后无法恢复。")}
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has(memoryDeletePromise)}
             fake.removed.add(id);click("确认");until("A removed result cannot be deleted from the old screen"){has("请求的资源不存在或已删除。")&&!has(fake.statement(id))};assertEquals(0,fake.deletes.get())
         }
     }
@@ -471,7 +472,7 @@ class WorkMemoryJourneyInstrumentedTest {
     }
     @Test fun leavingDuringDeleteVerificationCannotSendTheOldWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
-            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has("删除后无法恢复。")}
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has(memoryDeletePromise)}
             fake.holdPage.set(true);click("确认");assertTrue("The delete membership read is held",fake.pageEntered.await(10,TimeUnit.SECONDS));scenario.onActivity{it.navigate("overview")};fake.pageRelease.countDown()
             until("The new page becomes idle"){var ready=false;scenario.onActivity{ready=!it.isWorking};ready};assertEquals("Leaving before the guarded write sends no DELETE",0,fake.deletes.get());assertFalse(has(fake.statement(id)))
         }
@@ -486,7 +487,7 @@ class WorkMemoryJourneyInstrumentedTest {
     }
     @Test fun signingOutDuringDeleteVerificationCannotSendTheOldWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
-            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has("删除后无法恢复。")}
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has(memoryDeletePromise)}
             fake.holdPage.set(true);click("确认");assertTrue("The delete membership read is held",fake.pageEntered.await(10,TimeUnit.SECONDS));Settings(context).signOut();CentralAccess.resolve(context);fake.pageRelease.countDown()
             until("Signed-out view is visible"){has("登录并继续")};assertEquals("A superseded session sends no DELETE",0,fake.deletes.get());assertFalse(has(fake.statement(id)))
         }

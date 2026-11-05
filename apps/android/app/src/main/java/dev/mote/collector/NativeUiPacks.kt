@@ -45,10 +45,13 @@ internal class NativeUiPackRegistry {
     @Volatile var revision = 0L; private set
     /** The base and both resolved variants have the same type and semantic contract. */
     private fun validateThemeTokens(snapshot: NativeThemeSnapshot) {
-        listOf("background", "surface", "sidebar", "ink", "muted", "accent", "accent-hover", "tint", "border", "control-border", "divider", "success", "warning", "danger", "success-tint", "warning-tint", "danger-tint", "primary-background", "primary-ink", "surface-raised").forEach {
+        listOf("background", "surface", "sidebar", "ink", "muted", "accent", "accent-hover", "tint", "border", "control-border", "divider", "hair", "surface-hover", "surface-sunken", "on-accent", "success", "warning", "danger", "success-tint", "warning-tint", "danger-tint", "primary-background", "primary-ink", "surface-raised").forEach {
             require(Regex("#[a-fA-F0-9]{6}").matches(snapshot.value(it))) { "Unsupported native color token: $it" }
         }
-        listOf("radius", "radius-container", "radius-control", "radius-reading", "radius-indicator", "border-width", "panel-border-width").forEach { require(snapshot.number(it).isFinite() && snapshot.number(it) >= 0) }
+        // The fill role is the ink channel at a fixed alpha, so it carries ARGB.
+        require(Regex("#[a-fA-F0-9]{6}([a-fA-F0-9]{2})?").matches(snapshot.value("fill"))) { "Unsupported native color token: fill" }
+        listOf("radius", "radius-container", "radius-control", "radius-reading", "radius-indicator", "border-width", "panel-border-width",
+            "radius-thumb-mobile", "radius-control-mobile", "radius-container-mobile", "radius-panel-mobile", "radius-pill").forEach { require(snapshot.number(it).isFinite() && snapshot.number(it) >= 0) }
         listOf("font-title", "font-title-mobile", "font-appbar", "font-section", "font-row", "font-body", "font-support", "font-meta", "font-action", "space-page", "space-panel", "space-group", "space-item", "space-inline", "control-height-mobile").forEach { require(snapshot.number(it).isFinite() && snapshot.number(it) > 0) }
         require(snapshot.number("control-height-mobile") >= 48) { "Native controls require the phone touch-target contract" }
         listOf("weight-title", "weight-section", "weight-body").forEach { require(snapshot.number(it) in 100.0..900.0) }
@@ -194,7 +197,7 @@ internal object NativeUiPacks {
         val snapshot = NativeThemeSnapshot(identity(theme), tokens, variants)
         // Validate every core role before the first native window is created.
         listOf("background", "surface", "ink", "muted", "accent", "primary-background", "primary-ink", "surface-raised", "success-tint", "warning-tint", "danger-tint").forEach { Color.parseColor(snapshot.value(it)) }
-        listOf("font-body", "space-page", "control-height-mobile", "radius-control").forEach { require(snapshot.number(it) > 0) }
+        listOf("font-body", "space-page", "control-height-mobile", "radius-control", "radius-control-mobile", "radius-container-mobile", "radius-thumb-mobile", "radius-panel-mobile", "radius-pill").forEach { require(snapshot.number(it) > 0) }
         registry.register(object : NativeThemeProvider { override val snapshot = snapshot })
         val primary = layout.getJSONArray("primary")
         val layoutSnapshot = NativeLayoutSnapshot(identity(layout), (0 until primary.length()).map(primary::getString), layout.getString("initial"), layout.getString("navigation"), layout.getString("detail"))
@@ -218,6 +221,11 @@ internal object MoteTheme {
     val border get() = color("border")
     val controlBorder get() = color("control-border")
     val divider get() = color("divider")
+    val hair get() = color("hair")
+    val fill get() = color("fill")
+    val surfaceHover get() = color("surface-hover")
+    val surfaceSunken get() = color("surface-sunken")
+    val onAccent get() = color("on-accent")
     val success get() = color("success")
     val warning get() = color("warning")
     val danger get() = color("danger")
@@ -232,6 +240,11 @@ internal object MoteTheme {
     val radiusControl get() = dimension("radius-control")
     val radiusReading get() = dimension("radius-reading")
     val radiusIndicator get() = dimension("radius-indicator")
+    val radiusPill get() = dimension("radius-pill")
+    val radiusThumbMobile get() = dimension("radius-thumb-mobile")
+    val radiusControlMobile get() = dimension("radius-control-mobile")
+    val radiusContainerMobile get() = dimension("radius-container-mobile")
+    val radiusPanelMobile get() = dimension("radius-panel-mobile")
     val fontTitle get() = dimension("font-title")
     val fontTitleMobile get() = dimension("font-title-mobile")
     val fontAppbar get() = dimension("font-appbar")

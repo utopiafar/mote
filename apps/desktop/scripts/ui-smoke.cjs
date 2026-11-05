@@ -20,6 +20,7 @@ app.setPath('userData', profile);
 process.env.MOTE_PROFILE = 'default'; delete process.env.MOTE_URL; delete process.env.MOTE_TOKEN; delete process.env.MOTE_ENV_FILE;
 writeFileSync(join(profile, 'config.json'), JSON.stringify({ version:4, config: { ...defaultConfig(), serverUrl: '', deviceName: 'Synthetic Mac', metadataEnabled: false } }), { mode: 0o600 });
 writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:4}),{mode:0o600});
+if(['light','dark'].includes(process.env.MOTE_UI_SCHEME))writeFileSync(join(profile,'appearance.json'),JSON.stringify(process.env.MOTE_UI_SCHEME),{mode:0o600});
 const sourceFile = join(profile, 'synthetic-source.md');
 writeFileSync(sourceFile, '合成原生来源 UI：仅用于测试 🧑🏽‍💻');
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourceFile] });
@@ -87,6 +88,8 @@ app.on('browser-window-created', (_event, window) => {
           const visible=()=>Array.from(document.querySelectorAll('[data-nav="${page}"]')).find(button=>button.getClientRects().length);
           if(!visible()){
             document.querySelector('aside [data-nav=settings]').click();await new Promise(resolve=>requestAnimationFrame(resolve));
+            if(['screen'].includes('${page}')){document.querySelector('aside [data-nav=sources]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=sources] [data-nav=screen]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
+            if(['sync','privacy'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=capture-sync]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=capture-sync] [data-nav=${page}]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if(['storage','backup','restore'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=connection]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if(['capture','developer','about','preferences','chrome','statistics','activity','compression'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=mac-options]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if('${page}'==='compression'){document.querySelector('[data-page=mac-options] [data-nav=capture]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
@@ -111,7 +114,7 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`!document.querySelector('[data-page=overview]').hidden`),'A new profile opens Workbench');
       await navigate('overview');
       assert.equal(await js(`document.querySelectorAll('#home-onboarding [data-add-choice]').length`), 4, 'First use offers note, import, source and capture setup actions');
-      assert.deepEqual(await js(`(()=>{const styles=getComputedStyle(document.body);return ['muted','accent'].map(role=>styles.getPropertyValue('--mote-'+role).trim().toLowerCase());})()`),['#777066','#7651a4'],'Default Home uses the owner-selected final source palette; the prior D34 contrast variance is superseded');
+      assert.deepEqual(await js(`(()=>{const styles=getComputedStyle(document.body);return ['muted','accent'].map(role=>styles.getPropertyValue('--mote-'+role).trim().toLowerCase());})()`),process.env.MOTE_UI_SCHEME==='dark'?['#aba7a1','#c2b0e6']:['#777066','#7651a4'],'Default Home uses the owner-selected final source palette; the prior D34 contrast variance is superseded');
       assert(await js(`document.querySelector('#start').getClientRects().length === 0`), 'Home starts with content actions');
       await navigate('sources');await js(`document.querySelector('#source-add').click()`);
       assert.equal(await js(`document.querySelectorAll('#source-add-dialog .source-choice').length`),5,'Source Add keeps file, folder, Coding, calendar and Central source choices');

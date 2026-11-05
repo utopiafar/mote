@@ -604,7 +604,7 @@ internal class CentralAdmin(
             body.removeAllViews()
             ui.button(MoteI18n.text("刷新")) { lark() }
             ui.text(MoteI18n.text("飞书文档与日历"), DesignTokens.fontTitleMobile.toFloat())
-            ui.text(MoteI18n.text("照常在飞书写日记、会议纪要和方案。中央节点归档文档与活动线索，供回顾、问答和 Memory 使用。"))
+            ui.text(MoteI18n.text("照常在飞书写日记、会议纪要和方案。中央归档文档与活动线索，供回顾、问答和 Memory 使用。"))
             ui.text(MoteI18n.text("打开、编辑等线索单独保存；打开不代表读完、认同或当时看到的版本。"))
             val account = ui.card()
             ui.text(if (value.optBoolean("connected")) MoteI18n.text("已连接") else MoteI18n.text("尚未授权"), DesignTokens.fontSection.toFloat(), account)
@@ -637,7 +637,7 @@ internal class CentralAdmin(
             ui.button(MoteI18n.text("授权日历读取"), parent = range) { action("/api/connectors/lark/login", JSONObject().put("calendar", true)) { lark() } }
             ui.button(MoteI18n.text("选择日历"), parent = range) { calendarSelection(true) }
             ui.button(MoteI18n.text("飞书文档默认组合"), parent = range) { recipeSettings(false, "lark-docs") }
-            ui.text(MoteI18n.text("中央节点每 {0} 分钟检查；关闭页面后继续运行。", value.optInt("syncIntervalSeconds", 900) / 60), parent = range)
+            ui.text(MoteI18n.text("中央每 {0} 分钟检查；关闭页面后继续运行。", value.optInt("syncIntervalSeconds", 900) / 60), parent = range)
             val sync = value.optJSONObject("documentSync")
             val sourceId = sync?.optString("sourceId")?.takeIf(String::isNotBlank)
             val sourceRows = sourceList.optJSONArray("items") ?: JSONArray()

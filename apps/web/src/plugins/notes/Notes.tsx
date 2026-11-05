@@ -38,7 +38,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved, composerOnly=
         void controller.save();
     }
     function discard(id: string) {
-        if (!window.confirm(moteText("移除这条本机待同步副本？若中央节点已收到但确认丢失，需要在下方历史记录中另行删除。")))
+        if (!window.confirm(moteText("移除这条本机待同步副本？若中央已收到但确认丢失，需要在下方历史记录中另行删除。")))
             return;
         controller.discard(id);
     }
@@ -57,13 +57,13 @@ export function Notes({ api, namespace, revision, onOpen, onSaved, composerOnly=
         }}/></label><p role="status">{uploading ? moteText("正在上传附件…") : moteText("已添加 {0} 个附件", draft.attachments?.length ?? 0)}</p>
       <p className="fine-print note-attachment-boundary">{moteText("已有文件 · 不现场录音 · 附件先归档 · 每个附件最多 50 MiB。")}</p>
       <details className="note-attachment-help"><summary>{moteText("附件与处理说明")}</summary><p>{moteText("文字识别与音频转写按中央处理设置进行；可在资料库核对各阶段状态。")}</p></details>
-      <p className="note-storage-hint">{moteText("草稿和待同步内容保存在此应用的本机存储中，清除应用数据会移除它们。打开记录时自动续传；按中央节点地址分别保存。")}</p>
+      <p className="note-storage-hint">{moteText("草稿和待同步内容保存在此应用的本机存储中，清除应用数据会移除它们。打开记录时自动续传；按中央地址分别保存。")}</p>
       </div></details>{(draftSaved||!composerOnly||draft.text.length>0)&&<span>{draftSaved && <><Check size={14}/> {' '}{moteText("草稿已保存在本机 ·")}{' '}</>} {(!composerOnly||draft.text.length>0)&&draft.text.length.toLocaleString(getLocale())}{' '}{(!composerOnly||draft.text.length>0)&&moteText("字")}</span>}{onClose&&<button type="button" className="button" onClick={onClose}>{moteText("收起")}</button>}<button className="button primary" disabled={uploading || (!draft.text.trim() && !draft.attachments?.length)}>{!composerOnly&&<CloudUpload size={16}/>} {moteText(composerOnly?"保存":"保存并同步")}</button></div>
 
     </form>}
     {error && <div className="notice error" role="alert">{error}</div>}
     {notice && <div className="notice" role="status"><Check size={16}/>{notice}</div>}
-    {queued.length > 0 && <section className="panel note-pending"><div className="section-heading"><div><span className="eyebrow">{moteText("仅保存在本机")}</span><h2>{moteText("待同步 ·")}{' '}{queued.length}{' '}{moteText("条")}</h2></div><button className="button subtle" disabled={syncing} onClick={() => historyOnly?openQuickNote?.():void controller.retry()}><RefreshCw size={14} className={syncing ? 'spin' : ''}/>{syncing ? moteText("正在同步") : moteText("重试同步")}</button></div>{queued.map(item => <article className="pending-note" key={item.note.id}><div><time>{dateTime(item.note.capturedAt)}</time><p>{item.note.text}</p><small><WifiOff size={13}/>{item.error || moteText("本机已保存，等待中央节点确认。")}</small></div><button className="icon-button" aria-label={moteText("移除本机待同步副本")} onClick={() => discard(item.note.id)} disabled={syncing}><Trash2 size={15}/></button></article>)}</section>}
+    {queued.length > 0 && <section className="panel note-pending"><div className="section-heading"><div><span className="eyebrow">{moteText("仅保存在本机")}</span><h2>{moteText("待同步 ·")}{' '}{queued.length}{' '}{moteText("条")}</h2></div><button className="button subtle" disabled={syncing} onClick={() => historyOnly?openQuickNote?.():void controller.retry()}><RefreshCw size={14} className={syncing ? 'spin' : ''}/>{syncing ? moteText("正在同步") : moteText("重试同步")}</button></div>{queued.map(item => <article className="pending-note" key={item.note.id}><div><time>{dateTime(item.note.capturedAt)}</time><p>{item.note.text}</p><small><WifiOff size={13}/>{item.error || moteText("本机已保存，等待中央确认。")}</small></div><button className="icon-button" aria-label={moteText("移除本机待同步副本")} onClick={() => discard(item.note.id)} disabled={syncing}><Trash2 size={15}/></button></article>)}</section>}
     {!composerOnly&&<section className="notes-history" aria-busy={loading}><div className="section-heading"><div><h2>{moteText("已经留下的心绪与杂事")}</h2></div><button className="text-button" onClick={() => void controller.load()} disabled={loading}><RefreshCw size={14}/>{moteText("刷新")}</button></div>
       {listError && <div className="notice error" role="alert">{listError}{' '}{moteText("· 本机草稿仍可继续保存。")}</div>}
       {!records.length && !foregroundLoading && !listError && <div className="panel empty"><FileText size={26}/><h3>{moteText("给今天留一小段文字")}</h3><p>{moteText("保存后，原文会出现在这里，也可作为问答的证据。")}</p></div>}

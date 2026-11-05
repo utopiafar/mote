@@ -3,7 +3,7 @@ import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
-import {connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
+import {connectionClientPlatforms,connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
 import {PrivateFile} from './connectors/private-file.js';
 import type {Store} from './store.js';
 import type {SourceStore} from './sources.js';
@@ -11,7 +11,7 @@ import type {ConnectorConfig} from './connectors/types.js';
 
 const deviceId=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 const label=z.string().trim().min(1).max(120);
-const platform=z.enum(['android','macos','ios','windows','linux','other']);
+const platform=z.enum([...connectionClientPlatforms,'other'] as const);
 const timestamp=z.string().datetime();
 const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict().refine(c=>c.scope!=='collector'||Boolean(c.deviceId&&c.platform),'Collector credentials require a device and platform');
 const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema)}).strict();
@@ -25,8 +25,8 @@ export class ConnectionError extends Error {
 const denied=()=>new ConnectionError('connection_scope_denied',403,moteText("此连接仅可同步本设备资料；中央管理和浏览需要单独使用所有者令牌。"));
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
 function serverUrl(value:unknown){
-  if(typeof value!=='string')throw new ConnectionError('connection_url_invalid',400,moteText("请输入完整的 HTTPS 中央节点地址；本机回环地址可使用 HTTP。"));
-  try{return connectionServerUrl(value);}catch{throw new ConnectionError('connection_url_invalid',400,moteText("请输入完整的 HTTPS 中央节点地址；地址不能包含账号、路径、查询或片段。"));}
+  if(typeof value!=='string')throw new ConnectionError('connection_url_invalid',400,moteText("中央地址需为完整的 HTTPS 地址；本机回环地址可使用 HTTP。"));
+  try{return connectionServerUrl(value);}catch{throw new ConnectionError('connection_url_invalid',400,moteText("中央地址需为完整的 HTTPS 地址，不能包含账号、路径、查询或片段。"));}
 }
 // Registered route templates, not URL prefixes: new API routes are denied by default.
 const collectorRoutes=new Set([
@@ -68,24 +68,24 @@ export class Connections {
   async init(){
     if(this.closed)throw new ConnectionError('connection_closed',503,'Authorization platform is unavailable');
     try{const raw=await this.file.read();if(raw!==undefined){const saved=savedSchema.parse(raw);const ids=new Set(),hashes=new Set();for(const c of saved.credentials){serverUrl(c.serverUrl);if(ids.has(c.id)||hashes.has(c.hash)||(c.scope==='mcp-write'&&!c.writeSourceIds?.length))throw Error();ids.add(c.id);hashes.add(c.hash);}this.credentials=saved.credentials;}}
-    catch{throw new ConnectionError('connection_storage_invalid',503,moteText("连接凭据文件无法读取，请保留数据并检查中央节点文件权限。"));}
+    catch{throw new ConnectionError('connection_storage_invalid',503,moteText("连接凭据文件无法读取。保留数据并检查中央文件权限。"));}
   }
-  private serialize<T>(run:()=>Promise<T>):Promise<T>{const work=this.sequence.catch(()=>{}).then(()=>{if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));return run();});this.sequence=work;return work;}
+  private serialize<T>(run:()=>Promise<T>):Promise<T>{const work=this.sequence.catch(()=>{}).then(()=>{if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央正在关闭。稍后重试。"));return run();});this.sequence=work;return work;}
   private async persist(credentials:ConnectionCredential[]){
     // Reserve each record's revocation timestamp before issuing it, so a full store remains revocable.
     const reserved=credentials.map(c=>c.revokedAt?c:{...c,revokedAt:'2000-01-01T00:00:00.000Z'});
     if(Buffer.byteLength(JSON.stringify({version:1,credentials:reserved}))>2*1024*1024)throw new ConnectionError('connection_limit',409,moteText("连接记录已达到存储上限，请联系节点管理员。"));
-    try{await this.file.write({version:1,credentials});}catch{throw new ConnectionError('connection_storage_failed',503,moteText("连接凭据未保存，操作未生效；请检查中央节点存储后重试。"));}
+    try{await this.file.write({version:1,credentials});}catch{throw new ConnectionError('connection_storage_failed',503,moteText("连接凭据未保存，操作未生效。检查中央存储后重试。"));}
     this.credentials=credentials;
     for(const listener of this.changed)listener();
   }
   private pruneInvitations(){for(const [key,value] of this.invitations)if(value.expiresAt<=this.clock())this.invitations.delete(key);}
   invite(raw:unknown,scope:'owner'|'collector'='owner'){
-    if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));
+    if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央正在关闭。稍后重试。"));
     const input=z.object({serverUrl:z.string().max(2048),label,deviceId:deviceId.optional()}).strict().parse(raw),url=serverUrl(input.serverUrl);
     this.pruneInvitations();
     const code=randomBytes(32).toString('base64url'),expiresAt=this.clock()+10*60000;
-    const invitation:ConnectionInvitation={format:'mote.connection',version:1,serverUrl:url,code,expiresAt:new Date(expiresAt).toISOString()};
+    const invitation:ConnectionInvitation={format:'mote.connection',version:1,serverUrl:url,code,expiresAt:new Date(expiresAt).toISOString(),platforms:[...connectionClientPlatforms]};
     this.invitations.set(digest(code),{scope,serverUrl:url,label:input.label,expiresAt,authorizedDeviceId:input.deviceId});
     return {invitation,uri:connectionUri(invitation,this.clock()),scope};
   }
@@ -94,8 +94,8 @@ export class Connections {
     const input=z.object({code:z.string().regex(/^[A-Za-z0-9_-]{43}$/),deviceId,deviceName:z.string().trim().min(1).max(200),platform}).strict().parse(raw);
     return this.serialize(async()=>{
       this.pruneInvitations();const key=digest(input.code),invitation=this.invitations.get(key);
-      if(!invitation)throw new ConnectionError('invitation_invalid_or_expired',410,moteText("邀请已使用、取消或过期，请在中央节点重新生成。"));
-      if(invitation.authorizedDeviceId&&invitation.authorizedDeviceId!==input.deviceId)throw new ConnectionError('invitation_device_mismatch',403,moteText("此邀请已绑定另一台设备，请在中央节点确认设备后重新生成。"));
+      if(!invitation)throw new ConnectionError('invitation_invalid_or_expired',410,moteText("邀请已使用、取消或过期。在中央重新生成。"));
+      if(invitation.authorizedDeviceId&&invitation.authorizedDeviceId!==input.deviceId)throw new ConnectionError('invitation_device_mismatch',403,moteText("此邀请已绑定另一台设备。在中央确认设备后重新生成。"));
       const known=this.credentials.some(c=>c.deviceId===input.deviceId)||Boolean(this.store.db.prepare('SELECT id FROM devices WHERE id=?').get(input.deviceId))||this.sources.listSources().some(s=>s.deviceId===input.deviceId);
       if(known&&!invitation.authorizedDeviceId)throw new ConnectionError('device_already_registered',409,moteText("此设备 ID 已在中央登记；请由所有者选择该设备并生成绑定邀请。"));
       const token=randomBytes(32).toString('base64url'),now=new Date(this.clock()).toISOString();
@@ -110,7 +110,7 @@ export class Connections {
     if(this.closed||typeof header!=='string'||!/^Bearer [A-Za-z0-9_-]{43}$/.test(header))return;
     const hash=digest(header.slice(7));return this.credentials.find(c=>c.hash===hash&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock()));
   }
-  assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock())))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，请重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));}
+  assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock())))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，请重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央正在关闭。稍后重试。"));}
   publicCredential(c:ConnectionCredential){const {hash:_,writeSourceIds,...visible}=c;return {...visible,tokenHint:`…${c.id.slice(-8)}`,...(writeSourceIds?{writeSourceIds:[...writeSourceIds]}:{})};}
   inventory(config?:ConnectorConfig){return {items:this.credentials.map(c=>this.publicCredential(c)),mcp:{enabled:Boolean(config?.mcpEnabled),writeEnabled:Boolean(config?.mcpEnabled&&config.mcpWriteEnabled&&config.mcpWriteSourceIds?.length),writeSourceIds:config?.mcpWriteSourceIds??[]}};}
   revoke(id:string){z.string().uuid().parse(id);return this.serialize(async()=>{const found=this.credentials.find(c=>c.id===id);if(!found)throw new ConnectionError('connection_not_found',404,moteText("未找到此连接。"));if(!found.revokedAt)await this.persist(this.credentials.map(c=>c.id===id?{...c,revokedAt:new Date(this.clock()).toISOString()}:c));return {revoked:true as const,id};});}

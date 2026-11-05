@@ -39,7 +39,7 @@ it('refuses to mutate or retarget a prepared submission after a failed queue wri
   const store = new NoteDraftStore(directory); await store.initialize(); const input = { ...store.get(), text: 'generated', mood: '', revision: 1 };
   await expect(store.submit(input, config, 'macos', { enqueue: async () => { throw new Error('full'); } })).rejects.toThrow('full');
   await expect(store.update({ ...input, text: 'changed', revision: 2 })).rejects.toThrow('不能改写');
-  await expect(store.submit(input, { ...config, serverUrl: 'https://other.example' }, 'macos', { enqueue: async () => true })).rejects.toThrow('原中央节点');
+  await expect(store.submit(input, { ...config, serverUrl: 'https://other.example' }, 'macos', { enqueue: async () => true })).rejects.toThrow('原中央');
 });
 
 it('captures optional note metadata once before preparation, preserves it on retry, and honors the disabled setting', async () => {
@@ -60,7 +60,7 @@ it('keeps a prepared local note local across restart, then binds it only through
   await expect(store.submit(input, local, 'macos', { enqueue: async () => { throw new Error('full'); } })).rejects.toThrow('full');
   store = new NoteDraftStore(directory); await store.initialize(); expect(store.hasUnboundPrepared()).toBe(true);
   const target = { ...local, serverUrl: 'https://confirmed.example', token: 'synthetic-confirmed-token' };
-  await expect(store.submit(input, target, 'macos', { enqueue: async () => true })).rejects.toThrow('原中央节点');
+  await expect(store.submit(input, target, 'macos', { enqueue: async () => true })).rejects.toThrow('原中央');
   await store.bindPreparedOrigin(target.serverUrl);
   await expect(store.submit(input, target, 'macos', { enqueue: async () => true })).resolves.toMatchObject({ id: input.id });
 });
