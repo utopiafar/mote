@@ -1,5 +1,7 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
+  "昨天": "Gestern",
+  "离开页面会停止录音，并保留草稿。": "Beim Verlassen dieser Seite wird die Aufnahme gestoppt und der Entwurf gespeichert.",
   "网页": "Web",
   "截图与照片": "Screenshots und Fotos",
   "网页与文件": "Webseiten und Dateien",

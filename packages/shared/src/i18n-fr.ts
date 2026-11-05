@@ -1,5 +1,7 @@
 /* Authored interface messages only; never translate captured content. */
 export const french: Readonly<Record<string, string>> = {
+  "昨天": "Hier",
+  "离开页面会停止录音，并保留草稿。": "Quitter cette page arrête l’enregistrement et conserve le brouillon.",
   "网页": "Web",
   "截图与照片": "Captures d’écran et photos",
   "网页与文件": "Pages web et fichiers",

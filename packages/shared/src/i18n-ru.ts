@@ -1,5 +1,7 @@
 /* Authored interface messages only; never translate captured content. */
 export const russian: Readonly<Record<string, string>> = {
+  "昨天": "Вчера",
+  "离开页面会停止录音，并保留草稿。": "При выходе со страницы запись остановится, а черновик сохранится.",
   "网页": "Веб",
   "截图与照片": "Снимки экрана и фотографии",
   "网页与文件": "Веб-страницы и файлы",

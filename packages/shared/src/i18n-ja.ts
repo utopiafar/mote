@@ -1,5 +1,7 @@
 /* Authored interface messages only; never translate captured content. */
 export const japanese: Readonly<Record<string, string>> = {
+  "昨天": "昨日",
+  "离开页面会停止录音，并保留草稿。": "このページを離れると録音を停止し、下書きを保持します。",
   "网页": "ウェブ",
   "截图与照片": "スクリーンショットと写真",
   "网页与文件": "ウェブページとファイル",
