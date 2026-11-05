@@ -10123,5 +10123,6 @@ export const english: Readonly<Record<string, string>> = {
   "快捷入口不可用": "Quick entries unavailable",
   "系统入口插件已停用；快捷入口和通知动作不可用。": "The system entries plugin is stopped; quick entries and notification actions are unavailable.",
   "系统入口插件未加载；快捷入口和通知动作不可用。": "The system entries plugin is not loaded; quick entries and notification actions are unavailable.",
-  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "The system entries plugin needs a rebuild; quick entries and notification actions are unavailable."
+  "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "The system entries plugin needs a rebuild; quick entries and notification actions are unavailable.",
+  "快捷指令": "Shortcuts"
 };

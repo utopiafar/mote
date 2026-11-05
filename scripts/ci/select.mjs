@@ -5,7 +5,7 @@ import { serverGroups, serverFiles } from './server-tests.mjs';
 import { changedPaths } from '../release/affected-components.mjs';
 
 // Check scopes are independent of release/components.json and its central artifact.
-export const scopes = ['web', 'server', 'agent', 'shared', 'plugin-sdk', 'i18n', 'desktop', 'android', 'tooling'];
+export const scopes = ['web', 'server', 'agent', 'shared', 'plugin-sdk', 'i18n', 'desktop', 'android', 'ios', 'tooling'];
 const documentation = path => path.startsWith('docs/') || path.startsWith('release/notes/')
   || /(?:^|\/)AGENTS\.md$/.test(path) || /^(?:README(?:\.[\w-]+)?|THIRD_PARTY_NOTICES)\.md$/.test(path)
   || /^\.agents\/skills\/.*\.(?:md|yaml)$/.test(path)
@@ -44,6 +44,7 @@ export function selectScopes(paths) {
     if (path.startsWith('packages/agent/')) { add('agent', 'server'); broadServer = true; continue; }
     if (path.startsWith('apps/desktop/')) { add('desktop', 'i18n'); continue; }
     if (path.startsWith('apps/android/')) { add('android', 'i18n'); continue; }
+    if (path.startsWith('apps/ios/')) { add('ios'); continue; }
     if (path.startsWith('packages/diagnostics/')) { add('desktop', 'i18n'); continue; }
     // Public plugin API/host changes follow their real workspace consumers:
     // Shared/Agent/Web/Desktop import or depend on the API; the host is consumed
@@ -54,7 +55,7 @@ export function selectScopes(paths) {
     // desktop/Android runtime consumer and must not fall back to tooling-only.
     if (path.startsWith('packages/plugin-sdk/')) { add('plugin-sdk'); continue; }
     if (path.startsWith('packages/shared/') || path.startsWith('protocol/')) {
-      add('shared', 'agent', 'server', 'web', 'desktop', 'android', 'i18n'); broadServer = true; continue;
+      add('shared', 'agent', 'server', 'web', 'desktop', 'android', 'ios', 'i18n'); broadServer = true; continue;
     }
     if (path.startsWith('scripts/ci/') || /^scripts\/release\/(?:check-affected|affected-components)(?:\.test)?\.mjs$/.test(path)) { add('tooling'); continue; }
     if (path.startsWith('.github/workflows/') || path.startsWith('scripts/release/') || path.startsWith('release/')) { add('tooling'); continue; }
@@ -70,7 +71,7 @@ export function automaticTasks(selection, event = 'pull_request') {
   if (!['pull_request', 'push', 'local'].includes(event)) throw Error(`Unsupported automatic event: ${event}`);
   const selected = new Set(selection.scopes), tasks = [];
   // One source-boundary check before the affected Node tasks; no builds or heavy suites.
-  if ([...selected].some(name => name !== 'android')) tasks.push('architecture');
+  if ([...selected].some(name => !['android', 'ios'].includes(name))) tasks.push('architecture');
   for (const name of ['tooling', 'plugin-sdk', 'i18n', 'shared']) if (selected.has(name)) tasks.push(name);
   for (const name of ['web', 'agent', 'desktop']) if (selected.has(name)) tasks.push(event === 'push' ? `${name}-contract` : name);
   if (selected.has('server')) tasks.push(...(event === 'push' ? ['server-contract'] : ['server-build', ...[1, 2, 3, 4].filter(shard => serverFiles(shard, '.', selection.serverGroups).length).map(shard => `server-${shard}`)]));

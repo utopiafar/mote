@@ -3,7 +3,7 @@ export * from './owner-questions.js';
 export * from './ui-page.js';
 import {uiPageText} from './ui-page.js';
 import { z } from 'zod';
-import {provenanceSchema} from './sources.js';
+import {platformSchema,provenanceSchema} from './sources.js';
 import {stateOnly,stateSeriesSchema} from './state-series.js';
 export * from './state-series.js';
 import {recordMetadataSchema,ocrSchema,type OcrState,type MediaMetadata} from './metadata.js';
@@ -14,7 +14,6 @@ export * from './metadata.js';
 export * from './imports.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource, ConfigurationEffect, ConfigFieldMetadata, ConfigDomainView, ConfigServiceView } from './configuration.js';
 
-export const platformSchema = z.enum(['macos', 'windows', 'linux', 'android', 'import']);
 export const sourceSchema = z.enum(['screen', 'ui_page', 'activity', 'media', 'notification', 'device_event', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
 // A mood is the author's own label, never inferred from note text or app identity.
 export const moodSchema = z.string().max(80).refine(value => value.trim().length > 0, 'Mood cannot be blank');
@@ -46,7 +45,7 @@ export const captureSchema = z.object({
   if (v.source === 'ui_page') {
     const p=v.metadata?.uiPage;
     if(v.platform==='android'&&p?.version!==3)ctx.addIssue({code:'custom',message:'Android requires the current named-field representation'});
-    if (!p || !['android','macos'].includes(v.platform) || !v.appId || v.durationMs!==0 || v.imageBase64 || v.imageMime || v.windowTitle || v.provenance || v.mood || v.privacy.collection!=='content' || !['accessibility','browser_dom'].includes(v.metadata?.collector?.method??'') || v.metadata?.capture || v.metadata?.media || v.metadata?.notification || v.metadata?.deviceEvent || p && v.ocrText!==uiPageText(p)) ctx.addIssue({code:'custom',message:'Invalid UI page observation'});
+    if (!p || !['android','macos','ios'].includes(v.platform) || !v.appId || v.durationMs!==0 || v.imageBase64 || v.imageMime || v.windowTitle || v.provenance || v.mood || v.privacy.collection!=='content' || !['accessibility','browser_dom'].includes(v.metadata?.collector?.method??'') || v.metadata?.capture || v.metadata?.media || v.metadata?.notification || v.metadata?.deviceEvent || p && v.ocrText!==uiPageText(p)) ctx.addIssue({code:'custom',message:'Invalid UI page observation'});
     if(v.metadata?.collector?.method==='browser_dom'&&(v.platform!=='macos'||v.appId!=='com.google.Chrome'||p?.version!==3))ctx.addIssue({code:'custom',message:'Browser DOM requires a current macOS Chrome observation'});
     if (p?.version === 3 && (v.capturedAt !== p.observations.lastAt || v.metadata?.observedAt !== p.observations.lastAt))
       ctx.addIssue({code:'custom',message:'Structured page capture and metadata times must match the last observation'});
@@ -80,7 +79,7 @@ export const captureSchema = z.object({
   if (v.metadata?.notification && v.source !== 'notification' || v.metadata?.deviceEvent && v.source !== 'device_event')
     ctx.addIssue({code:'custom',message:'System event payload must match its source'});
   if (v.source === 'notification' || v.source === 'device_event') {
-    if (v.durationMs !== 0 || !['android','macos'].includes(v.platform) || v.imageBase64 !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.metadata?.media || v.metadata?.capture)
+    if (v.durationMs !== 0 || !['android','macos','ios'].includes(v.platform) || v.imageBase64 !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.metadata?.media || v.metadata?.capture)
       ctx.addIssue({code:'custom',message:'System observations require zero duration and no unrelated content'});
     if (!v.metadata?.observation || !(v.metadata.collector?.method === 'notification_listener' || v.platform === 'macos' && v.metadata.collector?.method === 'accessibility'))
       ctx.addIssue({code:'custom',message:'System observations require observer provenance'});

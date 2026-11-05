@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PluginContractError, PLUGIN_CONTRACT_VERSION, MAX_SNAPSHOT_CONTRIBUTIONS,
+  hostKinds, hostIdentitySchema,
   instanceIdentitySchema, scopeIdentitySchema, serviceBindingSchema, serviceContract,
   pluginSnapshotSchema, availabilitySchema, pluginFailureSchema, cancellationSchema,
 } from '@mote/plugin-api';
@@ -28,6 +29,11 @@ test('runtime DTO roundtrip preserves pinned identities and separate restart/bui
   assert.equal(parsed.contributions[0].identity.scope.activationId, 'activation-1');
   assert.equal(parsed.contributions[1].identity.scope.instanceId, 'source-b');
   assert.equal(parsed.contributions[2].availability.state, 'revoked');
+});
+
+test('iOS is a first-class plugin host kind', () => {
+  assert.ok(hostKinds.includes('ios'));
+  assert.deepEqual(hostIdentitySchema.parse({kind: 'ios', id: 'generated-ios-host'}), {kind: 'ios', id: 'generated-ios-host'});
 });
 
 test('missing required identity or a future wire version cannot silently use current defaults', () => {
