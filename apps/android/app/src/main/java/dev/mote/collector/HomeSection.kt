@@ -8,7 +8,7 @@ internal interface HomeSection {
 }
 
 /**
- * The home frame's android-free rules. The dock, the capture line and the JVM
+ * The home frame's android-free rules. The dock, the status notice and the JVM
  * tests share these decisions instead of repeating labels or launch modes.
  */
 internal object HomeFrame {
@@ -27,8 +27,4 @@ internal object HomeFrame {
 
     /** H05: the capture mode handed to the editor, or null for entries that only open the editor. */
     fun startMedia(entry: MoteQuickEntry): String? = entry.takeIf { it in captureEntries }?.media
-
-    /** G01: normal capture is quiet; only a pause or an actionable interruption earns a home line. */
-    fun showsCaptureNotice(kind: CaptureOverview.Kind): Boolean =
-        kind != CaptureOverview.Kind.HIDDEN && kind != CaptureOverview.Kind.ACTIVE
 }
