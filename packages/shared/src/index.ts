@@ -81,11 +81,12 @@ export const captureSchema = z.object({
   if (v.source === 'notification' || v.source === 'device_event') {
     if (v.durationMs !== 0 || !['android','macos','ios'].includes(v.platform) || v.imageBase64 !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.metadata?.media || v.metadata?.capture)
       ctx.addIssue({code:'custom',message:'System observations require zero duration and no unrelated content'});
-    if (!v.metadata?.observation || !(v.metadata.collector?.method === 'notification_listener' || v.platform === 'macos' && v.metadata.collector?.method === 'accessibility'))
+    if (!v.metadata?.observation || !(v.metadata.collector?.method === 'notification_listener' || v.platform === 'ios' && v.metadata.collector?.method === 'shortcuts' || v.platform === 'macos' && v.metadata.collector?.method === 'accessibility'))
       ctx.addIssue({code:'custom',message:'System observations require observer provenance'});
     if (v.source === 'notification') {
       const n=v.metadata?.notification;
       if (!n || !v.appId.trim()) ctx.addIssue({code:'custom',message:'Notifications require payload and source app'});
+      if (v.platform === 'ios' && n?.action !== 'posted') ctx.addIssue({code:'custom',message:'iOS notifications are posted observations'});
       if ((v.privacy.collection === 'activity' || n?.action === 'removed') && n && ['title','text','bigText','subText','textLines','channelId'].some(key=>key in n))
         ctx.addIssue({code:'custom',message:'Activity-only and removed notifications cannot contain content'});
       if (n?.removalReason !== undefined && n.action !== 'removed') ctx.addIssue({code:'custom',message:'Removal reason requires removal action'});
