@@ -10138,5 +10138,9 @@ export const german: Readonly<Record<string, string>> = {
   "采集中 · 发送已暂停": "Erfassung läuft · Senden pausiert",
   "采集中 · 发送需要处理": "Erfassung läuft · Senden erfordert Aufmerksamkeit",
   "新的记录暂时无法保存": "Neue Aufzeichnungen können derzeit nicht gespeichert werden",
-  "发送失败": "Senden fehlgeschlagen"
+  "发送失败": "Senden fehlgeschlagen",
+  "本人设备": "Dieses Gerät",
+  "连接时间": "Verbindungszeit",
+  "断开连接后停止发送，已有记录保留在本机。": "Beim Trennen wird das Senden beendet. Vorhandene Aufzeichnungen bleiben auf diesem Gerät.",
+  "已断开连接，已有记录保留在本机": "Verbindung getrennt. Vorhandene Aufzeichnungen bleiben auf diesem Gerät."
 };
