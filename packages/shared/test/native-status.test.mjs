@@ -39,7 +39,7 @@ test('every capture status text key is translated',()=>{
 test('heartbeat schema snapshot stays unchanged (C03)',()=>{
   const sync=heartbeatSchema.shape.sync.unwrap();
   assert.deepEqual(Object.keys(heartbeatSchema.shape),['deviceId','deviceName','platform','status','queueDepth','lastCaptureAt','error','metadata','sync']);
-  assert.deepEqual(heartbeatSchema.shape.platform.options,['macos','windows','linux','android','import']);
+  assert.deepEqual(heartbeatSchema.shape.platform.options,['macos','windows','linux','android','ios','import']);
   assert.deepEqual(heartbeatSchema.shape.status.options,['capturing','paused','permission_required','error','offline']);
   assert.deepEqual(Object.keys(sync.shape),['mode','state','intervalMinutes','batchSize','pendingRecords','blockedRecords','awaitingOcrRecords','retainedRecords','lastUploadAt','nextUploadAt']);
   assert.deepEqual(sync.shape.mode.options,['realtime','interval','batch','manual']);
