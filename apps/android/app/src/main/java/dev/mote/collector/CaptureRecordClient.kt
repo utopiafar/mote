@@ -46,7 +46,7 @@ internal class CaptureRecordClient(private val config: CollectorConfig, private 
             connection.setRequestProperty("Authorization", "Bearer ${config.connectionToken()}")
             val code = connection.responseCode
             check(code == 200) { centralFailureMessage(code, "") }
-            if (image) check(connection.contentType?.startsWith("image/") == true) { MoteI18n.text("中央节点未返回图片") }
+            if (image) check(connection.contentType?.startsWith("image/") == true) { MoteI18n.text("中央未返回图片") }
             val limit = if (image) 16 * 1024 * 1024 else 2 * 1024 * 1024
             return connection.inputStream.use { input ->
                 val output = ByteArrayOutputStream(); val buffer = ByteArray(8192)

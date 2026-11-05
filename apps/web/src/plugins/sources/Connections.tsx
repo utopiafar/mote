@@ -248,7 +248,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
         <div className="page-heading"><h1 id="connections-title">{moteText('新建连接')}</h1></div>
         <form className="access-create-form" onSubmit={event=>{event.preventDefault();createMcp();}}>
           <label>{moteText('连接名称')}<input aria-label={moteText('连接名称')} value={label} disabled={!!busy} onChange={event=>setLabel(event.target.value)} maxLength={120} required/></label>
-          <label>{moteText('中央节点地址')}<input aria-label={moteText('邀请节点地址')} type="url" value={endpoint} disabled={!!busy} onChange={event=>setEndpoint(event.target.value)} placeholder="https://mote.example.com" maxLength={2048} required/><small>{moteText('填写 Agent 可以访问的中央节点地址。')}</small></label>
+          <label>{moteText('中央地址')}<input aria-label={moteText('邀请节点地址')} type="url" value={endpoint} disabled={!!busy} onChange={event=>setEndpoint(event.target.value)} placeholder="https://mote.example.com" maxLength={2048} required/><small>{moteText('填写 Agent 可以访问的中央地址。')}</small></label>
           {loopback&&<p className="connection-warning">{moteText('当前是本机地址，只能由同一设备上的客户端访问。跨设备使用请填写可访问的 HTTPS 地址。')}</p>}
           <div className="access-permission"><span>{moteText('访问权限')}</span><div><strong>{mcpAccess==='write'?moteText('仅写入指定来源'):moteText('只读归档资料')}</strong><p>{mcpAccess==='write'?moteText('仅可写入：{0}。',inventory?.mcp.writeSourceIds.join('、')||moteText('未配置')):moteText('检索和读取已获准访问的资料，不修改内容。')}</p></div></div>
           <details className="connection-help"><summary>{moteText('客户端兼容性')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{moteText('只接受 OAuth 的客户端暂不能直接使用此 JSON。')}</p></details>
@@ -275,7 +275,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
     </section>;
     return <section className="connections device-pair-workspace" aria-labelledby="connections-title">
     <a className="back-link" href="#/connections">← {moteText('来源')}</a><div className="page-heading"><h1 id="connections-title">{moteText('连接设备')}</h1></div>
-    <div className="device-pair-center"><div><strong>{moteText('Mote 中心')}</strong><small>{invite&&!pairEditing?invite.invitation.serverUrl:endpoint}</small></div><span>{(invite&&!pairEditing?invite.scope:deviceScope)==='collector'?moteText('独立采集器 · 仅同步本设备'):moteText('完整客户端权限')}</span></div>
+    <div className="device-pair-center"><div><strong>{moteText('中央')}</strong><small>{invite&&!pairEditing?invite.invitation.serverUrl:endpoint}</small></div><span>{(invite&&!pairEditing?invite.scope:deviceScope)==='collector'?moteText('独立采集器 · 仅同步本设备'):moteText('完整客户端权限')}</span></div>
     {Boolean(error||inventoryResource.error||configuration.error)&&<div className="notice error" role="alert">{error||errorMessage(inventoryResource.error||configuration.error)}</div>}{message&&<div className="notice" role="status">{message}</div>}
     {(!invite||pairEditing)&&<form className="device-pair-form" onSubmit={event=>{event.preventDefault();createInvitation();}}>
     <div className="device-pair-choices" role="group" aria-label={moteText('设备类型')}>{(['macos','android'] as const).map(platform=><button type="button" key={platform} className="device-pair-choice" aria-pressed={pairPlatform===platform} disabled={!!busy} onClick={()=>setPairPlatform(platform)}><span aria-hidden="true">{platform==='macos'?'▱':'▯'}</span><span><strong>{platform==='macos'?'Mac':'Android'}</strong><small>{platform==='macos'?moteText('电脑客户端'):moteText('手机客户端')}</small></span></button>)}</div>

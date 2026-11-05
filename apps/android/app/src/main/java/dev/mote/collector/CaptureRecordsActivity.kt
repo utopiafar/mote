@@ -227,7 +227,7 @@ class CaptureRecordsActivity : MoteActivity() {
                 if (request != loadGeneration) return@execute
                 val settings = Settings(this); val config = settings.read()
                 val owner = if (remote) CentralAccess.resolve(this).client else null
-                if (remote && !config.hasSyncConnection() && owner == null) error(MoteI18n.text("请先在连接与同步中配置中央节点"))
+                if (remote && !config.hasSyncConnection() && owner == null) error(MoteI18n.text("先在连接与同步中配置中央"))
                 val client = if (remote) CaptureRecordClient(config, settings.deviceId, owner) else null
         val page = if (source == "screen" && sessions) {
                     client?.sessions(after, before, cursor, selected?.getString("id")) ?: queue().sessionPage(after, before, cursor, selected?.getString("id"))
@@ -465,7 +465,7 @@ class CaptureRecordsActivity : MoteActivity() {
                 }
                 val readerClient = if (remote && client == null) {
                     val settings = Settings(this)
-                    CaptureRecordClient(settings.read().copy(server = requireNotNull(selection).server), settings.deviceId, requireNotNull(selection.client) { MoteI18n.text("请先登录中央节点，各页面会共用这次登录。") })
+                    CaptureRecordClient(settings.read().copy(server = requireNotNull(selection).server), settings.deviceId, requireNotNull(selection.client) { MoteI18n.text("先登录中央，各页面会共用这次登录") })
                 } else client
                 val exact = if (version != null) {
                     check(!remote)

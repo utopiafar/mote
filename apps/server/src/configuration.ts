@@ -58,7 +58,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('baseDirectory', moteText("相对路径基准"), baseDir, moteText("MOTE_DATA_DIR 与 MOTE_LOG_DIR 的相对路径以此目录解析。"), undefined, ownerPath),
       ] },
       { id: 'storage', title: moteText("数据与空间"), description: storage.description, fields: [
-        field('dataDirectory', moteText("数据目录"), dataDir, moteText("中央资料库所在路径。迁移需先停止服务、备份并恢复到空目录，不要在线改动。"), 'MOTE_DATA_DIR', ownerPath),
+        field('dataDirectory', moteText("数据目录"), dataDir, moteText("资料库所在路径。迁移需先停止服务、备份并恢复到空目录，不要在线改动。"), 'MOTE_DATA_DIR', ownerPath),
         field('sqlitePath', moteText("SQLite 数据库"), storage.sqlitePath, moteText("保存原文、元数据、全文索引和可选向量；运行时还有 WAL/SHM 文件。"), undefined, ownerPath),
         field('assetDirectory', moteText("原件资产目录"), storage.assetDir??join(dataDir,'files','objects'), moteText("图片、导入文件与目录原件按内容哈希共享分片；观察记录和来源版本各自保留。"), undefined, ownerPath),
         field('storageKind', moteText("存储类型"), storage.kind, moteText("部署声明的本地目录、Docker 命名卷或 bind mount；不是磁盘自动检测结果。"), 'MOTE_STORAGE_KIND'),

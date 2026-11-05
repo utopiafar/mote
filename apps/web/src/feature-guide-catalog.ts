@@ -288,7 +288,7 @@ export const guideSections:GuideSection[] = [
             "setupTargets": [],
             "caveats": [
               "重试使用同一份冻结请求；修改内容会创建新请求。",
-              "丢弃本地队列项不代表删除已进入中央节点的归档。"
+              "丢弃本地队列项不代表删除已进入中央的归档。"
             ],
             "condition": "需要未完成或失败的本地上传队列项。"
           }
@@ -381,7 +381,7 @@ export const guideSections:GuideSection[] = [
             "setup": "文件、引用和不同外部服务各有自己的设置；外部服务授权与 Mote 管理登录分开。",
             "setupTargets": [],
             "caveats": [
-              "这是中央节点的来源管理；本地文件夹发现或设备采集仍在原生客户端。"
+              "这是中央的来源管理；本地文件夹发现或设备采集仍在原生客户端。"
             ],
             "condition": null
           },
@@ -476,7 +476,7 @@ export const guideSections:GuideSection[] = [
               }
             ],
             "caveats": [
-              "中央节点的 Google 日历来源是只读同步。",
+              "中央的 Google 日历来源是只读同步。",
               "日程记录只说明计划，不能证明实际参加。"
             ],
             "condition": null
@@ -552,7 +552,7 @@ export const guideSections:GuideSection[] = [
             "id": "A09",
             "priority": "advanced",
             "title": "连接飞书文档和日历",
-            "purpose": "在中央节点授权飞书，归档你创建、编辑或打开的文档及活动线索，也可持续跟踪指定范围和日历。",
+            "purpose": "在中央授权飞书，归档你创建、编辑或打开的文档及活动线索，也可持续跟踪指定范围和日历。",
             "actions": [
               "检测或安装 Lark CLI",
               "创建应用或配置 App ID、Secret 和区域",
@@ -586,7 +586,7 @@ export const guideSections:GuideSection[] = [
             "id": "A10",
             "priority": "advanced",
             "title": "归档厂商录音和转写",
-            "purpose": "连接中央节点已授权的录音账号，选择首次历史范围及是否继续后台同步。",
+            "purpose": "连接中央已授权的录音账号，选择首次历史范围及是否继续后台同步。",
             "actions": [
               "查看可用录音厂商",
               "连接已授权账号",
@@ -791,7 +791,7 @@ export const guideSections:GuideSection[] = [
             "id": "C05",
             "priority": "core",
             "title": "连接或重新授权设备",
-            "purpose": "生成一次性邀请，让原生客户端确认中央节点地址后连接。",
+            "purpose": "生成一次性邀请，让原生客户端确认中央地址后连接。",
             "actions": [
               "填写设备可访问的中央地址和连接名称",
               "选择新设备或原设备身份",
@@ -1743,7 +1743,7 @@ export const guideSections:GuideSection[] = [
             "setupTargets": [],
             "caveats": [
               "支持创建、更新、取消和标记完成；标记完成只改变 Mote 状态。",
-              "中央节点不直接写 Google 日历；网页没有设备日历权限或采集启动控制。",
+              "中央不直接写 Google 日历；网页没有设备日历权限或采集启动控制。",
               "执行结果不确定时先核对已有日程，避免盲目重复写入。"
             ],
             "condition": "审核需要已有建议；目标日历需要设备端已提供可写日历。"
@@ -2194,7 +2194,7 @@ export const guideSections:GuideSection[] = [
               "categoryId": null,
               "label": "运行状态与空间",
               "path": "设置 → 运行状态与空间",
-              "where": "在「运行状态与空间」查看中央节点磁盘统计，或打开用量与费用。"
+              "where": "在「运行状态与空间」查看中央磁盘统计，或打开用量与费用。"
             },
             "otherTargets": [
               {
@@ -2828,7 +2828,7 @@ export const guideSections:GuideSection[] = [
             "setupTargets": [],
             "caveats": [
               "安装、配置、检查、启用和绑定是不同步骤。",
-              "不支持任意脚本或远程界面；需重启会提示，但页面不重启中央节点。",
+              "不支持任意脚本或远程界面；需重启会提示，但页面不重启中央。",
               "Hindsight 验证可能调用真实模型并产生费用。"
             ],
             "condition": null
@@ -2847,8 +2847,8 @@ export const guideSections:GuideSection[] = [
             "collectionId": null,
             "categoryId": null,
             "label": "设置",
-            "path": "设置 → 当前服务（中央节点）",
-            "where": "页面下方的「当前服务（中央节点）」和「登录会话有效期」；未登录时由目标页进入登录。"
+            "path": "设置 → 当前服务（中央）",
+            "where": "页面下方的「当前服务（中央）」和「登录会话有效期」；未登录时由目标页进入登录。"
           }
         ],
         "units": [
@@ -2856,7 +2856,7 @@ export const guideSections:GuideSection[] = [
             "id": "C01",
             "priority": "core",
             "title": "登录并管理当前会话",
-            "purpose": "确认正在使用哪个中央节点，选择浏览器保留登录的时间，或退出当前会话。",
+            "purpose": "确认正在使用哪个中央，选择浏览器保留登录的时间，或退出当前会话。",
             "actions": [
               "使用管理令牌登录",
               "验证后回到原目的地",
@@ -2869,11 +2869,11 @@ export const guideSections:GuideSection[] = [
               "collectionId": null,
               "categoryId": null,
               "label": "外观、语言与会话",
-              "path": "设置 → 当前服务（中央节点）",
+              "path": "设置 → 当前服务（中央）",
               "where": "在「当前服务」查看连接与浏览器登录保留时间；未登录时由目标页进入登录。"
             },
             "otherTargets": [],
-            "setup": "需要当前中央节点的管理令牌；登录只连接当前网页所属的中央节点。",
+            "setup": "需要当前中央的管理令牌；登录只连接当前网页所属的中央。",
             "setupTargets": [],
             "caveats": [
               "浏览器与原生完整客户端会话拥有完整管理权限；受限 MCP 授权另行管理。",
@@ -2988,7 +2988,7 @@ export const guideSections:GuideSection[] = [
             "id": "C42",
             "priority": "core",
             "title": "找到帮助、版本和维护方式",
-            "purpose": "查找问题反馈入口，核对网页与中央版本，以及中央节点的手动升级说明。",
+            "purpose": "查找问题反馈入口，核对网页与中央版本，以及中央的手动升级说明。",
             "actions": [
               "找到 GitHub 反馈入口",
               "找到诊断支持导出",
@@ -3163,7 +3163,7 @@ export const guideSections:GuideSection[] = [
             "id": "A35",
             "priority": "advanced",
             "title": "设置诊断记录并查看部署生效值",
-            "purpose": "调整今后的日志和详细过程记录，核对中央节点实际使用的目录和配置。",
+            "purpose": "调整今后的日志和详细过程记录，核对中央实际使用的目录和配置。",
             "actions": [
               "开启或关闭日志、级别、调试和详细 Agent 过程",
               "保存",

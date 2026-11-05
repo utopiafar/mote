@@ -4,7 +4,7 @@ import { apiClient } from './client.js';
 const request=apiClient();
 const now=Date.now();
 const sources=[
-  {app:'合成 · 编辑器',id:'fixture.editor',text:'【合成演示，非真实活动】Mote 设计笔记：端点离线保存脱敏截图，中央节点独立部署。先完成幂等上传和证据检索。',color:'#315e50'},
+  {app:'合成 · 编辑器',id:'fixture.editor',text:'【合成演示，非真实活动】Mote 设计笔记：端点离线保存脱敏截图，中央独立部署。先完成幂等上传和证据检索。',color:'#315e50'},
   {app:'合成 · 阅读',id:'fixture.reader',text:'【合成演示，非真实活动】阅读上下文采集协议。需要分别保存事件发生时间、入库时间和索引进度。',color:'#bd8b48'},
   {app:'合成 · 备忘录',id:'fixture.notes',text:'【合成演示，非真实活动】与项目有关的想法：迁移服务器时保持事件 ID 不变，截图依照内容哈希去重。',color:'#547183'},
 ];
