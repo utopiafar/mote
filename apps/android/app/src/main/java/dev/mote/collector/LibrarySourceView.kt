@@ -66,7 +66,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
     val isLoading get() = task.busy || localTask.busy
     fun count(location: String) = projection.visible(location).size
     fun save() = Bundle().apply { putInt("pages", maxOf(pages, remotePages, 1)); putString("sourceId", source) }
-    fun restore(state: Bundle?) { restore = state?.getInt("pages", 1)?.coerceIn(1,50) ?: 1; source = state?.getString("sourceId").orEmpty() }
+    fun restore(state: Bundle?) { restore = state?.getInt("pages", 1)?.coerceIn(1,50) ?: 1 }
     fun refresh(kind: String, selectedDay: String) {
         val access = CentralAccess.resolve(activity)
         val scope = access.server to access.generation
@@ -154,31 +154,31 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
             else fetchRemote()
         }
     }
-    fun render(parent: LinearLayout, location: String) {
-        updateSources()
-        val visible = projection.visible(location)
-        for (row in visible) {
+    fun entries(location: String) = projection.visible(location)
+    val hasMore get() = localMore || originalMore || materialMore
+    fun renderItem(parent: LinearLayout, row: LibrarySourceProjection.Row) {
             val item = row.item
             val card = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL; transitionName = row.key.toString()
-                background = MoteUi.clickable(activity); setPadding(activity.moteDp(12), activity.moteDp(14), activity.moteDp(12), activity.moteDp(14))
-                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(10) }
+                minimumHeight = activity.moteDp(60)
+                background = MoteUi.clickable(activity, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false); setPadding(activity.moteDp(14), activity.moteDp(10), activity.moteDp(14), activity.moteDp(10))
+                isFocusable = true
             }
-            card.addView(TextView(activity).apply { text = item.optString("title"); MoteUi.type(this, NativeFontRole.ROW); MoteUi.textColor(this, NativeColorRole.INK) })
+            card.addView(TextView(activity).apply { text = item.optString("title"); MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK) })
             val otherVersion = projection.visible("").any { other -> row.local != null && other.central != null && other.key.origin == row.key.origin && other.key.type == row.key.type && other.key.source == row.key.source && other.key.external == row.key.external && other.key.device == row.key.device && other.key.revision != row.key.revision }
             val label = if (row.key.type == "material") MoteI18n.text("整理资料") else if (row.local?.optBoolean("localReadable") == true) MoteI18n.text(if (row.central != null) "本机与中央可读" else if (otherVersion) "本机可读 · 中央另有版本" else "本机可读 · 中央状态未知") else MoteI18n.text(if (row.central != null) "中央可读" else "仅目录信息")
-            if (row.key.type == "material") card.addView(TextView(activity).apply { text = LocalContentPresentation.centralStatus(null, item); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
-            val at = runCatching { java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT).withLocale(activity.resources.configuration.locales[0]).withZone(ZoneId.systemDefault()).format(Instant.parse(item.getString("sortAt"))) }.getOrDefault(item.optString("sortAt"))
-            card.addView(TextView(activity).apply { text = label + " · " + item.optString("sourceName").ifBlank { MoteI18n.text("未命名来源") } + "\n" + at; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
-            card.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("查看详情"); setOnClickListener {
+            val at = runCatching { java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(activity.resources.configuration.locales[0]).withZone(ZoneId.systemDefault()).format(Instant.parse(item.getString("sortAt"))) }.getOrDefault(item.optString("sortAt"))
+            card.addView(TextView(activity).apply { text = at + " · " + item.optString("sourceName").ifBlank { MoteI18n.text("文件") }; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
+            card.contentDescription = item.optString("title") + "，" + at + "，" + label
+            card.setOnClickListener {
                 if (row.local?.optBoolean("localFile") == true) activity.startActivity(Intent(activity, FileContentActivity::class.java).putExtra("sourceId", row.key.source).putExtra("externalId", row.key.external).putExtra("sourceRevision", row.key.revision))
                 else LibrarySourceReaderActivity.open(activity, row.key.origin, row.key.type, row.key.source, row.key.external, row.key.device, row.key.revision, row.central?.optString("captureId").orEmpty(), row.local != null)
-            } }))
+            }
             if (row.central != null && row.local != null) card.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("查看中央版本"); setOnClickListener { LibrarySourceReaderActivity.open(activity, row.key.origin, row.key.type, row.key.source, row.key.external, row.key.device, row.key.revision, row.central.optString("captureId"), false) } }))
             parent.addView(card)
-        }
+    }
+    fun renderFooter(parent: LinearLayout) {
         if (notice.isNotBlank()) parent.addView(TextView(activity).apply { text = notice })
-        if (localMore || originalMore || materialMore) parent.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("加载更多来源资料"); isEnabled = (localMore && !localTask.busy) || ((originalMore || materialMore) && !task.busy); setOnClickListener { load() } }))
     }
     fun close() { stamp++; task.close(); localTask.close() }
 }

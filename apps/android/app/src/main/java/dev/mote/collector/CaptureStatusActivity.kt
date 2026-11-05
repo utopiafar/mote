@@ -10,14 +10,17 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import dev.mote.collector.plugins.DailyHomePlugin
+import dev.mote.collector.plugins.CapturePlugin
+import dev.mote.collector.plugins.SourceProviderPlugin
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.Executors
 
 /**
- * Capture and sending behind the home status line, the notification and the tile. Screen, other sources and sending
- * keep separate pauses; resuming or restarting goes back to the app's preview and system consent.
+ * The capture status panel behind the home line, the notification and the tile. Screen, other sources and
+ * sending keep separate controls; resuming or restarting goes back to the app's preview and system consent.
  */
 class CaptureStatusActivity : MoteActivity() {
     internal data class ReadHooks(val execute: java.util.concurrent.Executor, val read: () -> CaptureOverview.Facts, val post: (Runnable) -> Unit)
@@ -25,12 +28,17 @@ class CaptureStatusActivity : MoteActivity() {
     private val instanceReadHooks = readHooks
     private val worker = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var line: HomeCaptureRow
-    private lateinit var screen: Pair<TextView, Button>
-    private lateinit var system: TextView
-    private lateinit var folders: TextView
-    private lateinit var send: Pair<TextView, Button>
+    private lateinit var screenDetail: TextView
+    private lateinit var screenSwitch: MoteComponents.MoteSwitch
+    private lateinit var screenFix: View
+    private lateinit var systemDetail: TextView
+    private lateinit var systemSwitch: MoteComponents.MoteSwitch
+    private lateinit var foldersValue: TextView
+    private lateinit var sendDetail: TextView
+    private lateinit var sendButton: View
     private lateinit var all: Button
+    private lateinit var more: Button
+    private var moreMenu: android.widget.PopupWindow? = null
     private var facts: CaptureOverview.Facts? = null
     private var working = false
     private var closed = false
@@ -50,25 +58,70 @@ class CaptureStatusActivity : MoteActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val content = moteDetailPage(primary = null, title = MoteI18n.text("采集状态"), onBack = ::leave)
-        line = DailyHomePlugin.owner(this).captureRow(this, open = null, act = ::forward)
-        content.addView(line, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(MoteTheme.spaceItem) })
-        heading(content, MoteI18n.text("来源"))
-        screen = control(content, MoteI18n.text("屏幕采集"), "capture-status-screen") { forwardPage("PRIVACY") }
-        system = control(content, MoteI18n.text("通知与设备信息"), "capture-status-system") { forwardPage("OBSERVATIONS") }.first
-        folders = control(content, MoteI18n.text("同步文件夹"), "capture-status-folders") { startActivity(Intent(this, SourcesActivity::class.java)) }.first
-        all = SecondaryUi.action(content, "") { toggleAll() }.apply { tag = "capture-status-all"; visibility = View.GONE }
-        heading(content, MoteI18n.text("发送"))
-        send = control(content, MoteI18n.text("发送中的内容"), "capture-status-send") { startActivity(Intent(this, SyncQueueActivity::class.java)) }
-        heading(content, MoteI18n.text("更多"))
-        SecondaryUi.row(content, MoteI18n.text("采集范围")) { forwardPage("PRIVACY") }
-        SecondaryUi.row(content, MoteI18n.text("采集与同步")) { startActivity(Intent(this, SourcesActivity::class.java)) }
-        SecondaryUi.row(content, MoteI18n.text("采集与存储详情")) { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
+        window.decorView.findViewWithTag<TextView>("detail-title")?.let { MoteUi.type(it, 16, medium = true) }
+        // The panel is the capture sheet: keep its own chrome on the raised surface the sheet uses over the home.
+        var shell: View? = content
+        while (shell != null && shell !is NativeAppShell) shell = shell.parent as? View
+        shell?.let { MoteUi.backgroundColor(it, NativeColorRole.SURFACE_RAISED) }
+        paintPanelBars()
+        content.setPadding(moteDp(16), moteDp(4), moteDp(16), moteDp(16))
+        val group = MoteComponents.group(this)
+        fun add(row: PanelRow) {
+            if (group.childCount > 0) group.addView(MoteComponents.divider(this))
+            group.addView(row.root, LinearLayout.LayoutParams(-1, -2))
+        }
+
+        val screen = row(MoteGlyph.SCREEN, MoteI18n.text("屏幕采集"), "capture-status-screen") { forwardPage("PRIVACY") }
+        screenDetail = screen.detail.apply { tag = "capture-status-screen-state" }
+        screenSwitch = MoteComponents.switch(this, false, MoteI18n.text("屏幕采集")) { on -> toggleScreen(on) }
+            .apply { tag = "capture-status-screen-toggle" }
+        screenFix = MoteComponents.smallButton(this, MoteI18n.text("处理")) { repairScreen() }
+            .apply { tag = "capture-status-screen-action" }
+        screen.trailing.addView(screenSwitch)
+        screen.trailing.addView(screenFix)
+        add(screen)
+
+        val system = row(MoteGlyph.BELL, MoteI18n.text("通知与设备信息"), "capture-status-system")
+        systemDetail = system.detail.apply { tag = "capture-status-system-state" }
+        systemSwitch = MoteComponents.switch(this, false, MoteI18n.text("通知与设备信息")) { on -> toggleSystem(on) }
+            .apply { tag = "capture-status-system-toggle" }
+        system.trailing.addView(systemSwitch)
+        add(system)
+
+        val folders = row(MoteGlyph.FOLDER, MoteI18n.text("同步文件夹"), "capture-status-folders") {
+            startActivity(Intent(this, SourcesActivity::class.java))
+        }
+        folders.detail.visibility = View.GONE
+        foldersValue = TextView(this).apply {
+            tag = "capture-status-folders-state"; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.MUTED)
+        }
+        folders.trailing.addView(foldersValue)
+        folders.trailing.addView(MoteComponents.icon(this, MoteGlyph.CHEV, NativeColorRole.MUTED, 16),
+            LinearLayout.LayoutParams(-2, -2).apply { marginStart = moteDp(8) })
+        add(folders)
+
+        val send = row(MoteGlyph.SEND, MoteI18n.text("发送"), "capture-status-send")
+        sendDetail = send.detail.apply { tag = "capture-status-send-state" }
+        sendButton = MoteComponents.smallButton(this, MoteI18n.text("立即发送")) { sendNow() }
+            .apply { tag = "capture-status-send-now" }
+        send.trailing.addView(sendButton)
+        add(send)
+
+        content.addView(group, LinearLayout.LayoutParams(-1, -2))
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
+        }
+        all = MoteComponents.button(this, "", MoteUi.ButtonRole.SECONDARY) { toggleAll() }.apply { tag = "capture-status-all" }
+        actions.addView(all, LinearLayout.LayoutParams(0, -2, 1f))
+        more = MoteComponents.button(this, MoteI18n.text("更多"), MoteUi.ButtonRole.TEXT) { showMore() }.apply { tag = "capture-status-more" }
+        actions.addView(more, LinearLayout.LayoutParams(-2, -2).apply { marginStart = moteDp(8) })
+        content.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(16) })
         MoteUi.styleTree(content)
         if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leave() }
     }
     override fun onResume() { super.onResume(); handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
-    override fun onDestroy() { closed = true; handler.removeCallbacks(refresh); reader.close(); worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { closed = true; moreMenu?.dismiss(); moreMenu = null; handler.removeCallbacks(refresh); reader.close(); worker.shutdown(); super.onDestroy() }
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Deprecated("Native back navigation") override fun onBackPressed() = leave()
 
@@ -78,26 +131,35 @@ class CaptureStatusActivity : MoteActivity() {
         finish()
     }
 
-    private fun heading(parent: LinearLayout, label: String) = parent.addView(TextView(this).apply {
-        text = label; MoteUi.type(this, NativeFontRole.META, medium = true); MoteUi.textColor(this, NativeColorRole.MUTED)
-    }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(20); bottomMargin = moteDp(4) })
+    @Suppress("DEPRECATION")
+    private fun paintPanelBars() {
+        window.statusBarColor = MoteTheme.surfaceRaised
+        window.navigationBarColor = MoteTheme.surfaceRaised
+    }
 
-    private fun control(parent: LinearLayout, label: String, identity: String, open: () -> Unit): Pair<TextView, Button> {
-        parent.addView(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LinearLayout.LayoutParams(-1, moteDp(1)))
-        val row = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(64); tag = identity; isFocusable = true
-            setPadding(0, moteDp(MoteTheme.spaceInline), 0, moteDp(MoteTheme.spaceInline))
-            background = MoteUi.clickable(this@CaptureStatusActivity, NativeColorRole.TRANSPARENT, 0, false); setOnClickListener { open() }
+    private class PanelRow(val root: LinearLayout, val detail: TextView, val trailing: LinearLayout)
+
+    private fun row(icon: MoteGlyph, title: String, identity: String, open: (() -> Unit)? = null): PanelRow {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
+            minimumHeight = moteDp(MoteTheme.controlHeight)
+            setPadding(moteDp(14), moteDp(9), moteDp(14), moteDp(9))
+            tag = identity
+            if (open != null) {
+                background = MoteUi.clickable(this@CaptureStatusActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false)
+                isFocusable = true; isClickable = true
+                setOnClickListener { open() }
+            }
         }
+        root.addView(MoteComponents.icon(this, icon, NativeColorRole.MUTED, 20), LinearLayout.LayoutParams(moteDp(20), moteDp(20)).apply { marginEnd = moteDp(12) })
         val words = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        words.addView(TextView(this).apply { text = label; MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK) })
-        val state = TextView(this).apply { tag = "$identity-state"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) }
-        words.addView(state)
-        row.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
-        val action = MoteUi.action(Button(this), MoteUi.ButtonRole.TEXT).apply { visibility = View.GONE; tag = "$identity-action"; MoteUi.textColor(this, NativeColorRole.ACCENT) }
-        row.addView(action)
-        parent.addView(row, LinearLayout.LayoutParams(-1, -2))
-        return state to action
+        words.addView(TextView(this).apply { text = title; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.INK) })
+        val detail = TextView(this).apply { MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED) }
+        words.addView(detail)
+        root.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+        val trailing = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false }
+        root.addView(trailing, LinearLayout.LayoutParams(-2, -2).apply { marginStart = moteDp(12) })
+        return PanelRow(root, detail, trailing)
     }
 
     internal fun render() {
@@ -107,41 +169,93 @@ class CaptureStatusActivity : MoteActivity() {
 
     private fun present(f: CaptureOverview.Facts) {
         facts = f
-        line.bind(CaptureOverview.line(f))
-        val (screenState, screenAction) = screen
-        screenState.text = when {
-            f.screenPausedAt != null && !f.screenSelected -> MoteI18n.text("已暂停") + " · " + CaptureOverview.since(f.screenPausedAt, Instant.now(), ZoneId.systemDefault())
-            !f.screenSelected -> MoteI18n.text("关闭")
-            !f.enabled -> MoteI18n.text("已暂停")
-            f.screenLive -> MoteI18n.text("采集中")
-            else -> MoteI18n.text("等待采集权限")
-        }
-        // After a full stop the line and the start button resume everything; the row only resumes its own pause.
-        val screenPaused = CaptureOverview.screenPaused(f)
-        screenAction.visibility = if (f.enabled && f.screenSelected || screenPaused) View.VISIBLE else View.GONE
-        screenAction.text = MoteI18n.text(if (screenPaused) "恢复采集" else "暂停")
-        screenAction.setOnClickListener { if (screenPaused) forward(CaptureOverview.Action.RESUME) else pauseScreen() }
-        system.text = when {
-            !f.observesSystem -> MoteI18n.text("关闭")
-            !f.enabled -> MoteI18n.text("已暂停")
-            f.systemLive -> MoteI18n.text("采集中")
-            else -> MoteI18n.text("等待采集权限")
-        }
-        folders.text = if (f.folders > 0) MoteI18n.text("{0} 个文件夹", f.folders) else MoteI18n.text("关闭")
-        val (sendState, sendAction) = send
-        sendState.text = CaptureOverview.send(f).first.ifBlank { MoteI18n.text("按设置发送") }
-        sendAction.visibility = if (f.connected) View.VISIBLE else View.GONE
-        sendAction.text = MoteI18n.text(if (f.sendPaused) "恢复" else "暂停")
-        sendAction.setOnClickListener { toggleSend(!f.sendPaused) }
-        all.text = MoteI18n.text(if (f.enabled) "暂停全部采集" else "开始采集"); all.visibility = View.VISIBLE
-        listOf(screenAction, sendAction, all).forEach { it.isEnabled = !working }
+        val model = CapturePanel.model(f)
+        screenDetail.text = model.screen.detail
+        MoteUi.textColor(screenDetail, if (model.screen.mode == CapturePanel.ScreenMode.FIX) NativeColorRole.WARNING else NativeColorRole.MUTED)
+        screenSwitch.setChecked(model.screen.checked)
+        screenSwitch.visibility = if (model.screen.mode == CapturePanel.ScreenMode.SWITCH) View.VISIBLE else View.GONE
+        screenFix.visibility = if (model.screen.mode == CapturePanel.ScreenMode.FIX) View.VISIBLE else View.GONE
+        systemDetail.text = model.system.detail
+        systemSwitch.setChecked(model.system.checked)
+        foldersValue.text = model.folders
+        sendDetail.text = model.send
+        MoteUi.textColor(sendDetail, if (model.sendAttention) NativeColorRole.WARNING else NativeColorRole.MUTED)
+        sendButton.visibility = if (model.sendAction) View.VISIBLE else View.GONE
+        all.text = model.all
+        listOf(screenSwitch, systemSwitch, screenFix, sendButton, all, more).forEach { it.isEnabled = !working }
     }
 
-    private fun pauseScreen() = work { done -> dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
-    private fun toggleSend(paused: Boolean) = work { done -> dev.mote.collector.plugins.CapturePlugin.controls().setSendingPaused(this, paused) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+    private fun toggleScreen(on: Boolean) {
+        val f = facts ?: return
+        if (!on) {
+            if (f.enabled && f.screenSelected) pauseScreen()
+            return
+        }
+        when {
+            !f.screenSelected -> forwardPage("PRIVACY")
+            !f.enabled || CaptureOverview.screenPaused(f) -> forward(CaptureOverview.Action.RESUME)
+        }
+    }
+
+    private fun toggleSystem(on: Boolean) {
+        val f = facts ?: return
+        if (!on) {
+            if (f.enabled && f.observesSystem) setSystemSources(false)
+            return
+        }
+        if (!f.enabled) { forward(CaptureOverview.Action.RESUME); return }
+        if (!f.observesSystem) setSystemSources(true)
+    }
+
+    /** The row covers the observations dialog's non-screen sources: turning it off stops all three, on selects the two named ones. */
+    private fun setSystemSources(on: Boolean) = work { done ->
+        worker.execute {
+            val current = runCatching { Settings(applicationContext).read() }
+            handler.post {
+                if (closed || isDestroyed) { done(); return@post }
+                current.onFailure { notice(it); done() }.onSuccess { config ->
+                    val next = if (on) config.copy(notificationCollectionEnabled = true, deviceEventCollectionEnabled = true)
+                    else config.copy(notificationCollectionEnabled = false, deviceEventCollectionEnabled = false, mediaCollectionEnabled = false)
+                    RuntimeSettings.apply(this, next, expected = config) { result ->
+                        result.exceptionOrNull()?.let(::notice); done()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun sendNow() = work { done ->
+        worker.execute {
+            val config = runCatching { Settings(applicationContext).read() }.getOrElse {
+                handler.post { notice(it); done() }
+                return@execute
+            }
+            if (!config.hasSyncConnection()) {
+                handler.post { toast(MoteI18n.text("记录已保存在本机；连接节点后才可以同步")); done() }
+                return@execute
+            }
+            val result = runCatching {
+                config.validateConnection()
+                ConnectionGuard.sync {
+                    if (localSources().sources().any { it.enabled }) SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
+                    else UploadWorker.schedule(applicationContext, config, true)
+                } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
+            }
+            handler.post {
+                result.onSuccess { toast(MoteI18n.text("已请求同步；仍遵守网络约束")) }.onFailure { notice(it) }
+                done()
+            }
+        }
+    }
+
+    private fun pauseScreen() = work { done -> CapturePlugin.controls().pauseScreen(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
     private fun toggleAll() {
         if (facts?.enabled != true) { forward(CaptureOverview.Action.RESUME); return }
-        work { done -> dev.mote.collector.plugins.CapturePlugin.controls().stopAll(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+        work { done -> CapturePlugin.controls().stopAll(this) { result -> result.exceptionOrNull()?.let(::notice); done() } }
+    }
+    private fun repairScreen() {
+        val action = facts?.let { CaptureOverview.line(it).action } ?: CaptureOverview.Action.PERMISSIONS
+        forward(action)
     }
     private fun work(run: (() -> Unit) -> Unit) {
         if (working) return
@@ -149,6 +263,46 @@ class CaptureStatusActivity : MoteActivity() {
         run { working = false; if (!isDestroyed) render() }
     }
     private fun notice(error: Throwable) = android.widget.Toast.makeText(this, error.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失"), android.widget.Toast.LENGTH_LONG).show()
+    private fun toast(message: String) = android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
+
+    private fun showMore() {
+        val width = moteDp(208)
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, moteDp(6), 0, moteDp(6))
+            background = MoteUi.shape(this@CaptureStatusActivity, NativeColorRole.SURFACE_RAISED, NativeRadiusRole.CONTROL, true, NativeColorRole.HAIR)
+        }
+        val popup = android.widget.PopupWindow(card, width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, true).apply {
+            isOutsideTouchable = true
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            elevation = moteDp(10).toFloat()
+        }
+        moreMenu?.dismiss()
+        moreMenu = popup
+        val items = listOf(
+            MoteI18n.text("采集与同步") to { startActivity(Intent(this, SourcesActivity::class.java)) },
+            MoteI18n.text("采集范围") to { forwardPage("PRIVACY") },
+            MoteI18n.text("采集与存储详情") to { startActivity(Intent(this, ActivityStatsActivity::class.java)) },
+            MoteI18n.text("来源") to { handOff("page", "SOURCES") }
+        )
+        items.forEachIndexed { index, (label, action) ->
+            card.addView(TextView(this).apply {
+                text = label; tag = "capture-status-more-item-$index"
+                gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
+                setPadding(moteDp(16), 0, moteDp(16), 0)
+                MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.INK)
+                background = MoteUi.clickable(this@CaptureStatusActivity, NativeColorRole.TRANSPARENT, 0, false)
+                isFocusable = true
+                setOnClickListener { popup.dismiss(); action() }
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
+        card.measure(android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED))
+        val location = IntArray(2); more.getLocationOnScreen(location)
+        val x = (more.rootView.width - moteDp(16) - width).coerceAtLeast(moteDp(16))
+        val y = (location[1] - card.measuredHeight - moteDp(8)).coerceAtLeast(moteDp(24))
+        popup.showAtLocation(more, Gravity.TOP or Gravity.START, x, y)
+    }
 
     /** Resume, restart and repair run where the preview, permissions and system consent already live. */
     private fun forward(action: CaptureOverview.Action) = handOff("captureAction", action.name)
@@ -157,5 +311,44 @@ class CaptureStatusActivity : MoteActivity() {
     private fun handOff(key: String, value: String) {
         startActivity(Intent(this, MainActivity::class.java).putExtra(key, value).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         finish()
+    }
+}
+
+/** The panel's four rows and bottom actions derived from one read; the Activity only binds them to native controls. */
+internal object CapturePanel {
+    enum class ScreenMode { SWITCH, FIX }
+    data class Screen(val detail: String, val mode: ScreenMode, val checked: Boolean)
+    data class SwitchRow(val detail: String, val checked: Boolean)
+    data class Model(
+        val screen: Screen, val system: SwitchRow, val folders: String,
+        val send: String, val sendAttention: Boolean, val sendAction: Boolean,
+        val all: String,
+    )
+
+    fun model(f: CaptureOverview.Facts, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): Model {
+        val screenPaused = CaptureOverview.screenPaused(f)
+        val fix = f.enabled && f.screenSelected && !screenPaused && !f.screenLive
+        val screen = when {
+            !f.enabled -> MoteI18n.text("已暂停")
+            screenPaused -> MoteI18n.text("{0} 起暂停", CaptureOverview.moment(f.screenPausedAt!!, now, zone))
+            !f.screenSelected -> MoteI18n.text("关闭")
+            f.screenLive -> MoteI18n.text("采集中")
+            else -> MoteI18n.text("等待采集权限")
+        }
+        val system = when {
+            !f.enabled -> MoteI18n.text("已暂停")
+            !f.observesSystem -> MoteI18n.text("关闭")
+            f.systemLive -> MoteI18n.text("采集中")
+            else -> MoteI18n.text("等待采集权限")
+        }
+        val (send, sendAttention) = CaptureOverview.send(f)
+        return Model(
+            screen = Screen(screen, if (fix) ScreenMode.FIX else ScreenMode.SWITCH, f.enabled && f.screenSelected && !screenPaused),
+            system = SwitchRow(system, f.enabled && f.observesSystem),
+            folders = if (f.folders > 0) MoteI18n.text("{0} 个文件夹", f.folders) else MoteI18n.text("关闭"),
+            send = send.ifBlank { MoteI18n.text("按设置发送") }, sendAttention = sendAttention,
+            sendAction = !f.sendPaused,
+            all = MoteI18n.text(if (f.enabled) "暂停全部采集" else "恢复采集")
+        )
     }
 }

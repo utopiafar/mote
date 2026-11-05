@@ -1,5 +1,10 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "网页": "Página web",
+  "截图与照片": "Capturas de pantalla y fotos",
+  "网页与文件": "Páginas web y archivos",
+  "按时间回看": "Explorar por fecha",
+  "昨天": "Ayer",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "Por ejemplo: estas son mis conversaciones de desarrollo de proyectos con un agente de código, incluidos los registros de herramientas.",
   "查看已生效日程和设备写入状态": "Ver eventos vigentes y el estado de escritura del dispositivo",
   "例如：这是我的工作日历，日程不代表实际参加。": "Por ejemplo: este es mi calendario de trabajo; un evento no demuestra que haya asistido.",
@@ -10108,6 +10113,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "当前显示本机副本；中央接收仍待确认。正文最多预览 100000 个字符。": "Se muestra la copia local; la recepción en Central aún no está confirmada. La vista previa muestra hasta 100000 caracteres.",
   "一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。": "Selecciona hasta 4.000 archivos a la vez. Para colecciones más grandes, usa un archivo ZIP o importa por lotes.",
   "当前默认": "Predeterminado actual",
+  "{0} 起暂停": "En pausa desde {0}",
   "屏幕采集已暂停": "Captura de pantalla en pausa",
   "其他来源照常采集": "Las demás fuentes siguen capturando",
   "文件夹照常同步": "Las carpetas siguen sincronizándose",
@@ -10186,5 +10192,14 @@ export const spanish: Readonly<Record<string, string>> = {
   "设备名称无效": "Nombre de dispositivo no válido",
   "有待发送记录，无法更换中央": "Los registros pendientes impiden cambiar de central",
   "扫描中央生成的连接二维码。": "Escanear el código QR de conexión generado por el central.",
-  "本人设备": "Este dispositivo"
+  "本人设备": "Este dispositivo",
+  "管理记忆": "Gestionar recuerdos",
+  "详情": "Detalles",
+  "已整理，可搜索": "Organizado y se puede buscar",
+  "整理未完成": "Organización incompleta",
+  "引用它的对话": "Conversaciones que lo citan",
+  "网页": "Web",
+  "参考整份资料": "Todo el material",
+  "昨天": "Ayer",
+  "{0}月{1}日": "{1}/{0}"
 };
