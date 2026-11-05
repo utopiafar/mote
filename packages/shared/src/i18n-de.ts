@@ -10187,5 +10187,7 @@ export const german: Readonly<Record<string, string>> = {
   "设备名称无效": "Ungültiger Gerätename",
   "有待发送记录，无法更换中央": "Ausstehende Einträge verhindern den Wechsel der Zentrale",
   "扫描中央生成的连接二维码。": "Den von der Zentrale erzeugten Verbindungs-QR-Code scannen.",
-  "本人设备": "Dieses Gerät"
+  "本人设备": "Dieses Gerät",
+  "附件超过 50 MiB": "Anhang überschreitet 50 MiB",
+  "未能保存": "Speichern fehlgeschlagen"
 };

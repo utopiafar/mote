@@ -10187,5 +10187,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "设备名称无效": "Nombre de dispositivo no válido",
   "有待发送记录，无法更换中央": "Los registros pendientes impiden cambiar de central",
   "扫描中央生成的连接二维码。": "Escanear el código QR de conexión generado por el central.",
-  "本人设备": "Este dispositivo"
+  "本人设备": "Este dispositivo",
+  "附件超过 50 MiB": "El adjunto supera los 50 MiB",
+  "未能保存": "No se pudo guardar"
 };

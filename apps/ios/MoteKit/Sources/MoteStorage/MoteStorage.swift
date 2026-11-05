@@ -32,6 +32,10 @@ public enum MoteStorage {
         return ConnectionStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Connection", isDirectory: true))
     }
 
+    public static func shareAttachmentStore(fileManager: FileManager = .default) throws -> ShareAttachmentStore {
+        ShareAttachmentStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("ShareAttachments", isDirectory: true))
+    }
+
     private static func containerURL(fileManager: FileManager) throws -> URL {
         if let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: MoteCore.appGroupIdentifier) {
             return url
