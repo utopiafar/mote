@@ -10154,7 +10154,6 @@ export const english: Readonly<Record<string, string>> = {
   "已清空": "Cleared",
   "已收到": "Received",
   "后台处理": "Background processing",
-  "本人设备": "My device",
   "待同步 {0}": "Pending sync {0}",
   "新的记录暂时无法保存": "New records cannot be saved for now",
   "发送失败": "Sending failed",
@@ -10165,5 +10164,14 @@ export const english: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Waiting for capture permission · Screen Recording",
   "Chrome 页面": "Chrome pages",
   "暂停发送": "Pause sending",
-  "待发送 {0} 条": "Pending send: {0}"
+  "待发送 {0} 条": "Pending send: {0}",
+  "录音已暂停": "Recording paused",
+  "暂停录音": "Pause recording",
+  "继续录音": "Resume recording",
+  "麦克风权限未开启": "Microphone permission is off",
+  "录音未能开始": "Recording could not start",
+  "录音未能继续": "Recording could not resume",
+  "录音未能保存": "Recording could not be saved",
+  "来电": "Incoming call",
+  "录制音频并添加到当前草稿": "Record audio and add it to the current draft"
 };

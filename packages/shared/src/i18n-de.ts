@@ -10154,7 +10154,6 @@ export const german: Readonly<Record<string, string>> = {
   "已清空": "Gelöscht",
   "已收到": "Empfangen",
   "后台处理": "Hintergrundverarbeitung",
-  "本人设备": "Mein Gerät",
   "待同步 {0}": "Ausstehend {0}",
   "新的记录暂时无法保存": "Neue Aufzeichnungen können derzeit nicht gespeichert werden",
   "发送失败": "Senden fehlgeschlagen",
@@ -10165,5 +10164,14 @@ export const german: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Warten auf Aufnahmeberechtigung · Bildschirmaufnahme",
   "Chrome 页面": "Chrome-Seiten",
   "暂停发送": "Senden pausieren",
-  "待发送 {0} 条": "Ausstehende Sendungen: {0}"
+  "待发送 {0} 条": "Ausstehende Sendungen: {0}",
+  "录音已暂停": "Aufnahme pausiert",
+  "暂停录音": "Aufnahme pausieren",
+  "继续录音": "Aufnahme fortsetzen",
+  "麦克风权限未开启": "Mikrofonzugriff ist nicht erlaubt",
+  "录音未能开始": "Aufnahme konnte nicht gestartet werden",
+  "录音未能继续": "Aufnahme konnte nicht fortgesetzt werden",
+  "录音未能保存": "Aufnahme konnte nicht gespeichert werden",
+  "来电": "Eingehender Anruf",
+  "录制音频并添加到当前草稿": "Audio aufnehmen und zum aktuellen Entwurf hinzufügen"
 };

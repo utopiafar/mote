@@ -10154,7 +10154,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "已清空": "Borrado",
   "已收到": "Recibidos",
   "后台处理": "Procesamiento en segundo plano",
-  "本人设备": "Mi dispositivo",
   "待同步 {0}": "Pendientes {0}",
   "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
   "发送失败": "Error al enviar",
@@ -10165,5 +10164,14 @@ export const spanish: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Esperando permiso de captura · Grabación de pantalla",
   "Chrome 页面": "Páginas de Chrome",
   "暂停发送": "Pausar envío",
-  "待发送 {0} 条": "Envíos pendientes: {0}"
+  "待发送 {0} 条": "Envíos pendientes: {0}",
+  "录音已暂停": "Grabación en pausa",
+  "暂停录音": "Pausar grabación",
+  "继续录音": "Reanudar grabación",
+  "麦克风权限未开启": "El acceso al micrófono no está autorizado",
+  "录音未能开始": "No se pudo iniciar la grabación",
+  "录音未能继续": "No se pudo reanudar la grabación",
+  "录音未能保存": "No se pudo guardar la grabación",
+  "来电": "Llamada entrante",
+  "录制音频并添加到当前草稿": "Grabar audio y añadirlo al borrador actual"
 };
