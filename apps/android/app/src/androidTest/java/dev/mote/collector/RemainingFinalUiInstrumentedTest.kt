@@ -80,7 +80,7 @@ class RemainingFinalUiInstrumentedTest {
         ActivityScenario.launch<RecordEditorActivity>(Intent(context,RecordEditorActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,original)).use { scenario->
             until("shared draft ready"){main { visible().any { it.tag=="record-origin-fulltext" } }}
             main { (visible().filterIsInstance<EditText>().single { it.contentDescription=="正在想什么" }).setText("Generated retained personal supplement") }
-            click("资料说明（选填）");main { (visible().single { it.tag=="record-description" } as EditText).setText("Generated independent explanation") };click("资料说明（选填）")
+            click("资料说明");main { (visible().single { it.tag=="record-description" } as EditText).setText("Generated independent explanation") }
             for((label,permission)in listOf("录音" to Manifest.permission.RECORD_AUDIO,"拍照" to Manifest.permission.CAMERA)){
                 main { visible().single { it.contentDescription==label&&it.isClickable }.performClick() }
                 until("real Android permission dialog"){nodes(instrumentation.uiAutomation.rootInActiveWindow).any { it.viewIdResourceName?.endsWith(":id/permission_deny_button")==true }}

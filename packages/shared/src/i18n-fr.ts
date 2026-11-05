@@ -10139,5 +10139,6 @@ export const french: Readonly<Record<string, string>> = {
   "失联": "Sans contact",
   "采集中 · 待同步 {0} 条": "Collecte en cours · En attente : {0}",
   "采集中 · 发送已暂停": "Collecte en cours · Envoi en pause",
-  "采集中 · 发送需要处理": "Collecte en cours · L’envoi nécessite une intervention"
+  "采集中 · 发送需要处理": "Collecte en cours · L’envoi nécessite une intervention",
+  "已清空": "Effacé"
 };

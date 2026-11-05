@@ -81,7 +81,7 @@ class FinalCentralJourneyInstrumentedTest {
         require(context.recordDraftStore().draft().let { it.optString("text").isBlank() && it.getJSONArray("attachments").length() == 0 })
         ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
             until("Actual editor ready") { var ready=false; scenario.onActivity { a -> ready=views(a.window.decorView).filterIsInstance<EditText>().any { it.contentDescription == "正在想什么" && it.isEnabled } }; ready }
-            scenario.onActivity { a -> views(a.window.decorView).filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.setText(original); views(a.window.decorView).single { it.contentDescription == "资料说明（选填）" }.performClick(); views(a.window.decorView).filterIsInstance<EditText>().single { it.tag == "record-description" }.setText(description) }
+            scenario.onActivity { a -> views(a.window.decorView).filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.setText(original); views(a.window.decorView).single { it.tag == "record-describe-toggle" }.performClick(); views(a.window.decorView).filterIsInstance<EditText>().single { it.tag == "record-description" }.setText(description) }
             until("Both fields persisted independently") { context.recordDraftStore().draft().let { it.getString("text") == original && it.getString("description") == description } }
             screenshot("record-before-save"); click("保存")
             until("Explicit native save creates exactly one record") { (context.queue().dedupeIds().toSet()-before).size == 1 }
@@ -236,7 +236,7 @@ class FinalCentralJourneyInstrumentedTest {
             val expectedDisplay=turn.getString("question")+"\n\n"+NativeAnswerPresentation.format(answer.getString("answer"),ids).text
             until("Readable quote is shown without changing the original") { main { shown().filterIsInstance<TextView>().any{it.tag=="record-origin-fulltext"&&it.text.toString()==expectedDisplay} } }
             val initial=context.recordDraftStore().draft();assertEquals(raw,initial.getJSONObject("origin").getString("text"));assertEquals(id,initial.getJSONObject("origin").getString("conversationId"));assertEquals("",initial.getString("text"))
-            click("资料说明（选填）");main{shown().filterIsInstance<EditText>().single{it.tag=="record-description"}.setText(description)}
+            click("资料说明");main{shown().filterIsInstance<EditText>().single{it.tag=="record-description"}.setText(description)}
             until("Independent context is retained") { context.recordDraftStore().draft().optString("description")==description };screenshot("saved-turn-readable-quote")
             click("保存");until("Exactly one generated record is saved") {(context.queue().dedupeIds().toSet()-before).size==1}
             val recordId=(context.queue().dedupeIds().toSet()-before).single();val local=requireNotNull(context.queue().capture(recordId));val origin=local.getJSONObject("metadata").getJSONObject("noteOrigin")
