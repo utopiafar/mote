@@ -7,7 +7,7 @@ import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
-import { type SettingsWindow } from './permission-types';
+import { permissionSettingsUrl, type SettingsWindow } from './permission-types';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, systemPreferences, Tray } from 'electron';
 import { DesktopPluginHost, electronIpcRouter } from './plugin-host/desktop-host';
@@ -48,6 +48,7 @@ import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
 import type { Config, Status } from './contracts';
 import { trayIconName } from './tray-icon';
+import { trayMenuTemplate, type TrayMenuItemId } from './tray-menu';
 
 const defaultDataDirectory = app.getPath('userData');
 const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
@@ -202,20 +203,28 @@ function updateUi(status: Status): void {
   try { serverHost = status.config.serverUrl ? new URL(status.config.serverUrl).host : undefined; } catch { /* An invalid URL is already surfaced by connection settings. */ }
   const notice = captureNotifications.update(captureStatusRowFor(status), { serverHost });
   if (notice) showCaptureNotification(notice);
-  tray?.setToolTip(moteText("Mote [{0}] · {1} · 待上传 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.queueDepth));
-  tray?.setContextMenu(Menu.buildFromTemplate([
-    { label: `Mote [${profile.name}] · ${status.running ? moteText("采集中") : moteText("已停止")}`, enabled: false },
-    { label: moteText("待上传 {0} 条", status.queueDepth), enabled: false },
-    { type: 'separator' },
-    { label: moteText("打开 Mote"), click: () => showClientPage('overview') },
-    { label: moteText("记录"), click: () => showClientPage('notes') },
-    { label: moteText("打开中央仓库"), click: () => showClientPage('central') },
-    { label: moteText("设置…"), click: () => showClientPage('settings') },
-    { label: status.running ? moteText("停止采集") : moteText("开始采集"), click: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); } },
-    { label: moteText("立即发送"), enabled: systemTools.canSend(status), click: () => { void systemTools.sendNow(); } },
-    { type: 'separator' },
-    { label: moteText("退出 Mote（停止采集和上传）"), click: () => app.quit() },
-  ]));
+  tray?.setToolTip(moteText("Mote [{0}] · {1} · 待发送 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.sync.pendingRecords));
+  const menuClicks: Partial<Record<TrayMenuItemId, () => void>> = {
+    'system-settings': () => { if (process.platform === 'darwin') void shell.openExternal(permissionSettingsUrl('screen')); },
+    note: () => showClientPage('notes'),
+    open: () => showClientPage('overview'),
+    central: () => showClientPage('central'),
+    toggle: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); },
+    send: () => { void systemTools.sendNow(); },
+    settings: () => showClientPage('settings'),
+    quit: () => app.quit(),
+  };
+  tray?.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate({
+    row: captureStatusRowFor(status),
+    running: status.running,
+    pending: status.sync.pendingRecords,
+    canSend: systemTools.canSend(status),
+    serverHost,
+  }).map(item => {
+    if (item.type === 'separator') return item;
+    const icon = item.icon === 'caution' && process.platform === 'darwin' ? nativeImage.createFromNamedImage('NSCaution') : undefined;
+    return { label: item.label, enabled: item.enabled, click: menuClicks[item.id], ...(icon && !icon.isEmpty() ? { icon } : {}) };
+  })));
 }
 
 /** Shell/window/status transport is an explicit host primitive, but it still
