@@ -202,11 +202,13 @@ class RemainingFinalUiInstrumentedTest {
             until("exact local record reader"){main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any{it is CaptureRecordsActivity}&&visible().filterIsInstance<TextView>().any{it.text.toString().contains(original)}}}
             main{val a=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single();assertTrue(a is CaptureRecordsActivity);picture(a,"gap-library-exact-original-dark")};click("返回上一页")
             until("same location on return"){main{visible().any{it.tag=="library-locations:local"&&it.isSelected}}}
-            tag("library-primary-views:memories");until("source memory handoff"){text("查看中心整理的记忆。")};scenario.onActivity{picture(it,"gap-library-memory-handoff-dark")}
-            scenario.recreate();scenario.awaitMainUi();until("same memory tab after recreation"){main{visible().any{it.tag=="library-primary-views:memories"&&it.isSelected}}};click("查看我的记忆 ↗")
-            until("existing Central memory route"){main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any{it is CentralActivity&&it.intent.getStringExtra("page")=="memories"}}}
+            tag("library-primary-views:memories")
+            until("memory segment opens the existing Central memory page"){main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any{it is CentralActivity&&it.intent.getStringExtra("page")=="memories"}}}
+            main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single{it is CentralActivity}.let{picture(it,"gap-library-memory-handoff-dark")}}
             main{androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single{it is CentralActivity}.finish()}
-            until("return to same handoff"){text("查看中心整理的记忆。")};assertNotNull(context.queue().capture(id));assertFalse(Settings(context).enabled)
+            until("return to the same local library"){main{visible().any{it.tag=="library-locations:local"&&it.isSelected}&&visible().any{it.tag=="library-record:"+id}}}
+            scenario.recreate();scenario.awaitMainUi();until("same local location after recreation"){main{visible().any{it.tag=="library-locations:local"&&it.isSelected}&&visible().any{it.tag=="library-record:"+id}}}
+            assertNotNull(context.queue().capture(id));assertFalse(Settings(context).enabled)
         }}finally{context.queue().acknowledge(id)}
     }
     @Test fun processingAndDiagnosticsKeepRealAdvancedDraftsAndVisibleRange() = fixture {

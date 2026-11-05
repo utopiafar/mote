@@ -1,5 +1,10 @@
 /* Authored interface messages only; never translate captured content. */
 export const french: Readonly<Record<string, string>> = {
+  "网页": "Page web",
+  "截图与照片": "Captures d’écran et photos",
+  "网页与文件": "Pages web et fichiers",
+  "按时间回看": "Parcourir par date",
+  "昨天": "Hier",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "Par exemple : il s’agit de mes conversations de développement avec un agent de code, y compris les journaux des outils.",
   "查看已生效日程和设备写入状态": "Consulter les événements appliqués et l’état d’écriture des appareils",
   "例如：这是我的工作日历，日程不代表实际参加。": "Par exemple : il s’agit de mon calendrier professionnel ; un événement ne prouve pas ma participation.",
@@ -10154,7 +10159,6 @@ export const french: Readonly<Record<string, string>> = {
   "已清空": "Effacé",
   "已收到": "Reçus",
   "后台处理": "Traitement en arrière-plan",
-  "本人设备": "Mon appareil",
   "待同步 {0}": "En attente {0}",
   "新的记录暂时无法保存": "Les nouveaux enregistrements ne peuvent pas être enregistrés pour le moment",
   "发送失败": "Échec de l’envoi",

@@ -1,5 +1,10 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "网页": "Página web",
+  "截图与照片": "Capturas de pantalla y fotos",
+  "网页与文件": "Páginas web y archivos",
+  "按时间回看": "Explorar por fecha",
+  "昨天": "Ayer",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "Por ejemplo: estas son mis conversaciones de desarrollo de proyectos con un agente de código, incluidos los registros de herramientas.",
   "查看已生效日程和设备写入状态": "Ver eventos vigentes y el estado de escritura del dispositivo",
   "例如：这是我的工作日历，日程不代表实际参加。": "Por ejemplo: este es mi calendario de trabajo; un evento no demuestra que haya asistido.",
@@ -10154,7 +10159,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "已清空": "Borrado",
   "已收到": "Recibidos",
   "后台处理": "Procesamiento en segundo plano",
-  "本人设备": "Mi dispositivo",
   "待同步 {0}": "Pendientes {0}",
   "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
   "发送失败": "Error al enviar",

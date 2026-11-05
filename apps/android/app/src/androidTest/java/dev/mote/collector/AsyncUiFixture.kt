@@ -36,7 +36,9 @@ fun ActivityScenario<MainActivity>.awaitMainUi(): ActivityScenario<MainActivity>
     while (!ready && SystemClock.elapsedRealtime() < deadline) {
         onActivity { activity ->
             val rows = views(activity.window.decorView).toList()
-            ready = rows.any { it is MotePrimaryNavigation } && rows.any { it.isShown && (it.tag == "local-page-title" || it.tag == "central-title") }
+            val titled = rows.any { it.isShown && (it.tag == "local-page-title" || it.tag == "central-title") }
+            val library = activity.intent.getStringExtra("page") == "LIBRARY" && rows.any { it.isShown && it.tag == "library-primary-views" }
+            ready = rows.any { it is MotePrimaryNavigation } && (titled || library)
         }
         if (!ready) Thread.sleep(25)
     }

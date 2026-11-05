@@ -2,7 +2,11 @@ package dev.mote.collector
 
 import android.app.DatePickerDialog
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.View
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -15,8 +19,6 @@ internal class LibraryCaptureView(
     parent: LinearLayout,
     state: Bundle?,
     private val capture: (LinearLayout, JSONObject, Boolean, String, String) -> Unit,
-    private val file: (LinearLayout, JSONObject) -> Unit,
-    private val moreRecords: () -> Unit,
     private val retention: () -> Unit,
 ) {
     private val task = UiTask(activity)
@@ -25,13 +27,18 @@ internal class LibraryCaptureView(
     private val host = parent
     private val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
     private val more = Button(activity)
-    private var locationSelector: Spinner? = null
     private var deniedOrigin: String? = null
     private val sourceView by lazy { LibrarySourceView(activity, { render() }, { origin ->
         deniedOrigin = origin; projection.clearCentral(origin); remoteCursor = null; remoteMore = false; render()
     }, { origin -> deniedOrigin != origin }) }
-    private var source = state?.getString("source").orEmpty()
-    private var location = state?.getString("location") ?: "local"
+    private val searchView by lazy { LibrarySearchView(activity) { render() } }
+    private var searchTick: Runnable? = null
+    private var category = state?.getString("category")?.takeIf { it in setOf("all", "records", "images", "notifications", "files") } ?: "all"
+    private var source = when (category) { "records" -> "note"; "notifications" -> "notification"; else -> "" }
+    private var location = state?.getString("location")?.takeIf { it in setOf("local", "central", "") } ?: "local"
+    private lateinit var locations: NativeSectionTabs
+    private var locationSelector: Spinner? = null
+    private var query = state?.getString("query").orEmpty()
     private var day = state?.getString("day").orEmpty()
     private var localCursor: String? = null
     private var remoteCursor: String? = null
@@ -70,51 +77,73 @@ internal class LibraryCaptureView(
     private var anchor = state?.getString("anchor")
     private var anchorTop = state?.getInt("anchorTop") ?: 0
     init {
-        lateinit var locations: NativeSectionTabs
-        locations=NativeSectionTabs(activity,listOf("local" to "本机","central" to "中央资料"),"library-locations",changed={value->location=value;locationSelector?.setSelection(if(value=="local")1 else 2);locations.select(value);render()},choiceStyle=true)
-        locations.select(location);parent.addView(locations)
-        val options = SecondaryUi.disclosure(parent,MoteI18n.text("筛选"),"library-filters",state?.getBoolean("filtersExpanded") ?: false)
-        val types = listOf("" to "全部记录", "file" to "文件", "source" to "来源资料", "material" to "整理资料", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "记录", "notification" to "通知", "media" to "媒体播放状态", "activity" to "应用活动", "device_event" to "设备事件")
-        fun selector(label: String, choices: List<Pair<String,String>>, selected: String, changed: (String) -> Unit) {
-            val spinner = Spinner(activity).apply {
-                contentDescription = MoteI18n.text(label)
-                adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, choices.map { MoteI18n.text(it.second) })
-                setSelection(choices.indexOfFirst { it.first == selected }.coerceAtLeast(0))
-            }
-            options.addView(spinner)
-            if(label=="资料位置")locationSelector=spinner
-            spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        // The existing local/Central scope switch stays available above search.
+        val scopeRow = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; isBaselineAligned = false }
+        locations = NativeSectionTabs(activity, listOf("local" to "本机", "central" to "中央资料"), "library-locations", changed = { value ->
+            location = value; locations.select(value); locationSelector?.setSelection(if (value == "local") 1 else 2)
+            searchTick?.let(uiHandler::removeCallbacks); searchView.clear()
+            if (query.isNotBlank()) searchView.reset(query, category, day, value) else render()
+        }, choiceStyle = true)
+        locations.select(location)
+        val selector = Spinner(activity).apply {
+            contentDescription = MoteI18n.text("资料位置")
+            adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item,
+                listOf(MoteI18n.text("全部位置"), MoteI18n.text("本机"), MoteI18n.text("中央可读")))
+            setSelection(if (location == "local") 1 else if (location == "central") 2 else 0)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) = changed(choices[position].first)
+                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                    val value = listOf("", "local", "central")[position]
+                    if (location == value) return
+                    location = value; locations.select(value)
+                    searchTick?.let(uiHandler::removeCallbacks); searchView.clear()
+                    if (query.isNotBlank()) searchView.reset(query, category, day, value) else { render(); resetFilter() }
+                }
             }
         }
-        selector("资料类型", types, source) { if (source != it) { source = it; resetFilter() } }
-        selector("资料位置", listOf("" to "全部位置", "local" to "本机", "central" to "中央可读"), location) { if (location != it) { location = it; locations.select(it); render() } }
-        options.addView(TextView(activity).apply { text = MoteI18n.text("收集/更新时间"); MoteUi.type(this, NativeFontRole.META) })
-        val date = Button(activity).apply {
-            text = day.ifBlank { MoteI18n.text("选择日期") }
-            setOnClickListener {
-                val current = day.takeIf(String::isNotBlank)?.let(LocalDate::parse) ?: LocalDate.now()
-                DatePickerDialog(activity, { _, year, month, dateOfMonth ->
-                    day = LocalDate.of(year, month + 1, dateOfMonth).toString(); text = day; resetFilter()
-                }, current.year, current.monthValue - 1, current.dayOfMonth).show()
+        locationSelector = selector
+        scopeRow.addView(locations, LinearLayout.LayoutParams(0, -2, 1f))
+        scopeRow.addView(selector, LinearLayout.LayoutParams(activity.moteDp(124), activity.moteDp(42)).apply { marginStart = activity.moteDp(8) })
+        parent.addView(scopeRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(12) })
+
+        val search = LibraryBrowseUi.search(activity, "搜索资料", query)
+        parent.addView(search, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(16) })
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                query = s?.toString().orEmpty().take(500)
+                searchTick?.let(uiHandler::removeCallbacks); searchView.clear(); render()
+                searchTick = Runnable { if (query.isBlank()) refresh() else searchView.reset(query, category, day, location) }.also { uiHandler.postDelayed(it, 300) }
             }
-        }; options.addView(MoteUi.button(date))
-        options.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("全部日期"); setOnClickListener { day = ""; date.text = MoteI18n.text("选择日期"); resetFilter() } }))
-        sourceView.restore(state?.getBundle("sourceView")); sourceView.controls(options)
-        SecondaryUi.action(options,MoteI18n.text("按日期浏览更多记录"),action=moreRecords)
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        search.setOnEditorActionListener { _, _, _ -> searchTick?.let(uiHandler::removeCallbacks); if (query.isBlank()) refresh() else searchView.reset(query, category, day, location); true }
+        sourceView.restore(state?.getBundle("sourceView"))
         parent.addView(status); parent.addView(rows)
-        more.text = MoteI18n.text("加载更多"); more.setOnClickListener { if (!task.busy) load() }; parent.addView(MoteUi.button(more))
-        parent.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("刷新"); setOnClickListener { refresh() } }))
-        parent.addView(TextView(activity).apply { text=MoteI18n.text("上传后的本机保留设置")+"  ›";MoteUi.type(this,NativeFontRole.SUPPORT);MoteUi.textColor(this,NativeColorRole.ACCENT);minHeight=activity.moteDp(42);gravity=android.view.Gravity.CENTER_VERTICAL;isFocusable=true;setOnClickListener { retention() } })
+        more.text = MoteI18n.text("加载更多"); more.setOnClickListener { if (query.isNotBlank()) searchView.more() else { if (!task.busy) load(); sourceView.load() } }; parent.addView(MoteUi.button(more))
+        val actions = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+        actions.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("刷新"); setOnClickListener { refresh() } }), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = activity.moteDp(8) })
+        actions.addView(TextView(activity).apply {
+            text = MoteI18n.text("上传后的本机保留设置") + "  ›"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT)
+            minHeight = activity.moteDp(48); gravity = android.view.Gravity.CENTER_VERTICAL; isFocusable = true; setOnClickListener { retention() }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        parent.addView(actions)
     }
+    fun showFilters() = LibraryBrowseUi.filters(activity, listOf("all" to "全部", "records" to "记录", "images" to "截图与照片", "notifications" to "通知", "files" to "网页与文件"), category, { value ->
+        category = value; source = when (value) { "records" -> "note"; "notifications" -> "notification"; else -> "" }; resetFilter()
+    }, date = {
+        val current = day.takeIf(String::isNotBlank)?.let(LocalDate::parse) ?: LocalDate.now()
+        DatePickerDialog(activity, { _, year, month, dateOfMonth -> day = LocalDate.of(year, month + 1, dateOfMonth).toString(); resetFilter() }, current.year, current.monthValue - 1, current.dayOfMonth).apply {
+            setButton(android.content.DialogInterface.BUTTON_NEUTRAL, MoteI18n.text("全部日期")) { _, _ -> day = ""; resetFilter() }
+        }.show()
+    }, dateLabel = day)
     fun saveState(): Bundle = Bundle().apply {
-        putBoolean("filtersExpanded", host.findViewWithTag<android.view.View>("library-filters:content")?.visibility == android.view.View.VISIBLE)
-        putBundle("sourceView", sourceView.save()); putString("source", source); putString("location", location); putString("day", day); putInt("pages", pages.coerceAtLeast(1))
-        val row = (0 until rows.childCount).map { rows.getChildAt(it) }.firstOrNull { it.getGlobalVisibleRect(android.graphics.Rect()) }
+        putBundle("sourceView", sourceView.save()); putString("category", category); putString("location", location); putString("query", query); putString("day", day); putInt("pages", pages.coerceAtLeast(1))
+        val row = descendants(rows).firstOrNull { it.transitionName != null && it.getGlobalVisibleRect(android.graphics.Rect()) }
         putString("anchor", row?.transitionName)
         val position = IntArray(2); row?.getLocationInWindow(position); putInt("anchorTop", position[1])
     }
+    private fun descendants(view: View): List<View> = listOf(view) + if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
     private fun resetFilter() { pages = 0; restorePages = 1; anchor = null; refresh() }
     fun resume() {
         val current = CentralAccess.resolve(activity)
@@ -152,6 +181,7 @@ internal class LibraryCaptureView(
             if (hasPendingRecords()) waitForRecordsVisibility()
             return
         }
+        if (query.isNotBlank()) { pendingFullRefresh = false; pendingInsertions = 0; searchView.reset(query, category, day, location); return }
         val current = CentralAccess.resolve(activity)
         if (session != (current.server to current.generation)) { refresh(); return }
         if (task.busy) { incrementalPending = true; return }
@@ -168,6 +198,7 @@ internal class LibraryCaptureView(
     }
     fun refresh() {
         cancelIncremental()
+        if (query.isNotBlank()) { searchView.reset(query, category, day, location); return }
         LocalStatusProducer.get(activity).state.value.let { refreshPolicy.baseline(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
         val current = CentralAccess.resolve(activity)
         if (task.busy && session == current.server to current.generation && activeFilter == source && activeDay == day) {
@@ -352,11 +383,32 @@ internal class LibraryCaptureView(
         } ?: run { if (updateCursor) localMore = false }
     }
     private fun render() {
+        if (query.isNotBlank()) { renderSearch(); return }
         rows.removeAllViews()
-        if (location != "central") files.forEach { file(rows, it) }
         val visible = projection.visible(location).filter { sourceView.matchesCapture(it.item) }.filterNot { sourceView.containsCapture(it.identity.scope, it.item) }
+            .filter { LibraryBrowseRules.matches(it.item, category) && LibraryBrowseRules.matchesText(it.item, query) }
+        val originals = sourceView.entries(location).filter { LibraryBrowseRules.matches(it.item, category) && LibraryBrowseRules.matchesText(it.item, query) }
         renderedRows.keys.retainAll(visible.map { it.identity }.toSet())
-        visible.forEach { row ->
+        data class Entry(val at: String, val capture: LibraryCaptureProjection.Row? = null, val original: LibrarySourceProjection.Row? = null)
+        val entries = (visible.map { Entry(it.sortAt, capture = it) } + originals.map { Entry(it.item.getString("sortAt"), original = it) }).sortedByDescending { Instant.parse(it.at) }
+        var lastDay: LocalDate? = null
+        var group: LinearLayout? = null
+        entries.forEach { entry ->
+            val currentDay = LibraryBrowseRules.day(entry.at, ZoneId.systemDefault())
+            if (lastDay != currentDay) {
+                val today = LocalDate.now()
+                val caption = when (currentDay) {
+                    today -> MoteI18n.text("今天")
+                    today.minusDays(1) -> MoteI18n.text("昨天")
+                    else -> java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM).withLocale(activity.resources.configuration.locales[0]).format(currentDay)
+                }
+                rows.addView(TextView(activity).apply { text = caption; MoteUi.type(this, NativeFontRole.SUPPORT, medium = true); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(activity.moteDp(14), activity.moteDp(12), 0, activity.moteDp(10)) })
+                group = MoteComponents.group(activity).also { rows.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(12) }) }
+                lastDay = currentDay
+            } else group?.addView(MoteComponents.divider(activity))
+            val parent = requireNotNull(group)
+            if (entry.original != null) { sourceView.renderItem(parent, entry.original); return@forEach }
+            val row = requireNotNull(entry.capture)
             val label = when {
                 row.local == null -> MoteI18n.text("中央可读")
                 row.remote == LibraryCaptureProjection.Remote.OTHER_VERSION -> MoteI18n.text("本机可读 · 中央另有版本")
@@ -365,15 +417,15 @@ internal class LibraryCaptureView(
                 else -> MoteI18n.text("本机可读 · 中央状态未知")
             }
             val signature = SourceRules.canonical(row.item) + ":" + row.central?.let(SourceRules::canonical) + ":" + label
-            renderedRows[row.identity]?.takeIf { it.first == signature }?.let { cached -> rows.addView(cached.second); return@forEach }
-            capture(rows, row.item, row.remoteOnly, label, row.identity.scope)
-            val card = rows.getChildAt(rows.childCount - 1)
+            renderedRows[row.identity]?.takeIf { it.first == signature }?.let { cached -> (cached.second.parent as? android.view.ViewGroup)?.removeView(cached.second); parent.addView(cached.second); return@forEach }
+            capture(parent, row.item, row.remoteOnly, label, row.identity.scope)
+            val card = parent.getChildAt(parent.childCount - 1)
             renderedRows[row.identity] = signature to card
             card.transitionName = JSONArray(listOf(row.identity.scope, row.identity.deviceId, row.identity.id)).toString()
             if (row.remote == LibraryCaptureProjection.Remote.OTHER_VERSION) {
                 // A same-ID older/newer observation is not the local version.
                 val centralVersion = row.central
-                if (centralVersion != null) ((card as? LinearLayout)?.getChildAt(1) as? LinearLayout)?.addView(Button(activity).apply {
+                if (centralVersion != null) (card as? LinearLayout)?.addView(Button(activity).apply {
                     text = MoteI18n.text("查看中央版本")
                     setOnClickListener { activity.startActivity(android.content.Intent(activity, CaptureRecordsActivity::class.java)
                         .putExtra("recordId", row.identity.id).putExtra("recordRemote", true).putExtra("recordOrigin", row.identity.scope)
@@ -382,15 +434,45 @@ internal class LibraryCaptureView(
                 })
             }
         }
-        status.text = MoteI18n.text("已加载 {0} 条资料", visible.size + sourceView.count(location)) + if (remoteNotice.isNotBlank()) "\n$remoteNotice" else ""
-        if (!sourceView.isLoading && visible.isEmpty() && sourceView.count(location) == 0 && (files.isEmpty() || location == "central")) rows.addView(TextView(activity).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或记录。") })
-        sourceView.render(rows, location)
-        more.isEnabled = !task.busy && (localMore || remoteMore)
+        status.text = remoteNotice; status.visibility = if (remoteNotice.isBlank()) View.GONE else View.VISIBLE
+        if (!sourceView.isLoading && entries.isEmpty()) rows.addView(TextView(activity).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或记录。") })
+        sourceView.renderFooter(rows)
+        more.visibility = if (localMore || remoteMore || sourceView.hasMore) View.VISIBLE else View.GONE
+        more.isEnabled = !task.busy || !sourceView.isLoading
+    }
+    private fun renderSearch() {
+        rows.removeAllViews()
+        data class Entry(val at: String, val capture: LibrarySearchView.Capture? = null, val original: LibrarySearchView.Original? = null)
+        val entries = (searchView.captures().map { Entry(it.item.getString("capturedAt"), capture = it) } +
+            searchView.originals().map { Entry(it.item.getString("sortAt"), original = it) }).sortedByDescending { Instant.parse(it.at) }
+        var lastDay: LocalDate? = null
+        var group: LinearLayout? = null
+        val sourceKeys = LibrarySourceProjection()
+        entries.forEach { entry ->
+            val date = LibraryBrowseRules.day(entry.at, ZoneId.systemDefault())
+            if (date != lastDay) {
+                val today = LocalDate.now()
+                val label = when (date) { today -> MoteI18n.text("今天"); today.minusDays(1) -> MoteI18n.text("昨天"); else -> java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM).withLocale(activity.resources.configuration.locales[0]).format(date) }
+                rows.addView(TextView(activity).apply { text = label; MoteUi.type(this, NativeFontRole.SUPPORT, medium = true); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(activity.moteDp(14), activity.moteDp(12), 0, activity.moteDp(10)) })
+                group = MoteComponents.group(activity).also { rows.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(12) }) }
+                lastDay = date
+            } else group?.addView(MoteComponents.divider(activity))
+            val parent = requireNotNull(group)
+            entry.capture?.let { hit -> capture(parent, hit.item, hit.remote, MoteI18n.text(if (hit.remote) "中央可读" else "本机可读 · 中央状态未知"), hit.scope) }
+            entry.original?.let { hit ->
+                val key = sourceKeys.key(hit.scope, hit.item)
+                sourceView.renderItem(parent, if (hit.remote) LibrarySourceProjection.Row(key, central = hit.item) else LibrarySourceProjection.Row(key, local = hit.item))
+            }
+        }
+        status.text = searchView.notice(); status.visibility = if (status.text.isBlank()) View.GONE else View.VISIBLE
+        if (entries.isEmpty() && !searchView.loading) rows.addView(TextView(activity).apply { text = MoteI18n.text("当前范围内暂无条目。没有列出不代表不存在。") })
+        more.visibility = if (searchView.hasMore) View.VISIBLE else View.GONE
+        more.isEnabled = !searchView.loading
     }
     private fun restoreAnchor(keep: Boolean = false) {
         restorePages = 1
         anchor?.let { value -> rows.post {
-            (0 until rows.childCount).map { rows.getChildAt(it) }.firstOrNull { it.transitionName == value }?.let { row ->
+            descendants(rows).firstOrNull { it.transitionName == value }?.let { row ->
                 var parent = rows.parent
                 while (parent is android.view.View && parent !is ScrollView) parent = parent.parent
                 (parent as? ScrollView)?.let { scroll -> val position = IntArray(2); row.getLocationInWindow(position); scroll.scrollBy(0, position[1] - anchorTop) }
@@ -398,5 +480,5 @@ internal class LibraryCaptureView(
         } }
         if (!keep) anchor = null
     }
-    fun close() { cancelIncremental(); stamp++; task.close(); sourceView.close() }
+    fun close() { cancelIncremental(); searchTick?.let(uiHandler::removeCallbacks); stamp++; task.close(); sourceView.close(); searchView.close() }
 }

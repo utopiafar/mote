@@ -310,11 +310,6 @@ class LibraryRecordsRefreshInstrumentedTest {
         val repository = LocalStatusProducer.get(context); repository.refresh()
         waitFor("paired generated inventory before opening the library") { repository.state.value.let { it.error == null && it.active?.records == 65 } }
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
-            scenario.onActivity { activity ->
-                val controls = views(activity.window.decorView)
-                if (controls.single { it.tag == "library-filters:content" }.visibility != View.VISIBLE)
-                    controls.single { it.tag == "library-filters" }.performClick()
-            }
             instrumentation.waitForIdleSync()
             scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
             fun shown(text: String): Boolean { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains(text) } }; return found }
@@ -639,10 +634,6 @@ class LibraryRecordsRefreshInstrumentedTest {
             val repository = LocalStatusProducer.get(context); repository.refresh()
             waitFor("the frontier fixture has exactly twenty local originals") { repository.state.value.let { it.error == null && it.active?.records == 20 } }
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
-                scenario.onActivity { activity ->
-                    val controls = views(activity.window.decorView)
-                    if (controls.single { it.tag == "library-filters:content" }.visibility != View.VISIBLE) controls.single { it.tag == "library-filters" }.performClick()
-                }
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.isShown && it.contentDescription == MoteI18n.text("资料位置") }.setSelection(0) }
                 fun rows(id: String): Int {

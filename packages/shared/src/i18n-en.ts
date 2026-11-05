@@ -1,5 +1,10 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "网页": "Web page",
+  "截图与照片": "Screenshots and photos",
+  "网页与文件": "Web pages and files",
+  "按时间回看": "Browse by date",
+  "昨天": "Yesterday",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "For example: These are my project development conversations with a Coding Agent, including tool activity.",
   "查看已生效日程和设备写入状态": "View calendar events in effect and device write status",
   "例如：这是我的工作日历，日程不代表实际参加。": "For example: this is my work calendar; an event does not prove that I attended.",
@@ -10154,7 +10159,6 @@ export const english: Readonly<Record<string, string>> = {
   "已清空": "Cleared",
   "已收到": "Received",
   "后台处理": "Background processing",
-  "本人设备": "My device",
   "待同步 {0}": "Pending sync {0}",
   "新的记录暂时无法保存": "New records cannot be saved for now",
   "发送失败": "Sending failed",
