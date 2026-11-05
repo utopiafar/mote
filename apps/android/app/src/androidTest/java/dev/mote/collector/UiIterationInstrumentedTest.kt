@@ -292,13 +292,13 @@ class UiIterationInstrumentedTest {
                         assertEquals("Diagnostics and central navigation retain their secondary role", MoteUi.accent, secondary.currentTextColor)
                     }
                 }
-                tab("LIBRARY"); awaitVisible("这里还没有内容。点击添加，选择文件、屏幕或随手记。"); render("content")
+                tab("LIBRARY"); awaitVisible("这里还没有内容。点击添加，选择文件、屏幕或记录。"); render("content")
                 scenario.onActivity { activity -> assertTrue("Content still offers the shared record action", views(activity.window.decorView).any { it.isShown && it.contentDescription == MoteI18n.text("添加内容") }) }
                 tab("ASK")
                 val deadline = SystemClock.elapsedRealtime() + 10000
                 var loaded = false
                 while (!loaded && SystemClock.elapsedRealtime() < deadline) {
-                    scenario.onActivity { activity -> loaded = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和随手记仍可在本机保存。") } }
+                    scenario.onActivity { activity -> loaded = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。") } }
                     if (!loaded) Thread.sleep(25)
                 }
                 assertTrue("Ask uses the real embedded native central page", loaded)
@@ -431,7 +431,7 @@ class UiIterationInstrumentedTest {
                         assertTrue("The editor remains focused while the actual IME is shown", field.hasFocus())
                         assertTrue(activity.window.decorView.rootWindowInsets.isVisible(android.view.WindowInsets.Type.ime()))
                     }
-                    scrollTo("保存随手记")
+                    scrollTo("保存记录")
                     var touchX = 0f; var touchY = 0f
                     scenario.onActivity { activity ->
                         fun screenRect(view: View): android.graphics.Rect {
@@ -445,7 +445,7 @@ class UiIterationInstrumentedTest {
                         val rootBounds = screenRect(root)
                         val imeBottom = insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
                         val imeTop = rootBounds.bottom - imeBottom
-                        val save = views(root).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("保存随手记") }
+                        val save = views(root).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("保存记录") }
                         val saveVisible = android.graphics.Rect(); val saveHasRect = save.getGlobalVisibleRect(saveVisible)
                         val saveBounds = screenRect(save)
                         val navigation = views(root).filterIsInstance<MotePrimaryNavigation>().single { it.isShown }
@@ -490,13 +490,13 @@ class UiIterationInstrumentedTest {
                 } else {
                     scenario.onActivity { activity ->
                         views(activity.window.decorView).filterIsInstance<android.widget.EditText>().single { it.isShown }.setText(generatedText)
-                        views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("保存随手记") }.performClick()
+                        views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("保存记录") }.performClick()
                     }
                 }
                 val savedDeadline = SystemClock.elapsedRealtime() + 10000
                 var saved = false
                 while (!saved && SystemClock.elapsedRealtime() < savedDeadline) {
-                    scenario.onActivity { activity -> saved = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("随手记已保存；同步按你的设置运行") } }
+                    scenario.onActivity { activity -> saved = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("记录已保存；同步按你的设置运行") } }
                     if (!saved) Thread.sleep(25)
                 }
                 assertTrue("Save uses the real note action and clears only the committed draft", saved)
@@ -661,7 +661,7 @@ class UiIterationInstrumentedTest {
                     var emptyNoteDay = false
                     while (!emptyNoteDay && SystemClock.elapsedRealtime() < emptyDeadline) {
                         instrumentation.runOnMainSync {
-                            emptyNoteDay = views(reader.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("当天没有随手记。选择其他日期，或添加一条随手记。") }
+                            emptyNoteDay = views(reader.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("当天没有记录。选择其他日期，或添加一条记录。") }
                         }
                         if (!emptyNoteDay) Thread.sleep(25)
                     }
@@ -720,7 +720,7 @@ class UiIterationInstrumentedTest {
                 val deadline = SystemClock.elapsedRealtime() + 10000
                 var ready = false
                 while (!ready && SystemClock.elapsedRealtime() < deadline) {
-                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("中央资料库暂不可用。连接中央后，可浏览已归档的资料；文件和随手记仍可在本机保存和查看。") } }
+                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("中央资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。") } }
                     if (!ready) Thread.sleep(25)
                 }
                 assertTrue("Offline archive must explain browsing instead of questioning", ready)
@@ -729,10 +729,10 @@ class UiIterationInstrumentedTest {
                     assertEquals(MoteI18n.text("中央资料库"), title.text.toString())
                     activity.navigate("ask")
                     assertEquals(MoteI18n.text("问一问"), title.text.toString())
-                    assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和随手记仍可在本机保存。") })
+                    assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。") })
                     activity.navigate("archive")
                     assertEquals(MoteI18n.text("中央资料库"), title.text.toString())
-                    assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().none { it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和随手记仍可在本机保存。") })
+                    assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().none { it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。") })
                 }
             }
             ActivityScenario.launch<FileTaskActivity>(android.content.Intent(context, FileTaskActivity::class.java).putExtra("addAction", "FILE")).awaitUiText(MoteI18n.text("未连接中央：先保存本机任务，连接时确认发送范围。")).use { scenario ->

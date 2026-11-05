@@ -75,7 +75,7 @@ app.on('browser-window-created',(_event,window)=>{
     assert.equal(await js('document.querySelector("[data-page=overview]").hidden'),false);
     assert.deepEqual(await js('Array.from(document.querySelectorAll(".main-nav [data-nav]")).map(b=>b.querySelector("span:not([aria-hidden])").textContent.trim())'),['工作台','内容','来源','问一问']);
     assert.equal(await js('document.querySelector("#home-onboarding").hidden'),true);
-    assert.equal(await js('document.querySelector("#note-action").textContent.trim()'),'＋随手记');
+    assert.equal(await js('document.querySelector("#note-action").textContent.trim()'),'＋记录');
     assert.equal(await js('document.querySelector("#home-recent .content-state").textContent'),'本机待发送');
     assert.equal(await js('document.querySelector("#home-conversations button").dataset.conversationId'),id);
     assert.equal((await js('window.mote.status()')).running,false);

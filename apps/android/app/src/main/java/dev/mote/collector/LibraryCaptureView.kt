@@ -74,7 +74,7 @@ internal class LibraryCaptureView(
         locations=NativeSectionTabs(activity,listOf("local" to "本机","central" to "中央资料"),"library-locations",changed={value->location=value;locationSelector?.setSelection(if(value=="local")1 else 2);locations.select(value);render()},choiceStyle=true)
         locations.select(location);parent.addView(locations)
         val options = SecondaryUi.disclosure(parent,MoteI18n.text("筛选"),"library-filters",state?.getBoolean("filtersExpanded") ?: false)
-        val types = listOf("" to "全部记录", "file" to "文件", "source" to "来源资料", "material" to "整理资料", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "随手记", "notification" to "通知", "media" to "媒体播放状态", "activity" to "应用活动", "device_event" to "设备事件")
+        val types = listOf("" to "全部记录", "file" to "文件", "source" to "来源资料", "material" to "整理资料", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "记录", "notification" to "通知", "media" to "媒体播放状态", "activity" to "应用活动", "device_event" to "设备事件")
         fun selector(label: String, choices: List<Pair<String,String>>, selected: String, changed: (String) -> Unit) {
             val spinner = Spinner(activity).apply {
                 contentDescription = MoteI18n.text(label)
@@ -383,7 +383,7 @@ internal class LibraryCaptureView(
             }
         }
         status.text = MoteI18n.text("已加载 {0} 条资料", visible.size + sourceView.count(location)) + if (remoteNotice.isNotBlank()) "\n$remoteNotice" else ""
-        if (!sourceView.isLoading && visible.isEmpty() && sourceView.count(location) == 0 && (files.isEmpty() || location == "central")) rows.addView(TextView(activity).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或随手记。") })
+        if (!sourceView.isLoading && visible.isEmpty() && sourceView.count(location) == 0 && (files.isEmpty() || location == "central")) rows.addView(TextView(activity).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或记录。") })
         sourceView.render(rows, location)
         more.isEnabled = !task.busy && (localMore || remoteMore)
     }

@@ -59,7 +59,7 @@ class ClientFeedbackInstrumentedTest {
             var original: MainActivity? = null
             scenario.onActivity { activity ->
                 original = activity
-                views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.contentDescription?.toString() == "写一条随手记" }.performClick()
+                views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.contentDescription?.toString() == "写一条记录" }.performClick()
                 activity.systemEntries().create()
                 activity.systemEntries().notification("合成测试通知").contentIntent.send()
             }

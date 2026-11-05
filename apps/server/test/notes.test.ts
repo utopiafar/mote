@@ -15,7 +15,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   t.after(async () => { await result.app.close(); rmSync(dataDir, { recursive: true, force: true }); });
   return { ...result, headers: { authorization: `Bearer ${config.token}` } };
 }
-const note = (changes: Record<string, unknown> = {}) => ({ id: randomUUID(), deviceId: 'synthetic-note-device', deviceName: '合成测试设备', platform: 'android', capturedAt: '2026-09-12T12:00:00.000Z', text: '  合成随手记：\n想起一件杂事，原样保存。  ', ...changes });
+const note = (changes: Record<string, unknown> = {}) => ({ id: randomUUID(), deviceId: 'synthetic-note-device', deviceName: '合成测试设备', platform: 'android', capturedAt: '2026-09-12T12:00:00.000Z', text: '  合成记录：\n想起一件杂事，原样保存。  ', ...changes });
 
 test('notes preserve original words and explicit mood, share capture ACKs, and remain ordinary retrievable evidence', async t => {
   const { app, store, headers } = await fixture(t);
