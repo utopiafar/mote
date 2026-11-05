@@ -169,14 +169,14 @@ class DiscoveryJourneyInstrumentedTest {
             until("exact result outside first page") { main { settled() && text("Generated native discovery 66") } }
             capture("old-report")
             scenario.recreate(); until("report after Activity recreation") { main { settled() && text("Generated native discovery 66") } }
-            clickTag("insight-citation:"+fixture.getString("noteId")); until("actual original and metadata") { main { settled() && text("Generated original discovery record: completion remains unknown.") && text("基于这条记录提问") } }
+            clickTag("insight-citation:"+fixture.getString("noteId")); until("actual original and metadata") { main { settled() && text("Generated original discovery record: completion remains unknown.") && text("围绕这份资料提问") } }
             capture("original")
             main { activity().recreate() }; until("original after recreation") { main { settled() && text("Generated original discovery record: completion remains unknown.") } }
-            click("基于这条记录提问"); until("actual original is an anchor") { main { settled() && shown().filterIsInstance<TextView>().any { it.text.toString().startsWith("参考这条记录，自动查找相关上下文") } } }
+            click("围绕这份资料提问"); until("actual original is an anchor") { main { settled() && shown().filterIsInstance<TextView>().any { it.text.toString() == "Generated original discovery record: completion remains unknown." } } }
             main { shown().filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated question about the original") }; click("发送")
             until("real scoped answer") { main { shown().filterIsInstance<TextView>().any { it.text.toString().contains("Generated answer from the actual original") } } }
             val query = state().getJSONObject("lastQuery"); assertEquals(fixture.getString("noteId"), query.getJSONArray("anchorEvidenceIds").getString(0)); assertTrue(query.isNull("evidenceIds"))
-            back(); until("Ask returns to original") { main { settled() && text("基于这条记录提问") } }
+            back(); until("Ask returns to original") { main { settled() && text("围绕这份资料提问") } }
             back(); until("original returns to exact report") { main { settled() && text("Generated native discovery 66") && text("原文依据") } }
         }
     }

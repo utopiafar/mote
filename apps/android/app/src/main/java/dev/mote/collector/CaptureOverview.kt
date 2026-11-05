@@ -96,11 +96,13 @@ internal object CaptureOverview {
         MoteI18n.text("{0} 个文件夹", f.folders).takeIf { f.folders > 0 }
     )
 
-    fun since(at: Long, now: Instant, zone: ZoneId): String {
+    fun since(at: Long, now: Instant, zone: ZoneId): String = MoteI18n.text("{0} 起", moment(at, now, zone))
+
+    /** A clock time for the same day, the localized short date and time for an earlier one. */
+    fun moment(at: Long, now: Instant, zone: ZoneId): String {
         val time = Instant.ofEpochMilli(at).atZone(zone)
-        val label = if (time.toLocalDate() == now.atZone(zone).toLocalDate()) DateTimeFormatter.ofPattern("HH:mm").format(time)
-            else DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(MoteI18n.locale()).format(time)
-        return MoteI18n.text("{0} 起", label)
+        return if (time.toLocalDate() == now.atZone(zone).toLocalDate()) DateTimeFormatter.ofPattern("HH:mm").format(time)
+        else DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(MoteI18n.locale()).format(time)
     }
 
     private fun separator() = if (MoteI18n.language() in setOf("zh-CN", "ja")) "、" else ", "

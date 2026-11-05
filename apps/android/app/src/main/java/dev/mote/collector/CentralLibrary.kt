@@ -233,7 +233,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             ui.text(row.optString("appName"), NativeFontRole.TITLE_MOBILE); ui.text(row.optString("capturedAt"))
             projected?.speaker?.let { ui.text(MoteI18n.text("说话人 {0}",it),NativeFontRole.SUPPORT) }
             ui.text(projected?.text ?: row.optString("ocrText")).tag="capture-reference-text"
-            ui.button(MoteI18n.text("基于这条记录提问")) { screens.askAbout(id) }
+            ui.button(MoteI18n.text("围绕这份资料提问")) { screens.askAbout(id, NativeOriginalDetail.title(row)) }
             val metadata = row.optJSONObject("metadata")
             if(projected==null)values(metadata ?: JSONObject(), ui.card())
             val attachments = metadata?.optJSONArray("attachments") ?: JSONArray()
@@ -299,8 +299,11 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 }
             }
             val reference="material:"+item.getString("id")+"@"+item.getString("revision")
-            ui.button(MoteI18n.text("围绕这份资料提问")) { screens.askAboutMaterial(reference) }.tag="material-ask"
+            ui.button(MoteI18n.text("围绕这份资料提问")) { screens.askAboutMaterial(reference, item.optString("title")) }.tag="material-ask"
             ui.disclosure(MoteI18n.text("更多")) { more ->
+            ui.button(MoteI18n.text("详情"), parent = more) {
+                ui.work(MoteI18n.text("正在读取详情…"), { NativeOriginalDetail.conversations(api) }) { conversations -> screens.showOriginalDetail(NativeOriginalDetail.material(item, conversations)) }
+            }
             values(item.getJSONObject("origin"), ui.card(more))
             for(index in 0 until spans.length())spans.getJSONObject(index).optJSONObject("asset")?.let { values(it,ui.card(more)) }
             item.optJSONObject("attributionContext")?.let { context ->

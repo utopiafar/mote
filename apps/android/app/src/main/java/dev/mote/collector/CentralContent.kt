@@ -16,6 +16,9 @@ import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import java.io.File
 
+/** A reader handoff keeps the visible reference title, never a rewritten evidence ID. */
+internal data class AskEvidence(val id: String, val label: String?)
+
 /** Reusable native central content. The host owns the window and primary navigation. */
 internal class CentralContent(
     private val activity: MoteActivity,
@@ -102,12 +105,13 @@ internal class CentralContent(
     fun acceptAskConversation(id:String) { if(requestedAskConversation()==id)clearAskConversationIntent() }
     internal val selectedAskConversationId get()=screens?.selectedAskConversationId
 
-    fun takeAskEvidence(): String? {
+    fun takeAskEvidence(): AskEvidence? {
         val evidence=activity.intent.getStringExtra("evidenceId") ?: return null
         val expected=activity.intent.getStringExtra("evidenceOrigin")
-        activity.intent.removeExtra("evidenceId"); activity.intent.removeExtra("evidenceOrigin")
+        val label=activity.intent.getStringExtra("evidenceLabel")
+        activity.intent.removeExtra("evidenceId"); activity.intent.removeExtra("evidenceOrigin"); activity.intent.removeExtra("evidenceLabel")
         if (expected != null && expected != server) { notice(MoteI18n.text("访问凭据已失效，请重新连接。")); return null }
-        return evidence
+        return AskEvidence(evidence,label?.takeIf { it.isNotBlank() })
     }
 
     val root: LinearLayout
@@ -126,6 +130,7 @@ internal class CentralContent(
     private lateinit var addAction: TextView
     private lateinit var status: TextView
     private lateinit var title: TextView
+    private lateinit var headerDivider: View
     private lateinit var collectionBar: LinearLayout
     private lateinit var composer: LinearLayout
     private var insightMoreAction: (() -> Unit)? = null
@@ -354,9 +359,11 @@ internal class CentralContent(
         state.putString("insightId", pendingInsightId); state.putString("insightOrigin", server)
         state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
+    var askBackToHistory: (() -> Boolean)? = null
     fun back(): Boolean {
         if (page == "files" && requestedFileId() != null) return false
         if (screens?.back() == true) { updateBackButton(); return true }
+        if (page == "ask" && askBackToHistory?.invoke() == true) { updateBackButton(); return true }
         if (page == "insights" && pageHistory.isEmpty()) return false
         val previous = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else MoteNavigation.centralParent(page)
         if (previous == null) return false
@@ -376,27 +383,41 @@ internal class CentralContent(
         newConversationAction.visibility = historyAction.visibility
         conversationMoreAction.visibility = View.GONE
     }
+    internal fun hostActivity(): MoteActivity = activity
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
-        composer.addView(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LinearLayout.LayoutParams(-1,moteDp(1)))
-        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(10),moteDp(20),moteDp(16)) }.also(composer::addView)
+        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(8),moteDp(20),moteDp(22)) }.also(composer::addView)
     }
     internal fun hideAskComposer() { composer.visibility = View.GONE }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
     internal fun askConversationActions(showMore: Boolean) { conversationMoreAction.visibility = if (showMore) View.VISIBLE else View.GONE }
+<<<<<<< HEAD
     internal fun detailTitle(value: String) { title.text = value; memoryFilterAction.visibility = View.GONE; historyAction.visibility = View.GONE; newConversationAction.visibility = View.GONE; conversationMoreAction.visibility = View.GONE }
 
     internal fun memoryLibraryHeader(filter: () -> Unit) {
         title.text = ""; memoryFilter = filter; memoryFilterAction.visibility = View.VISIBLE
     }
     internal fun openLibraryMaterials() = localPage("LIBRARY")
+=======
+    /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
+    internal fun askConversationVisible(visible: Boolean) {
+        title.visibility = if (visible) View.GONE else View.VISIBLE
+        headerDivider.visibility = if (visible || embeddedActions) View.GONE else View.VISIBLE
+        newConversationAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
+        conversationMoreAction.visibility = View.GONE
+        historyAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
+    }
+    internal fun detailTitle(value: String) { title.visibility = View.VISIBLE; title.text = value; historyAction.visibility = View.GONE; newConversationAction.visibility = View.GONE; conversationMoreAction.visibility = View.GONE }
+>>>>>>> origin/main
 
 
     internal fun navigate(next: String, remember: Boolean = true) {
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
         page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
+        askBackToHistory = null
         updateCollectionBar(); updateBackButton()
+        title.visibility = View.VISIBLE
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
         screens?.show(next)

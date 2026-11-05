@@ -10113,6 +10113,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "当前显示本机副本；中央接收仍待确认。正文最多预览 100000 个字符。": "Se muestra la copia local; la recepción en Central aún no está confirmada. La vista previa muestra hasta 100000 caracteres.",
   "一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。": "Selecciona hasta 4.000 archivos a la vez. Para colecciones más grandes, usa un archivo ZIP o importa por lotes.",
   "当前默认": "Predeterminado actual",
+  "{0} 起暂停": "En pausa desde {0}",
   "屏幕采集已暂停": "Captura de pantalla en pausa",
   "其他来源照常采集": "Las demás fuentes siguen capturando",
   "文件夹照常同步": "Las carpetas siguen sincronizándose",
@@ -10126,6 +10127,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "等你补充": "Pendiente de tus datos",
   "暂停全部采集": "Pausar toda la captura",
   "暂停屏幕采集": "Pausar captura de pantalla",
+  "恢复屏幕采集": "Reanudar captura de pantalla",
   "索引处理完成": "Procesamiento del índice completado",
   "仍在运行的版本：{0}": "Versión aún en ejecución: {0}",
   "候选版本": "Versión candidata",
@@ -10191,5 +10193,16 @@ export const spanish: Readonly<Record<string, string>> = {
   "有待发送记录，无法更换中央": "Los registros pendientes impiden cambiar de central",
   "扫描中央生成的连接二维码。": "Escanear el código QR de conexión generado por el central.",
   "本人设备": "Este dispositivo",
+<<<<<<< HEAD
   "管理记忆": "Gestionar recuerdos"
+=======
+  "详情": "Detalles",
+  "已整理，可搜索": "Organizado y se puede buscar",
+  "整理未完成": "Organización incompleta",
+  "引用它的对话": "Conversaciones que lo citan",
+  "网页": "Web",
+  "参考整份资料": "Todo el material",
+  "昨天": "Ayer",
+  "{0}月{1}日": "{1}/{0}"
+>>>>>>> origin/main
 };

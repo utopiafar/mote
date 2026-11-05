@@ -81,7 +81,7 @@ class MemoryTopicsJourneyInstrumentedTest {
             val before = main { activity() }; main { before.recreate() }
             until("same selected memory after Activity recreation") { main { activity() !== before && settled() && text("查看原文依据 1") && text("Synthetic topic memory 0") } }
             capture("detail-restored")
-            click("查看原文依据 1"); until("actual original") { main { settled() && text("Synthetic native topic original 0") && text("基于这条记录提问") } }
+            click("查看原文依据 1"); until("actual original") { main { settled() && text("Synthetic native topic original 0") && text("围绕这份资料提问") } }
             capture("original"); back(); until("back to same memory") { main { settled() && text("查看原文依据 1") } }
             back(); until("back to exact topic") { main { settled() && members() == 1 && text("合成复核") } }
             chooseTree("合成实践"); topic("reuse", "treeTwo")

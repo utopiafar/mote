@@ -5,6 +5,7 @@ import android.content.Context
 import dev.mote.collector.AppCaptureEditor
 import dev.mote.collector.AppCapturePresentation
 import dev.mote.collector.AppCollectionMode
+import dev.mote.collector.CaptureStatusOperation
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.MoteI18n
 import dev.mote.collector.MoteQuickEntry
@@ -27,7 +28,7 @@ internal object SystemEntriesPlugin {
 
     /** One system action the status notification may offer. Unavailable scopes
      * offer none, and the reason stays visible in the notification text. */
-    enum class Action { PAUSE_SCREEN, STOP_CAPTURE, RECORD }
+    enum class Action { RECORD, PAUSE_SCREEN, RESUME_SCREEN, STOP_CAPTURE, ATTENTION }
 
     @Volatile private var owner: SystemEntriesOwner? = null
     private val fallback = java.util.concurrent.ConcurrentHashMap<String, Notifications>()
@@ -94,8 +95,25 @@ internal object SystemEntriesPlugin {
     internal fun surfaceText(availability: Availability, text: String): String =
         if (availability.active) text else listOfNotNull(text.takeIf(String::isNotBlank), availability.reason).joinToString("\n")
 
-    internal fun notificationActions(availability: Availability, screenCapturing: Boolean): List<Action> =
-        if (availability.active) listOf(if (screenCapturing) Action.PAUSE_SCREEN else Action.STOP_CAPTURE, Action.RECORD) else emptyList()
+    /** Capturing offers record / pause screen / stop; a paused screen offers
+     * resume, and a partial problem offers its repair before recording. */
+    internal fun notificationActions(availability: Availability, screenCapturing: Boolean, screenPaused: Boolean, needsAction: Boolean): List<Action> =
+        if (!availability.active) emptyList() else buildList {
+            if (needsAction) add(Action.ATTENTION)
+            add(Action.RECORD)
+            if (!needsAction) when {
+                screenPaused -> add(Action.RESUME_SCREEN)
+                screenCapturing -> add(Action.PAUSE_SCREEN)
+            }
+            add(Action.STOP_CAPTURE)
+        }
+
+    /** The repair action named by the shared status row. */
+    internal fun attentionLabel(operation: CaptureStatusOperation?): String = MoteI18n.text(when (operation) {
+        CaptureStatusOperation.RECONNECT -> "连接"
+        CaptureStatusOperation.RESTART_CAPTURE -> "重新开启"
+        else -> "处理"
+    })
 
     /** The only construction entry for the editor. The owning page supplies
      * its configuration draft; the plugin supplies the availability policy. */
