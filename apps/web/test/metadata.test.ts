@@ -17,6 +17,7 @@ test('file times are labeled separately and activity is intentionally content-fr
   const missing=renderToStaticMarkup(React.createElement(Metadata,{}));assert.match(missing,/未上报额外元数据/);
 });
 test('shortcuts collection method is labelled for the owner',()=>{
-  const html=renderToStaticMarkup(React.createElement(Metadata,{metadata:{version:1,observedAt:'2026-11-06T01:00:00Z',collector:{method:'shortcuts'}}}));
+  const html=renderToStaticMarkup(React.createElement(Metadata,{metadata:{version:1,observedAt:'2026-11-06T01:00:00Z',collector:{method:'shortcuts'},notification:{action:'posted',notificationKey:'ab'.repeat(32),postedAt:'2026-11-06T01:00:00Z',ongoing:false,groupSummary:false,title:'Generated delivery',text:'Generated package arrived'}}}));
   assert.match(html,/采集方式/);assert.match(html,/快捷指令/);
+  assert.match(html,/通知标题/);assert.match(html,/Generated delivery/);assert.match(html,/通知正文/);assert.match(html,/Generated package arrived/);
 });

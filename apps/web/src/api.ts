@@ -67,6 +67,8 @@ export interface Device {
   lastSeenAt: string;
   lastCaptureAt?: string;
   error?: string;
+  /** Derived by Central from the reported send mode and its deadline. */
+  disconnected?: boolean;
 }
 export interface Activity {
   activityEvents?: number;

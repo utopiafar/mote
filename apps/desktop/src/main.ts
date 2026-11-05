@@ -7,9 +7,9 @@ import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
-import { type SettingsWindow } from './permission-types';
+import { permissionSettingsUrl, type SettingsWindow } from './permission-types';
 import { collectRecordMetadata } from './record-metadata';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, shell, systemPreferences, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, systemPreferences, Tray } from 'electron';
 import { DesktopPluginHost, electronIpcRouter } from './plugin-host/desktop-host';
 import { NativeProviderRegistry } from './plugin-host/native-registry';
 import { deviceSettingsChannels, hostChannels, pushChannels } from './desktop-ipc-channels';
@@ -42,11 +42,13 @@ import { failureCode, safeErrorName, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
 import { readFile, realpath, stat, writeFile, mkdir } from 'node:fs/promises';
 import { currentPlatform, type Collector } from './collector';
+import { CaptureNeedsActionNotifier, captureStatusRowFor, type CaptureNotification } from './capture-notification';
 import { signedOutConfig } from './config';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
 import type { Config, Status } from './contracts';
 import { trayIconName } from './tray-icon';
+import { trayMenuTemplate, type TrayMenuItemId } from './tray-menu';
 
 const defaultDataDirectory = app.getPath('userData');
 const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
@@ -164,9 +166,28 @@ async function showCentral(page?: string, evidenceId?: string,workId?:string,con
   }, page, evidenceId, workId,conversationId);
 }
 function showWindow(): void { window?.show(); window?.focus(); }
-function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start'): void {
+function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start' | 'permissions' | 'storage' | 'sync' | 'connection'): void {
   if (page === 'notes') { void openQuickNote?.(); return; }
   showWindow(); window?.webContents.send(pushChannels.navigate, page);
+}
+const captureNotifications = new CaptureNeedsActionNotifier();
+function showCaptureNotification(notice: CaptureNotification): void {
+  if (process.platform !== 'darwin' || !Notification.isSupported()) return;
+  const notification = new Notification({
+    title: notice.title, body: notice.body,
+    actions: notice.action ? [{ type: 'button' as const, text: notice.action }] : undefined,
+  });
+  const open = () => {
+    if (notice.operation === 'restart_capture') showClientPage('capture-start');
+    else if (notice.operation === 'open_permissions') showClientPage('permissions');
+    else if (notice.operation === 'open_storage') showClientPage('storage');
+    else if (notice.operation === 'open_sync') showClientPage('sync');
+    else if (notice.operation === 'reconnect') showClientPage('connection');
+    else showClientPage('overview');
+  };
+  notification.on('click', open);
+  notification.on('action', open);
+  notification.show();
 }
 function trayIcon(status: Status): Electron.NativeImage {
   const icon = nativeImage.createFromPath(join(__dirname, 'resources', 'tray', trayIconName(status)));
@@ -178,20 +199,32 @@ function updateUi(status: Status): void {
   if (window && !window.isDestroyed()) window.webContents.send(pushChannels.status, status);
   if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.webContents.send(pushChannels.status, status);
   tray?.setImage(trayIcon(status));
-  tray?.setToolTip(moteText("Mote [{0}] · {1} · 待上传 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.queueDepth));
-  tray?.setContextMenu(Menu.buildFromTemplate([
-    { label: `Mote [${profile.name}] · ${status.running ? moteText("采集中") : moteText("已停止")}`, enabled: false },
-    { label: moteText("待上传 {0} 条", status.queueDepth), enabled: false },
-    { type: 'separator' },
-    { label: moteText("打开 Mote"), click: () => showClientPage('overview') },
-    { label: moteText("记录"), click: () => showClientPage('notes') },
-    { label: moteText("打开中央仓库"), click: () => showClientPage('central') },
-    { label: moteText("设置…"), click: () => showClientPage('settings') },
-    { label: status.running ? moteText("停止采集") : moteText("开始采集"), click: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); } },
-    { label: moteText("立即发送"), enabled: systemTools.canSend(status), click: () => { void systemTools.sendNow(); } },
-    { type: 'separator' },
-    { label: moteText("退出 Mote（停止采集和上传）"), click: () => app.quit() },
-  ]));
+  let serverHost: string | undefined;
+  try { serverHost = status.config.serverUrl ? new URL(status.config.serverUrl).host : undefined; } catch { /* An invalid URL is already surfaced by connection settings. */ }
+  const notice = captureNotifications.update(captureStatusRowFor(status), { serverHost });
+  if (notice) showCaptureNotification(notice);
+  tray?.setToolTip(moteText("Mote [{0}] · {1} · 待发送 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.sync.pendingRecords));
+  const menuClicks: Partial<Record<TrayMenuItemId, () => void>> = {
+    'system-settings': () => { if (process.platform === 'darwin') void shell.openExternal(permissionSettingsUrl('screen')); },
+    note: () => showClientPage('notes'),
+    open: () => showClientPage('overview'),
+    central: () => showClientPage('central'),
+    toggle: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); },
+    send: () => { void systemTools.sendNow(); },
+    settings: () => showClientPage('settings'),
+    quit: () => app.quit(),
+  };
+  tray?.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate({
+    row: captureStatusRowFor(status),
+    running: status.running,
+    pending: status.sync.pendingRecords,
+    canSend: systemTools.canSend(status),
+    serverHost,
+  }).map(item => {
+    if (item.type === 'separator') return item;
+    const icon = item.icon === 'caution' && process.platform === 'darwin' ? nativeImage.createFromNamedImage('NSCaution') : undefined;
+    return { label: item.label, enabled: item.enabled, click: menuClicks[item.id], ...(icon && !icon.isEmpty() ? { icon } : {}) };
+  })));
 }
 
 /** Shell/window/status transport is an explicit host primitive, but it still

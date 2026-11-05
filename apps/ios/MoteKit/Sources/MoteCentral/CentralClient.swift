@@ -54,7 +54,25 @@ public struct CentralClient: Sendable {
 
     @discardableResult
     public func upload(_ capture: CaptureUpload) async throws -> CaptureReceipt {
-        try await request("POST", "/api/captures", body: capture)
+        try await upload(payload: JSONEncoder().encode(capture))
+    }
+
+    @discardableResult
+    public func upload(payload: Data) async throws -> CaptureReceipt {
+        var request = try captureUploadRequest()
+        request.httpBody = payload
+        return try await perform(request)
+    }
+
+    func captureUploadRequest() throws -> URLRequest {
+        var request = try makeRequest("POST", "/api/captures", query: [], authenticated: true)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return request
+    }
+
+    public func reconcile(deviceId: String, ids: [String]) async throws -> CaptureReconciliation {
+        try await request("POST", "/api/capture-browser/reconcile",
+                          body: CaptureReconciliationRequest(deviceId: deviceId, ids: ids))
     }
 
     public func originals(after: String? = nil, before: String? = nil, source: CaptureSource? = nil,
@@ -69,6 +87,18 @@ public struct CentralClient: Sendable {
 
     public func original(id: UUID) async throws -> OriginalRecord {
         try await request("GET", "/api/capture-browser/\(id.uuidString.lowercased())")
+    }
+
+    @discardableResult
+    public func deleteOriginal(id: UUID, expectedKind: OriginalDeletionKind) async throws -> DeletionReceipt {
+        let pathID = id.uuidString.lowercased()
+        let current = try await original(id: id)
+        guard current.id == pathID, current.deletion?.available == true,
+              current.deletion?.kind == expectedKind
+        else { throw OriginalDeletionError.unavailable }
+        let receipt: DeletionReceipt = try await request("DELETE", "/api/captures/\(pathID)")
+        try OriginalDeletion.requireCompleted(receipt)
+        return receipt
     }
 
     public func conversations(cursor: String? = nil, limit: Int = 30) async throws -> CentralPage<ConversationSummary> {
@@ -134,6 +164,10 @@ public struct CentralClient: Sendable {
 
     private func perform<Response: Decodable>(_ request: URLRequest) async throws -> Response {
         let (data, response) = try await session.data(for: request, delegate: RejectRedirects.shared)
+        return try Self.decode(data: data, response: response)
+    }
+
+    static func decode<Response: Decodable>(data: Data, response: URLResponse) throws -> Response {
         guard let http = response as? HTTPURLResponse else { throw CentralError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw CentralError.http(status: http.statusCode, code: Self.failureCode(data))

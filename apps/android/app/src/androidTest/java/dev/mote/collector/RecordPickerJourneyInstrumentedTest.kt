@@ -48,13 +48,13 @@ class RecordPickerJourneyInstrumentedTest {
             var ready = false
             scenario.onActivity { activity ->
                 ready = views(activity.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == MoteI18n.text("正在想什么") }?.isEnabled == true &&
-                    views(activity.window.decorView).filterIsInstance<TextView>().any { (it.text.toString() == label || it.contentDescription?.toString() == label) && it.isClickable && it.isEnabled }
+                    views(activity.window.decorView).any { ((it as? TextView)?.text.toString() == label || it.contentDescription?.toString() == label) && it.isClickable && it.isEnabled }
             }
             ready
         }
         scenario.onActivity { activity ->
             assertTrue("Secure window protection remains enabled", activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
-            assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().single { (it.text.toString() == label || it.contentDescription?.toString() == label) && it.isClickable }.performClick())
+            assertTrue(views(activity.window.decorView).single { ((it as? TextView)?.text.toString() == label || it.contentDescription?.toString() == label) && it.isClickable }.performClick())
         }
     }
 
@@ -87,7 +87,7 @@ class RecordPickerJourneyInstrumentedTest {
         val existingOriginals = (0 until beforeFiles.length()).associate { beforeFiles.getJSONObject(it).getString("id").let { id -> id to digest(store.bytes(id)) } }
         val beforeRecords = context.queue().dedupeIds().toSet()
         ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
-            click(scenario, "相册")
+            click(scenario, "照片")
             marker("PICKER_IMAGE_READY_FOR_MANUAL_DRIVER")
             until("Select only $imageName in the real system image picker", 120000) { store.draft().getJSONArray("attachments").length() == beforeIds.size + 1 }
             val image = store.draft().getJSONArray("attachments").let { files -> (0 until files.length()).map { files.getJSONObject(it) }.single { it.getString("id") !in beforeIds } }

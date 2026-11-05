@@ -15,6 +15,7 @@ final class ConnectionUITests: XCTestCase {
 
     private func launch(_ environment: [String: String] = [:]) -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchArguments = ["-MoteConnectPreview"]
         app.launchEnvironment = environment.merging(["MOTE_TEST_PENDING": "3"]) { value, _ in value }
         app.launch()
         return app
@@ -56,11 +57,13 @@ final class ConnectionUITests: XCTestCase {
 
     func testConfirmationCountsTheActualSendQueue() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["-MoteConnectPreview"]
         app.launchEnvironment = ["MOTE_TEST_PASTE": try invitation(), "MOTE_TEST_QUEUE_ITEMS": "3"]
         app.launch()
         app.buttons["粘贴邀请"].tap()
         assertConfirmation(app)
         app.terminate()
+        app.launchArguments = ["-MoteConnectPreview"]
         app.launchEnvironment = ["MOTE_TEST_QUEUE_ITEMS": "0"]
         app.launch()
     }
@@ -70,6 +73,7 @@ final class ConnectionUITests: XCTestCase {
         defer { central.stop() }
         let service = "dev.mote.ios.test.\(UUID().uuidString)"
         let app = XCUIApplication()
+        app.launchArguments = ["-MoteConnectPreview"]
         app.launchEnvironment = ["MOTE_TEST_PASTE": try invitation(server: central.origin),
                                  "MOTE_TEST_QUEUE_ITEMS": "0", "MOTE_TEST_CONNECTION_SERVICE": service]
         app.launch()
@@ -82,6 +86,7 @@ final class ConnectionUITests: XCTestCase {
         XCTAssertEqual(central.requests, ["/api/connections/redeem", "/api/connections/self"])
         app.terminate()
 
+        app.launchArguments = ["-MoteConnectPreview"]
         app.launchEnvironment = ["MOTE_TEST_PASTE": try invitation(), "MOTE_TEST_QUEUE_ITEMS": "1",
                                  "MOTE_TEST_CONNECTION_SERVICE": service]
         app.launch()
@@ -89,6 +94,30 @@ final class ConnectionUITests: XCTestCase {
         app.buttons["确认连接"].tap()
         XCTAssertTrue(app.staticTexts["有待发送记录，无法更换中央"].waitForExistence(timeout: 10))
         XCTAssertEqual(central.requests, ["/api/connections/redeem", "/api/connections/self"])
+    }
+
+    func testConnectingFromHomeReturnsToConnectedHome() throws {
+        let central = try ConnectionFixtureServer()
+        defer { central.stop() }
+        let service = "dev.mote.ios.test.\(UUID().uuidString)"
+        let app = XCUIApplication()
+        app.launchEnvironment = ["MOTE_TEST_PASTE": try invitation(server: central.origin),
+                                 "MOTE_TEST_QUEUE_ITEMS": "0", "MOTE_TEST_CONNECTION_SERVICE": service]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["连接"].waitForExistence(timeout: 10))
+        app.buttons["连接"].tap()
+        XCTAssertTrue(app.buttons["粘贴邀请"].waitForExistence(timeout: 5))
+        app.buttons["粘贴邀请"].tap()
+        XCTAssertTrue(app.staticTexts["本人设备"].waitForExistence(timeout: 10))
+        app.buttons["确认连接"].tap()
+        XCTAssertTrue(app.alerts["已连接"].waitForExistence(timeout: 20))
+        app.alerts["已连接"].buttons["完成"].tap()
+
+        XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["连接你的 Mote"].waitForNonExistence(timeout: 10))
+        XCTAssertEqual(Array(central.requests.prefix(2)), ["/api/connections/redeem", "/api/connections/self"])
+        XCTAssertTrue(central.requests.last?.hasPrefix("/api/capture-browser") == true)
     }
 
     func testScannerRecognizesInjectedQRCodeImage() throws {
@@ -132,7 +161,7 @@ final class ConnectionUITests: XCTestCase {
     func testConnectingCannotSubmitTwice() throws {
         for appearance in ["light", "dark"] {
             let app = XCUIApplication()
-            app.launchArguments = ["-MoteAppearance", appearance]
+            app.launchArguments = ["-MoteConnectPreview", "-MoteAppearance", appearance]
             app.launchEnvironment = ["MOTE_TEST_STATE": "connecting", "MOTE_TEST_PENDING": "3",
                                      "MOTE_TEST_INVITATION": try invitation(server: "https://mote.example.net")]
             app.launch()
@@ -150,7 +179,7 @@ final class ConnectionUITests: XCTestCase {
     private func captureScreens(_ appearance: String) throws {
         for state in ["start", "invalid", "scan", "confirm", "connecting", "failed"] {
             let app = XCUIApplication()
-            app.launchArguments = ["-MoteAppearance", appearance]
+            app.launchArguments = ["-MoteConnectPreview", "-MoteAppearance", appearance]
             let visualInvitation = try invitation(server: "https://mote.example.net")
             app.launchEnvironment = ["MOTE_TEST_STATE": state, "MOTE_TEST_PENDING": "3", "MOTE_TEST_INVITATION": visualInvitation]
             app.launch()

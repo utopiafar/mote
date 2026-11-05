@@ -55,12 +55,12 @@ class RecordCameraJourneyInstrumentedTest {
         ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
             until("Actual record editor must enable its camera action") {
                 var ready = false
-                scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.contentDescription?.toString() == "拍照" && it.isEnabled && it.isClickable } }
+                scenario.onActivity { activity -> ready = views(activity.window.decorView).any { it.contentDescription?.toString() == "拍照" && it.isEnabled && it.isClickable } }
                 ready
             }
             scenario.onActivity { activity ->
                 assertTrue("Secure window protection must remain enabled", activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
-                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().single { it.contentDescription?.toString() == "拍照" && it.isClickable }.performClick())
+                assertTrue(views(activity.window.decorView).single { it.contentDescription?.toString() == "拍照" && it.isClickable }.performClick())
             }
             until("Camera output destination must be journaled before the real camera result") { store.pendingMedia().length() == 1 }
             val marker = "CAMERA_READY_FOR_MANUAL_DRIVER"
@@ -95,7 +95,7 @@ class RecordCameraJourneyInstrumentedTest {
             }
             until("Recreated editor must display the staged camera attachment") {
                 var ready = false
-                scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == MoteI18n.text("正在想什么") }?.isEnabled == true && views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("照片") } }
+                scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == MoteI18n.text("正在想什么") }?.isEnabled == true && views(activity.window.decorView).any { it.contentDescription?.toString() == MoteI18n.text("照片") } }
                 ready
             }
             assertArrayEquals("Full decrypted original remains byte-identical after recreation", originalBytes, store.bytes(attachmentId))

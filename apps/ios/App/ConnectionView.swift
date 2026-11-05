@@ -341,16 +341,21 @@ struct ConnectionView: View {
         notice = nil
         Task {
             do {
-                let store = connectionStore()
+                let store = try MoteStorage.connectionStore()
                 let existing = try store.read()
-                if let existing, existing.credential.serverUrl != invitation.serverUrl, pendingCount > 0 {
+                if let existing, existing.serverUrl != invitation.serverUrl, pendingCount > 0 {
                     connectionState = .failed; notice = "有待发送记录，无法更换中央"; return
                 }
                 let defaults = UserDefaults.standard
-                let deviceId = existing?.deviceId ?? defaults.string(forKey: "mote.deviceId") ?? UUID().uuidString.lowercased()
+                let deviceId = defaults.string(forKey: "mote.deviceId") ?? UUID().uuidString.lowercased()
                 defaults.set(deviceId, forKey: "mote.deviceId")
                 let connection = try await ConnectionService.establish(invitation: invitation, deviceId: deviceId, deviceName: name)
-                try store.save(connection)
+                try store.save(StoredConnection(
+                    serverUrl: connection.credential.serverUrl,
+                    token: connection.credential.token,
+                    credentialId: connection.credential.credentialId,
+                    scope: connection.credential.scope
+                ))
                 connectionState = .ready
                 connected = true
             } catch CentralError.unsupportedPlatform {
@@ -359,14 +364,5 @@ struct ConnectionView: View {
                 connectionState = .failed; notice = "连接未完成"
             }
         }
-    }
-
-    private func connectionStore() -> ConnectionStore {
-        #if DEBUG && targetEnvironment(simulator)
-        if let service = ProcessInfo.processInfo.environment["MOTE_TEST_CONNECTION_SERVICE"] {
-            return ConnectionStore(service: service)
-        }
-        #endif
-        return ConnectionStore()
     }
 }

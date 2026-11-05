@@ -1,17 +1,45 @@
 import SwiftUI
+import UIKit
+
+final class MoteAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        AppSendPipeline.shared.handleBackgroundEvents(identifier: identifier, completionHandler: completionHandler)
+    }
+}
 
 @main
 struct MoteApp: App {
+    @UIApplicationDelegateAdaptor(MoteAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     private let arguments = ProcessInfo.processInfo.arguments
 
     var body: some Scene {
         WindowGroup {
-            if arguments.contains("-MoteComponentPreview") {
-                ComponentPreview()
-                    .preferredColorScheme(previewScheme)
-            } else {
-                ConnectionView()
-                    .preferredColorScheme(previewScheme)
+            Group {
+                if arguments.contains("-MoteComponentPreview") {
+                    ComponentPreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteHomePreview") {
+                    HomePreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteReaderPreview") {
+                    OriginalPreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteConnectPreview") {
+                    ConnectionView()
+                        .preferredColorScheme(previewScheme)
+                } else {
+                    HomeRootView()
+                }
+            }
+            .task {
+                await AppSendPipeline.shared.reconcileAndSend()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await AppSendPipeline.shared.reconcileAndSend() }
             }
         }
     }
