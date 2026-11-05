@@ -66,9 +66,9 @@ class CaptureSyncPresentationTest {
         assertEquals("尚未连接", CaptureSyncPresentation.host("  "))
     }
 
-    @Test fun sendMethodCombinesModeAndWifiOnly() {
+    @Test fun sendMethodSummarizesWifiOnlyOrTheSyncMode() {
         assertEquals("仅 Wi-Fi", CaptureSyncPresentation.sendMethodLabel("realtime", wifiOnly = true))
-        assertEquals("凑够一批后发送 · 仅 Wi-Fi", CaptureSyncPresentation.sendMethodLabel("batch", wifiOnly = true))
+        assertEquals("仅 Wi-Fi", CaptureSyncPresentation.sendMethodLabel("batch", wifiOnly = true))
         assertEquals("仅手动发送", CaptureSyncPresentation.sendMethodLabel("manual", wifiOnly = false))
         assertEquals("有新内容时发送", CaptureSyncPresentation.sendMethodLabel("realtime", wifiOnly = false))
         assertEquals("有新内容时发送", CaptureSyncPresentation.syncModeLabel("realtime"))

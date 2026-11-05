@@ -194,7 +194,7 @@ internal object MoteComponents {
             addView(TextView(context).apply { text = title; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, titleColor) })
             subtitle?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, subtitleColor) }) }
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        value?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, valueColor) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) }) }
+        value?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, valueColor) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) }) }
         when {
             trailing != null -> addView(trailing, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) })
             onClick != null && chevron -> addView(MoteComponents.icon(context, MoteGlyph.CHEV, NativeColorRole.MUTED, 16), LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) })

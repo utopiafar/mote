@@ -46,12 +46,14 @@ class SourcesActivity : MoteActivity() {
         detailSourceId = intent.getStringExtra("detailSourceId")
         sourceKind = intent.getStringExtra("kind")?.takeIf { it in setOf("local-files", "local-calendar") }
         localOffset = savedInstanceState?.getInt("localOffset") ?: 0
+        val overviewPage = detailSourceId == null && sourceKind == null
         val content = moteDetailPage(title = MoteI18n.text(when {
             detailSourceId != null -> "来源详情"
             sourceKind == "local-files" -> "同步文件夹"
             sourceKind == "local-calendar" -> "本机日历"
             else -> ""
         }))
+        content.setPadding(moteDp(16), moteDp(if (overviewPage) 0 else MoteTheme.spaceItem), moteDp(16), moteDp(MoteTheme.spaceGroup))
         operationStatus = SecondaryUi.text(content, "", muted = true).apply { accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
         list = SecondaryUi.column(content)
         MoteUi.styleTree(content)
@@ -198,6 +200,8 @@ class SourcesActivity : MoteActivity() {
         list.addView(TextView(this).apply {
             text = MoteI18n.text("采集与同步")
             MoteUi.type(this, NativeFontRole.TITLE_MOBILE); MoteUi.textColor(this, NativeColorRole.INK)
+            setLineSpacing(0f, 1.25f)
+            setPadding(moteDp(4), moteDp(2), moteDp(4), 0)
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(18) })
         val sourcesGroup = MoteComponents.group(this)
         overview.rows.forEachIndexed { index, row ->
@@ -220,11 +224,11 @@ class SourcesActivity : MoteActivity() {
         sendGroup.addView(MoteComponents.divider(this))
         sendGroup.addView(MoteComponents.row(this, MoteGlyph.PAUSE, MoteI18n.text("暂停发送"),
             trailing = MoteComponents.switch(this, overview.sendPaused, MoteI18n.text("暂停发送")) { changeSendPause(it) }))
-        list.addView(sendGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(MoteTheme.spaceGroup) })
+        list.addView(sendGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(24) })
         val storageGroup = MoteComponents.group(this)
         storageGroup.addView(MoteComponents.row(this, MoteGlyph.DISK, MoteI18n.text("本机存储"),
             value = overview.storageText.takeIf(String::isNotBlank)) { openMoteLocalPage("STORAGE") })
-        list.addView(storageGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(MoteTheme.spaceGroup) })
+        list.addView(storageGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(24) })
     }
 
     private fun glyphFor(kind: CaptureSyncPresentation.SourceKind) = when (kind) {

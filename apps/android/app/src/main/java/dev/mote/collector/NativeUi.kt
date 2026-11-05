@@ -347,21 +347,20 @@ internal fun Activity.moteDetailPageContent(primary: MotePrimaryTab? = detailTab
         setPadding(moteDp(MoteTheme.spacePage), moteDp(MoteTheme.spaceItem), moteDp(MoteTheme.spacePage), moteDp(MoteTheme.spaceGroup))
     }
     val root = NativeAppShell(this).apply { moteInsets() }
-    val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(66) }
-    header.addView(TextView(this).apply {
-        text = if (title == null) "‹  " + MoteI18n.text("返回上级") else "‹"
+    val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(if (title == null) 66 else 48) }
+    header.addView(if (title == null) TextView(this).apply {
+        text = "‹  " + MoteI18n.text("返回上级")
         MoteUi.type(this, NativeFontRole.ACTION); MoteUi.textColor(this, NativeColorRole.MUTED)
         gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
         setPadding(moteDp(16), moteDp(4), moteDp(16), moteDp(4))
         contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { onBack() }
-    }, if (title == null) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(moteDp(48), -2))
+    } else MoteComponents.iconButton(this, MoteGlyph.BACK, MoteI18n.text("返回上一页")) { onBack() }, if (title == null) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(moteDp(48), moteDp(48)).apply { marginStart = moteDp(6) })
     if (title != null) header.addView(TextView(this).apply {
         text = title; tag = "detail-title"; MoteUi.type(this, NativeFontRole.APPBAR, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
         setPadding(0, moteDp(MoteTheme.spaceInline), moteDp(MoteTheme.spaceInline), moteDp(MoteTheme.spaceInline))
     }, LinearLayout.LayoutParams(0, -2, 1f))
     headerAction?.let { header.addView(it, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = moteDp(20) }) }
     root.header(header)
-    root.header(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.HAIR); layoutParams = LinearLayout.LayoutParams(-1, moteDp(1)) })
     root.content(buildContent(body))
     setContentView(root)
     return body

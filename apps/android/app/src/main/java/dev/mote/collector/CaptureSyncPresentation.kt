@@ -106,12 +106,9 @@ internal object CaptureSyncPresentation {
         else -> MoteI18n.text("凑够一批后发送")
     }
 
-    /** Send-method row value: the non-default mode plus the Wi-Fi-only flag when it is on. */
-    fun sendMethodLabel(mode: String, wifiOnly: Boolean): String {
-        val modeLabel = if (mode == "realtime") "" else syncModeLabel(mode)
-        return listOfNotNull(modeLabel.ifBlank { null }, if (wifiOnly) MoteI18n.text("仅 Wi-Fi") else null)
-            .ifEmpty { listOf(syncModeLabel(mode)) }.joinToString(" · ")
-    }
+    /** Send-method row value: the Wi-Fi-only summary when it is on, otherwise the sync mode. */
+    fun sendMethodLabel(mode: String, wifiOnly: Boolean): String =
+        if (wifiOnly) MoteI18n.text("仅 Wi-Fi") else syncModeLabel(mode)
 
     fun storageLabel(bytes: Long?): String = when {
         bytes == null -> ""
