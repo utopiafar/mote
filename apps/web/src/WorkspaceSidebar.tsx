@@ -1,12 +1,11 @@
-import { ChartNoAxesColumn, Database, House, Link2, Bot, MessageSquare } from 'lucide-react';
+import { ChartNoAxesColumn, Database, House, Link2, Bot, MessageSquare, Settings } from 'lucide-react';
 import { moteText } from '@mote/shared/i18n';
-import { moteBrand, uiDestinationPresentation, type UiDestinationIcon, type UiLayoutProfile } from '@mote/shared';
+import { moteBrand, uiDestinationPresentation, type UiDestination, type UiDestinationIcon, type UiLayoutProfile } from '@mote/shared';
 import type { Connection } from './api';
 import { primaryDestination } from './WorkspaceNavigation';
+import { destinationPages } from './navigation';
 
 export const destinationIcons: Record<UiDestinationIcon, typeof House> = { home: House, library: Database, sources: Link2, agent: Bot, ask: MessageSquare, activity: ChartNoAxesColumn };
-export const destinationPages = { home: 'overview', library: 'archive', sources: 'sources', connections: 'connections', ask: 'ask', activity: 'activity' } as const;
-const destinationGlyphs = { home:'⌂', library:'▤', sources:'↗', agent:'◇', ask:'◌', activity:'◷' } as const;
 
 export function WorkspaceSidebar({ layout, page, onPage, connection, verified, profile, onConnect, onRefresh, refreshing=false }: {
   layout: UiLayoutProfile;
@@ -19,16 +18,18 @@ export function WorkspaceSidebar({ layout, page, onPage, connection, verified, p
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
+  const destination = (id: UiDestination, className: string) => {
+    const item=uiDestinationPresentation[id], Icon=destinationIcons[item.icon], active=page!=='featureGuide'&&primaryDestination(page)===destinationPages[id];
+    return <button key={id} className={[className,active?'active':''].filter(Boolean).join(' ')} aria-current={active?'page':undefined} onClick={() => onPage(destinationPages[id])}><Icon size={18} strokeWidth={1.65} aria-hidden="true"/><span>{moteText(item.label)}</span></button>;
+  };
   return <aside id="primary-navigation" className="sidebar">
     <button className="brand" onClick={() => onPage('overview')} aria-label={moteText(uiDestinationPresentation.home.label)}><span className="mote-symbol" aria-hidden="true">m</span><span>{moteBrand.name}</span></button>
     <nav aria-label={moteText('主导航')}>
-      {layout.primary.map(id => {
-        const item=uiDestinationPresentation[id], target=destinationPages[id], active = page!=='featureGuide'&&primaryDestination(page) === target;
-        return <button key={target} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} onClick={() => onPage(target)}><span className="nav-glyph" aria-hidden="true">{destinationGlyphs[item.icon]}</span><span>{moteText(item.label)}</span></button>;
-      })}
+      {layout.primary.map(id => destination(id, ''))}
     </nav>
     <div className="sidebar-bottom">
-      <button className="settings-nav" aria-current={primaryDestination(page) === 'about' ? 'page' : undefined} onClick={() => onPage('about')}><span className="nav-glyph" aria-hidden="true">⚙</span>{moteText('设置')}</button>
+      {layout.secondary?.map(id => destination(id, 'utility-nav'))}
+      <button className={'settings-nav'+(primaryDestination(page) === 'about' ? ' active' : '')} aria-current={primaryDestination(page) === 'about' ? 'page' : undefined} onClick={() => onPage('about')}><Settings size={18} strokeWidth={1.65} aria-hidden="true"/>{moteText('设置')}</button>
       <details className="workspace-node-menu"><summary className="node-button"><span className={`node-state ${verified ? 'online' : ''}`}/><span>{verified?moteText('我的 Mote'):connection?moteText('正在验证登录'):moteText('登录 Mote')}</span></summary><div>
         {verified&&<p>{moteText('已登录 · {0}',profile||moteText('当前节点'))}</p>}
         <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button>

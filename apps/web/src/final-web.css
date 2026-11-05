@@ -1,11 +1,10 @@
 /* Final Central workspace, source: the owner's published 01a17d84 UI. */
-.app-shell:is([data-navigation=sidebar],[data-navigation=adaptive]) { --mote-sidebar-width:184px; }
-@media(min-width:761px) { .app-shell:is([data-navigation=sidebar],[data-navigation=adaptive])>.sidebar { padding:25px 12px 18px; } }
-.app-shell[data-navigation] .sidebar .brand { margin-bottom:34px; padding:0 10px; gap:9px; line-height:1.7; }
-.app-shell[data-navigation] .mote-symbol { width:27px; height:27px; font-size:25px; letter-spacing:-2px; padding-right:2px; border-radius:5px; }
-.app-shell[data-navigation] .sidebar nav { gap:5px; }
-.app-shell[data-navigation] .nav-glyph { display:inline-block; width:18px; font-size:17px; line-height:1.7; text-align:center; }
-.app-shell[data-navigation] .sidebar nav button { min-height:43px; padding:8px 12px; font-size:14px; line-height:1.7; }
+@media(min-width:761px) { .app-shell:is([data-navigation=sidebar],[data-navigation=adaptive])>.sidebar { padding:14px 10px; } }
+.app-shell[data-navigation] .sidebar .brand { margin-bottom:0; padding:4px 10px 16px; gap:10px; line-height:1.7; }
+.app-shell[data-navigation] .mote-symbol { width:28px; height:28px; font-size:25px; letter-spacing:-2px; padding-right:2px; border-radius:6px; }
+.app-shell[data-navigation] .sidebar nav { gap:2px; }
+.app-shell[data-navigation] .sidebar nav button>svg,.app-shell[data-navigation] .sidebar-bottom>button>svg { width:18px; height:18px; }
+.app-shell[data-navigation] .sidebar nav button { min-height:var(--mote-nav-height); padding:0 10px; font-size:14px; line-height:1.7; }
 .app-shell[data-navigation] .sidebar [aria-current=page] { color:var(--mote-accent); }
 .app-shell[data-navigation] .topbar { min-height:61px; padding:10px 34px; gap:20px; flex-wrap:nowrap; position:sticky; top:0; z-index:30; }
 .app-shell[data-navigation] .breadcrumb { font-size:12px; }
@@ -187,7 +186,7 @@
 .evidence-reader .reader-source-details>summary { color:var(--mote-muted); font-size:12px; cursor:pointer; }
 .evidence-reader .evidence-footer { padding:18px 0; margin-top:10px; font-size:11px; }
 .evidence-reader .evidence-back { font-size:12px; color:var(--mote-muted); }
-.evidence-reader-backdrop { padding:34px 42px 60px; background:var(--mote-background); backdrop-filter:none; top:61px; left:184px; overflow:auto; align-items:flex-start; }
+.evidence-reader-backdrop { padding:34px 42px 60px; background:var(--mote-background); backdrop-filter:none; top:61px; left:var(--mote-sidebar-width); overflow:auto; align-items:flex-start; }
 .evidence-reader-backdrop>.evidence-reader { width:100%; max-width:996px; max-height:none; padding:0; overflow:visible; border:0; border-radius:0; box-shadow:none; background:transparent; }
 .evidence-reader .reference-detail { padding:0; }
 .evidence-reader .reference-detail .material-detail { padding:0; }

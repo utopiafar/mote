@@ -359,7 +359,6 @@ small { display: block; margin-top: 7px; font-weight: 400; font-size: var(--mote
 .brand strong { line-height: 1; font: 600 18px/1.2 var(--mote-font); letter-spacing: -.02em; }
 .brand-icon { display: grid; place-items: center; flex: 0 0 auto; padding-bottom: 5px; font-size: var(--mote-font-title); font-family: var(--mote-font); border-color: var(--mote-accent); width: 28px; height: 28px; padding: 0; font: 600 var(--mote-font-title)/1 var(--mote-font); border: 0; background: var(--mote-primary-background); color: var(--mote-primary-ink); border-radius: var(--mote-radius-control); box-shadow: none; }
 .nav-item { width: 100%; display: flex; align-items: center; font-weight: 400; text-align: left; border-radius: var(--mote-radius-control); min-height: 40px; padding: 8px 13px; gap: 10px; margin: 5px 0; color: var(--mote-sidebar-ink); background: transparent; border: 0; font-size: 13px; }
-.nav-symbol { width: 18px; flex: 0 0 18px; text-align: center; font-size: 17px; }
 .nav-item:hover { color: var(--mote-ink); background: var(--mote-surface-hover); }
 .nav-item.selected { font-weight: 400; color: var(--mote-accent); background: var(--mote-sidebar-tint); }
 .nav-item[aria-current=page] { font-weight: 400; color: var(--mote-accent); background: var(--mote-sidebar-tint); }
