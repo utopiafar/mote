@@ -14,6 +14,16 @@ test('portable connection JSON and QR URI round trip without an owner token', ()
   for (const url of ['http://127.0.0.1:47832','http://localhost:47832','http://[::1]:47832']) assert.equal(connectionServerUrl(url),url);
 });
 
+test('invitations declare client platforms and absence never implies iOS', () => {
+  const declared = {...invitation, platforms: ['android', 'macos', 'ios', 'windows', 'linux']};
+  assert.deepEqual(parseConnectionInvitation(JSON.stringify(declared), now).platforms, declared.platforms);
+  assert.deepEqual(parseConnectionInvitation(connectionUri(declared, now), now), declared);
+  const withoutIos = {...invitation, platforms: ['android', 'macos', 'windows', 'linux']};
+  assert.equal(parseConnectionInvitation(JSON.stringify(withoutIos), now).platforms?.includes('ios'), false);
+  assert.equal(parseConnectionInvitation(JSON.stringify(invitation), now).platforms, undefined, 'A central that does not declare platforms never implies iOS support');
+  for (const platforms of [[], ['other'], ['import'], ['android', 'android'], ['android', 'ios', 'macos', 'windows', 'linux', 'android'], 'ios', [1]]) assert.throws(() => parseConnectionInvitation(JSON.stringify({...invitation, platforms}), now));
+});
+
 test('untrusted invitations reject credentials, unsupported formats, stale codes and unsafe endpoints', () => {
   for (const patch of [{format:'mcpServers'},{version:2},{token:'do-not-share'},{code:'short'},{expiresAt:'yesterday'},{expiresAt:'2026-09-14T01:00:00Z'},{serverUrl:'http://192.168.1.20:47832'},{serverUrl:'https://user:password@example.com'},{serverUrl:'https://example.com/subpath'},{serverUrl:'https://example.com/?token=secret'},{serverUrl:'https://example.com/#token'}]) assert.throws(()=>parseConnectionInvitation(JSON.stringify({...invitation,...patch}),now));
   assert.throws(()=>parseConnectionInvitation('{bad json',now));
