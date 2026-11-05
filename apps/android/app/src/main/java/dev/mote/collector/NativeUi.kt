@@ -17,7 +17,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.MoteIconButtonStyle
 
 /** Shared, native presentation for the collector and its detail screens. */
 internal object MoteUi {
@@ -243,7 +245,8 @@ class MoteNavigationIcon(context: Context, kind: String, private val active: Boo
 class MotePrimaryNavigation(private val activity: Activity, private val onSelect: (MotePrimaryTab) -> Unit) : LinearLayout(activity) {
     private var selected = MotePrimaryTab.HOME
     private var hasDraft = false
-    private lateinit var record: TextView
+    private lateinit var record: LinearLayout
+    private lateinit var recordLabel: TextView
     init { setWillNotDraw(false); refreshPresentation() }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -253,53 +256,54 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
     fun refreshPresentation() {
         removeAllViews()
         orientation = VERTICAL; isBaselineAligned = false
-        setPadding(activity.moteDp(16), activity.moteDp(12), activity.moteDp(16), activity.moteDp(16))
-        MoteUi.backgroundColor(this, NativeColorRole.BACKGROUND)
+        // H02: a full-width Ask capsule, then the ink record action and the two icon-only capture entries.
+        setPadding(activity.moteDp(16), activity.moteDp(12), activity.moteDp(16), activity.moteDp(24))
+        MoteUi.backgroundColor(this, NativeColorRole.SURFACE)
         contentDescription = MoteI18n.text("记录与提问")
         val ask = LinearLayout(activity).apply {
-            tag = "home-ask-action"; gravity = Gravity.CENTER_VERTICAL; minimumHeight = activity.moteDp(MoteTheme.controlHeight)
-            setPadding(activity.moteDp(16), 0, activity.moteDp(16), 0)
-            background = MoteUi.clickable(activity, NativeColorRole.FILL, NativeRadiusRole.PILL)
+            tag = "home-ask-action"; gravity = Gravity.CENTER; minimumHeight = activity.moteDp(MoteTheme.controlHeight)
+            background = MoteUi.clickable(activity, NativeColorRole.FILL, NativeRadiusRole.PILL, false)
             contentDescription = MoteI18n.text("问一问"); isFocusable = true
             setOnClickListener { onSelect(MotePrimaryTab.ASK) }
         }
-        ask.addView(ImageView(activity).apply { setImageDrawable(MoteNavigationIcon(activity, "ask", true)); importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO },
-            LayoutParams(activity.moteDp(20), activity.moteDp(20)).apply { marginEnd = activity.moteDp(10) })
-        ask.addView(TextView(activity).apply { text = MoteI18n.text("问一问…"); MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.MUTED) }, LayoutParams(0, -2, 1f))
-        addView(ask, LayoutParams(-1, -2))
+        ask.addView(MoteComponents.icon(activity, MoteGlyph.ASK, NativeColorRole.INK, 20),
+            LayoutParams(activity.moteDp(20), activity.moteDp(20)).apply { marginEnd = activity.moteDp(8) })
+        ask.addView(TextView(activity).apply {
+            text = MoteI18n.text("问一问"); MoteUi.type(this, NativeFontRole.BODY, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
+        }, LayoutParams(-2, -2))
+        addView(ask, LayoutParams(-1, activity.moteDp(MoteTheme.controlHeight)))
         // Off-screen moments are recorded by hand; on-screen content is already covered by background capture.
         val actions = LinearLayout(activity).apply { orientation = HORIZONTAL; isBaselineAligned = false }
-        record = TextView(activity).apply {
-            tag = "home-record-action"; gravity = Gravity.CENTER; minHeight = activity.moteDp(MoteTheme.controlHeight)
-            setPadding(activity.moteDp(12), 0, activity.moteDp(12), 0)
-            MoteUi.type(this, NativeFontRole.ACTION, medium = true)
-            MoteUi.textColor(this, NativeColorRole.PRIMARY_INK)
-            background = MoteUi.clickable(activity, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL)
+        record = LinearLayout(activity).apply {
+            orientation = HORIZONTAL; gravity = Gravity.CENTER; tag = "home-record-action"
+            minimumHeight = activity.moteDp(MoteTheme.controlHeight); setPadding(activity.moteDp(16), 0, activity.moteDp(16), 0)
+            background = MoteUi.clickable(activity, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL, false)
             isFocusable = true; setOnClickListener { activity.openRecordEditor() }
         }
-        actions.addView(record, LayoutParams(0, -1, 1f))
-        actions.addView(quickRecord("home-photo-action", "camera", MoteQuickEntry.PHOTO), LayoutParams(activity.moteDp(76), -1).apply { marginStart = activity.moteDp(8) })
-        actions.addView(quickRecord("home-audio-action", "microphone", MoteQuickEntry.AUDIO), LayoutParams(activity.moteDp(76), -1).apply { marginStart = activity.moteDp(8) })
-        addView(actions, LayoutParams(-1, -2).apply { topMargin = activity.moteDp(8) })
+        record.addView(MoteComponents.icon(activity, MoteGlyph.COMPOSE, NativeColorRole.PRIMARY_INK, 20),
+            LayoutParams(activity.moteDp(20), activity.moteDp(20)).apply { marginEnd = activity.moteDp(8) })
+        recordLabel = TextView(activity).apply {
+            MoteUi.type(this, NativeFontRole.BODY, medium = true); MoteUi.textColor(this, NativeColorRole.PRIMARY_INK)
+        }
+        record.addView(recordLabel, LayoutParams(-2, -2))
+        actions.addView(record, LayoutParams(0, activity.moteDp(MoteTheme.controlHeight), 1f))
+        HomeFrame.captureEntries.forEach { entry ->
+            val glyph = when (entry) { MoteQuickEntry.PHOTO -> MoteGlyph.CAMERA; MoteQuickEntry.AUDIO -> MoteGlyph.MIC; else -> error("Unexpected capture entry: ${entry.id}") }
+            val quick = MoteComponents.iconButton(activity, glyph, entry.labelKey, MoteIconButtonStyle.FILLED) {
+                activity.openRecordEditor(media = HomeFrame.startMedia(entry))
+            }
+            quick.tag = "home-${entry.id}-action"
+            actions.addView(quick, LayoutParams(activity.moteDp(MoteTheme.controlHeight), activity.moteDp(MoteTheme.controlHeight)).apply {
+                marginStart = activity.moteDp(8)
+            })
+        }
+        addView(actions, LayoutParams(-1, activity.moteDp(MoteTheme.controlHeight)).apply { topMargin = activity.moteDp(10) })
         updateDraft(hasDraft); select(selected)
-    }
-    // The same entry definitions back the launcher shortcuts, notification and widget.
-    private fun quickRecord(identity: String, icon: String, entry: MoteQuickEntry) = LinearLayout(activity).apply {
-        orientation = VERTICAL; gravity = Gravity.CENTER; tag = identity; minimumHeight = activity.moteDp(MoteTheme.controlHeight)
-        setPadding(0, activity.moteDp(6), 0, activity.moteDp(6))
-        background = MoteUi.clickable(activity, NativeColorRole.FILL, NativeRadiusRole.PILL)
-        contentDescription = entry.label; isFocusable = true; setOnClickListener { activity.openRecordEditor(media = entry.media) }
-        addView(ImageView(activity).apply { setImageDrawable(MoteNavigationIcon(activity, icon, false)); importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO },
-            LayoutParams(activity.moteDp(20), activity.moteDp(20)))
-        addView(TextView(activity).apply {
-            text = entry.label; gravity = Gravity.CENTER; maxLines = 1; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
-            MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.INK)
-        }, LayoutParams(-2, -2).apply { topMargin = activity.moteDp(2) })
     }
     fun updateDraft(value: Boolean) {
         hasDraft = value
-        record.text = "✎  " + MoteI18n.text(if (value) "继续草稿" else "记录")
-        record.contentDescription = MoteI18n.text(if (value) "继续草稿" else "记录")
+        recordLabel.text = HomeFrame.recordLabel(value)
+        record.contentDescription = recordLabel.text
     }
     fun select(tab: MotePrimaryTab) { selected = tab; visibility = if (tab == MotePrimaryTab.HOME) VISIBLE else GONE }
 }

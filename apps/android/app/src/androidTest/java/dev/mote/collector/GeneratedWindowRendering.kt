@@ -172,7 +172,7 @@ internal object GeneratedWindowRendering {
             "home-menu" -> Triple("manage", "content", "我的 Mote")
             "ask-retained-draft" -> Triple("ask", "draft", "生成的未发送草稿")
             "home-history-error" -> Triple("home", "error", "对话暂不可读取，请稍后重试。")
-            "home-first-use-draft" -> Triple("home", "first-use", "先记下一件事。")
+            "home-first-use-draft", "home-first-use-draft-dark" -> Triple("home", "first-use", "连接你的 Mote")
             "capture-context-local" -> Triple("capture", "local-context", "采集来源说明")
             "ask-turn-details" -> Triple("ask", "turn-details", "本轮详情")
             "home-connected-empty" -> Triple("home", "connected-empty", "已连接你的 Mote")

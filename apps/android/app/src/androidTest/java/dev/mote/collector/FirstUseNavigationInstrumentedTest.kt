@@ -47,7 +47,7 @@ class FirstUseNavigationInstrumentedTest {
         val original="Generated first offline thought: leave the afternoon unplanned."
         val description="Generated diary context; no Central or model is required."
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use {
-            until("Actual empty first use") { shown().filterIsInstance<TextView>().any { it.text.toString()=="先记下一件事。" } }; screenshot("first-open")
+            until("Actual empty first use") { shown().any { it.tag == "home-first-use-guide" } }; screenshot("first-open")
             click("还没有自己的 Mote？"); until("Install help") { activity() is StartUsingActivity }; screenshot("install-help")
             click("复制给安装助手")
             assertEquals(StartUsingActivity.INSTALL_PROMPT,main { context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString() })
@@ -57,7 +57,10 @@ class FirstUseNavigationInstrumentedTest {
             main { shown().filterIsInstance<EditText>().single { it.tag=="record-description" }.setText(description) }; screenshot("first-editor")
             assertEquals(0,context.queue().depth()); click("保存")
             until("Local receipt after explicit save") { activity() is MainActivity && shown().filterIsInstance<TextView>().any { it.text.toString()=="• 本机已保存" } }; screenshot("local-saved-receipt")
-            main { assertTrue(shown().filterIsInstance<TextView>().any { it.text.toString()=="先留下，再慢慢想。" }); assertTrue(shown().filterIsInstance<TextView>().any { it.text.toString()=="最近留下的内容" }) }
+            main {
+                assertFalse(shown().filterIsInstance<TextView>().any { it.text.toString() in setOf("先留下，再慢慢想。", "最近留下的内容") })
+                assertTrue(shown().any { it.tag == "home-record-receipt" })
+            }
             val row=context.queue().peek()!!; assertEquals(original,row.getString("ocrText")); assertEquals(description,row.getJSONObject("metadata").getString("ownerDescription")); assertFalse(row.optBoolean("uploaded")); assertFalse(settings.read().hasSyncConnection())
             click("查看原文"); until("Exact full-page local original") { activity() is CaptureRecordsActivity && shown().filterIsInstance<TextView>().any { it.text.toString()==original } }; screenshot("first-local-original")
             main { assertEquals("原文",shown().filterIsInstance<TextView>().single { it.tag=="detail-title" }.text.toString()); assertTrue(shown().filterIsInstance<android.widget.Spinner>().isEmpty()) }

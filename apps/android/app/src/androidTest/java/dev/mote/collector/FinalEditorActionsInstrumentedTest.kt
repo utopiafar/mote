@@ -44,6 +44,7 @@ class FinalEditorActionsInstrumentedTest {
     private fun shown()=WindowInspector.getGlobalWindowViews().filter{it.isShown&&it.hasWindowFocus()}.flatMap(::views).filter{it.isShown}
     private fun until(label:String,check:()->Boolean){val end=SystemClock.elapsedRealtime()+30_000;while(SystemClock.elapsedRealtime()<end){if(check())return;Thread.sleep(50)};fail(label)}
     private fun has(text:String)=main{shown().filterIsInstance<TextView>().any{it.text.toString().contains(text)}}
+    private fun hasTag(tag:String)=main{shown().any{it.tag==tag}}
     private fun click(label:String){until("Action $label"){main{shown().filterIsInstance<TextView>().any{it.isEnabled&&it.isClickable&&(it.text.toString()==label||it.contentDescription==label)}}};main{shown().filterIsInstance<TextView>().first{it.isEnabled&&it.isClickable&&(it.text.toString()==label||it.contentDescription==label)}.also{it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true)}.performClick()}}
     private fun tag(label:String)=main{shown().single{it.tag==label}.performClick()}
     private fun picture(name:String){instrumentation.waitForIdleSync();until("Focused native window before $name"){main{WindowInspector.getGlobalWindowViews().any{it.isShown&&it.hasWindowFocus()&&it.width>0&&it.height>0}}};val frame=CountDownLatch(1);main{WindowInspector.getGlobalWindowViews().last{it.isShown&&it.hasWindowFocus()}.postOnAnimation{frame.countDown()}};check(frame.await(5,TimeUnit.SECONDS));until("Focused native window after frame for $name"){main{WindowInspector.getGlobalWindowViews().any{it.isShown&&it.hasWindowFocus()&&it.width>0&&it.height>0}}};main{val root=WindowInspector.getGlobalWindowViews().last{it.isShown&&it.hasWindowFocus()};val image=Bitmap.createBitmap(root.width,root.height,Bitmap.Config.ARGB_8888);try{root.draw(android.graphics.Canvas(image));File(context.filesDir,"final-editor-actions").apply{mkdirs()}.resolve("$name.png").outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)}}finally{image.recycle()}}}
@@ -78,9 +79,9 @@ class FinalEditorActionsInstrumentedTest {
         instrumentation.addMonitor(camera)
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{scenario->
-            until("Actual first-use home"){has("先记下一件事。")};assertTrue(main{(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).single() as MainActivity).isFirstUseRecordEntry()});picture("first-use-dark-entry")
+            until("Actual first-use home"){hasTag("home-first-use-guide")};assertTrue(main{(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).single() as MainActivity).isFirstUseRecordEntry()});picture("first-use-dark-entry")
             tag("home-record-action");until("First-use editor ready"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}};main{assertFalse(shown().filterIsInstance<TextView>().single{it.text.toString()=="保存"}.isEnabled)};picture("editor-dark-empty-save-disabled")
-            click("拍照");until("Actual camera ACTION_IMAGE_CAPTURE returned cancelled"){cameraCalls.get()==1&&context.recordDraftStore().pendingMedia().length()==0};assertEquals(0,store.draft().getJSONArray("attachments").length());click("返回上一页");until("Camera cancel returns first-use home"){has("先记下一件事。")};tag("home-record-action");until("Actual first-use mic route"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
+            click("拍照");until("Actual camera ACTION_IMAGE_CAPTURE returned cancelled"){cameraCalls.get()==1&&context.recordDraftStore().pendingMedia().length()==0};assertEquals(0,store.draft().getJSONArray("attachments").length());click("返回上一页");until("Camera cancel returns first-use home"){hasTag("home-first-use-guide")};tag("home-record-action");until("Actual first-use mic route"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
             main{shown().filterIsInstance<EditText>().single{it.contentDescription=="正在想什么"}.apply{requestFocus();setText("Generated AVD silent audio draft");setSelection(text.length)}};picture("editor-dark-focused-text")
             click("录音");until("Actual MediaRecorder running with disabled competing tools"){main{shown().any{it.contentDescription=="停止录音"}&&shown().single{it.tag=="record-leave-notice"}.isShown}};main{assertFalse(shown().filterIsInstance<TextView>().single{it.text.toString()=="保存"}.isEnabled);for(label in listOf("拍照","相册","文件"))assertFalse(label,shown().single{it.contentDescription==label}.isEnabled)};picture("editor-dark-recording-save-and-tools-disabled");assertEquals(0,context.queue().depth());Thread.sleep(1300);click("停止录音")
             until("Actual AAC attachment staged"){store.draft().getJSONArray("attachments").length()==1&&main{shown().filterIsInstance<TextView>().any{it.text.toString()=="保存"&&it.isEnabled}}};val attachment=store.draft().getJSONArray("attachments").getJSONObject(0);val bytes=store.bytes(attachment.getString("id"));val file=File(context.cacheDir,"selected-silent-avd.m4a").apply{writeBytes(bytes)};val metadata=MediaMetadataRetriever();try{metadata.setDataSource(file.absolutePath);assertTrue(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()>0)}finally{metadata.release();file.delete()};picture("editor-dark-generated-aac-ready")
@@ -95,7 +96,7 @@ class FinalEditorActionsInstrumentedTest {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName,Manifest.permission.CAMERA)
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
-            until("Actual first-use home before the system camera"){has("先记下一件事。")} ;tag("home-record-action")
+            until("Actual first-use home before the system camera"){hasTag("home-first-use-guide")} ;tag("home-record-action")
             until("First-use editor is ready for a photo"){main{shown().any{it.contentDescription=="拍照"&&it.isEnabled}}};click("拍照")
             until("The private full-size camera destination is journaled"){store.pendingMedia().length()==1}
             instrumentation.sendStatus(0,android.os.Bundle().apply{putString("stream","FIRST_USE_CAMERA_READY_FOR_DRIVER\n")})
@@ -117,7 +118,7 @@ class FinalEditorActionsInstrumentedTest {
         val clipboard=context.getSystemService(android.content.ClipboardManager::class.java);var previous:android.content.ClipData?=null;var clipboardRead=false
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
-            until("Actual first-use home opens installation help"){has("先记下一件事。")};click("还没有自己的 Mote？");until("Home opens the real installation help"){has("先准备你的中央档案")}
+            until("Actual first-use home opens installation help"){hasTag("home-first-use-guide")};click("还没有自己的 Mote？");until("Home opens the real installation help"){has("先准备你的中央档案")}
             previous=main{clipboard.primaryClip?.let{android.content.ClipData(it)}};clipboardRead=true
             click("复制给安装助手");assertEquals(StartUsingActivity.INSTALL_PROMPT,main{clipboard.primaryClip!!.getItemAt(0).text.toString()});click("查看安装提示词");until("The copied installation prompt is visible"){has(StartUsingActivity.INSTALL_PROMPT)};picture("first-home-help-prompt")
             click("现在先记下来");until("The local first-use editor opens"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
@@ -135,11 +136,11 @@ class FinalEditorActionsInstrumentedTest {
         store.edit(draft,JSONArray(),JSONObject().put("kind","manual"),explanation);settings.save(settings.read().copy(server="",token="",syncMode="manual",syncPaused=true),confirmCentralEndpoint=true);context.getSharedPreferences("mote",0).edit().remove("lastCapture").commit();NativeRecordReceipt.recordId=null;LocalStateChanges.changed(records=true,immediate=true)
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
-            until("Actual first-use home offers connection"){has("先记下一件事。")};click("连接");until("The actual connection entry loads"){has("把记录接到一起")}
+            until("Actual first-use home offers connection"){hasTag("home-first-use-guide")};click("连接");until("The actual connection entry loads"){has("把记录接到一起")}
             val invitation="Generated incomplete invitation retained across help";main{shown().filterIsInstance<EditText>().single{it.isShown}.setText(invitation)}
             click("还没有自己的 Mote？");until("Connection opens its real installation help"){has("先准备你的中央档案")};picture("connection-help-open")
             click("返回上一页");until("The exact invitation returns"){main{shown().filterIsInstance<EditText>().any{it.isShown&&it.text.toString()==invitation}}};picture("connection-help-same-invitation")
-            click("稍后连接");until("The original home returns"){has("先记下一件事。")} ;assertEquals(draft,store.draft().getString("text"));assertEquals(explanation,store.draft().getString("description"));assertEquals(0,context.queue().depth());assertEquals(0,requests.get())
+            click("稍后连接");until("The original home returns"){hasTag("home-first-use-guide")} ;assertEquals(draft,store.draft().getString("text"));assertEquals(explanation,store.draft().getString("description"));assertEquals(0,context.queue().depth());assertEquals(0,requests.get())
         }}finally{HttpJson.onRequest=hook}
     }
     @Test fun isolatedEmptyQueueBulkComparisonAndRestoreKeepsOriginalProfile()=fixture{
