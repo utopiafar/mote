@@ -96,6 +96,17 @@ internal class NativeAskController(
         clearConversationState()
     }
 
+    /** A question sent from the conversation list starts a fresh thread while
+     * keeping the images already staged for that outgoing question. */
+    fun startConversation(question: String) {
+        val attachments = state.optJSONArray("attachments")?.let { JSONArray(it.toString()) }
+        val uploads = state.optJSONObject("imageUploads")?.let { JSONObject(it.toString()) }
+        newConversation()
+        if (attachments != null && attachments.length() > 0) state.put("attachments", attachments)
+        uploads?.let { state.put("imageUploads", it) }
+        editQuestion(question)
+    }
+
     private fun clearConversationState() {
         listOf(
             "runId", "runStatus", "activeRequest", "failureDetails", "evidenceIds", "anchorEvidenceIds",

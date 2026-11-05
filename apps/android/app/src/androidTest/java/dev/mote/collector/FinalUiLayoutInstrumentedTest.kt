@@ -113,15 +113,17 @@ class FinalUiLayoutInstrumentedTest {
             ActivityScenario.launch(SourcesActivity::class.java).use { scenario ->
                 until("source header ready") { var ready=false; scenario.onActivity { a -> ready=views(a.window.decorView).any { it.tag=="sources-add" && it.isShown } }; ready }
                 frames(scenario)
-                scenario.onActivity { a ->
-                    val button=views(a.window.decorView).filterIsInstance<Button>().single { it.tag=="sources-add" }
-                    val bounds=Rect(); assertTrue(button.getGlobalVisibleRect(bounds))
-                    assertEquals("Source add width $language/$appearance",button.width,bounds.width())
-                    assertEquals("Source add border $language/$appearance",button.height,bounds.height())
-                    assertEquals(0,button.layout.getEllipsisCount(button.layout.lineCount-1))
+                until("source header measured") { var measured=false; scenario.onActivity { a ->
+                    val row=views(a.window.decorView).singleOrNull { it.tag=="sources-add" } ?: return@onActivity
+                    val bounds=Rect(); assertTrue(row.getGlobalVisibleRect(bounds))
+                    assertEquals("Source add width $language/$appearance",row.width,bounds.width())
+                    assertEquals("Source add border $language/$appearance",row.height,bounds.height())
+                    val label=views(row).filterIsInstance<TextView>().singleOrNull { it.text.toString()==MoteI18n.text("添加来源") } ?: return@onActivity
+                    assertEquals(0,label.layout.getEllipsisCount(label.layout.lineCount-1))
                     val root=a.window.decorView; val bitmap=android.graphics.Bitmap.createBitmap(root.width,root.height,android.graphics.Bitmap.Config.ARGB_8888)
                     try { root.draw(android.graphics.Canvas(bitmap)); File(context.filesDir,"ui-final-layout").apply { mkdirs() }.resolve("sources-$language-${appearance.name.lowercase()}.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) } } finally { bitmap.recycle() }
-                }
+                    measured=true
+                }; measured }
             }
         }
         MoteI18n.select(context,"zh-CN"); MoteAppearance.select(context,AppearancePreference.LIGHT)

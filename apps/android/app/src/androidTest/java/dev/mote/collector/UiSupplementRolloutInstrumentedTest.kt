@@ -33,7 +33,7 @@ class UiSupplementRolloutInstrumentedTest {
         assertTrue(button.performClick())
     }
     private fun overlay() = android.view.inspector.WindowInspector.getGlobalWindowViews().single { root ->
-        root.isShown && views(root).any { it.id in setOf(android.R.id.button1, android.R.id.button2) && it.isShown }
+        root.isShown && views(root).any { (it.id in setOf(android.R.id.button1, android.R.id.button2) || it.tag == "add-source:FILE") && it.isShown }
     }
     private fun settleWindows() {
         instrumentation.waitForIdleSync()
@@ -106,8 +106,8 @@ class UiSupplementRolloutInstrumentedTest {
             scenario.onActivity { save(it, "import-advanced", "import-local-task") }
         }
         ActivityScenario.launch<SourcesActivity>(Intent(context, SourcesActivity::class.java)).use { scenario ->
-            settleWindows(); scenario.onActivity { click(it, "来源限制与同步说明") }; settleWindows()
-            scenario.onActivity { save(it, "source-restrictions-dialog", "sources", dialog = true); overlay().findViewById<View>(android.R.id.button1).performClick() }
+            settleWindows(); scenario.onActivity { assertTrue(views(it.window.decorView).single { view -> view.tag == "sources-add" }.performClick()) }; settleWindows()
+            scenario.onActivity { save(it, "source-add-sheet", "sources", dialog = true); views(overlay()).single { view -> view.contentDescription == MoteI18n.text("关闭") }.performClick() }
         }
         ActivityScenario.launch<ActivityStatsActivity>(Intent(context, ActivityStatsActivity::class.java)).use { scenario ->
             val deadline = System.currentTimeMillis() + 10_000

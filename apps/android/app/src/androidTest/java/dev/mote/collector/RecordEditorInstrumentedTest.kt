@@ -94,17 +94,18 @@ class RecordEditorInstrumentedTest {
             scenario.onActivity { activity -> views(activity.window.decorView).single { it.contentDescription == "录音" }.performClick() }
             Thread.sleep(1300)
             scenario.onActivity { activity ->
-                assertTrue(views(activity.window.decorView).single { it.tag == "record-leave-notice" }.isShown)
+                assertTrue(views(activity.window.decorView).single { it.tag == "recording-time" }.isShown)
+                assertTrue("Audio alone makes Save available", views(activity.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "保存" }.isEnabled)
                 screenshot(activity,"editor-recording")
             }
             scenario.onActivity { activity -> views(activity.window.decorView).single { it.contentDescription == "停止录音" }.performClick() }
-            waitUntil("Stopped audio persisted") { context.recordDraftStore().draft().getJSONArray("attachments").let { it.length() > 0 && it.getJSONObject(it.length() - 1).getString("mime") == "audio/mp4" } }
+            waitUntil("Stopped audio persisted") { context.recordDraftStore().draft().getJSONArray("attachments").let { it.length() > 0 && it.getJSONObject(it.length() - 1).getString("mime") == "audio/aac" } }
             val files = context.recordDraftStore().draft().getJSONArray("attachments"); val audio = files.getJSONObject(files.length() - 1)
-            val temp = File(context.cacheDir, "generated-audio-check.m4a"); temp.writeBytes(context.recordDraftStore().bytes(audio.getString("id")))
+            val temp = File(context.cacheDir, "generated-audio-check.aac"); temp.writeBytes(context.recordDraftStore().bytes(audio.getString("id")))
             val metadata = android.media.MediaMetadataRetriever(); metadata.setDataSource(temp.absolutePath)
             assertTrue(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong() > 0); metadata.release(); temp.delete()
             waitUntil("Audio preview button ready") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).any { view -> view.contentDescription?.toString() == "播放" } }; ready }
-            scenario.onActivity { activity -> assertFalse(views(activity.window.decorView).single { it.tag == "record-leave-notice" }.isShown) }
+            scenario.onActivity { activity -> assertFalse(views(activity.window.decorView).single { it.tag == "recording-time" }.isShown) }
             scenario.onActivity { activity -> views(activity.window.decorView).first { it.contentDescription?.toString() == "播放" }.performClick(); screenshot(activity, "editor-audio-preview") }
             scenario.recreate()
             waitUntil("Audio retained after recreation") { context.recordDraftStore().draft().getJSONArray("attachments").toString().contains(audio.getString("id")) }
@@ -133,25 +134,319 @@ class RecordEditorInstrumentedTest {
             }
         } finally { store.clear() }
     }
-    @Test fun leavingAnActualRecordingStopsItAndKeepsAnEncodedPrivateDraft() {
-        guard();instrumentation.uiAutomation.grantRuntimePermission(context.packageName,android.Manifest.permission.RECORD_AUDIO)
-        ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
-            waitUntil("Editor loaded") { var ready=false;scenario.onActivity { ready=views(it.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription=="正在想什么" }?.isEnabled==true };ready }
-            scenario.onActivity { a ->
-                views(a.window.decorView).filterIsInstance<EditText>().single { it.contentDescription=="正在想什么" }.setText("Generated draft before leaving recording")
-                views(a.window.decorView).single { it.contentDescription=="录音" }.performClick()
+    @Test fun leavingAndRecreatingTheEditorKeepsRecordingUntilExplicitlyStopped() {
+        guard(); instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
+        val store = context.recordDraftStore()
+        store.clear()
+        try {
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("Editor loaded") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == "正在想什么" }?.isEnabled == true }; ready }
+                scenario.onActivity { a ->
+                    views(a.window.decorView).filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.setText("Generated draft before leaving recording")
+                    views(a.window.decorView).single { it.contentDescription == "录音" }.performClick()
+                }
+                waitUntil("Microphone foreground session starts") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.RECORDING }
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+                val before = dev.mote.collector.recording.RecordingSession.snapshot().elapsedMs
+                waitUntil("Recording continues after onPause") { dev.mote.collector.recording.RecordingSession.snapshot().elapsedMs > before + 1200 }
+                assertEquals(0, store.draft().getJSONArray("attachments").length())
+                assertEquals("Generated draft before leaving recording", store.draft().getString("text"))
+                assertEquals(0, context.queue().depth())
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                waitUntil("Editor returns to the active recording") { var found = false; scenario.onActivity { a -> found = views(a.window.decorView).any { it.contentDescription == "停止录音" && it.isShown } }; found }
+                scenario.recreate()
+                waitUntil("Recording survives editor recreation") { var found = false; scenario.onActivity { a -> found = views(a.window.decorView).any { it.contentDescription == "停止录音" && it.isShown } }; found }
+                assertEquals(dev.mote.collector.recording.RecordingPhase.RECORDING, dev.mote.collector.recording.RecordingSession.snapshot().phase)
+                scenario.onActivity { a -> views(a.window.decorView).single { it.contentDescription == "停止录音" }.performClick() }
+                waitUntil("Explicit stop retains the encoded audio") { store.draft().getJSONArray("attachments").length() == 1 }
+                val audio = store.draft().getJSONArray("attachments").getJSONObject(0)
+                assertEquals("audio/aac", audio.getString("mime"))
+                val file = File(context.cacheDir, "generated-left-recording.aac"); file.writeBytes(store.bytes(audio.getString("id")))
+                val metadata = android.media.MediaMetadataRetriever()
+                try { metadata.setDataSource(file.absolutePath); assertTrue(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong() > 0) } finally { metadata.release(); file.delete() }
+                waitUntil("Stopped draft returns with playback") { var found = false; scenario.onActivity { a -> found = views(a.window.decorView).any { it.contentDescription?.toString() == "播放" && it.isShown } }; found }
+                scenario.recreate(); waitUntil("Stopped original survives recreation") { store.draft().getJSONArray("attachments").optJSONObject(0)?.optString("id") == audio.getString("id") }
             }
-            Thread.sleep(1300)
-            scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
-            waitUntil("Leaving stores the stopped audio") { context.recordDraftStore().draft().getJSONArray("attachments").length()==1 }
-            val draft=context.recordDraftStore().draft();assertEquals("Generated draft before leaving recording",draft.getString("text"))
-            val audio=draft.getJSONArray("attachments").getJSONObject(0);val file=File(context.cacheDir,"generated-left-recording.m4a");file.writeBytes(context.recordDraftStore().bytes(audio.getString("id")))
-            val metadata=android.media.MediaMetadataRetriever();try{metadata.setDataSource(file.absolutePath);assertTrue(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()>0)}finally{metadata.release();file.delete()}
-            assertEquals(0,context.queue().depth());scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-            waitUntil("Stopped draft returns with playback") { var found=false;scenario.onActivity { a -> found=views(a.window.decorView).any { it.contentDescription?.toString()=="播放" && it.isShown } };found }
-            scenario.onActivity { a -> assertFalse(views(a.window.decorView).any { it.contentDescription=="停止录音" });screenshot(a,"recording-left-and-returned") }
-            scenario.recreate();waitUntil("Stopped original survives recreation") { context.recordDraftStore().draft().getJSONArray("attachments").optJSONObject(0)?.optString("id")==audio.getString("id") }
+        } finally {
+            dev.mote.collector.recording.RecordingService.command(context, dev.mote.collector.recording.RecordingService.ACTION_STOP)
+            store.clear()
         }
+    }
+    @Test fun notificationPauseAndFocusLossStopWritingUntilExplicitResume() {
+        guard()
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+        context.recordDraftStore().clear()
+        context.systemEntries().create()
+        val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+        assertEquals("需要处理", notifications.getNotificationChannel("mote_attention").name.toString())
+        val settings = Settings(context)
+        val originalConfig = settings.read()
+        val audioManager = context.getSystemService(android.media.AudioManager::class.java)
+        val competingFocus = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).build())
+            .setOnAudioFocusChangeListener { }.build()
+        fun notificationAction(label: String): android.app.PendingIntent {
+            val manager = context.getSystemService(android.app.NotificationManager::class.java)
+            return manager.activeNotifications.single { it.id == dev.mote.collector.recording.RecordingService.NOTIFICATION_ID }
+                .notification.actions.single { it.title.toString() == label }.actionIntent
+        }
+        fun bytes(): Long = synchronized(dev.mote.collector.recording.RecordingSession.lock) {
+            dev.mote.collector.recording.RecordingSession.directory?.listFiles().orEmpty().sumOf { it.length() }
+        }
+        try {
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("Editor loaded") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().any { field -> field.contentDescription == "正在想什么" && field.isEnabled } }; ready }
+                scenario.onActivity { views(it.window.decorView).single { view -> view.contentDescription == "录音" }.performClick() }
+                waitUntil("Microphone produces a segment") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.RECORDING && bytes() > 0 }
+                // An actual UA18 interruption, with capture stopped, persists
+                // while recording publishes its own foreground notification.
+                settings.save(originalConfig.copy(mode = "projection", appCollectionRules = AppCollectionRules(AppCollectionMode.SCREENSHOT, emptyMap()).json()), confirmCentralEndpoint = true)
+                settings.captured(java.time.Instant.now().toString())
+                settings.status("error", "Generated interrupted capture")
+                context.systemEntries().refresh()
+                waitUntil("Both recording and attention notifications coexist") { notifications.activeNotifications.map { it.id }.containsAll(listOf(Notifications.ATTENTION_ID, dev.mote.collector.recording.RecordingService.NOTIFICATION_ID)) }
+                assertEquals("采集已中断", notifications.activeNotifications.single { it.id == Notifications.ATTENTION_ID }.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString())
+                assertEquals(setOf(Notifications.ATTENTION_ID, dev.mote.collector.recording.RecordingService.NOTIFICATION_ID), notifications.activeNotifications.map { it.id }.filter { it in setOf(Notifications.ATTENTION_ID, dev.mote.collector.recording.RecordingService.NOTIFICATION_ID) }.toSet())
+                val recording = notifications.activeNotifications.single { it.id == dev.mote.collector.recording.RecordingService.NOTIFICATION_ID }.notification
+                assertEquals("录音", recording.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString())
+                assertEquals(listOf("暂停", "停止"), recording.actions.map { it.title.toString() })
+                notificationAction("暂停").send()
+                waitUntil("Notification pauses recording") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.PAUSED }
+                waitUntil("Paused editor offers an explicit continuation") {
+                    var shown = false
+                    scenario.onActivity { activity ->
+                        val all = views(activity.window.decorView)
+                        shown = all.filterIsInstance<TextView>().any { it.text.toString() == "录音已暂停" && it.isShown } &&
+                            all.any { it.contentDescription == "继续录音" && it.isShown && it.isEnabled } &&
+                            all.filterIsInstance<TextView>().single { it.text.toString() == "保存" }.isEnabled
+                    }
+                    shown
+                }
+                val pausedNotification = notifications.activeNotifications.single { it.id == dev.mote.collector.recording.RecordingService.NOTIFICATION_ID }.notification
+                assertEquals("录音已暂停", pausedNotification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString())
+                assertEquals(listOf("继续", "停止"), pausedNotification.actions.map { it.title.toString() })
+                val pausedBytes = bytes(); val pausedTime = dev.mote.collector.recording.RecordingSession.snapshot().elapsedMs
+                Thread.sleep(1200)
+                assertEquals("No AAC bytes are written while paused", pausedBytes, bytes())
+                assertEquals("The timer is frozen while paused", pausedTime, dev.mote.collector.recording.RecordingSession.snapshot().elapsedMs)
+                notificationAction("继续").send()
+                waitUntil("Notification resumes audio writing") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.RECORDING && bytes() > pausedBytes }
+                assertEquals(android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED, audioManager.requestAudioFocus(competingFocus))
+                waitUntil("Another audio owner interrupts the recording") { dev.mote.collector.recording.RecordingSession.snapshot().let { it.phase == dev.mote.collector.recording.RecordingPhase.PAUSED && it.interrupted } }
+                val interruptedBytes = bytes()
+                audioManager.abandonAudioFocusRequest(competingFocus)
+                Thread.sleep(1200)
+                assertEquals(interruptedBytes, bytes())
+                assertEquals("Regaining focus must not silently resume the microphone", dev.mote.collector.recording.RecordingPhase.PAUSED, dev.mote.collector.recording.RecordingSession.snapshot().phase)
+                notificationAction("继续").send()
+                waitUntil("Explicit continue resumes after focus loss") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.RECORDING && bytes() > interruptedBytes }
+                notificationAction("停止").send()
+                waitUntil("Stop retains the audio in the draft") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE && context.recordDraftStore().draft().getJSONArray("attachments").length() == 1 }
+                assertTrue("The UA18 attention notification survives recording", notifications.activeNotifications.any { it.id == Notifications.ATTENTION_ID })
+            }
+        } finally {
+            audioManager.abandonAudioFocusRequest(competingFocus)
+            dev.mote.collector.recording.RecordingService.command(context, dev.mote.collector.recording.RecordingService.ACTION_STOP)
+            waitUntil("Recording service stops") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE }
+            settings.status("paused", "Generated fixture finished")
+            settings.save(originalConfig, confirmCentralEndpoint = true)
+            context.systemEntries().refresh()
+            context.recordDraftStore().clear()
+        }
+    }
+    @Test fun savingWhileRecordingStopsThenSavesTheFinishedAudio() {
+        guard()
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
+        val store = context.recordDraftStore(); store.clear()
+        try {
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("Editor loaded") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().any { field -> field.contentDescription == "正在想什么" && field.isEnabled } }; ready }
+                scenario.onActivity { activity ->
+                    val all = views(activity.window.decorView)
+                    all.filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.setText("Generated text saved during recording")
+                    all.single { it.tag == "record-describe-toggle" }.performClick()
+                    all.filterIsInstance<EditText>().single { it.tag == "record-description" }.apply {
+                        setText("Generated description retained during recording")
+                        requestFocus()
+                        (activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
+                waitUntil("Keyboard is open before recording") { var shown = false; scenario.onActivity { shown = it.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true }; shown }
+                scenario.onActivity { views(it.window.decorView).single { view -> view.contentDescription == "录音" }.performClick() }
+                waitUntil("Recording starts and writes audio") {
+                    dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.RECORDING &&
+                        synchronized(dev.mote.collector.recording.RecordingSession.lock) { dev.mote.collector.recording.RecordingSession.directory?.listFiles().orEmpty().any { it.length() > 0 } }
+                }
+                waitUntil("Recording chrome hides the keyboard and editing controls") {
+                    var correct = false
+                    scenario.onActivity { activity ->
+                        val all = views(activity.window.decorView)
+                        val editorBounds = android.graphics.Rect()
+                        val waveBounds = android.graphics.Rect()
+                        val editorVisible = all.filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.getGlobalVisibleRect(editorBounds)
+                        val waveVisible = all.single { it.tag == "recording-wave" }.getGlobalVisibleRect(waveBounds)
+                        correct = activity.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == false &&
+                            all.filterIsInstance<TextView>().single { it.text.toString() == "保存" }.isEnabled &&
+                            editorVisible && editorBounds.height() > 0 && waveVisible && waveBounds.height() > 0 &&
+                            all.filterIsInstance<TextView>().none { it.text.toString() == "清空" && it.isShown } &&
+                            all.none { it.tag in setOf("record-describe-toggle", "record-description") && it.isShown }
+                    }
+                    correct
+                }
+                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "保存" }.performClick() }
+                waitUntil("Save finishes recording before enqueuing") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE && context.queue().depth() == 1 }
+            }
+            val event = context.queue().peek()!!
+            assertEquals("Generated text saved during recording", event.getString("ocrText"))
+            assertEquals("Generated description retained during recording", event.getJSONObject("metadata").getString("ownerDescription"))
+            val audio = store.record(event.getString("id"))!!.getJSONArray("attachments").getJSONObject(0)
+            assertEquals("audio/aac", audio.getString("mime"))
+            assertTrue("The queued note contains the finished AAC segment", store.bytes(audio.getString("id")).isNotEmpty())
+            assertEquals(audio.getString("id"), store.draft().getJSONArray("attachments").getJSONObject(0).getString("id"))
+        } finally {
+            dev.mote.collector.recording.RecordingService.command(context, dev.mote.collector.recording.RecordingService.ACTION_STOP)
+            waitUntil("Recording service stops") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE }
+            store.clear()
+        }
+    }
+    @Test fun savingRecordingStillCompletesWhenEditorMovesToBackground() {
+        guard()
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
+        val store = context.recordDraftStore(); store.clear()
+        val release = java.util.concurrent.CountDownLatch(1)
+        try {
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("Editor loaded") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().any { field -> field.contentDescription == "正在想什么" && field.isEnabled } }; ready }
+                scenario.onActivity { activity ->
+                    views(activity.window.decorView).filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.setText("Generated save before background")
+                    views(activity.window.decorView).single { it.contentDescription == "录音" }.performClick()
+                }
+                waitUntil("Microphone has written audio and the editor observes the session") {
+                    var shown = false; scenario.onActivity { shown = views(it.window.decorView).any { view -> view.tag == "recording-time" && view.isShown } }
+                    shown && synchronized(dev.mote.collector.recording.RecordingSession.lock) { dev.mote.collector.recording.RecordingSession.directory?.listFiles().orEmpty().any { it.length() > 0 } }
+                }
+                val blocked = java.util.concurrent.CountDownLatch(1)
+                dev.mote.collector.plugins.NotesPlugin.io.execute { blocked.countDown(); check(release.await(15, java.util.concurrent.TimeUnit.SECONDS)) }
+                assertTrue(blocked.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "保存" }.performClick() }
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+                release.countDown()
+                waitUntil("Save queues the finished recording without reopening the editor") { context.queue().depth() == 1 && dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE }
+                // Let the stopped Activity deliver its queued result before
+                // ActivityScenario closes it; the save assertion already ran in the background.
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+            }
+            val event = context.queue().peek()!!
+            assertEquals("Generated save before background", event.getString("ocrText"))
+            val audio = store.record(event.getString("id"))!!.getJSONArray("attachments").getJSONObject(0)
+            assertEquals("audio/aac", audio.getString("mime"))
+            assertTrue(store.bytes(audio.getString("id")).isNotEmpty())
+        } finally {
+            release.countDown()
+            dev.mote.collector.recording.RecordingService.command(context, dev.mote.collector.recording.RecordingService.ACTION_STOP)
+            waitUntil("Recording service stops") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE }
+            store.clear()
+        }
+    }
+    @Test fun revokingNotesScopeStopsCaptureAndRetainsTheWrittenSegment() {
+        guard()
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
+        val store = context.recordDraftStore(); store.clear()
+        try {
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("Editor loaded") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().any { field -> field.contentDescription == "正在想什么" && field.isEnabled } }; ready }
+                scenario.onActivity { activity ->
+                    views(activity.window.decorView).filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.setText("Generated text retained after scope revocation")
+                    views(activity.window.decorView).single { it.contentDescription == "录音" }.performClick()
+                }
+                waitUntil("Microphone has written a segment") {
+                    dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.RECORDING &&
+                        synchronized(dev.mote.collector.recording.RecordingSession.lock) { dev.mote.collector.recording.RecordingSession.directory?.listFiles().orEmpty().any { it.length() > 0 } }
+                }
+                scenario.onActivity { activity ->
+                    val host = (activity.application as MoteApplication).pluginHost
+                    assertTrue(host.stopScope(dev.mote.collector.plugins.NotesPlugin.INSTANCE_ID).isEmpty())
+                    assertTrue(dev.mote.collector.recording.RecordingSession.snapshot().phase in setOf(dev.mote.collector.recording.RecordingPhase.STOPPING, dev.mote.collector.recording.RecordingPhase.IDLE))
+                }
+                waitUntil("Scope revocation flushes the segment and releases the microphone") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE && store.draft().getJSONArray("attachments").length() == 1 }
+                waitUntil("The revoked scope's foreground service is gone") {
+                    @Suppress("DEPRECATION")
+                    context.getSystemService(android.app.ActivityManager::class.java).getRunningServices(Int.MAX_VALUE)
+                        .none { it.service.className == dev.mote.collector.recording.RecordingService::class.java.name }
+                }
+                val audio = store.draft().getJSONArray("attachments").getJSONObject(0)
+                assertEquals("audio/aac", audio.getString("mime"))
+                val retained = File(context.cacheDir, "generated-revoked-scope.aac").apply { writeBytes(store.bytes(audio.getString("id"))) }
+                val metadata = android.media.MediaMetadataRetriever()
+                try { metadata.setDataSource(retained.absolutePath); assertTrue(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong() > 0) }
+                finally { metadata.release(); retained.delete() }
+                assertEquals("Generated text retained after scope revocation", store.draft().getString("text"))
+                scenario.onActivity { activity -> views(activity.window.decorView).single { it.contentDescription == "录音" }.performClick() }
+                Thread.sleep(500)
+                assertEquals("A revoked editor cannot restart recording", dev.mote.collector.recording.RecordingPhase.IDLE, dev.mote.collector.recording.RecordingSession.snapshot().phase)
+            }
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("A fresh notes scope can reopen the retained draft") { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).filterIsInstance<EditText>().any { it.text.toString() == "Generated text retained after scope revocation" } }; found }
+                assertEquals(1, store.draft().getJSONArray("attachments").length())
+            }
+        } finally {
+            dev.mote.collector.recording.RecordingService.command(context, dev.mote.collector.recording.RecordingService.ACTION_STOP)
+            waitUntil("Recording service stops") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE }
+            store.clear()
+        }
+    }
+    @Test fun sharedEditorCannotBeTrickedIntoStartingTheMicrophone() {
+        guard()
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
+        context.recordDraftStore().clear()
+        try {
+            val forged = Intent(context, RecordEditorActivity::class.java).putExtra("startMedia", "audio")
+            ActivityScenario.launch<RecordEditorActivity>(forged).use { scenario ->
+                waitUntil("Shared editor loaded") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().any { field -> field.isEnabled && field.contentDescription == "正在想什么" } }; ready }
+                Thread.sleep(500)
+                assertEquals(dev.mote.collector.recording.RecordingPhase.IDLE, dev.mote.collector.recording.RecordingSession.snapshot().phase)
+            }
+            val entry = Intent(context, MicrophoneRecordEditorActivity::class.java).putExtra("startMedia", "audio")
+            ActivityScenario.launch<MicrophoneRecordEditorActivity>(entry).use {
+                waitUntil("Private audio entry starts in the editor") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.RECORDING }
+                dev.mote.collector.recording.RecordingService.command(context, dev.mote.collector.recording.RecordingService.ACTION_STOP)
+                waitUntil("Private audio entry stops") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE }
+            }
+        } finally {
+            dev.mote.collector.recording.RecordingService.command(context, dev.mote.collector.recording.RecordingService.ACTION_STOP)
+            waitUntil("Recording service stops") { dev.mote.collector.recording.RecordingSession.snapshot().phase == dev.mote.collector.recording.RecordingPhase.IDLE }
+            context.recordDraftStore().clear()
+        }
+    }
+    @Test fun fullDraftCanBeEditedAndRecoverAnUnattachedRecordingOnReopen() {
+        guard()
+        val store = context.recordDraftStore(); store.clear()
+        val attachments = org.json.JSONArray()
+        repeat(10) { attachments.put(store.stage(byteArrayOf((it + 1).toByte()), "generated-$it.txt", "text/plain")) }
+        store.edit("Generated full draft", attachments, org.json.JSONObject().put("kind", "manual"))
+        val pending = File(context.filesDir, "recording-pending/generated-capacity-recovery")
+        require(!pending.exists())
+        val writer = dev.mote.collector.recording.SegmentedAudioWriter(pending, 44_100, 1)
+        writer.write(byteArrayOf(7, 8, 9)); writer.finish()
+        val segment = pending.listFiles().orEmpty().single()
+        try {
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("The full draft opens despite the retained segment") { var ready = false; scenario.onActivity { a -> ready = views(a.window.decorView).filterIsInstance<EditText>().any { field -> field.isEnabled && field.text.toString() == "Generated full draft" } }; ready }
+                scenario.onActivity { a ->
+                    val all = views(a.window.decorView)
+                    assertTrue(all.filterIsInstance<TextView>().any { it.text.toString() == "本机存储恢复失败" })
+                    assertFalse(all.filterIsInstance<TextView>().single { it.text.toString() == "保存" }.isEnabled)
+                    assertTrue(segment.isFile)
+                    all.first { it.contentDescription == "移除" && it.isShown }.performClick()
+                }
+                waitUntil("Removing one attachment frees draft capacity") { store.draft().getJSONArray("attachments").length() == 9 }
+                scenario.recreate()
+                waitUntil("Reopening attaches the retained recording") { store.draft().getJSONArray("attachments").let { rows -> rows.length() == 10 && (0 until rows.length()).any { rows.getJSONObject(it).optString("mime") == "audio/aac" } } }
+                assertFalse(segment.exists())
+                waitUntil("The complete draft can now be saved") { var enabled = false; scenario.onActivity { a -> enabled = views(a.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == "保存" && it.isEnabled } }; enabled }
+            }
+        } finally { store.clear() }
     }
     @Test fun synchronizeOfflineRecordThroughRealWorkManagerAndVerifyOriginalBytes() {
         val args = InstrumentationRegistry.getArguments()
