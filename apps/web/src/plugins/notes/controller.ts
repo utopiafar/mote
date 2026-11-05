@@ -268,7 +268,7 @@ export class NotesController {
       // the owner has already folded this composer away.
       if (saved) this.#onSaved?.();
       if (this.#started) {
-        this.#emit({queued: this.#outbox.items(), ...(saved ? {notice: moteText('记录已同步到你的中央节点。')} : {})});
+        this.#emit({queued: this.#outbox.items(), ...(saved ? {notice: moteText('记录已同步到你的中央。')} : {})});
         if (saved) {
           if (!this.#composerOnly) void this.load();
           const current = this.#outbox.draft();

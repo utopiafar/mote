@@ -163,7 +163,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         ui.button(MoteI18n.text("刷新")) { refresh() }
         val target = ui.card()
         val api = client
-        ui.work(MoteI18n.text("正在连接中央节点…"), {
+        ui.work(MoteI18n.text("正在连接中央…"), {
             listOf(api.get("/api/status"), api.get("/api/devices"), api.get("/api/operations?limit=5"))
         }) { data ->
             val status = data[0]
@@ -181,7 +181,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             ui.text(MoteI18n.text("处理任务"), NativeFontRole.SECTION, target)
             admin.items(data[2], target) { row -> admin.operation(row.optString("id")) }
         }
-        ui.button(MoteI18n.text("中央资料库")) { ui.navigate("archive") }
+        ui.button(MoteI18n.text("资料库")) { ui.navigate("archive") }
         ui.button(MoteI18n.text("日程建议")) {
             ui.startActivity(android.content.Intent(ui, CalendarActionsActivity::class.java))
         }
@@ -506,7 +506,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val latest = if (events.length() > 0) events.getJSONObject(events.length() - 1).optString("message") else ""
         runStatus?.visibility = android.view.View.VISIBLE
         runStatus?.text = when (update.status) {
-            "running" -> latest.ifBlank { MoteI18n.text("中央节点正在回答…") }
+            "running" -> latest.ifBlank { MoteI18n.text("中央正在回答…") }
             "completed" -> MoteI18n.text("回答已完成")
             "cancelled" -> MoteI18n.text("已停止回答")
             else -> MoteI18n.text("回答未完成")
@@ -892,7 +892,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
         fun next(value: JSONObject): String? = if (value.isNull("nextCursor") || !value.has("nextCursor")) null else value.opt("nextCursor").toString()
         val pages = listOf(
-            "overview" to "中央工作台", "archive" to "中央资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "activity" to "活动", "notes" to "记录",
+            "overview" to "中央工作台", "archive" to "资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "activity" to "活动", "notes" to "记录",
             "materials" to "正式资料", "coding" to "Coding 会话同步状态", "timeline" to "片段", "files" to "文件与录音",
             "memories" to "记忆", "insights" to "洞察", "actions" to "行动", "agentView" to "Agent 视角",
             "sources" to "来源", "devices" to "设备", "connections" to "对外授权", "lark" to "飞书",

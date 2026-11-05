@@ -720,18 +720,18 @@ class UiIterationInstrumentedTest {
                 val deadline = SystemClock.elapsedRealtime() + 10000
                 var ready = false
                 while (!ready && SystemClock.elapsedRealtime() < deadline) {
-                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("中央资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。") } }
+                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。") } }
                     if (!ready) Thread.sleep(25)
                 }
                 assertTrue("Offline archive must explain browsing instead of questioning", ready)
                 scenario.onActivity { activity ->
                     val title = views(activity.window.decorView).single { it.tag == "central-title" } as TextView
-                    assertEquals(MoteI18n.text("中央资料库"), title.text.toString())
+                    assertEquals(MoteI18n.text("资料库"), title.text.toString())
                     activity.navigate("ask")
                     assertEquals(MoteI18n.text("问一问"), title.text.toString())
                     assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。") })
                     activity.navigate("archive")
-                    assertEquals(MoteI18n.text("中央资料库"), title.text.toString())
+                    assertEquals(MoteI18n.text("资料库"), title.text.toString())
                     assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().none { it.text.toString() == MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。") })
                 }
             }

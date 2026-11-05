@@ -188,11 +188,11 @@ internal object GeneratedWindowRendering {
             "p31-real-generated-calendar-picker-dark" -> Triple("sources", "real-calendar-picker", "Generated final picker calendar")
             "p31-selected-calendar-scope-dark" -> Triple("sources", "paused-calendar-draft", "Generated calendar scope, no event collection")
             "p31-cancel-keeps-exact-calendar-dark" -> Triple("sources", "cancelled-calendar-edit", "这台手机的来源")
-            "p36-another-central-valid-zip-rejected-dark" -> Triple("backup", "wrong-central", "备份无法导入：备份属于不同中央节点，请先连接原节点")
+            "p36-another-central-valid-zip-rejected-dark" -> Triple("backup", "wrong-central", "备份无法导入：备份属于不同中央。先连接原节点")
             "p37-local-metadata-json-success-dark" -> Triple("backup", "metadata-exported", "导出文件已生成")
             "p37-local-metadata-json-write-failure-dark" -> Triple("backup", "metadata-write-failed", "备份未能生成")
             "p27-notification-granted-return-dark", "p27-usage-granted-return-dark" -> Triple("permissions", "actual-grant-return", "采集权限")
-            "p11-central-unconnected-dark" -> Triple("materials", "disconnected", "中央资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。")
+            "p11-central-unconnected-dark" -> Triple("materials", "disconnected", "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。")
             "p11-empty-materials-dark", "p11-empty-materials-light", "p11-empty-materials-message-dark" -> Triple("central-library", "actual-empty", "当前范围内暂无条目。没有列出不代表不存在。")
             "p11-empty-memories-dark", "p11-empty-memories-light", "p11-empty-memories-message-dark", "p11-memory-return-dark" -> Triple("memories", "actual-empty", "当前筛选下没有匹配的记忆。可切换内容分类或调整筛选条件。")
             "p11-memory-management-more-dark" -> Triple("memories", "explicit-more", "记忆主题")
@@ -264,7 +264,7 @@ internal object GeneratedWindowRendering {
             "rollout-app-rule-edit" -> Triple("rollout-app-rule-edit", "restriction", "配置此版本字段")
             "rollout-scanner" -> Triple("scanner", "content", "扫描连接二维码")
             "rollout-calendar" -> Triple("calendar", "restriction", "日程建议")
-            "rollout-pairing" -> Triple("rollout-pairing", "content", "连接中央节点")
+            "rollout-pairing" -> Triple("rollout-pairing", "content", "连接中央")
             else -> if (name.startsWith("rollout-detail-central-")) {
                 val centralPage = name.removePrefix("rollout-detail-central-")
                 val title = CentralScreens.pages.single { it.first == centralPage }.second

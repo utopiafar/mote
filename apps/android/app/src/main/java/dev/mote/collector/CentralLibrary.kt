@@ -539,7 +539,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     }.onFailure { error->if(onFailure!=null)onFailure(error) else ui.requestFailure(error) }
                 }
             }
-            ui.button(MoteI18n.text("删除记忆")) { screens.confirm(MoteI18n.text("删除记忆"), MoteI18n.text("删除后无法恢复。")) {
+            ui.button(MoteI18n.text("删除记忆")) { screens.confirm(MoteI18n.text("删除记忆"), MoteI18n.text("原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。")) {
                 val exact=reference?.invoke()
                 if(reference!=null && exact==null) { onFailure?.invoke(WorkMemoryUnavailable());return@confirm }
                 val visit=ui.readVisit()

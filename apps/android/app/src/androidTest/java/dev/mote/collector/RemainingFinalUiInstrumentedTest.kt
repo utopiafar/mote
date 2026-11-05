@@ -129,7 +129,7 @@ class RemainingFinalUiInstrumentedTest {
             val plain=object:ByteCipher{override fun seal(bytes:ByteArray)=bytes;override fun open(bytes:ByteArray)=bytes};val source=DurableQueue(File(root,"isolated-archive"),plain);source.enqueue(event,null,16_000_000)
             val zip=File(root,"other-central.zip");zip.outputStream().use { QueueArchive.export(source,"http://127.0.0.1:59998",it) };val before=context.queue().inventory()
             ActivityScenario.launch<BackupActivity>(Intent(context,BackupActivity::class.java)).use { scenario->
-                tag("backup-restore-records");picker(Intent.ACTION_OPEN_DOCUMENT,zip){click("选择备份文件");until("another node ZIP rejected"){text("备份属于不同中央节点")}}
+                tag("backup-restore-records");picker(Intent.ACTION_OPEN_DOCUMENT,zip){click("选择备份文件");until("another node ZIP rejected"){text("备份属于不同中央")}}
                 assertFalse(text("导入到此手机"));assertEquals(before,context.queue().inventory());scenario.onActivity { picture(it,"p36-another-central-valid-zip-rejected-dark") };click("返回")
                 tag("backup-scope");val output=File(root,"metadata.json")
                 picker(Intent.ACTION_CREATE_DOCUMENT,output){click("导出本机元数据 JSON");until("real metadata JSON write"){text("导出文件已生成")}}

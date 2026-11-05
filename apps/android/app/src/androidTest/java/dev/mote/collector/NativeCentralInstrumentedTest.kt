@@ -88,7 +88,7 @@ class NativeCentralInstrumentedTest {
             scenario.onActivity { activity ->
                 val types = all(activity).filterIsInstance<android.widget.Spinner>().single { it.contentDescription == "资料类型" }
                 val labels = (0 until types.adapter.count).map { types.adapter.getItem(it).toString() }
-                assertTrue(labels.contains("中央资料库"))
+                assertTrue(labels.contains("资料库"))
                 assertFalse(labels.contains("Coding Agent 上传")); assertFalse(labels.contains("Coding 会话同步状态"))
                 activity.navigate("coding")
             }

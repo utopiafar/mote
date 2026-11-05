@@ -10,8 +10,8 @@ import android.view.ViewGroup
 
 internal enum class NativeColorRole(val key: String?) {
     BACKGROUND("background"), SURFACE("surface"), SIDEBAR("sidebar"), INK("ink"), MUTED("muted"), ACCENT("accent"), TINT("tint"),
-    BORDER("border"), CONTROL_BORDER("control-border"), DIVIDER("divider"), SUCCESS("success"), WARNING("warning"), DANGER("danger"),
-    SUCCESS_TINT("success-tint"), WARNING_TINT("warning-tint"), DANGER_TINT("danger-tint"), PRIMARY_BACKGROUND("primary-background"), PRIMARY_INK("primary-ink"), SURFACE_RAISED("surface-raised"), TRANSPARENT(null);
+    BORDER("border"), CONTROL_BORDER("control-border"), DIVIDER("divider"), HAIR("hair"), FILL("fill"), SUCCESS("success"), WARNING("warning"), DANGER("danger"),
+    SUCCESS_TINT("success-tint"), WARNING_TINT("warning-tint"), DANGER_TINT("danger-tint"), PRIMARY_BACKGROUND("primary-background"), PRIMARY_INK("primary-ink"), SURFACE_RAISED("surface-raised"), SURFACE_HOVER("surface-hover"), SURFACE_SUNKEN("surface-sunken"), ON_ACCENT("on-accent"), TRANSPARENT(null);
     fun color(): Int = key?.let { Color.parseColor(NativeUiPacks.registry.theme().value(it)) } ?: Color.TRANSPARENT
 }
 internal enum class NativeFontRole(val key: String) {
@@ -20,7 +20,8 @@ internal enum class NativeFontRole(val key: String) {
     val isHeading get() = this == TITLE || this == TITLE_MOBILE
 }
 internal enum class NativeRadiusRole(val key: String) {
-    CONTAINER("radius-container"), CONTROL("radius-control"), READING("radius-reading"), INDICATOR("radius-indicator");
+    CONTAINER("radius-container-mobile"), CONTROL("radius-control-mobile"), READING("radius-reading"), INDICATOR("radius-indicator"),
+    THUMB("radius-thumb-mobile"), PANEL("radius-panel-mobile"), PILL("radius-pill");
     fun dp() = NativeUiPacks.registry.theme().dimension(key)
 }
 

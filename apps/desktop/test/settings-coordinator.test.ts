@@ -123,7 +123,7 @@ it('binds an explicitly confirmed unbound backlog including an interrupted prepa
     await f.coordinator.connectionChange(() => f.coordinator.commitConnection(updated, false, true), false, true);
     const reopened = new NoteDraftStore(join(f.profile, 'notes')); await reopened.initialize();
     expect(reopened.get()).toMatchObject({ ...draft, prepared: true });
-    await expect(reopened.submit(draft, { ...updated, serverUrl: 'https://other.invalid' }, 'macos', f.queue)).rejects.toThrow('原中央节点');
+    await expect(reopened.submit(draft, { ...updated, serverUrl: 'https://other.invalid' }, 'macos', f.queue)).rejects.toThrow('原中央');
     expect((await reopened.submit(draft, updated, 'macos', f.queue)).id).toBe(draft.id);
   } finally { await f.close(); }
 });
