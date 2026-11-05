@@ -185,7 +185,7 @@ class HomeJourneyInstrumentedTest {
             onTop("The panel reads the same facts") { activity -> shown(activity).any { it.tag == "capture-status-screen-state" && (it as TextView).text.isNotBlank() } && shown(activity).any { it.tag == "capture-status-all" } }
             instrumentation.runOnMainSync {
                 assertTrue("屏幕采集" in texts(panel) && "通知与设备信息" in texts(panel) && "同步文件夹" in texts(panel))
-                assertEquals("Starting returns to the app's preview", "开始采集", (shown(panel).single { it.tag == "capture-status-all" } as Button).text.toString())
+                assertEquals("Resuming returns to the app's preview", "恢复采集", (shown(panel).single { it.tag == "capture-status-all" } as Button).text.toString())
             }
             capture(panel, "capture-status")
             instrumentation.runOnMainSync { panel.onBackPressedDispatcherCompat() }
