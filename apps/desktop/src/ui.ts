@@ -149,7 +149,7 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false, refre
   if (page === 'records' && !preserveContentPosition) { void loadRecords(); void refreshContent(); }
   if (page === 'overview' && initialized && !preserveContentPosition) { void libraryUi.refreshHome(); void refreshSources(); void workbenchUi.refresh(); }
   if (page === 'sources') void refreshSources();
-  if (page === 'overview' && initialized) { const epoch=statusReadEpoch; void desktopApi.status().then(status=>{if(epoch===statusReadEpoch&&!busy)render(status);}).catch(() => {if(epoch===statusReadEpoch&&!busy)feedback(moteText("状态读取失败，请重试。"));}); }
+  if (page === 'overview' && initialized) { const epoch=statusReadEpoch; void desktopApi.status().then(status=>{if(epoch===statusReadEpoch&&!busy)render(status);}).catch(() => {if(epoch===statusReadEpoch&&!busy)feedback(moteText("状态读取失败。"));}); }
   return true;
 }
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-nav]:not([data-presentation-nav])'))) button.addEventListener('click', () => {
