@@ -101,24 +101,19 @@ private struct RecordingMark: View {
 
 private struct RecordingTime: View {
     let state: RecordingActivityAttributes.ContentState
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
-        Group {
-            if state.isPaused {
-                Text(Self.duration(state.elapsed))
-            } else if isLuminanceReduced {
-                Text(timerInterval: state.timerStart...state.timerStart.addingTimeInterval(8 * 60 * 60), countsDown: false, showsHours: false)
-            } else {
-                Text(.durationOffset(to: state.timerStart), format: .time(pattern: .minuteSecond(padMinuteToLength: 2)))
-            }
-        }
-        .lineLimit(1)
-        .accessibilityLabel("录音")
+        Text(Self.duration(state.elapsed))
+            .lineLimit(1)
+            .monospacedDigit()
+            .accessibilityLabel("录音")
     }
 
     private static func duration(_ value: TimeInterval) -> String {
         let seconds = max(0, Int(value))
+        if seconds >= 3_600 {
+            return String(format: "%d:%02d:%02d", seconds / 3_600, seconds % 3_600 / 60, seconds % 60)
+        }
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
     }
 }

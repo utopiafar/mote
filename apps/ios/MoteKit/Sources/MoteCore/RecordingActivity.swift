@@ -4,17 +4,13 @@ import Foundation
 public struct RecordingActivitySnapshot: Equatable, Sendable {
     public let recordingID: UUID
     public let elapsed: TimeInterval
-    public let updatedAt: Date
     public let isPaused: Bool
 
-    public init(recordingID: UUID, elapsed: TimeInterval, updatedAt: Date, isPaused: Bool) {
+    public init(recordingID: UUID, elapsed: TimeInterval, isPaused: Bool) {
         self.recordingID = recordingID
         self.elapsed = max(0, elapsed)
-        self.updatedAt = updatedAt
         self.isPaused = isPaused
     }
-
-    public var timerStart: Date { updatedAt.addingTimeInterval(-elapsed) }
 }
 
 /// The platform adapter owns ActivityKit objects; the recorder remains the authority.

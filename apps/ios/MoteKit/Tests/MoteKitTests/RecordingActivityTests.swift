@@ -8,10 +8,9 @@ final class RecordingActivityTests: XCTestCase {
         let backend = ActivityBackend()
         let coordinator = RecordingActivityCoordinator(backend: backend)
         let id = UUID()
-        let now = Date(timeIntervalSince1970: 1_000)
-        coordinator.recordingChanged(snapshot(id, elapsed: 0, at: now))
-        coordinator.recordingChanged(snapshot(id, elapsed: 134, at: now.addingTimeInterval(134), paused: true))
-        coordinator.recordingChanged(snapshot(id, elapsed: 134, at: now.addingTimeInterval(200)))
+        coordinator.recordingChanged(snapshot(id, elapsed: 0))
+        coordinator.recordingChanged(snapshot(id, elapsed: 134, paused: true))
+        coordinator.recordingChanged(snapshot(id, elapsed: 134))
         coordinator.recordingChanged(nil)
         await coordinator.waitForUpdates()
 
@@ -19,7 +18,6 @@ final class RecordingActivityTests: XCTestCase {
         XCTAssertEqual(backend.snapshots[1].elapsed, 134)
         XCTAssertTrue(backend.snapshots[1].isPaused)
         XCTAssertFalse(backend.snapshots[2].isPaused)
-        XCTAssertEqual(backend.snapshots[2].timerStart, now.addingTimeInterval(66))
         XCTAssertNil(backend.active)
     }
 
@@ -27,7 +25,7 @@ final class RecordingActivityTests: XCTestCase {
         let backend = ActivityBackend()
         backend.suspendStart = true
         let coordinator = RecordingActivityCoordinator(backend: backend)
-        coordinator.recordingChanged(snapshot(UUID(), elapsed: 0, at: .now))
+        coordinator.recordingChanged(snapshot(UUID(), elapsed: 0))
         while backend.startContinuation == nil { await Task.yield() }
         coordinator.recordingChanged(nil)
         backend.startContinuation?.resume()
@@ -39,10 +37,10 @@ final class RecordingActivityTests: XCTestCase {
 
     func testRestartCleansOrphansAndFailedStartDoesNotCreateAnActivity() async {
         let backend = ActivityBackend()
-        backend.active = snapshot(UUID(), elapsed: 20, at: .now)
+        backend.active = snapshot(UUID(), elapsed: 20)
         backend.allowStart = false
         let coordinator = RecordingActivityCoordinator(backend: backend)
-        coordinator.recordingChanged(snapshot(UUID(), elapsed: 0, at: .now))
+        coordinator.recordingChanged(snapshot(UUID(), elapsed: 0))
         coordinator.recordingChanged(nil)
         await coordinator.waitForUpdates()
 
@@ -53,8 +51,8 @@ final class RecordingActivityTests: XCTestCase {
     func testNewRecordingEndsPreviousActivityBeforeStarting() async {
         let backend = ActivityBackend()
         let coordinator = RecordingActivityCoordinator(backend: backend)
-        let first = snapshot(UUID(), elapsed: 1, at: .now)
-        let second = snapshot(UUID(), elapsed: 0, at: .now)
+        let first = snapshot(UUID(), elapsed: 1)
+        let second = snapshot(UUID(), elapsed: 0)
         coordinator.recordingChanged(first)
         coordinator.recordingChanged(second)
         await coordinator.waitForUpdates()
@@ -62,8 +60,8 @@ final class RecordingActivityTests: XCTestCase {
         XCTAssertEqual(backend.active, second)
     }
 
-    private func snapshot(_ id: UUID, elapsed: TimeInterval, at: Date, paused: Bool = false) -> RecordingActivitySnapshot {
-        RecordingActivitySnapshot(recordingID: id, elapsed: elapsed, updatedAt: at, isPaused: paused)
+    private func snapshot(_ id: UUID, elapsed: TimeInterval, paused: Bool = false) -> RecordingActivitySnapshot {
+        RecordingActivitySnapshot(recordingID: id, elapsed: elapsed, isPaused: paused)
     }
 }
 

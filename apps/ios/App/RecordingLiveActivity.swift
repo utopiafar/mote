@@ -8,18 +8,29 @@ enum RecordingLiveActivity {
 
     private static let coordinator = RecordingActivityCoordinator(backend: ActivityKitBackend())
     private static weak var controller: RecordingController?
+    private static var lastTick = Date.distantPast
 
     static func initialize() { _ = coordinator }
 
     static func started(_ recorder: RecordingController) {
         controller = recorder
+        changed(recorder, force: true)
+    }
+
+    /// The recorder calls this while audio arrives; one activity update per
+    /// second keeps the clock current without spending the update budget.
+    static func tick(_ recorder: RecordingController) {
+        let now = Date()
+        guard now.timeIntervalSince(lastTick) >= 1 else { return }
+        lastTick = now
         changed(recorder)
     }
 
-    static func changed(_ recorder: RecordingController) {
+    static func changed(_ recorder: RecordingController, force: Bool = false) {
         guard controller === recorder, let id = recorder.activityRecordingID else { return }
+        if force { lastTick = Date() }
         coordinator.recordingChanged(RecordingActivitySnapshot(
-            recordingID: id, elapsed: recorder.elapsed, updatedAt: .now, isPaused: recorder.isPaused
+            recordingID: id, elapsed: recorder.elapsed, isPaused: recorder.isPaused
         ))
     }
 
@@ -80,6 +91,6 @@ private final class ActivityKitBackend: RecordingActivityBackend {
     }
 
     private func content(_ snapshot: RecordingActivitySnapshot) -> RecordingActivityAttributes.ContentState {
-        .init(timerStart: snapshot.timerStart, elapsed: snapshot.elapsed, isPaused: snapshot.isPaused)
+        .init(elapsed: snapshot.elapsed, isPaused: snapshot.isPaused)
     }
 }

@@ -173,7 +173,10 @@ final class RecordingController: ObservableObject {
         guard generation == id, state.phase == .recording, !data.isEmpty else { return }
         do {
             try writer?.appendPCM16(data)
-            if !visualFixture { elapsed += Double(data.count / 2) / currentSampleRate }
+            if !visualFixture {
+                elapsed += Double(data.count / 2) / currentSampleRate
+                RecordingLiveActivity.tick(self)
+            }
         } catch {
             pause()
             errorMessage = "录音未能保存"
