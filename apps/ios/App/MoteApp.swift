@@ -20,9 +20,11 @@ struct MoteApp: App {
                 if arguments.contains("-MoteComponentPreview") {
                     ComponentPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteHomePreview") {
+                    HomePreview()
+                        .preferredColorScheme(previewScheme)
                 } else {
-                    Color(uiColor: .systemBackground)
-                        .ignoresSafeArea()
+                    HomeRootView()
                 }
             }
             .task {
