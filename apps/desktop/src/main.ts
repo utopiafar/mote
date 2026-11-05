@@ -46,6 +46,7 @@ import { signedOutConfig } from './config';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
 import type { Config, Status } from './contracts';
+import { trayIconName } from './tray-icon';
 
 const defaultDataDirectory = app.getPath('userData');
 const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
@@ -85,7 +86,7 @@ function refreshApplicationMenu() {
       { role: 'editMenu', label: moteText("编辑") },
       { label: moteText("前往"), submenu: [
         { label: moteText("首页"), accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
-        { label: moteText("随手记"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
+        { label: moteText("记录"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
         { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
       ] },
       { label: moteText("显示"), submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }, ...(developmentProfile ? [{role:'toggleDevTools' as const}] : [])] },
@@ -167,12 +168,8 @@ function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'c
   if (page === 'notes') { void openQuickNote?.(); return; }
   showWindow(); window?.webContents.send(pushChannels.navigate, page);
 }
-function trayIcon(): Electron.NativeImage {
-  const bitmap = Buffer.alloc(20 * 20 * 4);
-  for (let y = 4; y < 16; y++) for (let x = 3; x < 17; x++) {
-    if (x < 6 || x > 13 || (y < 10 && (Math.abs(x - (y - 1)) <= 1 || Math.abs(x - (20 - y)) <= 1))) bitmap[(y * 20 + x) * 4 + 3] = 255;
-  }
-  const icon = nativeImage.createFromBitmap(bitmap, { width: 20, height: 20 });
+function trayIcon(status: Status): Electron.NativeImage {
+  const icon = nativeImage.createFromPath(join(__dirname, 'resources', 'tray', trayIconName(status)));
   icon.setTemplateImage(true);
   return icon;
 }
@@ -180,13 +177,14 @@ function updateUi(status: Status): void {
   status = { ...includePreparedNote(status), operations: backgroundJobs.snapshot(), storage: storageStatus(), credentialStorage: developmentProfile ? 'json' : 'system', environment: { profile: profile.name, defaultProfile: profile.defaultProfile, dataDirectory: profile.dataDirectory } };
   if (window && !window.isDestroyed()) window.webContents.send(pushChannels.status, status);
   if (quickNoteWindow && !quickNoteWindow.isDestroyed()) quickNoteWindow.webContents.send(pushChannels.status, status);
+  tray?.setImage(trayIcon(status));
   tray?.setToolTip(moteText("Mote [{0}] · {1} · 待上传 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.queueDepth));
   tray?.setContextMenu(Menu.buildFromTemplate([
     { label: `Mote [${profile.name}] · ${status.running ? moteText("采集中") : moteText("已停止")}`, enabled: false },
     { label: moteText("待上传 {0} 条", status.queueDepth), enabled: false },
     { type: 'separator' },
     { label: moteText("打开 Mote"), click: () => showClientPage('overview') },
-    { label: moteText("随手记"), click: () => showClientPage('notes') },
+    { label: moteText("记录"), click: () => showClientPage('notes') },
     { label: moteText("打开中央仓库"), click: () => showClientPage('central') },
     { label: moteText("设置…"), click: () => showClientPage('settings') },
     { label: status.running ? moteText("停止采集") : moteText("开始采集"), click: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); } },
@@ -405,7 +403,7 @@ else {
     await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, deviceSettings, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!, localStorageBackup, systemTools, capabilityPublisher]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
-      const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
+      const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('记录'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
       quickNoteWindow=noteWindow;
       const noteSenderId = noteWindow.webContents.id;
       host.registerWindow(noteSenderId, 'quick-note', [hostCapability, notesReadCapability, notesWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability]);
@@ -547,7 +545,7 @@ else {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
-    tray = new Tray(trayIcon());
+    tray = new Tray(trayIcon(clientStatus()));
     tray.on('click', showWindow);
     updateUi(clientStatus());
     await window.loadURL(pageUrl);

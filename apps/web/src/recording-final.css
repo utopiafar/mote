@@ -6,28 +6,28 @@
 .recording-view .recording-turn-tools .text-button{font-size:11px;color:var(--mote-muted);border:0;background:none;padding:0}
 .recording-view .recording-correction{margin-top:13px}
 .recording-view .recording-correction label{font-size:12px;display:block}
-.recording-view .recording-correction textarea{width:100%;min-height:118px;resize:vertical;border:1px solid var(--mote-border);border-radius:5px;background:var(--mote-surface);color:var(--mote-ink);padding:12px;font-family:inherit;font-size:13px;line-height:1.9;margin-top:7px;box-sizing:border-box}
+.recording-view .recording-correction textarea{width:100%;min-height:118px;resize:vertical;border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-control);background:var(--mote-surface);color:var(--mote-ink);padding:12px;font-family:inherit;font-size:13px;line-height:1.9;margin-top:7px;box-sizing:border-box}
 .recording-view .recording-correction-caption{font-size:11px;color:var(--mote-muted);margin-top:9px}
 .recording-speakers-form>p{font-size:12px;color:var(--mote-muted);line-height:1.9;margin-bottom:20px}
-.recording-speakers-form .recording-speaker-row{border-top:1px solid var(--mote-border);padding:18px 0;display:grid;grid-template-columns:110px minmax(0,1fr);gap:20px;align-items:start}
+.recording-speakers-form .recording-speaker-row{border-top:1px solid var(--mote-hair);padding:18px 0;display:grid;grid-template-columns:110px minmax(0,1fr);gap:20px;align-items:start}
 .recording-speaker-row strong{display:block;font-size:13px;font-weight:500}
 .recording-speaker-row .text-button{font-size:11px;margin-top:7px;background:none;border:0;padding:0}
 .recording-speaker-row small{display:block;font-size:11px;color:var(--mote-muted);margin-top:7px}
 .recording-speaker-row label{display:block;font-size:11px;color:var(--mote-muted)}
-.recording-speaker-row input{display:block;margin-top:7px;box-sizing:border-box;width:100%;background:var(--mote-surface);border:1px solid var(--mote-border);border-radius:4px;color:var(--mote-ink);font-family:inherit;font-size:13px;padding:9px 10px}
+.recording-speaker-row input{display:block;margin-top:7px;box-sizing:border-box;width:100%;background:var(--mote-surface);border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-control);color:var(--mote-ink);font-family:inherit;font-size:13px;padding:9px 10px}
 .recording-sample-player{width:100%;height:37px;margin:0 0 15px}
 .recording-sample-label{font-size:11px;color:var(--mote-muted);margin-bottom:6px}
 .recording-speaker-quality{margin-top:14px;font-size:12px}
 @media(max-width:736px){.recording-speakers-form .recording-speaker-row{grid-template-columns:88px minmax(0,1fr);gap:14px}}
 @media(max-width:390px){.recording-speakers-form .recording-speaker-row{grid-template-columns:1fr;gap:11px}}
-.recording-view .recording-associated{display:flex;justify-content:space-between;gap:15px;border-top:1px solid var(--mote-border);padding:19px 0;margin-top:24px;font-size:12px}
+.recording-view .recording-associated{display:flex;justify-content:space-between;gap:15px;border-top:1px solid var(--mote-hair);padding:19px 0;margin-top:24px;font-size:12px}
 .recording-view .recording-associated small{display:block;font-size:11px;color:var(--mote-muted);margin-top:5px}
 .recording-view .recording-associated .text-button{font-size:12px;color:var(--mote-accent)}
 .recording-view .recording-correction .source-toolbar{margin-top:10px}
 .recording-view .recording-correction .button{font-size:12px;margin-top:0}
 @media(max-width:736px){.recording-view .recording-turn{grid-template-columns:47px minmax(0,1fr);gap:12px}.recording-view .recording-turn p{font-size:13px}.recording-view .recording-file{padding:15px}.recording-view .recording-file-head{gap:9px;flex-wrap:nowrap}.recording-view .recording-file-icon{display:none}.recording-view .recording-file-head .button{font-size:11px;padding:8px 11px;margin-left:0}.recording-view .recording-toolbar{gap:10px}.recording-view .recording-version{font-size:10px;max-width:none}}
 @media(max-width:390px){.recording-view .recording-toolbar{flex-wrap:wrap}.recording-view .recording-version{order:4;width:100%;margin-top:-5px}.recording-view .recording-turn{grid-template-columns:39px minmax(0,1fr);gap:10px}.recording-view .recording-file-head{align-items:start}.recording-view .recording-file-name strong{font-size:12px}.recording-view .recording-file-head .button{max-width:95px}.recording-view .recording-more-menu{min-width:198px}}
-.recording-dialog:has(.recording-speakers-form){border-radius:8px}
+.recording-dialog:has(.recording-speakers-form){border-radius:var(--mote-radius-panel)}
 .recording-dialog:has(.recording-speakers-form)>header{padding:17px 23px}
 .recording-dialog:has(.recording-speakers-form)>header h2{font-size:15px;font-weight:550}
 .recording-dialog:has(.recording-speakers-form) .recording-dialog-body{padding:22px 23px}

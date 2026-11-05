@@ -16,3 +16,7 @@ test('file times are labeled separately and activity is intentionally content-fr
   assert.equal(sourceLabels.activity,'应用活动');assert.match(activityExplanation,/这条记录仅包含前台应用与采样时长/);assert.match(activityExplanation,/独立选项/);
   const missing=renderToStaticMarkup(React.createElement(Metadata,{}));assert.match(missing,/未上报额外元数据/);
 });
+test('shortcuts collection method is labelled for the owner',()=>{
+  const html=renderToStaticMarkup(React.createElement(Metadata,{metadata:{version:1,observedAt:'2026-11-06T01:00:00Z',collector:{method:'shortcuts'}}}));
+  assert.match(html,/采集方式/);assert.match(html,/快捷指令/);
+});

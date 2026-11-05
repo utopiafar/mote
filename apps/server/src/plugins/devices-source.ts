@@ -51,6 +51,18 @@ export const devicesSourceReplacement='restart' as const;
 
 const unavailable=()=>new StoreError('Devices source is unavailable',503);
 
+// Android sends an independent heartbeat every 15 minutes, even when its
+// configured upload interval is shorter. Allow two expected intervals before
+// reporting a lack of contact; upload receipts also advance lastSeenAt.
+function contactLost(device:DeviceRecord,now:number):boolean{
+  const sync=device.sync;
+  if(!sync||sync.mode==='manual')return false;
+  const lastSeen=Date.parse(device.lastSeenAt);
+  const heartbeatMinutes=15;
+  const expectedMinutes=sync.mode==='realtime'?heartbeatMinutes:Math.max(heartbeatMinutes,sync.intervalMinutes);
+  return Number.isFinite(lastSeen)&&now-lastSeen>expectedMinutes*2*60_000;
+}
+
 /** Owns the devices HTTP contribution. Heartbeats are writes and stop at quiesce;
  * read views keep working until close. Archived device/capture rows are never
  * deleted here, so disabling the plugin cannot erase history. */
@@ -86,7 +98,8 @@ export function createDevicesSource(options:DeviceSourceOptions,dependencies:Dev
     });
     app.get('/api/devices',async request=>{
       pin(request);reading();
-      return {items:devices.devices()};
+      const items=devices.devices(),now=Date.now();
+      return {items,disconnectedDeviceIds:items.filter(device=>contactLost(device,now)).map(device=>device.deviceId)};
     });
     // Owner-only through the host's default-deny collector allowlist. This module
     // never loosens it: no collector/MCP route is registered for first data.

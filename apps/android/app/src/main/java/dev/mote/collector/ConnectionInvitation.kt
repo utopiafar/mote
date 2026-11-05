@@ -10,6 +10,7 @@ data class ConnectionInvitation(val serverUrl: String, val code: String, val exp
     override fun toString() = "ConnectionInvitation(redacted)"
     companion object {
         const val MAX_BYTES = 8192
+        private val declaredPlatforms = setOf("android", "macos", "ios", "windows", "linux")
         fun parse(input: String, debugHttp: Boolean, isDebug: Boolean, now: Instant = Instant.now()): ConnectionInvitation {
             try {
                 require(input.toByteArray(Charsets.UTF_8).size <= MAX_BYTES)
@@ -26,7 +27,15 @@ data class ConnectionInvitation(val serverUrl: String, val code: String, val exp
                 }
                 require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES); StrictJson.validate(text)
                 val json = JSONObject(text)
-                require(json.keys().asSequence().toSet() == setOf("format", "version", "serverUrl", "code", "expiresAt"))
+                require(json.keys().asSequence().toSet() in setOf(
+                    setOf("format", "version", "serverUrl", "code", "expiresAt"),
+                    setOf("format", "version", "serverUrl", "code", "expiresAt", "platforms"),
+                ))
+                val platforms = json.optJSONArray("platforms")
+                if (platforms != null) {
+                    val values = (0 until platforms.length()).map { platforms.get(it) }
+                    require(values.size in 1..declaredPlatforms.size && values.all { it is String && it in declaredPlatforms } && values.toSet().size == values.size)
+                }
                 require(json.get("format") == "mote.connection" && json.get("version") is Number && (json.get("version") as Number).toDouble() == 1.0)
                 val server = json.get("serverUrl") as? String ?: error("server")
                 require(server.length <= 2048 && server == server.trim() && server.none { it.isWhitespace() || it.code < 32 || it.code == 127 })

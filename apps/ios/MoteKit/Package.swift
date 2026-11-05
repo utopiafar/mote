@@ -18,7 +18,7 @@ let package = Package(
         .target(name: "MoteDesign"),
         .target(name: "MoteCore"),
         .target(name: "MoteCentral"),
-        .target(name: "MoteStorage"),
+        .target(name: "MoteStorage", dependencies: ["MoteCore"]),
         .testTarget(
             name: "MoteKitTests",
             dependencies: ["MoteDesign", "MoteCore", "MoteCentral", "MoteStorage"]

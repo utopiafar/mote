@@ -4,6 +4,9 @@ import {fileIndexSchema} from './file-index.js';
 import {z} from 'zod';
 import {sourceMetadataSchema} from './metadata.js';
 
+/** Every client and source shares one platform vocabulary. `other` stays a
+ * server connection admission label, never a capture platform. */
+export const platformSchema=z.enum(['macos','windows','linux','android','ios','import']);
 const timestamp=z.string().max(64).datetime({offset:true});
 // Authored/document time is independent of the time a connector observed a revision.
 // Preserve provider metadata as bounded JSON evidence; it is never interpreted as instructions.
@@ -126,7 +129,7 @@ export const sourceKindSchema=z.union([
 export const sourceConnectionSchema=z.object({
   id:sourceIdSchema,name:z.string().trim().min(1).max(200),
   kind:sourceKindSchema,
-  deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
+  deviceId:sourceIdSchema,platform:platformSchema,
   ownerRelation:ownerRelationSchema.optional(),ownerRelationVersion:z.number().int().positive().optional(),
   /** Owner API only. Source manifests and collectors cannot set this identity. */
   sourceContext:sourceDescriptionDeclarationSchema.omit({sourceId:true}).optional(),

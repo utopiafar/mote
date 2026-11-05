@@ -31,7 +31,7 @@ async function fixture(t:any){
 function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/actions/by-evidence/'))return {items:[],hasMore:false};
   if(path==='/api/library/descriptor')return {schemaVersion:1,revision:1,types:[]};
   if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:['/api/capture-browser','/api/capture-browser/timeline','/api/capture-browser/timeline/members','/api/library/browse','/api/coding/uploads'].map(path=>({id:'http:GET:'+path,version:'1',state:'active'}))};
-  const result=await read(path,init);return path.startsWith('/api/library/browse?')?{schemaVersion:1,types:[],sources:[],noteOrigin:{origin:'notes',label:'随手记'},...result as object,items:((result as any).items??[]).map((material:any)=>material.entryType?material:{entryType:'material',ref:material.ref,contentAt:material.origin?.lastAt??material.updatedAt??when,material})}:result;
+  const result=await read(path,init);return path.startsWith('/api/library/browse?')?{schemaVersion:1,types:[],sources:[],noteOrigin:{origin:'notes',label:'记录'},...result as object,items:((result as any).items??[]).map((material:any)=>material.entryType?material:{entryType:'material',ref:material.ref,contentAt:material.origin?.lastAt??material.updatedAt??when,material})}:result;
 },setAgentTimeout:()=>{}} as Api;}
 function view(api:Api,extras:Partial<React.ComponentProps<typeof Archive>>={}){return React.createElement(Archive,{api,devices:[{deviceId:'fixture-device',deviceName:'Generated device',platform:'macos',status:'capturing',queueDepth:0,lastSeenAt:when}],range:{},activity,revision:0,onOpen:()=>{},tab:'records',setTab:()=>{},...extras});}
 const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent===text)!;
@@ -158,7 +158,7 @@ test('formal material selection reads its pinned version through full ReferenceD
 test('type and source filters remain explicit across chips, pagination and node changes; previews use the pinned original',async t=>{
  const {root,d,w}=await fixture(t),paths:string[]=[],materialId='mat_'+'1'.repeat(64),revision='2'.repeat(64),ref='material:'+materialId+'@'+revision;
  const material:Material={id:materialId,ref,revision,kind:'mote.note',schemaVersion:1,title:'Generated preview',sequence:1,textLength:26,blockCount:1,coverage:{state:'complete'},origin:{sourceId:'generated-source'},retention:{original:'kept'}};
- const api=apiWith(path=>{paths.push(path);if(path.startsWith('/api/library/browse?'))return {items:[material],types:[{id:'mote.note',kind:'mote.note',schemaVersion:1,label:'随手记'}],sources:[{id:'generated-source',label:'Generated source',count:1}],nextCursor:path.includes('cursor=')?null:'next'};if(path.includes('/read?'))return {material:{ref},text:'Generated exact original',spans:[{kind:'text',format:'plain',pageRange:{start:0,end:24}}]};throw Error(path);});
+ const api=apiWith(path=>{paths.push(path);if(path.startsWith('/api/library/browse?'))return {items:[material],types:[{id:'mote.note',kind:'mote.note',schemaVersion:1,label:'记录'}],sources:[{id:'generated-source',label:'Generated source',count:1}],nextCursor:path.includes('cursor=')?null:'next'};if(path.includes('/read?'))return {material:{ref},text:'Generated exact original',spans:[{kind:'text',format:'plain',pageRange:{start:0,end:24}}]};throw Error(path);});
  await act(async()=>root.render(React.createElement(LibraryMaterials,{api,revision:0,onSelect:()=>{},materialPreview:{read:true,image:false}})));
  assert.equal(d.querySelector<HTMLElement>('#library-catalog-filters')!.hidden,true);
  assert.equal(d.querySelector('.library-record-preview')?.textContent,'Generated exact original');
@@ -171,7 +171,7 @@ test('type and source filters remain explicit across chips, pagination and node 
  await act(async()=>button(d,'下一页').click());
  let query=new URL('http://localhost'+paths.filter(path=>path.startsWith('/api/library/browse?')).at(-1)!).searchParams;
  assert.equal(query.get('sourceId'),'generated-source');assert.equal(query.get('type'),'note');assert.equal(query.get('cursor'),'next');
- await act(async()=>d.querySelector<HTMLButtonElement>('.library-filter-chips button[aria-label="清除随手记筛选"]')!.click());
+ await act(async()=>d.querySelector<HTMLButtonElement>('.library-filter-chips button[aria-label="清除记录筛选"]')!.click());
  query=new URLSearchParams(w.location.hash.split('?')[1]);assert.equal(query.get('sourceId'),'generated-source');assert.equal(query.has('type'),false);assert.equal(query.has('cursor'),false);
  await act(async()=>{selects[3]!.value='mote.note';selects[3]!.dispatchEvent(new w.Event('change',{bubbles:true}));});
  query=new URL('http://localhost'+paths.filter(path=>path.startsWith('/api/library/browse?')).at(-1)!).searchParams;

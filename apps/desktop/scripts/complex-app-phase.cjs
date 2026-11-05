@@ -136,7 +136,7 @@ app.on('browser-window-created', (_event, window) => {
           const question='仅供UI故障恢复验证的合成问题';
           await run(`{const input=document.querySelector('textarea[aria-label="向 Mote 提问"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,${JSON.stringify(question)});input.dispatchEvent(new Event('input',{bubbles:true}));}`);
           const submit = async index => { await until(()=>run(`!document.querySelector('button[aria-label="发送问题"]').disabled`)); await run('document.querySelector(".ask-form").requestSubmit()'); await until(()=>run(`window.__motePending.length>${index}`)); };
-          const resolve = async (index,text,status=200) => { const body=status===200?{answer:text,runId:randomUUID(),citations:[{id:state.ids[0],capturedAt:state.startedAt,appName:'随手记',excerpt:'合成UI验证'}],trace:[]}:{error:'SyntheticFixtureError',message:text};await run(`window.__motePending[${index}].resolve(new Response(${JSON.stringify(JSON.stringify(body))},{status:${status},headers:{'content-type':'application/json'}}));`);await sleep(70); };
+          const resolve = async (index,text,status=200) => { const body=status===200?{answer:text,runId:randomUUID(),citations:[{id:state.ids[0],capturedAt:state.startedAt,appName:'记录',excerpt:'合成UI验证'}],trace:[]}:{error:'SyntheticFixtureError',message:text};await run(`window.__motePending[${index}].resolve(new Response(${JSON.stringify(JSON.stringify(body))},{status:${status},headers:{'content-type':'application/json'}}));`);await sleep(70); };
           if(process.env.MOTE_COMPLEX_RAPID_SCOPE==='1') {
             await until(()=>run(`!document.querySelector('button[aria-label="发送问题"]').disabled`));
             for(let round=0;round<10;round++) {

@@ -3,7 +3,7 @@ import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
-import {connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
+import {connectionClientPlatforms,connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
 import {PrivateFile} from './connectors/private-file.js';
 import type {Store} from './store.js';
 import type {SourceStore} from './sources.js';
@@ -11,7 +11,7 @@ import type {ConnectorConfig} from './connectors/types.js';
 
 const deviceId=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 const label=z.string().trim().min(1).max(120);
-const platform=z.enum(['android','macos','windows','linux','other']);
+const platform=z.enum([...connectionClientPlatforms,'other'] as const);
 const timestamp=z.string().datetime();
 const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict().refine(c=>c.scope!=='collector'||Boolean(c.deviceId&&c.platform),'Collector credentials require a device and platform');
 const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema)}).strict();
@@ -85,7 +85,7 @@ export class Connections {
     const input=z.object({serverUrl:z.string().max(2048),label,deviceId:deviceId.optional()}).strict().parse(raw),url=serverUrl(input.serverUrl);
     this.pruneInvitations();
     const code=randomBytes(32).toString('base64url'),expiresAt=this.clock()+10*60000;
-    const invitation:ConnectionInvitation={format:'mote.connection',version:1,serverUrl:url,code,expiresAt:new Date(expiresAt).toISOString()};
+    const invitation:ConnectionInvitation={format:'mote.connection',version:1,serverUrl:url,code,expiresAt:new Date(expiresAt).toISOString(),platforms:[...connectionClientPlatforms]};
     this.invitations.set(digest(code),{scope,serverUrl:url,label:input.label,expiresAt,authorizedDeviceId:input.deviceId});
     return {invitation,uri:connectionUri(invitation,this.clock()),scope};
   }

@@ -1,6 +1,6 @@
 import {object, oneOf, schema, token, type Parser} from './schema.js';
 
-export const hostKinds = ['central', 'web', 'mac', 'android'] as const;
+export const hostKinds = ['central', 'web', 'mac', 'android', 'ios'] as const;
 export type HostKind = typeof hostKinds[number];
 /** A host runtime incarnation. Fresh on host recreation; not deviceId, owner identity or a browser profile. */
 export interface HostIdentity { readonly kind: HostKind; readonly id: string }

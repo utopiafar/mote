@@ -149,7 +149,7 @@ describe('durable capture queue', () => {
 });
 
   it('persists and exports notes without synthetic blobs, retaining original text, mood and stable retries', async () => {
-    const note = { ...event(), source: 'note' as const, imageMime: undefined, durationMs: 0, ocrText: '  合成随手记\n第二行  ', mood: '平静', privacy: { excluded: false as const, redacted: false, mode: 'none' as const } };
+    const note = { ...event(), source: 'note' as const, imageMime: undefined, durationMs: 0, ocrText: '  合成记录\n第二行  ', mood: '平静', privacy: { excluded: false as const, redacted: false, mode: 'none' as const } };
     await queue.enqueue(note); await queue.failed(note.id, 1000, () => .5);
     expect(await readdir(join(directory, 'blobs'))).toEqual([]);
     const restored = new DurableQueue(directory, limits); await restored.initialize();
