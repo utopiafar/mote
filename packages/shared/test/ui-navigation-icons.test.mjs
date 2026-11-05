@@ -29,7 +29,7 @@ test('the web sidebar maps shared destination icons to lucide instead of a dupli
   const source=read('apps/web/src/WorkspaceSidebar.tsx');
   assert.doesNotMatch(source,/destinationGlyphs/);
   assert.match(source,/from 'lucide-react'/);
-  for(const icon of ['House','Database','Link2','Bot','MessageSquare','ChartNoAxesColumn'])assert.match(source,new RegExp(`\\b${icon}\\b`));
+  for(const icon of ['House','Database','Link2','Bot','MessageSquare','Activity'])assert.match(source,new RegExp(`\\b${icon}\\b`));
 });
 
 test('the Mac generated navigation uses the shared line-icon symbols',()=>{

@@ -1,11 +1,11 @@
-import { ChartNoAxesColumn, Database, House, Link2, Bot, MessageSquare, Settings } from 'lucide-react';
+import { Activity, Database, House, Link2, Bot, MessageSquare, Settings } from 'lucide-react';
 import { moteText } from '@mote/shared/i18n';
 import { moteBrand, uiDestinationPresentation, type UiDestination, type UiDestinationIcon, type UiLayoutProfile } from '@mote/shared';
 import type { Connection } from './api';
 import { primaryDestination } from './WorkspaceNavigation';
 import { destinationPages } from './navigation';
 
-export const destinationIcons: Record<UiDestinationIcon, typeof House> = { home: House, library: Database, sources: Link2, agent: Bot, ask: MessageSquare, activity: ChartNoAxesColumn };
+export const destinationIcons: Record<UiDestinationIcon, typeof House> = { home: House, library: Database, sources: Link2, agent: Bot, ask: MessageSquare, activity: Activity };
 
 export function WorkspaceSidebar({ layout, page, onPage, connection, verified, profile, onConnect, onRefresh, refreshing=false }: {
   layout: UiLayoutProfile;

@@ -36,6 +36,16 @@ test('group, divider, sidebar and row lines use hair while inputs use the contro
   }
 });
 
+test('sidebar navigation uses primary ink and the accent tint for selection at the reference brand scale', () => {
+  const shell = read('presentation.css');
+  assert.match(shell, /\.sidebar nav button[^{]*\{[^}]*color:var\(--mote-ink\)/);
+  assert.match(shell, /\.sidebar \[aria-current=page\] \{ background:var\(--mote-tint\); color:var\(--mote-accent\); \}/);
+  assert.match(shell, /font:500 15px\/1\.2/);
+  assert.match(shell, /font:600 23px\/1/);
+  assert.match(shell, /\.sidebar-bottom \{ margin-top:auto; padding:0; display:grid; gap:2px; \}/);
+  assert.match(read('final-web.css'), /\.sidebar \.brand \{[^}]*line-height:1\.2/);
+});
+
 test('secondary buttons are borderless fill controls and shapes come from the desktop radius table', () => {
   const direction = read('art-direction.css');
   const base = rules(direction).find(rule => rule.selector === '.button');

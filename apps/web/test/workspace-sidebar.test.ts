@@ -36,7 +36,7 @@ test('the sidebar keeps four primary text labels and moves AI access and activit
   assert.equal(lower[0].className, 'utility-nav');
   assert.equal(lower[1].className, 'utility-nav');
   assert.match(lower[0].innerHTML, /lucide-bot/);
-  assert.match(lower[1].innerHTML, /lucide-chart-no-axes-column/);
+  assert.match(lower[1].innerHTML, /lucide-activity/);
 });
 
 test('AI access and activity report their own selected state in the lower region', () => {
