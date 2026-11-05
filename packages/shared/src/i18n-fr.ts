@@ -8840,6 +8840,7 @@ export const french: Readonly<Record<string, string>> = {
   "来源需要处理": "Sources à traiter",
   "查看已保存记录": "Voir l'enregistrement enregistré",
   "保存为记录": "Enregistrer comme enregistrement",
+  "保存到 Mote": "Enregistrer dans Mote",
   "引用原文": "Original cité",
   "确认保存": "Confirmer l'enregistrement",
   "个人上下文中心": "Centre de contexte personnel",
@@ -10157,7 +10158,6 @@ export const french: Readonly<Record<string, string>> = {
   "待同步 {0}": "En attente {0}",
   "新的记录暂时无法保存": "Les nouveaux enregistrements ne peuvent pas être enregistrés pour le moment",
   "发送失败": "Échec de l’envoi",
-  "本人设备": "Cet appareil",
   "连接时间": "Heure de connexion",
   "断开连接后停止发送，已有记录保留在本机。": "La déconnexion arrête l'envoi. Les enregistrements existants restent sur cet appareil.",
   "已断开连接，已有记录保留在本机": "Déconnecté. Les enregistrements existants restent sur cet appareil.",
@@ -10175,5 +10175,6 @@ export const french: Readonly<Record<string, string>> = {
   "暂时无法读取": "Lecture temporairement impossible",
   "设备名称无效": "Nom d’appareil non valide",
   "有待发送记录，无法更换中央": "Des enregistrements en attente empêchent de changer de central",
-  "扫描中央生成的连接二维码。": "Scanner le code QR de connexion généré par le central."
+  "扫描中央生成的连接二维码。": "Scanner le code QR de connexion généré par le central.",
+  "本人设备": "Cet appareil"
 };

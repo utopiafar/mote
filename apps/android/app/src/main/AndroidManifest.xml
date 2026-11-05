@@ -39,12 +39,15 @@
             android:noHistory="true" android:theme="@android:style/Theme.NoDisplay">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
         </activity>
-        <activity android:configChanges="uiMode" android:name=".RecordEditorActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+        <activity android:configChanges="uiMode" android:name=".RecordEditorActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".ShareRecordActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
             <intent-filter><action android:name="android.intent.action.SEND" /><category android:name="android.intent.category.DEFAULT" /><data android:mimeType="*/*" /></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND_MULTIPLE" /><category android:name="android.intent.category.DEFAULT" /><data android:mimeType="*/*" /></intent-filter>
         </activity>
-        <activity android:configChanges="uiMode" android:name=".ConversationRecordEditorActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+        <activity android:configChanges="uiMode" android:name=".AnswerRecordActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
         </activity>
         <activity android:configChanges="uiMode" android:name=".CentralActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
