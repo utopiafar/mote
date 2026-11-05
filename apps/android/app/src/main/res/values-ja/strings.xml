@@ -5,5 +5,5 @@
     <string name="tile_screen_capture">画面キャプチャ</string>
     <string name="widget_label">Mote クイック入力</string>
     <string name="widget_description">ホーム画面から質問や記録</string>
-    <string name="widget_ask">質問する…</string>
+    <string name="widget_ask">質問する</string>
 </resources>

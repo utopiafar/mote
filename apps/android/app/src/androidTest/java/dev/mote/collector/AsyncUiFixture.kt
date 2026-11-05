@@ -36,7 +36,9 @@ fun ActivityScenario<MainActivity>.awaitMainUi(): ActivityScenario<MainActivity>
     while (!ready && SystemClock.elapsedRealtime() < deadline) {
         onActivity { activity ->
             val rows = views(activity.window.decorView).toList()
-            ready = rows.any { it is MotePrimaryNavigation } && rows.any { it.isShown && (it.tag == "local-page-title" || it.tag == "central-title") }
+            val titled = rows.any { it.isShown && (it.tag == "local-page-title" || it.tag == "central-title" || it.tag == "home-m-action") }
+            val library = activity.intent.getStringExtra("page") == "LIBRARY" && rows.any { it.isShown && it.tag == "library-primary-views" }
+            ready = rows.any { it is MotePrimaryNavigation } && (titled || library)
         }
         if (!ready) Thread.sleep(25)
     }
@@ -69,7 +71,7 @@ fun Activity.openGeneratedMenu() {
     repeat(8) {
         val rows = views(window.decorView)
         if (rows.any { it.isShown && it.tag == "menu:" + MoteI18n.text("资料与记忆") }) return
-        rows.firstOrNull { it.isShown && it.contentDescription == MoteI18n.text("打开菜单") }?.let { it.performClick(); return }
+        rows.firstOrNull { it.isShown && it.tag == "home-m-action" }?.let { it.performClick(); return }
         rows.firstOrNull { it.isShown && (it.tag?.toString()?.startsWith("local-back:") == true || (it is TextView && it.text.toString() == "‹")) }?.performClick()
     }
     error("Secondary menu unavailable")
@@ -117,4 +119,53 @@ fun Activity.openGeneratedHome() {
         rows.firstOrNull { it.isShown && (it.tag?.toString()?.startsWith("local-back:") == true || (it is TextView && it.text.toString() == "‹")) }?.performClick()
     }
     error("Home return unavailable")
+}
+
+private fun generatedViews(root: View): List<View> = buildList {
+    add(root); if (root is ViewGroup) repeat(root.childCount) { addAll(generatedViews(root.getChildAt(it))) }
+}
+
+private fun ActivityScenario<*>.awaitGeneratedTag(tag: String) {
+    val end = SystemClock.elapsedRealtime() + 10_000
+    var found = false
+    while (!found && SystemClock.elapsedRealtime() < end) {
+        onActivity {
+            found = android.view.inspector.WindowInspector.getGlobalWindowViews()
+                .flatMap(::generatedViews).any { it.isShown && it.tag == tag }
+        }
+        if (!found) Thread.sleep(25)
+    }
+    assertTrue("Generated window control $tag must appear", found)
+}
+
+/** The location choice is folded into the library filter sheet, not a second row above search. */
+fun ActivityScenario<MainActivity>.chooseLibraryLocation(value: String) {
+    onActivity { activity -> generatedViews(activity.window.decorView).single { it.tag == "library-filter" }.performClick() }
+    awaitGeneratedTag("library-location:$value")
+    onActivity {
+        android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::generatedViews)
+            .single { it.isShown && it.tag == "library-location:$value" }.performClick()
+    }
+    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+}
+
+fun ActivityScenario<MainActivity>.refreshLibrary() {
+    onActivity { activity -> generatedViews(activity.window.decorView).single { it.tag == "library-filter" }.performClick() }
+    awaitGeneratedTag("library-refresh")
+    onActivity {
+        android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::generatedViews)
+            .single { it.isShown && it.tag == "library-refresh" }.performClick()
+    }
+    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+}
+
+/** Memory management remains reachable from the filter sheet; no extra "More" pill sits in the list. */
+fun ActivityScenario<CentralActivity>.manageMemories() {
+    onActivity { activity -> generatedViews(activity.window.decorView).single { it.tag == "memory-filter" }.performClick() }
+    awaitGeneratedTag("memory-manage")
+    onActivity {
+        android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::generatedViews)
+            .single { it.isShown && it.tag == "memory-manage" }.performClick()
+    }
+    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 }

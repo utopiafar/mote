@@ -46,6 +46,9 @@ test('data-only themes and complete core navigation are validated before registr
   assert.throws(()=>host.registerTheme({...linearUiTheme,id:'fixture.remote',tokens:{...linearUiTheme.tokens,font:'url(https://example.invalid/font)'}}),/Invalid theme/);
   assert.throws(()=>host.registerTheme({...linearUiTheme,id:'fixture.partial',tokens:{accent:'#ffffff'}}),/roles/);
   assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.hidden',primary:['library'],implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.overlap',secondary:['home'],implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.duplicate',secondary:['activity','activity'],implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.unknown',secondary:['settings'],implementation:{}}),/layout contract/);
   assert.throws(()=>host.registerTheme(linearUiTheme),/already installed/);
   const pack={...linearUiTheme,id:'fixture.pinned',tokens:{...linearUiTheme.tokens}};
   host.registerTheme(pack);pack.tokens.accent='#ffffff';
@@ -78,6 +81,7 @@ test('clients preserve shared destination identities and the final platform-spec
   assert.deepEqual([...mainNav.matchAll(/data-nav="([^"]+)"/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>macRoutes[id]));
   assert.deepEqual([...mainNav.matchAll(/<span data-i18n>([^<]+)<\/span>/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>macLabels[id]??uiDestinationPresentation[id].label));
   assert.match(html,/data-nav="work"[^>]*>.*?<span data-i18n>同步与活动<\/span>/);
+  assert.deepEqual(desktopUiLayout.secondary,['connections','activity'],'Web and Mac keep AI access and activity in the lower navigation region');
   // Android declares its tabs natively; route ids map to the same destinations.
   const kotlin=read('apps/android/app/src/main/java/dev/mote/collector/PrimaryNavigation.kt');
   const tabs=Object.fromEntries([...kotlin.matchAll(/^\s+[A-Z]+\("([^"]+)", "[^"]+", "[A-Z]+", "([a-z]+)"\)/gm)].map(match=>[match[2],match[1]]));

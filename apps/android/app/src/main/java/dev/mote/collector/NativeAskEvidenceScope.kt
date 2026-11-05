@@ -33,6 +33,7 @@ internal object NativeAskEvidenceScope {
     fun clear(state: JSONObject): Boolean {
         if (state.has("pending") || state.optString("runStatus") == "running") return false
         state.put("evidenceIds", JSONObject.NULL).put("anchorEvidenceIds", JSONObject.NULL).put("anchorMaterialRef",JSONObject.NULL).put("scopeDirty", true)
+        state.remove("scopeLabel")
         return true
     }
     fun writeInput(state: JSONObject, input: JSONObject) {
@@ -46,5 +47,6 @@ internal object NativeAskEvidenceScope {
         }
         val reference=conversation.optJSONObject("scope")?.let(::material)
         if(reference!=null)state.put("anchorMaterialRef",reference) else state.remove("anchorMaterialRef")
+        state.remove("scopeLabel")
     }
 }

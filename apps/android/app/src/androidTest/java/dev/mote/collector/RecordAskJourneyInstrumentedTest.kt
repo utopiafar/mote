@@ -90,7 +90,7 @@ class RecordAskJourneyInstrumentedTest {
                 texts.any { it.contains(original) } && texts.any { it.contains(comment) }
             } }
             screenshot("record-ask-original")
-            clickText("基于这条记录提问")
+            clickText("围绕这份资料提问")
             clickText("仅查这条记录")
             until("Scoped native Ask composer or exact retry") { main { visibleViews().filterIsInstance<TextView>().any { it.text.toString() == "仅查这条记录" } && visibleViews().filterIsInstance<EditText>().any { it.minLines >= 4 } } }
             val retry = main { visibleViews().filterIsInstance<TextView>().any { it.text.toString() == "重试同一请求" && it.isEnabled } }
@@ -136,14 +136,8 @@ class RecordAskJourneyInstrumentedTest {
             screenshot("record-ask-citation")
             click("Return from citation to complete Ask workspace") { it.contentDescription?.toString() == "返回上级" && it.isClickable }
             clickText("存为记录")
-            // A prior generated recording preview may have left an unsaved draft. Replace it explicitly through the real editor prompt.
-            until("Conversation record editor or existing-draft decision") { main { activity() is RecordEditorActivity && (visibleViews().filterIsInstance<EditText>().any { it.isEnabled } || visibleViews().filterIsInstance<TextView>().any { it.text.toString() == "替换草稿" }) } }
-            if (main { visibleViews().filterIsInstance<TextView>().any { it.text.toString() == "替换草稿" && it.isClickable } }) clickText("替换草稿")
-            until("Conversation quote is staged with empty authored comment") {
-                val draft = context.recordDraftStore().draft()
-                draft.getJSONObject("origin").optString("kind") == "conversation" && draft.getJSONObject("origin").optString("text").contains(answer) && draft.getString("text").isEmpty()
-            }
-            assertEquals("Opening the save editor must never save a record", beforeLocal, context.queue().dedupeIds().toSet())
+            until("Answer save panel shows the quoted answer and an empty supplement") { main { activity() is AnswerRecordActivity && visibleViews().filterIsInstance<TextView>().any { it.tag == "record-origin-fulltext" && it.text.toString().contains(answer) } && visibleViews().filterIsInstance<EditText>().any { it.tag == "share-note" && it.text.isEmpty() } } }
+            assertEquals("Opening the save panel must never save a record", beforeLocal, context.queue().dedupeIds().toSet())
             assertEquals("The query must never implicitly create a note", beforeRemote, items(api.get("/api/notes?limit=100")).map { it.getString("id") }.toSet())
             screenshot("record-ask-explicit-save-editor")
             clickText("保存")
@@ -208,32 +202,14 @@ class RecordAskJourneyInstrumentedTest {
             }
             instrumentation.waitForIdleSync()
             screenshot("final-ask")
-            val existingDraft = context.recordDraftStore().draft()
-            val replaceGeneratedDraft = existingDraft.getString("text").isNotBlank() || existingDraft.getJSONArray("attachments").length() > 0 || existingDraft.getJSONObject("origin").optString("text").isNotBlank()
-            if (replaceGeneratedDraft) {
-                assertEquals("Snapshot may replace only its exact existing generated excerpt", turn.getString("question") + "\n\n" + raw, existingDraft.getJSONObject("origin").optString("text"))
-                assertEquals("", existingDraft.getString("text")); assertEquals(0, existingDraft.getJSONArray("attachments").length())
-            }
+            val existingDraft = context.recordDraftStore().draft().toString()
             clickText("存为记录")
-            until("Conversation excerpt editor") { main { activity() is RecordEditorActivity } }
-            if (replaceGeneratedDraft) clickText("替换草稿")
-            until("Source label separates the exact conversation excerpt") { main { visibleViews().any { it.tag == "record-origin-toggle" } } }
-            main {
-                val quote = views(activity().window.decorView).single { it.tag == "record-origin-fulltext" } as TextView
-                assertTrue("Original excerpt starts open above my supplement", quote.isShown)
-                assertEquals("Source preview is readable while the stored snapshot remains literal", display, quote.text.toString())
-            }
-            click("Collapse exact conversation excerpt") { it.tag == "record-origin-toggle" }
-            until("Source excerpt collapsed") { main { views(activity().window.decorView).single { it.tag == "record-origin-fulltext" }.visibility == View.GONE } }
-            click("Expand exact conversation excerpt") { it.tag == "record-origin-toggle" }
-            until("Expanded original is fully available") { main { visibleViews().any { it.tag == "record-origin-fulltext" && (it as TextView).text.toString() == display } } }
-            click("Collapse exact conversation excerpt") { it.tag == "record-origin-toggle" }
-            until("Source excerpt collapsed again") { main { views(activity().window.decorView).single { it.tag == "record-origin-fulltext" }.visibility == View.GONE } }
-            until("Formatted answer exports its exact original raw text into the explicit draft") { context.recordDraftStore().draft().getJSONObject("origin").optString("text") == turn.getString("question") + "\n\n" + raw }
-            assertEquals("Conversation quote is not user-authored text", "", context.recordDraftStore().draft().getString("text"))
+            until("Answer save panel") { main { activity() is AnswerRecordActivity } }
+            until("Quoted answer is visible above the supplement") { main { visibleViews().any { it.tag == "record-origin-fulltext" && (it as TextView).text.toString() == NativeAnswerPresentation.format(raw,items(result,"citations").map { it.getString("id") }).text } } }
+            assertEquals("Answer preview leaves the manual draft unchanged", existingDraft, context.recordDraftStore().draft().toString())
             screenshot("final-editor", currentActivity = true)
             main { activity().finish() }
-            until("Editor finished and MainActivity resumed") { main { activityOrNull() is MainActivity } }
+            until("Panel finished and MainActivity resumed") { main { activityOrNull() is MainActivity } }
             click("Home destination") { it.tag == "primary:HOME" }
             until("Resumed Home selected and laid out") { main { val current = activityOrNull(); current is MainActivity && views(current.window.decorView).any { it.tag == "primary:HOME" && it.isSelected && it.isShown } } }
             instrumentation.waitForIdleSync()

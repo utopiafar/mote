@@ -673,7 +673,7 @@ export const guideSections:GuideSection[] = [
         "links": [
           {
             "pageId": "devices",
-            "href": "#/connections/devices",
+            "href": "#/sources/devices",
             "collectionId": null,
             "categoryId": null,
             "label": "采集与设备",
@@ -715,7 +715,7 @@ export const guideSections:GuideSection[] = [
             "otherTargets": [
               {
                 "pageId": "devices",
-                "href": "#/connections/devices",
+                "href": "#/sources/devices",
                 "collectionId": null,
                 "categoryId": null,
                 "label": "采集与设备",
@@ -771,7 +771,7 @@ export const guideSections:GuideSection[] = [
             ],
             "target": {
               "pageId": "devices",
-              "href": "#/connections/devices",
+              "href": "#/sources/devices",
               "collectionId": null,
               "categoryId": null,
               "label": "采集与设备",
@@ -2932,7 +2932,7 @@ export const guideSections:GuideSection[] = [
               },
               {
                 "pageId": "devices",
-                "href": "#/connections/devices",
+                "href": "#/sources/devices",
                 "collectionId": null,
                 "categoryId": null,
                 "label": "采集与设备",

@@ -57,7 +57,7 @@ class LibraryCaptureJourneyInstrumentedTest {
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
             fun shown(text: String): Boolean { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains(text) } }; return found }
             fun rows(id: String): Int { var count = 0; scenario.onActivity { activity -> count = views(activity.window.decorView).count { it.isShown && it.tag == "library-record:$id" } }; return count }
-            fun location(position: Int) { scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.contentDescription == MoteI18n.text("资料位置") }.setSelection(position) } }
+            fun location(position: Int) { scenario.chooseLibraryLocation(listOf("", "local", "central")[position]) }
             waitFor("one exact joined record") { shown("本机与中央可读") && rows(id) == 1 && rows(remoteId) == 1 }
             assertEquals(0, context.queue().pendingSync().count)
             location(1); waitFor("local location filter") { rows(id) == 1 && rows(remoteId) == 0 }
@@ -85,7 +85,7 @@ class LibraryCaptureJourneyInstrumentedTest {
             location(0); waitFor("local readable after logout") { rows(id) == 1 && rows(remoteId) == 0 }
             settings.signIn(server, token, 86400000); scenario.recreate()
             waitFor("owner reconnect reloads same exact records") { rows(id) == 1 && rows(remoteId) == 1 && shown("本机与中央可读") }
-            scenario.onActivity { activity -> repeat(3) { views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text == MoteI18n.text("刷新") && it.isClickable }.performClick() } }
+            repeat(3) { scenario.refreshLibrary() }
             waitFor("duplicate refresh cannot duplicate cards") { rows(id) == 1 && rows(remoteId) == 1 && shown("本机与中央可读") }
         }
         assertEquals(0, context.queue().pendingSync().count)
@@ -194,10 +194,10 @@ class LibraryCaptureJourneyInstrumentedTest {
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "LIBRARY")).awaitMainUi().use { scenario ->
                 fun shown(text: String): Boolean { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains(text) } }; return found }
                 fun click(label: String) { scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text == MoteI18n.text(label) && it.isClickable }.performClick() } }
-                fun location(position: Int) { scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.contentDescription == MoteI18n.text("资料位置") }.setSelection(position) } }
+                fun location(position: Int) { scenario.chooseLibraryLocation(listOf("", "local", "central")[position]) }
                 for (mode in listOf("forbidden", "revoked")) {
                     api.post("/api/fixture/library-denial", JSONObject().put("mode", "none"))
-                    click("刷新")
+                    scenario.refreshLibrary()
                     waitFor("remote body and exact local/Central availability are initially loaded") { shown("Generated remote denial original") && shown("本机与中央可读") }
                     val generation = CentralAccess.resolve(context).generation
                     api.post("/api/fixture/library-denial", JSONObject().put("mode", mode))

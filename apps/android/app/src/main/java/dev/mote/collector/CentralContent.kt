@@ -16,6 +16,9 @@ import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import java.io.File
 
+/** A reader handoff keeps the visible reference title, never a rewritten evidence ID. */
+internal data class AskEvidence(val id: String, val label: String?)
+
 /** Reusable native central content. The host owns the window and primary navigation. */
 internal class CentralContent(
     private val activity: MoteActivity,
@@ -102,18 +105,17 @@ internal class CentralContent(
     fun acceptAskConversation(id:String) { if(requestedAskConversation()==id)clearAskConversationIntent() }
     internal val selectedAskConversationId get()=screens?.selectedAskConversationId
 
-    fun takeAskEvidence(): String? {
+    fun takeAskEvidence(): AskEvidence? {
         val evidence=activity.intent.getStringExtra("evidenceId") ?: return null
         val expected=activity.intent.getStringExtra("evidenceOrigin")
-        activity.intent.removeExtra("evidenceId"); activity.intent.removeExtra("evidenceOrigin")
+        val label=activity.intent.getStringExtra("evidenceLabel")
+        activity.intent.removeExtra("evidenceId"); activity.intent.removeExtra("evidenceOrigin"); activity.intent.removeExtra("evidenceLabel")
         if (expected != null && expected != server) { notice(MoteI18n.text("访问凭据已失效，请重新连接。")); return null }
-        return evidence
+        return AskEvidence(evidence,label?.takeIf { it.isNotBlank() })
     }
 
     val root: LinearLayout
-    private lateinit var backButton: FrameLayout
-    private lateinit var backLabel: TextView
-    private lateinit var backIcon: ImageView
+    private lateinit var backButton: ImageButton
     private lateinit var headerBar: LinearLayout
     private lateinit var headerDivider: View
     val isDestroyed get() = activity.isDestroyed
@@ -137,6 +139,8 @@ internal class CentralContent(
     private lateinit var historyAction: TextView
     private lateinit var newConversationAction: TextView
     private lateinit var conversationMoreAction: TextView
+    private lateinit var memoryFilterAction: ImageButton
+    private var memoryFilter: (() -> Unit)? = null
     private val pageHistory = mutableListOf<String>()
     internal var client: CentralClient? = null; private set
     internal var server = ""; private set
@@ -232,22 +236,10 @@ internal class CentralContent(
         headerBar = header
         val heading = if (compactHeader) LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL } else header
         val actions = if (compactHeader) LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL } else header
-        backLabel = TextView(this).apply {
-            text = "‹"; textSize = 28f; gravity = Gravity.CENTER; MoteUi.textColor(this, NativeColorRole.INK)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        backButton = MoteComponents.iconButton(this, MoteGlyph.BACK, "返回上级") {
+            if (!back()) { if (openLocalPage != null) localPage("OVERVIEW") else activity.finish() }
         }
-        backIcon = MoteComponents.icon(this, MoteGlyph.BACK, NativeColorRole.INK, 24).apply {
-            visibility = View.GONE
-        }
-        backButton = FrameLayout(this).apply {
-            contentDescription = MoteI18n.text("返回上级")
-            isFocusable = true; minimumWidth = moteDp(48); minimumHeight = moteDp(48)
-            background = MoteUi.clickable(this@CentralContent, NativeColorRole.TRANSPARENT, NativeRadiusRole.PILL, false)
-            setOnClickListener { if (!back()) { if (openLocalPage != null) localPage("OVERVIEW") else activity.finish() } }
-            addView(backLabel, FrameLayout.LayoutParams(-1, -1))
-            addView(backIcon, FrameLayout.LayoutParams(moteDp(24), moteDp(24), Gravity.CENTER))
-        }
-        heading.addView(backButton, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
+        heading.addView(backButton, LinearLayout.LayoutParams(moteDp(44), -2))
         title = TextView(this).apply { tag = "central-title"; MoteUi.type(this, NativeFontRole.APPBAR, medium = true); maxLines = Int.MAX_VALUE; ellipsize = null; MoteUi.textColor(this, NativeColorRole.INK) }
         heading.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
         fun headerAction(label: String, description: String = label, tonal: Boolean = false, action: () -> Unit): TextView {
@@ -266,7 +258,9 @@ internal class CentralContent(
         historyAction = headerAction("◷", "对话历史") { openConversationList() }
         newConversationAction = headerAction("＋", "新对话") { screens?.newConversation() }
         conversationMoreAction = headerAction("⋯", "对话更多") { screens?.conversationMore() }
-        header.minimumHeight = moteDp(66)
+        memoryFilterAction = MoteComponents.iconButton(this, MoteGlyph.SLIDERS, "筛选") { memoryFilter?.invoke() }.apply { tag = "memory-filter" }
+        actions.addView(memoryFilterAction, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
+        header.minimumHeight = moteDp(if (page == "memories") 56 else 66)
         if (compactHeader) {
             header.addView(heading, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(6) })
             header.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(6) })
@@ -366,9 +360,11 @@ internal class CentralContent(
         state.putString("insightId", pendingInsightId); state.putString("insightOrigin", server)
         state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
+    var askBackToHistory: (() -> Boolean)? = null
     fun back(): Boolean {
         if (page == "files" && requestedFileId() != null) return false
         if (screens?.back() == true) { updateBackButton(); return true }
+        if (page == "ask" && askBackToHistory?.invoke() == true) { updateBackButton(); return true }
         if (page == "insights" && pageHistory.isEmpty()) return false
         val previous = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else MoteNavigation.centralParent(page)
         if (previous == null) return false
@@ -380,15 +376,14 @@ internal class CentralContent(
         addAction.visibility = View.GONE
         val ask = page == "ask"
         val conversations = page == "conversations"
-        headerBar.minimumHeight = moteDp(if (conversations) 48 else 66)
+        headerBar.minimumHeight = moteDp(if (conversations) 48 else if (page == "memories") 56 else 66)
         headerBar.setPadding(moteDp(if (conversations) 6 else 12), 0, moteDp(if (conversations) 6 else 12), 0)
-        headerDivider.visibility = if (conversations || embeddedActions) View.GONE else View.VISIBLE
+        headerDivider.visibility = if (conversations || page == "memories" || embeddedActions) View.GONE else View.VISIBLE
         title.tag = if (conversations) null else "central-title"
-        backLabel.visibility = if (conversations) View.GONE else View.VISIBLE
-        backIcon.visibility = if (conversations) View.VISIBLE else View.GONE
         moreAction.tag = if (page == "insights") "insight-more" else null
-        settingsAction.visibility = if (ask || page == "insights" || conversations) View.GONE else View.VISIBLE
-        moreAction.visibility = if (ask || conversations) View.GONE else View.VISIBLE
+        settingsAction.visibility = if (ask || page == "insights" || page == "memories" || conversations) View.GONE else View.VISIBLE
+        moreAction.visibility = if (ask || page == "memories" || conversations) View.GONE else View.VISIBLE
+        memoryFilterAction.visibility = View.GONE
         historyAction.visibility = if (ask && client != null) View.VISIBLE else View.GONE
         newConversationAction.visibility = historyAction.visibility
         conversationMoreAction.visibility = View.GONE
@@ -396,10 +391,10 @@ internal class CentralContent(
     /** The conversation list is a peer of the thread: reaching it clears in-page
      * history so its back action returns to the home surface, not the thread. */
     internal fun openConversationList() { pageHistory.clear(); navigate("conversations", remember = false) }
+    internal fun hostActivity(): MoteActivity = activity
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
-        composer.addView(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LinearLayout.LayoutParams(-1,moteDp(1)))
-        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(10),moteDp(20),moteDp(16)) }.also(composer::addView)
+        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(8),moteDp(20),moteDp(22)) }.also(composer::addView)
     }
     /** The AND-History dock: page background, no divider, the pill composer inside. */
     internal fun conversationComposer(): LinearLayout {
@@ -412,14 +407,35 @@ internal class CentralContent(
     internal fun hideAskComposer() { composer.visibility = View.GONE }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
     internal fun askConversationActions(showMore: Boolean) { conversationMoreAction.visibility = if (showMore) View.VISIBLE else View.GONE }
-    internal fun detailTitle(value: String) { title.text = value; historyAction.visibility = View.GONE; newConversationAction.visibility = View.GONE; conversationMoreAction.visibility = View.GONE }
+    /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
+    internal fun askConversationVisible(visible: Boolean) {
+        title.visibility = if (visible) View.GONE else View.VISIBLE
+        headerDivider.visibility = if (visible || embeddedActions) View.GONE else View.VISIBLE
+        newConversationAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
+        conversationMoreAction.visibility = View.GONE
+        historyAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
+    }
+    internal fun detailTitle(value: String) {
+        title.visibility = View.VISIBLE
+        title.text = value
+        memoryFilterAction.visibility = View.GONE
+        historyAction.visibility = View.GONE
+        newConversationAction.visibility = View.GONE
+        conversationMoreAction.visibility = View.GONE
+    }
+    internal fun memoryLibraryHeader(filter: () -> Unit) {
+        title.text = ""; memoryFilter = filter; memoryFilterAction.visibility = View.VISIBLE
+    }
+    internal fun openLibraryMaterials() = localPage("LIBRARY")
 
 
     internal fun navigate(next: String, remember: Boolean = true) {
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
         page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
+        askBackToHistory = null
         updateCollectionBar(); updateBackButton()
+        title.visibility = View.VISIBLE
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
         screens?.show(next)
@@ -483,7 +499,7 @@ internal class CentralContent(
     }
     private fun updateCollectionBar() {
         collectionBar.removeAllViews()
-        if (client == null || page == "insights" || page !in MoteNavigation.libraryBrowsePages) { collectionBar.visibility = View.GONE; return }
+        if (client == null || page == "insights" || page == "memories" || page !in MoteNavigation.libraryBrowsePages) { collectionBar.visibility = View.GONE; return }
         collectionBar.visibility = View.VISIBLE
         val scope = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         scope.addView(TextView(this).apply {
@@ -604,7 +620,7 @@ internal class CentralContent(
         addView(TextView(this@CentralContent).apply { text = "›"; textSize = 20f; MoteUi.textColor(this, NativeColorRole.ACCENT) }, LinearLayout.LayoutParams(moteDp(20), -2))
         setOnClickListener { if (!task.busy) runCatching { action(); MoteUi.styleSelects(body) }.onFailure { notice(it.message ?: MoteI18n.text("操作失败")) } }
     }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(4) }) }
-    internal fun disclosure(label: String, parent: LinearLayout = body, build: (LinearLayout) -> Unit) {
+    internal fun disclosure(label: String, parent: LinearLayout = body, build: (LinearLayout) -> Unit): LinearLayout {
         val section = card(parent)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         var built = false
@@ -613,6 +629,7 @@ internal class CentralContent(
             content.visibility = if (content.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }.apply { contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         section.addView(content)
+        return section
     }
     internal fun notice(message: String) {
         status.text = message

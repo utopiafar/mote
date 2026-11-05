@@ -219,4 +219,22 @@ class RecordDraftStoreTest {
         assertFalse(reopened.pendingSubmission { error("cleared draft") })
     }
 
+    @Test fun `standalone share registration retains originals and never edits or clears the manual draft`() {
+        val directory = folder.newFolder(); val store = RecordDraftStore(directory, cipher)
+        val draftAttachment = store.stage(byteArrayOf(9, 8), "draft.bin", "application/octet-stream")
+        store.edit("Generated private draft", JSONArray().put(draftAttachment), JSONObject().put("kind", "manual"), "Generated private context")
+        val before = store.draft().toString()
+        val sharedBytes = "Generated shared original".toByteArray()
+        val shared = store.stage(sharedBytes, "shared.txt", "text/plain")
+        val submission = event(JSONObject().put("text", "Generated supplement"))
+        store.prepareSubmission("https://generated.example", submission, JSONArray().put(shared))
+        val reopened = RecordDraftStore(directory, cipher)
+        assertEquals(before, reopened.draft().toString())
+        assertEquals(shared.getString("id"), reopened.record(submission.getString("id"))!!.getJSONArray("attachments").getJSONObject(0).getString("id"))
+        assertArrayEquals(sharedBytes, reopened.bytes(shared.getString("id")))
+        assertArrayEquals(byteArrayOf(9, 8), reopened.bytes(draftAttachment.getString("id")))
+        reopened.prepareSubmission("https://generated.example", submission, JSONArray().put(shared))
+        assertEquals(before, reopened.draft().toString())
+    }
+
 }

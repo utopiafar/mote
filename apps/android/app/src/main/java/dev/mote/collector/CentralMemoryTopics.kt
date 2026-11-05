@@ -8,7 +8,59 @@ import android.widget.ArrayAdapter
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.LinearLayout
+import android.widget.TextView
+import android.text.Editable
+import android.text.TextWatcher
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.BackgroundColorSpan
+import android.text.style.ForegroundColorSpan
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONObject
+import java.net.URLEncoder
+
+/** Literal search terms are display highlights, never a memory classification. */
+internal object MemorySearchHighlight {
+    data class Match(val start: Int, val endExclusive: Int)
+
+    fun matches(text: String, query: String): List<Match> {
+        val terms = query.trim().split(Regex("\\s+")).filter(String::isNotBlank).take(12)
+        val found = mutableListOf<Match>()
+        for (term in terms) {
+            var from = 0
+            while (from <= text.length - term.length) {
+                val start = text.indexOf(term, from, ignoreCase = true)
+                if (start < 0) break
+                found.add(Match(start, start + term.length))
+                from = start + term.length
+            }
+        }
+        val merged = mutableListOf<Match>()
+        for (match in found.sortedWith(compareBy<Match> { it.start }.thenBy { it.endExclusive })) {
+            val previous = merged.lastOrNull()
+            if (previous != null && match.start <= previous.endExclusive) {
+                merged[merged.lastIndex] = Match(previous.start, maxOf(previous.endExclusive, match.endExclusive))
+            } else merged.add(match)
+        }
+        return merged
+    }
+}
+
+internal object MemoryBrowseCriteria {
+    fun select(navigation: MemoryTopicNavigation, value: String) {
+        when (value) {
+            "personal" -> navigation.choose("topics", "personal")
+            "event" -> navigation.choose("knowledge", "episodic")
+            else -> navigation.choose("topics")
+        }
+    }
+    fun path(navigation: MemoryTopicNavigation, query: String, history: Boolean): String = buildString {
+        append(navigation.path())
+        if (navigation.nodeId == null) append("&level=detail")
+        if (query.isNotBlank()) append("&query=").append(URLEncoder.encode(query.trim().take(500), "UTF-8"))
+        if (history) append("&includeHistory=true")
+    }
+}
 
 /** Native consumer of host-generated references. It never classifies or grants model access. */
 internal class CentralMemoryTopics(
@@ -24,10 +76,15 @@ internal class CentralMemoryTopics(
     private var generation = 0L
     private val detail = MemoryTopicDetailGuard()
     private var invalidated = false
+    private var query = ""
+    private var kind = "all"
+    private var history = false
+    private var loadVersion = 0L
+    private var searchTask: Runnable? = null
     private fun scrollView() = body.parent as? ScrollView
-    fun clear() { invalidated = false; detail.clear(); generation++; navigation = MemoryTopicNavigation(); catalog = null }
-    fun save(out: Bundle) { if (navigation.selectedMemory == null) navigation.scroll = scrollView()?.scrollY ?: 0; out.putString("navigation", navigation.save().toString()) }
-    fun restore(value: Bundle) { runCatching { navigation.restore(JSONObject(value.getString("navigation") ?: "{}")) }.onFailure { clear() } }
+    fun clear() { invalidated = false; detail.clear(); generation++; loadVersion++; searchTask?.let(body::removeCallbacks); navigation = MemoryTopicNavigation(); catalog = null; query = ""; kind = "all"; history = false }
+    fun save(out: Bundle) { if (navigation.selectedMemory == null) navigation.scroll = scrollView()?.scrollY ?: 0; out.putString("navigation", navigation.save().toString()); out.putString("query", query); out.putString("kind", kind); out.putBoolean("history", history) }
+    fun restore(value: Bundle) { runCatching { navigation.restore(JSONObject(value.getString("navigation") ?: "{}")); query = value.getString("query").orEmpty().take(500); kind = value.getString("kind").orEmpty().takeIf { it in setOf("all", "personal", "event") } ?: "all"; history = value.getBoolean("history") }.onFailure { clear() } }
     fun show() {
         invalidated = false
         val stamp = ++generation; val api = screens.client
@@ -65,9 +122,98 @@ internal class CentralMemoryTopics(
         }
     }
     private fun list(directory: MemoryTopicCatalog) {
-        body.removeAllViews(); screens.clearBack(); controls(body, false)
-        navigation.nodeId?.let { selected -> directory.trees.find { it.id == navigation.treeId }?.nodes?.find { it.id == selected }?.let { ui.text(it.label, NativeFontRole.SUPPORT) } }
-        ui.disclosure(MoteI18n.text("更多")) { management ->
+        searchTask?.let(body::removeCallbacks); searchTask = null
+        body.removeAllViews(); screens.clearBack()
+        body.setPadding(ui.moteDp(16), 0, ui.moteDp(16), ui.moteDp(24))
+        var more: View? = null
+        fun filters() = LibraryBrowseUi.filters(ui, listOf("all" to "全部记忆", "personal" to "个人记忆", "event" to "事件记忆"), kind,
+            { value -> kind = value; MemoryBrowseCriteria.select(navigation, value); list(directory) },
+            history = history to { enabled -> history = enabled; navigation.first(); list(directory) },
+            manage = {
+                val section = more as? LinearLayout
+                val trigger = section?.getChildAt(0)
+                val content = section?.getChildAt(1)
+                if (content?.visibility == View.VISIBLE) { trigger?.performClick(); section.visibility = View.GONE }
+                else { section?.visibility = View.VISIBLE; trigger?.performClick() }
+            })
+        ui.memoryLibraryHeader(::filters)
+        ui.text(MoteI18n.text("资料与记忆"), NativeFontRole.TITLE_MOBILE).setPadding(ui.moteDp(4), 0, 0, ui.moteDp(12))
+        body.addView(LibraryBrowseUi.tabs(ui, "memories") { selected -> if (selected == "materials") ui.openLibraryMaterials() }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(10) })
+        val search = LibraryBrowseUi.search(ui, "搜索记忆", query)
+        body.addView(search, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(16) })
+        val target = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(target)
+        fun highlighted(text: String): CharSequence = SpannableString(text).apply {
+            MemorySearchHighlight.matches(text, query).forEach { match ->
+                setSpan(BackgroundColorSpan(NativeColorRole.TINT.color()), match.start, match.endExclusive, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(ForegroundColorSpan(NativeColorRole.ACCENT.color()), match.start, match.endExclusive, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        var moreTrigger: View? = null
+        fun readPage() {
+            val api = screens.client; val stamp = generation; val version = ++loadVersion
+            val path = MemoryBrowseCriteria.path(navigation, query, history)
+            val needsDetail = navigation.nodeId != null
+            ui.work(MoteI18n.text("正在读取记忆…"), { runCatching {
+                val page = api.get(path)
+                if (needsDetail) {
+                    val items = page.getJSONArray("items")
+                    for (index in 0 until items.length()) {
+                        val overview = items.getJSONObject(index)
+                        val full = api.get("/api/memories/" + CentralScreens.encode(overview.getString("id")))
+                        check(full.getString("id") == overview.getString("id") && full.getInt("version") == overview.getInt("version") && full.getString("fingerprint") == overview.getString("revision")) { MoteI18n.text("记忆版本暂不可用。") }
+                        items.put(index, full)
+                    }
+                }
+                page
+            } }) { result ->
+                if (stamp != generation || version != loadVersion) return@work
+                result.onSuccess { page ->
+                    target.removeAllViews(); val rows = page.getJSONArray("items")
+                    if (rows.length() == 0) ui.text(MoteI18n.text("当前筛选下没有匹配的记忆。可切换内容分类或调整筛选条件。"), parent = target)
+                    else {
+                        val group = MoteComponents.group(ui); target.addView(group)
+                        for (index in 0 until rows.length()) {
+                            if (index > 0) group.addView(MoteComponents.divider(ui))
+                            val row = rows.getJSONObject(index); val id = row.getString("id")
+                            val title = row.getString("title"); val statement = row.getString("statement")
+                            val item = LinearLayout(ui).apply {
+                                orientation = LinearLayout.VERTICAL; minimumHeight = ui.moteDp(60)
+                                setPadding(ui.moteDp(14), ui.moteDp(10), ui.moteDp(14), ui.moteDp(10))
+                                background = MoteUi.clickable(ui, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false)
+                                tag = "topic-memory:$id"; isFocusable = true; contentDescription = "$title，$statement"
+                                setOnClickListener { navigation.scroll = scrollView()?.scrollY ?: 0; detail.clear(); navigation.selectMemory(id); screens.refresh() }
+                            }
+                            item.addView(TextView(ui).apply { text = highlighted(title); MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK) })
+                            item.addView(TextView(ui).apply { text = highlighted(statement); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED); maxLines = 2 })
+                            if (history && (row.optString("supersededBy").isNotBlank() || row.optString("validUntil").isNotBlank())) item.addView(TextView(ui).apply { text = statusLabel(row); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED) })
+                            group.addView(item)
+                        }
+                    }
+                    if (navigation.canGoBack) ui.button(MoteI18n.text("上一页"), parent = target) { navigation.previous(); readPage() }
+                    CentralScreens.next(page)?.let { cursor -> ui.button(MoteI18n.text("下一页"), parent = target) { navigation.next(cursor); readPage() } }
+                    scrollView()?.post { scrollView()?.scrollTo(0, navigation.scroll) }
+                }.onFailure { error ->
+                    if (error is CentralFailure && error.status == 409) navigation.first()
+                    failure(error)
+                }
+                ui.scheduleMemoryTopicsPoll()
+            }
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val next = s?.toString().orEmpty().take(500)
+                if (next == query) return
+                query = next; navigation.first(); loadVersion++
+                searchTask?.let(body::removeCallbacks)
+                searchTask = Runnable { readPage() }.also { body.postDelayed(it, 300) }
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        search.setOnEditorActionListener { _, _, _ -> searchTask?.let(body::removeCallbacks); readPage(); true }
+        readPage()
+        more = ui.disclosure(MoteI18n.text("更多")) { management ->
             controls(management, true)
             ui.text(MoteI18n.text("记忆主题"), NativeFontRole.SECTION, management)
             ui.text(MoteI18n.text(when (directory.state) {
@@ -89,26 +235,9 @@ internal class CentralMemoryTopics(
             }
             ui.button(MoteI18n.text("刷新"), parent = management) { screens.refresh() }
         }
-        val target = ui.card(); val api = screens.client; val stamp = generation
-        ui.work(MoteI18n.text("正在读取记忆…"), { runCatching { api.get(navigation.path()) } }) { result ->
-            if (stamp != generation) return@work
-            result.onSuccess { page ->
-                target.removeAllViews(); val rows = page.getJSONArray("items")
-                if (rows.length() == 0) ui.text(MoteI18n.text("当前筛选下没有匹配的记忆。可切换内容分类或调整筛选条件。"), parent = target)
-                for (index in 0 until rows.length()) {
-                    val row = rows.getJSONObject(index); val id = row.getString("id"); val card = ui.card(target)
-                    ui.text(row.getString("title"), NativeFontRole.SECTION, card)
-                    ui.text(statusLabel(row) + " · " + row.optInt("evidenceCount", row.optJSONArray("evidenceIds")?.length() ?: 0) + " " + MoteI18n.text("条证据"), parent = card)
-                    ui.button(MoteI18n.text("查看详情"), parent = card) { navigation.scroll = scrollView()?.scrollY ?: 0; detail.clear(); navigation.selectMemory(id); screens.refresh() }.tag = "topic-memory:$id"
-                }
-                if (navigation.canGoBack) ui.button(MoteI18n.text("上一页"), parent = target) { navigation.previous(); screens.refresh() }
-                CentralScreens.next(page)?.let { cursor -> ui.button(MoteI18n.text("下一页"), parent = target) { navigation.next(cursor); screens.refresh() } }
-                scrollView()?.post { scrollView()?.scrollTo(0, navigation.scroll) }
-            }.onFailure { error ->
-                if (error is CentralFailure && error.status == 409) { navigation.first(); failure(error) } else failure(error)
-            }
-            ui.scheduleMemoryTopicsPoll()
-        }
+        moreTrigger = (more as? LinearLayout)?.getChildAt(0)
+        moreTrigger?.visibility = View.GONE
+        more?.visibility = View.GONE
     }
     private fun edits(): List<Pair<MemoryTopicEdit, String>> {
         fun children(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()

@@ -54,25 +54,25 @@ class LibrarySourceJourneyInstrumentedTest {
             fun titleCount():Int { var count=0; scenario.onActivity { count=views(it.window.decorView).filterIsInstance<TextView>().count { view->view.isShown && view.text.toString()=="Generated B1 original.txt" } }; return count }
             fun click(text:String) { scenario.onActivity { views(it.window.decorView).filterIsInstance<TextView>().first { view->view.isShown && view.text.toString()==text }.performClick() } }
             waitFor("actual joined file and distinct material") { titleCount()==1 && shown("Generated B1 organized material") && shown("中央可读") }
-            click("刷新"); waitFor("duplicate refresh remains one exact original") { titleCount()==1 && shown("Generated B1 organized material") }
+            scenario.refreshLibrary(); waitFor("duplicate refresh remains one exact original") { titleCount()==1 && shown("Generated B1 organized material") }
             scenario.recreate(); waitFor("B1 Activity restored") { titleCount()==1 && shown("Generated B1 organized material") }
             val pending=prepare("Generated B1 newer saved original bytes version two")
             val revision=pending.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision")
             assertNotEquals(firstRevision,revision); assertNull(LocalContentPresentation.currentReceipt(queue.row(source.id,external)))
             saved.put("pendingRevision",revision); File(context.filesDir,"generated-b1-keys.json").writeText(saved.toString())
-            click("刷新"); waitFor("new saved version does not merge with prior Central original") { titleCount()==2 }
-            api.post("/api/fixture/library-denial",JSONObject().put("mode","forbidden")); click("刷新")
+            scenario.refreshLibrary(); waitFor("new saved version does not merge with prior Central original") { titleCount()==2 }
+            api.post("/api/fixture/library-denial",JSONObject().put("mode","forbidden")); scenario.refreshLibrary()
             waitFor("403 clears remote original and material but preserves local pending original") { titleCount()==1 && !shown("Generated B1 organized material") }
             assertEquals("Generated B1 newer saved original bytes version two",queue.pendingPreview(source.id,external,revision)!!.first)
-            api.post("/api/fixture/library-denial",JSONObject().put("mode","offline")); click("刷新")
+            api.post("/api/fixture/library-denial",JSONObject().put("mode","offline")); scenario.refreshLibrary()
             waitFor("HTTP unavailable retains local original") { titleCount()==1 && !shown("Generated B1 organized material") }
-            api.post("/api/fixture/library-denial",JSONObject().put("mode","none")); click("刷新")
+            api.post("/api/fixture/library-denial",JSONObject().put("mode","none")); scenario.refreshLibrary()
             waitFor("recovery restores precise versions") { titleCount()==2 && shown("Generated B1 organized material") }
-            scenario.onActivity { views(it.window.decorView).filterIsInstance<Spinner>().single { view->view.contentDescription==MoteI18n.text("资料位置") }.setSelection(1) }
+            scenario.chooseLibraryLocation("local")
             waitFor("local filter") { titleCount()==1 && !shown("Generated B1 organized material") }
             scenario.recreate(); waitFor("local filter restored with versions") { titleCount()==1 && !shown("Generated B1 organized material") }
-            scenario.onActivity { views(it.window.decorView).filterIsInstance<Spinner>().single { view->view.contentDescription==MoteI18n.text("资料位置") }.setSelection(0) }
-            api.post("/api/fixture/library-denial",JSONObject().put("mode","none").put("delayMs",1000));click("刷新")
+            scenario.chooseLibraryLocation("")
+            api.post("/api/fixture/library-denial",JSONObject().put("mode","none").put("delayMs",1000));scenario.refreshLibrary()
             settings.signOut()
             Thread.sleep(1300)
             waitFor("late source response cannot republish after sign out") { titleCount()==1 && !shown("Generated B1 organized material") }

@@ -29,6 +29,7 @@ import dev.mote.collector.plugins.NativeSystemToolsPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.MoteIconButtonStyle
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -62,10 +63,9 @@ class MainActivity : MoteActivity() {
     private lateinit var pagesHost: FrameLayout
     private val pages = linkedMapOf<Page, View>()
     private lateinit var homeHeader: LinearLayout
-    private lateinit var headerAddAction: Button
-    private lateinit var headerSettingsAction: TextView
+    private lateinit var headerMarkAction: View
     private lateinit var headerSearchAction: ImageView
-    private lateinit var headerBackAction: TextView
+    private lateinit var headerBackAction: android.widget.ImageButton
     private lateinit var headerDivider: View
     private lateinit var headerTitle: TextView
     private lateinit var headerHeading: LinearLayout
@@ -91,16 +91,12 @@ class MainActivity : MoteActivity() {
     private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
     private lateinit var homeCaptureRow: HomeCaptureRow
-    private lateinit var homeGreeting: TextView
-    private lateinit var homeWelcome: TextView
     private lateinit var homeConversationsSection: LinearLayout
     private lateinit var homeRecordReceipt: LinearLayout
-    private lateinit var homeFirstIntro: TextView
     private var homeReceiptAvailable = false
     internal fun isFirstUseRecordEntry() = firstUse
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
-    private var libraryTab = "materials"
     private var processingSave: Button? = null
     private var libraryRecordsRevision = -1L
     private var firstUseGuide: LinearLayout? = null
@@ -227,37 +223,29 @@ class MainActivity : MoteActivity() {
     private fun buildUi(config: CollectorConfig, savedInstanceState: Bundle?, retained: RetainedDraft?) {
         loadedConfig = config
         settingsSummaries.committed(config.settingsSummary())
-        val root = NativeAppShell(this).apply { moteInsets() }
+        val root = NativeAppShell(this).apply { moteInsets(topBar = true) }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(MoteTheme.spacePage), 0, dp(MoteTheme.spacePage), 0) }
         headerHeading = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         headerActions = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-        headerBackAction = TextView(this).apply {
-            text = "‹"; MoteUi.type(this, NativeFontRole.ACTION); MoteUi.textColor(this, NativeColorRole.MUTED)
-            gravity = Gravity.CENTER; minHeight = dp(MoteTheme.controlHeight); isFocusable = true
-            setOnClickListener { navigatePageBack(currentPage) }
-        }
+        headerBackAction = MoteComponents.iconButton(this, MoteGlyph.BACK, "返回上一页") {
+            navigatePageBack(currentPage)
+        }.apply { tag = "local-back" }
         headerHeading.addView(headerBackAction, LinearLayout.LayoutParams(dp(MoteTheme.controlHeight), -2))
+        headerMarkAction = LinearLayout(this).apply {
+            gravity = Gravity.CENTER; tag = "home-m-action"; visibility = View.GONE
+            contentDescription = MoteI18n.text("我的 Mote"); isFocusable = true
+            background = MoteUi.clickable(this@MainActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.PILL, false)
+            setOnClickListener { showPage(Page.MANAGE) }
+            addView(MoteComponents.mark(this@MainActivity).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(28), dp(28)))
+        }
+        headerHeading.addView(headerMarkAction, LinearLayout.LayoutParams(dp(48), dp(48)))
         headerTitle = TextView(this).apply { text = "Mote"; tag = "local-page-title"; MoteUi.type(this, NativeFontRole.APPBAR, medium = true); MoteUi.textColor(this, NativeColorRole.INK) }
         headerHeading.addView(headerTitle, LinearLayout.LayoutParams(0, -2, 1f))
-        val quickNote = MoteUi.button(Button(this).apply {
-            text = MoteI18n.text("记下"); contentDescription = MoteI18n.text("记下")
-            setOnClickListener { openRecordEditor() }
-        })
-        headerAddAction = quickNote
-        headerActions.addView(quickNote, LinearLayout.LayoutParams(-2, dp(48)))
-        // Finding a material is one tap; Central's evidence reader ranks results and the client never guesses intent.
-        headerSearchAction = ImageView(this).apply {
-            setImageDrawable(MoteNavigationIcon(this@MainActivity, "search", false)); tag = "home-search-action"
-            contentDescription = MoteI18n.text("搜索资料"); isFocusable = true; isClickable = true; setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = MoteUi.clickable(this@MainActivity, NativeColorRole.TRANSPARENT, 24, false); setOnClickListener { openCentral(MoteNavigation.SEARCH) }
+        // H01: the home app bar carries only the brand entry and Central's original search.
+        headerSearchAction = MoteComponents.iconButton(this, MoteGlyph.SEARCH, "搜索资料") { openCentral(MoteNavigation.SEARCH) }.apply {
+            tag = "home-search-action"
         }
         headerActions.addView(headerSearchAction, LinearLayout.LayoutParams(dp(48), dp(48)))
-        headerSettingsAction = TextView(this).apply {
-            text = "☰"; contentDescription = MoteI18n.text("打开菜单"); MoteUi.type(this, NativeFontRole.ACTION)
-            MoteUi.textColor(this, NativeColorRole.MUTED); gravity = Gravity.CENTER; minHeight = dp(48); isFocusable = true
-            setPadding(dp(16), 0, 0, 0); setOnClickListener { showPage(Page.MANAGE) }
-        }
-        headerActions.addView(headerSettingsAction)
         header.addView(headerHeading, LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(headerActions, LinearLayout.LayoutParams(-2, -2))
         homeHeader = header
@@ -280,7 +268,7 @@ class MainActivity : MoteActivity() {
         root.navigation(navigation)
         setContentView(root)
         // CollectorConfig is the complete draft baseline. Unvisited pages never supply defaults.
-        libraryState = savedInstanceState?.getBundle("library"); libraryTab = savedInstanceState?.getString("libraryTab") ?: "materials"; logExportHours=savedInstanceState?.getInt("logExportHours",24)?.takeIf { it in listOf(1,24,168) } ?: 24
+        libraryState = savedInstanceState?.getBundle("library"); logExportHours=savedInstanceState?.getInt("logExportHours",24)?.takeIf { it in listOf(1,24,168) } ?: 24
         buildToday()
         buildManagement()
         buildSettings()
@@ -325,12 +313,6 @@ class MainActivity : MoteActivity() {
         // Look at the top, act at the bottom: one capture line here, Ask and quick records in the thumb zone.
         homeCaptureRow = home.captureRow(this, open = { startActivity(Intent(this, CaptureStatusActivity::class.java)) }, act = ::runCaptureAction)
         content.addView(homeCaptureRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
-        homeWelcome = text(MoteI18n.text("欢迎使用 Mote"), NativeFontRole.META, NativeColorRole.MUTED)
-        homeGreeting = text(MoteI18n.text("想问什么？"), NativeFontRole.TITLE_MOBILE).apply {
-            NativePresentationStyles.bind(this, "home-greeting") { (it as TextView).textSize = 25f; it.typeface = android.graphics.Typeface.create(android.graphics.Typeface.create(MoteTheme.fontFamily(true), android.graphics.Typeface.NORMAL), 500, false) }
-            setPadding(0, dp(22), 0, dp(29))
-            (layoutParams as LinearLayout.LayoutParams).bottomMargin = 0
-        }
         // Work and discovery own their home blocks: a stopped plugin publishes none.
         val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
         val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
@@ -341,11 +323,8 @@ class MainActivity : MoteActivity() {
         }
         homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         val pageContent = content
-        val guide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        val guide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-first-use-guide" }
         content.addView(guide); firstUseGuide = guide; content = guide
-        homeFirstIntro = text(MoteI18n.text("留下想法、照片或录音。\n需要找回什么时，再问 Mote。"), NativeFontRole.BODY, NativeColorRole.MUTED).apply {
-            NativePresentationStyles.bind(this,"first-use-intro") { (it as TextView).setLineSpacing(0f,1f) }
-        }
         val connection = lightControl(MoteI18n.text("连接你的 Mote"), MoteI18n.text("连接")) {
             if (loadedConfig.hasSyncConnection()) startActivity(Intent(this,SyncQueueActivity::class.java)) else startActivity(Intent(this,ConnectionActivity::class.java).putExtra("firstUse",firstUse))
         }
@@ -389,18 +368,12 @@ class MainActivity : MoteActivity() {
     private fun updateFirstUse() {
         val connected = loadedConfig.hasSyncConnection()
         val firstReceipt=homeReceiptAvailable && NativeRecordReceipt.fromFirstUse
-        homeWelcome.text = MoteI18n.text(if(firstReceipt) "最近留下的内容" else if (connected) "欢迎回来" else "欢迎使用 Mote")
         homeConnectionTitle?.text = MoteI18n.text(if (connected) "已连接你的 Mote" else "连接你的 Mote")
         homeConnectionState?.text = MoteI18n.text(if (connected) "自动采集尚未开启。" else "让记录进入资料库，供其他设备和 AI 使用。")
         homeConnectionAction?.text = MoteI18n.text(if (connected) "查看状态" else "连接")
         homeConnectionHelp?.visibility = if (connected) View.GONE else View.VISIBLE
         firstUseGuide?.visibility = if (firstUse || firstReceipt) View.VISIBLE else View.GONE
-        homeFirstIntro.visibility = if (firstUse && !firstReceipt) View.VISIBLE else View.GONE
-        homeWelcome.visibility = if (firstUse || firstReceipt) View.VISIBLE else View.GONE
         homeConversationsSection.visibility = if (firstUse || firstReceipt) View.GONE else View.VISIBLE
-        // Ask lives in the thumb zone; the large prompt remains only for the first-use handoff.
-        homeGreeting.visibility = if (firstUse || firstReceipt) View.VISIBLE else View.GONE
-        homeGreeting.text = MoteI18n.text(if(firstReceipt) "先留下，再慢慢想。" else if (firstUse) "先记下一件事。" else "想问什么？")
     }
 
     private fun buildManagement() {
@@ -662,50 +635,53 @@ class MainActivity : MoteActivity() {
             setOnClickListener { action() }
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
     }
-    private fun addFileRow(parent: LinearLayout, row: org.json.JSONObject) {
-        addContentRow(parent, row.getJSONObject("candidate").optString("title"), LocalContentPresentation.fileStatus(row), "file-content:" + row.getString("sourceId"), "import", row.optString("sourceName")) {
-            startActivity(Intent(this, FileContentActivity::class.java).putExtra("sourceId", row.getString("sourceId")).putExtra("externalId", row.getJSONObject("candidate").getString("externalId")))
-        }
-    }
     private fun addCaptureRow(parent: LinearLayout, item: org.json.JSONObject, remote: Boolean = false, location: String = "", scope: String = "") {
-        val title = item.optString("appName").ifBlank { if (item.optString("source") == "note") MoteI18n.text("记录") else MoteI18n.text("采集记录") }
         val note = item.optString("source") == "note"
-        val timestamp = runCatching { java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT).withLocale(resources.configuration.locales[0]).withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(item.getString("capturedAt"))) }.getOrDefault(item.optString("capturedAt"))
-        val kind = MoteI18n.text(if (note) "记录" else "采集记录")
-        val provenance = if (title == kind) timestamp else "$kind · $timestamp"
-        addContentRow(parent, title, NativeRecordPreview.text(item), "library-record:" + item.getString("id"), if (note) "notes" else "capture", listOf(provenance, location).filter(String::isNotBlank).joinToString(" · ")) {
+        val title = item.optString("windowTitle").ifBlank { NativeRecordPreview.text(item) }.ifBlank { item.optString("appName") }.ifBlank { MoteI18n.text(if (note) "记录" else "采集记录") }
+        val timestamp = runCatching { java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(resources.configuration.locales[0]).withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(item.getString("capturedAt"))) }.getOrDefault(item.optString("capturedAt"))
+        val source = item.optString("source")
+        val recordingLength = item.optLong("durationMs", 0).takeIf { source == "media" && it > 0 }?.let { millis ->
+            val seconds = millis / 1000
+            "%d:%02d".format(seconds / 60, seconds % 60)
+        }
+        val kind = MoteI18n.text(when (source) {
+            "note" -> when {
+                item.optString("windowTitle").matches(Regex("(?i).+\\.(pdf|docx?|xlsx?|pptx?|txt|md|csv|zip)$")) -> "文件"
+                item.optString("appName").contains('.') -> item.optString("appName")
+                else -> "记录"
+            }
+            "screen" -> if (item.optBoolean("hasImage")) "照片" else "截图"
+            "notification" -> "通知"
+            "ui_page" -> "网页"
+            "media" -> "录音"
+            "activity" -> "应用活动"
+            "device_event" -> "设备事件"
+            else -> "采集记录"
+        }) + (recordingLength?.let { " $it" }.orEmpty())
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; minimumHeight = dp(60); setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = MoteUi.clickable(this@MainActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false)
+            isFocusable = true; tag = "library-record:" + item.getString("id"); contentDescription = listOf(title, timestamp, kind, location).filter(String::isNotBlank).joinToString("，")
+            addView(TextView(this@MainActivity).apply { text = title; MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK); maxLines = 2 })
+            addView(TextView(this@MainActivity).apply { text = "$timestamp · $kind"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
+        }
+        row.setOnClickListener {
             startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", dev.mote.collector.plugins.NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", dev.mote.collector.plugins.NativeLibraryPlugin.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
         }
+        parent.addView(row)
     }
 
     private fun buildLibrary() {
         page(Page.LIBRARY, null)
-        val pageContent = content
-        val index = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        pageContent.addView(index, LinearLayout.LayoutParams(-1, -2)); content = index
+        content.setPadding(dp(20), dp(6), dp(20), dp(28))
+        val heading = designHeading(MoteI18n.text("资料与记忆"))
+        heading.setPadding(0, 0, 0, 0)
+        (heading.layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(10)
         val materials = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val memories = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        lateinit var tabs: NativeSectionTabs
-        fun select(value: String) {
-            libraryTab = value; tabs.select(value)
-            materials.visibility = if(value=="materials")View.VISIBLE else View.GONE
-            memories.visibility = if(value=="memories")View.VISIBLE else View.GONE
-            if(value=="materials"&&currentPage==Page.LIBRARY&&!initializing)loadLocalLibrary()
-        }
-        tabs = NativeSectionTabs(this,listOf("materials" to "我的资料","memories" to "我的记忆"),"library-primary-views",::select)
-        content.addView(tabs,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) })
-        content.addView(materials);content.addView(memories)
+        content.addView(LibraryBrowseUi.tabs(this, "materials") { value -> if (value == "memories") openCentral("memories") }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        content.addView(materials)
         libraryView = LibraryCaptureView(this, materials, libraryState,
-            { parent, item, remote, location, scope -> addCaptureRow(parent, item, remote, location, scope) },
-            { parent, item -> addFileRow(parent, item) },
-            { startActivity(Intent(this,CaptureRecordsActivity::class.java)) },
-            { showPage(Page.STORAGE) })
-        val previous=content;content=memories
-        text(MoteI18n.text("查看中心整理的记忆。"),NativeFontRole.BODY,NativeColorRole.MUTED)
-        button(MoteI18n.text("查看我的记忆")+" ↗") { openCentral("memories") }
-        content=previous;select(libraryTab)
-
-        content = pageContent
+            { parent, item, remote, location, scope -> addCaptureRow(parent, item, remote, location, scope) })
     }
     private fun openCentral(page: String) { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", page)) }
 
@@ -2043,27 +2019,39 @@ class MainActivity : MoteActivity() {
         val enteringAsk = page == Page.ASK && currentPage != page
         val enteringActivity = page == Page.ACTIVITY && currentPage != page
         currentPage = page
-        val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION)
+        val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.LIBRARY)
         headerTitle.text = if (page == Page.OVERVIEW) "Mote" else page.title
-        headerTitle.visibility = if (designHeader) View.GONE else View.VISIBLE
+        headerTitle.visibility = if (page == Page.OVERVIEW || designHeader) View.GONE else View.VISIBLE
         NativePresentationStyles.bind(headerTitle, "local-heading") { (it as TextView).textSize = if (currentPage == Page.OVERVIEW) 17f else MoteTheme.fontAppbar.toFloat() }
         headerTitle.setPadding(0, dp(MoteTheme.spaceInline), dp(MoteTheme.spaceInline), dp(MoteTheme.spaceInline))
-        homeHeader.setPadding(dp(if (page == Page.OVERVIEW) 20 else if (designHeader) 6 else if (page.parent == null) MoteTheme.spacePage else 0), 0, dp(if (page == Page.OVERVIEW) 20 else if (designHeader) 6 else MoteTheme.spacePage), 0)
-        homeHeader.minimumHeight = dp(if (page == Page.OVERVIEW) 66 else 48)
+        headerMarkAction.visibility = if (page == Page.OVERVIEW) View.VISIBLE else View.GONE
+        homeHeader.setPadding(dp(if (page == Page.OVERVIEW) 8 else if (page == Page.LIBRARY) 8 else if (designHeader) 6 else if (page.parent == null) MoteTheme.spacePage else 0), 0, dp(if (page == Page.OVERVIEW) 4 else if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0)
+        homeHeader.minimumHeight = dp(if (page == Page.OVERVIEW) 56 else 48)
         headerBackAction.tag = "local-back:${page.name}"
         headerBackAction.visibility = if (page.parent != null) View.VISIBLE else View.GONE
         headerBackAction.contentDescription = if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.CENTRAL_CALLER)
             MoteI18n.text("返回上一页") else pageBackTarget(page)?.let { MoteI18n.text("返回{0}", it.title) }
         homeHeader.visibility = if (page in setOf(Page.ASK, Page.ACTIVITY)) View.GONE else View.VISIBLE
-        headerDivider.visibility = if (homeHeader.visibility == View.VISIBLE && !designHeader) View.VISIBLE else View.GONE
-        headerAddAction.visibility = View.GONE
-        headerSettingsAction.visibility = if (page == Page.OVERVIEW) View.VISIBLE else View.GONE
-        headerSearchAction.visibility = headerSettingsAction.visibility
+        headerDivider.visibility = if (page != Page.OVERVIEW && homeHeader.visibility == View.VISIBLE && !designHeader) View.VISIBLE else View.GONE
+        headerSearchAction.visibility = if (page in setOf(Page.OVERVIEW, Page.LIBRARY)) View.VISIBLE else View.GONE
+        NativePresentationStyles.bind(headerSearchAction, "glyph-tint") {
+            (it as ImageView).imageTintList = android.content.res.ColorStateList.valueOf(NativeColorRole.INK.color())
+        }
+        if (page == Page.LIBRARY) {
+            headerSearchAction.setImageResource(MoteGlyph.SLIDERS.drawable)
+            headerSearchAction.contentDescription = MoteI18n.text("筛选")
+            headerSearchAction.tag = "library-filter"
+            headerSearchAction.setOnClickListener { libraryView?.showFilters() }
+        } else {
+            headerSearchAction.setImageResource(MoteGlyph.SEARCH.drawable)
+            headerSearchAction.contentDescription = MoteI18n.text("搜索资料"); headerSearchAction.tag = "home-search-action"
+            headerSearchAction.setOnClickListener { openCentral(MoteNavigation.SEARCH) }
+        }
         val compactHeader = page != Page.OVERVIEW && (resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f)
         homeHeader.orientation = if (compactHeader) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         headerHeading.layoutParams = if (compactHeader) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f)
         headerActions.layoutParams = LinearLayout.LayoutParams(if (compactHeader) -1 else -2, -2)
-        headerActions.visibility = if (headerAddAction.visibility == View.GONE && headerSettingsAction.visibility == View.GONE) View.GONE else View.VISIBLE
+        headerActions.visibility = headerSearchAction.visibility
         pages.forEach { (key, view) ->
             view.visibility = if (key == page) View.VISIBLE else View.GONE
             view.importantForAccessibility = if (key == page) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -2127,7 +2115,7 @@ class MainActivity : MoteActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBundle("library", libraryView?.saveState() ?: libraryState); outState.putString("libraryTab",libraryTab);outState.putInt("logExportHours",logExportHours)
+        outState.putBundle("library", libraryView?.saveState() ?: libraryState);outState.putInt("logExportHours",logExportHours)
         outState.putString("page", currentPage.name)
         outState.putString("permissionReturnPage", permissionReturnPage.name)
         if (currentPage == Page.CONNECTION) connectionOrigin?.let { outState.putString("connectionOrigin", it.name) }
