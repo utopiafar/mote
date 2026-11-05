@@ -74,7 +74,7 @@ class NativeCentralInstrumentedTest {
                 scenario.onActivity { activity ->
                     val tabs = all(activity).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
                     assertTrue(tabs.isEmpty())
-                    assertTrue("$page has a visible back action", all(activity).any { it.isShown && (it as? TextView)?.text == "‹" })
+                    assertTrue("$page has a visible back action", all(activity).any { it.isShown && it.contentDescription == MoteI18n.text("返回上级") })
                     assertFalse("$page embeds a WebView", all(activity).any { it is WebView })
                     assertFalse("$page requested another token", contains(activity, "登录并继续"))
                     assertEquals("$page API error", "", all(activity).filterIsInstance<TextView>().first { it.tag == "central-status" }.text.toString())
