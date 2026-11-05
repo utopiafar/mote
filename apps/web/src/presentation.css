@@ -23,13 +23,13 @@
 .app-shell[data-navigation] .topbar-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
 .app-shell[data-navigation] .breadcrumb { color:var(--mote-muted); font-size:var(--mote-font-meta); }
 .app-shell[data-navigation] .breadcrumb strong { color:var(--mote-ink); font-weight:500; }
-.app-shell[data-navigation] .topbar .avatar { width:26px; height:26px; color:var(--mote-muted); border:1px solid var(--mote-border); background:var(--mote-surface); }
+.app-shell[data-navigation] .topbar .avatar { width:26px; height:26px; color:var(--mote-muted); border:1px solid var(--mote-hair); background:var(--mote-surface); }
 .app-shell[data-navigation] .content { max-width:var(--mote-page-width); padding:var(--mote-space-page); margin:0 auto; }
 .app-shell[data-navigation] .footer { display:flex; justify-content:space-between; gap:16px; padding:18px var(--mote-space-page); margin:0; border-top:1px solid var(--mote-divider); color:var(--mote-muted); font-size:var(--mote-font-meta); }
 .presentation-content-outlet,.presentation-content-outlet>div { min-width:0; }
 .shell-menu { position:relative; font-size:var(--mote-font-meta); }
 .shell-menu>summary { cursor:pointer; padding:8px; list-style:none; color:var(--mote-muted); }
-.shell-menu>div { position:absolute; right:0; top:100%; z-index:60; display:grid; min-width:160px; padding:6px; background:var(--mote-surface-raised); border:1px solid var(--mote-border); border-radius:var(--mote-radius-container); }
+.shell-menu>div { position:absolute; right:0; top:100%; z-index:60; display:grid; min-width:160px; padding:6px; background:var(--mote-surface-raised); border:1px solid var(--mote-hair); border-radius:var(--mote-radius-container); }
 .shell-menu button { color:var(--mote-ink); text-align:left; padding:8px 12px; min-height:40px; border-radius:var(--mote-radius-control); }
 .shell-menu button:hover { background:var(--mote-tint); }
 .related-activity-context { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:12px 0; font-size:var(--mote-font-support); }
@@ -52,7 +52,7 @@
 .source-grid .source-select.active { color:var(--mote-accent); }
 /* Two surface patterns only: a bordered surface card for clickable grid tiles and split-view detail panes,
    and divided rows for lists. Flat .panel groups keep the token's borderless form. */
-.central-status-grid>button,.discovery-source-grid>.discovery-source-card,.source-grid>section.panel,.conversation-history.panel { border:var(--mote-border-width) solid var(--mote-border); border-radius:var(--mote-radius-container); background:var(--mote-surface); box-shadow:none; }
+.central-status-grid>button,.discovery-source-grid>.discovery-source-card,.source-grid>section.panel,.conversation-history.panel { border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-container); background:var(--mote-surface); box-shadow:none; }
 .central-status-grid>button,.discovery-source-grid>.discovery-source-card { padding:var(--mote-space-panel); transition:border-color .12s ease,background-color .12s ease; }
 .central-status-grid>button:hover,.discovery-source-grid>a.discovery-source-card:hover { border-color:var(--mote-control-border); background:var(--mote-surface-hover); }
 .central-status-grid { gap:var(--mote-space-item); margin:var(--mote-space-panel) 0 var(--mote-section-gap); }
@@ -67,7 +67,7 @@
 .source-grid>section.panel { padding:var(--mote-space-panel); align-self:start; }
 .conversation-history.panel { padding:var(--mote-space-panel); }
 /* Recent records: one compact row per record instead of a tall card. */
-.home-record-list { border:var(--mote-border-width) solid var(--mote-border); border-radius:var(--mote-radius-container); background:var(--mote-surface); overflow:hidden; }
+.home-record-list { border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-container); background:var(--mote-surface); overflow:hidden; }
 .home-record-list .capture-card-compact { display:flex; align-items:center; gap:var(--mote-space-item); width:100%; min-height:0; margin:0; padding:var(--mote-row-padding) var(--mote-space-panel); border:0; border-bottom:var(--mote-row-border-width) solid var(--mote-divider); border-radius:0; background:transparent; box-shadow:none; text-align:left; color:inherit; }
 .home-record-list .capture-card-compact:last-child { border-bottom:0; }
 .home-record-list .capture-card-compact:hover { transform:none; background:var(--mote-surface-hover); }

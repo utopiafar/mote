@@ -1,10 +1,10 @@
 .final-search .page-heading{display:flex;align-items:center;justify-content:space-between;gap:18px}
-.final-search .workspace-search{display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid var(--mote-divider);border-radius:6px;background:var(--mote-surface)}
+.final-search .workspace-search{display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid var(--mote-divider);border-radius:var(--mote-radius-control);background:var(--mote-surface)}
 .final-search .workspace-search input{min-width:0;flex:1;border:0;outline:0;background:none;color:var(--mote-ink);font:inherit;font-size:13px;line-height:1.7}
 .final-search .workspace-search .button{min-height:34px;font-size:12px}
 .final-search .search-options{display:flex;align-items:center;justify-content:space-between;margin:20px 0 28px}
 .final-search .view-tabs{display:flex;gap:3px;border:0}
-.final-search .view-tabs button{border:0;border-radius:5px;background:none;padding:5px 10px;color:var(--mote-muted);font-size:12px;cursor:pointer}
+.final-search .view-tabs button{border:0;border-radius:var(--mote-radius-indicator);background:none;padding:5px 10px;color:var(--mote-muted);font-size:12px;cursor:pointer}
 .final-search .view-tabs button[aria-pressed=true]{color:var(--mote-ink);background:var(--mote-sidebar);border:0}
 .final-search .search-result-group{margin:0 0 34px}
 .final-search .section-head{display:flex;justify-content:space-between;align-items:center;margin:0 0 16px;gap:18px}
@@ -26,10 +26,10 @@
 .final-search .search-records{border-top:1px solid var(--mote-divider)}
 .final-search .search-memory-row{display:grid;grid-template-columns:35px minmax(0,1fr) 18px;gap:15px;align-items:start;padding:19px 5px}
 .final-search .search-memory-row .library-record-copy{display:block}
-.final-search .search-memory-symbol{width:32px;height:36px;border:1px solid var(--mote-divider);border-radius:5px;background:var(--mote-surface);display:grid;place-items:center;color:var(--mote-accent);font-size:19px;margin-top:2px}
+.final-search .search-memory-symbol{width:32px;height:36px;border:1px solid var(--mote-divider);border-radius:var(--mote-radius-thumb);background:var(--mote-surface);display:grid;place-items:center;color:var(--mote-accent);font-size:19px;margin-top:2px}
 .final-search .search-memory-title{display:flex;align-items:center;gap:8px;min-width:0}
 .final-search .search-memory-title strong{font-size:14px;line-height:1.7;font-weight:520;color:var(--mote-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.final-search .search-memory-title .memory-status-badge{font-size:9px;padding:1px 5px;color:light-dark(#956d39,#d6b07d);background:light-dark(#f0e8da,#393126);border-radius:3px;white-space:nowrap;flex-shrink:0}
+.final-search .search-memory-title .memory-status-badge{font-size:9px;padding:1px 5px;color:light-dark(#956d39,#d6b07d);background:light-dark(#f0e8da,#393126);border-radius:var(--mote-radius-indicator);white-space:nowrap;flex-shrink:0}
 .final-search .search-memory-row .search-memory-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.8;color:var(--mote-muted);margin-top:7px}
 .final-search .search-memory-row .library-record-copy>small{display:block;font-size:10px;line-height:1.7;color:var(--mote-muted);margin-top:9px}
 .final-search .search-memory-row>svg{align-self:center}
