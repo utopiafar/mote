@@ -11,6 +11,7 @@ struct RecordingPreview: View {
     private let store: EditorDraftStore
     private let arguments: [String]
     private let interrupted: Bool
+    private let previewElapsed: TimeInterval
 
     init(arguments: [String]) {
         let directory = FileManager.default.temporaryDirectory
@@ -20,6 +21,7 @@ struct RecordingPreview: View {
         self.arguments = arguments
         let state = Self.argument("-MoteRecordingState", in: arguments) ?? "inApp"
         self.interrupted = state == "interrupted"
+        self.previewElapsed = Self.argument("-MoteRecordingElapsed", in: arguments).flatMap(TimeInterval.init) ?? 134
         _inEditor = State(initialValue: state != "away")
         _recording = StateObject(wrappedValue: RecordingController(store: store, arguments: arguments))
     }
@@ -45,7 +47,7 @@ struct RecordingPreview: View {
             guard scenePhase == .active, !didPrepare else { return }
             didPrepare = true
             recording.model?.load(fixtureName: "recording", descriptionExpanded: false)
-            await recording.preparePreview(interrupted: interrupted)
+            await recording.preparePreview(interrupted: interrupted, elapsed: previewElapsed)
         }
     }
 

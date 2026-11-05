@@ -305,20 +305,53 @@ public struct ObservationMetadata: Codable, Equatable, Sendable {
     }
 }
 
+/// Explicit source of a note: the owner typed it, shared it from another app,
+/// or saved a conversation excerpt. Never an assertion about its content.
+public struct NoteOrigin: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case manual, share, conversation
+    }
+
+    public let kind: Kind
+    public let text: String?
+    public let url: String?
+    public let app: String?
+    public let conversationId: String?
+    public let messageIds: [String]?
+
+    public init(kind: Kind, text: String? = nil, url: String? = nil, app: String? = nil,
+                conversationId: String? = nil, messageIds: [String]? = nil) {
+        self.kind = kind
+        self.text = text
+        self.url = url
+        self.app = app
+        self.conversationId = conversationId
+        self.messageIds = messageIds
+    }
+}
+
 public struct RecordMetadata: Codable, Equatable, Sendable {
     public let version: Int?
     public let observedAt: String?
     public let collector: CollectorMetadata?
     public let notification: NotificationMetadata?
     public let observation: ObservationMetadata?
+    public let noteOrigin: NoteOrigin?
+    public let ownerDescription: String?
+    public let attachments: [String]?
 
     public init(version: Int? = nil, observedAt: String? = nil, collector: CollectorMetadata? = nil,
-                notification: NotificationMetadata? = nil, observation: ObservationMetadata? = nil) {
+                notification: NotificationMetadata? = nil, observation: ObservationMetadata? = nil,
+                noteOrigin: NoteOrigin? = nil, ownerDescription: String? = nil,
+                attachments: [String]? = nil) {
         self.version = version
         self.observedAt = observedAt
         self.collector = collector
         self.notification = notification
         self.observation = observation
+        self.noteOrigin = noteOrigin
+        self.ownerDescription = ownerDescription
+        self.attachments = attachments
     }
 }
 

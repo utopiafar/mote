@@ -1,8 +1,8 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {JSDOM} from 'jsdom';
 import {readFileSync} from 'node:fs';
-import {desktopUiLayout,linearUiTheme} from '@mote/shared';
-import {createDesktopPresentation,defaultDesktopRenderer,type DesktopLayoutRenderer,type DesktopPresentationScope} from '../src/presentation';
+import {desktopUiLayout,linearUiTheme,uiDestinationPresentation} from '@mote/shared';
+import {createDesktopPresentation,defaultDesktopRenderer,desktopDestination,type DesktopLayoutRenderer,type DesktopPresentationScope} from '../src/presentation';
 
 let dom:JSDOM|undefined;
 afterEach(()=>{dom?.window.close();});
@@ -28,6 +28,22 @@ it('replaces a real layout and theme without recreating editors or duplicating n
   expect(document.getElementById('note-text')).toBe(editor);expect(editor.value).toBe('Generated unsaved note');
   document.querySelector<HTMLButtonElement>('.main-nav [data-nav=ask]')!.click();expect(navigate.mock.calls).toEqual([['ask'],['ask']]);
   shell.dispose();expect(Array.from(root.childNodes)).toEqual(originalOrder);expect(root.style.getPropertyValue('--mote-background')).toBe('');
+});
+
+it('renders the shared desktop destinations with Settings last in the sidebar',()=>{
+  dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'),{url:'https://generated.invalid'});
+  const document=dom.window.document,root=document.body,navigate=vi.fn();
+  const slots={root,sidebar:document.querySelector<HTMLElement>('.sidebar')!,toolbar:document.querySelector<HTMLElement>('.workspace-toolbar')!,main:document.getElementById('main-content')!,navigate};
+  const shell=createDesktopPresentation(slots);
+  const items=Array.from(document.querySelectorAll<HTMLElement>('.sidebar .nav-item[data-nav]'));
+  expect(items.map(node=>node.dataset.nav)).toEqual([...desktopUiLayout.primary.map(id=>desktopDestination[id]),'settings']);
+  expect(items.map(node=>node.querySelector('span:not([aria-hidden]):not(.pending-dot)')!.textContent)).toEqual([...desktopUiLayout.primary.map(id=>uiDestinationPresentation[id].label),'设置']);
+  expect(items.map(node=>node.querySelector('use')!.getAttribute('href'))).toEqual(['#icon-home','#icon-layers','#icon-plug','#icon-ask','#icon-settings']);
+  expect(document.querySelector('.sidebar>.sidebar-titlebar')).not.toBeNull();
+  expect(document.querySelector('.sidebar [data-nav=work]')).toBeNull();
+  expect(document.getElementById('central')).toBeNull();
+  expect(document.querySelector('.sidebar-device, #sidebar-device, #sidebar-state')).toBeNull();
+  shell.dispose();
 });
 
 it('isolates a throwing renderer and restores the default around the same focused editor',()=>{
