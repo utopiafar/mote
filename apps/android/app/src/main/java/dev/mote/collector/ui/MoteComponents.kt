@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -175,16 +176,18 @@ internal object MoteComponents {
         subtitle: String? = null,
         value: String? = null,
         valueColor: NativeColorRole = NativeColorRole.MUTED,
+        titleColor: NativeColorRole = NativeColorRole.INK,
         trailing: View? = null,
+        verticalPaddingDp: Int = 9,
         onClick: ((View) -> Unit)? = null,
     ): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
         minimumHeight = context.moteDp(MoteTheme.controlHeight)
-        setPadding(context.moteDp(14), context.moteDp(9), context.moteDp(14), context.moteDp(9))
+        setPadding(context.moteDp(14), context.moteDp(verticalPaddingDp), context.moteDp(14), context.moteDp(verticalPaddingDp))
         icon?.let { addView(MoteComponents.icon(context, it), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = context.moteDp(12) }) }
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            addView(TextView(context).apply { text = title; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.INK) })
+            addView(TextView(context).apply { text = title; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, titleColor) })
             subtitle?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED) }) }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         value?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, valueColor) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) }) }
@@ -201,6 +204,27 @@ internal object MoteComponents {
     /** All buttons are capsules: primary ink, secondary fill without outline, text, danger. */
     fun button(context: Context, label: String, role: MoteUi.ButtonRole = MoteUi.ButtonRole.SECONDARY, onClick: (View) -> Unit = {}): Button =
         MoteUi.action(Button(context).apply { text = label; setOnClickListener(onClick) }, role)
+
+    /** A 32dp visual capsule inside a full 48dp touch target for the compact row action. */
+    fun smallButton(context: Context, label: String, onClick: (View) -> Unit = {}): View = FrameLayout(context).apply {
+        minimumHeight = context.moteDp(MoteIconButtonSpec.MIN_TOUCH_DP)
+        contentDescription = MoteI18n.text(label)
+        isFocusable = true
+        setOnClickListener(onClick)
+        val visual = Button(context).apply {
+            text = MoteI18n.text(label); isAllCaps = false
+            minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
+            includeFontPadding = false; isFocusable = false; isClickable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            MoteUi.type(this, NativeFontRole.ACTION, medium = true)
+            MoteUi.textColor(this, NativeColorRole.INK)
+            setPadding(context.moteDp(12), 0, context.moteDp(12), 0)
+            bind(this, "small-button") { view ->
+                view.background = MoteUi.shape(context, NativeColorRole.FILL, NativeRadiusRole.PILL, false)
+            }
+        }
+        addView(visual, FrameLayout.LayoutParams(-2, context.moteDp(32)).apply { gravity = Gravity.CENTER_VERTICAL })
+    }
 
     /** Inner items are capsule buttons; the frame radius is the button radius + gap. */
     internal class MoteSegmented(context: Context, options: List<Pair<String, String>>, private val onSelect: (String) -> Unit) : LinearLayout(context) {
@@ -335,6 +359,9 @@ internal object MoteComponents {
         init {
             isFocusable = true
             setOnClickListener { checked = !checked; invalidate(); onChange(checked) }
+        }
+        fun setChecked(value: Boolean) {
+            if (checked != value) { checked = value; invalidate() }
         }
         override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
             super.onInitializeAccessibilityNodeInfo(info)

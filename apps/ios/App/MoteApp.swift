@@ -20,12 +20,17 @@ struct MoteApp: App {
                 if arguments.contains("-MoteComponentPreview") {
                     ComponentPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteHomePreview") {
+                    HomePreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteReaderPreview") {
+                    OriginalPreview()
+                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteCaptureSyncPreview") {
                     CaptureSyncPreview()
                         .preferredColorScheme(previewScheme)
                 } else {
-                    Color(uiColor: .systemBackground)
-                        .ignoresSafeArea()
+                    HomeRootView()
                 }
             }
             .task {

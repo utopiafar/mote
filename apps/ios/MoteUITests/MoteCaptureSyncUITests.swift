@@ -123,6 +123,29 @@ final class MoteCaptureSyncUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["handleMediaPermission"].waitForExistence(timeout: 3))
     }
 
+    func testHomeOpensCaptureSyncAndReturnsHome() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-MoteAppearance", "light"]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 15))
+        app.buttons["我的 Mote"].tap()
+        XCTAssertTrue(app.staticTexts["我的 Mote"].waitForExistence(timeout: 5))
+
+        let entry = app.buttons["采集与同步"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 44)
+        entry.tap()
+
+        XCTAssertTrue(app.staticTexts["通知"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["返回"].firstMatch.exists)
+        attachScreenshot(named: "home-to-capture-sync-light")
+
+        app.buttons["返回"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["记录"].exists)
+    }
+
     private func assertPermissionState(appearance: String) {
         let app = launch(state: "permission", appearance: appearance)
         XCTAssertTrue(app.staticTexts["通知"].exists)
