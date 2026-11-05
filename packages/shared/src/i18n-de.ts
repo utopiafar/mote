@@ -10147,6 +10147,7 @@ export const german: Readonly<Record<string, string>> = {
   "采集中 · 待同步 {0} 条": "Erfassung läuft · Ausstehend: {0}",
   "采集中 · 发送已暂停": "Erfassung läuft · Senden pausiert",
   "采集中 · 发送需要处理": "Erfassung läuft · Senden erfordert Aufmerksamkeit",
+  "已清空": "Gelöscht",
   "已收到": "Empfangen",
   "后台处理": "Hintergrundverarbeitung",
   "本人设备": "Mein Gerät",
