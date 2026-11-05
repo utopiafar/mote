@@ -98,7 +98,7 @@ enum HomeDestination: Equatable, Identifiable {
 
     var isFullScreen: Bool {
         switch self {
-        case .profile, .captureStatus, .editor: true
+        case .profile, .captureStatus, .editor, .ask(.none): true
         default: false
         }
     }
@@ -125,6 +125,16 @@ struct HomeDestinationView: View {
             }
         case .original(let id):
             OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
+        case .ask(.none):
+            // IOS11: 问一问 opens the conversation history; opening or sending
+            // a conversation is wired by the conversation unit (IOS10).
+            ConversationHistoryView(
+                model: .live(), now: Date(), calendar: .current,
+                onBack: { dismiss() },
+                onOpen: { _ in },
+                onSend: { _ in },
+                onAddImage: {}
+            )
         case .profile:
             ProfileMenuView(onOpenConnection: onOpenConnection)
         case .captureStatus:
