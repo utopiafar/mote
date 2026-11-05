@@ -30,6 +30,9 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteHomePreview") {
                     HomePreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteHistoryPreview") {
+                    ConversationHistoryPreview()
+                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteEditorPreview") {
                     editorPreview
                         .preferredColorScheme(previewScheme)
@@ -38,6 +41,9 @@ struct MoteApp: App {
                         .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteReaderPreview") {
                     OriginalPreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteConnectPreview") {
+                    ConnectionView()
                         .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteCaptureSyncPreview") {
                     CaptureSyncPreview()

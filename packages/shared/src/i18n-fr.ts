@@ -10173,5 +10173,16 @@ export const french: Readonly<Record<string, string>> = {
   "录音未能继续": "L'enregistrement n'a pas pu reprendre",
   "录音未能保存": "L'enregistrement n'a pas pu être enregistré",
   "来电": "Appel entrant",
-  "录制音频并添加到当前草稿": "Enregistrer de l'audio et l'ajouter au brouillon actuel"
+  "录制音频并添加到当前草稿": "Enregistrer de l'audio et l'ajouter au brouillon actuel",
+  "粘贴邀请": "Coller l’invitation",
+  "邀请已失效": "L’invitation a expiré",
+  "此中央尚不支持 iOS，升级中央后重试": "Ce central ne prend pas encore en charge iOS. Mettez-le à jour puis réessayez.",
+  "我的 iPhone": "Mon iPhone",
+  "连接后发送": "Envoyer après connexion",
+  "正在连接…": "Connexion en cours…",
+  "连接未完成": "Connexion inachevée",
+  "暂时无法读取": "Lecture temporairement impossible",
+  "设备名称无效": "Nom d’appareil non valide",
+  "有待发送记录，无法更换中央": "Des enregistrements en attente empêchent de changer de central",
+  "扫描中央生成的连接二维码。": "Scanner le code QR de connexion généré par le central."
 };

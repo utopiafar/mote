@@ -19,5 +19,14 @@
             </array>
         </dict>
     </array>
+#if MOTE_DEVELOPMENT
+    <key>UIFileSharingEnabled</key>
+    <true/>
+#endif
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>
