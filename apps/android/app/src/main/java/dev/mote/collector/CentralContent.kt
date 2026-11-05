@@ -391,14 +391,6 @@ internal class CentralContent(
     internal fun hideAskComposer() { composer.visibility = View.GONE }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
     internal fun askConversationActions(showMore: Boolean) { conversationMoreAction.visibility = if (showMore) View.VISIBLE else View.GONE }
-<<<<<<< HEAD
-    internal fun detailTitle(value: String) { title.text = value; memoryFilterAction.visibility = View.GONE; historyAction.visibility = View.GONE; newConversationAction.visibility = View.GONE; conversationMoreAction.visibility = View.GONE }
-
-    internal fun memoryLibraryHeader(filter: () -> Unit) {
-        title.text = ""; memoryFilter = filter; memoryFilterAction.visibility = View.VISIBLE
-    }
-    internal fun openLibraryMaterials() = localPage("LIBRARY")
-=======
     /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
     internal fun askConversationVisible(visible: Boolean) {
         title.visibility = if (visible) View.GONE else View.VISIBLE
@@ -407,8 +399,18 @@ internal class CentralContent(
         conversationMoreAction.visibility = View.GONE
         historyAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
     }
-    internal fun detailTitle(value: String) { title.visibility = View.VISIBLE; title.text = value; historyAction.visibility = View.GONE; newConversationAction.visibility = View.GONE; conversationMoreAction.visibility = View.GONE }
->>>>>>> origin/main
+    internal fun detailTitle(value: String) {
+        title.visibility = View.VISIBLE
+        title.text = value
+        memoryFilterAction.visibility = View.GONE
+        historyAction.visibility = View.GONE
+        newConversationAction.visibility = View.GONE
+        conversationMoreAction.visibility = View.GONE
+    }
+    internal fun memoryLibraryHeader(filter: () -> Unit) {
+        title.text = ""; memoryFilter = filter; memoryFilterAction.visibility = View.VISIBLE
+    }
+    internal fun openLibraryMaterials() = localPage("LIBRARY")
 
 
     internal fun navigate(next: String, remember: Boolean = true) {

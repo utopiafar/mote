@@ -10193,9 +10193,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "有待发送记录，无法更换中央": "Los registros pendientes impiden cambiar de central",
   "扫描中央生成的连接二维码。": "Escanear el código QR de conexión generado por el central.",
   "本人设备": "Este dispositivo",
-<<<<<<< HEAD
-  "管理记忆": "Gestionar recuerdos"
-=======
+  "管理记忆": "Gestionar recuerdos",
   "详情": "Detalles",
   "已整理，可搜索": "Organizado y se puede buscar",
   "整理未完成": "Organización incompleta",
@@ -10204,5 +10202,4 @@ export const spanish: Readonly<Record<string, string>> = {
   "参考整份资料": "Todo el material",
   "昨天": "Ayer",
   "{0}月{1}日": "{1}/{0}"
->>>>>>> origin/main
 };
