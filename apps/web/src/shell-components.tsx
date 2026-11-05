@@ -148,16 +148,16 @@ export function CentralStatusPill({
 }) {
   const state = !connection ? "signed-out" : verified ? "online" : "checking";
   const label = !connection
-    ? moteText("连接中央节点")
+    ? moteText("连接中央")
     : verified
-      ? moteText("中央节点 · 已连接")
-      : moteText("中央节点 · 正在验证");
+      ? moteText("中央 · 已连接")
+      : moteText("中央 · 正在验证");
   return (
     <button
       className={`connection-pill ${state}`}
       type="button"
       onClick={onClick}
-      aria-label={verified ? moteText("已连接中央节点，打开连接详情") : label}
+      aria-label={verified ? moteText("已连接中央，打开连接详情") : label}
     >
       <span className="connection-pill-dot" aria-hidden="true" />
       <span>{label}</span>
@@ -352,7 +352,7 @@ export function LoginDialog({ destination, onConnected, onClose }: {
       <div className="modal-icon"><ShieldCheck size={24}/></div>
       <div className="eyebrow">{moteText("MOTE · 中央管理界面")}</div>
       <h2 id="connect-title">{moteText("登录 Mote")}</h2>
-      <p className="muted-copy">{moteText("此服务就是中央节点，负责接收和归档客户端采集的数据。验证管理令牌后，进入「")}{destination}{cjkLocale()?'」。':'”.'}</p>
+      <p className="muted-copy">{moteText("此服务就是中央，负责接收和归档客户端采集的数据。验证管理令牌后，进入「")}{destination}{cjkLocale()?'」。':'”.'}</p>
       <form onSubmit={connect}>
         <p className="login-endpoint">{moteText("当前服务")}{' '}<strong>{window.location.origin}</strong></p>
         <label>{moteText("管理访问令牌")}<input ref={tokenInput} aria-label={moteText("管理访问令牌")} autoFocus type="password" autoComplete="off" placeholder={moteText("输入此节点的管理令牌")} value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>

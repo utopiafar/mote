@@ -195,7 +195,7 @@ class SourcesActivity : MoteActivity() {
             }
         }
         SecondaryUi.row(list, MoteI18n.text("查看待上传队列")) { startActivity(Intent(this, SyncQueueActivity::class.java).putExtra("sourceId", source.id)) }
-        SecondaryUi.row(list, MoteI18n.text("中央资料库")) { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "archive")) }
+        SecondaryUi.row(list, MoteI18n.text("资料库")) { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "archive")) }
         val connection = SecondaryUi.disclosure(list, MoteI18n.text("连接管理"), "source-connection")
         SecondaryUi.action(connection, MoteI18n.text("移除连接")) { confirmRemove(source) }.tag = "source-remove"
     }

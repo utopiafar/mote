@@ -20,10 +20,12 @@ class NativeUiPacksPresentationTest {
     private fun tokens(): Map<String, String> = buildMap {
         listOf(
             "background", "surface", "sidebar", "ink", "muted", "accent", "accent-hover", "tint",
-            "border", "control-border", "divider", "success", "warning", "danger",
+            "border", "control-border", "divider", "hair", "fill", "surface-hover", "surface-sunken", "on-accent",
+            "success", "warning", "danger",
             "success-tint", "warning-tint", "danger-tint", "primary-background", "primary-ink", "surface-raised",
         ).forEach { put(it, "#112233") }
-        listOf("radius", "radius-container", "radius-control", "radius-reading", "radius-indicator", "border-width", "panel-border-width")
+        listOf("radius", "radius-container", "radius-control", "radius-reading", "radius-indicator", "border-width", "panel-border-width",
+            "radius-thumb-mobile", "radius-control-mobile", "radius-container-mobile", "radius-panel-mobile", "radius-pill")
             .forEach { put(it, "4") }
         listOf(
             "font-title", "font-title-mobile", "font-appbar", "font-section", "font-row", "font-body",

@@ -46,7 +46,7 @@ export function FileProcessingSettings({ api }: {
         const value = profile.parameters[d.key] ?? d.default ?? '', change = (v: unknown) => edit(s => { s.policy.profiles[index].parameters[d.key] = v; });
         return <label key={d.key}>{d.type === 'boolean' ? <><input type="checkbox" checked={value === true} onChange={e => change(e.target.checked)}/>{d.label}</> : <>{d.label}{d.options ? <select aria-label={d.label} value={String(value)} onChange={e => change(e.target.value)}>{d.options.map(o => <option key={o}>{o}</option>)}</select> : <input aria-label={d.label} type={d.type === 'number' ? 'number' : 'text'} value={String(value)} min={d.min} max={d.max} step={d.integer ? 1 : 'any'} required={!d.nullable && d.type === 'number'} onChange={e => change(d.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value)}/>}</>}{d.description && <small>{d.description}</small>}</label>;
     }
-    return <section className="panel file-processing-settings" aria-label={moteText("中央文件处理设置")}><p>{moteText("按文件类型选择处理方案。服务保存地址和密钥；方案保存独立参数；同一目录可对录音和图片采用不同方案。处理均由中央节点调度。")}</p>
+    return <section className="panel file-processing-settings" aria-label={moteText("中央文件处理设置")}><p>{moteText("按文件类型选择处理方案。服务保存地址和密钥；方案保存独立参数；同一目录可对录音和图片采用不同方案。处理均由中央调度。")}</p>
  <h3>{moteText('中心本机处理')}</h3><MediaPreparation api={api} role="dialogue" title={moteText('录音转写与说话人')}/>
  <details><summary>{moteText('可选 WeSpeaker 中文声纹模型')}</summary><p>{moteText('仅选用此插件的录音使用此模型；下载不会更改默认方案。')}</p><MediaPreparation api={api} role="speaker-wespeaker" title={moteText('可选 WeSpeaker 中文声纹模型')}/></details>
  {resource.loading && !saved && <p role="status">{moteText("正在读取…")}</p>}{readError && <p role="alert" className="error-banner">{errorMessage(readError)}</p>}

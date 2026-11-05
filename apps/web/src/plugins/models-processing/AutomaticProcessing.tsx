@@ -46,7 +46,7 @@ export function AutomaticProcessing({api}:{api:Api}){
   const profile=models.data?.profiles.find(value=>connection.id.startsWith('profile:'+value.id+':'));
   if(profile)return {name:profile.name+' · '+connection.id.slice(('profile:'+profile.id+':').length),address:profile.settings.protocol==='codex-app-server'?moteText('Central 上已登录的 Codex'):profile.settings.baseUrl};
   const service=media.data?.policy.services.find(value=>connection.id.startsWith('media:'+value.id+':')||connection.id.startsWith('file-service:'+value.id+':'));
-  if(service)return {name:service.name,address:service.execution==='local'?moteText('在 Mote 中心所在机器处理'):service.endpoint};
+  if(service)return {name:service.name,address:service.execution==='local'?moteText('在中央所在机器处理'):service.endpoint};
   return {name:connection.id,address:''};
  };
  async function send(request:Command){

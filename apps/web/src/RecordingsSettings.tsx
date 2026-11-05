@@ -20,10 +20,10 @@ const names: Record<string, string> = { feishu: '飞书录音 / 妙记', dingtal
 const phases: Record<string, string> = { discover: '发现记录', metadata: '读取信息', transcript: '归档转写', media: '备份音频' };
 const states: Record<string, string> = { waiting: '等待处理', running: '正在处理…', succeeded: '已完成', failed: '未完成', blocked: '需要处理', cancelled: '已取消', stale: '已过期' };
 const errors: Record<string, string> = {
-    lark_cli_missing: '中央节点需要安装 Lark CLI 并完成飞书账号授权。',
-    lark_not_connected: '请先在中央节点完成飞书账号授权，再连接录音。',
-    dingtalk_cli_missing: '中央节点需要安装 DWS CLI 并完成钉钉账号授权。',
-    dingtalk_not_connected: '请先在中央节点完成钉钉账号授权，再连接录音。',
+    lark_cli_missing: '中央需要安装 Lark CLI 并完成飞书账号授权。',
+    lark_not_connected: '先在中央完成飞书账号授权，再连接录音',
+    dingtalk_cli_missing: '中央需要安装 DWS CLI 并完成钉钉账号授权。',
+    dingtalk_not_connected: '先在中央完成钉钉账号授权，再连接录音',
     recording_account_changed: '账号已变化，请重新连接并确认同步范围。',
     recording_authorization_required: '读取权限不足或授权已失效，请重新连接后重试。',
     recording_transcript_not_ready: '厂商转写尚未就绪。',
@@ -135,8 +135,8 @@ export function RecordingConnection({ api, provider, onOpen }: {
  {status && <p className="recording-sync-status">{recordingSyncText(status)}</p>}
  {status?.accountName&&<strong>{status.accountName}</strong>}{!status?.connected&&<button className="button" disabled={busy||!status} onClick={()=>{if(preparation.current)preparation.current.open=true;}}>{moteText('连接账号')}</button>}<details ref={preparation} className="connector-details connector-preparation"><summary>{moteText('接入准备')}</summary><RecordingSetupHelp/>{status?.connected && <p className="muted">{moteText('已保存账号绑定不代表当前登录或读取权限有效。“重新检测”检查中央运行环境；请结合授权结果与同步步骤确认账号权限。')}</p>}
  {status?.authorization&&<RecordingAuthorization key={provider} api={api} provider={provider}/>}
- {status?.accountName && <p>{status.accountName}</p>}{!status?.connected && !status?.authorization && <div className="discovery-inline-guidance"><p>{moteText("先在中央节点授权厂商账号，确认所需读取权限，再选择历史范围并启用同步。飞书文档与日历的授权另在自己的页面管理。")}</p></div>}
- {!status?.connected && <><p>{status?.authorization?moteText('授权完成后，确认历史范围并启用同步。'):moteText('连接中央节点已经授权的厂商账号，然后选择首次导入时间。')}</p><button className="button" disabled={busy || !status} onClick={() => void run('POST', '/connect')}>{moteText('连接已授权账号')}</button>
+ {status?.accountName && <p>{status.accountName}</p>}{!status?.connected && !status?.authorization && <div className="discovery-inline-guidance"><p>{moteText("先在中央授权厂商账号，确认所需读取权限，再选择历史范围并启用同步。飞书文档与日历的授权另在自己的页面管理。")}</p></div>}
+ {!status?.connected && <><p>{status?.authorization?moteText('授权完成后，确认历史范围并启用同步。'):moteText('连接中央已经授权的厂商账号，然后选择首次导入时间。')}</p><button className="button" disabled={busy || !status} onClick={() => void run('POST', '/connect')}>{moteText('连接已授权账号')}</button>
 {status?.setup && <details><summary>{moteText('首次授权帮助')}</summary><p>{status.setup.description}</p>{status.setup.command && <code>{status.setup.command}</code>}{status.setup.documentationUrl?.startsWith('https://') && <p><a href={status.setup.documentationUrl} target="_blank" rel="noreferrer">{status.label ?? provider}</a></p>}</details>}</>}
  </details><div className="connector-actions"><button className="text-button" disabled={busy} onClick={read.refresh}>{moteText('刷新状态')}</button></div></section>
  {status?.connected && selection && <form className="recording-scope-form connector-section" onSubmit={e => {
