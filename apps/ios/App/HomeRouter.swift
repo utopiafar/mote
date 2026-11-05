@@ -98,7 +98,7 @@ enum HomeDestination: Equatable, Identifiable {
 
     var isFullScreen: Bool {
         switch self {
-        case .profile, .captureStatus, .editor, .ask(.none): true
+        case .profile, .captureStatus, .editor, .ask(.none), .connection: true
         default: false
         }
     }
@@ -123,6 +123,8 @@ struct HomeDestinationView: View {
             } else {
                 unavailable
             }
+        case .connection:
+            ConnectionView()
         case .original(let id):
             OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
         case .ask(.none):

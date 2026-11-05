@@ -97,6 +97,7 @@ class HomeJourneyInstrumentedTest {
         settings.save(settings.read().copy(server = "", token = "", debugHttp = false, screenCollectionEnabled = true, notificationCollectionEnabled = false, syncPaused = false))
         settings.screenPaused(null); settings.status("paused", "生成的初始状态")
         context.getSharedPreferences("mote", Context.MODE_PRIVATE).edit().remove("capturePreviewSeen").remove("lastCapture").commit()
+        context.recordDraftStore().edit("", JSONArray(), JSONObject().put("kind", "manual"))
         NativeRecordReceipt.recordId = null
     }
 
@@ -114,7 +115,7 @@ class HomeJourneyInstrumentedTest {
             connect(fixture)
             for (appearance in listOf(AppearancePreference.LIGHT, AppearancePreference.DARK)) {
                 MoteAppearance.select(context, appearance)
-                ActivityScenario.launch(MainActivity::class.java).use {
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                     val home = onTop("Recent conversation and the waiting calendar item come from the generated Central") { activity ->
                         shown(activity).any { it.tag == "home-conversation:$conversation" } && shown(activity).any { it.tag == "home-calendar-need:$action" }
                     }
@@ -129,12 +130,26 @@ class HomeJourneyInstrumentedTest {
                         assertTrue("Ask sits above the quick records in the thumb zone", ask[1] < record[1])
                     }
                     capture(home, "home-regular-" + appearance.name.lowercase())
+                    scenario.onActivity { activity ->
+                        val navigation = shown(activity).filterIsInstance<MotePrimaryNavigation>().single()
+                        val location = IntArray(2); navigation.getLocationOnScreen(location)
+                        assertEquals("The dock surface reaches the bottom edge behind the navigation bar", activity.window.decorView.height, location[1] + navigation.height)
+                        assertTrue("The dock keeps the navigation-bar inset as inner padding", navigation.paddingBottom >= activity.moteDp(24))
+                    }
+                    // H04: one retained draft changes the record label and still opens that same editor.
+                    context.recordDraftStore().edit("Generated home draft", JSONArray(), JSONObject().put("kind", "manual"))
+                    scenario.recreate()
+                    val draftHome = onTop("The retained draft becomes the record action label") { activity ->
+                        shown(activity).any { it.tag == "home-record-action" } && "继续草稿" in texts(activity)
+                    }
+                    capture(draftHome, "home-draft-" + appearance.name.lowercase())
+                    context.recordDraftStore().edit("", JSONArray(), JSONObject().put("kind", "manual"))
                     if (appearance == AppearancePreference.LIGHT) {
-                        click(home) { it is Button && it.text == "补充时间" }
+                        click(draftHome) { it is Button && it.text == "补充时间" }
                         val calendar = resumed(CalendarActionsActivity::class.java, "Completing a time opens the existing calendar page")
                         instrumentation.runOnMainSync { calendar.finish() }
                         val back = resumed(MainActivity::class.java, "Calendar returns to the home")
-                        click(back) { it.contentDescription == "打开菜单" }
+                        click(back) { it.tag == "home-m-action" }
                         onTop("Memories are one step from the menu") { activity -> shown(activity).any { it.tag == "menu:我的记忆" } && shown(activity).any { it.tag == "menu:资料与记忆" } }
                     }
                 }
@@ -237,6 +252,23 @@ class HomeJourneyInstrumentedTest {
         }
     }
 
+    @Test fun askOpensTheConversationSurfaceWithoutTakingFocusOrSubmitting() {
+        Fixture().use { fixture ->
+            connect(fixture)
+            ActivityScenario.launch(MainActivity::class.java).use {
+                val home = onTop("Home is ready") { activity -> shown(activity).any { it.tag == "home-ask-action" } }
+                click(home) { it.tag == "home-ask-action" }
+                val ask = onTop("Ask opens the existing conversation surface") { activity ->
+                    activity is MainActivity && shown(activity).any { it.tag == "central-title" && (it as TextView).text.toString() == MoteI18n.text("问一问") }
+                }
+                instrumentation.runOnMainSync {
+                    assertFalse("Ask must not focus its composer on entry", shown(ask).filterIsInstance<EditText>().any { it.isFocused })
+                    assertEquals("Ask must not submit a question by itself", 0, fixture.writes)
+                }
+            }
+        }
+    }
+
     @Test fun systemEntriesShareOneDefinitionAndKeepTheAppTask() {
         automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -251,7 +283,7 @@ class HomeJourneyInstrumentedTest {
 
         instrumentation.runOnMainSync {
             val widget = QuickEntryWidget.views(context).apply(context, FrameLayout(context))
-            assertEquals("问一问…", widget.findViewById<TextView>(R.id.widget_ask).text.toString())
+            assertEquals("问一问", widget.findViewById<TextView>(R.id.widget_ask).text.toString())
             assertEquals(listOf("记录", "拍照", "录音"), listOf(R.id.widget_record, R.id.widget_photo, R.id.widget_audio).map { widget.findViewById<View>(it).contentDescription.toString() })
         }
         MoteShortcuts.publish(context)
@@ -338,10 +370,8 @@ class HomeJourneyInstrumentedTest {
             until("The task-owned emulator binds the capture service") { CaptureAccessibilityService.connected }
             settings.enabled = true; settings.status("capturing", "生成的采集状态")
             ActivityScenario.launch(MainActivity::class.java).use {
-                val home = onTop("Normal capture is one quiet line") { activity -> shown(activity).any { it.tag == "home-capture-state" } && "采集中" in texts(activity) }
-                instrumentation.runOnMainSync {
-                    assertTrue("The line names the live source", "屏幕" in texts(home))
-                    assertFalse("Normal capture offers no step", listOf("恢复采集", "重新开启", "处理").any { it in texts(home) })
+                val home = onTop("Normal capture stays quiet on the home") { activity ->
+                    shown(activity).any { it.tag == "home-record-action" } && shown(activity).none { it.tag in setOf("home-capture-state", "home-capture-paused", "home-attention") } && "采集中" !in texts(activity)
                 }
                 capture(home, "home-capturing")
                 until("The service's own notification pauses only the screen") {
@@ -373,12 +403,16 @@ class HomeJourneyInstrumentedTest {
         private val listener = ServerSocket().apply { reuseAddress = true; bind(java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), 47911), 8) }
         val origin = "http://127.0.0.1:${listener.localPort}"
         @Volatile var searchQuery: String? = null
+        @Volatile var writes = 0
         private val executor = Executors.newSingleThreadExecutor()
         init { executor.submit {
             while (!listener.isClosed) runCatching { listener.accept() }.getOrNull()?.use { socket ->
                 val input = socket.getInputStream().bufferedReader()
-                val path = input.readLine().orEmpty().split(' ').getOrElse(1) { "" }
+                val request = input.readLine().orEmpty().split(' ')
+                val method = request.getOrElse(0) { "" }
+                val path = request.getOrElse(1) { "" }
                 while (!input.readLine().isNullOrBlank()) Unit
+                if (method != "GET") writes++
                 val body = when {
                     path.startsWith("/api/conversations?") -> JSONObject().put("items", JSONArray().put(JSONObject().put("id", conversation).put("title", "周五评审需要准备什么？").put("updatedAt", "2026-10-30T10:00:00Z").put("turnCount", 2)))
                     path == "/api/status" -> JSONObject().put("storage", JSONObject().put("captures", 3))
