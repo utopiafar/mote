@@ -3,16 +3,31 @@ import MoteStorage
 import SwiftUI
 import UIKit
 
-/// 我的 Mote: the settings hub home reaches from the top-left mark. The
-/// capture and sync row opens the product capture screen; the other rows are
-/// owned by later units and answer with the shared placeholder notice.
+/// 我的 Mote: the settings hub home reaches from the top-left mark. Rows whose
+/// screens belong to later units answer with the shared placeholder notice.
 struct ProfileMenuView: View {
+    enum Screen: Equatable {
+        case menu
+        case capture
+        case settings
+    }
+
     private let onOpenConnection: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
-    @State private var showingCaptureSync = false
+    @State private var screen: Screen
+    @State private var model: ProfileMenuModel
+    @State private var settingsModel: SettingsModel
     @State private var showingUnavailable = false
 
-    init(onOpenConnection: (() -> Void)? = nil) {
+    init(
+        model: ProfileMenuModel = ProfileMenuModel(),
+        settingsModel: SettingsModel = SettingsModel(),
+        screen: Screen = .menu,
+        onOpenConnection: (() -> Void)? = nil
+    ) {
+        _model = State(initialValue: model)
+        _settingsModel = State(initialValue: settingsModel)
+        _screen = State(initialValue: screen)
         self.onOpenConnection = onOpenConnection
     }
 
@@ -21,10 +36,13 @@ struct ProfileMenuView: View {
             MoteDesignTokens.background.color
                 .ignoresSafeArea()
 
-            if showingCaptureSync {
-                CaptureSyncScreen(onBack: { dismiss() }, onOpenConnection: onOpenConnection)
-            } else {
+            switch screen {
+            case .menu:
                 menu
+            case .capture:
+                CaptureSyncScreen(onBack: { dismiss() }, onOpenConnection: onOpenConnection)
+            case .settings:
+                SettingsScreen(model: settingsModel, onBack: { screen = .menu }, onOpenConnection: onOpenConnection)
             }
         }
         .alert("此功能将在后续版本提供", isPresented: $showingUnavailable) {
@@ -58,10 +76,21 @@ struct ProfileMenuView: View {
                     .padding(.horizontal, MoteMetrics.pageMargin)
 
                     MoteGroup {
-                        MoteRow(icon: .refresh, title: "采集与同步") {
-                            showingCaptureSync = true
+                        MoteRow(icon: .refresh, title: "采集与同步", action: { screen = .capture }) {
+                            HStack(spacing: 12) {
+                                if let status = model.captureStatus {
+                                    Text(status.title)
+                                        .font(MoteFont.body)
+                                        .foregroundStyle(status.tone == .warning
+                                                         ? MoteDesignTokens.warning.color
+                                                         : MoteDesignTokens.muted.color)
+                                        .lineLimit(1)
+                                }
+                                MoteChevron()
+                            }
                         }
-                        MoteRow(icon: .gear, title: "设置", topDivider: true) { unavailable() }
+                        .accessibilityIdentifier("menu-capture-sync")
+                        MoteRow(icon: .gear, title: "设置", topDivider: true) { screen = .settings }
                     }
                     .padding(.horizontal, MoteMetrics.pageMargin)
                     .padding(.top, 24)
@@ -79,6 +108,7 @@ struct ProfileMenuView: View {
             }
             .scrollIndicators(.hidden)
         }
+        .onAppear { model.refresh() }
     }
 
     private func unavailable() {
