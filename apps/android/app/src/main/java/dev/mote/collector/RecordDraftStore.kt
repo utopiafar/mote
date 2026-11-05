@@ -85,6 +85,19 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
         })
         write(state); return JSONObject(event.toString())
     }
+    @Synchronized fun prepareSubmission(origin: String, event: JSONObject, attachments: JSONArray, originPresentation: JSONObject? = null): JSONObject {
+        val id = UUID.fromString(event.getString("id")).toString()
+        require(attachments.length() <= 10)
+        val state = state(); val records = state.getJSONObject("records")
+        records.optJSONObject(id)?.let { existing ->
+            require(existing.getString("server") == origin && existing.getJSONArray("attachments").toString() == attachments.toString())
+            return JSONObject(event.toString())
+        }
+        records.put(id, JSONObject().put("server", origin).put("attachments", JSONArray(attachments.toString())).put("acks", JSONObject()).also { record ->
+            originPresentation?.let { record.put("originPresentation", JSONObject(it.toString())) }
+        })
+        write(state); return JSONObject(event.toString())
+    }
     @Synchronized fun finish(id: String) {
         val state = state()
         if (state.getJSONObject("draft").optJSONObject("prepared")?.optString("id") == id) { state.put("draft", emptyDraft()); write(state) }

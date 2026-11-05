@@ -230,14 +230,11 @@ class FinalCentralJourneyInstrumentedTest {
                 val action=(start until end).flatMap{n->views(parent.getChildAt(n))}.filterIsInstance<TextView>().single{it.text.toString()=="保存为记录"&&it.isClickable}
                 action.requestRectangleOnScreen(android.graphics.Rect(0,0,action.width,action.height),true);assertTrue(action.performClick())
             }
-            until("Native record editor opened") { main { currentOrNull() is RecordEditorActivity } }
-            if(main{shown().filterIsInstance<TextView>().any{it.text.toString()=="替换草稿"&&it.isClickable}})click("替换草稿")
-            until("Saved quote carries the exact turn") { context.recordDraftStore().draft().getJSONObject("origin").optJSONArray("messageIds")?.optString(0)==turnId }
-            val expectedDisplay=turn.getString("question")+"\n\n"+NativeAnswerPresentation.format(answer.getString("answer"),ids).text
-            until("Readable quote is shown without changing the original") { main { shown().filterIsInstance<TextView>().any{it.tag=="record-origin-fulltext"&&it.text.toString()==expectedDisplay} } }
-            val initial=context.recordDraftStore().draft();assertEquals(raw,initial.getJSONObject("origin").getString("text"));assertEquals(id,initial.getJSONObject("origin").getString("conversationId"));assertEquals("",initial.getString("text"))
-            click("资料说明（选填）");main{shown().filterIsInstance<EditText>().single{it.tag=="record-description"}.setText(description)}
-            until("Independent context is retained") { context.recordDraftStore().draft().optString("description")==description };screenshot("saved-turn-readable-quote")
+            until("Answer save panel opened") { main { currentOrNull() is AnswerRecordActivity } }
+            val expectedDisplay=NativeAnswerPresentation.format(answer.getString("answer"),ids).text
+            until("Readable answer is quoted without changing the original") { main { shown().filterIsInstance<TextView>().any{it.tag=="record-origin-fulltext"&&it.text.toString()==expectedDisplay} } }
+            click("资料说明");main{shown().filterIsInstance<EditText>().single{it.tag=="record-description"}.setText(description)}
+            screenshot("saved-turn-readable-quote")
             click("保存");until("Exactly one generated record is saved") {(context.queue().dedupeIds().toSet()-before).size==1}
             val recordId=(context.queue().dedupeIds().toSet()-before).single();val local=requireNotNull(context.queue().capture(recordId));val origin=local.getJSONObject("metadata").getJSONObject("noteOrigin")
             assertEquals(raw,origin.getString("text"));assertEquals(id,origin.getString("conversationId"));assertEquals(turnId,origin.getJSONArray("messageIds").getString(0));assertEquals("",local.getString("ocrText"));assertEquals(description,local.getJSONObject("metadata").getString("ownerDescription"))

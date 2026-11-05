@@ -8836,6 +8836,7 @@ export const french: Readonly<Record<string, string>> = {
   "来源需要处理": "Sources à traiter",
   "查看已保存记录": "Voir l'enregistrement enregistré",
   "保存为记录": "Enregistrer comme enregistrement",
+  "保存到 Mote": "Enregistrer dans Mote",
   "引用原文": "Original cité",
   "确认保存": "Confirmer l'enregistrement",
   "个人上下文中心": "Centre de contexte personnel",

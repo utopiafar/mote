@@ -74,25 +74,18 @@ class RemainingFinalUiInstrumentedTest {
         try { MoteI18n.select(context,"zh-CN");main { MoteAppearance.select(context,AppearancePreference.DARK) };settings.save(old.copy(server="",token="",syncPaused=true,syncMode="manual"),confirmCentralEndpoint=true);return block(root) }
         finally { assertFalse(settings.enabled);context.recordDraftStore().edit(draft.optString("text"),draft.getJSONArray("attachments"),draft.getJSONObject("origin"),draft.optString("description"),draft.optJSONObject("originPresentation"));settings.save(old,confirmCentralEndpoint=true);MoteI18n.select(context,language);main { MoteAppearance.select(context,appearance) };root.deleteRecursively() }
     }
-    @Test fun darkSharedDraftSurvivesRealMicrophoneAndCameraDenialsWithoutRecording() = fixture {
-        require(context.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED&&context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)
+    @Test fun darkSharePanelHasNoCaptureActionsAndPreservesTheManualDraft() = fixture {
         val original="Generated shared original; retained byte-for-byte."
-        ActivityScenario.launch<RecordEditorActivity>(Intent(context,RecordEditorActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,original)).use { scenario->
-            until("shared draft ready"){main { visible().any { it.tag=="record-origin-fulltext" } }}
-            main { (visible().filterIsInstance<EditText>().single { it.contentDescription=="正在想什么" }).setText("Generated retained personal supplement") }
-            click("资料说明（选填）");main { (visible().single { it.tag=="record-description" } as EditText).setText("Generated independent explanation") };click("资料说明（选填）")
-            for((label,permission)in listOf("录音" to Manifest.permission.RECORD_AUDIO,"拍照" to Manifest.permission.CAMERA)){
-                main { visible().single { it.contentDescription==label&&it.isClickable }.performClick() }
-                until("real Android permission dialog"){nodes(instrumentation.uiAutomation.rootInActiveWindow).any { it.viewIdResourceName?.endsWith(":id/permission_deny_button")==true }}
-                systemPicture("p03-p06-${if(label=="录音")"microphone" else "camera"}-system-denial")
-                systemClick("deny generated permission"){it.viewIdResourceName?.endsWith(":id/permission_deny_button")==true}
-                until("permission denial returns to editor"){text("权限未授予")}
-                assertNotEquals(PackageManager.PERMISSION_GRANTED,context.checkSelfPermission(permission));assertEquals(0,context.recordDraftStore().pendingMedia().length());assertEquals(0,context.queue().inventory().records)
-                scenario.onActivity { picture(it,"p06-${if(label=="录音")"microphone" else "camera"}-denied-dark") }
-            }
-            scenario.recreate();until("retained separate supplement"){main { visible().filterIsInstance<EditText>().any { it.text.toString()=="Generated retained personal supplement" } }}
-            main { assertEquals(original,(visible().single { it.tag=="record-origin-fulltext" } as TextView).text.toString());assertTrue(visible().any { it.tag=="record-origin-fulltext" });assertFalse(visible().any { it.tag=="record-description" }) }
-            assertEquals("Generated independent explanation",context.recordDraftStore().draft().getString("description"));scenario.onActivity { picture(it,"p06-dark-restored-quote-and-supplement") }
+        context.recordDraftStore().edit("Generated retained manual draft",JSONArray(),JSONObject().put("kind","manual"),"Generated retained manual description")
+        val before=context.recordDraftStore().draft().toString()
+        ActivityScenario.launch<ShareRecordActivity>(Intent(context,ShareRecordActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,original)).use { scenario->
+            until("compact share panel ready"){main { visible().any { it.tag=="share-title" } }}
+            main { (visible().filterIsInstance<EditText>().single { it.tag=="share-note" }).setText("Generated retained personal supplement") }
+            click("资料说明");main { (visible().single { it.tag=="record-description" } as EditText).setText("Generated independent explanation") }
+            main { assertFalse(visible().any { it.contentDescription?.toString() in setOf("拍照","录音") });assertFalse(visible().filterIsInstance<TextView>().any { it.text.toString()=="替换草稿" }) }
+            scenario.recreate();until("panel fields survive recreation"){main { visible().filterIsInstance<EditText>().any { it.tag=="share-note"&&it.text.toString()=="Generated retained personal supplement" }&&visible().filterIsInstance<EditText>().any { it.tag=="record-description"&&it.isShown&&it.text.toString()=="Generated independent explanation" } }}
+            assertEquals(before,context.recordDraftStore().draft().toString());assertEquals(0,context.queue().inventory().records)
+            scenario.onActivity { picture(it,"p06-dark-share-panel") }
         }
     }
     @Test fun darkSettingsAndDeviceOptionsHaveCompleteVisibleContentWhileStopped() = fixture {
