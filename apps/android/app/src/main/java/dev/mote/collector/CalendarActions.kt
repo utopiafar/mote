@@ -64,7 +64,7 @@ internal class CalendarActions(
     private fun request(path: String, body: JSONObject? = null): JSONObject {
         checkSession()
         if (sessionIdentity != null && !path.startsWith("/api/managed-calendar") && !path.startsWith("/api/device-action-capabilities")) {
-            val client = selectedClient ?: error(MoteI18n.text("请先登录中央节点，各页面会共用这次登录。"))
+            val client = selectedClient ?: error(MoteI18n.text("先登录中央，各页面会共用这次登录"))
             return (if (body == null) client.get(path) else client.post(path, body)).also { checkSession() }
         }
         if (path.startsWith("/api/managed-calendar") || path.startsWith("/api/device-action-capabilities")) return deviceRequest(path, body)

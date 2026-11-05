@@ -24,7 +24,7 @@ describe('acknowledgment-gated uploads', () => {
   });
   it('normalizes batch network failures without exposing transport internals', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic-private-server synthetic-secret')));
-    await expect(uploadCaptureBatch({ ...defaultConfig(), token: 'synthetic-secret' }, [{ event: event() }])).rejects.toMatchObject({ classification: 'NETWORK', message: '无法连接中央节点，已保留本地队列并等待重试' });
+    await expect(uploadCaptureBatch({ ...defaultConfig(), token: 'synthetic-secret' }, [{ event: event() }])).rejects.toMatchObject({ classification: 'NETWORK', message: '无法连接中央，已保留本地队列并等待重试' });
   });
   it.each(['not-json', 'null', '{"results":[null]}'])('preserves queued records and reports invalid batch receipt envelopes (%s)', async body => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
@@ -90,7 +90,7 @@ describe('acknowledgment-gated uploads', () => {
   });
   it('does not expose network internals or tokens in errors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('url has synthetic-secret')));
-    await expect(uploadCapture({ ...defaultConfig(), token: 'synthetic-secret' }, event(), image)).rejects.toThrow('无法连接中央节点');
+    await expect(uploadCapture({ ...defaultConfig(), token: 'synthetic-secret' }, event(), image)).rejects.toThrow('无法连接中央');
   });
   it('cancels an oversized streamed acknowledgement and preserves the pending record', async () => {
     const cancel = vi.fn();

@@ -250,7 +250,7 @@ internal class LibraryReader(
     fun export(context: Context, request: Request, generation: Long?, origin: String?, destination: Uri) {
         val selected = access()
         check(selected.generation == generation && selected.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-        val client = selected.client ?: error(MoteI18n.text("请先登录中央节点，各页面会共用这次登录。"))
+        val client = selected.client ?: error(MoteI18n.text("先登录中央，各页面会共用这次登录"))
         val output = context.contentResolver.openOutputStream(destination) ?: error("Destination unavailable")
         output.use { client.download("/api/files/" + enc(request.capture) + "/content", it) }
     }

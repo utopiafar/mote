@@ -15,7 +15,7 @@ test('a forbidden origin, revoked credential, missing resource and protocol fail
     configureLocale(()=>locale);
     const messages=[httpFailureMessage(403,'origin_denied'),httpFailureMessage(403,'connection_scope_denied'),httpFailureMessage(401,'connection_revoked'),httpFailureMessage(404),httpFailureMessage(426,'incompatible_protocol'),httpFailureMessage(429)];
     assert.equal(new Set(messages).size,messages.length);
-    for(const message of messages)assert.doesNotMatch(message,/请升级中央节点|Upgrade the central node/);
+    for(const message of messages)assert.doesNotMatch(message,/请升级中央|Upgrade the central node/);
   }
   configureLocale(()=> 'zh-CN');
   assert.match(httpFailureMessage(503,'unknown_fixture_code'),/503.*unknown_fixture_code/);
