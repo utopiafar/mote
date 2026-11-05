@@ -38,6 +38,8 @@ it('renders the shared desktop destinations with Settings last in the sidebar',(
   const items=Array.from(document.querySelectorAll<HTMLElement>('.sidebar .nav-item[data-nav]'));
   expect(items.map(node=>node.dataset.nav)).toEqual([...desktopUiLayout.primary.map(id=>desktopDestination[id]),'settings']);
   expect(items.map(node=>node.querySelector('span:not([aria-hidden]):not(.pending-dot)')!.textContent)).toEqual([...desktopUiLayout.primary.map(id=>uiDestinationPresentation[id].label),'设置']);
+  expect(items.map(node=>node.querySelector('use')!.getAttribute('href'))).toEqual(['#icon-home','#icon-layers','#icon-plug','#icon-ask','#icon-settings']);
+  expect(document.querySelector('.sidebar>.sidebar-titlebar')).not.toBeNull();
   expect(document.querySelector('.sidebar [data-nav=work]')).toBeNull();
   expect(document.getElementById('central')).toBeNull();
   expect(document.querySelector('.sidebar-device, #sidebar-device, #sidebar-state')).toBeNull();

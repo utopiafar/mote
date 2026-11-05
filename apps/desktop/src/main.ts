@@ -413,6 +413,8 @@ else {
     const host: DesktopPluginHost = pluginHost;
     window = new BrowserWindow({
       width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
+      // The sidebar reserves the traffic-light strip, so the title bar is hidden on macOS.
+      ...process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 22 } } : {},
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: developmentProfile },
     });
     const broadcastAppearance=()=>{window?.setBackgroundColor(appearanceBackground());window?.webContents.send(pushChannels.appearance,appearanceState());};
