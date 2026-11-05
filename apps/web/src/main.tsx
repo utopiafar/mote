@@ -410,7 +410,7 @@ function App() {
       toolbar={
         <header className="topbar">
           {api&&verified&&page!=='featureGuide'&&guideVisit(api).returnAvailable&&webFeatures.page('featureGuide')&&<button className="guide-return" onClick={()=>{window.location.hash='#/guide';}}><span aria-hidden="true">← </span>{moteText('全部功能')}</button>}
-            <details className="shell-menu shell-mobile-menu"><summary aria-label={moteText('全部功能')}>{pageLabel??moteText("更多")}</summary><div>{Object.entries({overview:moteText("首页"),archive:moteText("资料库"),sources:moteText("来源"),connections:moteText("AI 接入"),ask:moteText("问一问"),activity:moteText("后台活动")}).map(([target,label])=><button key={target} onClick={event=>{event.currentTarget.closest("details")!.open=false;onPage(target);}}>{label}</button>)}
+            <details className="shell-menu shell-mobile-menu"><summary aria-label={moteText('全部功能')}>{pageLabel??moteText("更多")}</summary><div>{Object.entries({overview:moteText("首页"),archive:moteText("资料库"),sources:moteText("来源"),ask:moteText("问一问"),connections:moteText("AI 接入"),activity:moteText("活动")}).map(([target,label])=><button key={target} onClick={event=>{event.currentTarget.closest("details")!.open=false;onPage(target);}}>{label}</button>)}
               <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button>
               <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('about');}}>{moteText('设置')}</button>
               <button onClick={event=>{event.currentTarget.closest('details')!.open=false;setShowConnect(true);}}>{moteText('登录 Mote')}</button>

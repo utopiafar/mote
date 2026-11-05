@@ -5,5 +5,5 @@
     <string name="tile_screen_capture">屏幕采集</string>
     <string name="widget_label">Mote 快速记录</string>
     <string name="widget_description">在桌面直接问一问或记录</string>
-    <string name="widget_ask">问一问…</string>
+    <string name="widget_ask">问一问</string>
 </resources>

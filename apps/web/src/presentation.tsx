@@ -1,5 +1,5 @@
 import {webAppearance} from './appearance';
-import { UiPresentationHost, applyAppearanceTheme, defaultUiLayout, linearUiTheme, type UiLayoutProfile } from '@mote/shared';
+import { UiPresentationHost, applyAppearanceTheme, desktopUiLayout, linearUiTheme, type UiLayoutProfile } from '@mote/shared';
 import React, { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { revealWorkspaceFocus } from './workspace-focus';
@@ -26,7 +26,7 @@ export function WorkspaceShell({ layout, navigation, toolbar, content, footer }:
 
 export const webPresentation = new UiPresentationHost<WebShellRenderer>({
   theme: linearUiTheme,
-  layout: { ...defaultUiLayout, implementation: WorkspaceShell },
+  layout: { ...desktopUiLayout, implementation: WorkspaceShell },
 });
 
 /** Moving this stable portal container preserves fields, React state and pending work across shells. */
