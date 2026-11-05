@@ -12,6 +12,10 @@ internal class NativeAppShell(activity: Activity) : LinearLayout(activity) {
     private val column = LinearLayout(activity).apply { orientation = VERTICAL }
     private var navigationView: MotePrimaryNavigation? = null
     private var keyboardInset = 0
+    private var barLeft = 0
+    private var barTop = 0
+    private var barRight = 0
+    private var barBottom = 0
     private val presentationNotice = android.widget.TextView(activity).apply {
         visibility = GONE; tag = "native-presentation-notice"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED)
         setPadding(context.moteDp(MoteTheme.spacePage), context.moteDp(MoteTheme.spaceInline), context.moteDp(MoteTheme.spacePage), context.moteDp(MoteTheme.spaceInline))
@@ -31,7 +35,20 @@ internal class NativeAppShell(activity: Activity) : LinearLayout(activity) {
         if (navigationView !== view) view.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom -> if (bottom - top != oldBottom - oldTop) applyKeyboard() }
         navigationView = view
         if (rail) addView(view, 0, LayoutParams(-2, -1)) else addView(view)
+        applySystemBars()
         applyKeyboard()
+    }
+    /** Bars are applied by the shell so the dock, not the window behind it, owns the bottom inset. */
+    fun systemBars(left: Int, top: Int, right: Int, bottom: Int) {
+        barLeft = left; barTop = top; barRight = right; barBottom = bottom
+        applySystemBars()
+    }
+    internal fun navigationVisibilityChanged() = applySystemBars()
+    private fun docked() = navigationView?.takeIf { !renderedRail && it.parent === this && it.visibility != GONE }
+    private fun applySystemBars() {
+        val dock = docked()
+        setPadding(barLeft, barTop, barRight, if (dock == null) barBottom else 0)
+        if (!renderedRail) navigationView?.navigationBarInset(barBottom)
     }
     fun keyboard(inset: Int) { keyboardInset = inset; applyKeyboard() }
     private fun applyKeyboard() {
@@ -50,6 +67,7 @@ internal class NativeAppShell(activity: Activity) : LinearLayout(activity) {
             addView(column, if (rail) LayoutParams(0, -1, 1f) else LayoutParams(-1, 0, 1f))
             navigationView?.let(::navigation)
             renderedRail = rail
+            applySystemBars()
             applyKeyboard()
             focused?.requestFocus()
             if (selection != null && selection.first >= 0 && selection.second >= 0) editor.setSelection(selection.first, selection.second)
