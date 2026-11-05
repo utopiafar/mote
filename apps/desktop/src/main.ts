@@ -492,7 +492,7 @@ else {
       if(![0,86400000,604800000,2592000000].includes(durationMs))throw Error('Invalid lifetime');
       const requested=settings;
       const identity=await testConnection({...requested,token},fetch,false);
-      if(!identity.capabilities.archiveRead)throw Error(moteText('请升级中央节点后再登录。'));
+      if(!identity.capabilities.archiveRead)throw Error(moteText('升级中央后再登录'));
       let credential=token,expiresAt=durationMs?Date.now()+durationMs:undefined;
       let minted=false;
       if(identity.credential.id==='owner'||identity.credential.deviceId!==requested.deviceId){

@@ -63,7 +63,7 @@ test('an empty conversation history keeps its explanation visible through backgr
  const {root,d}=await fixture(t),refresh=deferred();let refreshing=false;
  const api=apiWith(path=>path==='/api/conversations?limit=30'&&refreshing?refresh.promise:{items:[]});
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- const message=d.querySelector('.conversation-history .fine-print')!;assert.match(message.textContent!,/回答会自动保存在中央节点/);
+ const message=d.querySelector('.conversation-history .fine-print')!;assert.match(message.textContent!,/回答会自动保存在中央/);
  refreshing=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
  assert.equal(d.querySelector('.conversation-history .fine-print'),message);assert.doesNotMatch(d.querySelector('.conversation-history')!.textContent!,/正在读取/);
  await act(async()=>refresh.resolve({items:[]}));assert.equal(d.querySelector('.conversation-history .fine-print'),message);

@@ -110,7 +110,7 @@ async function request(base, path, { status = 200, method = 'GET', body, token =
 
 const note = {
   id: randomUUID(), deviceId: `container-fixture-${runId}`, deviceName: 'Synthetic Docker fixture', platform: 'linux',
-  capturedAt: new Date().toISOString(), text: '  合成容器验收随手记\n验证原文、幂等与重启持久化。  ', mood: '平静（合成）',
+  capturedAt: new Date().toISOString(), text: '  合成容器验收记录\n验证原文、幂等与重启持久化。  ', mood: '平静（合成）',
 };
 async function assertSavedNote(base) {
   const saved = (await request(base, `/api/notes/${note.id}`)).json();

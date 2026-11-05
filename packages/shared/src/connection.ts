@@ -12,7 +12,7 @@ export const CONNECTION_INPUT_MAX_BYTES = 8192;
 export function connectionServerUrl(input: string): string {
   if (typeof input !== 'string' || input.length > 2048 || input !== input.trim() || /[\s\\\u0000-\u001f\u007f]/u.test(input)) throw new Error(moteText("节点地址格式无效"));
   let url: URL;
-  try { url = new URL(input); } catch { throw new Error(moteText("请填写完整的中央节点地址")); }
+  try { url = new URL(input); } catch { throw new Error(moteText("填写完整的中央地址")); }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new Error(moteText("远程节点须使用 HTTPS；地址不能包含账号、路径、查询或片段"));
@@ -25,7 +25,7 @@ function validate(value: unknown, now: number): ConnectionInvitation {
   const v = value as Record<string, unknown>;
   if (Object.keys(v).sort().join(',') !== 'code,expiresAt,format,serverUrl,version' || v.format !== 'mote.connection' || v.version !== 1 || typeof v.serverUrl !== 'string' || typeof v.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(v.code) || typeof v.expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(v.expiresAt)) throw new Error(moteText("请导入有效的 Mote v1 连接邀请"));
   const expires = Date.parse(v.expiresAt);
-  if (!Number.isFinite(expires) || !Number.isFinite(now) || expires <= now) throw new Error(moteText("连接邀请已过期，请在中央节点重新生成"));
+  if (!Number.isFinite(expires) || !Number.isFinite(now) || expires <= now) throw new Error(moteText("连接邀请已过期。在中央重新生成"));
   const serverUrl = connectionServerUrl(v.serverUrl);
   return { format: 'mote.connection', version: 1, serverUrl, code: v.code, expiresAt: v.expiresAt };
 }

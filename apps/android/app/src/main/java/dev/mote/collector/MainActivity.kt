@@ -359,7 +359,7 @@ class MainActivity : MoteActivity() {
         }
         homeConnectionTitle = (connection.first.parent as LinearLayout).getChildAt(0) as TextView
         homeConnectionState = connection.first; homeConnectionAction = connection.second
-        connection.first.text = MoteI18n.text("让记录进入中央档案，供其他设备和 AI 使用。")
+        connection.first.text = MoteI18n.text("让记录进入资料库，供其他设备和 AI 使用。")
         homeConnectionHelp = lightTextAction(MoteI18n.text("还没有自己的 Mote？")) { startActivity(Intent(this,StartUsingActivity::class.java).putExtra("firstUse",firstUse)) }
         text(MoteI18n.text("也可以自动留下"),NativeFontRole.META,NativeColorRole.MUTED).apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(24) }
         val capture = lightControl(MoteI18n.text("屏幕与应用记录"),MoteI18n.text("设置")) { showPage(Page.PRIVACY) }
@@ -399,7 +399,7 @@ class MainActivity : MoteActivity() {
         val firstReceipt=homeReceiptAvailable && NativeRecordReceipt.fromFirstUse
         homeWelcome.text = MoteI18n.text(if(firstReceipt) "最近留下的内容" else if (connected) "欢迎回来" else "欢迎使用 Mote")
         homeConnectionTitle?.text = MoteI18n.text(if (connected) "已连接你的 Mote" else "连接你的 Mote")
-        homeConnectionState?.text = MoteI18n.text(if (connected) "自动采集尚未开启。" else "让记录进入中央档案，供其他设备和 AI 使用。")
+        homeConnectionState?.text = MoteI18n.text(if (connected) "自动采集尚未开启。" else "让记录进入资料库，供其他设备和 AI 使用。")
         homeConnectionAction?.text = MoteI18n.text(if (connected) "查看状态" else "连接")
         homeConnectionHelp?.visibility = if (connected) View.GONE else View.VISIBLE
         firstUseGuide?.visibility = if (firstUse || firstReceipt) View.VISIBLE else View.GONE
@@ -765,10 +765,10 @@ class MainActivity : MoteActivity() {
     }
 
     private fun buildConnection(config: CollectorConfig) {
-        page(Page.CONNECTION, MoteI18n.text("可先只在本机记录，需要时再连接中央档案"))
-        section(MoteI18n.text("中央节点"))
+        page(Page.CONNECTION, MoteI18n.text("可先只在本机记录，需要时再连接资料库"))
+        section(MoteI18n.text("中央"))
         connectionSummary = text("", NativeFontRole.SUPPORT, NativeColorRole.MUTED).apply { tag = "connection-current-status" }
-        menu(MoteI18n.text("扫码或导入邀请"), MoteI18n.text("推荐使用中央节点生成的一次性邀请"), "sync") { discardPageDraft(); startActivity(Intent(this, ConnectionActivity::class.java)) }
+        menu(MoteI18n.text("扫码或导入邀请"), MoteI18n.text("推荐使用中央生成的一次性邀请"), "sync") { discardPageDraft(); startActivity(Intent(this, ConnectionActivity::class.java)) }
         val manual = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = if(connectionSettingsExpanded) View.VISIBLE else View.GONE; tag = "connection-settings-panel" }.also { connectionSettingsPanel = it }
         button(MoteI18n.text("连接设置")) { connectionSettingsExpanded = manual.visibility != View.VISIBLE; manual.visibility = if(connectionSettingsExpanded) View.VISIBLE else View.GONE }.apply { tag = "connection-settings-toggle" }
         content.addView(manual); val connectionContent = content; content = manual
@@ -793,7 +793,7 @@ class MainActivity : MoteActivity() {
             }
         })
         name = sourceField("设备名称", config.deviceName, MoteI18n.text("我的 K90 Pro Max"))
-        text(MoteI18n.text("中央节点可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；跨设备请填写局域网 IP 或 HTTPS 域名。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("中央可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；跨设备需填写局域网 IP 或 HTTPS 域名。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         help(MoteI18n.text("连接说明"), MoteI18n.text("登录一次即可使用问答、资料库和同步等所有中央功能。"))
         val verification = text("", NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         button(MoteI18n.text("验证已保存的采集连接")) {
@@ -802,7 +802,7 @@ class MainActivity : MoteActivity() {
                 if (!settings.read().hasSyncConnection()) throw ConnectionFailure("authentication")
                 ConnectionClient(applicationContext).test()
             }) { result ->
-                verification.text = if (result.isSuccess) MoteI18n.text("已连接中央节点")
+                verification.text = if (result.isSuccess) MoteI18n.text("已连接中央")
                     else MoteI18n.text("采集连接验证未通过，请检查已保存的地址、凭据和网络后重试。")
                 refreshStatus()
             }
@@ -1097,7 +1097,7 @@ class MainActivity : MoteActivity() {
         text(MoteI18n.text("开启后附带实际系统/机型、采集器版本、语言/时区、电量/充电、网络类型、锁屏与可用空间；不取设备序列号、IMEI、MAC、SSID或定位。关闭只影响新记录和心跳，已入队内容不追溯修改。授权文件来源自身的大小/修改时间不受此开关影响。"), NativeFontRole.SUPPORT)
         text(MoteI18n.text("没有内置应用黑名单。配置排除后，无法识别应用、多个应用窗口或系统遮挡时暂停。投屏模式需要同时启用无障碍服务才能可靠执行排除；仅使用情况权限不足以保证所有可见窗口。"), NativeFontRole.SUPPORT)
         section(MoteI18n.text("页面采集方式"))
-        text(MoteI18n.text("端侧提取可见字段，中央端组织资料和活动。每个应用分别选择截图和结构化内容。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("端侧提取可见字段，中央组织资料和活动。每个应用分别选择截图和结构化内容。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         text(MoteI18n.text("结构化字段规则按应用和版本匹配，仅在该应用已选择结构化内容时运行。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         uiPageMode=Spinner(this).apply {
             adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf(MoteI18n.text("只截图"),MoteI18n.text("页面优先，未取得内容时截图")))
@@ -1738,11 +1738,11 @@ class MainActivity : MoteActivity() {
         val connectionState = c?.takeIf { it.hasSyncConnection() }?.let { ConnectionClient(this).status() } ?: "unchecked"
         val connectionTitle = when {
             UploadHistoryRecovery.unavailable -> UploadHistoryRecovery.title()
-            c == null || !c.hasSyncConnection() -> MoteI18n.text("未连接中央节点")
-            settings.syncState() == "uploading" -> MoteI18n.text("正在同步中央节点")
+            c == null || !c.hasSyncConnection() -> MoteI18n.text("未连接中央")
+            settings.syncState() == "uploading" -> MoteI18n.text("正在同步中央")
             settings.syncState() == "error" || connectionState !in setOf("connected", "unchecked") -> MoteI18n.text("连接需要处理")
             connectionState == "unchecked" -> MoteI18n.text("已保存节点 · 待验证")
-            else -> MoteI18n.text("已连接中央节点")
+            else -> MoteI18n.text("已连接中央")
         }
         val connectionText = when {
             UploadHistoryRecovery.unavailable -> UploadHistoryRecovery.message()
@@ -2327,7 +2327,7 @@ class MainActivity : MoteActivity() {
             detail(MoteI18n.text("本机 OCR 补充：{0}", if (config.localContentOcr) MoteI18n.text("已选择") else MoteI18n.text("未选择")))
         }
         if (appId == null) detail(MoteI18n.text("通知：{0} · 设备事件：{1} · 媒体：{2}", if (config.notificationCollectionEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择"), if (config.deviceEventCollectionEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择"), if (config.mediaCollectionEnabled && config.metadataEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择")))
-        detail(if (config.hasSyncConnection()) MoteI18n.text("记录按已保存的同步策略发送到：{0}", config.server) else MoteI18n.text("尚未连接中央节点，记录只保存在本机"))
+        detail(if (config.hasSyncConnection()) MoteI18n.text("记录按已保存的同步策略发送到：{0}", config.server) else MoteI18n.text("尚未连接中央，记录只保存在本机"))
         val builder = MoteDialogBuilder(this).setTitle(MoteI18n.text("开启前预览"))
             .setView(ScrollView(this).apply { addView(body) })
             .setNegativeButton(if (firstStart) MoteI18n.text("暂不开始") else MoteI18n.text("关闭预览"), null)

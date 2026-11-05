@@ -123,7 +123,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
             local.filter { !it.optBoolean("provisional") }.forEach { row ->
                 matches.put(JSONObject().put("sourceId", row.getString("sourceId")).put("externalId", row.getString("externalId")).put("revision", row.getString("revision")).put("deviceId", row.getString("deviceId")).apply { row.optString("captureId").takeIf(String::isNotBlank)?.let { put("captureId", it) } })
             }
-            val api = access.client ?: throw IllegalStateException(MoteI18n.text("请先登录中央节点，各页面会共用这次登录。"))
+            val api = access.client ?: throw IllegalStateException(MoteI18n.text("先登录中央，各页面会共用这次登录"))
             fun remote(stream: String, cursor: String?): JSONObject {
                 val q = JSONObject().put("after", after).put("before", until).put("stream", stream).put("limit", 20)
                 if (stream == "originals") q.put("candidates", matches)

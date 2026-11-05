@@ -75,7 +75,7 @@ export class NoteDraftStore {
       if (input.mood && !input.mood.trim()) throw new Error(moteText("心情不能只有空白；清空心情后也可以保存"));
       if (input.revision < this.value.draft.revision) throw new Error(moteText("提交版本已过期，请重新保存当前草稿"));
       if (this.value.submission) {
-        if (this.value.targetOrigin !== (config.serverUrl && config.token ? config.serverUrl : '')) throw new Error(moteText("待完成记录属于原中央节点，请恢复原节点完成保存"));
+        if (this.value.targetOrigin !== (config.serverUrl && config.token ? config.serverUrl : '')) throw new Error(moteText("待完成记录属于原中央；恢复原节点后完成保存"));
         if (input.text !== this.value.draft.text || input.mood !== this.value.draft.mood || input.description !== this.value.draft.description) throw new Error(moteText("待完成记录不能改写，请重新载入草稿后重试"));
       } else {
         const observed = config.metadataEnabled ? await metadataProvider?.() : undefined;
