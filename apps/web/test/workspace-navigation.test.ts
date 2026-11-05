@@ -41,7 +41,7 @@ test('the legacy Coding page stays under Library and has a Library parent withou
  assert.doesNotMatch(settings,/Generated Coding status/);
 });
 
-test('AI access is a primary destination while source setup retains its parent',async t=>{
+test('AI access keeps its own route while source setup retains its parent',async t=>{
  configureLocale(()=> 'zh-CN');
  const featureId='generated.ai-access-navigation';
  const fiber=await webFeatures.install({id:featureId,version:'1',components:[]},[
