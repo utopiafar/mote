@@ -20,7 +20,7 @@ import {ConnectionOnboarding, testConnection} from '../connection';
 import {ConnectionController} from '../connection-controller';
 import {loginRequest} from '../login-session';
 import {PermissionGuide} from '../permission-guide';
-import {permissionKind, type DragPermissionKind, type PermissionStatus, type SettingsWindow} from '../permission-types';
+import {permissionKind, permissionSettingsUrl, type DragPermissionKind, type PermissionStatus, type SettingsWindow} from '../permission-types';
 import {SettingsCoordinator, type SettingsDependencies} from '../settings-coordinator';
 import {failureCode, safeErrorName, type EventJournal, type EventStage} from '../support';
 import {deviceSettingsChannels} from '../desktop-ipc-channels';
@@ -231,10 +231,9 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
       const openPermissionSettings = async (raw: unknown): Promise<void> => {
         const kind = permissionKind(raw);
         const generation = ++permissionSettingsGeneration;
-        const panes = {screen: 'Privacy_ScreenCapture', accessibility: 'Privacy_Accessibility', calendar: 'Privacy_Calendars', files: 'Privacy_AllFiles'};
         permissionGuide.close();
         if (options.platform !== 'macos') return;
-        await d.openExternal('x-apple.systempreferences:com.apple.preference.security?' + panes[kind]);
+        await d.openExternal(permissionSettingsUrl(kind));
         if (kind !== 'calendar' && generation === permissionSettingsGeneration) await permissionGuide.open(kind);
       };
       const permissionStatus = async (): Promise<PermissionStatus> => ({

@@ -147,7 +147,7 @@ class FinalSelectedRiskInstrumentedTest {
             instrumentation.addMonitor(monitor)
             try{ActivityScenario.launch(RecordEditorActivity::class.java).use{scenario->
                 until("Editor ready"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
-                main{shown().filterIsInstance<EditText>().single{it.contentDescription=="正在想什么"}.setText(text)};click("资料说明（选填）");main{(shown().single{it.tag=="record-description"}as EditText).setText(description)}
+                main{shown().filterIsInstance<EditText>().single{it.contentDescription=="正在想什么"}.setText(text)};click("资料说明");main{(shown().single{it.tag=="record-description"}as EditText).setText(description)}
                 until("Actual draft persisted"){store.draft().optString("text")==text&&store.draft().optString("description")==description}
                 scenario.onActivity{it.startActivity(Intent(it,StartUsingActivity::class.java))};until("Install help"){has("查看安装文档")};picture("install-document-before-browser");click("查看安装文档")
                 until("Real browser loaded only generated loopback page"){

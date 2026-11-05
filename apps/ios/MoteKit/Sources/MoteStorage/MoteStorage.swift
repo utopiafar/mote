@@ -12,15 +12,28 @@ public enum MoteStorage {
         DraftStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Draft", isDirectory: true))
     }
 
+    public static func editorDraftStore(fileManager: FileManager = .default) throws -> EditorDraftStore {
+        EditorDraftStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Draft", isDirectory: true))
+    }
+
     public static func sendQueue(fileManager: FileManager = .default) throws -> SendQueue {
         SendQueue(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("SendQueue", isDirectory: true))
     }
 
+    public static func connectionStore(fileManager: FileManager = .default) throws -> ConnectionStore {
+        ConnectionStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Connection", isDirectory: true))
+    }
+
     private static func containerURL(fileManager: FileManager) throws -> URL {
-        guard let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: MoteCore.appGroupIdentifier) else {
-            throw MoteStorageError.appGroupUnavailable
+        if let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: MoteCore.appGroupIdentifier) {
+            return url
         }
-        return url
+        #if targetEnvironment(simulator)
+        return fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Shared", isDirectory: true)
+        #else
+        throw MoteStorageError.appGroupUnavailable
+        #endif
     }
 }
 
@@ -50,6 +63,12 @@ public final class DraftStore {
         try encoder.encode(draft).write(to: fileURL, options: .atomic)
     }
 
+    public func exists() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return fileManager.fileExists(atPath: fileURL.path)
+    }
+
     public func clear() throws {
         lock.lock()
         defer { lock.unlock() }
@@ -69,6 +88,56 @@ public struct SendQueueItem: Codable, Equatable, Sendable {
     public init(id: String, payload: Data) {
         self.id = id
         self.payload = payload
+    }
+}
+
+/// The one saved connection this device uses. Connection setup owns writing it;
+/// the home screen only reads whether a connection exists.
+public struct StoredConnection: Codable, Equatable, Sendable {
+    public let serverUrl: String
+    public let token: String
+    public let credentialId: String
+    public let scope: String
+
+    public init(serverUrl: String, token: String, credentialId: String, scope: String) {
+        self.serverUrl = serverUrl
+        self.token = token
+        self.credentialId = credentialId
+        self.scope = scope
+    }
+}
+
+public final class ConnectionStore {
+    private let fileURL: URL
+    private let fileManager: FileManager
+    private let lock = NSLock()
+
+    public init(directoryURL: URL, fileManager: FileManager = .default) {
+        self.fileURL = directoryURL.appendingPathComponent("connection.json")
+        self.fileManager = fileManager
+    }
+
+    public func read() throws -> StoredConnection? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
+        return try JSONDecoder().decode(StoredConnection.self, from: Data(contentsOf: fileURL))
+    }
+
+    public func save(_ connection: StoredConnection) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(connection).write(to: fileURL, options: .atomic)
+    }
+
+    public func clear() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+        try fileManager.removeItem(at: fileURL)
     }
 }
 

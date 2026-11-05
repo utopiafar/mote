@@ -88,6 +88,8 @@ app.on('browser-window-created', (_event, window) => {
           const visible=()=>Array.from(document.querySelectorAll('[data-nav="${page}"]')).find(button=>button.getClientRects().length);
           if(!visible()){
             document.querySelector('aside [data-nav=settings]').click();await new Promise(resolve=>requestAnimationFrame(resolve));
+            if(['screen'].includes('${page}')){document.querySelector('aside [data-nav=sources]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=sources] [data-nav=screen]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
+            if(['sync','privacy'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=capture-sync]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=capture-sync] [data-nav=${page}]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if(['storage','backup','restore'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=connection]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if(['capture','developer','about','preferences','chrome','statistics','activity','compression'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=mac-options]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if('${page}'==='compression'){document.querySelector('[data-page=mac-options] [data-nav=capture]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}

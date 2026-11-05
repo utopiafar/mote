@@ -103,6 +103,32 @@ final class MoteCentralTests: XCTestCase {
         XCTAssertEqual(original.ocrText, "Generated iOS original")
         XCTAssertEqual(original.metadata?.collector?.method, "shortcuts")
 
+        let notificationContent = IOSNotificationContent(appId: "generated.messages", appName: "Generated Messages",
+                                                         title: "Generated delivery", text: "Generated package arrived")
+        let notification = try IOSNotificationCapture.make(content: notificationContent, deviceId: deviceId,
+                                                          deviceName: "Generated iPhone", postedAt: "2026-10-01T00:00:00Z")
+        let notificationReceipt = try await client.upload(notification)
+        XCTAssertEqual(notificationReceipt.id, notification.id)
+        XCTAssertFalse(notificationReceipt.duplicate)
+        let notificationReplay = try IOSNotificationCapture.make(content: notificationContent, deviceId: deviceId,
+                                                                deviceName: "Generated iPhone", postedAt: "2026-10-01T00:01:00Z")
+        XCTAssertNotEqual(notificationReplay.id, notification.id)
+        let replayReceipt = try await client.upload(notificationReplay)
+        XCTAssertTrue(replayReceipt.duplicate)
+        XCTAssertEqual(replayReceipt.id, notification.id)
+        let notifications = try await client.originals(after: "2026-09-30T00:00:00Z", before: "2026-10-02T00:00:00Z",
+                                                       source: .notification)
+        XCTAssertEqual(notifications.items.count, 1)
+        XCTAssertEqual(notifications.items.first?.id, notification.id)
+        XCTAssertTrue(notifications.items.first?.textPreview.contains("Generated delivery") == true)
+        XCTAssertTrue(notifications.items.first?.textPreview.contains("Generated package arrived") == true)
+        let notificationOriginal = try await client.original(id: try XCTUnwrap(UUID(uuidString: notification.id)))
+        XCTAssertEqual(notificationOriginal.platform, .ios)
+        XCTAssertEqual(notificationOriginal.metadata?.notification?.action, .posted)
+        XCTAssertEqual(notificationOriginal.metadata?.notification?.notificationKey,
+                       notification.metadata?.notification?.notificationKey)
+        XCTAssertEqual(notificationOriginal.metadata?.collector?.method, "shortcuts")
+
         let conversations = try await client.conversations()
         XCTAssertTrue(conversations.items.contains { $0.id == conversationId })
         let conversation = try await client.conversation(id: try XCTUnwrap(UUID(uuidString: conversationId)))

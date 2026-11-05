@@ -24,9 +24,9 @@ async function fixture(t:TestContext){
   const image=await sharp({create:{width:960,height:640,channels:3,background:'#4e8060'}}).jpeg().toBuffer();
   const capture=(deviceId='phone')=>({id:randomUUID(),deviceId,deviceName:'Generated device',platform:'android',capturedAt:'2026-09-13T12:00:00.000Z',
     durationMs:0,appId:'',appName:'',windowTitle:'',source:'screen',imageMime:'image/jpeg',imageBase64:image.toString('base64'),ocrText:'',ocr:{status:'pending'}});
-  const paired=async(deviceId='phone')=>{
+  const paired=async(deviceId='phone',platform:'android'|'ios'='android')=>{
     const invite=await value.app.inject({method:'POST',url:'/api/connections/invitations',headers:auth(),payload:{serverUrl:'https://fixture.invalid',label:'Generated phone'}});
-    const redeem=await value.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId,deviceName:'Generated device',platform:'android'}});
+    const redeem=await value.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId,deviceName:platform==='ios'?'Generated iPhone':'Generated device',platform}});
     assert.equal(redeem.statusCode,200);return redeem.json() as {token:string;credentialId:string};
   };
   return {...value,capture,paired,image};
@@ -173,6 +173,35 @@ test('generated Android system events upload with device scope, idempotency, sea
   const exported=(await app.inject({url:'/api/export',headers:auth()})).json();
   const restored=await fixture(t);const imported=await restored.app.inject({method:'POST',url:'/api/import',headers:auth(),payload:exported});assert.equal(imported.statusCode,200,imported.body);
   assert.deepEqual(restored.store.evidence([device.id])[0].metadata,device.metadata);
+});
+
+test('generated iOS Shortcuts notifications are stored once by content key and readable as shortcut records',async t=>{
+  const {app,store,paired}=await fixture(t),phone=await paired('generated-iphone','ios'),headers=auth(phone.token);
+  const at='2026-09-15T01:02:03.000Z',notificationKey='cd'.repeat(32);
+  const notification=(id:string,capturedAt=at)=>({id,deviceId:'generated-iphone',deviceName:'Generated iPhone',platform:'ios',capturedAt,durationMs:0,
+    source:'notification',appId:'fixture.messages',appName:'Fixture Messages',privacy:{collection:'content',mode:'none'},
+    metadata:{version:1,observedAt:capturedAt,collector:{method:'shortcuts'},observation:{sessionId:randomUUID(),elapsedRealtimeMs:0},
+      notification:{action:'posted',notificationKey,postedAt:capturedAt,ongoing:false,groupSummary:false,title:'Generated delivery',text:'Generated package arrived'}}});
+  const first=notification(randomUUID());
+  const created=await app.inject({method:'POST',url:'/api/captures',headers,payload:first});
+  assert.equal(created.statusCode,201,created.body);assert.equal(created.json().duplicate,false);
+  const repeated=await app.inject({method:'POST',url:'/api/captures',headers,payload:notification(randomUUID(),'2026-09-15T01:03:03.000Z')});
+  assert.equal(repeated.statusCode,200,repeated.body);assert.equal(repeated.json().duplicate,true);assert.equal(repeated.json().id,first.id);
+  assert.equal(store.list({source:'notification'}).items.length,1,'identical content is one stored notification');
+  const listed=await app.inject({url:'/api/capture-browser?source=notification&after=2026-09-15T00:00:00Z&before=2026-09-16T00:00:00Z',headers});
+  assert.equal(listed.statusCode,200,listed.body);assert.equal(listed.json().totalCount,1);
+  assert.equal(listed.json().items[0].platform,'ios');assert.match(listed.json().items[0].textPreview,/Generated delivery/);assert.match(listed.json().items[0].textPreview,/Generated package arrived/);
+  const timeline=await app.inject({url:'/api/capture-browser/timeline?source=notification&after=2026-09-15T00:00:00Z&before=2026-09-16T00:00:00Z&timeZone=UTC',headers});
+  assert.equal(timeline.statusCode,200,timeline.body);assert.equal(timeline.json().items.length,1);assert.equal(timeline.json().items[0].recordCount,1);
+  const detail=await app.inject({url:`/api/capture-browser/${first.id}`,headers});
+  assert.equal(detail.statusCode,200,detail.body);assert.equal(detail.json().platform,'ios');
+  assert.equal(detail.json().metadata.collector.method,'shortcuts');assert.equal(detail.json().metadata.notification.action,'posted');assert.equal(detail.json().metadata.notification.notificationKey,notificationKey);
+  const changed=notification(randomUUID());
+  const updated=await app.inject({method:'POST',url:'/api/captures',headers,payload:{...changed,metadata:{...changed.metadata,notification:{...changed.metadata.notification,action:'updated'}}}});
+  assert.equal(updated.statusCode,400,'iOS Shortcuts notifications only admit posted observations');
+  const android=await paired('phone','android'),androidNotification=notification(randomUUID());
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(android.token),payload:{...androidNotification,deviceId:'phone',deviceName:'Generated phone',platform:'android',metadata:{...androidNotification.metadata,collector:{method:'notification_listener'}}}})).statusCode,201,'the same content digest on another platform is a separate observation');
+  assert.equal(store.list({source:'notification'}).items.length,2);
 });
 
 test('sync reconciliation is read-only, device-scoped and cannot acknowledge or resurrect records',async t=>{
