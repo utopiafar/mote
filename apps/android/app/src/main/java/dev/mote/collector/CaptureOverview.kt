@@ -24,8 +24,19 @@ internal object CaptureOverview {
     }
     data class Line(val kind: Kind, val title: String, val detail: String, val send: String, val sendAttention: Boolean, val action: Action?)
 
+    /** Capture facts only; sending keeps its own line and never turns a live capture into an attention state. */
+    fun attention(enabled: Boolean, state: String, live: Boolean, missingSource: Boolean, queueFull: Boolean): Boolean {
+        // A safe stop leaves the old error state behind; it is still an interruption the owner must repair.
+        val interrupted = state in setOf("permission_required", "error")
+        return CaptureStatusMapping.status(CaptureStatusFacts(
+            connection = CaptureConnection.CONNECTED, captureEnabled = enabled || interrupted, captureLive = live,
+            permission = if (missingSource) CapturePermission.MISSING else null, storageFull = queueFull && enabled,
+            interrupted = interrupted, syncState = CaptureSyncState.IDLE
+        )).level == CaptureStatusLevel.NEEDS_ACTION
+    }
+
     fun kind(f: Facts): Kind = when {
-        CaptureAttention.show(f.enabled, f.state, f.live, f.missingSource, f.queueFull) -> Kind.ATTENTION
+        attention(f.enabled, f.state, f.live, f.missingSource, f.queueFull) -> Kind.ATTENTION
         screenPaused(f) -> Kind.SCREEN_PAUSED
         !f.enabled -> if (f.used) Kind.PAUSED else Kind.HIDDEN
         else -> Kind.ACTIVE

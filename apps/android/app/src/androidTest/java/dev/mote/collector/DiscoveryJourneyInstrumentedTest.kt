@@ -265,7 +265,7 @@ class DiscoveryJourneyInstrumentedTest {
             until("standard inline opens same original") { main { activity() is CaptureRecordsActivity && text(original) } };click("关闭详情")
             until("standard report returns") { main { activity() is CentralActivity && settled() && shown().filterIsInstance<TextView>().any { it.tag == "insight-content" && it.text.toString().startsWith("Generated exact inline report [1]") } } }
             main { activity().recreate() };until("standard report survives recreation") { main { settled() && shown().filterIsInstance<TextView>().any { it.tag == "insight-content" && it.text.toString().startsWith("Generated exact inline report [1]") } } }
-            clickTag("insight-more");chooseMenu("资料与记忆");chooseMenu("资料类型");until("secondary type routes remain") { main { text("中央资料库") } };back()
+            clickTag("insight-more");chooseMenu("资料与记忆");chooseMenu("资料类型");until("secondary type routes remain") { main { text("资料库") } };back()
         }
         assertEquals(saved.toString(),api.get("/api/insights/$id").toString());assertEquals(0,state().getInt("insightCalls"))
     }

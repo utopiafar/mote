@@ -15,7 +15,7 @@ export function connectionToken(config:LoginSettings,now=Date.now()):string|unde
   return !config.authSignedOut&&(!config.authExpiresAt||config.authExpiresAt>now)?config.token:undefined;
 }
 export function requireConnectionToken(config:LoginSettings):string {
-  const token=connectionToken(config);if(!token)throw Error(moteText('请先登录中央节点，各页面会共用这次登录。'));return token;
+  const token=connectionToken(config);if(!token)throw Error(moteText('先登录中央，各页面会共用这次登录'));return token;
 }
 export async function loginRequest(config:Pick<Config,'serverUrl'>,path:string,body:unknown,token?:string):Promise<any>{
   const response=await fetch(validateServerUrl(config.serverUrl)+path,{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)});

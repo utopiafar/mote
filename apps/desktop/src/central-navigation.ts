@@ -97,7 +97,7 @@ export async function showCentral(navigation: CentralNavigation, page?: string, 
   if (!connectionToken(selected)) {
     const login = navigation.browserLogin();
     if (login) return login(page, evidenceId, undefined, workId,conversationId);
-    throw Error(moteText('请先登录中央节点，各页面会共用这次登录。'));
+    throw Error(moteText('先登录中央，各页面会共用这次登录'));
   }
   const route = centralRoute(evidenceId, workId, conversationId);
   await navigation.ensureBrowserLogin();

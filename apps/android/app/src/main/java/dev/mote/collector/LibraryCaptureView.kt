@@ -329,7 +329,7 @@ internal class LibraryCaptureView(
             }
         }
         val central = if (readRemote && filter !in setOf("file", "source", "material")) runCatching {
-            val api = selection.client ?: error(MoteI18n.text("请先登录中央节点，各页面会共用这次登录。"))
+            val api = selection.client ?: error(MoteI18n.text("先登录中央，各页面会共用这次登录"))
             // The owner-scope check is per connection generation; device-view still authorizes each response.
             if (verifiedConnection != identity) {
                 if (api.get("/api/connections/self").getJSONObject("credential").getString("scope") != "owner") throw CentralFailure(403, "connection_scope_denied")

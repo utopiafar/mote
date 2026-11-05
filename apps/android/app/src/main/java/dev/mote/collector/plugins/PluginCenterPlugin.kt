@@ -53,7 +53,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         val request = if (previous != null && previous.path == intent.path && previous.method == intent.method && comparable(previous) == comparable(intent)) previous else intent
         pending = request; retryPanel?.let(body::removeView); retryPanel = null
         ui.work(MoteI18n.text("正在处理…"), { runCatching { control.execute(request) } }) { result ->
-            result.onSuccess { pending = null; ui.notice(MoteI18n.text("请求已登记，运行状态以中央节点返回为准。")); done(it) }
+            result.onSuccess { pending = null; ui.notice(MoteI18n.text("请求已登记，运行状态以中央返回为准。")); done(it) }
                 .onFailure { failure ->
                     if (failure is CentralFailure && failure.status in setOf(401, 403, 404, 410)) { readFailure(failure); return@onFailure }
                     ui.requestFailure(failure)
@@ -143,7 +143,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
                 ui.button(MoteI18n.text("查看记忆方案"), parent = target) { tab = "memory"; load() }
             }
             if ("uninstall" in item.allowedActions) ui.button(MoteI18n.text("卸载安装包"), parent = card) {
-                screens.confirm(MoteI18n.text("卸载安装包"), MoteI18n.text("移除此安装包。已绑定、仍有历史读者或正在排空的包不能卸载，中央节点会再次核验。")) { submit(PluginControlClient.uninstall(item.id, data.revision)) }
+                screens.confirm(MoteI18n.text("卸载安装包"), MoteI18n.text("移除此安装包。已绑定、仍有历史读者或正在排空的包不能卸载，中央会再次核验。")) { submit(PluginControlClient.uninstall(item.id, data.revision)) }
             }
         }
     }
@@ -181,7 +181,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         body.removeAllViews(); listVisible = false; val fields = instance?.fields ?: item.fields; val initial = instance?.configuration ?: JSONObject()
         ui.text(MoteI18n.text("配置实例"), NativeFontRole.TITLE_MOBILE); ui.text(MoteI18n.text("配置实例与资料范围，再单独启用。启用不会自动替换当前记忆方案。"))
         val name = ui.field(MoteI18n.text("实例名称"), instance?.name ?: item.name); val scope = ui.field(MoteI18n.text("资料范围"), instance?.scope ?: "default")
-        ui.text(MoteI18n.text("由中央节点核验授权范围；填写范围不会授予新的数据权限。"), NativeFontRole.META)
+        ui.text(MoteI18n.text("由中央核验授权范围；填写范围不会授予新的数据权限。"), NativeFontRole.META)
         val reads = linkedMapOf<String, () -> Any?>()
         fields.forEach { field ->
             when (field.type) {
@@ -202,7 +202,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
             }
             if (field.description.isNotBlank()) ui.text(field.description, NativeFontRole.META)
         }
-        if (instance == null && item.fields.isEmpty()) ui.text(MoteI18n.text("先创建实例，中央节点返回此插件的配置字段。"))
+        if (instance == null && item.fields.isEmpty()) ui.text(MoteI18n.text("先创建实例，中央返回此插件的配置字段。"))
         fun collect() = JSONObject(initial.toString()).apply { reads.forEach { (id, read) -> val value = read(); if (value == null || value == "") remove(id) else put(id, value) } }
         fun dirty() = name.text.toString() != (instance?.name ?: item.name) || scope.text.toString() != (instance?.scope ?: "default") || collect().toString() != initial.toString()
         fun back() { if (dirty()) { screens.setBack { back() }; screens.confirm(MoteI18n.text("取消"), MoteI18n.text("有未保存的修改。离开并丢弃修改？")) { load() } } else load() }

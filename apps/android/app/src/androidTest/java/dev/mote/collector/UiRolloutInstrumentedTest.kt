@@ -112,7 +112,7 @@ class UiRolloutInstrumentedTest {
             Triple(StorageActivity::class.java, "storage-location", "图片保存位置"), Triple(StorageStatisticsActivity::class.java, "statistics", "统计中心"),
             Triple(ActivityStatsActivity::class.java, "activity-statistics", "采集与存储详情"), Triple(LogViewerActivity::class.java, "logs", "本地日志"),
             Triple(ImageDedupeDiagnosticsActivity::class.java, "dedupe", "去重对比诊断"), Triple(CompressionPreviewActivity::class.java, "compression", "图片压缩预览"),
-            Triple(BulkDedupeActivity::class.java, "bulk-dedupe", "本机图片批量去重"), Triple(CalendarActionsActivity::class.java, "calendar", "日程建议"), Triple(ConnectionActivity::class.java, "pairing", "连接中央节点"))) {
+            Triple(BulkDedupeActivity::class.java, "bulk-dedupe", "本机图片批量去重"), Triple(CalendarActionsActivity::class.java, "calendar", "日程建议"), Triple(ConnectionActivity::class.java, "pairing", "连接中央"))) {
             render("rollout-$scene", title, Intent(context, activity)) { a ->
                 when (scene) {
                     "queue" -> labels(a).contains(MoteI18n.text("暂无待上传记录"))

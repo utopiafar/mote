@@ -370,6 +370,47 @@ public struct CaptureReceipt: Codable, Equatable, Sendable {
     public let duplicate: Bool
     public let blobHash: String?
     public let indexingStatus: String
+
+    public init(id: String, duplicate: Bool, blobHash: String? = nil, indexingStatus: String = "pending") {
+        self.id = id
+        self.duplicate = duplicate
+        self.blobHash = blobHash
+        self.indexingStatus = indexingStatus
+    }
+}
+
+public struct CaptureReconciliationRequest: Codable, Equatable, Sendable {
+    public let deviceId: String
+    public let ids: [String]
+
+    public init(deviceId: String, ids: [String]) {
+        self.deviceId = deviceId
+        self.ids = ids
+    }
+}
+
+public struct CaptureReconciliation: Codable, Equatable, Sendable {
+    public enum State: String, Codable, Sendable {
+        case present, unavailable
+    }
+
+    public struct Item: Codable, Equatable, Sendable {
+        public let id: String
+        public let state: State
+
+        public init(id: String, state: State) {
+            self.id = id
+            self.state = state
+        }
+    }
+
+    public let checkedAt: String
+    public let items: [Item]
+
+    public init(checkedAt: String, items: [Item]) {
+        self.checkedAt = checkedAt
+        self.items = items
+    }
 }
 
 public struct OCRState: Codable, Equatable, Sendable {

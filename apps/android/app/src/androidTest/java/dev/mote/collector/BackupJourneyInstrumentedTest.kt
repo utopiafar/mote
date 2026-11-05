@@ -243,7 +243,7 @@ class BackupJourneyInstrumentedTest {
         val next=before.copy(server="http://127.0.0.1:47999",token="",debugHttp=true)
         val file=File(root,"generated-other-central.json").apply { writeText(ConfigurationArchive.encode(next)) }
         ActivityScenario.launch(BackupActivity::class.java).use { scenario ->
-            tag("backup-config-tab");picker(Intent.ACTION_OPEN_DOCUMENT,file) { click("导入配置 JSON");until("Other Central explicit preview"){textVisible("中央节点将改变；未携带令牌时需重新连接")} }
+            tag("backup-config-tab");picker(Intent.ACTION_OPEN_DOCUMENT,file) { click("导入配置 JSON");until("Other Central explicit preview"){textVisible("中央将改变；未携带令牌时需重新连接")} }
             screenshot(scenario,"backup-other-central-preview");click("取消")
             assertEquals(before,settings.read());assertEquals(device,settings.deviceId);assertEquals(inventory,context.queue().inventory())
         }

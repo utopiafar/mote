@@ -57,11 +57,11 @@ export function isLoopback(hostname: string): boolean {
 }
 
 export function validateServerUrl(value: unknown): string {
-  if (typeof value !== 'string') throw new Error(moteText("中央节点地址不正确"));
+  if (typeof value !== 'string') throw new Error(moteText("中央地址不正确"));
   let url: URL;
-  try { url = new URL(value); } catch { throw new Error(moteText("中央节点需要完整的 http:// 或 https:// 地址")); }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) throw new Error(moteText("中央节点地址不能含账号、路径或查询参数"));
-  if (url.protocol !== 'https:' && !isLoopback(url.hostname)) throw new Error(moteText("远程中央节点必须使用 HTTPS；HTTP 只允许本机回环地址"));
+  try { url = new URL(value); } catch { throw new Error(moteText("中央需要完整的 http:// 或 https:// 地址")); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) throw new Error(moteText("中央地址不能含账号、路径或查询参数"));
+  if (url.protocol !== 'https:' && !isLoopback(url.hostname)) throw new Error(moteText("远程中央必须使用 HTTPS；HTTP 只允许本机回环地址"));
   return url.origin;
 }
 
@@ -113,8 +113,8 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (config.serverUrl === current.serverUrl && config.token === current.token && current.credentialScope === 'owner') config.credentialScope = current.credentialScope;
   if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换节点或令牌；请先完成上传或备份处理旧队列"));
   if (config.serverUrl !== current.serverUrl) {
-    if (queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换中央节点；请先完成上传，或导出并移走旧队列后重启"));
-    if (config.serverUrl && (typeof input.token !== 'string')) throw new Error(moteText("切换中央节点必须明确输入新节点令牌，不能复用已有令牌"));
+    if (queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换中央；先完成上传，或导出并移走旧队列后重启"));
+    if (config.serverUrl && (typeof input.token !== 'string')) throw new Error(moteText("切换中央必须明确输入新节点令牌，不能复用已有令牌"));
   }
   if (!config.serverUrl) config.token = undefined;
   if (config.serverUrl && config.token && !isLoopback(new URL(config.serverUrl).hostname) && (config.token?.length ?? 0) < 32) throw new Error(moteText("远程部署至少需要 32 字符访问令牌"));

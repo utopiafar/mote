@@ -57,9 +57,3 @@ object MoteNavigation {
     fun isFirstUse(hasConnection: Boolean, captureEnabled: Boolean, lastCapture: String?, hasRecords: Boolean, centralConfirmedEmpty: Boolean = false) =
         (!hasConnection || centralConfirmedEmpty) && !captureEnabled && lastCapture == null && !hasRecords
 }
-
-/** Runtime interruption is actionable even after the service has safely disabled capture. */
-internal object CaptureAttention {
-    fun show(enabled: Boolean, state: String, live: Boolean, missingSource: Boolean, queueFull: Boolean): Boolean =
-        state in setOf("permission_required", "error") || (enabled && (!live || missingSource || queueFull))
-}

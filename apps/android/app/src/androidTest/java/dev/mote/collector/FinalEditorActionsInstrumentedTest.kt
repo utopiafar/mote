@@ -118,7 +118,7 @@ class FinalEditorActionsInstrumentedTest {
         val clipboard=context.getSystemService(android.content.ClipboardManager::class.java);var previous:android.content.ClipData?=null;var clipboardRead=false
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
-            until("Actual first-use home opens installation help"){hasTag("home-first-use-guide")};click("还没有自己的 Mote？");until("Home opens the real installation help"){has("先准备你的中央档案")}
+            until("Actual first-use home opens installation help"){hasTag("home-first-use-guide")};click("还没有自己的 Mote？");until("Home opens the real installation help"){has("先准备你的资料库")}
             previous=main{clipboard.primaryClip?.let{android.content.ClipData(it)}};clipboardRead=true
             click("复制给安装助手");assertEquals(StartUsingActivity.INSTALL_PROMPT,main{clipboard.primaryClip!!.getItemAt(0).text.toString()});click("查看安装提示词");until("The copied installation prompt is visible"){has(StartUsingActivity.INSTALL_PROMPT)};picture("first-home-help-prompt")
             click("现在先记下来");until("The local first-use editor opens"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
@@ -138,7 +138,7 @@ class FinalEditorActionsInstrumentedTest {
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
             until("Actual first-use home offers connection"){hasTag("home-first-use-guide")};click("连接");until("The actual connection entry loads"){has("把记录接到一起")}
             val invitation="Generated incomplete invitation retained across help";main{shown().filterIsInstance<EditText>().single{it.isShown}.setText(invitation)}
-            click("还没有自己的 Mote？");until("Connection opens its real installation help"){has("先准备你的中央档案")};picture("connection-help-open")
+            click("还没有自己的 Mote？");until("Connection opens its real installation help"){has("先准备你的资料库")};picture("connection-help-open")
             click("返回上一页");until("The exact invitation returns"){main{shown().filterIsInstance<EditText>().any{it.isShown&&it.text.toString()==invitation}}};picture("connection-help-same-invitation")
             click("稍后连接");until("The original home returns"){hasTag("home-first-use-guide")} ;assertEquals(draft,store.draft().getString("text"));assertEquals(explanation,store.draft().getString("description"));assertEquals(0,context.queue().depth());assertEquals(0,requests.get())
         }}finally{HttpJson.onRequest=hook}

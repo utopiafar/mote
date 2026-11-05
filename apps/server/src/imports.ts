@@ -174,7 +174,7 @@ export class ImportStore {
       try{
       const source=realpathSync(resolve(request.directory!)),vault=realpathSync(this.store.directory);
       if(inside(source,vault)||inside(vault,source))throw new StoreError('Choose a directory outside the Mote data directory');
-      if(!lstatSync(source).isDirectory())throw new ImportInputError('import_directory_required',moteText('该路径不是目录，请填写中央服务器上可读取的目录。'));
+      if(!lstatSync(source).isDirectory())throw new ImportInputError('import_directory_required',moteText('该路径不是目录。填写中央所在机器上可读取的目录'));
       const walk=async(directory:string,depth:number):Promise<void>=>{this.lifetime.signal.throwIfAborted();if(depth>30)throw new StoreError('Directory nesting exceeds 30 levels',413);for(const name of (await readdir(directory)).sort()){
         this.lifetime.signal.throwIfAborted();
         const path=join(directory,name),info=await lstat(path,{bigint:true});if(info.isSymbolicLink())throw new StoreError('Directory imports cannot follow symbolic links');
@@ -185,8 +185,8 @@ export class ImportStore {
       }};await walk(source,0);
       }catch(error){
         const code=(error as NodeJS.ErrnoException).code;
-        if(code==='ENOENT'||code==='ENOTDIR')throw new ImportInputError('import_directory_missing',moteText('中央服务器上的目录不存在或文件已移动，请检查路径后重新提交。'));
-        if(code==='EACCES'||code==='EPERM')throw new ImportInputError('import_directory_unreadable',moteText('中央服务器无法读取该目录，请检查访问权限后重新提交。'));
+        if(code==='ENOENT'||code==='ENOTDIR')throw new ImportInputError('import_directory_missing',moteText('中央所在机器上的目录不存在或文件已移动。检查路径后重新提交'));
+        if(code==='EACCES'||code==='EPERM')throw new ImportInputError('import_directory_unreadable',moteText('中央无法读取该目录。检查访问权限后重新提交'));
         throw error;
       }
     }
