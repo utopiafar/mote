@@ -10172,6 +10172,8 @@ export const english: Readonly<Record<string, string>> = {
   "Chrome 页面": "Chrome pages",
   "暂停发送": "Pause sending",
   "待发送 {0} 条": "Pending send: {0}",
+  "本周": "This week",
+  "更早": "Earlier",
   "录音已暂停": "Recording paused",
   "暂停录音": "Pause recording",
   "继续录音": "Resume recording",
