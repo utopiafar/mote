@@ -52,6 +52,20 @@ try {
   const iosGranted = await central.app.inject({method: 'POST', url: '/api/connections/redeem', payload: {
     code: iosInvitation.json().invitation.code, deviceId: 'generated-iphone', deviceName: 'Generated iPhone', platform: 'ios'}});
   assert.equal(iosGranted.statusCode, 200, 'Central must accept an iOS collector platform');
+  const iosHeaders = {authorization: 'Bearer ' + iosGranted.json().token, 'x-mote-ingress-version': '2'};
+  const iosNotification = {id: randomUUID(), deviceId: 'generated-iphone', deviceName: 'Generated iPhone', platform: 'ios',
+    capturedAt: '2026-10-01T00:00:00Z', durationMs: 0, source: 'notification', appId: 'generated.messages',
+    appName: 'Generated Messages', privacy: {collection: 'content', mode: 'none'},
+    metadata: {version: 1, observedAt: '2026-10-01T00:00:00Z', collector: {method: 'shortcuts'},
+      observation: {sessionId: randomUUID(), elapsedRealtimeMs: 0},
+      notification: {action: 'posted', notificationKey: 'ef'.repeat(32), postedAt: '2026-10-01T00:00:00Z',
+        ongoing: false, groupSummary: false, title: 'Generated delivery', text: 'Generated package arrived'}}};
+  const acceptedNotification = await central.app.inject({method: 'POST', url: '/api/captures', headers: iosHeaders, payload: iosNotification});
+  assert.equal(acceptedNotification.statusCode, 201, 'Central must accept an iOS Shortcuts notification');
+  const replayNotification = await central.app.inject({method: 'POST', url: '/api/captures', headers: iosHeaders,
+    payload: {...iosNotification, id: randomUUID(), capturedAt: '2026-10-01T00:01:00Z'}});
+  assert.equal(replayNotification.statusCode, 200, 'Repeated iOS notification content must be acknowledged');
+  assert.equal(replayNotification.json().duplicate, true);
   if (interrupted) throw Error('Kotlin contract interrupted before Gradle started');
   const args = ['-p', 'apps/android', '--no-daemon', ':app:testDebugUnitTest', '--rerun',
     ...(all.length ? [] : ['--tests', 'dev.mote.collector.CentralProducerContractTest'])];
