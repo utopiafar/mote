@@ -10,8 +10,8 @@ struct MoteApp: App {
                 ComponentPreview()
                     .preferredColorScheme(previewScheme)
             } else {
-                Color(uiColor: .systemBackground)
-                    .ignoresSafeArea()
+                ConnectionView()
+                    .preferredColorScheme(previewScheme)
             }
         }
     }

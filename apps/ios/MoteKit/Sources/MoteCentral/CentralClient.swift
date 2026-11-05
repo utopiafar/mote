@@ -7,6 +7,7 @@ public enum CentralError: Error, Equatable {
     case invalidRequest
     case invalidResponse
     case incompatibleProtocol
+    case unsupportedPlatform
     case http(status: Int, code: String?)
 }
 
@@ -25,12 +26,16 @@ public struct CentralClient: Sendable {
 
     public static func redeem(invitation: ConnectionInvitation, deviceId: String, deviceName: String,
                               session: URLSession = .shared) async throws -> DeviceCredential {
+        guard invitation.platforms?.contains(.ios) == true else { throw CentralError.unsupportedPlatform }
         guard !deviceId.isEmpty, !deviceName.isEmpty, let expires = CentralTimestamp.parse(invitation.expiresAt), expires > Date() else {
             throw CentralError.invalidRequest
         }
         let client = try CentralClient(serverUrl: invitation.serverUrl, token: "", session: session)
         let request = RedemptionRequest(code: invitation.code, deviceId: deviceId, deviceName: deviceName, platform: .ios)
-        return try await client.request("POST", "/api/connections/redeem", body: request, authenticated: false)
+        let credential: DeviceCredential = try await client.request("POST", "/api/connections/redeem", body: request, authenticated: false)
+        guard credential.serverUrl == invitation.serverUrl, credential.scope == "owner",
+              !credential.token.isEmpty, !credential.credentialId.isEmpty else { throw CentralError.invalidResponse }
+        return credential
     }
 
     public func verify(deviceId: String, credentialId: String) async throws -> ConnectionIdentity {
@@ -128,7 +133,7 @@ public struct CentralClient: Sendable {
     }
 
     private func perform<Response: Decodable>(_ request: URLRequest) async throws -> Response {
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request, delegate: RejectRedirects.shared)
         guard let http = response as? HTTPURLResponse else { throw CentralError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw CentralError.http(status: http.statusCode, code: Self.failureCode(data))
@@ -144,6 +149,16 @@ public struct CentralClient: Sendable {
                code.range(of: #"^[a-z][a-z0-9_.-]{0,99}$"#, options: .regularExpression) != nil { return code }
         }
         return nil
+    }
+}
+
+private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
+    static let shared = RejectRedirects()
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }
 
