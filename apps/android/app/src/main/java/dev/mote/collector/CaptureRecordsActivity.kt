@@ -515,8 +515,21 @@ class CaptureRecordsActivity : MoteActivity() {
                             check(access.server == intent.getStringExtra("recordOrigin") && access.generation == selection?.generation) { MoteI18n.text("访问凭据已失效，请重新连接。") }
                             return requireNotNull(access.client)
                         }
-                        content.addView(MoteUi.button(Button(this).apply { text=MoteI18n.text("基于这条记录提问"); setOnClickListener { runCatching { selected(); startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId",id).putExtra("evidenceOrigin",intent.getStringExtra("recordOrigin"))) }.onFailure { text(content,it.message ?: MoteI18n.text("操作失败，请重试"),MoteTheme.fontSupport.toFloat()) } } }))
+                        content.addView(MoteUi.button(Button(this).apply { text=MoteI18n.text("围绕这份资料提问"); setOnClickListener { runCatching { selected(); startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId",id).putExtra("evidenceOrigin",intent.getStringExtra("recordOrigin")).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) }.onFailure { text(content,it.message ?: MoteI18n.text("操作失败，请重试"),MoteTheme.fontSupport.toFloat()) } } }))
                         val more=SecondaryUi.disclosure(content,MoteI18n.text("更多"),"capture-reader-more")
+                        more.addView(MoteUi.button(Button(this).apply { text=MoteI18n.text("详情"); setOnClickListener {
+                            detailExecutor.execute {
+                                val conversations=runCatching { NativeOriginalDetail.conversations(selected()) }.getOrDefault(emptyList())
+                                runOnUiThread {
+                                    if (isDestroyed || !reading()) return@runOnUiThread
+                                    val access=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
+                                    if (selection==null || access==null || access.server!=selection.server || access.generation!=selection.generation) return@runOnUiThread
+                                    val dialog=MoteDialogBuilder(this@CaptureRecordsActivity).setTitle(MoteI18n.text("详情"))
+                                    dialog.setView(ScrollView(this@CaptureRecordsActivity).apply { addView(NativeOriginalDetail.view(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record, conversations))) })
+                                    dialog.setPositiveButton(MoteI18n.text("关闭"),null).show()
+                                }
+                            }
+                        } }))
                         val deletionKind=CentralDeletion.kind(record)
                         if (deletionKind == null) text(more,MoteI18n.text("此引用不能直接删除原始记录。"),MoteTheme.fontSupport.toFloat())
                         else {
@@ -585,7 +598,7 @@ class CaptureRecordsActivity : MoteActivity() {
                             val presentation = expectedOrigin?.let { NativeConversationQuote.scoped(localNote,it) }
                             text(quote,NativeConversationQuote.display(noteOrigin,presentation),MoteTheme.fontBody.toFloat()).setTextIsSelectable(true); content.addView(quote)
                         }
-                        if (!intent.getBooleanExtra("centralReaderActions",false)) content.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("基于这条记录提问"); setOnClickListener { startActivity(Intent(this@CaptureRecordsActivity, CentralActivity::class.java).putExtra("page", "ask").putExtra("evidenceId", id).putExtra("evidenceOrigin", if (remote) selection?.server else record.optString("dataOrigin").takeIf(String::isNotBlank))) } }))
+                        if (!intent.getBooleanExtra("centralReaderActions",false)) content.addView(MoteUi.button(Button(this).apply { text = MoteI18n.text("围绕这份资料提问"); setOnClickListener { startActivity(Intent(this@CaptureRecordsActivity, CentralActivity::class.java).putExtra("page", "ask").putExtra("evidenceId", id).putExtra("evidenceOrigin", if (remote) selection?.server else record.optString("dataOrigin").takeIf(String::isNotBlank)).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) } }))
                         if (remote) record.optJSONObject("metadata")?.optJSONArray("attachments")?.let { files ->
                             for (index in 0 until files.length()) {
                                 val attachmentId=files.getString(index)

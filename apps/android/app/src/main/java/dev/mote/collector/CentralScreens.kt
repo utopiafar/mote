@@ -9,6 +9,9 @@ import android.widget.*
 import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.MoteIconButtonStyle
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -44,7 +47,10 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private var lastConversationCursor: String? = null
     private var messages: LinearLayout? = null
     private var scopeBox: LinearLayout? = null
+    private var scopeChip: LinearLayout? = null
+    private var scopeIcon: ImageView? = null
     private var scopeLabel: TextView? = null
+    private var scopeClear: ImageButton? = null
     private var runStatus: TextView? = null
     private var askFailureAction: TextView? = null
     private var askFailureDialog: android.app.AlertDialog? = null
@@ -111,9 +117,15 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         askFailureDialog?.dismiss(); askFailureDialog = null; askFailureAction = null
         ask.clearImageReferences()
         askImagesView?.removeAllViews();askImagesView=null;addAskImage=null
+        scopeBox=null;scopeChip=null;scopeIcon=null;scopeLabel=null;scopeClear=null
         ask.reset(); askHistory = JSONObject(); askHistoryReadable = false; modelSettings = JSONObject(); lastConversation = null; question = null; messages = null; noteText = null; noteMood = null; admin.clearPrivateState(); activity.clearPrivateState(); library.clearTopics(); insights.clear(); body.removeAllViews()
     }
     fun refresh() { if (currentPage == "insights") insights.returnFromEvidence(); ui.navigate(currentPage) }
+    fun showOriginalDetail(detail: OriginalDetailPresentation) {
+        MoteDialogBuilder(ui).setTitle(MoteI18n.text("详情"))
+            .setView(ScrollView(ui).apply { addView(NativeOriginalDetail.view(ui, detail)) })
+            .setPositiveButton(MoteI18n.text("关闭"), null).show()
+    }
     fun insightRequest(prompt: String): JSONObject = CentralDraftWrites.barrier {
         val saved = insightStore.read()
         if (saved.has("requestId")) saved else JSONObject().put("requestId", UUID.randomUUID().toString())
@@ -122,16 +134,16 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
     fun pendingInsightRequest(): JSONObject = CentralDraftWrites.barrier { insightStore.read() }
     fun insightAccepted() = CentralDraftWrites.barrier { insightStore.write(JSONObject()) }
-    fun askAbout(id: String) {
+    fun askAbout(id: String, label: String? = null) {
         UUID.fromString(id)
-        if (!ask.beginEvidence(id)) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
+        if (!ask.beginEvidence(id, label)) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
         persistAsk(); ui.navigate("ask")
     }
-    fun askAboutMaterial(reference: String) {
+    fun askAboutMaterial(reference: String, label: String? = null) {
         if(ask.busy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
         verifyMaterial(reference,loadDraft=true) { state ->
             ask.replace(state)
-            if(!ask.beginMaterial(reference)) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return@verifyMaterial }
+            if(!ask.beginMaterial(reference,label)) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return@verifyMaterial }
             persistAsk(); ui.navigate("ask")
         }
     }
@@ -205,7 +217,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         }) { (state, remote) ->
             ask.replace(state)
             var scopeRefused = false
-            ui.takeAskEvidence()?.let { evidence -> scopeRefused = !ask.selectEvidence(evidence) }
+            ui.takeAskEvidence()?.let { evidence -> scopeRefused = !ask.beginEvidence(evidence.id, evidence.label) }
             persistAsk(); askHistoryReadable = remote.isSuccess
             remote.getOrNull()?.let { modelSettings = it.second }
             buildAsk(remote.getOrNull()?.first ?: JSONObject())
@@ -234,9 +246,14 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val compose = ui.askComposer()
         askImagesView=LinearLayout(ui).apply { orientation=LinearLayout.VERTICAL }.also(compose::addView)
         scopeBox = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }.also(compose::addView)
+        scopeChip = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }.also { scopeBox!!.addView(it, LinearLayout.LayoutParams(-2,-2)) }
+        scopeIcon = MoteComponents.icon(ui, MoteGlyph.FILE, NativeColorRole.ACCENT, 16).also {
+            scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2).apply { marginEnd = ui.moteDp(6) })
+        }
         scopeLabel = TextView(ui).apply {
-            MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED)
-            minHeight = ui.moteDp(38); gravity = android.view.Gravity.CENTER_VERTICAL; isFocusable = true
+            MoteUi.type(this, NativeFontRole.SUPPORT)
+            minHeight = ui.moteDp(48); gravity = android.view.Gravity.CENTER_VERTICAL; isFocusable = true
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; maxWidth = ui.moteDp(220)
             setOnClickListener {
                 if(ui.isWorking)return@setOnClickListener
                 ask.material()?.let { reference ->
@@ -249,11 +266,21 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 if (id.isNullOrBlank()) { ui.navigate("archive"); return@setOnClickListener }
                 val labels = listOf("参考这条记录，自动查找相关上下文", "仅查这条记录", "清除范围")
                 MoteDialogBuilder(ui).setTitle(MoteI18n.text("调整参考范围")).setItems(labels.map { MoteI18n.text(it) }.toTypedArray()) { _, index ->
-                    val accepted = when (index) { 0 -> ask.selectEvidence(id); 1 -> ask.selectEvidence(id, only = true); else -> ask.clearScope() }
+                    val accepted = when (index) { 0 -> ask.selectEvidence(id, label = ask.scopeLabel()); 1 -> ask.selectEvidence(id, only = true, label = ask.scopeLabel()); else -> ask.clearScope() }
                     if (accepted) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。"))
                 }.show()
             }
-        }.also { scopeBox!!.addView(it, LinearLayout.LayoutParams(-1,-2)) }
+        }.also { scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2)) }
+        scopeClear = MoteComponents.iconButton(ui, MoteGlyph.CLOSE, "清除范围", MoteIconButtonStyle.MUTED) {
+            if(ui.isWorking)return@iconButton
+            if(ask.clearScope()) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。"))
+        }.apply {
+            tag="scope-clear"
+            NativePresentationStyles.bind(this, "scope-clear-tint") { value ->
+                (value as ImageButton).imageTintList = android.content.res.ColorStateList.valueOf(MoteUi.accent)
+            }
+        }.also { scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2)) }
+        scopeBox!!.addView(android.view.View(ui), LinearLayout.LayoutParams(0,1,1f))
         updateScope()
         val entry = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; background = MoteUi.shape(ui, NativeColorRole.SURFACE_RAISED, 7, true); setPadding(ui.moteDp(12),ui.moteDp(10),ui.moteDp(12),ui.moteDp(8)) }
         compose.addView(entry)
@@ -443,9 +470,30 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val strict = (askState.optJSONArray("evidenceIds")?.length() ?: 0) > 0
         val anchored = (askState.optJSONArray("anchorEvidenceIds")?.length() ?: 0) > 0
         val material=ask.material()
+        val scoped = material != null || strict || anchored
+        val fallback = when {
+            material != null -> MoteI18n.text("参考整份资料 · 版本 {0}", material.substringAfter('@').take(8))
+            strict -> MoteI18n.text("仅查这条记录")
+            anchored -> MoteI18n.text("参考这条记录，自动查找相关上下文")
+            else -> "＋ " + MoteI18n.text("参考资料")
+        }
+        val label = if (scoped) ask.scopeLabel() ?: fallback else fallback
         scopeBox?.visibility = android.view.View.VISIBLE
-        scopeLabel?.contentDescription=material ?: MoteI18n.text("参考资料")
-        scopeLabel?.text = if(material!=null) MoteI18n.text("参考整份资料 · 版本 {0}",material.substringAfter('@').take(8))+" ⌄" else if (strict) MoteI18n.text("仅查这条记录") + " ⌄" else if (anchored) MoteI18n.text("参考这条记录，自动查找相关上下文") + " ⌄" else "＋ " + MoteI18n.text("参考资料")
+        scopeChip?.let { chip ->
+            NativePresentationStyles.bind(chip, "scope-chip") { value ->
+                (value as LinearLayout).apply {
+                    background = if (scoped) MoteUi.shape(ui, NativeColorRole.TINT, NativeRadiusRole.PILL, false) else null
+                    setPadding(ui.moteDp(if (scoped) 12 else 0), 0, 0, 0)
+                }
+            }
+        }
+        scopeIcon?.visibility = if (scoped) android.view.View.VISIBLE else android.view.View.GONE
+        scopeLabel?.let { view ->
+            view.text = label
+            view.contentDescription = material ?: label
+            NativePresentationStyles.bind(view, "scope-text") { value -> (value as TextView).setTextColor(if (scoped) MoteUi.accent else MoteUi.muted) }
+        }
+        scopeClear?.visibility = if (scoped) android.view.View.VISIBLE else android.view.View.GONE
     }
     private data class AskAdmission(val run:JSONObject?=null,val materialRejected:Boolean=false)
     private fun submitAsk(validatedMaterial: String? = null) {

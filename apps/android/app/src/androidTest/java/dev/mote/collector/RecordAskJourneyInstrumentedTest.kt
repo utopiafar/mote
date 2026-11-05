@@ -90,7 +90,7 @@ class RecordAskJourneyInstrumentedTest {
                 texts.any { it.contains(original) } && texts.any { it.contains(comment) }
             } }
             screenshot("record-ask-original")
-            clickText("基于这条记录提问")
+            clickText("围绕这份资料提问")
             clickText("仅查这条记录")
             until("Scoped native Ask composer or exact retry") { main { visibleViews().filterIsInstance<TextView>().any { it.text.toString() == "仅查这条记录" } && visibleViews().filterIsInstance<EditText>().any { it.minLines >= 4 } } }
             val retry = main { visibleViews().filterIsInstance<TextView>().any { it.text.toString() == "重试同一请求" && it.isEnabled } }

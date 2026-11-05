@@ -8843,7 +8843,6 @@
   "确认保存": "Speichern bestätigen",
   "个人上下文中心": "Persönliches Kontextzentrum",
   "工作台": "Arbeitsbereich",
-  "基于这条记录提问": "Zu dieser Aufzeichnung fragen",
   "存为记录": "Als Aufzeichnung speichern",
   "记下": "Aufzeichnen",
   "＋记下": "+ Aufzeichnen",
@@ -10163,5 +10162,10 @@
   "等待采集权限 · 屏幕录制": "Warten auf Aufnahmeberechtigung · Bildschirmaufnahme",
   "Chrome 页面": "Chrome-Seiten",
   "暂停发送": "Senden pausieren",
-  "待发送 {0} 条": "Ausstehende Sendungen: {0}"
+  "待发送 {0} 条": "Ausstehende Sendungen: {0}",
+  "详情": "Details",
+  "已整理，可搜索": "Aufbereitet, durchsuchbar",
+  "整理未完成": "Aufbereitung unvollständig",
+  "引用它的对话": "Konversationen, die es zitieren",
+  "网页": "Web"
 }

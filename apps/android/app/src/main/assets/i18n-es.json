@@ -8843,7 +8843,6 @@
   "确认保存": "Confirmar guardado",
   "个人上下文中心": "Centro de contexto personal",
   "工作台": "Espacio de trabajo",
-  "基于这条记录提问": "Preguntar sobre este registro",
   "存为记录": "Guardar como registro",
   "记下": "Registrar",
   "＋记下": "+ Registrar",
@@ -10163,5 +10162,10 @@
   "等待采集权限 · 屏幕录制": "Esperando permiso de captura · Grabación de pantalla",
   "Chrome 页面": "Páginas de Chrome",
   "暂停发送": "Pausar envío",
-  "待发送 {0} 条": "Envíos pendientes: {0}"
+  "待发送 {0} 条": "Envíos pendientes: {0}",
+  "详情": "Detalles",
+  "已整理，可搜索": "Organizado y se puede buscar",
+  "整理未完成": "Organización incompleta",
+  "引用它的对话": "Conversaciones que lo citan",
+  "网页": "Web"
 }

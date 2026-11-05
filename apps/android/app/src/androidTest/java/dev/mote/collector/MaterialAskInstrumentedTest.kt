@@ -42,13 +42,16 @@ class MaterialAskInstrumentedTest {
     private fun question(s:ActivityScenario<CentralActivity>,text:String){ready(s,"Composer ready"){a -> !a.isWorking && shown(a).filterIsInstance<EditText>().any { it.contentDescription=="你的问题" && it.isEnabled }};s.onActivity { a -> shown(a).filterIsInstance<EditText>().single { it.contentDescription=="你的问题" }.setText(text) }}
     private fun screenshotOne(s:ActivityScenario<CentralActivity>,name:String){instrumentation.waitForIdleSync();s.onActivity { a -> if(name.endsWith("-dark"))shown(a).filterIsInstance<android.widget.Spinner>().forEach { spinner -> (spinner.selectedView as? TextView)?.let { assertEquals(MoteUi.ink,it.currentTextColor) } };val root=a.window.decorView;val image=android.graphics.Bitmap.createBitmap(root.width,root.height,android.graphics.Bitmap.Config.ARGB_8888);try{root.draw(android.graphics.Canvas(image));File(context.filesDir,"material-ask-final").apply{mkdirs()}.resolve("$name.png").outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }}finally{image.recycle()} }}
     private fun screenshot(s:ActivityScenario<CentralActivity>,name:String){val before=MoteAppearance.preference();try{for(theme in listOf(AppearancePreference.LIGHT,AppearancePreference.DARK)){main { MoteAppearance.select(context,theme) };instrumentation.waitForIdleSync();screenshotOne(s,name+if(theme==AppearancePreference.DARK)"-dark" else "")}}finally{main { MoteAppearance.select(context,before) }}}
-    private fun openMaterial():ActivityScenario<CentralActivity> {
+    private fun captureDetail(name:String){main{val root=android.view.inspector.WindowInspector.getGlobalWindowViews().filter{it.isShown}.firstOrNull{ root->views(root).any{it is TextView&&it.text.toString()=="本机已保存"} }?:error("Detail window is not visible");val image=android.graphics.Bitmap.createBitmap(root.width,root.height,android.graphics.Bitmap.Config.ARGB_8888);try{root.draw(android.graphics.Canvas(image));File(context.getExternalFilesDir(null),"ua09").apply{mkdirs()}.resolve("$name.png").outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }}finally{image.recycle()}}}
+    private fun windows()=android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it.isShown }.flatMap(::views).filter { it.isShown }
+    private fun openMaterial(capture:Boolean=true):ActivityScenario<CentralActivity> {
         val scenario=ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","materials"))
         click(scenario,"Actual Material list row"){it.tag=="material-open:"+fixture.getString("nativeMaterialId")}
         ready(scenario,"Pinned reader ready"){a -> !a.isWorking && shown(a).any { it.tag=="material-ask" }};val page=api.get("/api/materials/"+fixture.getString("nativeMaterialId")+"/read?offset=0&length=4000&revision="+control("state").getString("nativeMaterialRef").substringAfter('@'))
         scenario.onActivity { a->val spans=page.getJSONArray("spans");for(index in 0 until spans.length()){val span=spans.getJSONObject(index);if(span.getString("kind")=="text"){val range=span.getJSONObject("pageRange");assertEquals(page.getString("text").substring(range.getInt("start"),range.getInt("end")),shown(a).filterIsInstance<TextView>().single{it.tag=="material-literal:"+span.getString("blockId")}.text.toString())}} }
-        screenshot(scenario,"pinned-material-reader");return scenario
+        if(capture)screenshot(scenario,"pinned-material-reader");return scenario
     }
+    private fun clickWindowText(text:String){until("Window action $text"){main{windows().any{it.isEnabled&&it is TextView&&it.text.toString()==text}}};main{windows().first{it.isEnabled&&it is TextView&&it.text.toString()==text}.performClick()}}
     private fun choose(s:ActivityScenario<CentralActivity>):String {
         val ref=control("state").getString("nativeMaterialRef")
         click(s,"Ask about the actual pinned Material"){it.tag=="material-ask"}
@@ -61,6 +64,37 @@ class MaterialAskInstrumentedTest {
         main { val list=android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it.isShown }.flatMap(::views).filterIsInstance<android.widget.ListView>().single { it.isShown }
             val position=(0 until list.adapter.count).single { list.adapter.getItem(it).toString()=="清除范围" }
             assertTrue(list.performItemClick(list.getChildAt(position-list.firstVisiblePosition),position,list.adapter.getItemId(position))) }
+    }
+    @Test fun a09DetailReceiptsAndClearableScopeKeepTheAcceptedOriginal(){
+        val before=MoteAppearance.preference()
+        try {
+            for(theme in listOf(AppearancePreference.LIGHT,AppearancePreference.DARK)) {
+                main { MoteAppearance.select(context,theme) }
+                openMaterial(capture=false).use { s ->
+                    click(s,"Open the actual original More menu"){it is TextView && it.isClickable && it.text.toString()=="更多  ›"}
+                    clickText(s,"详情")
+                    until("Receipt timeline and references are visible"){main{windows().any{it is TextView&&it.text.toString()=="本机已保存"}&&windows().any{it is TextView&&it.text.toString()=="中央已接收"}&&windows().any{it is TextView&&it.text.toString()=="引用它的对话"}}}
+                    captureDetail("impl-original-detail"+if(theme==AppearancePreference.DARK)"-dark" else "-light")
+                    clickWindowText("关闭")
+                }
+            }
+            for(theme in listOf(AppearancePreference.LIGHT,AppearancePreference.DARK)) {
+                main { MoteAppearance.select(context,theme) }
+                openMaterial(capture=false).use { s ->
+                    val ref=choose(s)
+                    question(s,"Generated draft kept after clearing the scope")
+                    until("Draft is persisted"){saved().optString("question")=="Generated draft kept after clearing the scope"}
+                    var chip=""
+                    s.onActivity { a -> chip=shown(a).filterIsInstance<TextView>().single{it.contentDescription?.toString()==ref}.text.toString() }
+                    assertEquals("Generated exact whole Material",chip)
+                    screenshotOne(s,"impl-ask-scoped"+if(theme==AppearancePreference.DARK)"-dark" else "-light")
+                    click(s,"Clear the exact scope from its chip"){it.contentDescription?.toString()=="清除范围"}
+                    until("Scope chip clears without losing the draft"){saved().isNull("anchorMaterialRef")&&saved().optString("question")=="Generated draft kept after clearing the scope"}
+                    s.onActivity { a -> assertFalse(shown(a).filterIsInstance<TextView>().any{it.contentDescription?.toString()==ref}) }
+                    screenshotOne(s,"impl-ask-scope-cleared"+if(theme==AppearancePreference.DARK)"-dark" else "-light")
+                }
+            }
+        } finally { main { MoteAppearance.select(context,before) } }
     }
     @Before fun generatedOnly(){
         assumeTrue(InstrumentationRegistry.getArguments().getString("nativeAskRecoveryFixture")=="true")

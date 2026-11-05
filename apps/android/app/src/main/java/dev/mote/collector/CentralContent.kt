@@ -14,6 +14,9 @@ import android.widget.*
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import java.io.File
 
+/** A reader handoff keeps the visible reference title, never a rewritten evidence ID. */
+internal data class AskEvidence(val id: String, val label: String?)
+
 /** Reusable native central content. The host owns the window and primary navigation. */
 internal class CentralContent(
     private val activity: MoteActivity,
@@ -100,12 +103,13 @@ internal class CentralContent(
     fun acceptAskConversation(id:String) { if(requestedAskConversation()==id)clearAskConversationIntent() }
     internal val selectedAskConversationId get()=screens?.selectedAskConversationId
 
-    fun takeAskEvidence(): String? {
+    fun takeAskEvidence(): AskEvidence? {
         val evidence=activity.intent.getStringExtra("evidenceId") ?: return null
         val expected=activity.intent.getStringExtra("evidenceOrigin")
-        activity.intent.removeExtra("evidenceId"); activity.intent.removeExtra("evidenceOrigin")
+        val label=activity.intent.getStringExtra("evidenceLabel")
+        activity.intent.removeExtra("evidenceId"); activity.intent.removeExtra("evidenceOrigin"); activity.intent.removeExtra("evidenceLabel")
         if (expected != null && expected != server) { notice(MoteI18n.text("访问凭据已失效，请重新连接。")); return null }
-        return evidence
+        return AskEvidence(evidence,label?.takeIf { it.isNotBlank() })
     }
 
     val root: LinearLayout

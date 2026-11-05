@@ -8843,7 +8843,6 @@
   "确认保存": "Confirm save",
   "个人上下文中心": "Personal context center",
   "工作台": "Workbench",
-  "基于这条记录提问": "Ask about this record",
   "存为记录": "Save as record",
   "记下": "Record",
   "＋记下": "+ Record",
@@ -10163,5 +10162,10 @@
   "等待采集权限 · 屏幕录制": "Waiting for capture permission · Screen Recording",
   "Chrome 页面": "Chrome pages",
   "暂停发送": "Pause sending",
-  "待发送 {0} 条": "Pending send: {0}"
+  "待发送 {0} 条": "Pending send: {0}",
+  "详情": "Details",
+  "已整理，可搜索": "Organized and searchable",
+  "整理未完成": "Organization incomplete",
+  "引用它的对话": "Conversations referencing it",
+  "网页": "Web"
 }
