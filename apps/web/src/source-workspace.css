@@ -4,14 +4,14 @@
 .source-workspace .page-heading h1 { font-size:25px; line-height:1.35; letter-spacing:-.04em; margin:0; }
 .source-workspace .back-link { display:inline-flex; align-items:center; gap:5px; color:var(--mote-muted); margin:2px 0 20px; font-size:12px; }
 .source-workspace .page-heading .eyebrow { color:var(--mote-accent); margin-bottom:10px; font-size:11px; }
-.source-workspace .button { min-height:36px; border-radius:6px; font-size:13px; }
+.source-workspace .button { min-height:36px; border-radius:var(--mote-radius-control); font-size:13px; }
 .source-workspace .button.primary { background:var(--mote-ink); border-color:var(--mote-ink); color:var(--mote-background); }
 .source-workspace .page-heading p { margin-top:12px; font-size:13px; }
 .source-list-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:18px 0 16px; }
 .source-filter { display:flex; gap:2px; }
-.source-filter button { border:0; background:transparent; color:var(--mote-muted); padding:7px 10px; border-radius:4px; font-size:12px; }
+.source-filter button { border:0; background:transparent; color:var(--mote-muted); padding:7px 10px; border-radius:var(--mote-radius-control); font-size:12px; }
 .source-filter button[aria-pressed="true"] { color:var(--mote-ink); background:var(--mote-sidebar); }
-.source-row-icon { width:36px; height:40px; border:1px solid var(--mote-border); border-radius:5px; display:inline-flex; align-items:center; justify-content:center; color:var(--mote-muted); background:var(--mote-surface); flex:none; }
+.source-row-icon { width:36px; height:40px; border:1px solid var(--mote-hair); border-radius:var(--mote-radius-thumb); display:inline-flex; align-items:center; justify-content:center; color:var(--mote-muted); background:var(--mote-surface); flex:none; }
 .source-row-copy { display:flex; flex-direction:column; min-width:0; gap:9px; flex:1; }
 .source-row-copy strong { font-weight:600; font-size:14px; }
 .source-row-copy small { font-size:12px; color:var(--mote-muted); }
@@ -19,8 +19,8 @@
 .access-list-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .access-list-heading h2 { font-size:14px; margin:0; font-weight:600; }
 .access-list-heading > span { color:var(--mote-muted); font-size:12px; }
-.access-workspace .access-list { display:block; padding:0; margin:0; border-top:1px solid var(--mote-border); list-style:none; }
-.access-workspace .access-list > li { display:block; border:0; border-bottom:1px solid var(--mote-border); padding:0; background:none; }
+.access-workspace .access-list { display:block; padding:0; margin:0; border-top:1px solid var(--mote-hair); list-style:none; }
+.access-workspace .access-list > li { display:block; border:0; border-bottom:1px solid var(--mote-hair); padding:0; background:none; }
 .access-row { display:flex; gap:18px; align-items:center; width:100%; padding:24px 5px; text-align:left; background:transparent; border:0; color:var(--mote-ink); }
 .access-row:hover { background:var(--mote-surface); }
 .access-state { color:var(--mote-accent); font-size:12px; }
@@ -29,29 +29,29 @@
 .access-workspace .connection-help p { max-width:74ch; line-height:1.7; }
 .access-create-form { max-width:674px; display:flex; flex-direction:column; gap:24px; }
 .access-create-form > label { display:flex; flex-direction:column; gap:10px; font-size:12px; }
-.access-workspace .access-create-form input { width:100%; height:44px; min-height:44px; padding:10px 12px; border-radius:5px; font-size:13px; background:var(--mote-surface); }
+.access-workspace .access-create-form input { width:100%; height:44px; min-height:44px; padding:10px 12px; border-radius:var(--mote-radius-control); font-size:13px; background:var(--mote-surface); }
 .access-create-form small { color:var(--mote-muted); font-size:11px; }
-.access-permission { display:grid; grid-template-columns:100px 1fr; gap:16px; padding:24px 0; border-top:1px solid var(--mote-border); border-bottom:1px solid var(--mote-border); font-size:13px; }
+.access-permission { display:grid; grid-template-columns:100px 1fr; gap:16px; padding:24px 0; border-top:1px solid var(--mote-hair); border-bottom:1px solid var(--mote-hair); font-size:13px; }
 .access-permission > span { color:var(--mote-muted); }
 .access-permission p { margin:10px 0 0; font-size:11px; color:var(--mote-muted); line-height:1.7; }
 .access-workspace .access-create-form .connection-help { margin:0; }
-.access-form-actions { display:flex; justify-content:flex-end; padding-top:20px; margin-top:0; border-top:1px solid var(--mote-border); }
+.access-form-actions { display:flex; justify-content:flex-end; padding-top:20px; margin-top:0; border-top:1px solid var(--mote-hair); }
 .access-detail { max-width:794px; }
-.access-detail .page-heading { border-bottom:1px solid var(--mote-border); padding-bottom:28px; }
+.access-detail .page-heading { border-bottom:1px solid var(--mote-hair); padding-bottom:28px; }
 .access-properties { display:grid; grid-template-columns:100px minmax(0,1fr); gap:22px 20px; margin:30px 0; font-size:14px; }
 .access-properties dt { color:var(--mote-muted); }
 .access-properties dd { text-align:left; margin:0; overflow-wrap:anywhere; }
-.access-danger { margin-top:28px; padding-top:24px; border-top:1px solid var(--mote-border); }
+.access-danger { margin-top:28px; padding-top:24px; border-top:1px solid var(--mote-hair); }
 .access-danger .danger { color:var(--mote-danger); }
 .access-workspace .connection-mcp { margin:0; padding:0; background:none; border:0; }
 .access-workspace .connection-mcp > p { font-size:12px; color:var(--mote-muted); }
 .access-workspace .connection-mcp textarea { margin:16px 0 20px; min-height:320px; padding:18px; width:100%; background:var(--mote-surface); line-height:1.65; font-size:12px; }
 .source-dialog-overlay { position:fixed; inset:0; z-index:80; display:flex; justify-content:center; align-items:center; background:rgb(38 35 31 / 14%); backdrop-filter:blur(4px); padding:20px; }
-.source-dialog { width:536px; max-width:100%; background:var(--mote-surface); color:var(--mote-ink); border:1px solid var(--mote-border); border-radius:8px; box-shadow:0 15px 60px rgb(0 0 0 / 12%); }
-.source-dialog header { display:flex; justify-content:space-between; gap:15px; align-items:center; padding:20px 22px; border-bottom:1px solid var(--mote-border); }
+.source-dialog { width:536px; max-width:100%; background:var(--mote-surface); color:var(--mote-ink); border:1px solid var(--mote-hair); border-radius:var(--mote-radius-panel); box-shadow:0 15px 60px rgb(0 0 0 / 12%); }
+.source-dialog header { display:flex; justify-content:space-between; gap:15px; align-items:center; padding:20px 22px; border-bottom:1px solid var(--mote-hair); }
 .source-dialog header h2 { font-size:15px; margin:0; }
 .source-dialog > p { font-size:13px; line-height:1.7; padding:22px; margin:0; }
-.source-dialog footer { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid var(--mote-border); }
+.source-dialog footer { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid var(--mote-hair); }
 @media(max-width:700px) { .source-workspace { padding:4px 0 30px; } .access-row { gap:12px; flex-wrap:wrap; padding:18px 3px; } .access-row .source-row-copy { min-width:55%; } .access-permission,.access-properties { grid-template-columns:90px minmax(0,1fr); } .source-workspace .page-heading h1 { font-size:23px; } }
 /* A long connection name may wrap; its authorization state remains one phrase. */
 .access-workspace .access-detail > .split-heading > div { min-width:0; flex:1; }

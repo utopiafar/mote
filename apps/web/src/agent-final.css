@@ -4,18 +4,18 @@
 .agent-final .page-heading h1{font-size:25px;font-weight:540;letter-spacing:-.6px;line-height:1.5;margin:0}
 .agent-trace-page .page-heading h1{font-size:27px}
 .agent-final-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:28px}
-.agent-final .section-tabs{display:flex;gap:25px;overflow-x:auto;border-bottom:1px solid var(--mote-border);margin:0 0 25px;padding:0}
+.agent-final .section-tabs{display:flex;gap:25px;overflow-x:auto;border-bottom:1px solid var(--mote-hair);margin:0 0 25px;padding:0}
 .agent-final .section-tabs button{font-size:12px;font-weight:400;white-space:nowrap;padding:8px 0 11px;min-height:0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--mote-muted)}
 .agent-final .section-tabs button[aria-current=page]{color:var(--mote-ink);border-color:var(--mote-accent);background:none;font-weight:400}
 .agent-access-note{font-size:12px;color:var(--mote-muted);margin:20px 0;line-height:1.9}
-.agent-access-links{border-top:1px solid var(--mote-border)}
-.agent-access-links a{display:grid;grid-template-columns:33px minmax(0,1fr) 12px;gap:13px;align-items:center;padding:18px 1px;border-bottom:1px solid var(--mote-border);text-decoration:none;color:var(--mote-ink)}
+.agent-access-links{border-top:1px solid var(--mote-hair)}
+.agent-access-links a{display:grid;grid-template-columns:33px minmax(0,1fr) 12px;gap:13px;align-items:center;padding:18px 1px;border-bottom:1px solid var(--mote-hair);text-decoration:none;color:var(--mote-ink)}
 .agent-access-links a:hover{background:var(--mote-surface)}
 .agent-access-icon{display:grid;place-items:center;width:31px;height:31px;color:var(--mote-accent);font-size:18px}
 .agent-access-links strong{display:block;font-size:14px;font-weight:500}
 .agent-access-links small{display:block;font-size:11px;color:var(--mote-muted);margin-top:4px}
 .agent-access-links svg{color:var(--mote-muted)}
-.agent-directory-options{margin:26px 0;border-top:1px solid var(--mote-border);padding-top:20px}
+.agent-directory-options{margin:26px 0;border-top:1px solid var(--mote-hair);padding-top:20px}
 .agent-directory-options>summary,.agent-catalog-browser>summary{font-size:12px;color:var(--mote-muted);cursor:pointer}
 .agent-final .agent-scope{margin:20px 0}
 .agent-final .agent-browser{margin-top:24px}
@@ -23,37 +23,37 @@
 .agent-recorded>h2{display:none}
 .agent-final .agent-run-selection{display:block;margin:0 0 22px}
 .agent-run-selection label{display:grid;gap:9px;font-size:12px;line-height:1.8;margin:18px 0}
-.agent-run-selection input,.agent-run-selection select{width:100%;min-width:0;font:inherit;border:1px solid var(--mote-border);border-radius:6px;padding:10px 12px;background:var(--mote-surface);color:var(--mote-ink)}
+.agent-run-selection input,.agent-run-selection select{width:100%;min-width:0;font:inherit;border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-control);padding:10px 12px;background:var(--mote-surface);color:var(--mote-ink)}
 .agent-run-selection select{max-width:420px}
 .agent-run-selection>.button{font-size:12px;min-height:38px}
 .agent-run-manual{margin:18px 0}
 .agent-run-manual>summary{font-size:11px;color:var(--mote-muted);cursor:pointer}
 .agent-recording-status{font-size:11px;color:var(--mote-muted);line-height:1.9;margin:18px 0}
-.agent-recorded-tabs{display:flex;gap:20px;margin:18px 0 24px;overflow:auto;border-bottom:1px solid var(--mote-border)}
+.agent-recorded-tabs{display:flex;gap:20px;margin:18px 0 24px;overflow:auto;border-bottom:1px solid var(--mote-hair)}
 .agent-recorded-tabs button{padding:10px 0 12px;border:0;border-bottom:2px solid transparent;border-radius:0;min-height:0;background:none;font-size:12px;font-weight:400;white-space:nowrap;color:var(--mote-muted)}
 .agent-recorded-tabs button[aria-selected=true]{color:var(--mote-ink);border-color:var(--mote-accent)}
 .agent-recorded-content{font-size:14px;line-height:1.95}
 .agent-recorded-event{margin:0 0 22px}
 .agent-recorded-event .agent-body{white-space:pre-wrap;overflow-wrap:anywhere;text-align:left}
-.agent-question-card{padding:24px;border:1px solid var(--mote-border);border-radius:9px;background:var(--mote-surface);margin:18px 0}
+.agent-question-card{padding:24px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container);background:var(--mote-surface);margin:18px 0}
 .agent-question-card>span{font-size:10px;letter-spacing:.5px;color:var(--mote-muted)}
 .agent-question-card>p{margin:8px 0 0}
-.agent-recorded-event .agent-context-fields{padding:18px;border:1px solid var(--mote-border);background:var(--mote-surface);border-radius:6px}
+.agent-recorded-event .agent-context-fields{padding:18px;border:1px solid var(--mote-hair);background:var(--mote-surface);border-radius:var(--mote-radius-container)}
 .agent-recorded-event .agent-context-fields dt{font-size:10px;color:var(--mote-muted);font-weight:400}
 .agent-recorded-event .agent-context-fields dd{font-size:13px;line-height:1.95}
-.agent-recorded-event details{padding:16px 0;border-top:1px solid var(--mote-border)}
+.agent-recorded-event details{padding:16px 0;border-top:1px solid var(--mote-hair)}
 .agent-recorded-event summary{font-size:12px;cursor:pointer}
 .agent-output-evidence{display:flex;flex-wrap:wrap;gap:16px;margin:20px 0}
-.agent-event-details{margin-top:27px;padding-top:20px;border-top:1px solid var(--mote-border)}
+.agent-event-details{margin-top:27px;padding-top:20px;border-top:1px solid var(--mote-hair)}
 .agent-event-details>summary{font-size:12px;color:var(--mote-muted);cursor:pointer}
 .agent-final .feature-json{font-size:11px;line-height:1.8;max-width:100%;overflow:auto}
 .agent-final .processing-actions{gap:20px}
-.agent-startup-box{padding:19px 20px;border:1px solid var(--mote-border);border-radius:8px;background:var(--mote-surface)}
+.agent-startup-box{padding:19px 20px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container);background:var(--mote-surface)}
 .agent-startup-box>h2{font-size:14px;margin:0 0 9px;font-weight:500}
 .agent-startup-box>p{font-size:12px;line-height:1.9;color:var(--mote-muted)}
 .agent-startup-structure{margin-top:18px}
 .agent-startup-structure>summary{font-size:12px;color:var(--mote-muted);cursor:pointer}
 .agent-recorded-entry{margin:26px 0}
 .agent-recorded-entry>h2{font-size:13px;font-weight:600;margin:0 0 14px}
-.agent-recorded-entry>a{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 1px;border-block:1px solid var(--mote-border);font-size:14px;text-decoration:none;color:var(--mote-ink)}
+.agent-recorded-entry>a{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 1px;border-block:1px solid var(--mote-hair);font-size:14px;text-decoration:none;color:var(--mote-ink)}
 @media(max-width:700px){.agent-final .section-tabs{gap:19px}.agent-final .agent-scope{display:grid;grid-template-columns:1fr}.agent-recorded-event .agent-context-fields{padding:16px}.agent-recorded-content{font-size:12px}}
