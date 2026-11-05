@@ -13,14 +13,16 @@ final class EntryDefinitionTests: XCTestCase {
         ])
     }
 
-    func testOpenEntriesHaveOneCanonicalDeepLink() throws {
-        for entry in MoteEntry.allCases where entry != .pauseSending {
+    func testEveryEntryRoundTripsThroughItsCanonicalDeepLink() throws {
+        for entry in MoteEntry.allCases {
             let url = try XCTUnwrap(entry.deepLinkURL, entry.id)
+            XCTAssertEqual(MoteEntry(url: url), entry)
             XCTAssertEqual(MoteEntry.resolve(url), entry)
         }
-        XCTAssertNil(MoteEntry.pauseSending.deepLinkURL)
-        XCTAssertNil(MoteEntry.resolve(URL(string: "mote://entry/unknown")!))
-        XCTAssertNil(MoteEntry.resolve(URL(string: "https://mote.example/entry/record")!))
+        XCTAssertNil(MoteEntry(url: URL(string: "mote://entry/unknown")!))
+        XCTAssertNil(MoteEntry(url: URL(string: "https://mote.example/entry/record")!))
+        XCTAssertNil(MoteEntry(url: URL(string: "mote://entry/record?source=shortcut")!))
+        XCTAssertNil(MoteEntry(url: URL(string: "mote://entry/record#top")!))
     }
 
     func testShortcutNamesAndSiriPhrasesMatchThePublishedContract() {

@@ -42,8 +42,7 @@ public enum MoteEntry: String, CaseIterable, Equatable, Sendable {
     }
 
     public var deepLinkURL: URL? {
-        guard action != .pause else { return nil }
-        return URL(string: "mote://entry/\(rawValue)")
+        URL(string: "mote://entry/\(rawValue)")
     }
 
     public var siriPhrases: [String] {
@@ -55,9 +54,16 @@ public enum MoteEntry: String, CaseIterable, Equatable, Sendable {
         }
     }
 
+    public init?(url: URL) {
+        guard url.scheme == "mote", url.host == "entry", url.query == nil, url.fragment == nil,
+              let entry = MoteEntry(rawValue: String(url.path.dropFirst())),
+              entry.deepLinkURL == url
+        else { return nil }
+        self = entry
+    }
+
     public static func resolve(_ url: URL) -> MoteEntry? {
-        guard url.scheme == "mote", url.host == "entry", url.query == nil, url.fragment == nil else { return nil }
-        return MoteEntry(rawValue: String(url.path.dropFirst())).flatMap { $0.deepLinkURL == url ? $0 : nil }
+        MoteEntry(url: url)
     }
 }
 

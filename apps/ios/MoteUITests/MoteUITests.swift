@@ -37,4 +37,21 @@ final class MoteUITests: XCTestCase {
             XCTAssertTrue(app.buttons[label].waitForExistence(timeout: 2), "\(label) did not return to home")
         }
     }
+
+    func testEntryDeepLinksOpenAskAndRecordDestinations() {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertTrue(app.buttons["问一问"].waitForExistence(timeout: 10))
+
+        app.open(URL(string: "mote://entry/ask")!)
+        XCTAssertTrue(app.navigationBars["问一问"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["关闭"].exists)
+        app.buttons["关闭"].tap()
+
+        XCTAssertTrue(app.buttons["记录"].waitForExistence(timeout: 5))
+        app.open(URL(string: "mote://entry/record")!)
+        XCTAssertTrue(app.navigationBars["记录"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["关闭"].exists)
+    }
 }

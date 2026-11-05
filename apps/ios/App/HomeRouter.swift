@@ -25,6 +25,16 @@ final class HomeRouter {
         case .original(let id): destination = .original(id)
         }
     }
+
+    func open(_ entry: MoteEntry) {
+        switch entry.action {
+        case .openEditor(.note): open(HomeAction.record)
+        case .openEditor(.photo): open(HomeAction.camera)
+        case .openEditor(.recording): open(HomeAction.microphone)
+        case .openAsk: open(HomeAction.ask)
+        case .pause: MoteSendPause.pause()
+        }
+    }
 }
 
 enum HomeDestination: Equatable, Identifiable {
