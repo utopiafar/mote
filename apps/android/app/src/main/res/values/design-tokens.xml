@@ -9,8 +9,10 @@
     <color name="mote_accent_hover">#5f3d8d</color>
     <color name="mote_tint">#eee7f5</color>
     <color name="mote_border">#d8d1c6</color>
-    <color name="mote_control_border">#827a71</color>
+    <color name="mote_control_border">#928a81</color>
     <color name="mote_divider">#d8d1c6</color>
+    <color name="mote_hair">#e8e3db</color>
+    <color name="mote_fill">#122d2a26</color>
     <color name="mote_success">#316d45</color>
     <color name="mote_warning">#815b20</color>
     <color name="mote_danger">#a73830</color>
@@ -29,4 +31,8 @@
     <color name="mote_warning_tint">#f7eddb</color>
     <color name="mote_danger_tint">#f7e6e3</color>
     <color name="mote_focus_ring">#7651a4</color>
+    <dimen name="mote_radius_thumb_mobile">10dp</dimen>
+    <dimen name="mote_radius_control_mobile">12dp</dimen>
+    <dimen name="mote_radius_container_mobile">16dp</dimen>
+    <dimen name="mote_radius_panel_mobile">24dp</dimen>
 </resources>

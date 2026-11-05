@@ -16,6 +16,11 @@ test('Web, Agent, translations and shared wire changes retain their actual consu
   for (const path of ['packages/shared/src/i18n.ts', 'packages/shared/src/i18n-en.ts', 'packages/shared/src/i18n-ja.ts', 'packages/shared/src/i18n-ru.ts', 'apps/android/app/src/main/assets/i18n-en.json', 'apps/android/app/src/main/assets/i18n-de.json']) assert.deepEqual(changed(path).scopes, ['i18n']);
   for (const path of ['packages/shared/src/protocol.ts', 'protocol/contract.json']) assert.deepEqual(changed(path).scopes, scopes.filter(name => name !== 'tooling' && name !== 'plugin-sdk'));
 });
+test('iOS scaffolding changes select only the iOS simulator check', () => {
+  const selection = changed('apps/ios/project.yml');
+  assert.deepEqual(selection, { scopes: ['ios'], fallback: [] });
+  assert.deepEqual(automaticTasks(selection), { tasks: [], android: false });
+});
 test('unknown inputs and locks conservatively select all light scopes and explain the fallback', () => {
   for (const path of ['package-lock.json', 'package.json', 'tsconfig.base.json', 'packages/future/src/new.ts', 'new-root/input.ts']) assert.deepEqual(changed(path), { scopes, fallback: [path], serverGroups: ['all'], androidContract: true });
   assert.deepEqual(changed('docs/testing.md', 'AGENTS.md', '.agents/skills/real-world-testing/SKILL.md').scopes, []);
