@@ -100,7 +100,9 @@ fun Activity.openGeneratedAdd(action: MoteAddAction) {
             val source = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
                 .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<SourcesActivity>().singleOrNull()
             if (source == null) { check(SystemClock.elapsedRealtime() < deadline) { "Actual source list did not open" }; handler.postDelayed(this,40); return }
-            views(source.window.decorView).single { it.tag == "sources-add" }.performClick()
+            val row = views(source.window.decorView).firstOrNull { it.tag == "sources-add" }
+            if (row == null) { check(SystemClock.elapsedRealtime() < deadline) { "Actual source list did not render" }; handler.postDelayed(this,40); return }
+            row.performClick()
             val key = when (action) { MoteAddAction.FILE -> "FILE"; MoteAddAction.FOLDER -> "FOLDER"; MoteAddAction.FEISHU -> "CLOUD"; else -> error("Unexpected action") }
             val sheetDeadline = SystemClock.elapsedRealtime() + 5_000
             val pick = object : Runnable {
