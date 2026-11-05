@@ -10,6 +10,7 @@ final class EditorModel: ObservableObject {
 
     let store: EditorDraftStore
     private var clearedDescriptionExpanded = false
+    private var didLoad = false
 
     init(store: EditorDraftStore) {
         self.store = store
@@ -20,6 +21,8 @@ final class EditorModel: ObservableObject {
     }
 
     func load(fixtureName: String?, descriptionExpanded: Bool) {
+        guard !didLoad else { return }
+        didLoad = true
         do {
             if let fixtureName {
                 session = EditorDraftSession(draft: try EditorFixture.makeDraft(name: fixtureName, store: store))
@@ -49,6 +52,13 @@ final class EditorModel: ObservableObject {
     func add(_ attachment: EditorAttachment) {
         session.update { $0.attachments.append(attachment) }
         persist()
+    }
+
+    func addRecording(_ attachment: EditorAttachment) throws {
+        var draft = session.draft
+        draft.attachments.append(attachment)
+        try store.save(draft)
+        session.update { $0 = draft }
     }
 
     func remove(_ attachment: EditorAttachment) {

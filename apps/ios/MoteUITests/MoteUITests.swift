@@ -28,7 +28,9 @@ final class MoteUITests: XCTestCase {
 
     func testDefaultHomeActionsOpenADestination() {
         resetDraft()
+        defer { resetDraft() }
         let app = XCUIApplication()
+        app.launchArguments = ["-MoteRecordingTestInput"]
         app.launch()
 
         XCTAssertTrue(app.buttons["连接"].waitForExistence(timeout: 10))
