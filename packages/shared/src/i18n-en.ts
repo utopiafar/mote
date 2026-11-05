@@ -10129,5 +10129,9 @@ export const english: Readonly<Record<string, string>> = {
   "失联": "No contact",
   "采集中 · 待同步 {0} 条": "Collecting · Pending: {0}",
   "采集中 · 发送已暂停": "Collecting · Sending paused",
-  "采集中 · 发送需要处理": "Collecting · Sending needs attention"
+  "采集中 · 发送需要处理": "Collecting · Sending needs attention",
+  "已收到": "Received",
+  "后台处理": "Background processing",
+  "本人设备": "My device",
+  "待同步 {0}": "Pending sync {0}"
 };
