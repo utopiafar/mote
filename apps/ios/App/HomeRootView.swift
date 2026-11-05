@@ -1,4 +1,5 @@
 import MoteCore
+import MoteStorage
 import SwiftUI
 
 /// The app's default root. The home owns reading local state; destinations
@@ -8,24 +9,18 @@ struct HomeRootView: View {
     @State private var model = HomeModel()
     @State private var router = HomeRouter()
     @Environment(\.scenePhase) private var scenePhase
+    var arguments: [String] = ProcessInfo.processInfo.arguments
+    var editorStore: EditorDraftStore? = try? MoteStorage.editorDraftStore()
 
     var body: some View {
         HomeView(presentation: model.presentation) { action in
             router.open(action)
         }
-        .sheet(item: sheetDestination, onDismiss: {
-            Task { await model.refresh() }
-        }) { destination in
-            HomeDestinationView(
-                destination: destination,
-                onAsk: { router.destination = .ask($0) },
-                onClearScope: { router.destination = .ask(nil) }
-            )
+        .sheet(item: sheetDestination, onDismiss: refresh) { destination in
+            destinationView(destination)
         }
-        .fullScreenCover(isPresented: connectionPresented, onDismiss: {
-            Task { await model.refresh() }
-        }) {
-            ConnectionView()
+        .fullScreenCover(item: fullScreenDestination, onDismiss: refresh) { destination in
+            destinationView(destination)
         }
         .task {
             await model.refresh()
@@ -40,17 +35,34 @@ struct HomeRootView: View {
         }
     }
 
+    /// The editor, settings menu and capture screen fill the window like
+    /// their reference designs; the remaining destinations keep the home sheet.
     private var sheetDestination: Binding<HomeDestination?> {
         Binding(
-            get: { router.destination == .connection ? nil : router.destination },
+            get: { router.destination?.isFullScreen == true ? nil : router.destination },
             set: { router.destination = $0 }
         )
     }
 
-    private var connectionPresented: Binding<Bool> {
+    private var fullScreenDestination: Binding<HomeDestination?> {
         Binding(
-            get: { router.destination == .connection },
-            set: { if !$0 { router.destination = nil } }
+            get: { router.destination?.isFullScreen == true ? router.destination : nil },
+            set: { router.destination = $0 }
         )
+    }
+
+    private func destinationView(_ destination: HomeDestination) -> some View {
+        HomeDestinationView(
+            destination: destination,
+            editorStore: editorStore,
+            arguments: arguments,
+            onAsk: { router.destination = .ask($0) },
+            onClearScope: { router.destination = .ask(nil) },
+            onOpenConnection: { router.destination = .connection }
+        )
+    }
+
+    private func refresh() {
+        Task { await model.refresh() }
     }
 }

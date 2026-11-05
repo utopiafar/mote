@@ -1,5 +1,6 @@
 import MoteCentral
 import MoteCore
+import MoteStorage
 import MoteDesign
 import Observation
 import SwiftUI
@@ -39,7 +40,7 @@ final class HomeRouter {
 }
 
 enum HomeDestination: Equatable, Identifiable {
-    // Destination: 我的 Mote（后续单元）
+    // Destination: 我的 Mote 菜单；其余条目由 IOS16 补齐
     case profile
     // Destination: 中央原文搜索（后续单元）
     case search
@@ -49,7 +50,7 @@ enum HomeDestination: Equatable, Identifiable {
     case editor(EditorIntent)
     // Destination: IOS07 iOS 连接
     case connection
-    // Destination: 采集状态（IOS09、IOS10 之后）
+    // Destination: IOS19 采集与同步
     case captureStatus
     case original(String)
     // Destination: 日程与待办、发现历史（后续单元）
@@ -74,6 +75,11 @@ enum HomeDestination: Equatable, Identifiable {
         }
     }
 
+    var isEditor: Bool {
+        if case .editor = self { return true }
+        return false
+    }
+
     var title: String {
         switch self {
         case .profile: "我的 Mote"
@@ -89,50 +95,105 @@ enum HomeDestination: Equatable, Identifiable {
         case .highlight(.discovery, _): "发现"
         }
     }
+
+    var isFullScreen: Bool {
+        switch self {
+        case .profile, .captureStatus, .editor, .ask(.none), .connection: true
+        default: false
+        }
+    }
 }
 
 struct HomeDestinationView: View {
     let destination: HomeDestination
+    let editorStore: EditorDraftStore?
+    let arguments: [String]
     let onAsk: (OriginalAskScope) -> Void
     let onClearScope: () -> Void
+    let onOpenConnection: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        if case .connection = destination {
-            ConnectionView()
-        } else if case .original(let id) = destination {
-            OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
-        } else {
-            NavigationStack {
-                VStack(spacing: 12) {
-                    MoteMark()
-                    Text(destination.title)
-                        .font(MoteFont.title)
-                        .foregroundStyle(MoteDesignTokens.ink.color)
-                    if case .ask(let scope?) = destination {
-                        HStack(spacing: 8) {
-                            Text(scope.title)
-                                .font(MoteFont.secondary)
-                                .foregroundStyle(MoteDesignTokens.ink.color)
-                                .lineLimit(1)
-                            Button("清除范围", action: onClearScope)
-                                .font(MoteFont.smallAction)
-                                .frame(minHeight: MoteMetrics.touchTarget)
-                        }
-                        .accessibilityElement(children: .contain)
-                    }
-                    Text("此功能将在后续版本提供")
-                        .font(MoteFont.secondary)
-                        .foregroundStyle(MoteDesignTokens.muted.color)
+        switch destination {
+        case .editor(let intent):
+            if let editorStore {
+                EditorFlowView(store: editorStore, arguments: arguments, intent: intent) {
+                    dismiss()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(MoteDesignTokens.background.color)
-                .navigationTitle(destination.title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("关闭") { dismiss() }
+            } else {
+                unavailable
+            }
+        case .connection:
+            ConnectionView()
+        case .original(let id):
+            OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
+        case .ask(.none):
+            // IOS11: 问一问 opens the conversation history; opening or sending
+            // a conversation is wired by the conversation unit (IOS10).
+            ConversationHistoryView(
+                model: .live(), now: Date(), calendar: .current,
+                onBack: { dismiss() },
+                onOpen: { _ in },
+                onSend: { _ in },
+                onAddImage: {}
+            )
+        case .profile:
+            ProfileMenuView(onOpenConnection: onOpenConnection)
+        case .captureStatus:
+            CaptureSyncScreen(onOpenConnection: onOpenConnection)
+        default:
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                MoteMark()
+                Text(destination.title)
+                    .font(MoteFont.title)
+                    .foregroundStyle(MoteDesignTokens.ink.color)
+                if case .ask(let scope?) = destination {
+                    HStack(spacing: 8) {
+                        Text(scope.title)
+                            .font(MoteFont.secondary)
+                            .foregroundStyle(MoteDesignTokens.ink.color)
+                            .lineLimit(1)
+                        Button("清除范围", action: onClearScope)
+                            .font(MoteFont.smallAction)
+                            .frame(minHeight: MoteMetrics.touchTarget)
                     }
+                    .accessibilityElement(children: .contain)
+                }
+                Text("此功能将在后续版本提供")
+                    .font(MoteFont.secondary)
+                    .foregroundStyle(MoteDesignTokens.muted.color)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(MoteDesignTokens.background.color)
+            .navigationTitle(destination.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var unavailable: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                MoteMark()
+                Text("草稿未能打开")
+                    .font(MoteFont.title)
+                    .foregroundStyle(MoteDesignTokens.danger.color)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(MoteDesignTokens.background.color)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { dismiss() }
                 }
             }
         }
