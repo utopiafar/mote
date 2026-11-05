@@ -19,6 +19,7 @@ targets:
     platform: iOS
     sources:
       - App
+      - Share/SharePanel.swift
     dependencies:
       - package: MoteKit
         product: MoteDesign
@@ -28,6 +29,8 @@ targets:
         product: MoteCentral
       - package: MoteKit
         product: MoteStorage
+      - target: MoteShare
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios
@@ -41,6 +44,27 @@ targets:
       configs:
         Debug:
           INFOPLIST_PREPROCESSOR_DEFINITIONS: MOTE_DEVELOPMENT=1
+  MoteShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Share
+    dependencies:
+      - package: MoteKit
+        product: MoteDesign
+      - package: MoteKit
+        product: MoteCentral
+      - package: MoteKit
+        product: MoteStorage
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.share
+        PRODUCT_NAME: MoteShare
+        CODE_SIGN_ENTITLEMENTS: Share/MoteShare.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Share/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: 保存到 Mote
+        SKIP_INSTALL: YES
   MoteUITests:
     type: com.apple.product-type.bundle.ui-testing
     platform: iOS
