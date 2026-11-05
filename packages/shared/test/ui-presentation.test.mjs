@@ -74,14 +74,12 @@ test('clients preserve shared destination identities and the final platform-spec
   const repo=new URL('../../../',import.meta.url),read=path=>readFileSync(new URL(path,repo),'utf8');
   const glyphs=Object.values(uiDestinationPresentation).map(item=>item.icon);
   assert.equal(new Set(glyphs).size,glyphs.length,'Each destination needs its own glyph');
-  // The final Mac workspace intentionally says 工作台/内容. Its underlying
-  // destinations still match the shared contract before the renderer mounts.
   const html=read('apps/desktop/src/index.html'),mainNav=html.slice(html.indexOf('<nav class="main-nav"'),html.indexOf('</nav>'));
-  const macLabels={home:'工作台',library:'内容'},macRoutes={home:'overview',library:'records',sources:'sources',ask:'ask'};
+  const macRoutes={home:'overview',library:'records',sources:'sources',ask:'ask'};
   assert.deepEqual([...mainNav.matchAll(/data-nav="([^"]+)"/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>macRoutes[id]));
-  assert.deepEqual([...mainNav.matchAll(/<span data-i18n>([^<]+)<\/span>/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>macLabels[id]??uiDestinationPresentation[id].label));
-  assert.match(html,/data-nav="work"[^>]*>.*?<span data-i18n>同步与活动<\/span>/);
-  assert.deepEqual(desktopUiLayout.secondary,['connections','activity'],'Web and Mac keep AI access and activity in the lower navigation region');
+  assert.deepEqual([...mainNav.matchAll(/<span data-i18n>([^<]+)<\/span>/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>uiDestinationPresentation[id].label));
+  assert.match(html,/data-nav="settings"[^>]*>.*?<span data-i18n>设置<\/span>/);
+  assert.deepEqual(desktopUiLayout.secondary,['connections','activity'],'Web keeps AI access and activity in the lower navigation region');
   // Android declares its tabs natively; route ids map to the same destinations.
   const kotlin=read('apps/android/app/src/main/java/dev/mote/collector/PrimaryNavigation.kt');
   const tabs=Object.fromEntries([...kotlin.matchAll(/^\s+[A-Z]+\("([^"]+)", "[^"]+", "[A-Z]+", "([a-z]+)"\)/gm)].map(match=>[match[2],match[1]]));

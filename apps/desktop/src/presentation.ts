@@ -33,8 +33,8 @@ function createPresentationScope(root:HTMLElement){
 }
 export const desktopDestination:Record<UiDestination,DesktopPage>={home:'overview',library:'records',ask:'ask',sources:'sources',activity:'work',connections:'connection'};
 // The desktop connection destination is the central/device link, not Agent access.
-const labels:Record<UiDestination,string>={...Object.fromEntries(Object.entries(uiDestinationPresentation).map(([id,item])=>[id,item.label])) as Record<UiDestination,string>,home:'工作台',library:'内容',activity:'同步与活动',connections:'连接与设备'};
-export const desktopIconSymbols:Record<UiDestinationIcon,string>={home:'home',library:'storage',ask:'ask',sources:'link',agent:'access',activity:'activity'};
+const labels:Record<UiDestination,string>={...Object.fromEntries(Object.entries(uiDestinationPresentation).map(([id,item])=>[id,item.label])) as Record<UiDestination,string>,activity:'同步与活动',connections:'连接与设备'};
+export const desktopIconSymbols:Record<UiDestinationIcon,string>={home:'home',library:'layers',ask:'ask',sources:'plug',agent:'access',activity:'activity'};
 
 /** Presentation receives stable DOM slots and navigation commands, never the preload API.
  * Replacing it cannot recreate editors, restart work, or acquire platform capabilities. */
