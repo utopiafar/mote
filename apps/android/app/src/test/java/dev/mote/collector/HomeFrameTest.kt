@@ -21,6 +21,12 @@ class HomeFrameTest {
         assertFalse("Ask has its own destination", HomeFrame.captureEntries.contains(MoteQuickEntry.ASK))
     }
 
+    @Test fun topBarDoesNotReserveMoreThanTheDesignTopArea() {
+        assertEquals((HomeFrame.TOP_BAR_TOP_DP * 2.625f).toInt(), HomeFrame.topBarTop(132, 2.625f))
+        assertEquals(63, HomeFrame.topBarTop(63, 2.625f))
+        assertEquals(0, HomeFrame.topBarTop(0, 2.625f))
+    }
+
     @Test fun normalCaptureStaysOffTheHome() {
         assertFalse(HomeFrame.showsCaptureNotice(CaptureOverview.Kind.HIDDEN))
         assertFalse(HomeFrame.showsCaptureNotice(CaptureOverview.Kind.ACTIVE))

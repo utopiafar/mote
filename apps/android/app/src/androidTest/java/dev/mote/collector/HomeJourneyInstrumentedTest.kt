@@ -130,6 +130,12 @@ class HomeJourneyInstrumentedTest {
                         assertTrue("Ask sits above the quick records in the thumb zone", ask[1] < record[1])
                     }
                     capture(home, "home-regular-" + appearance.name.lowercase())
+                    scenario.onActivity { activity ->
+                        val navigation = shown(activity).filterIsInstance<MotePrimaryNavigation>().single()
+                        val location = IntArray(2); navigation.getLocationOnScreen(location)
+                        assertEquals("The dock surface reaches the bottom edge behind the navigation bar", activity.window.decorView.height, location[1] + navigation.height)
+                        assertTrue("The dock keeps the navigation-bar inset as inner padding", navigation.paddingBottom >= activity.moteDp(24))
+                    }
                     // H04: one retained draft changes the record label and still opens that same editor.
                     context.recordDraftStore().edit("Generated home draft", JSONArray(), JSONObject().put("kind", "manual"))
                     scenario.recreate()

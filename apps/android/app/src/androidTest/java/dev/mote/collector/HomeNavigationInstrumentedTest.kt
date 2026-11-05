@@ -113,6 +113,21 @@ class HomeNavigationInstrumentedTest {
             }
             settings.save(settings.read().copy(server = "", token = "", debugHttp = false), confirmCentralEndpoint = true)
         }
+        // The no-draft first-use capture must not inherit a retained draft from a previous journey.
+        context.recordDraftStore().edit("", JSONArray(), JSONObject().put("kind", "manual"))
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            waitFor(scenario, "First use without a draft shows the record action") { activity ->
+                shown(activity).any { it.tag == "home-first-use-guide" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
+            }
+            screenshot(scenario, "home-first-use")
+            MoteAppearance.select(context, AppearancePreference.DARK)
+            scenario.recreate(); scenario.awaitMainUi()
+            waitFor(scenario, "First use without a draft keeps the record action in dark") { activity ->
+                shown(activity).any { it.tag == "home-first-use-guide" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
+            }
+            screenshot(scenario, "home-first-use-dark")
+            MoteAppearance.select(context, AppearancePreference.LIGHT)
+        }
         context.recordDraftStore().edit("生成的本机草稿", JSONArray(), JSONObject().put("kind", "manual"))
         try { ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             waitFor(scenario, "Unconnected local drafts remain available") { shown(it).any { row -> row.contentDescription == "继续草稿" } }

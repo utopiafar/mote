@@ -21,6 +21,10 @@ internal object HomeFrame {
     /** H04: one draft changes only the record label; the action still opens the same editor. */
     fun recordLabel(hasDraft: Boolean): String = MoteI18n.text(if (hasDraft) "继续草稿" else "记录")
 
+    /** The design's 36dp top area; a taller status/cutout frame must not push the 56dp bar deeper. */
+    const val TOP_BAR_TOP_DP = 36
+    fun topBarTop(systemTop: Int, density: Float): Int = minOf(systemTop, (TOP_BAR_TOP_DP * density).toInt())
+
     /** H05: the capture mode handed to the editor, or null for entries that only open the editor. */
     fun startMedia(entry: MoteQuickEntry): String? = entry.takeIf { it in captureEntries }?.media
 

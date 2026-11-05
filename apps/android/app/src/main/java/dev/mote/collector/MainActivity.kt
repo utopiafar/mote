@@ -234,7 +234,7 @@ class MainActivity : MoteActivity() {
         connectionSettingsExpanded = connectionSettingsExpanded && retained?.config?.let { it.server == config.server && it.connectionToken() == config.connectionToken() } == true
         loadedServer = config.server; loadedConfig = config
         settingsSummaries.committed(config.settingsSummary())
-        val root = NativeAppShell(this).apply { moteInsets() }
+        val root = NativeAppShell(this).apply { moteInsets(topBar = true) }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(MoteTheme.spacePage), 0, dp(MoteTheme.spacePage), 0) }
         headerHeading = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         headerActions = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }

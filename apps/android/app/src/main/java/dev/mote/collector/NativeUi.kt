@@ -245,9 +245,23 @@ class MoteNavigationIcon(context: Context, kind: String, private val active: Boo
 class MotePrimaryNavigation(private val activity: Activity, private val onSelect: (MotePrimaryTab) -> Unit) : LinearLayout(activity) {
     private var selected = MotePrimaryTab.HOME
     private var hasDraft = false
+    private var navigationBarInset = 0
     private lateinit var record: LinearLayout
     private lateinit var recordLabel: TextView
     init { setWillNotDraw(false); refreshPresentation() }
+    /** The dock surface owns its own bottom inset instead of leaving a background strip below it. */
+    fun navigationBarInset(value: Int) {
+        if (navigationBarInset == value) return
+        navigationBarInset = value
+        applyDockPadding()
+    }
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (changedView === this) (parent as? NativeAppShell)?.navigationVisibilityChanged()
+    }
+    private fun applyDockPadding() {
+        setPadding(activity.moteDp(16), activity.moteDp(12), activity.moteDp(16), activity.moteDp(24) + navigationBarInset)
+    }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val line = Paint().apply { color = NativeColorRole.HAIR.color(); strokeWidth = resources.displayMetrics.density }
@@ -257,7 +271,7 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
         removeAllViews()
         orientation = VERTICAL; isBaselineAligned = false
         // H02: a full-width Ask capsule, then the ink record action and the two icon-only capture entries.
-        setPadding(activity.moteDp(16), activity.moteDp(12), activity.moteDp(16), activity.moteDp(24))
+        applyDockPadding()
         MoteUi.backgroundColor(this, NativeColorRole.SURFACE)
         contentDescription = MoteI18n.text("记录与提问")
         val ask = LinearLayout(activity).apply {
