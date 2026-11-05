@@ -176,7 +176,7 @@ internal object GeneratedWindowRendering {
             "home-first-use-draft", "home-first-use-draft-dark" -> Triple("home", "first-use-draft", "连接你的 Mote")
             "capture-context-local" -> Triple("capture", "local-context", "采集来源说明")
             "ask-turn-details" -> Triple("ask", "turn-details", "本轮详情")
-            "home-connected-empty" -> Triple("home", "connected-empty", "已连接你的 Mote")
+            "home-connected-empty" -> Triple("home", "connected-empty", "问一问")
             "connection-entry" -> Triple("connection", "empty", "把记录接到一起")
             "connection-review" -> Triple("connection", "review", "这是你的 Mote 吗？")
             "connection-default-light", "connection-default-dark", "connection-collapsed-draft-light", "connection-new-owner-default" -> Triple("connection", "default-disclosure", "扫码或导入邀请")

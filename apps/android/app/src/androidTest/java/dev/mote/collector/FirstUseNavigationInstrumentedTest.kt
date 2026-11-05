@@ -30,7 +30,8 @@ class FirstUseNavigationInstrumentedTest {
     private fun activity(): Activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).single()
     private fun shown() = views(activity().window.decorView).filter { it.isShown }
     private fun until(label: String, check: () -> Boolean) { val end=SystemClock.elapsedRealtime()+20_000; while(SystemClock.elapsedRealtime()<end) { if(main { if(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).isEmpty()) false else check() }) return; Thread.sleep(50) }; fail(label+": "+main { shown().filterIsInstance<TextView>().joinToString(" | ") { it.text.toString() } }) }
-    private fun click(label: String) { until(label) { shown().filterIsInstance<TextView>().any { it.isEnabled && it.isClickable && (it.text.toString()==label || it.contentDescription?.toString()==label) } }; main { shown().filterIsInstance<TextView>().first { it.isEnabled && it.isClickable && (it.text.toString()==label || it.contentDescription?.toString()==label) }.performClick() } }
+    private fun View.named(label: String) = isEnabled && isClickable && (this is TextView && text.toString()==label || contentDescription?.toString()==label)
+    private fun click(label: String) { until(label) { shown().any { it.named(label) } }; main { shown().first { it.named(label) }.performClick() } }
     private fun screenshot(name: String) {
         val frames=java.util.concurrent.CountDownLatch(1); main { activity().window.decorView.postOnAnimation { activity().window.decorView.postOnAnimation { frames.countDown() } } }; assertTrue(frames.await(5,java.util.concurrent.TimeUnit.SECONDS))
         main { val a=activity(); assertTrue(a.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0); val root=a.window.decorView
@@ -47,7 +48,8 @@ class FirstUseNavigationInstrumentedTest {
         val original="Generated first offline thought: leave the afternoon unplanned."
         val description="Generated diary context; no Central or model is required."
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use {
-            until("Actual empty first use") { shown().any { it.tag == "home-first-use-guide" } }; screenshot("first-open")
+            until("Actual empty first use") { shown().any { it.tag == "home-notice-connect" } }; screenshot("first-open")
+            click("连接"); until("Connection entry") { activity() is ConnectionActivity }
             click("还没有自己的 Mote？"); until("Install help") { activity() is StartUsingActivity }; screenshot("install-help")
             click("复制给安装助手")
             assertEquals(StartUsingActivity.INSTALL_PROMPT,main { context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString() })
@@ -56,6 +58,8 @@ class FirstUseNavigationInstrumentedTest {
             main { shown().filterIsInstance<EditText>().single { it.contentDescription=="正在想什么" }.setText(original) }; click("资料说明")
             main { shown().filterIsInstance<EditText>().single { it.tag=="record-description" }.setText(description) }; screenshot("first-editor")
             assertEquals(0,context.queue().depth()); click("保存")
+            until("Saved editor returns to the connection entry") { activity() is ConnectionActivity }
+            click("稍后连接")
             until("Local receipt after explicit save") { activity() is MainActivity && shown().filterIsInstance<TextView>().any { it.text.toString()=="• 本机已保存" } }; screenshot("local-saved-receipt")
             main {
                 assertFalse(shown().filterIsInstance<TextView>().any { it.text.toString() in setOf("先留下，再慢慢想。", "最近留下的内容") })
