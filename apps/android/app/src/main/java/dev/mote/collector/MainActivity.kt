@@ -1755,7 +1755,7 @@ class MainActivity : MoteActivity() {
         }
         val captureState = state + if (c?.screenCollectionEnabled == true && settings.enabled) "\n" + MoteI18n.text("屏幕采集：{0}", settings.screenStatus()) else ""
         val overview = c?.let { config -> runCatching { CaptureOverview.line(CaptureOverview.facts(this, settings, config, local)) }.getOrNull() }
-        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureAttention.show(settings.enabled, settings.state(), live, missingSource, queueFull), overview)
+        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, queueFull), overview)
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))
