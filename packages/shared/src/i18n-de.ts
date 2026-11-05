@@ -1,10 +1,11 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
+  "昨天": "Gestern",
+  "离开页面会停止录音，并保留草稿。": "Beim Verlassen dieser Seite wird die Aufnahme gestoppt und der Entwurf gespeichert.",
   "网页": "Web",
   "截图与照片": "Screenshots und Fotos",
   "网页与文件": "Webseiten und Dateien",
   "按时间回看": "Nach Datum ansehen",
-  "昨天": "Gestern",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "Zum Beispiel: Dies sind meine Gespräche zur Projektentwicklung mit einem Coding Agent, einschließlich der Werkzeugausführung.",
   "查看已生效日程和设备写入状态": "Übernommene Termine und den Schreibstatus der Geräte ansehen",
   "例如：这是我的工作日历，日程不代表实际参加。": "Zum Beispiel: Dies ist mein Arbeitskalender; ein Termin belegt keine tatsächliche Teilnahme.",
@@ -243,7 +244,6 @@ export const german: Readonly<Record<string, string>> = {
   "保存分享": "Geteilten Inhalt speichern",
   "引用与我的补充分开保存": "Das zitierte Original und mein Kommentar werden getrennt gespeichert",
   "未保存的草稿": "Ungespeicherter Entwurf",
-  "离开页面会停止录音，并保留草稿。": "Beim Verlassen dieser Seite wird die Aufnahme gestoppt und der Entwurf gespeichert.",
   "连接管理": "Verbindungsverwaltung",
   "检查结果": "Ergebnis prüfen",
   "先留下，再慢慢想。": "Erst festhalten, dann in Ruhe nachdenken.",
@@ -8857,6 +8857,7 @@ export const german: Readonly<Record<string, string>> = {
   "目标节点已变化，请确认本机记录归属。": "Das Ziel hat sich geändert. Bestätigen Sie, wohin diese lokale Aufzeichnung gehört.",
   "权限未授予": "Berechtigung nicht erteilt",
   "播放": "Abspielen",
+  "录音失败": "Aufnahme fehlgeschlagen",
   "停止录音": "Aufnahme stoppen",
   "文件与文件夹": "Dateien und Ordner",
   "本机日历与其他来源": "Lokale Kalender und andere Quellen",

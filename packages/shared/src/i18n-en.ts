@@ -1,10 +1,11 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "昨天": "Yesterday",
+  "离开页面会停止录音，并保留草稿。": "Leaving this page stops recording and keeps the draft.",
   "网页": "Web",
   "截图与照片": "Screenshots and photos",
   "网页与文件": "Web pages and files",
   "按时间回看": "Browse by date",
-  "昨天": "Yesterday",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "For example: These are my project development conversations with a Coding Agent, including tool activity.",
   "查看已生效日程和设备写入状态": "View calendar events in effect and device write status",
   "例如：这是我的工作日历，日程不代表实际参加。": "For example: this is my work calendar; an event does not prove that I attended.",
@@ -243,7 +244,6 @@ export const english: Readonly<Record<string, string>> = {
   "保存分享": "Save shared content",
   "引用与我的补充分开保存": "The quoted original and my comment are saved separately",
   "未保存的草稿": "Unsaved draft",
-  "离开页面会停止录音，并保留草稿。": "Leaving this page stops recording and keeps the draft.",
   "连接管理": "Connection management",
   "检查结果": "Check result",
   "先留下，再慢慢想。": "Save first. Take your time.",
@@ -8857,6 +8857,7 @@ export const english: Readonly<Record<string, string>> = {
   "目标节点已变化，请确认本机记录归属。": "The destination changed. Confirm where this local record belongs.",
   "权限未授予": "Permission not granted",
   "播放": "Play",
+  "录音失败": "Recording failed",
   "停止录音": "Stop recording",
   "文件与文件夹": "Files and folders",
   "本机日历与其他来源": "Local calendars and other sources",
