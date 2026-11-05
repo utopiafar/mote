@@ -119,7 +119,7 @@ export interface DesktopApi {
   captureDetail(location: import('./contracts/content').CaptureLocation, id: string): Promise<import('./contracts/content').BrowserDetail>;
   captureImage(location: import('./contracts/content').CaptureLocation, id: string, thumbnail: boolean): Promise<string>;
   installedApplications(): Promise<{ appId: string; appName: string; appVersion?: string }[]>;
-  onNavigate(callback: (page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start') => void): () => void;
+  onNavigate(callback: (page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start' | 'permissions' | 'storage' | 'sync' | 'connection') => void): () => void;
   previewConnection(input: string): Promise<import('./contracts/connection').ConnectionPreview>;
   importConnection(kind: 'json' | 'qr'): Promise<{ canceled: boolean; preview?: import('./contracts/connection').ConnectionPreview }>;
   cancelConnection(): Promise<void>;
