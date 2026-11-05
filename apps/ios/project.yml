@@ -34,6 +34,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: 拍摄照片并添加到当前草稿
   MoteUITests:
     type: com.apple.product-type.bundle.ui-testing
     platform: iOS

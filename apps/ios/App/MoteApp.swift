@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import MoteDesign
+import MoteStorage
 
 final class MoteAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
@@ -13,6 +15,11 @@ struct MoteApp: App {
     @UIApplicationDelegateAdaptor(MoteAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     private let arguments = ProcessInfo.processInfo.arguments
+    private let editorStore: EditorDraftStore?
+
+    init() {
+        editorStore = try? MoteStorage.editorDraftStore()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -26,11 +33,14 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteHistoryPreview") {
                     ConversationHistoryPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteEditorPreview") {
+                    editorPreview
+                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteReaderPreview") {
                     OriginalPreview()
                         .preferredColorScheme(previewScheme)
                 } else {
-                    HomeRootView()
+                    HomeRootView(arguments: arguments, editorStore: editorStore)
                 }
             }
             .task {
@@ -41,6 +51,16 @@ struct MoteApp: App {
             if phase == .active {
                 Task { await AppSendPipeline.shared.reconcileAndSend() }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var editorPreview: some View {
+        if let editorStore {
+            EditorFlowView(store: editorStore, arguments: arguments)
+        } else {
+            Text("草稿未能打开")
+                .foregroundStyle(MoteDesignTokens.danger.color)
         }
     }
 
