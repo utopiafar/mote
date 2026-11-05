@@ -10138,5 +10138,9 @@ export const spanish: Readonly<Record<string, string>> = {
   "采集中 · 发送已暂停": "Capturando · Envío en pausa",
   "采集中 · 发送需要处理": "Capturando · El envío requiere atención",
   "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
-  "发送失败": "Error al enviar"
+  "发送失败": "Error al enviar",
+  "等待采集权限 · 屏幕录制": "Esperando permiso de captura · Grabación de pantalla",
+  "Chrome 页面": "Páginas de Chrome",
+  "暂停发送": "Pausar envío",
+  "待发送 {0} 条": "Envíos pendientes: {0}"
 };

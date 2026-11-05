@@ -10137,5 +10137,9 @@
   "采集中 · 发送已暂停": "Collecte en cours · Envoi en pause",
   "采集中 · 发送需要处理": "Collecte en cours · L’envoi nécessite une intervention",
   "新的记录暂时无法保存": "Les nouveaux enregistrements ne peuvent pas être enregistrés pour le moment",
-  "发送失败": "Échec de l’envoi"
+  "发送失败": "Échec de l’envoi",
+  "等待采集权限 · 屏幕录制": "En attente de l'autorisation de capture · Enregistrement de l'écran",
+  "Chrome 页面": "Pages Chrome",
+  "暂停发送": "Suspendre l'envoi",
+  "待发送 {0} 条": "Envois en attente : {0}"
 }

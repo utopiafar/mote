@@ -28,6 +28,14 @@
     <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 7V4h7l3 3h8v13H3Z"/></symbol>
     <symbol id="icon-import" viewBox="0 0 24 24"><path d="M13 3H5v18h14V9l-6-6Zm0 0v6h6M8 14h8m-3-3 3 3-3 3"/></symbol>
     <symbol id="icon-ask" viewBox="0 0 24 24"><path d="M7 18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7l-5 4Zm0-10h10M7 12h7"/></symbol>
+    <symbol id="icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.5 3.5 5.4 3.5 8.5s-1.1 6-3.5 8.5c-2.4-2.5-3.5-5.4-3.5-8.5s1.1-6 3.5-8.5z"/></symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="icon-send" viewBox="0 0 24 24"><path d="M12 14.5V4.5M7.5 9 12 4.5 16.5 9"/><path d="M5 14v5.5h14V14"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 2"/></symbol>
+    <symbol id="icon-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9.5" rx="1.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
+    <symbol id="icon-disk" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 14h16M7.5 16.5h1"/></symbol>
   </defs></svg>
   <aside class="sidebar" aria-label="主导航" data-i18n-aria-label="">
     <div class="brand"><span class="brand-icon" aria-hidden="true">m</span><strong>Mote</strong></div>
@@ -64,7 +72,7 @@
       <section class="home-ask"><h2 data-i18n>想从留下的内容里找什么？</h2><form id="home-ask-form" class="home-composer"><label class="visually-hidden" for="home-question" data-i18n>问题</label><textarea id="home-question" rows="2" maxlength="8000" placeholder="问一问…" data-i18n-placeholder=""></textarea><button id="home-ask-submit" class="primary" type="submit" disabled data-i18n>提问</button></form></section>
       <section class="home-section"><div class="section-heading"><h2 data-i18n>最近对话</h2><button class="text-button" data-nav="ask" type="button" data-i18n>对话历史 →</button></div><div id="home-conversations" class="home-conversations" aria-live="polite"></div></section>
       <section class="home-section"><div class="section-heading"><h2 data-i18n>最近留下的内容</h2><button class="text-button" data-nav="records" type="button" data-i18n>查看全部 →</button></div><div id="home-recent" class="content-feed" aria-live="polite"></div></section>
-      <div class="home-quiet"><span id="home-collection-summary" aria-live="polite" data-i18n>正在读取本机状态…</span><button class="text-button" data-nav="settings" type="button" data-i18n>本机采集与同步 →</button></div>
+      <div class="home-quiet"><span id="home-collection-summary" aria-live="polite" data-i18n>正在读取本机状态…</span><button class="text-button" data-nav="capture-sync" type="button" data-i18n>本机采集与同步 →</button></div>
     </section>
     <section data-page="screen" class="page" hidden>
       <header class="page-header"><div><h1 tabindex="-1" data-page-title data-i18n>记录屏幕</h1></div></header>
@@ -158,6 +166,67 @@
     <dialog id="source-context-dialog" class="source-context-dialog"><h2 data-i18n>资料说明</h2><p id="source-context-scope" class="helper" data-i18n>适用于这个来源的已有与后续资料。</p><textarea id="source-context-description" rows="5" maxlength="12000" aria-label="资料说明" data-i18n-aria-label=""></textarea><p id="source-context-message" class="helper" role="status"></p><details id="source-context-current" hidden><summary data-i18n>中央当前说明</summary><p id="source-context-current-text"></p></details><div class="actions"><button id="source-context-cancel" class="secondary" type="button" data-i18n>取消</button><button id="source-context-refresh" class="secondary" type="button" data-i18n>重新核对</button><button id="source-context-save" class="primary" type="button" data-i18n>保存</button></div></dialog>
 
     <section data-page="statistics" class="page" hidden><header class="page-header"><div><h1 tabindex="-1" data-page-title><span data-i18n>统计中心</span></h1></div><button id="storage-refresh" type="button" data-i18n>刷新</button></header><div id="storage-statistics" role="status"></div></section>
+    <section data-page="capture-sync" class="page capture-sync-page" hidden>
+      <header class="page-header"><div><h1 tabindex="-1" data-page-title data-i18n>采集与同步</h1></div></header>
+      <div class="capture-sync-groups">
+        <section class="capture-sync-group" aria-label="来源" data-i18n-aria-label="">
+          <div class="capture-sync-row" data-capture-sync-source="screen">
+            <svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>屏幕与应用</strong><small id="capture-sync-screen-state"></small></span>
+            <button id="capture-sync-screen-settings" class="secondary capture-sync-action" type="button" data-i18n>打开系统设置</button>
+            <button id="capture-sync-screen-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="屏幕与应用" data-i18n-aria-label="" hidden></button>
+          </div>
+          <div class="capture-sync-row" data-capture-sync-source="chrome">
+            <svg class="icon" aria-hidden="true"><use href="#icon-globe"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>Chrome 页面</strong><small id="capture-sync-chrome-state"></small></span>
+            <button id="capture-sync-chrome-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="Chrome 页面" data-i18n-aria-label=""></button>
+          </div>
+          <div class="capture-sync-row" data-capture-sync-source="calendar">
+            <svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>日历</strong><small id="capture-sync-calendar-state"></small></span>
+            <button id="capture-sync-calendar-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="日历" data-i18n-aria-label=""></button>
+          </div>
+          <button class="capture-sync-row" type="button" data-capture-sync-source="folders" data-nav="sources">
+            <svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>同步文件夹</strong></span>
+            <span id="capture-sync-folder-count" class="capture-sync-value"></span><span class="chevron" aria-hidden="true">›</span>
+          </button>
+          <button id="capture-sync-add-source" class="capture-sync-row capture-sync-add" type="button" data-capture-sync-source="add">
+            <svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>添加来源</strong></span>
+          </button>
+        </section>
+        <section class="capture-sync-group" aria-label="发送" data-i18n-aria-label="">
+          <div class="capture-sync-row" data-capture-sync-send="central">
+            <svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg>
+            <span class="capture-sync-copy"><strong id="capture-sync-host"></strong><small id="capture-sync-send-state"></small></span>
+            <button id="capture-sync-send-now" class="secondary capture-sync-action" type="button" data-i18n>立即发送</button>
+          </div>
+          <button class="capture-sync-row" type="button" data-nav="sync">
+            <svg class="icon" aria-hidden="true"><use href="#icon-clock"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>发送方式</strong></span>
+            <span id="capture-sync-mode" class="capture-sync-value"></span><span class="chevron" aria-hidden="true">›</span>
+          </button>
+          <div class="capture-sync-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-pause"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>暂停发送</strong></span>
+            <button id="capture-sync-pause" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="暂停发送" data-i18n-aria-label=""></button>
+          </div>
+        </section>
+        <section class="capture-sync-group" aria-label="本机设置" data-i18n-aria-label="">
+          <button class="capture-sync-row" type="button" data-nav="privacy">
+            <svg class="icon" aria-hidden="true"><use href="#icon-lock"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>隐私与过滤</strong></span>
+            <span class="chevron" aria-hidden="true">›</span>
+          </button>
+          <button class="capture-sync-row" type="button" data-nav="storage">
+            <svg class="icon" aria-hidden="true"><use href="#icon-disk"/></svg>
+            <span class="capture-sync-copy"><strong data-i18n>本机存储</strong></span>
+            <span id="capture-sync-storage" class="capture-sync-value"></span><span class="chevron" aria-hidden="true">›</span>
+          </button>
+        </section>
+      </div>
+    </section>
     <section data-page="settings" class="page" hidden>
       <header class="page-header"><div><h1 tabindex="-1" data-page-title><span data-i18n>设置</span></h1></div></header><label class="language-selector"><span data-i18n>外观</span><select id="appearance"><option value="light" data-i18n>浅色</option><option value="dark" data-i18n>深色</option><option value="auto" data-i18n>跟随系统</option></select><span id="appearance-error" role="status" hidden data-i18n>无法保存外观偏好，请重试。</span></label><label class="language-selector"><span data-i18n>界面语言</span><select id="language"><option value="system" data-i18n>跟随系统</option><option value="zh-CN">中文</option><option value="en">English</option><option value="ja">日本語</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="es">Español</option><option value="ru">Русский</option></select></label>
       <div class="settings-group-label"><span data-i18n>偏好设置</span></div>
