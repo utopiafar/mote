@@ -13,7 +13,7 @@ interface StoredDraft { draft: NoteDraft; submission?: CaptureEvent; targetOrigi
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function emptyDraft(): NoteDraft { return { id: randomUUID(), text: '', mood: '', description: '', revision: 0 }; }
 function validateDraft(value: NoteDraft): void {
-  if (!value || !uuid.test(value.id) || typeof value.text !== 'string' || typeof value.mood !== 'string' || typeof value.description !== 'string' || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error(moteText("随手记草稿格式无效"));
+  if (!value || !uuid.test(value.id) || typeof value.text !== 'string' || typeof value.mood !== 'string' || typeof value.description !== 'string' || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error(moteText("记录草稿格式无效"));
   if (value.text.length > 20000) throw new Error(moteText("正文最多 20000 个字符位，部分表情占多个字符位；原草稿未改动"));
   if (value.mood.length > 80) throw new Error(moteText("心情最多 80 个字符位，部分表情占多个字符位；原草稿未改动"));
   if (value.description.length > 12000) throw new Error(moteText('资料说明最多 12000 个字符位；原草稿未改动。'));
@@ -37,7 +37,7 @@ export class NoteDraftStore {
       if (value.completed && (!uuid.test(value.completed.draftId) || !uuid.test(value.completed.eventId))) throw new Error('invalid completion');
       if (value.submission && (value.submission.id !== value.draft.id || value.submission.source !== 'note' || value.submission.ocrText !== value.draft.text || (value.submission.metadata?.ownerDescription??'')!==(value.draft.description.trim()?value.draft.description:'') || typeof value.targetOrigin !== 'string')) throw new Error('invalid prepared note');
       this.value = value;
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("随手记草稿无法读取；请先备份草稿文件再修复")); await this.persist(this.value); }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("记录草稿无法读取；请先备份草稿文件再修复")); await this.persist(this.value); }
     for (const name of await readdir(this.directory)) if (name.endsWith('.tmp') && uuid.test(name.slice(0, -4))) await unlink(join(this.directory, name));
   }
   get(): NoteDraft { return { ...this.value.draft, prepared: Boolean(this.value.submission) }; }
@@ -71,7 +71,7 @@ export class NoteDraftStore {
       validateDraft(input);
       if (this.value.completed?.draftId === input.id) return { id: this.value.completed.eventId, draft: this.get() };
       if (input.id !== this.value.draft.id) throw new Error(moteText("草稿已更新，此提交不会重复创建记录"));
-      if (!input.text.trim()) throw new Error(moteText("请填写随手记正文，不能只有空白"));
+      if (!input.text.trim()) throw new Error(moteText("请填写记录正文，不能只有空白"));
       if (input.mood && !input.mood.trim()) throw new Error(moteText("心情不能只有空白；清空心情后也可以保存"));
       if (input.revision < this.value.draft.revision) throw new Error(moteText("提交版本已过期，请重新保存当前草稿"));
       if (this.value.submission) {
@@ -83,7 +83,7 @@ export class NoteDraftStore {
         // Explicit owner text is independent of optional device observations and the original body.
         const metadata = input.description.trim()?{version:1 as const,observedAt:capturedAt,collector:{method:'manual' as const},...observed,ownerDescription:input.description}:observed;
         const submission: CaptureEvent = { id: input.id, deviceId: config.deviceId, deviceName: config.deviceName, platform,
-          capturedAt, durationMs: 0, appId: 'dev.mote.notes', appName: moteText("随手记"), source: 'note',
+          capturedAt, durationMs: 0, appId: 'dev.mote.notes', appName: moteText("记录"), source: 'note',
           ocrText: input.text, ...(metadata ? { metadata } : {}), ...(input.mood ? { mood: input.mood } : {}), privacy: { excluded: false, redacted: false, mode: 'none' } };
         await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, description: input.description, revision: input.revision }, submission, targetOrigin: config.serverUrl && config.token ? config.serverUrl : '' });
       }

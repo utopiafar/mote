@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom';
 import { AnswerMarkdown, answerPreview } from '../src/plugins/ask/AnswerMarkdown.js';
 import type { Answer } from '../src/api.js';
 const id='11111111-1111-4111-8111-111111111111';
-const answer:Answer={answer:'',runId:'fixture',trace:[],citations:[{id,appName:'合成随手记',capturedAt:'2026-09-12T00:00:00Z',excerpt:'合成原文'}]};
+const answer:Answer={answer:'',runId:'fixture',trace:[],citations:[{id,appName:'合成记录',capturedAt:'2026-09-12T00:00:00Z',excerpt:'合成原文'}]};
 const render=(text:string)=>renderToStaticMarkup(React.createElement(AnswerMarkdown,{answer:{...answer,answer:text},onOpen:()=>{}}));
 test('verified citations become accessible local evidence controls inside prose and lists',()=>{
   const html=render(`最终决定 [${id}]。\n\n- 复核 [${id}]`);

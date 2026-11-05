@@ -2,7 +2,7 @@ import { moteText } from '@mote/shared/i18n';
 import type {RecordMetadata, SourceMetadata} from '@mote/shared';
 import {bytes, dateTime} from './api';
 
-export const sourceLabels: Record<string,string> = {ui_page:moteText("页面内容采集"),screen:moteText("屏幕采样"),activity:moteText("应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("随手记"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
+export const sourceLabels: Record<string,string> = {ui_page:moteText("页面内容采集"),screen:moteText("屏幕采样"),activity:moteText("应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("记录"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
 export const activityExplanation = moteText("这条记录仅包含前台应用与采样时长。截图和结构化内容按该应用的独立选项保存。时长存在采样空隙，不代表完整使用历史。");
 type Row = [string, string | number | boolean | undefined];
 const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? moteText("是") : moteText("否");

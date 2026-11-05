@@ -14,7 +14,7 @@ export const pages: PageEntry[] = [
   {
     id: 'notes',
     route: 'library/notes',
-    label: moteText('随手记'),
+    label: moteText('记录'),
     section: 'library',
     order: 5,
     featureId: 'mote.notes',

@@ -72,6 +72,6 @@ export class ConnectionOnboarding {
 }
 export function assertConnectionChangeSafe(state: { running: boolean; inFlight: boolean; queued: number; preparedNote: boolean; sourcePending: number; sourceInFlight: boolean }, sameNodeInvitation = false): void {
   if (state.running) throw new Error(moteText("请先停止采集，再更换连接"));
-  if (!sameNodeInvitation && (state.queued || state.preparedNote || state.sourcePending)) throw new Error(moteText("还有待上传截图、随手记或来源版本，不能更换节点或凭据；请先完成上传或备份处理旧队列"));
+  if (!sameNodeInvitation && (state.queued || state.preparedNote || state.sourcePending)) throw new Error(moteText("还有待上传截图、记录或来源版本，不能更换节点或凭据；请先完成上传或备份处理旧队列"));
   if (state.inFlight || state.sourceInFlight) throw new Error(moteText("当前采集、上传或来源同步尚未结束，请稍后重试连接"));
 }

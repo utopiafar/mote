@@ -179,7 +179,7 @@ export class NotesController {
       const note = this.#outbox.prepareSubmission(this.#state.draft, {
         id: this.#createId(),
         deviceId: this.#deviceId(),
-        deviceName: moteText('Mote 随手记'),
+        deviceName: moteText('Mote 记录'),
         platform: 'import',
         client: 'web',
         capturedAt,
@@ -268,7 +268,7 @@ export class NotesController {
       // the owner has already folded this composer away.
       if (saved) this.#onSaved?.();
       if (this.#started) {
-        this.#emit({queued: this.#outbox.items(), ...(saved ? {notice: moteText('随手记已同步到你的中央节点。')} : {})});
+        this.#emit({queued: this.#outbox.items(), ...(saved ? {notice: moteText('记录已同步到你的中央节点。')} : {})});
         if (saved) {
           if (!this.#composerOnly) void this.load();
           const current = this.#outbox.draft();

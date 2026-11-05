@@ -82,12 +82,12 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("统计起点：{0}\n", when (state.getString("epochReason")) { "recovered" -> MoteI18n.text("统计文件曾不可读，已重新起算"); "user_reset" -> MoteI18n.text("用户主动重置"); else -> MoteI18n.text("首次建立统计，之前历史不可用") }))
                     if (getSharedPreferences("operation-health", 0).getBoolean("incomplete", false)) append(MoteI18n.text("⚠ 曾有统计写入失败，本周期数据不完整。\n"))
                     append(MoteI18n.text("\n累计结果\n截图请求 {0} · 收到画面 {1}\n", count(OperationKind.CAPTURE_REQUESTED), count(OperationKind.FRAME_RECEIVED)))
-                    append(MoteI18n.text("累计截图记录 {0} · 已保存随手记 {1}\n", count(OperationKind.SCREEN_QUEUED), count(OperationKind.NOTE_QUEUED)))
+                    append(MoteI18n.text("累计截图记录 {0} · 已保存记录 {1}\n", count(OperationKind.SCREEN_QUEUED), count(OperationKind.NOTE_QUEUED)))
                     append(MoteI18n.text("系统事件已保存 {0} · 已确认 {1}\n", count(OperationKind.SYSTEM_EVENT_QUEUED), count(OperationKind.SYSTEM_EVENT_ACK)))
                     append(MoteI18n.text("媒体已保存 {0} · 已确认 {1} · 失败 {2}\n", count(OperationKind.MEDIA_QUEUED), count(OperationKind.MEDIA_ACK), count(OperationKind.MEDIA_FAILED)))
                     append(MoteI18n.text("应用活动已保存 {0} · 已确认 {1} · 失败 {2}（无内容）\n", count(OperationKind.ACTIVITY_QUEUED), count(OperationKind.ACTIVITY_ACK), count(OperationKind.ACTIVITY_FAILED)))
                     append(MoteI18n.text("已丢弃画面 {0} · 截图/处理失败 {1}\n", count(OperationKind.FRAME_BLOCKED), count(OperationKind.CAPTURE_FAILED)))
-                    append(MoteI18n.text("截图已确认上传 {0} · 随手记已确认上传 {1}\n", count(OperationKind.SCREEN_ACK), count(OperationKind.NOTE_ACK)))
+                    append(MoteI18n.text("截图已确认上传 {0} · 记录已确认上传 {1}\n", count(OperationKind.SCREEN_ACK), count(OperationKind.NOTE_ACK)))
                     append(MoteI18n.text("上传待重试结果 {0} · 来源版本已确认 {1} / 失败 {2}\n设备心跳失败 {3}\n", count(OperationKind.UPLOAD_RETRY), count(OperationKind.SOURCE_ACK), count(OperationKind.SOURCE_FAILED), count(OperationKind.HEARTBEAT_FAILED)))
                     append(MoteI18n.text("已确认上传 JSON 字节 {0}（不含 TLS/HTTP 开销）\n", size(state.getLong("confirmedUploadBytes"))))
                     append(MoteI18n.text("\n记录明细抽样\n采集区保留：{0} 条，截图 {1} / 活动 {2} / 媒体 {3} / 系统事件 {4} / 笔记 {5} / 无法读取 {6} / 未检查 {7}（分类最多读取100条）\n", queue.getInt("total"), queue.getInt("screens"), queue.getInt("activities"), queue.optInt("media"), queue.optInt("systemEvents"), queue.getInt("notes"), queue.getInt("unreadable"), queue.getInt("uninspected")))
@@ -127,7 +127,7 @@ class ActivityStatsActivity : MoteActivity() {
         for (i in pendingPage * 10 until minOf((pendingPage + 1) * 10, pending.length())) {
             val item = pending.getJSONObject(i)
             history.addView(Button(this).apply {
-                text = "${if (item.optBoolean("archiveMissing")) MoteI18n.text("中央不可更新") else if (item.optBoolean("uploaded")) MoteI18n.text("已同步保留") else MoteI18n.text("待确认")} · ${when (item.getString("kind")) { "screen" -> MoteI18n.text("截图"); "activity" -> MoteI18n.text("应用活动"); "media" -> MoteI18n.text("媒体状态"); "notification" -> MoteI18n.text("通知事件"); "device_event" -> MoteI18n.text("设备事件"); else -> MoteI18n.text("随手记") }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
+                text = "${if (item.optBoolean("archiveMissing")) MoteI18n.text("中央不可更新") else if (item.optBoolean("uploaded")) MoteI18n.text("已同步保留") else MoteI18n.text("待确认")} · ${when (item.getString("kind")) { "screen" -> MoteI18n.text("截图"); "activity" -> MoteI18n.text("应用活动"); "media" -> MoteI18n.text("媒体状态"); "notification" -> MoteI18n.text("通知事件"); "device_event" -> MoteI18n.text("设备事件"); else -> MoteI18n.text("记录") }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
                 setOnClickListener { MoteDialogBuilder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机记录")).setMessage(MoteI18n.text("记录 ID：{0}\n创建：{1}\n条目字节：{2}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。", item.getString("id"), item.getString("createdAt"), item.getLong("bytes"))).setPositiveButton(MoteI18n.text("关闭"), null).show() }
             })
         }
@@ -192,7 +192,7 @@ class ActivityStatsActivity : MoteActivity() {
         fun kind(value: OperationKind): String = when (value) {
             OperationKind.PAGE_QUEUED -> MoteI18n.text("页面内容已保存"); OperationKind.PAGE_ACK -> MoteI18n.text("页面记录已确认上传")
             OperationKind.CAPTURE_REQUESTED -> MoteI18n.text("请求截图"); OperationKind.FRAME_RECEIVED -> MoteI18n.text("收到内存画面"); OperationKind.SCREEN_QUEUED -> MoteI18n.text("截图已保存")
-            OperationKind.NOTE_QUEUED -> MoteI18n.text("随手记已保存"); OperationKind.SCREEN_ACK -> MoteI18n.text("截图已确认上传"); OperationKind.NOTE_ACK -> MoteI18n.text("随手记已确认上传")
+            OperationKind.NOTE_QUEUED -> MoteI18n.text("记录已保存"); OperationKind.SCREEN_ACK -> MoteI18n.text("截图已确认上传"); OperationKind.NOTE_ACK -> MoteI18n.text("记录已确认上传")
             OperationKind.FRAME_BLOCKED -> MoteI18n.text("画面已丢弃，未入队"); OperationKind.CAPTURE_FAILED -> MoteI18n.text("截图或处理失败"); OperationKind.CAPTURE_PAUSED -> MoteI18n.text("采集暂停原因变化")
             OperationKind.HEARTBEAT_FAILED -> MoteI18n.text("设备心跳未确认")
             OperationKind.SYSTEM_EVENT_QUEUED -> MoteI18n.text("系统事件已入队"); OperationKind.SYSTEM_EVENT_ACK -> MoteI18n.text("系统事件已确认上传")

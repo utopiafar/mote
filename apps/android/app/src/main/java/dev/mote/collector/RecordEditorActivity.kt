@@ -59,7 +59,7 @@ open class RecordEditorActivity : MoteActivity() {
         save = MoteUi.button(Button(this).apply { text = MoteI18n.text("保存"); setOnClickListener { submit() } }, true)
         NativePresentationStyles.bind(save, "record-save") { (it as Button).apply { minWidth = moteDp(58); minimumWidth = minWidth; minHeight = moteDp(36); minimumHeight = minHeight; textSize = 11f; setPadding(moteDp(10),0,moteDp(10),0); background = MoteUi.clickable(this@RecordEditorActivity, NativeColorRole.INK, 6, false) } }
         MoteUi.textColor(save, NativeColorRole.BACKGROUND)
-        val body = moteDetailPage(primary = null, title = MoteI18n.text("随手记"), headerAction = save)
+        val body = moteDetailPage(primary = null, title = MoteI18n.text("记录"), headerAction = save)
         body.setPadding(moteDp(20), moteDp(25), moteDp(20), moteDp(32))
         val meta = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         draftState = TextView(this).apply { text = MoteI18n.text("文字、照片或录音"); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED); tag = "record-draft-state" }
@@ -214,7 +214,7 @@ open class RecordEditorActivity : MoteActivity() {
         originView.removeAllViews()
         val hasOrigin = origin.optString("text").isNotBlank()
         field.hint = MoteI18n.text(if(hasOrigin) "我的补充" else "记下此刻的想法…")
-        (window.decorView.findViewWithTag<android.view.View>("detail-title") as? TextView)?.text = MoteI18n.text(if(hasOrigin) if(origin.optString("kind")=="conversation") "保存为记录" else "保存分享" else "随手记")
+        (window.decorView.findViewWithTag<android.view.View>("detail-title") as? TextView)?.text = MoteI18n.text(if(hasOrigin) if(origin.optString("kind")=="conversation") "保存为记录" else "保存分享" else "记录")
         if (origin.optString("text").isNotBlank()) {
             val title = MoteI18n.text(if (origin.optString("kind") == "conversation") "对话摘录" else "引用原文")
             val quote = TextView(this).apply { tag = "record-origin-fulltext"; text = NativeConversationQuote.display(origin, originPresentation); MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this,NativeColorRole.INK); setTextIsSelectable(true); visibility = if(originExpanded) android.view.View.VISIBLE else android.view.View.GONE }

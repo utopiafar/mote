@@ -75,7 +75,7 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
 
     @Synchronized fun prepare(origin: String, create: (JSONObject) -> JSONObject): JSONObject {
         val state = state(); val draft = state.getJSONObject("draft")
-        require(draft.getString("text").isNotBlank() || draft.getJSONArray("attachments").length() > 0 || draft.getJSONObject("origin").optString("text").isNotBlank()) { MoteI18n.text("请先填写随手记") }
+        require(draft.getString("text").isNotBlank() || draft.getJSONArray("attachments").length() > 0 || draft.getJSONObject("origin").optString("text").isNotBlank()) { MoteI18n.text("请先填写记录") }
         val prepared = draft.optJSONObject("prepared")
         if (prepared != null) { require(draft.getString("server") == origin); return JSONObject(prepared.toString()) }
         val event = create(draft)

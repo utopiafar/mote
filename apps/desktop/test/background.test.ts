@@ -75,11 +75,11 @@ it('renders authored operation and completion labels in the current locale after
   let locale: Locale = 'zh-CN'; configureLocale(() => locale);
   try {
     const jobs = new BackgroundJobs(); let complete!: () => void;
-    const pending = jobs.run('note', '正在保存随手记', () => new Promise<void>(resolve => { complete = resolve; }));
-    await Promise.resolve(); expect(jobs.snapshot()[0].message).toBe('正在保存随手记');
-    locale = 'en'; expect(jobs.snapshot()[0].message).toBe('Saving quick note');
-    complete(); await pending; expect(jobs.snapshot()[0].message).toBe('Saving quick note · Operation finished');
-    locale = 'zh-CN'; expect(jobs.snapshot()[0].message).toBe('正在保存随手记 · 操作已结束');
+    const pending = jobs.run('note', '正在保存记录', () => new Promise<void>(resolve => { complete = resolve; }));
+    await Promise.resolve(); expect(jobs.snapshot()[0].message).toBe('正在保存记录');
+    locale = 'en'; expect(jobs.snapshot()[0].message).toBe('Saving records');
+    complete(); await pending; expect(jobs.snapshot()[0].message).toBe('Saving records · Operation finished');
+    locale = 'zh-CN'; expect(jobs.snapshot()[0].message).toBe('正在保存记录 · 操作已结束');
     locale = 'en';
     const failed = jobs.run('import', '正在导入队列', () => { jobs.progress('import', { message: moteText('正在校验备份') }); throw Error('generated'); });
     await expect(failed).rejects.toThrow('generated');

@@ -479,7 +479,7 @@ enum class MoteAddAction(val titleKey: String, val subtitleKey: String, val icon
     FOLDER("同步文件夹", "持续收集文件夹里的新内容与修改", "folder"),
     FILE("导入文件", "导入一次，不跟踪后续修改。", "import"),
     SCREEN("记录屏幕", "先选择应用范围，再按需授权", "capture"),
-    NOTE("随手记", "离线也能留下想法与片段", "notes"),
+    NOTE("记录", "离线也能留下想法与片段", "notes"),
     FEISHU("连接飞书文档", "由中央收集文档与活动线索", "library")
 }
 fun Activity.openMoteAdd(action: MoteAddAction) {

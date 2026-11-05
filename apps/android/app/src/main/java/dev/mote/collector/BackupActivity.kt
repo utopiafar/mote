@@ -67,7 +67,7 @@ class BackupActivity : MoteActivity() {
         SecondaryUi.action(recordActions, MoteI18n.text("导出本机记录"), primary = true) { create(12, "application/zip", "mote-records.zip") }.tag = "backup-export-records"
         SecondaryUi.action(recordActions, MoteI18n.text("从备份恢复")) { chooseRestore() }.tag = "backup-restore-records"
         val range = SecondaryUi.disclosure(records, MoteI18n.text("备份包含什么"), "backup-scope")
-        SecondaryUi.text(range, MoteI18n.text("备份本机仍保留的截图、应用活动、通知、媒体和随手记。ZIP 为明文，不含中央归档、来源文件原件、未提交草稿或模型文件。"), muted = true)
+        SecondaryUi.text(range, MoteI18n.text("备份本机仍保留的截图、应用活动、通知、媒体和记录。ZIP 为明文，不含中央归档、来源文件原件、未提交草稿或模型文件。"), muted = true)
         SecondaryUi.text(range, MoteI18n.text("已清理的本机副本不在其中。"), muted = true)
         SecondaryUi.text(range, MoteI18n.text("备份文件为明文，仅保存在自己信任的位置。"), muted = true)
         SecondaryUi.action(range, MoteI18n.text("导出本机元数据 JSON")) { create(14, "application/json", "mote-local-metadata.json") }

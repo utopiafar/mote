@@ -95,7 +95,7 @@ function validateEvent(value: unknown): CaptureEvent {
   }
   if (v.privacy.collection !== undefined && v.privacy.collection !== 'content') throw new Error(moteText("内容记录的采集级别无效"));
   if (v.source === 'note') {
-    if (v.durationMs !== 0 || v.imageMime !== undefined || typeof v.ocrText !== 'string' || !v.ocrText.trim() || v.ocrText.length > 20000 || v.privacy.mode !== 'none' || v.privacy.redacted !== false || (v.mood !== undefined && (typeof v.mood !== 'string' || !v.mood.trim() || v.mood.length > 80))) throw new Error(moteText("随手记格式无效"));
+    if (v.durationMs !== 0 || v.imageMime !== undefined || typeof v.ocrText !== 'string' || !v.ocrText.trim() || v.ocrText.length > 20000 || v.privacy.mode !== 'none' || v.privacy.redacted !== false || (v.mood !== undefined && (typeof v.mood !== 'string' || !v.mood.trim() || v.mood.length > 80))) throw new Error(moteText("记录格式无效"));
     return { ...base, ocrText: v.ocrText, source: 'note', mood: v.mood, privacy: { excluded: false, redacted: false, mode: 'none' } };
   }
   if (v.imageMime !== 'image/jpeg' || v.privacy.mode !== 'local' || typeof v.privacy.reason !== 'string' || v.privacy.reason.length > 500) throw new Error(moteText("截图隐私标记无效"));
@@ -325,7 +325,7 @@ export class DurableQueue {
       this.assertReady();
       event = validateEvent(event);
       if (event.source === 'screen') { if (!image) throw new Error(moteText("截图缺少图像")); validateImage(image); }
-      else if (image) throw new Error(moteText("随手记或仅活动记录不得包含图片"));
+      else if (image) throw new Error(moteText("记录或仅活动记录不得包含图片"));
       const transactionId=randomUUID(),blobHash=image?imageHash(image):undefined;
       if(image&&blobHash)await atomicWrite(this.blobPath(blobHash),image);
       const journal:CaptureInputJournal={version:1,transactionId,event,blobHash,blobBytes:image?.length??0,reviewHeld};
@@ -372,7 +372,7 @@ export class DurableQueue {
       if(privacyFloor.activity&&output.privacy.collection!=='activity'||privacyFloor.redacted&&!output.privacy.redacted)throw new Error('Capture stage weakened privacy');
       if(flush&&outputImage)throw new Error('Capture stages cannot flush image bytes from a metadata checkpoint');
       if(output.source==='screen'){if(!Buffer.isBuffer(outputImage))throw new Error(moteText('截图缺少图像'));validateImage(outputImage);}
-      else if(outputImage!==undefined)throw new Error(moteText('随手记或仅活动记录不得包含图片'));
+      else if(outputImage!==undefined)throw new Error(moteText('记录或仅活动记录不得包含图片'));
       const hash=outputImage?imageHash(outputImage):undefined,existing=this.records.get(output.id);
       if(existing){
         if(existing.blobHash===hash&&JSON.stringify(existing.event)===JSON.stringify(output))continue;

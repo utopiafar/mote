@@ -90,7 +90,7 @@ export class OwnerLibraryBrowse {
    notesDone:position.notesDone||notesExhausted&&usedNotes.length===notes.length};
   const more=materialEntries.length>usedMaterials.length||notes.length>usedNotes.length||!next.materialDone||!next.notesDone;
   const catalog=this.currentFacets(generation,ownerIdentity);
-  return {schemaVersion:1 as const,revision:generation,types:catalog.types,sources:catalog.sources,sourcesTruncated:catalog.sourcesTruncated,noteOrigin:{origin:'notes' as const,label:moteText('随手记')},items,nextCursor:more?this.materials.catalog.sealPosition({scope,generation,inner:JSON.stringify(next)}):null};
+  return {schemaVersion:1 as const,revision:generation,types:catalog.types,sources:catalog.sources,sourcesTruncated:catalog.sourcesTruncated,noteOrigin:{origin:'notes' as const,label:moteText('记录')},items,nextCursor:more?this.materials.catalog.sealPosition({scope,generation,inner:JSON.stringify(next)}):null};
  }
 }
 /** Mounted behind the same default-deny owner route hook as Material browsing. */
