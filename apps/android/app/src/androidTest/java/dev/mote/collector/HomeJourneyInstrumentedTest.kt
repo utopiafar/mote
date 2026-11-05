@@ -274,10 +274,10 @@ class HomeJourneyInstrumentedTest {
         val manager = context.getSystemService(NotificationManager::class.java)
         fun actions(): List<String>? = manager.activeNotifications.firstOrNull { it.id == Notifications.ID }?.notification?.actions?.map { it.title.toString() }
         context.systemEntries().show("生成的屏幕状态")
-        until("The capture notification pauses only the screen and records") { actions() == listOf("暂停屏幕采集", "记录") }
+        until("The capture notification records, pauses the screen and stops") { actions() == listOf("记录", "暂停屏幕采集", "停止采集") }
         if (Build.VERSION.SDK_INT >= 31) assertTrue("Tapping the notification opens an activity", manager.activeNotifications.first { it.id == Notifications.ID }.notification.contentIntent.isActivity)
         context.systemEntries().clear(); context.systemEntries().showEvents("生成的设备事件")
-        until("Without screen capture the existing full stop remains") { actions() == listOf("停止采集", "记录") }
+        until("Without screen capture the existing full stop remains") { actions() == listOf("记录", "停止采集") }
         context.systemEntries().showEvents(null)
         until("No capture means no ongoing notification") { actions() == null }
 
@@ -375,7 +375,7 @@ class HomeJourneyInstrumentedTest {
                 }
                 capture(home, "home-capturing")
                 until("The service's own notification pauses only the screen") {
-                    manager.activeNotifications.firstOrNull { it.id == Notifications.ID }?.notification?.actions?.map { it.title.toString() } == listOf("暂停屏幕采集", "记录")
+                    manager.activeNotifications.firstOrNull { it.id == Notifications.ID }?.notification?.actions?.map { it.title.toString() } == listOf("记录", "暂停屏幕采集", "停止采集")
                 }
                 shell("cmd statusbar add-tile $tile")
                 Thread.sleep(2000) // SystemUI binds a newly added tile before it accepts a click.

@@ -10121,6 +10121,7 @@ export const english: Readonly<Record<string, string>> = {
   "等你补充": "Needs your input",
   "暂停全部采集": "Pause all collection",
   "暂停屏幕采集": "Pause screen capture",
+  "恢复屏幕采集": "Resume screen capture",
   "索引处理完成": "Index processing complete",
   "仍在运行的版本：{0}": "Still running: {0}",
   "候选版本": "Candidate version",

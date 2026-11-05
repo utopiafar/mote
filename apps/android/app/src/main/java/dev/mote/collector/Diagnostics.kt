@@ -53,7 +53,7 @@ class Diagnostics(private val context: Context) {
     private fun read(): JSONArray = if (file.exists()) JSONArray(file.readText()) else JSONArray()
     companion object {
         private val lock = Any()
-        private val counters = setOf("capturedCount", "blockedCount", "failedCount", "uploadBytes", "captureRequests", "receivedFrames", "earlySkippedFrames", "modelCalls", "ocrCalls", "httpRequests", "uploadSessions", "heartbeatRequests", "notificationPublishes", "notificationCancels")
+        private val counters = setOf("capturedCount", "blockedCount", "failedCount", "uploadBytes", "captureRequests", "receivedFrames", "earlySkippedFrames", "modelCalls", "ocrCalls", "httpRequests", "uploadSessions", "heartbeatRequests", "notificationPublishes", "notificationCancels", "attentionPublishes")
         private val timings = setOf("inferenceMs", "ocrMs", "pipelineMs", "httpMs", "encodeMs", "queueMs")
         private fun bytes(file: File): Long = if (file.isDirectory) file.listFiles()?.sumOf { bytes(it) } ?: 0 else file.length()
         fun battery(context: Context): Pair<Int, Boolean> {

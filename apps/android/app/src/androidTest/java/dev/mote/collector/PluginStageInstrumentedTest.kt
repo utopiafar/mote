@@ -352,7 +352,7 @@ class PluginStageInstrumentedTest {
             context.systemEntries().show("生成的插件阶段采集状态")
             until("the plugin publishes its capture notification actions") {
                 manager.activeNotifications.firstOrNull { it.id == Notifications.ID }?.notification?.actions
-                    ?.map { it.title.toString() } == listOf(MoteI18n.text("暂停屏幕采集"), MoteI18n.text("记录"))
+                    ?.map { it.title.toString() } == listOf(MoteI18n.text("记录"), MoteI18n.text("暂停屏幕采集"), MoteI18n.text("停止采集"))
             }
             context.systemEntries().clear()
             until("clearing the plugin notification leaves no stale action") {
