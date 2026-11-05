@@ -36,12 +36,17 @@ try {
     query: async () => { throw Error('No model belongs in the Kotlin upload contract'); }, close: async () => {}}});
   const historyEvidence=randomUUID();
   await central.store.ingest({id:historyEvidence,deviceId:'generated-kotlin-phone',deviceName:'Generated phone',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated saved source body'});
+  central.store.heartbeat({deviceId:'generated-contact-contract',deviceName:'Generated contact device',platform:'android',status:'capturing',queueDepth:0,
+    sync:{mode:'interval',state:'waiting',intervalMinutes:40,batchSize:20,pendingRecords:0}});
+  central.store.db.prepare("UPDATE devices SET json=json_set(json,'$.lastSeenAt',?) WHERE id=?")
+    .run(new Date(Date.now()-3*60*60_000).toISOString(),'generated-contact-contract');
   const history=central.conversations.append(undefined,{question:'Generated saved question',evidenceIds:[historyEvidence]},
     {answer:'Generated saved answer',citations:[{id:historyEvidence,appName:'Generated source',capturedAt:'2026-10-01T00:00:00Z',excerpt:'Generated saved excerpt'}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[historyEvidence]}});
   const origin = await central.app.listen({host: '127.0.0.1', port: 0});
   const invitation = await central.app.inject({method: 'POST', url: '/api/connections/collector-invitations',
     headers: {authorization: 'Bearer ' + token}, payload: {serverUrl: origin, label: 'Generated Kotlin contract', deviceId: 'generated-kotlin-phone'}});
   assert.equal(invitation.statusCode, 200, 'Generated collector invitation failed');
+  assert.deepEqual(invitation.json().invitation.platforms, ['android', 'macos', 'ios', 'windows', 'linux'], 'Central must declare the client platforms it accepts');
   const granted = await central.app.inject({method: 'POST', url: '/api/connections/redeem', payload: {
     code: invitation.json().invitation.code, deviceId: 'generated-kotlin-phone', deviceName: 'Generated phone', platform: 'android'}});
   assert.equal(granted.statusCode, 200, 'Generated collector redemption failed');

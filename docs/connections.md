@@ -39,9 +39,12 @@ Content-Type: application/json
   "version": 1,
   "serverUrl": "https://mote.example.com",
   "code": "<32-random-bytes-as-base64url>",
-  "expiresAt": "<UTC-ISO-time>"
+  "expiresAt": "<UTC-ISO-time>",
+  "platforms": ["android", "macos", "ios", "windows", "linux"]
 }
 ```
+
+`platforms` 声明中央允许通过连接凭据接入的客户端平台，不含采集专用标签 `other`。iOS 在兑换前检查其中是否包含 `ios`；字段缺失或列表中没有 `ios` 表示中央不支持 iOS，客户端提示升级中央且不发送任何记录。邀请格式版本仍为 v1。
 
 URI 为 `mote://connect?data=<base64url-UTF8-JSON>`。邀请有效期为 10 分钟，只能兑换一次。邀请码在内存中仅保存 SHA-256，中央重启后邀请失效。邀请包含一次性授权能力，发送给预期设备前应确认接收方。
 
@@ -54,7 +57,7 @@ Content-Type: application/json
 {"code":"<invitation-code>","deviceId":"existing-device-id","deviceName":"我的手机","platform":"android"}
 ```
 
-`platform` 支持 `android`、`macos`、`windows`、`linux` 和 `other`。兑换响应为 `{serverUrl, token, credentialId, scope:"owner"}`；随后通过 `/api/connections/self` 验证节点、设备及必需的协议元数据，验证完成再保存凭据。客户端应只将该 token 用于已确认的 `serverUrl`，不跟随重定向传递凭据。现有采集协议的通用 `other` 客户端使用 `platform:"import"`；当前 Android 和 Mac 直接使用各自平台名称。
+`platform` 支持 `android`、`macos`、`ios`、`windows`、`linux` 和 `other`。兑换响应为 `{serverUrl, token, credentialId, scope:"owner"}`；随后通过 `/api/connections/self` 验证节点、设备及必需的协议元数据，验证完成再保存凭据。客户端应只将该 token 用于已确认的 `serverUrl`，不跟随重定向传递凭据。现有采集协议的通用 `other` 客户端使用 `platform:"import"`；当前 Android、iOS 和 Mac 直接使用各自平台名称。
 
 `serverUrl` 必须是所有者显式填写的 HTTPS origin；仅 `localhost`、`127.0.0.1`、`[::1]` 允许 HTTP。地址不能包含用户名、密码、路径、查询或片段。服务端不会从 `Host` 或转发请求头猜测地址，也不会替所有者探测这个地址。
 
@@ -71,7 +74,7 @@ Content-Type: application/json
 
 ## 独立采集器
 
-完整 Mac / Android 客户端选择「本人客户端 · 完整权限」，一次登录即可使用采集和归档功能。专用采集程序选择「独立采集器 · 仅同步」。所有者通过 `POST /api/connections/collector-invitations` 创建受限邀请，请求字段与普通邀请相同；响应的 `scope` 明确为 `collector`。权限保存在服务端邀请记录中，兑换方不能指定或提升权限。可携带的 v1 邀请格式不变。
+完整 Mac / Android / iOS 客户端选择「本人客户端 · 完整权限」，一次登录即可使用采集和归档功能。专用采集程序选择「独立采集器 · 仅同步」。所有者通过 `POST /api/connections/collector-invitations` 创建受限邀请，请求字段与普通邀请相同；响应的 `scope` 明确为 `collector`。权限保存在服务端邀请记录中，兑换方不能指定或提升权限。采集器邀请与普通邀请使用同一 v1 邀请格式和平台声明。
 
 采集器兑换后通过 `/api/connections/self` 核验 `scope:collector` 与协议。能力为 `ingest:true`、`ownSources:true`、`archiveRead:false`。它可以上报绑定设备的心跳、采集和笔记、登记或更新该设备来源、写入来源版本，并通过 file-sync 完成分片上传、确认丢失后的重试和原件恢复。来源登记及重用必须匹配设备和平台；通用 `other` 采集器对应 `import` 平台。
 

@@ -33,13 +33,13 @@ function preview(event: Partial<CaptureEvent> & { hasImage?: boolean; textPrevie
   return { source:event.source==='ui_page'?'ui_page':'screen', id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { syncError: record.syncError } : {}) };
 }
 async function request(config: Config, path: string): Promise<Response> {
-  if (!connectionToken(config) || !config.serverUrl) throw new Error(moteText("请先连接中央节点；本机记录仍可查看"));
+  if (!connectionToken(config) || !config.serverUrl) throw new Error(moteText("先连接中央；本机记录仍可查看"));
   const response = await fetch(`${validateServerUrl(config.serverUrl)}${path}`, { headers: { 'Accept-Language': getLocale(), Authorization: `Bearer ${requireConnectionToken(config)}` }, redirect: 'error', signal: AbortSignal.timeout(20000) });
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
-    if (response.status === 404) throw new Error(moteText("记录不存在，或中央节点需要升级才能浏览采集记录"));
+    if (response.status === 404) throw new Error(moteText("记录不存在，或中央需要升级才能浏览采集记录"));
     if (response.status === 401 || response.status === 403) throw new Error(moteText("无法访问采集记录，请检查中央连接权限"));
-    throw new Error(moteText("中央节点返回 HTTP {0}，请稍后重试", response.status));
+    throw new Error(moteText("中央返回 HTTP {0}。稍后重试", response.status));
   }
   return response;
 }

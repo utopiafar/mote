@@ -36,7 +36,7 @@ export class AskClient {
     if (!response.ok) {
       await response.body?.cancel();
       if (command === 'run' && response.status === 404) return {id: input.id, notFound:true, status: 'failed', events: [], error: {message: moteText('对话或运行记录已删除。')}};
-      throw Error(response.status === 401 || response.status === 403 ? moteText('令牌无效或已失效，请检查后重新登录。') : command==='history'?moteText('对话暂不可读取，请稍后重试。'):command==='reference'?moteText('这条引用暂时打不开，请稍后重试。'):moteText('问答请求失败（HTTP {0}），请检查中央节点模型设置或稍后重试。', response.status));
+      throw Error(response.status === 401 || response.status === 403 ? moteText('令牌无效或已失效，请检查后重新登录。') : command==='history'?moteText('对话暂不可读取，请稍后重试。'):command==='reference'?moteText('这条引用暂时打不开，请稍后重试。'):moteText('问答请求失败（HTTP {0}）。检查中央模型设置或稍后重试', response.status));
     }
     const value=JSON.parse(await readResponseText(response,8*1024*1024));this.check(config);if(['start','run','cancel'].includes(command)&&(value?.id!==input.id||value?.notFound!==undefined||!['running','completed','failed','cancelled'].includes(value?.status)||!Array.isArray(value?.events)))throw Error('Invalid query run response');if(command==='reference'&&(value?.id!==input.id||typeof value?.available!=='boolean'))throw Error('Invalid reference availability');return value;
   }

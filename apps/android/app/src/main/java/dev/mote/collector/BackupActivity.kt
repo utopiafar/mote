@@ -263,7 +263,7 @@ class BackupActivity : MoteActivity() {
                 row(MoteI18n.text("本机保留"), MoteI18n.text("{0} 天", current.uploadedRetentionDays), MoteI18n.text("{0} 天", next.uploadedRetentionDays))
                 row(MoteI18n.text("发送方式"), syncLabel(current), syncLabel(next))
                 row(MoteI18n.text("应用规则"), current.collectionRules.apps.size.toString(), next.collectionRules.apps.size.toString())
-                SecondaryUi.text(card, if (current.server == next.server) MoteI18n.text("中央节点不变") else MoteI18n.text("中央节点将改变；未携带令牌时需重新连接"), muted = true)
+                SecondaryUi.text(card, if (current.server == next.server) MoteI18n.text("中央不变") else MoteI18n.text("中央将改变；未携带令牌时需重新连接"), muted = true)
             }, actions = listOf(Triple(MoteI18n.text("导入配置"), true, applyConfiguration@{
                 if (!canChooseFile()) return@applyConfiguration
                 if (!owner.applyConfiguration(this, current, next)) status.text = MoteI18n.text("操作正在进行")

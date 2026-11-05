@@ -163,7 +163,7 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-ad
   else if(action==='source')showPage('sources');
   else if(action==='folder'||action==='file')void beginSourceSelection(action==='folder'?'directory':'files',Boolean(button.closest('#home-onboarding')));
   else if(action==='lark'){
-    if(!currentStatus?.config.serverUrl){showPage('connection');feedback(moteText('先连接你的中央节点，即可打开中央仓库。'));return;}
+    if(!currentStatus?.config.serverUrl){showPage('connection');feedback(moteText('先连接你的中央，即可打开中央仓库。'));return;}
     void perform(()=>desktopApi.openCentral('lark'));
   }
 });
@@ -377,7 +377,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   byId<HTMLTextAreaElement>('gate-text').value = (config.uploadGate?.blockedText ?? []).join('\n');
   byId<HTMLSelectElement>('gate-failure').value = config.uploadGate?.failureAction ?? 'hold';
   byId<HTMLInputElement>('token').value = '';
-  byId<HTMLInputElement>('token').placeholder = config.tokenConfigured ? moteText("已安全保存；留空保留已有令牌") : moteText("输入中央节点访问令牌");
+  byId<HTMLInputElement>('token').placeholder = config.tokenConfigured ? moteText("已安全保存；留空保留已有令牌") : moteText("输入中央访问令牌");
   byId<HTMLSelectElement>('sync-mode').value=config.syncMode;
   byId<HTMLInputElement>('confirm-local-backlog').checked = false;
   refreshPresets(); updateSyncOptions(); renderMaskEditor(); updateLocalBacklog();
@@ -421,12 +421,12 @@ function render(status: import('./contracts').Status): void {
   const hasCentralConnection = Boolean(status.config.serverUrl && status.config.tokenConfigured);
   const centralState = !hasCentralConnection ? 'unconfigured' : status.sync.state === 'uploading' ? 'syncing' : status.sync.state === 'error' ? 'error' : 'connected';
   const centralTitle = !hasCentralConnection
-    ? moteText("未连接中央节点")
+    ? moteText("未连接中央")
     : centralState === 'syncing'
-      ? moteText("正在同步中央节点")
+      ? moteText("正在同步中央")
       : centralState === 'error'
         ? moteText("连接需要处理")
-        : moteText("已连接中央节点");
+        : moteText("已连接中央");
   const centralMessage = !hasCentralConnection
     ? moteText("记录只保存在本机；连接后按你的策略上传。")
     : centralState === 'error'
@@ -448,7 +448,7 @@ function render(status: import('./contracts').Status): void {
   setText('central-status-message', centralMessage);
   setText('central-status-origin', hasCentralConnection ? `${status.config.deviceName} · ${status.config.serverUrl}` : moteText("连接后，采集记录会按同步设置发送"));
   setText('central-status-action', hasCentralConnection ? moteText("连接详情") : moteText("连接节点"));
-  byId('settings-connection-summary').textContent = status.config.tokenConfigured ? moteText("{0} · 已保存连接", status.config.deviceName) : moteText("连接你的中央节点，让记录开始同步");
+  byId('settings-connection-summary').textContent = status.config.tokenConfigured ? moteText("{0} · 已保存连接", status.config.deviceName) : moteText("连接你的中央，让记录开始同步");
   byId<HTMLInputElement>('login').disabled = status.environment?.defaultProfile === false;
   byId('login-hint').textContent = status.environment?.defaultProfile === false ? moteText("命名环境使用带 --profile 的启动命令；不会注册可能丢失环境参数的系统登录项。") : moteText("应用启动后保持停止状态，需手动开始采集；已有记录按上传策略处理。");
   setText('message', status.message);
@@ -620,12 +620,12 @@ void desktopApi.status().then(render).catch(() => feedback(moteText("无法连�
 
 byId('note-attachments').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('notes')));
 byId('central').addEventListener('click', () => {
-  if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央节点，即可打开中央仓库。")); return; }
+  if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央，即可打开中央仓库。")); return; }
 
   void perform(() => desktopApi.openCentral('overview'));
 });
 byId('home-feature-guide').addEventListener('click', () => {
-  if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央节点，即可打开中央仓库。")); return; }
+  if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央，即可打开中央仓库。")); return; }
   void perform(() => desktopApi.openCentral('guide'));
 });
 let draft: import('./note-draft').NoteDraft | undefined;
@@ -751,7 +751,7 @@ let sourceEditingContext:import('./source-context-outbox').SourceContextState|un
 const sourceAddDialog=byId<HTMLDialogElement>('source-add-dialog');
 byId('source-add').addEventListener('click',()=>sourceAddDialog.showModal());
 byId('source-add-close').addEventListener('click',()=>sourceAddDialog.close());
-for(const id of ['source-central','source-cloud-choice'])byId(id).addEventListener('click',()=>{sourceAddDialog.close();if(!currentStatus?.config.serverUrl){showPage('connection');feedback(moteText('先连接你的中央节点，即可打开中央仓库。'));return;}void perform(()=>desktopApi.openCentral('sources'));});
+for(const id of ['source-central','source-cloud-choice'])byId(id).addEventListener('click',()=>{sourceAddDialog.close();if(!currentStatus?.config.serverUrl){showPage('connection');feedback(moteText('先连接你的中央，即可打开中央仓库。'));return;}void perform(()=>desktopApi.openCentral('sources'));});
 function renderSourceDestination():void {
   const config=currentStatus?.config;byId('source-destination').textContent=config?.serverUrl||moteText('尚未连接中央，先保存在本机');
   byId('source-destination-state').textContent=!config?.tokenConfigured?moteText('未连接'):config.syncPaused?moteText('发送已暂停'):moteText('已连接');
@@ -821,7 +821,7 @@ function refreshSourceTextOptions(): void {
   byId('source-retention-hint').hidden=!fileSource;
   byId('source-retention-hint').textContent=readInput('source-retention')==='snapshot'?moteText('完整文件发往中心解析；处理后删除中心临时原件。'):readInput('source-retention')==='archive'?moteText('完整文件发往中心解析，并保留原件。'):moteText('只记录文件信息，不读取正文，也不上传文件内容。');
   byId('source-content-transfer-note').hidden=!fileSource;
-  byId('source-content-transfer-note').textContent=readInput('source-retention')==='reference'?moteText('只记录文件信息，不读取正文，也不上传文件内容。'):moteText('完整文件会发送到所示中央节点进行处理；提取正文不代表只上传摘要。未连接时先保存本机任务，首次连接须确认发送范围。');
+  byId('source-content-transfer-note').textContent=readInput('source-retention')==='reference'?moteText('只记录文件信息，不读取正文，也不上传文件内容。'):moteText('完整文件会发送到所示中央进行处理；提取正文不代表只上传摘要。未连接时先保存本机任务，首次连接须确认发送范围。');
 }
 byId('source-retention').addEventListener('change',refreshSourceTextOptions);
 let sourcesReading = false;let sourceReadGeneration=0,sourceConnectGeneration=0;
@@ -1412,7 +1412,7 @@ async function refreshAsk(): Promise<void> {
   if(askRestoringConversationId){const id=askRestoringConversationId;await askAction(()=>loadAskConversation(id));return;}
   await askAction(async () => {
     const generation=askGeneration;
-    setText('ask-login-status', moteText('正在连接中央节点…'));
+    setText('ask-login-status', moteText('正在连接中央…'));
     try { await askHistory(); } catch (error) { if(generation===askGeneration)setText('ask-login-status', moteText('请求失败，请重试')); throw error; }
     if(generation!==askGeneration)return;
     setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));
@@ -1506,6 +1506,6 @@ async function openAskEvidence(id:string,rendered:import('./ask').AskConversatio
   }
   await desktopApi.openCentral('ask',id,conversationId);
 }
-byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央节点…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('请先登录中央节点，各页面会共用这次登录。')); throw error; } await refreshAskStatus();setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));if(!askRestoringConversationId&&!askPendingInput&&!askRun)await askHistory(); }); });
+byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('先登录中央，各页面会共用这次登录')); throw error; } await refreshAskStatus();setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));if(!askRestoringConversationId&&!askPendingInput&&!askRun)await askHistory(); }); });
 byId('ask-browser-login').addEventListener('click',()=>void askAction(async()=>{await askCall('login-browser',{durationMs:Number(readInput('ask-lifetime'))});await refreshAskStatus();if(!askRestoringConversationId&&!askPendingInput&&!askRun)await askHistory();setText('ask-login-status',moteText('已登录 · {0}',currentStatus.config.serverUrl));}));
 byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout');await refreshAskStatus();setText('ask-login-status', moteText('已退出中央登录')); }));
