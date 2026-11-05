@@ -9,8 +9,8 @@ struct HomeRootView: View {
     @State private var model = HomeModel()
     @State private var router = HomeRouter()
     @Environment(\.scenePhase) private var scenePhase
-    let arguments: [String]
-    let editorStore: EditorDraftStore?
+    var arguments: [String] = ProcessInfo.processInfo.arguments
+    var editorStore: EditorDraftStore? = try? MoteStorage.editorDraftStore()
 
     var body: some View {
         HomeView(presentation: model.presentation) { action in
