@@ -1,5 +1,10 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
+  "网页": "Webseite",
+  "截图与照片": "Screenshots und Fotos",
+  "网页与文件": "Webseiten und Dateien",
+  "按时间回看": "Nach Datum ansehen",
+  "昨天": "Gestern",
   "例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。": "Zum Beispiel: Dies sind meine Gespräche zur Projektentwicklung mit einem Coding Agent, einschließlich der Werkzeugausführung.",
   "查看已生效日程和设备写入状态": "Übernommene Termine und den Schreibstatus der Geräte ansehen",
   "例如：这是我的工作日历，日程不代表实际参加。": "Zum Beispiel: Dies ist mein Arbeitskalender; ein Termin belegt keine tatsächliche Teilnahme.",
@@ -10189,5 +10194,14 @@ export const german: Readonly<Record<string, string>> = {
   "扫描中央生成的连接二维码。": "Den von der Zentrale erzeugten Verbindungs-QR-Code scannen.",
   "本人设备": "Dieses Gerät",
   "附件超过 50 MiB": "Anhang überschreitet 50 MiB",
-  "未能保存": "Speichern fehlgeschlagen"
+  "未能保存": "Speichern fehlgeschlagen",
+  "管理记忆": "Erinnerungen verwalten",
+  "详情": "Details",
+  "已整理，可搜索": "Aufbereitet, durchsuchbar",
+  "整理未完成": "Aufbereitung unvollständig",
+  "引用它的对话": "Konversationen, die es zitieren",
+  "网页": "Web",
+  "参考整份资料": "Gesamtes Material",
+  "昨天": "Gestern",
+  "{0}月{1}日": "{1}.{0}."
 };

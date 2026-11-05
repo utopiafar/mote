@@ -155,7 +155,7 @@ class HistoricalConversationInstrumentedTest {
     }
     private fun refresh(scenario: ActivityScenario<MainActivity>, work: Boolean) {
         if (!work) {
-            scenario.onActivity { a -> shown(a).single { it.contentDescription == MoteI18n.text("对话历史") }.performClick() }
+            scenario.onActivity { a -> shown(a).single { it.contentDescription == MoteI18n.text("返回上级") }.performClick() }
             waitFor(scenario,"Same conversation is reachable in native history") { a -> shown(a).any { row -> row.isClickable && row.contentDescription?.toString()?.startsWith(fixture.getString("title")+". ") == true } }
             scenario.onActivity { a -> shown(a).single { row -> row.isClickable && row.contentDescription?.toString()?.startsWith(fixture.getString("title")+". ") == true }.performClick() }
         }
