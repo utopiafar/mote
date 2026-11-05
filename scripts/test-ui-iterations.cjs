@@ -99,7 +99,7 @@ const observeFixtureRequests = `(() => {
 function rendererReadiness() {
  const visible=element=>!!element&&element.getClientRects().length>0&&getComputedStyle(element).visibility!=='hidden';
  const route=location.hash||'#/today',path=route.replace(/^#\/?/,'').split('?')[0];
- const expectedPage=({'today':'overview','preferences':'about','system/models':'settings','system/storage':'vault','system':'statistics','guide':'featureGuide','ask':'ask','library':'archive','library/notes':'notes','library/import':'imports','library/insights':'insights','activity':'activity','connections/add':'sourceCatalog','connections/devices':'devices','connections':'sources','connections/access':'connections','connections/lark':'lark','connections/recordings':'recordings','system/plugins':'extensions','system/processing':'processing','agent':'agentView','system/diagnostics':'developer','system/usage':'usage','help':'help','actions':'actions'})[path];
+ const expectedPage=({'today':'overview','preferences':'about','system/models':'settings','system/storage':'vault','system':'statistics','guide':'featureGuide','ask':'ask','library':'archive','library/notes':'notes','library/import':'imports','library/insights':'insights','activity':'activity','connections/add':'sourceCatalog','sources/devices':'devices','connections':'sources','connections/access':'connections','connections/lark':'lark','connections/recordings':'recordings','system/plugins':'extensions','system/processing':'processing','agent':'agentView','system/diagnostics':'developer','system/usage':'usage','help':'help','actions':'actions'})[path];
  const content=document.querySelector('.content[data-page]'),page=content?.dataset.page;
  const base={ready:false,route,page,expectedPage,pendingApi:window.__moteUiPendingApi??0};
  if(!expectedPage||!visible(content)||page!==expectedPage)return {...base,reason:'requested consumer is not mounted'};
@@ -323,7 +323,7 @@ async function consumerMatrix() {
       ...(rollout?[
         ['system/models?category=images','image-settings','.perception-settings'],['system/models?category=file-processing','file-settings','.file-processing-settings'],
         ['system/models?category=storage','retention-settings','.config-draft-footer'],['system/models?category=embedding','index-settings','.config-draft-footer'],
-        ['connections/devices','devices','.device-overview'],['connections/add','source-catalog','.discovery-source-catalog'],
+        ['sources/devices','devices','.device-overview'],['connections/add','source-catalog','.discovery-source-catalog'],
         ['connections','source-management','.sources-page'],['connections/access','authorization','.connections'],
         ['connections/lark','lark','.lark-settings'],['connections/recordings','recorders','.lark-settings'],
         ['system/plugins','plugins','.plugin-center'],['system/processing','operations','.operation-list'],
