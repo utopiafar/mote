@@ -168,10 +168,10 @@ internal object GeneratedWindowRendering {
         require(base.width > 0 && base.height > 0 && base.isShown)
         check(hasNoPendingLabels(base) && overlays.all(::hasNoPendingLabels)) { "An unfinished native surface cannot be a ready scene: $name" }
         val (page, state, marker) = when (name) {
-            "home-recent" -> Triple("home", "content", "周五评审需要准备什么？")
+            "home-recent" -> Triple("home", "content", "生成的设计稿标注内容")
             "home-menu" -> Triple("manage", "content", "我的 Mote")
             "ask-retained-draft" -> Triple("ask", "draft", "生成的未发送草稿")
-            "home-history-error" -> Triple("home", "error", "对话暂不可读取，请稍后重试。")
+            "home-history-error" -> Triple("home", "error", "暂不可读取")
             "home-first-use", "home-first-use-dark" -> Triple("home", "first-use", "连接你的 Mote")
             "home-first-use-draft", "home-first-use-draft-dark" -> Triple("home", "first-use-draft", "连接你的 Mote")
             "capture-context-local" -> Triple("capture", "local-context", "采集来源说明")

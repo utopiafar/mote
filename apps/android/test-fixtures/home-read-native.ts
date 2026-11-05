@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {buildApp} from '../../server/src/app.js';
 import type {Config} from '../../server/src/config.js';
 
-// Real Central conversations feed the production home read. Only the
+// Real Central captures feed the production home read. Only the
 // unavailable Android transport runtime is replaced by JDK HTTP in the JVM test.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 assert.deepEqual(process.argv.slice(2), [], 'This case accepts no arguments');
@@ -39,20 +39,13 @@ try {
   await central.store.ingest({id: evidenceId, deviceId: 'generated-home-device', deviceName: 'Generated home device',
     platform: 'import', source: 'note', capturedAt: '2026-11-04T04:00:00Z', durationMs: 0,
     ocrText: 'Generated home evidence'});
-  const history = central.conversations.append(undefined, {
-    question: 'Generated home question', evidenceIds: [evidenceId],
-  }, {
-    answer: 'Generated home answer',
-    citations: [{id: evidenceId, appName: 'Generated source', capturedAt: '2026-11-04T04:00:00Z', excerpt: 'Generated home evidence'}],
-    trace: [], runId: randomUUID(), evidenceDependencies: {version: 1, complete: true, ids: [evidenceId]},
-  });
   const origin = await central.app.listen({host: '127.0.0.1', port: 0});
   if (interrupted) throw Error('Home read contract interrupted before Gradle started');
   const args = ['-p', 'apps/android', '--no-daemon', ':app:testDebugUnitTest', '--rerun',
     '--tests', 'dev.mote.collector.plugins.DailyHomeReadContractTest'];
   child = spawn(resolve(root, 'apps/android/gradlew'), args, {cwd: root, stdio: 'inherit', detached: process.platform !== 'win32',
     env: {...process.env, MOTE_HOME_READ_ORIGIN: origin, MOTE_HOME_READ_TOKEN: token,
-      MOTE_HOME_READ_CONVERSATION: history.conversationId}});
+      MOTE_HOME_READ_EVIDENCE: evidenceId}});
   await new Promise<void>((done, reject) => {
     let processFailure: Error | undefined;
     let force: ReturnType<typeof setTimeout> | undefined;

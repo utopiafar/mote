@@ -26,6 +26,9 @@ class HomeNavigationInstrumentedTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val conversation = "14d4ef91-48c4-4372-b9ac-008f59b71e46"
+    private val feedPhoto = "6a1c3e5b-7d9f-4a2b-8c4d-1e3f5a7b9c02"
+    private val feedAudio = "4d7b2a9c-1e5f-4b3a-9d6c-2f4a6b8c0d13"
+    private val feedNote = "8f2e4c6a-3b1d-4e5f-a7c9-0d2b4e6f8a24"
     private fun views(root: View): List<View> = listOf(root) + if (root is ViewGroup) (0 until root.childCount).flatMap { views(root.getChildAt(it)) } else emptyList()
     private fun shown(activity: MainActivity) = views(activity.window.decorView).filter { it.isShown }
     private fun waitFor(scenario: ActivityScenario<MainActivity>, description: String, check: (MainActivity) -> Boolean) {
@@ -57,13 +60,23 @@ class HomeNavigationInstrumentedTest {
         MoteAppearance.select(context, AppearancePreference.LIGHT)
     }
 
+    /** The home no longer lists conversations; the same native Ask state owns entry through its history page. */
+    private fun openGeneratedConversation(scenario: ActivityScenario<MainActivity>) {
+        scenario.onActivity { activity -> shown(activity).single { it.tag == "home-ask-action" }.performClick() }
+        waitFor(scenario, "The Ask page offers its history") { shown(it).any { row -> row.contentDescription == "对话历史" } }
+        scenario.onActivity { activity -> shown(activity).single { it.contentDescription == "对话历史" }.performClick() }
+        waitFor(scenario, "The history lists the generated conversation") { shown(it).any { row -> row.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true } }
+        scenario.onActivity { activity -> shown(activity).single { it.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true }.performClick() }
+        waitFor(scenario, "The selected conversation loads its answer") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString().contains("这是已提交的生成回答。") } }
+    }
+
     @Test fun recentConversationAndDraftSurviveMenuAndBackWithoutPersistentTabs() {
         ConversationFixture().use { fixture ->
             val settings = Settings(context)
             settings.save(settings.read().copy(server = fixture.origin, token = "generated-home-owner-token-1234567890", debugHttp = true, syncMode = "manual", syncPaused = true, authSignedOut = false), confirmCentralEndpoint = true)
             File(context.noBackupFilesDir, "central-native/" + SourceRules.hash(fixture.origin)).deleteRecursively()
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                waitFor(scenario, "Recent history must load from the selected Central") { shown(it).any { row -> row.tag == "home-conversation:$conversation" } }
+                waitFor(scenario, "The grouped originals must load from the selected Central") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
                 screenshot(scenario, "home-recent")
                 scenario.onActivity { activity ->
                     assertTrue(shown(activity).any { it.tag == "home-record-action" })
@@ -76,11 +89,8 @@ class HomeNavigationInstrumentedTest {
                     assertFalse(shown(activity).any { it.tag == "home-record-action" })
                 }
                 screenshot(scenario, "home-menu")
-                scenario.onActivity { activity ->
-                    activity.onBackPressed()
-                    shown(activity).single { it.tag == "home-conversation:$conversation" }.performClick()
-                }
-                waitFor(scenario, "The clicked summary opens its original conversation") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "这是已提交的生成回答。" } }
+                scenario.onActivity { activity -> activity.onBackPressed() }
+                openGeneratedConversation(scenario)
                 assertEquals(conversation, fixture.openedId)
                 scenario.onActivity { activity ->
                     shown(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("生成的未发送草稿")
@@ -103,14 +113,26 @@ class HomeNavigationInstrumentedTest {
         ConversationFixture().use { fixture ->
             val settings = Settings(context)
             settings.save(settings.read().copy(server = fixture.origin, token = "generated-home-owner-token-1234567890", debugHttp = true, syncMode = "manual", authSignedOut = false), confirmCentralEndpoint = true)
+            // The feed owns the home middle now: its failures stay distinct from an honest empty.
             for (failure in listOf("http", "missing-items", "invalid-id")) {
-                fixture.failure = failure
+                fixture.feedFailure = failure
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario, "Read failure is reported as a failure, not an empty history") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "对话暂不可读取，请稍后重试。" } }
-                    scenario.onActivity { assertFalse(shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "还没有对话。" }) }
+                    waitFor(scenario, "A feed read failure is reported, not an empty day list") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "暂不可读取" } }
+                    scenario.onActivity { assertFalse(shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "暂无记录。" }) }
                     if (failure == "http") screenshot(scenario, "home-history-error")
                 }
             }
+            fixture.feedFailure = ""
+            // The conversation history page keeps its own failure surface.
+            fixture.failure = "http"
+            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+                scenario.onActivity { activity -> shown(activity).single { it.tag == "home-ask-action" }.performClick() }
+                waitFor(scenario, "The Ask page offers its history") { shown(it).any { row -> row.contentDescription == "对话历史" } }
+                scenario.onActivity { activity -> shown(activity).single { it.contentDescription == "对话历史" }.performClick() }
+                waitFor(scenario, "A failed history read is reported on its own page") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "对话暂不可读取，请稍后重试。" } }
+                scenario.onActivity { assertFalse(shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "还没有对话。" }) }
+            }
+            fixture.failure = ""
             settings.save(settings.read().copy(server = "", token = "", debugHttp = false), confirmCentralEndpoint = true)
         }
         // The no-draft first-use capture must not inherit a retained draft from a previous journey.
@@ -156,13 +178,13 @@ class HomeNavigationInstrumentedTest {
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     waitFor(scenario, "A service interruption stays visible after capture safely stops") { shown(it).any { row -> row.tag == "home-attention" } }
-                    waitFor(scenario, "Conversation row is ready") { shown(it).any { row -> row.tag == "home-conversation:$conversation" } }
+                    waitFor(scenario, "Feed row is ready") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
                     scenario.onActivity { activity ->
-                        val stale = shown(activity).single { it.tag == "home-conversation:$conversation" }
+                        val stale = shown(activity).single { it.tag == "home-original:$feedPhoto" }
                         settings.save(settings.read().copy(server = "", token = "", debugHttp = false), confirmCentralEndpoint = true)
                         stale.performClick()
                         assertTrue(shown(activity).any { it.tag == "home-record-action" })
-                        assertFalse(shown(activity).any { it.tag == "home-conversation:$conversation" })
+                        assertFalse(shown(activity).any { it.tag == "home-original:$feedPhoto" })
                         assertFalse(settings.enabled)
                     }
                 }
@@ -188,7 +210,7 @@ class HomeNavigationInstrumentedTest {
                 }
                 fixture.archiveFailure = true
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario,"History read completed") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "还没有对话。" } }
+                    waitFor(scenario,"History read completed") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "暂无记录。" } }
                     scenario.onActivity { activity ->
                         assertFalse("An unavailable inventory must not be declared empty",shown(activity).any { it.tag == "home-first-use-guide" })
                         assertFalse(settings.enabled)
@@ -206,8 +228,8 @@ class HomeNavigationInstrumentedTest {
             val draftDirectory = File(context.noBackupFilesDir, "central-native/" + SourceRules.hash(fixture.origin))
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario,"Recent conversation is available") { shown(it).any { row -> row.tag == "home-conversation:$conversation" } }
-                    scenario.onActivity { shown(it).single { row -> row.tag == "home-conversation:$conversation" }.performClick() }
+                    waitFor(scenario,"The grouped feed is available") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
+                    openGeneratedConversation(scenario)
                     waitFor(scenario,"The completed turn must show its actions") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "更多" } }
                     scenario.onActivity { activity ->
                         shown(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated retained follow-up")
@@ -289,8 +311,8 @@ class HomeNavigationInstrumentedTest {
             settings.save(before.copy(server=fixture.origin,token="generated-home-owner-token-1234567890",debugHttp=true,syncMode="manual",syncPaused=true,authSignedOut=false),confirmCentralEndpoint=true)
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario,"Existing long conversation loaded") { shown(it).any { row -> row.tag == "home-conversation:$conversation" } }
-                    scenario.onActivity { a -> shown(a).single { it.tag == "home-conversation:$conversation" }.performClick() }
+                    waitFor(scenario,"The grouped feed is available") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
+                    openGeneratedConversation(scenario)
                     waitFor(scenario,"Long answer loaded") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString().contains("Generated original answer paragraph 70") } }
                     var position=0
                     scenario.onActivity { a ->
@@ -317,8 +339,8 @@ class HomeNavigationInstrumentedTest {
             settings.save(before.copy(server=fixture.origin,token="generated-home-owner-token-1234567890",debugHttp=true,syncMode="manual",syncPaused=true,authSignedOut=false),confirmCentralEndpoint=true)
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario,"Existing conversation loaded") { shown(it).any { row -> row.tag == "home-conversation:$conversation" } }
-                    scenario.onActivity { a -> shown(a).single { it.tag == "home-conversation:$conversation" }.performClick() }
+                    waitFor(scenario,"The grouped feed is available") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
+                    openGeneratedConversation(scenario)
                     waitFor(scenario,"Original citation available") { shown(it).any { row -> row.contentDescription == "查看引用 1 · Generated source" } }
                     scenario.onActivity { a -> shown(a).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated pin-race draft"); shown(a).single { it.contentDescription == "查看引用 1 · Generated source" }.performClick() }
                     val end=SystemClock.elapsedRealtime()+15_000
@@ -351,7 +373,25 @@ class HomeNavigationInstrumentedTest {
         @Volatile var longAnswer = false
         @Volatile var emptyArchive = false
         @Volatile var archiveFailure = false
+        @Volatile var feedFailure = ""
         private val evidence = "3f4cf6ee-b09b-4fcf-a718-c0944f4b46cc"
+        private val zone = java.time.ZoneId.systemDefault()
+        private val dayStart = java.time.LocalDate.now(zone).atStartOfDay(zone)
+        private val feedItems = JSONArray()
+            .put(JSONObject().put("id", feedPhoto).put("capturedAt", java.time.Instant.now().toString()).put("source", "screen")
+                .put("deviceId", "generated-device").put("hasImage", true)
+                .put("windowTitle", "生成的设计稿.png").put("appName", "生成设计工具").put("textPreview", "生成的设计稿标注内容"))
+            .put(JSONObject().put("id", feedAudio).put("capturedAt", dayStart.minusHours(2).toInstant().toString()).put("source", "media")
+                .put("deviceId", "generated-device").put("hasImage", false).put("durationMs", 642000)
+                .put("windowTitle", "生成的录音").put("appName", "录音机").put("textPreview", ""))
+            .put(JSONObject().put("id", feedNote).put("capturedAt", dayStart.minusHours(3).toInstant().toString()).put("source", "note")
+                .put("deviceId", "generated-device").put("hasImage", false)
+                .put("windowTitle", "生成的会议纪要.txt").put("appName", "生成文本编辑器").put("textPreview", "生成的纪要正文摘要"))
+        private val thumbnail: ByteArray by lazy {
+            val bitmap = android.graphics.Bitmap.createBitmap(96, 64, android.graphics.Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(bitmap).apply { drawColor(0xFF33608C.toInt()); drawRect(8f, 8f, 88f, 56f, android.graphics.Paint().apply { color = 0xFFE8C468.toInt() }) }
+            java.io.ByteArrayOutputStream().also { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray()
+        }
         private val executor = Executors.newSingleThreadExecutor()
         init { executor.submit {
             while (!listener.isClosed) runCatching { listener.accept() }.getOrNull()?.use { socket ->
@@ -359,9 +399,19 @@ class HomeNavigationInstrumentedTest {
                 val first = input.readLine().orEmpty(); val path = first.split(' ').getOrElse(1) { "" }
                 while (!input.readLine().isNullOrBlank()) Unit
                 val isHistory = path.startsWith("/api/conversations?")
-                val isFailure = failure == "all" || failure == "http" && isHistory || archiveFailure && path == "/api/status"
+                val isFeedList = path.startsWith("/api/capture-browser?")
+                val isFailure = failure == "all" || failure == "http" && isHistory || archiveFailure && path == "/api/status" || feedFailure == "http" && isFeedList
+                if (path.startsWith("/api/capture-browser/") && path.contains("/image")) {
+                    val bytes = thumbnail
+                    socket.getOutputStream().apply { write("HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(bytes); flush() }
+                    return@use
+                }
                 val body = when {
                     isFailure -> JSONObject().put("error", "generated_failure")
+                    isFeedList && feedFailure == "missing-items" -> JSONObject().put("unrelated", true)
+                    isFeedList && feedFailure == "invalid-id" -> JSONObject().put("items", JSONArray().put(JSONObject()
+                        .put("id", "not-a-record-id").put("capturedAt", "2026-10-28T10:00:00Z").put("source", "note").put("deviceId", "generated-device")))
+                    isFeedList -> JSONObject().put("items", if (emptyArchive) JSONArray() else feedItems)
                     isHistory && failure == "missing-items" -> JSONObject().put("unrelated", true)
                     isHistory && failure == "invalid-id" -> JSONObject().put("items", JSONArray().put(JSONObject().put("id", "not-a-conversation-id")))
                     path.startsWith("/api/conversations?") -> JSONObject().put("items", JSONArray().apply { if (!emptyArchive) put(JSONObject().put("id", conversation).put("title", "周五评审需要准备什么？").put("updatedAt", "2026-10-28T10:00:00Z").put("turnCount", 1)) })

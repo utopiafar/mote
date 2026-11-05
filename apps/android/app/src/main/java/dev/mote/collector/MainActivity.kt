@@ -91,7 +91,6 @@ class MainActivity : MoteActivity() {
     private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
     private lateinit var homeCaptureRow: HomeCaptureRow
-    private lateinit var homeConversationsSection: LinearLayout
     private lateinit var homeRecordReceipt: LinearLayout
     private var homeReceiptAvailable = false
     internal fun isFirstUseRecordEntry() = firstUse
@@ -313,14 +312,6 @@ class MainActivity : MoteActivity() {
         // Look at the top, act at the bottom: one capture line here, Ask and quick records in the thumb zone.
         homeCaptureRow = home.captureRow(this, open = { startActivity(Intent(this, CaptureStatusActivity::class.java)) }, act = ::runCaptureAction)
         content.addView(homeCaptureRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
-        // Work and discovery own their home blocks: a stopped plugin publishes none.
-        val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
-        val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
-        if (NativeWorkDiscoveryPlugin.HomeSection.CALENDAR_NEEDS in workHomeSections) {
-            workDiscovery.homeCalendarNeeds(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
-                sections.add(it); content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-            }
-        }
         homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         val pageContent = content
         val guide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-first-use-guide" }
@@ -336,31 +327,33 @@ class MainActivity : MoteActivity() {
         val capture = lightControl(MoteI18n.text("屏幕与应用记录"),MoteI18n.text("设置")) { showPage(Page.PRIVACY) }
         capture.first.text = MoteI18n.text("需要时再选范围、开权限")
         content = pageContent
-        homeConversationsSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(homeConversationsSection, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
-        content = homeConversationsSection
-        text(MoteI18n.text("最近对话"), NativeFontRole.META, NativeColorRole.MUTED).apply {
-            setPadding(0, dp(9), 0, dp(1))
+        // H08: waiting calendar items and existing discoveries lead the home list in the
+        // shared row style; the feed below groups recent originals by day. Neither block
+        // takes a position when its plugin has nothing to show.
+        val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
+        val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
+        if (NativeWorkDiscoveryPlugin.HomeSection.CALENDAR_NEEDS in workHomeSections) {
+            workDiscovery.homeCalendarNeeds(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
+                sections.add(it); content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+            }
         }
-        val conversations = home.conversation(this, archiveEmpty = { empty ->
-            homeArchiveEmpty = empty
-            firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
-            updateFirstUse()
-        }) { id ->
-            // The same native Ask state owns the draft and the selected conversation.
-            intent.removeExtra("moteConversationOrigin");intent.removeExtra("moteConversationGeneration");intent.putExtra("conversationId", id)
-            centralContent?.captureAskConversationIntent()
-            showPage(Page.ASK)
-        }
-        sections.add(conversations)
-        content.addView(conversations)
-        content = pageContent
-        // Existing discoveries follow the continuing work; the home never generates a new one.
         if (NativeWorkDiscoveryPlugin.HomeSection.DISCOVERY in workHomeSections) {
             workDiscovery.homeDiscovery(this) { id ->
                 startActivity(Intent(this,CentralActivity::class.java).putExtra("page","insights").apply{if(id!=null)putExtra("insightId",id)})
             }.also { sections.add(it); content.addView(it) }
         }
+        val feed = home.feed(this, archiveEmpty = { empty ->
+            homeArchiveEmpty = empty
+            firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
+            updateFirstUse()
+        }) { original, origin ->
+            startActivity(Intent(this, CaptureRecordsActivity::class.java)
+                .putExtra("recordId", original.id).putExtra("directReader", true).putExtra("recordRemote", true)
+                .putExtra("recordOrigin", origin).putExtra("recordDeviceId", original.deviceId)
+                .putExtra("recordSource", original.source).putExtra("recordDate", original.day))
+        }
+        sections.add(feed)
+        content.addView(feed)
         sections.show()
         updateFirstUse()
     }
@@ -373,7 +366,6 @@ class MainActivity : MoteActivity() {
         homeConnectionAction?.text = MoteI18n.text(if (connected) "查看状态" else "连接")
         homeConnectionHelp?.visibility = if (connected) View.GONE else View.VISIBLE
         firstUseGuide?.visibility = if (firstUse || firstReceipt) View.VISIBLE else View.GONE
-        homeConversationsSection.visibility = if (firstUse || firstReceipt) View.GONE else View.VISIBLE
     }
 
     private fun buildManagement() {
