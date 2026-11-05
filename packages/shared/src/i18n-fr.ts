@@ -10187,5 +10187,13 @@ export const french: Readonly<Record<string, string>> = {
   "设备名称无效": "Nom d’appareil non valide",
   "有待发送记录，无法更换中央": "Des enregistrements en attente empêchent de changer de central",
   "扫描中央生成的连接二维码。": "Scanner le code QR de connexion généré par le central.",
-  "本人设备": "Cet appareil"
+  "本人设备": "Cet appareil",
+  "详情": "Détails",
+  "已整理，可搜索": "Organisé et recherchable",
+  "整理未完成": "Organisation incomplète",
+  "引用它的对话": "Conversations qui le citent",
+  "网页": "Web",
+  "参考整份资料": "L'intégralité du document",
+  "昨天": "Hier",
+  "{0}月{1}日": "{1}/{0}"
 };
