@@ -36,7 +36,7 @@ fun ActivityScenario<MainActivity>.awaitMainUi(): ActivityScenario<MainActivity>
     while (!ready && SystemClock.elapsedRealtime() < deadline) {
         onActivity { activity ->
             val rows = views(activity.window.decorView).toList()
-            ready = rows.any { it is MotePrimaryNavigation } && rows.any { it.isShown && (it.tag == "local-page-title" || it.tag == "central-title") }
+            ready = rows.any { it is MotePrimaryNavigation } && rows.any { it.isShown && (it.tag == "local-page-title" || it.tag == "central-title" || it.tag == "home-m-action") }
         }
         if (!ready) Thread.sleep(25)
     }
@@ -69,7 +69,7 @@ fun Activity.openGeneratedMenu() {
     repeat(8) {
         val rows = views(window.decorView)
         if (rows.any { it.isShown && it.tag == "menu:" + MoteI18n.text("资料与记忆") }) return
-        rows.firstOrNull { it.isShown && it.contentDescription == MoteI18n.text("打开菜单") }?.let { it.performClick(); return }
+        rows.firstOrNull { it.isShown && it.tag == "home-m-action" }?.let { it.performClick(); return }
         rows.firstOrNull { it.isShown && (it.tag?.toString()?.startsWith("local-back:") == true || (it is TextView && it.text.toString() == "‹")) }?.performClick()
     }
     error("Secondary menu unavailable")

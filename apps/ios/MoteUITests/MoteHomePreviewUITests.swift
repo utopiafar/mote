@@ -12,16 +12,16 @@ final class MoteHomePreviewUITests: XCTestCase {
 
     func testHomeActionsDispatchAndHighlightsOnlyAppearWhenSupplied() {
         let app = launch(state: "highlights")
-        XCTAssertTrue(app.buttons["生成的日程, 待补充"].exists)
-        XCTAssertTrue(app.buttons["生成的发现, 查看发现"].exists)
-        XCTAssertLessThan(app.buttons["生成的日程, 待补充"].frame.minY, app.staticTexts["今天"].frame.minY)
+        XCTAssertTrue(app.buttons["生成的日程、待补充"].exists)
+        XCTAssertTrue(app.buttons["生成的发现、查看发现"].exists)
+        XCTAssertLessThan(app.buttons["生成的日程、待补充"].frame.minY, app.staticTexts["今天"].frame.minY)
 
-        app.buttons["生成的日程, 待补充"].tap()
+        app.buttons["生成的日程、待补充"].tap()
         XCTAssertTrue(app.staticTexts["highlight.schedule.generated-schedule"].waitForExistence(timeout: 2))
-        app.buttons["生成的发现, 查看发现"].tap()
+        app.buttons["生成的发现、查看发现"].tap()
         XCTAssertTrue(app.staticTexts["highlight.discovery.generated-discovery"].waitForExistence(timeout: 2))
 
-        app.buttons["白板：第三季度路线图, 18:02 · 照片"].tap()
+        app.buttons["白板：第三季度路线图、18:02 · 照片"].tap()
         XCTAssertTrue(app.staticTexts["original.generated-board"].waitForExistence(timeout: 2))
 
         for (label, action) in [("我的 Mote", "profile"), ("搜索", "search"), ("问一问", "ask"), ("记录", "record"), ("拍照", "camera"), ("录音", "microphone")] {
