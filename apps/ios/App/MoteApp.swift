@@ -2,16 +2,27 @@ import SwiftUI
 
 @main
 struct MoteApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     private let arguments = ProcessInfo.processInfo.arguments
 
     var body: some Scene {
         WindowGroup {
-            if arguments.contains("-MoteComponentPreview") {
-                ComponentPreview()
-                    .preferredColorScheme(previewScheme)
-            } else {
-                Color(uiColor: .systemBackground)
-                    .ignoresSafeArea()
+            Group {
+                if arguments.contains("-MoteComponentPreview") {
+                    ComponentPreview()
+                        .preferredColorScheme(previewScheme)
+                } else {
+                    Color(uiColor: .systemBackground)
+                        .ignoresSafeArea()
+                }
+            }
+            .task {
+                await AppSendPipeline.shared.reconcileAndSend()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await AppSendPipeline.shared.reconcileAndSend() }
             }
         }
     }

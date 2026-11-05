@@ -72,7 +72,13 @@ public struct SendQueueItem: Codable, Equatable, Sendable {
     }
 }
 
-public final class SendQueue {
+public enum SendQueueError: Error, Equatable {
+    case attachmentTooLarge
+}
+
+public final class SendQueue: @unchecked Sendable {
+    public static let maximumAttachmentBytes = 50 * 1024 * 1024
+
     private let fileURL: URL
     private let fileManager: FileManager
     private let lock = NSLock()
@@ -84,6 +90,7 @@ public final class SendQueue {
 
     @discardableResult
     public func enqueue(_ payload: Data, id: String = UUID().uuidString) throws -> SendQueueItem {
+        guard payload.count <= Self.maximumAttachmentBytes else { throw SendQueueError.attachmentTooLarge }
         lock.lock()
         defer { lock.unlock() }
         let item = SendQueueItem(id: id, payload: payload)
