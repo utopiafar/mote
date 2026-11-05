@@ -75,6 +75,24 @@ class NativeAskPluginTest {
         assertEquals(conversation, restored.getString("conversationId"))
     }
 
+    @Test fun aListQuestionStartsANewThreadWithoutDroppingItsStagedImages() = temporary { directory ->
+        val controller = NativeAskController(storage(directory))
+        controller.restore(JSONArray())
+        controller.replace(JSONObject()
+            .put("conversationId", UUID.randomUUID().toString())
+            .put("runId", UUID.randomUUID().toString()).put("runStatus", "running")
+            .put("question", "Generated prior question")
+            .put("attachments", JSONArray().put(JSONObject().put("id", UUID.randomUUID().toString())))
+            .put("imageUploads", JSONObject().put("file:///generated-image", JSONObject().put("status", "pending"))))
+        controller.startConversation("Generated list question")
+        assertEquals("Generated list question", controller.state.getString("question"))
+        assertEquals(1, controller.state.getJSONArray("attachments").length())
+        assertEquals("pending", controller.state.getJSONObject("imageUploads").getJSONObject("file:///generated-image").getString("status"))
+        assertFalse(controller.state.has("conversationId"))
+        assertFalse(controller.state.has("runId"))
+        assertFalse(controller.state.has("runStatus"))
+    }
+
     @Test fun recreatedActivityRetriesTheExactUnconfirmedAdmissionInsteadOfCreatingANewOne() = temporary { directory ->
         val first = NativeAskController(storage(directory))
         first.restore(JSONArray())
