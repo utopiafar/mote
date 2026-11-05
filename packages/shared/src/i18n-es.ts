@@ -10107,6 +10107,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "当前显示本机副本；中央接收仍待确认。正文最多预览 100000 个字符。": "Se muestra la copia local; la recepción en Central aún no está confirmada. La vista previa muestra hasta 100000 caracteres.",
   "一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。": "Selecciona hasta 4.000 archivos a la vez. Para colecciones más grandes, usa un archivo ZIP o importa por lotes.",
   "当前默认": "Predeterminado actual",
+  "{0} 起暂停": "En pausa desde {0}",
   "屏幕采集已暂停": "Captura de pantalla en pausa",
   "其他来源照常采集": "Las demás fuentes siguen capturando",
   "文件夹照常同步": "Las carpetas siguen sincronizándose",

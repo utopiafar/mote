@@ -10107,6 +10107,7 @@ export const english: Readonly<Record<string, string>> = {
   "当前显示本机副本；中央接收仍待确认。正文最多预览 100000 个字符。": "The local copy is shown; Central receipt is still unconfirmed. The preview shows up to 100000 characters.",
   "一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。": "Select up to 4,000 files at a time. For larger collections, use a ZIP archive or import in batches.",
   "当前默认": "Current default",
+  "{0} 起暂停": "Paused since {0}",
   "屏幕采集已暂停": "Screen capture paused",
   "其他来源照常采集": "Other sources keep collecting",
   "文件夹照常同步": "Folders keep syncing",
