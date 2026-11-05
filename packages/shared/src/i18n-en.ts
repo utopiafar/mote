@@ -3029,7 +3029,7 @@ export const english: Readonly<Record<string, string>> = {
   "中央节点返回 HTTP {0}；队列已保留": "Central node returned HTTP {0}; queue preserved",
   "中央节点确认格式无效；队列已保留": "Invalid central acknowledgement; queue preserved",
   "中央节点确认 ID 不匹配；队列已保留": "Central acknowledgement ID mismatch; queue preserved",
-  "状态读取失败，请重试。": "Cannot read status. Retry.",
+  "状态读取失败。": "Cannot read status.",
   "有未保存的修改，离开此页会丢弃。保存后立即生效。": "Unsaved changes will be discarded when leaving this page. Saved changes apply immediately.",
   "保存后立即应用；必要时会短暂暂停并自动恢复采集。": "Applies on save; collection may briefly pause and resume automatically.",
   "设置保存后立即生效；采集保持当前开停状态。": "Saved settings apply immediately; collection keeps its current running state.",

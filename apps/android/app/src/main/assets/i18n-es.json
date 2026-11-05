@@ -3028,7 +3028,7 @@
   "中央节点返回 HTTP {0}；队列已保留": "El nodo central devolvió HTTP {0}; cola conservada",
   "中央节点确认格式无效；队列已保留": "Confirmación central no válida; cola conservada",
   "中央节点确认 ID 不匹配；队列已保留": "ID de confirmación central no coincidente; cola conservada",
-  "状态读取失败，请重试。": "No se puede leer el estado. Reintenta.",
+  "状态读取失败。": "No se puede leer el estado.",
   "有未保存的修改，离开此页会丢弃。保存后立即生效。": "Los cambios sin guardar se descartarán al salir de esta página. Los cambios guardados se aplican inmediatamente.",
   "保存后立即应用；必要时会短暂暂停并自动恢复采集。": "Se aplica al guardar; la captura puede pausarse brevemente y reanudarse automáticamente.",
   "设置保存后立即生效；采集保持当前开停状态。": "La configuración guardada se aplica inmediatamente; la captura mantiene su estado actual.",
