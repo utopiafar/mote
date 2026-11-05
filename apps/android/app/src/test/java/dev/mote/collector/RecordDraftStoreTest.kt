@@ -29,7 +29,6 @@ class RecordDraftStoreTest {
         assertEquals(original,prepared.getJSONObject("metadata").getJSONObject("noteOrigin").getString("text"))
         assertEquals(turn,prepared.getJSONObject("metadata").getJSONObject("noteOrigin").getJSONArray("messageIds").getString(0))
         assertFalse(prepared.getJSONObject("metadata").getJSONObject("noteOrigin").has("originPresentation"))
-        reopened.finish(prepared.getString("id"))
         assertEquals(presentation.toString(),RecordDraftStore(directory,cipher).record(prepared.getString("id"))!!.getJSONObject("originPresentation").toString())
     }
     @Test fun historyCompletionRequiresOriginalAttachmentHashAndKeepsDraft() {
@@ -62,7 +61,8 @@ class RecordDraftStoreTest {
         assertEquals(1, queue.depth()); assertEquals(prepared.toString(), retry.toString())
         assertEquals("generated original attachment", String(reopened.bytes(attachment.getString("id"))))
         assertFalse(directory.listFiles()!!.any { String(it.readBytes()).contains("Generated comment") || String(it.readBytes()).contains("generated original attachment") })
-        reopened.finish(retry.getString("id")); assertFalse(reopened.hasPrepared()); assertEquals("", reopened.draft().getString("text"))
+        assertEquals("Generated comment", reopened.draft().getString("text")); assertTrue(reopened.hasPrepared())
+        reopened.clear(); assertFalse(reopened.hasPrepared()); assertEquals("", reopened.draft().getString("text"))
         assertEquals(1, reopened.record(retry.getString("id"))!!.getJSONArray("attachments").length())
     }
     @Test fun `attachment only and shared original are valid but an empty record is not`() {
@@ -70,7 +70,7 @@ class RecordDraftStoreTest {
         assertThrows(IllegalArgumentException::class.java) { store.prepare("", ::event) }
         val attachment = store.stage(byteArrayOf(1, 2, 3), "fixture.jpg", "image/jpeg")
         store.edit("", JSONArray().put(attachment), JSONObject().put("kind", "manual"))
-        val image = store.prepare("", ::event); assertEquals("", image.getString("ocrText")); store.finish(image.getString("id"))
+        val image = store.prepare("", ::event); assertEquals("", image.getString("ocrText"))
         store.edit("", JSONArray(), JSONObject().put("kind", "share").put("text", "Third party source"))
         assertEquals("", store.prepare("", ::event).getString("ocrText"))
         assertEquals("Third party source", store.draft().getJSONObject("origin").getString("text"))
@@ -104,7 +104,7 @@ class RecordDraftStoreTest {
         val store = RecordDraftStore(folder.newFolder(), cipher)
         val attachment = store.stage(byteArrayOf(1, 2), "fixture.bin", "application/octet-stream")
         store.edit("Generated retained note", JSONArray().put(attachment), JSONObject().put("kind", "manual"))
-        val event = store.prepare("", ::event); store.finish(event.getString("id"))
+        val event = store.prepare("", ::event); store.clear()
         store.prune { true }; assertNotNull(store.record(event.getString("id")))
         assertArrayEquals(byteArrayOf(1, 2), store.bytes(attachment.getString("id")))
         store.prune { false }; assertNull(store.record(event.getString("id")))
@@ -163,7 +163,60 @@ class RecordDraftStoreTest {
         assertEquals("Record", second.getString("ocrText"))
         assertThrows(IllegalArgumentException::class.java) { store.edit("Record", JSONArray(), JSONObject().put("kind", "manual"), "x".repeat(12001)) }
         assertEquals("Corrected description", store.draft().getString("description"))
-        store.finish(second.getString("id")); assertEquals("", store.draft().getString("description"))
+        store.clear(); assertEquals("", store.draft().getString("description"))
+    }
+
+    @Test fun `explicit clear returns the whole draft and undo restore survives a process restart`() {
+        val directory = folder.newFolder(); val store = RecordDraftStore(directory, cipher)
+        val photo = store.stage(byteArrayOf(7, 8, 9), "generated-photo.jpg", "image/jpeg")
+        val audio = store.stage(byteArrayOf(4, 5), "generated-audio.m4a", "audio/mp4")
+        val origin = JSONObject().put("kind", "share").put("text", "Shared source")
+        store.edit("Generated body", JSONArray().put(photo).put(audio), origin, "Generated description")
+        val prepared = store.prepare("https://fixture.example", ::event)
+
+        val removed = store.clear()
+        val emptied = RecordDraftStore(directory, cipher).draft()
+        assertEquals("", emptied.getString("text")); assertEquals("", emptied.getString("description"))
+        assertEquals(0, emptied.getJSONArray("attachments").length()); assertFalse(emptied.has("prepared"))
+        assertEquals("Generated body", removed.getString("text"))
+        assertEquals("Generated description", removed.getString("description"))
+        assertEquals(prepared.getString("id"), removed.getJSONObject("prepared").getString("id"))
+
+        val reopened = RecordDraftStore(directory, cipher)
+        reopened.restore(removed)
+        val reloaded = RecordDraftStore(directory, cipher).draft()
+        assertEquals("Generated body", reloaded.getString("text"))
+        assertEquals("Generated description", reloaded.getString("description"))
+        assertEquals(origin.toString(), reloaded.getJSONObject("origin").toString())
+        assertEquals(2, reloaded.getJSONArray("attachments").length())
+        assertEquals(photo.getString("id"), reloaded.getJSONArray("attachments").getJSONObject(0).getString("id"))
+        assertEquals(audio.getString("id"), reloaded.getJSONArray("attachments").getJSONObject(1).getString("id"))
+        assertEquals(prepared.getString("id"), reloaded.getJSONObject("prepared").getString("id"))
+        assertArrayEquals(byteArrayOf(7, 8, 9), reopened.bytes(photo.getString("id")))
+        assertArrayEquals(byteArrayOf(4, 5), reopened.bytes(audio.getString("id")))
+    }
+
+    @Test fun `undo restore is rejected for content that could not have been drafted`() {
+        val store = RecordDraftStore(folder.newFolder(), cipher)
+        assertThrows(IllegalArgumentException::class.java) { store.restore(JSONObject().put("text", "x").put("attachments", JSONArray())) }
+        assertThrows(IllegalArgumentException::class.java) {
+            store.restore(JSONObject().put("text", "x").put("description", "x".repeat(12001)).put("attachments", JSONArray()).put("origin", JSONObject().put("kind", "manual")))
+        }
+        assertEquals("", store.draft().getString("text"))
+    }
+
+    @Test fun `prepared submission pins the data origin only until the event reaches the durable queue`() {
+        val directory = folder.newFolder(); val store = RecordDraftStore(directory, cipher)
+        assertFalse(store.pendingSubmission { error("no prepared event") })
+        store.edit("Generated pending record", JSONArray(), JSONObject().put("kind", "manual"))
+        val prepared = store.prepare("https://fixture.example", ::event)
+        assertTrue(store.pendingSubmission { false })
+        assertFalse(store.pendingSubmission { it == prepared.getString("id") })
+        val reopened = RecordDraftStore(directory, cipher)
+        assertTrue(reopened.pendingSubmission { false })
+        assertFalse(reopened.pendingSubmission { it == prepared.getString("id") })
+        reopened.clear()
+        assertFalse(reopened.pendingSubmission { error("cleared draft") })
     }
 
     @Test fun `standalone share registration retains originals and never edits or clears the manual draft`() {
@@ -180,7 +233,7 @@ class RecordDraftStoreTest {
         assertEquals(shared.getString("id"), reopened.record(submission.getString("id"))!!.getJSONArray("attachments").getJSONObject(0).getString("id"))
         assertArrayEquals(sharedBytes, reopened.bytes(shared.getString("id")))
         assertArrayEquals(byteArrayOf(9, 8), reopened.bytes(draftAttachment.getString("id")))
-        reopened.finish(submission.getString("id"))
+        reopened.prepareSubmission("https://generated.example", submission, JSONArray().put(shared))
         assertEquals(before, reopened.draft().toString())
     }
 

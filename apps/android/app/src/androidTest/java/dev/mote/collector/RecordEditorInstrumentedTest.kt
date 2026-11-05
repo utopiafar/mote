@@ -91,24 +91,47 @@ class RecordEditorInstrumentedTest {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
         ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
             waitUntil("Editor loaded") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == "正在想什么" }?.isEnabled == true }; ready }
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.contentDescription == "录音" }.performClick() }
+            scenario.onActivity { activity -> views(activity.window.decorView).single { it.contentDescription == "录音" }.performClick() }
             Thread.sleep(1300)
             scenario.onActivity { activity ->
                 assertTrue(views(activity.window.decorView).single { it.tag == "record-leave-notice" }.isShown)
                 screenshot(activity,"editor-recording")
             }
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.contentDescription == "停止录音" }.performClick() }
+            scenario.onActivity { activity -> views(activity.window.decorView).single { it.contentDescription == "停止录音" }.performClick() }
             waitUntil("Stopped audio persisted") { context.recordDraftStore().draft().getJSONArray("attachments").let { it.length() > 0 && it.getJSONObject(it.length() - 1).getString("mime") == "audio/mp4" } }
             val files = context.recordDraftStore().draft().getJSONArray("attachments"); val audio = files.getJSONObject(files.length() - 1)
             val temp = File(context.cacheDir, "generated-audio-check.m4a"); temp.writeBytes(context.recordDraftStore().bytes(audio.getString("id")))
             val metadata = android.media.MediaMetadataRetriever(); metadata.setDataSource(temp.absolutePath)
             assertTrue(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong() > 0); metadata.release(); temp.delete()
-            waitUntil("Audio preview button ready") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<TextView>().any { view -> view.text.toString() == "播放" } }; ready }
+            waitUntil("Audio preview button ready") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).any { view -> view.contentDescription?.toString() == "播放" } }; ready }
             scenario.onActivity { activity -> assertFalse(views(activity.window.decorView).single { it.tag == "record-leave-notice" }.isShown) }
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().first { it.text.toString() == "播放" }.performClick(); screenshot(activity, "editor-audio-preview") }
+            scenario.onActivity { activity -> views(activity.window.decorView).first { it.contentDescription?.toString() == "播放" }.performClick(); screenshot(activity, "editor-audio-preview") }
             scenario.recreate()
             waitUntil("Audio retained after recreation") { context.recordDraftStore().draft().getJSONArray("attachments").toString().contains(audio.getString("id")) }
         }
+    }
+    @Test fun explicitClearOffersOneUndoThatRestoresBodyAttachmentsOriginAndDescription() {
+        guard()
+        val store = context.recordDraftStore()
+        try {
+            val image = store.stage(byteArrayOf(9, 9, 9), "generated-undo-photo.jpg", "image/jpeg")
+            store.edit("Generated undo body", org.json.JSONArray().put(image), org.json.JSONObject().put("kind", "share").put("text", "Generated undo original"), "Generated undo description")
+            ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
+                waitUntil("Draft loads") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == "正在想什么" }?.isEnabled == true }; ready }
+                waitUntil("Clear control appears only with content") { var shown = false; scenario.onActivity { shown = views(it.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == "清空" && it.isShown } }; shown }
+                scenario.onActivity { screenshot(it, "editor-before-clear"); views(it.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "清空" }.performClick() }
+                waitUntil("Clear empties the durable draft") { val draft = store.draft(); draft.getString("text") == "" && draft.getJSONArray("attachments").length() == 0 && draft.getString("description") == "" && draft.getJSONObject("origin").optString("text") == "" }
+                waitUntil("Clear toast offers 已清空 and 撤销") { var shown = false; scenario.onActivity { a -> val texts = views(a.window.decorView).filterIsInstance<TextView>().map { it.text.toString() }; shown = "已清空" in texts && "撤销" in texts }; shown }
+                scenario.onActivity { screenshot(it, "editor-cleared-undo") }
+                scenario.onActivity { views(it.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "撤销" }.performClick() }
+                waitUntil("Undo restores the whole durable draft") { val draft = store.draft(); draft.getString("text") == "Generated undo body" && draft.getString("description") == "Generated undo description" && draft.getJSONArray("attachments").length() == 1 && draft.getJSONArray("attachments").getJSONObject(0).getString("id") == image.getString("id") && draft.getJSONObject("origin").optString("text") == "Generated undo original" }
+                waitUntil("Restored draft renders again") { var ready = false; scenario.onActivity { a -> ready = views(a.window.decorView).filterIsInstance<EditText>().any { it.contentDescription == "正在想什么" && it.text.toString() == "Generated undo body" } }; ready }
+                scenario.onActivity { screenshot(it, "editor-undo-restored") }
+                scenario.recreate()
+                waitUntil("Undo survives recreation") { store.draft().getString("text") == "Generated undo body" && store.draft().getJSONArray("attachments").length() == 1 }
+                assertArrayEquals(byteArrayOf(9, 9, 9), store.bytes(image.getString("id")))
+            }
+        } finally { store.clear() }
     }
     @Test fun leavingAnActualRecordingStopsItAndKeepsAnEncodedPrivateDraft() {
         guard();instrumentation.uiAutomation.grantRuntimePermission(context.packageName,android.Manifest.permission.RECORD_AUDIO)
@@ -116,7 +139,7 @@ class RecordEditorInstrumentedTest {
             waitUntil("Editor loaded") { var ready=false;scenario.onActivity { ready=views(it.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription=="正在想什么" }?.isEnabled==true };ready }
             scenario.onActivity { a ->
                 views(a.window.decorView).filterIsInstance<EditText>().single { it.contentDescription=="正在想什么" }.setText("Generated draft before leaving recording")
-                views(a.window.decorView).filterIsInstance<TextView>().single { it.contentDescription=="录音" }.performClick()
+                views(a.window.decorView).single { it.contentDescription=="录音" }.performClick()
             }
             Thread.sleep(1300)
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
@@ -125,7 +148,7 @@ class RecordEditorInstrumentedTest {
             val audio=draft.getJSONArray("attachments").getJSONObject(0);val file=File(context.cacheDir,"generated-left-recording.m4a");file.writeBytes(context.recordDraftStore().bytes(audio.getString("id")))
             val metadata=android.media.MediaMetadataRetriever();try{metadata.setDataSource(file.absolutePath);assertTrue(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()>0)}finally{metadata.release();file.delete()}
             assertEquals(0,context.queue().depth());scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-            waitUntil("Stopped draft returns with playback") { var found=false;scenario.onActivity { a -> found=views(a.window.decorView).filterIsInstance<TextView>().any { it.text.toString()=="播放" && it.isShown } };found }
+            waitUntil("Stopped draft returns with playback") { var found=false;scenario.onActivity { a -> found=views(a.window.decorView).any { it.contentDescription?.toString()=="播放" && it.isShown } };found }
             scenario.onActivity { a -> assertFalse(views(a.window.decorView).any { it.contentDescription=="停止录音" });screenshot(a,"recording-left-and-returned") }
             scenario.recreate();waitUntil("Stopped original survives recreation") { context.recordDraftStore().draft().getJSONArray("attachments").optJSONObject(0)?.optString("id")==audio.getString("id") }
         }
@@ -174,7 +197,8 @@ class RecordEditorInstrumentedTest {
             waitUntil("Current mixed native draft must load") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == "正在想什么" }?.isEnabled == true }; ready }
             assertEquals("Opening the mixed draft must never save it", before, context.queue().dedupeIds().toSet())
             scenario.onActivity { activity -> screenshot(activity, "editor-mixed-before-save"); views(activity.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "保存" }.performClick() }
-            waitUntil("One explicit save creates exactly one mixed durable record") { (context.queue().dedupeIds().toSet() - before).size == 1 && store.draft().getJSONArray("attachments").length() == 0 }
+            waitUntil("One explicit save creates exactly one mixed durable record") { (context.queue().dedupeIds().toSet() - before).size == 1 }
+            assertEquals("The single durable draft keeps its originals after saving", originals.size, store.draft().getJSONArray("attachments").length())
         }
         val created = context.queue().dedupeIds().toSet() - before; assertEquals(1, created.size); val id = created.single()
         UploadWorker.schedule(context, Settings(context).read(), true)

@@ -53,7 +53,8 @@ final class HomeModel {
 
     private static func readLocalState(fileManager: FileManager) -> LocalState {
         let connection = (try? MoteStorage.connectionStore(fileManager: fileManager).read()) ?? nil
-        let hasDraft = (try? MoteStorage.draftStore(fileManager: fileManager).exists()) ?? false
+        let hasDraft = (try? MoteStorage.editorDraftStore(fileManager: fileManager).load())
+            .map { !$0.isEmpty } ?? false
         let pendingCount = (try? MoteStorage.sendQueue(fileManager: fileManager).pending().count) ?? 0
         return LocalState(connection: connection, hasDraft: hasDraft, pendingCount: pendingCount)
     }

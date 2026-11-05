@@ -85,6 +85,7 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
         })
         write(state); return JSONObject(event.toString())
     }
+    /** Registers an independent submission without editing the retained manual draft. */
     @Synchronized fun prepareSubmission(origin: String, event: JSONObject, attachments: JSONArray, originPresentation: JSONObject? = null): JSONObject {
         val id = UUID.fromString(event.getString("id")).toString()
         require(attachments.length() <= 10)
@@ -98,10 +99,26 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
         })
         write(state); return JSONObject(event.toString())
     }
-    @Synchronized fun finish(id: String) {
+
+    /** The single draft is emptied and its whole previous content is returned for an undo restore. */
+    @Synchronized fun clear(): JSONObject {
         val state = state()
-        if (state.getJSONObject("draft").optJSONObject("prepared")?.optString("id") == id) { state.put("draft", emptyDraft()); write(state) }
+        val removed = JSONObject(state.getJSONObject("draft").toString())
+        state.put("draft", emptyDraft()); write(state)
+        return removed
     }
+
+    /** A draft returned by clear() is restored verbatim, including its prepared submission identity. */
+    @Synchronized fun restore(draft: JSONObject) {
+        require(draft.optString("text").length <= 100000 && (draft.optJSONArray("attachments")?.length() ?: 0) <= 10 && draft.optString("description").length <= 12000)
+        require(draft.optJSONObject("origin") != null)
+        val state = state()
+        state.put("draft", JSONObject(draft.toString())); write(state)
+    }
+
+    /** A journaled submission whose event never reached the durable queue still pins the data origin. */
+    fun pendingSubmission(reachedQueue: (String) -> Boolean): Boolean =
+        state().getJSONObject("draft").optJSONObject("prepared")?.optString("id")?.takeIf { it.isNotBlank() }?.let { !reachedQueue(it) } == true
     @Synchronized fun record(id: String): JSONObject? = state().getJSONObject("records").optJSONObject(id)?.let { JSONObject(it.toString()) }
     @Synchronized fun acknowledge(id: String, attachment: String, captureId: String) {
         UUID.fromString(captureId); val state = state(); val record = state.getJSONObject("records").getJSONObject(id)

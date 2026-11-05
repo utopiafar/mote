@@ -161,7 +161,8 @@ internal class NotesOwner internal constructor(
                 recordEvent(current.getString("text"), current.getJSONObject("origin"), current.optString("description"), settings, config)
             }
             app.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
-            draft.finish(event.getString("id"))
+            // The draft is retained with its prepared identity: only explicit Clear or an
+            // edit ends it, and a repeated save reuses the same queued record.
             runCatching { UploadWorker.schedule(app, config) }
             event.getString("id")
         } ?: error(MoteI18n.text("请稍后重试"))
@@ -243,6 +244,8 @@ internal class NotesEditor internal constructor(private val owner: NotesOwner, p
     fun draft(): JSONObject = owner.draft.draft()
     fun edit(text: String, attachments: JSONArray, origin: JSONObject, description: String = "", presentation: JSONObject? = null) =
         owner.draft.edit(text, attachments, origin, description, presentation)
+    fun clearDraft(): JSONObject = owner.draft.clear()
+    fun restoreDraft(draft: JSONObject) = owner.draft.restore(draft)
     fun stage(bytes: ByteArray, name: String, mime: String, stagedId: String? = null): JSONObject = owner.draft.stage(bytes, name, mime, stagedId)
     fun holdMedia(item: JSONObject) = owner.draft.holdMedia(item)
     fun finishMedia(id: String) = owner.draft.finishMedia(id)
