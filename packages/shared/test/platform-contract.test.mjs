@@ -20,3 +20,12 @@ test('shortcuts is a first-class collector method with the same bounded metadata
   assert.deepEqual(recordMetadataSchema.parse(metadata).collector,metadata.collector);
   assert.equal(captureSchema.safeParse({id:'11111111-1111-4111-8111-111111111113',deviceId:'generated-iphone',deviceName:'Generated iPhone',platform:'ios',capturedAt:at,durationMs:0,source:'note',ocrText:'Generated shared original',metadata}).success,true);
 });
+
+test('iOS Shortcuts notifications are posted observations and require observer provenance',()=>{
+  const notification={action:'posted',notificationKey:'ab'.repeat(32),postedAt:at,ongoing:false,groupSummary:false,title:'Generated notification'};
+  const base={id:'11111111-1111-4111-8111-111111111115',deviceId:'generated-iphone',deviceName:'Generated iPhone',platform:'ios',capturedAt:at,durationMs:0,source:'notification',appId:'fixture.app',appName:'Generated app',privacy:{collection:'content'},metadata:{version:1,observedAt:at,collector:{method:'shortcuts'},observation:{sessionId:'22222222-2222-4222-8222-222222222222',elapsedRealtimeMs:0},notification}};
+  assert.equal(captureSchema.safeParse(base).success,true);
+  for(const action of ['updated','removed'])assert.equal(captureSchema.safeParse({...base,metadata:{...base.metadata,notification:{...notification,action}}}).success,false);
+  assert.equal(captureSchema.safeParse({...base,metadata:{...base.metadata,collector:{method:'notification_listener'}}}).success,true,'the existing listener provenance remains valid');
+  assert.equal(captureSchema.safeParse({...base,platform:'android'}).success,false,'Shortcuts is not observer provenance on Android');
+});

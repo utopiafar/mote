@@ -44,7 +44,7 @@ class FinalUiLayoutInstrumentedTest {
     @Test fun independentDescriptionKeepsThreeVisibleLinesAfterThemeRefreshAndRecreation() {
         ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
             until("editor ready") { var ready = false; scenario.onActivity { a -> ready = views(a.window.decorView).filterIsInstance<EditText>().any { it.tag == "record-description" && it.isEnabled } }; ready }
-            fun open() { scenario.onActivity { a -> views(a.window.decorView).single { it.contentDescription == "资料说明（选填）" }.performClick() } }
+            fun open() { scenario.onActivity { a -> views(a.window.decorView).single { it.tag == "record-describe-toggle" }.performClick() } }
             fun verify() {
                 frames(scenario); instrumentation.waitForIdleSync()
                 scenario.onActivity { a ->

@@ -29,7 +29,7 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
   let runId = '', contentOffset = 0, contentSource: SyncSource | undefined, contentOutcome: 'received' | 'unconfirmed' | undefined, selected: SyncHistoryItem | undefined, chunkOffset = 0;
   let pending: Awaited<ReturnType<DesktopApi['syncHistoryPending']>> = [];
   (el('upload-day') as HTMLInputElement).value = localDay();
-  const failure = (error: unknown) => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText('状态读取失败，请重试。');
+  const failure = (error: unknown) => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText('状态读取失败。');
   const showFailure=(id:string,error:unknown)=>{
     const root=el(id),diagnostic=failure(error),classes=root.className;
     const known=[moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。'),moteText('无法访问采集记录，请检查中央连接权限')];
@@ -49,7 +49,7 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
       const [page, week, rows] = await Promise.all([api.syncHistory({ day, days, offset, source, outcome }), api.syncHistory({ day, days: 7 }), api.syncHistoryPending()]);
       if (!active || generation !== refreshGeneration||requestedScope!==scope()) return;
       pending = rows;readScope=requestedScope;render(page, week);showReadFacts();setText('upload-error', '');
-    } catch (error) { if (generation === refreshGeneration) renderReadableFailure(el('upload-error'),moteText('状态读取失败，请重试。'),failure(error)); }
+    } catch (error) { if (generation === refreshGeneration) renderReadableFailure(el('upload-error'),moteText('状态读取失败。'),failure(error)); }
     finally { if (generation === refreshGeneration) refreshing = false; }
   }
   function render(page: SyncHistoryPage, week: SyncHistoryPage) {
