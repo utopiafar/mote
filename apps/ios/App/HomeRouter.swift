@@ -1,3 +1,4 @@
+import MoteCentral
 import MoteCore
 import MoteDesign
 import Observation
@@ -14,7 +15,7 @@ final class HomeRouter {
         switch action {
         case .profile: destination = .profile
         case .search: destination = .search
-        case .ask: destination = .ask
+        case .ask: destination = .ask(nil)
         case .record: destination = .editor(.record)
         case .camera: destination = .editor(.camera)
         case .microphone: destination = .editor(.microphone)
@@ -33,14 +34,13 @@ enum HomeDestination: Equatable, Identifiable {
     // Destination: 中央原文搜索（后续单元）
     case search
     // Destination: IOS11 iOS 对话列表
-    case ask
+    case ask(OriginalAskScope?)
     // Destination: IOS08 iOS 编辑器；拍照直接进入编辑器，录音由 IOS09 接管
     case editor(EditorIntent)
     // Destination: IOS07 iOS 连接
     case connection
     // Destination: 采集状态（IOS09、IOS10 之后）
     case captureStatus
-    // Destination: 原文阅读（后续单元）
     case original(String)
     // Destination: 日程与待办、发现历史（后续单元）
     case highlight(HomeHighlight.Kind, String)
@@ -55,7 +55,7 @@ enum HomeDestination: Equatable, Identifiable {
         switch self {
         case .profile: "profile"
         case .search: "search"
-        case .ask: "ask"
+        case .ask(let scope): "ask.\(scope?.id ?? "none")"
         case .editor(let intent): "editor.\(intent.rawValue)"
         case .connection: "connection"
         case .captureStatus: "captureStatus"
@@ -83,26 +83,44 @@ enum HomeDestination: Equatable, Identifiable {
 
 struct HomeDestinationView: View {
     let destination: HomeDestination
+    let onAsk: (OriginalAskScope) -> Void
+    let onClearScope: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                MoteMark()
-                Text(destination.title)
-                    .font(MoteFont.title)
-                    .foregroundStyle(MoteDesignTokens.ink.color)
-                Text("此功能将在后续版本提供")
-                    .font(MoteFont.secondary)
-                    .foregroundStyle(MoteDesignTokens.muted.color)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(MoteDesignTokens.background.color)
-            .navigationTitle(destination.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { dismiss() }
+        if case .original(let id) = destination {
+            OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
+        } else {
+            NavigationStack {
+                VStack(spacing: 12) {
+                    MoteMark()
+                    Text(destination.title)
+                        .font(MoteFont.title)
+                        .foregroundStyle(MoteDesignTokens.ink.color)
+                    if case .ask(let scope?) = destination {
+                        HStack(spacing: 8) {
+                            Text(scope.title)
+                                .font(MoteFont.secondary)
+                                .foregroundStyle(MoteDesignTokens.ink.color)
+                                .lineLimit(1)
+                            Button("清除范围", action: onClearScope)
+                                .font(MoteFont.smallAction)
+                                .frame(minHeight: MoteMetrics.touchTarget)
+                        }
+                        .accessibilityElement(children: .contain)
+                    }
+                    Text("此功能将在后续版本提供")
+                        .font(MoteFont.secondary)
+                        .foregroundStyle(MoteDesignTokens.muted.color)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(MoteDesignTokens.background.color)
+                .navigationTitle(destination.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("关闭") { dismiss() }
+                    }
                 }
             }
         }
