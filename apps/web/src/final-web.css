@@ -3,7 +3,7 @@
 .app-shell[data-navigation] .sidebar .brand { margin-bottom:0; padding:4px 10px 16px; gap:10px; line-height:1.2; }
 .app-shell[data-navigation] .mote-symbol { width:28px; height:28px; font-size:23px; letter-spacing:-1.5px; padding:0 1px 3px 0; border-radius:6px; }
 .app-shell[data-navigation] .sidebar nav { gap:2px; }
-.app-shell[data-navigation] .sidebar nav button>svg,.app-shell[data-navigation] .sidebar-bottom>button>svg { width:18px; height:18px; }
+.app-shell[data-navigation] .sidebar nav button>svg,.app-shell[data-navigation] .sidebar-bottom>button>svg { width:16px; height:16px; }
 .app-shell[data-navigation] .sidebar nav button { min-height:var(--mote-nav-height); padding:0 10px; font-size:14px; line-height:1.7; }
 .app-shell[data-navigation] .sidebar [aria-current=page] { color:var(--mote-accent); }
 .app-shell[data-navigation] .topbar { min-height:61px; padding:10px 34px; gap:20px; flex-wrap:nowrap; position:sticky; top:0; z-index:30; }

@@ -20,7 +20,7 @@ export function WorkspaceSidebar({ layout, page, onPage, connection, verified, p
 }) {
   const destination = (id: UiDestination, className: string) => {
     const item=uiDestinationPresentation[id], Icon=destinationIcons[item.icon], active=page!=='featureGuide'&&primaryDestination(page)===destinationPages[id];
-    return <button key={id} className={[className,active?'active':''].filter(Boolean).join(' ')} aria-current={active?'page':undefined} onClick={() => onPage(destinationPages[id])}><Icon size={18} strokeWidth={1.65} aria-hidden="true"/><span>{moteText(item.label)}</span></button>;
+    return <button key={id} className={[className,active?'active':''].filter(Boolean).join(' ')} aria-current={active?'page':undefined} onClick={() => onPage(destinationPages[id])}><Icon size={16} strokeWidth={1.5} aria-hidden="true"/><span>{moteText(item.label)}</span></button>;
   };
   return <aside id="primary-navigation" className="sidebar">
     <button className="brand" onClick={() => onPage('overview')} aria-label={moteText(uiDestinationPresentation.home.label)}><span className="mote-symbol" aria-hidden="true">m</span><span>{moteBrand.name}</span></button>
@@ -29,7 +29,7 @@ export function WorkspaceSidebar({ layout, page, onPage, connection, verified, p
     </nav>
     <div className="sidebar-bottom">
       {layout.secondary?.map(id => destination(id, 'utility-nav'))}
-      <button className={'settings-nav'+(primaryDestination(page) === 'about' ? ' active' : '')} aria-current={primaryDestination(page) === 'about' ? 'page' : undefined} onClick={() => onPage('about')}><Settings size={18} strokeWidth={1.65} aria-hidden="true"/>{moteText('设置')}</button>
+      <button className={'settings-nav'+(primaryDestination(page) === 'about' ? ' active' : '')} aria-current={primaryDestination(page) === 'about' ? 'page' : undefined} onClick={() => onPage('about')}><Settings size={16} strokeWidth={1.5} aria-hidden="true"/>{moteText('设置')}</button>
       <details className="workspace-node-menu"><summary className="node-button"><span className={`node-state ${verified ? 'online' : ''}`}/><span>{verified?moteText('我的 Mote'):connection?moteText('正在验证登录'):moteText('登录 Mote')}</span></summary><div>
         {verified&&<p>{moteText('已登录 · {0}',profile||moteText('当前节点'))}</p>}
         <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button>
