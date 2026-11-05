@@ -340,14 +340,15 @@ public struct CaptureUpload: Codable, Equatable, Sendable {
     public let appName: String?
     public let windowTitle: String?
     public let ocrText: String?
+    public let imageBase64: String?
     public let mood: String?
     public let privacy: CapturePrivacy
     public let metadata: RecordMetadata?
 
     public init(id: UUID = UUID(), deviceId: String, deviceName: String, capturedAt: String,
                 source: CaptureSource, appId: String? = nil, appName: String? = nil,
-                windowTitle: String? = nil, ocrText: String? = nil, mood: String? = nil,
-                privacy: CapturePrivacy = CapturePrivacy(), metadata: RecordMetadata? = nil) {
+                windowTitle: String? = nil, ocrText: String? = nil, imageBase64: String? = nil,
+                mood: String? = nil, privacy: CapturePrivacy = CapturePrivacy(), metadata: RecordMetadata? = nil) {
         self.id = id.uuidString.lowercased()
         self.deviceId = deviceId
         self.deviceName = deviceName
@@ -359,6 +360,7 @@ public struct CaptureUpload: Codable, Equatable, Sendable {
         self.appName = appName
         self.windowTitle = windowTitle
         self.ocrText = ocrText
+        self.imageBase64 = imageBase64
         self.mood = mood
         self.privacy = privacy
         self.metadata = metadata
@@ -436,6 +438,15 @@ public struct CapturePreview: Codable, Equatable, Sendable {
     public let sizeBytes: Int?
 }
 
+public enum OriginalDeletionKind: String, Codable, Sendable {
+    case capture, file
+}
+
+public struct OriginalDeletionCapability: Codable, Equatable, Sendable {
+    public let available: Bool
+    public let kind: OriginalDeletionKind?
+}
+
 public struct OriginalRecord: Codable, Equatable, Sendable {
     public let id: String
     public let capturedAt: String
@@ -454,6 +465,8 @@ public struct OriginalRecord: Codable, Equatable, Sendable {
     public let privacy: CapturePrivacy
     public let metadata: RecordMetadata?
     public let libraryVersion: String?
+    public let deletion: OriginalDeletionCapability?
+    public let memoryMaterialRef: String?
 }
 
 public struct CentralPage<Item: Codable & Sendable>: Codable, Sendable {
@@ -470,6 +483,17 @@ public struct ConversationScope: Codable, Equatable, Sendable {
     public let evidenceIds: [String]?
     public let anchorEvidenceIds: [String]?
     public let anchorMaterialRef: String?
+
+    public init(after: String? = nil, before: String? = nil, deviceId: String? = nil, timeZone: String? = nil,
+                evidenceIds: [String]? = nil, anchorEvidenceIds: [String]? = nil, anchorMaterialRef: String? = nil) {
+        self.after = after
+        self.before = before
+        self.deviceId = deviceId
+        self.timeZone = timeZone
+        self.evidenceIds = evidenceIds
+        self.anchorEvidenceIds = anchorEvidenceIds
+        self.anchorMaterialRef = anchorMaterialRef
+    }
 }
 
 public enum ConversationStatus: String, Codable, Sendable { case completed, failed }

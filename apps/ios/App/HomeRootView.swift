@@ -1,3 +1,4 @@
+import MoteCore
 import MoteStorage
 import SwiftUI
 
@@ -16,13 +17,29 @@ struct HomeRootView: View {
             router.open(action)
         }
         .sheet(item: sheetDestination, onDismiss: refresh) { destination in
-            HomeDestinationView(destination: destination, editorStore: editorStore, arguments: arguments)
+            HomeDestinationView(
+                destination: destination,
+                editorStore: editorStore,
+                arguments: arguments,
+                onAsk: { router.destination = .ask($0) },
+                onClearScope: { router.destination = .ask(nil) }
+            )
         }
         .fullScreenCover(item: editorDestination, onDismiss: refresh) { destination in
-            HomeDestinationView(destination: destination, editorStore: editorStore, arguments: arguments)
+            HomeDestinationView(
+                destination: destination,
+                editorStore: editorStore,
+                arguments: arguments,
+                onAsk: { router.destination = .ask($0) },
+                onClearScope: { router.destination = .ask(nil) }
+            )
         }
         .task {
             await model.refresh()
+        }
+        .onOpenURL { url in
+            guard let entry = MoteEntry(url: url) else { return }
+            router.open(entry)
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }

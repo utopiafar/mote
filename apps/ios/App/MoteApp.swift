@@ -33,6 +33,9 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteEditorPreview") {
                     editorPreview
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteReaderPreview") {
+                    OriginalPreview()
+                        .preferredColorScheme(previewScheme)
                 } else {
                     HomeRootView(arguments: arguments, editorStore: editorStore)
                 }
