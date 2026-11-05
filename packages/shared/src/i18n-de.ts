@@ -10121,5 +10121,20 @@ export const german: Readonly<Record<string, string>> = {
   "系统入口插件已停用；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin ist gestoppt; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
   "系统入口插件未加载；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin ist nicht geladen; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
   "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "Das Systemeinstiegs-Plugin muss neu gebaut werden; Schnelleinstiege und Benachrichtigungsaktionen sind nicht verfügbar.",
-  "快捷指令": "Kurzbefehle"
+  "蓝牙": "Bluetooth",
+  "复制": "Kopieren",
+  "存储": "Speicher",
+  "语言": "Sprache",
+  "历史": "Verlauf",
+  "键盘": "Tastatur",
+  "权限": "Berechtigung",
+  "二维码": "QR-Code",
+  "分享": "Teilen",
+  "网络": "Netzwerk",
+  "快捷指令": "Kurzbefehle",
+  "需要重新连接": "Neuverbindung erforderlich",
+  "失联": "Kein Kontakt",
+  "采集中 · 待同步 {0} 条": "Erfassung läuft · Ausstehend: {0}",
+  "采集中 · 发送已暂停": "Erfassung läuft · Senden pausiert",
+  "采集中 · 发送需要处理": "Erfassung läuft · Senden erfordert Aufmerksamkeit"
 };

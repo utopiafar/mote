@@ -6,6 +6,7 @@ import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
 import com.google.zxing.qrcode.QRCodeWriter
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -40,6 +41,20 @@ class ConnectionAndOperationsTest {
         assertEquals("expired", assertThrows(ConnectionFailure::class.java) { ConnectionInvitation.parse(invitation().toString(), false, false, now.plusSeconds(601)) }.category)
         for (raw in listOf(invitation().put("token", "secret").toString(), invitation().put("code", "A".repeat(42)).toString(), "{\"format\":\"mote.connection\",\"format\":\"other\"}", "x".repeat(8193), "mote://connect?data=e30&redirect=https://bad.example")) {
             assertThrows(ConnectionFailure::class.java) { ConnectionInvitation.parse(raw, false, false, now) }
+        }
+    }
+    @Test fun declaredClientPlatformsAreValidatedButOptional() {
+        val declared = invitation().put("platforms", JSONArray().put("android").put("macos").put("ios").put("windows").put("linux"))
+        assertEquals("https://mote.example", ConnectionInvitation.parse(declared.toString(), false, false, now).serverUrl)
+        for (platforms in listOf(
+            JSONArray(),
+            JSONArray().put("ios").put("ios"),
+            JSONArray().put("other"),
+            JSONArray().put("android").put("import"),
+            JSONArray().put("android").put(1),
+            JSONArray().put("android").put("macos").put("ios").put("windows").put("linux").put("android"),
+        )) {
+            assertThrows(ConnectionFailure::class.java) { ConnectionInvitation.parse(invitation().put("platforms", platforms).toString(), false, false, now) }
         }
     }
     @Test fun ledgerSurvivesReopenBoundsEventsAndResetsHonestEpoch() {

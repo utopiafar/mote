@@ -1,10 +1,17 @@
 import { moteText } from './i18n.js';
+/** Client platforms a central can admit through a connection invitation. `other`
+ * stays a server admission label and is never advertised as a client platform. */
+export const connectionClientPlatforms = ['android', 'macos', 'ios', 'windows', 'linux'] as const;
+export type ConnectionClientPlatform = (typeof connectionClientPlatforms)[number];
 export interface ConnectionInvitation {
   format: 'mote.connection';
   version: 1;
   serverUrl: string;
   code: string;
   expiresAt: string;
+  /** Declared client platforms. Clients must treat a missing entry or a missing
+   * declaration as unsupported instead of guessing. */
+  platforms?: ConnectionClientPlatform[];
 }
 
 export const CONNECTION_INPUT_MAX_BYTES = 8192;
@@ -20,14 +27,22 @@ export function connectionServerUrl(input: string): string {
   return url.origin;
 }
 
+function invitationPlatforms(value: unknown): ConnectionClientPlatform[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > connectionClientPlatforms.length) throw new Error(moteText("连接邀请格式无效"));
+  if (!value.every(platform => typeof platform === 'string' && (connectionClientPlatforms as readonly string[]).includes(platform)) || new Set(value).size !== value.length) throw new Error(moteText("连接邀请格式无效"));
+  return value as ConnectionClientPlatform[];
+}
+
 function validate(value: unknown, now: number): ConnectionInvitation {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(moteText("连接邀请格式无效"));
   const v = value as Record<string, unknown>;
-  if (Object.keys(v).sort().join(',') !== 'code,expiresAt,format,serverUrl,version' || v.format !== 'mote.connection' || v.version !== 1 || typeof v.serverUrl !== 'string' || typeof v.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(v.code) || typeof v.expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(v.expiresAt)) throw new Error(moteText("请导入有效的 Mote v1 连接邀请"));
+  const keys = Object.keys(v).sort().join(',');
+  if ((keys !== 'code,expiresAt,format,serverUrl,version' && keys !== 'code,expiresAt,format,platforms,serverUrl,version') || v.format !== 'mote.connection' || v.version !== 1 || typeof v.serverUrl !== 'string' || typeof v.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(v.code) || typeof v.expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(v.expiresAt)) throw new Error(moteText("请导入有效的 Mote v1 连接邀请"));
   const expires = Date.parse(v.expiresAt);
   if (!Number.isFinite(expires) || !Number.isFinite(now) || expires <= now) throw new Error(moteText("连接邀请已过期。在中央重新生成"));
   const serverUrl = connectionServerUrl(v.serverUrl);
-  return { format: 'mote.connection', version: 1, serverUrl, code: v.code, expiresAt: v.expiresAt };
+  const platforms = v.platforms === undefined ? undefined : invitationPlatforms(v.platforms);
+  return { format: 'mote.connection', version: 1, serverUrl, code: v.code, expiresAt: v.expiresAt, ...(platforms ? { platforms } : {}) };
 }
 
 export function parseConnectionInvitation(input: string, now = Date.now()): ConnectionInvitation {

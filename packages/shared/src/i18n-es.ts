@@ -10121,5 +10121,20 @@ export const spanish: Readonly<Record<string, string>> = {
   "系统入口插件已停用；快捷入口和通知动作不可用。": "El complemento de accesos del sistema está detenido; los accesos rápidos y las acciones de notificación no están disponibles.",
   "系统入口插件未加载；快捷入口和通知动作不可用。": "El complemento de accesos del sistema no está cargado; los accesos rápidos y las acciones de notificación no están disponibles.",
   "系统入口插件需要重新构建；快捷入口和通知动作不可用。": "El complemento de accesos del sistema necesita recompilarse; los accesos rápidos y las acciones de notificación no están disponibles.",
-  "快捷指令": "Atajos"
+  "蓝牙": "Bluetooth",
+  "复制": "Copiar",
+  "存储": "Almacenamiento",
+  "语言": "Idioma",
+  "历史": "Historial",
+  "键盘": "Teclado",
+  "权限": "Permiso",
+  "二维码": "Código QR",
+  "分享": "Compartir",
+  "网络": "Red",
+  "快捷指令": "Atajos",
+  "需要重新连接": "Es necesario reconectar",
+  "失联": "Sin contacto",
+  "采集中 · 待同步 {0} 条": "Capturando · Pendientes: {0}",
+  "采集中 · 发送已暂停": "Capturando · Envío en pausa",
+  "采集中 · 发送需要处理": "Capturando · El envío requiere atención"
 };
