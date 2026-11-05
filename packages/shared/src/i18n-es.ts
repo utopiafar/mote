@@ -10169,5 +10169,16 @@ export const spanish: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Esperando permiso de captura · Grabación de pantalla",
   "Chrome 页面": "Páginas de Chrome",
   "暂停发送": "Pausar envío",
-  "待发送 {0} 条": "Envíos pendientes: {0}"
+  "待发送 {0} 条": "Envíos pendientes: {0}",
+  "粘贴邀请": "Pegar invitación",
+  "邀请已失效": "La invitación ha caducado",
+  "此中央尚不支持 iOS，升级中央后重试": "Este central aún no admite iOS. Actualízalo y vuelve a intentarlo.",
+  "我的 iPhone": "Mi iPhone",
+  "连接后发送": "Enviar después de conectar",
+  "正在连接…": "Conectando…",
+  "连接未完成": "Conexión incompleta",
+  "暂时无法读取": "No se puede leer temporalmente",
+  "设备名称无效": "Nombre de dispositivo no válido",
+  "有待发送记录，无法更换中央": "Los registros pendientes impiden cambiar de central",
+  "扫描中央生成的连接二维码。": "Escanear el código QR de conexión generado por el central."
 };
