@@ -1,7 +1,16 @@
 import SwiftUI
+import UIKit
+
+final class MoteAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        AppSendPipeline.shared.handleBackgroundEvents(identifier: identifier, completionHandler: completionHandler)
+    }
+}
 
 @main
 struct MoteApp: App {
+    @UIApplicationDelegateAdaptor(MoteAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     private let arguments = ProcessInfo.processInfo.arguments
 
