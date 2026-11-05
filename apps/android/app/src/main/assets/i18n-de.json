@@ -1147,7 +1147,7 @@
   "上报的采集状态": "Gemeldeter Erfassungsstatus",
   "最近采集": "Letzte Erfassung",
   "上报的待同步记录": "Gemeldete ausstehende Aufzeichnungen",
-  "约每 {0} 分钟检查一次": "Prüft etwa alle {0} Minuten",
+  "约每 {0} 分钟": "Etwa alle {0} Minuten",
   "累计 {0} 条，或最长等待 {1} 分钟后同步": "Synchronisiert bei {0} Aufzeichnungen oder nach {1} Minuten",
   "在客户端点击同步后发送记录": "Sendet Aufzeichnungen, wenn Sie im Client auf „Synchronisieren“ tippen",
   "有新记录时尝试同步": "Versucht zu synchronisieren, wenn neue Aufzeichnungen eintreffen",

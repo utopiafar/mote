@@ -1147,7 +1147,7 @@
   "上报的采集状态": "Reported capture state",
   "最近采集": "Latest capture",
   "上报的待同步记录": "Reported pending records",
-  "约每 {0} 分钟检查一次": "Checks approximately every {0} minutes",
+  "约每 {0} 分钟": "Approximately every {0} minutes",
   "累计 {0} 条，或最长等待 {1} 分钟后同步": "Syncs at {0} records or after {1} minutes",
   "在客户端点击同步后发送记录": "Sends records when you tap Sync on the client",
   "有新记录时尝试同步": "Attempts sync when new records arrive",

@@ -1147,7 +1147,7 @@
   "上报的采集状态": "Estado de captura informado",
   "最近采集": "Última captura",
   "上报的待同步记录": "Registros pendientes informados",
-  "约每 {0} 分钟检查一次": "Comprueba aproximadamente cada {0} minutos",
+  "约每 {0} 分钟": "Aproximadamente cada {0} minutos",
   "累计 {0} 条，或最长等待 {1} 分钟后同步": "Sincroniza a los {0} registros o tras {1} minutos",
   "在客户端点击同步后发送记录": "Envía registros al tocar Sincronizar en el cliente",
   "有新记录时尝试同步": "Intenta sincronizar cuando llegan nuevos registros",
