@@ -336,7 +336,7 @@ class PluginStageInstrumentedTest {
             // The widget, launcher shortcuts and notification actions share the plugin's definitions.
             main {
                 val widget = QuickEntryWidget.views(context).apply(context, FrameLayout(context))
-                assertEquals(MoteI18n.text("问一问…"), widget.findViewById<TextView>(R.id.widget_ask).text.toString())
+                assertEquals(MoteI18n.text("问一问"), widget.findViewById<TextView>(R.id.widget_ask).text.toString())
                 assertEquals(
                     listOf("记录", "拍照", "录音"),
                     listOf(R.id.widget_record, R.id.widget_photo, R.id.widget_audio).map { widget.findViewById<View>(it).contentDescription.toString() },
@@ -352,7 +352,7 @@ class PluginStageInstrumentedTest {
             context.systemEntries().show("生成的插件阶段采集状态")
             until("the plugin publishes its capture notification actions") {
                 manager.activeNotifications.firstOrNull { it.id == Notifications.ID }?.notification?.actions
-                    ?.map { it.title.toString() } == listOf(MoteI18n.text("暂停屏幕采集"), MoteI18n.text("记录"))
+                    ?.map { it.title.toString() } == listOf(MoteI18n.text("记录"), MoteI18n.text("暂停屏幕采集"), MoteI18n.text("停止采集"))
             }
             context.systemEntries().clear()
             until("clearing the plugin notification leaves no stale action") {

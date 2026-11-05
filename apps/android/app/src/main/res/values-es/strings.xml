@@ -6,5 +6,5 @@
     <string name="tile_send_pause">Pausar envío</string>
     <string name="widget_label">Accesos rápidos de Mote</string>
     <string name="widget_description">Pregunta y registra desde la pantalla de inicio</string>
-    <string name="widget_ask">Preguntar…</string>
+    <string name="widget_ask">Preguntar</string>
 </resources>

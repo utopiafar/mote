@@ -5,6 +5,9 @@ import MoteStorage
 enum EditorFixture {
     static func makeDraft(name: String, store: EditorDraftStore) throws -> EditorDraft {
         guard name != "empty" else { return EditorDraft() }
+        if name == "recording" {
+            return EditorDraft(text: "周四和房东确认：暖气费按实际用量分摊，月底前把账单照片发给他。")
+        }
         let photo = try store.importData(photoData(), kind: .photo, fileName: "照片.png")
         var attachments = [photo]
         if name != "audio-false" {

@@ -44,47 +44,29 @@ class RecordEditorInstrumentedTest {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }; bitmap.recycle()
         val originalBytes = file.readBytes()
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.record-files", file)
-        val intent = Intent(context, RecordEditorActivity::class.java).setAction(Intent.ACTION_SEND).setType("image/jpeg")
+        context.recordDraftStore().edit("Generated retained manual draft", org.json.JSONArray(), org.json.JSONObject().put("kind", "manual"), "Generated retained manual description")
+        val priorDraft = context.recordDraftStore().draft().toString()
+        val intent = Intent(context, ShareRecordActivity::class.java).setAction(Intent.ACTION_SEND).setType("image/jpeg")
             .putExtra(Intent.EXTRA_TEXT, "Generated third-party original").putExtra(Intent.EXTRA_STREAM, uri)
-        ActivityScenario.launch<RecordEditorActivity>(intent).use { scenario ->
-            waitUntil("Shared image must be durably staged") { context.recordDraftStore().draft().getJSONArray("attachments").length() == 1 }
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }.setText("My separate generated comment") }
+        ActivityScenario.launch<ShareRecordActivity>(intent).use { scenario ->
+            waitUntil("Shared image preview is staged") { var ready = false; scenario.onActivity { activity -> ready = views(activity.window.decorView).any { it.tag == "share-images-preview" } && views(activity.window.decorView).single { it.tag == "share-save" }.isEnabled }; ready }
             scenario.onActivity { activity ->
-                views(activity.window.decorView).single { it.tag == "record-describe-toggle" }.performClick()
+                views(activity.window.decorView).filterIsInstance<EditText>().single { it.tag == "share-note" }.setText("My separate generated comment")
+                views(activity.window.decorView).single { it.tag == "share-description-toggle" }.performClick()
                 views(activity.window.decorView).filterIsInstance<EditText>().single { it.tag == "record-description" }.setText("This is a saved third-party quotation, not my own experience")
-            }
-            waitUntil("Independent description must persist privately") { context.recordDraftStore().draft().optString("description") == "This is a saved third-party quotation, not my own experience" }
-            waitUntil("Comment must persist privately") { context.recordDraftStore().draft().getString("text") == "My separate generated comment" }
-            scenario.recreate()
-            waitUntil("Restored editor must load") { var ready = false; scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<EditText>().any { it.isEnabled && it.text.toString() == "My separate generated comment" } }; ready }
-            scenario.onActivity { activity ->
-                val quote = views(activity.window.decorView).filterIsInstance<TextView>().single { it.tag == "record-origin-fulltext" }
-                assertTrue("Shared original starts open",quote.isShown)
-                assertEquals("Generated third-party original",quote.text.toString())
-                val composer = views(activity.window.decorView).filterIsInstance<EditText>().single { it.contentDescription == "正在想什么" }
-                assertEquals("我的补充",composer.hint.toString())
-                assertEquals("保存分享",views(activity.window.decorView).filterIsInstance<TextView>().single { it.tag == "detail-title" }.text.toString())
-                val quotePosition=IntArray(2); val composerPosition=IntArray(2); quote.getLocationOnScreen(quotePosition); composer.getLocationOnScreen(composerPosition)
-                assertTrue("Original precedes my separate supplement",quotePosition[1]+quote.height <= composerPosition[1])
-                assertTrue("The single-draft clear control is offered while the draft has content",views(activity.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "清空" }.isShown)
-                screenshot(activity, "editor-shared-image")
-                views(activity.window.decorView).single { it.tag == "record-origin-toggle" }.performClick()
+                assertEquals(priorDraft, context.recordDraftStore().draft().toString())
+                screenshot(activity, "share-image")
             }
             scenario.recreate()
-            waitUntil("Collapsed source restores with the separate supplement") { var restored=false; scenario.onActivity { activity ->
-                val quote=views(activity.window.decorView).singleOrNull { it.tag == "record-origin-fulltext" } as? TextView
-                restored=quote?.visibility == android.view.View.GONE && views(activity.window.decorView).filterIsInstance<EditText>().any { it.isEnabled && it.text.toString() == "My separate generated comment" }
-            }; restored }
-            scenario.onActivity { activity ->
-                views(activity.window.decorView).single { it.tag == "record-origin-toggle" }.performClick()
-                assertEquals("Generated third-party original",views(activity.window.decorView).filterIsInstance<TextView>().single { it.tag == "record-origin-fulltext" && it.isShown }.text.toString())
-            }
-            MoteAppearance.select(context,AppearancePreference.DARK); instrumentation.waitForIdleSync()
-            scenario.onActivity { screenshot(it,"editor-shared-image-dark") }
-            MoteAppearance.select(context,AppearancePreference.LIGHT); instrumentation.waitForIdleSync()
+            waitUntil("Restored panel keeps its own fields") { var ready = false; scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<EditText>().any { it.tag == "share-note" && it.text.toString() == "My separate generated comment" } && views(activity.window.decorView).filterIsInstance<EditText>().any { it.tag == "record-description" && it.isShown && it.text.toString() == "This is a saved third-party quotation, not my own experience" } }; ready }
+            assertEquals(priorDraft, context.recordDraftStore().draft().toString())
+            MoteAppearance.select(context, AppearancePreference.DARK); instrumentation.waitForIdleSync()
+            scenario.onActivity { screenshot(it, "share-image-dark") }
+            MoteAppearance.select(context, AppearancePreference.LIGHT); instrumentation.waitForIdleSync()
             assertEquals("Shared record is never saved on opening or recreation", 0, context.queue().depth())
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "保存" }.performClick() }
+            scenario.onActivity { activity -> views(activity.window.decorView).single { it.tag == "share-save" }.performClick() }
             waitUntil("Explicit save must enter durable offline queue") { context.queue().depth() == 1 }
+            assertEquals(priorDraft, context.recordDraftStore().draft().toString())
         }
         val event = context.queue().peek()!!
         assertEquals("My separate generated comment", event.getString("ocrText"))
@@ -93,7 +75,8 @@ class RecordEditorInstrumentedTest {
         val saved = context.recordDraftStore().record(event.getString("id"))!!.getJSONArray("attachments").getJSONObject(0)
         assertArrayEquals(originalBytes, context.recordDraftStore().bytes(saved.getString("id")))
         assertEquals("image/jpeg", saved.getString("mime"))
-        assertEquals("Saving keeps the single durable draft", "My separate generated comment", context.recordDraftStore().draft().getString("text"))
+        assertEquals(priorDraft, context.recordDraftStore().draft().toString())
+        context.recordDraftStore().edit("", org.json.JSONArray(), org.json.JSONObject().put("kind", "manual"))
         file.delete()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             waitUntil("Home must be rendered") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).any { view -> view.tag == "home-record-action" } }; ready }
@@ -125,30 +108,6 @@ class RecordEditorInstrumentedTest {
             scenario.onActivity { activity -> views(activity.window.decorView).first { it.contentDescription?.toString() == "播放" }.performClick(); screenshot(activity, "editor-audio-preview") }
             scenario.recreate()
             waitUntil("Audio retained after recreation") { context.recordDraftStore().draft().getJSONArray("attachments").toString().contains(audio.getString("id")) }
-        }
-    }
-    @Test fun incomingShareKeepsThePriorDraftUntilExplicitReplacement() {
-        guard()
-        context.recordDraftStore().edit("Generated prior private text",org.json.JSONArray(),org.json.JSONObject().put("kind","manual"),"Generated prior private description")
-        fun shared()=ActivityScenario.launch<RecordEditorActivity>(Intent(context,RecordEditorActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,"Generated incoming quoted original"))
-        fun choose(label:String) {
-            waitUntil("Existing draft choice $label") { var found=false;instrumentation.runOnMainSync { found=android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views).filterIsInstance<TextView>().any { it.isShown && it.isClickable && it.text.toString()==label } };found }
-            instrumentation.runOnMainSync { android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString()==label }.performClick() }
-        }
-        shared().use { scenario ->
-            choose("继续编辑")
-            waitUntil("Prior text stays visible") { var found=false;scenario.onActivity { a -> found=views(a.window.decorView).filterIsInstance<EditText>().any { it.isEnabled && it.text.toString()=="Generated prior private text" } };found }
-            assertEquals("Generated prior private description",context.recordDraftStore().draft().getString("description"));assertEquals("",context.recordDraftStore().draft().getJSONObject("origin").optString("text"))
-            scenario.onActivity { screenshot(it,"share-existing-continued") }
-        }
-        shared().use { scenario ->
-            choose("替换草稿")
-            waitUntil("Explicitly accepted original is separate") { context.recordDraftStore().draft().getJSONObject("origin").optString("text")=="Generated incoming quoted original" }
-            val draft=context.recordDraftStore().draft();assertEquals("",draft.getString("text"));assertEquals("",draft.getString("description"));assertEquals(0,context.queue().depth())
-            scenario.onActivity { a ->
-                assertTrue(views(a.window.decorView).filterIsInstance<TextView>().single { it.tag=="record-origin-fulltext" }.isShown)
-                screenshot(a,"share-existing-replaced")
-            }
         }
     }
     @Test fun explicitClearOffersOneUndoThatRestoresBodyAttachmentsOriginAndDescription() {

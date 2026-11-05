@@ -99,29 +99,50 @@ internal class NativeAskController(
     private fun clearConversationState() {
         listOf(
             "runId", "runStatus", "activeRequest", "failureDetails", "evidenceIds", "anchorEvidenceIds",
-            "anchorMaterialRef", "scopeDirty", "imageUploads",
+            "anchorMaterialRef", "scopeDirty", "scopeLabel", "imageUploads",
         ).forEach(state::remove)
     }
 
-    fun beginEvidence(id: String): Boolean {
+    fun beginEvidence(id: String, label: String? = null): Boolean {
         if (busy()) return false
         state.remove("conversationId")
         clearConversationState()
-        return NativeAskEvidenceScope.select(state, id)
+        if (!NativeAskEvidenceScope.select(state, id)) return false
+        putScopeLabel(label)
+        return true
     }
 
-    fun beginMaterial(reference: String): Boolean {
+    fun beginMaterial(reference: String, label: String? = null): Boolean {
         if (busy()) return false
         state.remove("conversationId")
         clearConversationState()
-        return NativeAskEvidenceScope.selectMaterial(state, reference)
+        if (!NativeAskEvidenceScope.selectMaterial(state, reference)) return false
+        putScopeLabel(label)
+        return true
     }
 
-    fun selectEvidence(id: String, only: Boolean = false): Boolean =
-        if (only) NativeAskEvidenceScope.selectOnly(state, id) else NativeAskEvidenceScope.select(state, id)
+    fun selectEvidence(id: String, only: Boolean = false, label: String? = null): Boolean {
+        val accepted = if (only) NativeAskEvidenceScope.selectOnly(state, id) else NativeAskEvidenceScope.select(state, id)
+        if (accepted) putScopeLabel(label) else return false
+        return true
+    }
 
-    fun selectMaterial(reference: String): Boolean = NativeAskEvidenceScope.selectMaterial(state, reference)
+    fun selectMaterial(reference: String, label: String? = null): Boolean {
+        if (!NativeAskEvidenceScope.selectMaterial(state, reference)) return false
+        putScopeLabel(label)
+        return true
+    }
+
     fun clearScope(): Boolean = NativeAskEvidenceScope.clear(state)
+    fun scopeLabel(): String? = state.optString("scopeLabel").takeIf(String::isNotBlank)
+    /** Restored material scopes carry only the immutable ref; the screen resolves
+     * its readable title from the same Central origin before showing the chip. */
+    fun scopeLabel(value: String?) {
+        if (material() != null) putScopeLabel(value)
+    }
+    private fun putScopeLabel(label: String?) {
+        if (label.isNullOrBlank()) state.remove("scopeLabel") else state.put("scopeLabel", label)
+    }
     fun material(): String? = NativeAskEvidenceScope.material(state)
     fun material(value: JSONObject): String? = NativeAskEvidenceScope.material(value)
     fun writeScope(input: JSONObject) = NativeAskEvidenceScope.writeInput(state, input)

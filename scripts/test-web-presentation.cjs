@@ -26,7 +26,8 @@ async function run(){
  const browser=await request('/api/login/session',{serverUrl:base,deviceId:randomUUID(),deviceName:'Generated UI browser',platform:'other',durationMs:0});
  await window.loadURL(base);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token:browser.token,viewScope:randomUUID()}))});location.reload()`);
  await until(()=>js(`document.querySelector('[data-page="overview"][data-session="ready"]')`),'empty route opens Overview');
- assert.deepEqual(await js(`Array.from(document.querySelectorAll('.sidebar nav button')).map(e=>e.textContent.trim())`),['首页','资料库','来源','AI 接入']);
+ assert.deepEqual(await js(`Array.from(document.querySelectorAll('.sidebar nav button')).map(e=>e.textContent.trim())`),['首页','资料库','来源','问一问']);
+ assert.deepEqual(await js(`Array.from(document.querySelectorAll('.sidebar-bottom > button')).map(e=>e.textContent.trim())`),['AI 接入','活动','设置']);
  assert.equal(await js(`getComputedStyle(document.documentElement).getPropertyValue('--mote-background').trim()`),'#1c1b1a');
  const click=async label=>until(()=>js(`(()=>{const control=[...document.querySelectorAll('button,a[href]')].find(e=>e.getClientRects().length&&e.textContent.trim()===${JSON.stringify(label)});if(!control||control.disabled)return false;control.click();return true;})()`),'control '+label);
  const route=async(path,selector)=>{await js(`location.hash=${JSON.stringify('#/'+path)}`);await until(()=>js(`!!document.querySelector(${JSON.stringify(selector)})`),path);};

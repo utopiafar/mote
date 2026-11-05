@@ -8,12 +8,23 @@ import SwiftUI
 struct HomeRootView: View {
     @State private var model = HomeModel()
     @State private var router = HomeRouter()
+    @StateObject private var recording: RecordingController
     @Environment(\.scenePhase) private var scenePhase
     var arguments: [String] = ProcessInfo.processInfo.arguments
     var editorStore: EditorDraftStore? = try? MoteStorage.editorDraftStore()
 
+    init(arguments: [String] = ProcessInfo.processInfo.arguments, editorStore: EditorDraftStore? = try? MoteStorage.editorDraftStore()) {
+        self.arguments = arguments
+        self.editorStore = editorStore
+        _recording = StateObject(wrappedValue: RecordingController(store: editorStore, arguments: arguments))
+    }
+
     var body: some View {
-        HomeView(presentation: model.presentation) { action in
+        HomeView(
+            presentation: model.presentation,
+            recording: recording.isActive ? RecordingBarState(elapsed: recording.elapsed, paused: recording.isPaused) : nil,
+            onRecordingStop: { recording.stop(); refresh() }
+        ) { action in
             router.open(action)
         }
         .sheet(item: sheetDestination, onDismiss: refresh) { destination in
@@ -55,6 +66,7 @@ struct HomeRootView: View {
         HomeDestinationView(
             destination: destination,
             editorStore: editorStore,
+            recording: recording,
             arguments: arguments,
             onAsk: { router.destination = .ask($0) },
             onClearScope: { router.destination = .ask(nil) },

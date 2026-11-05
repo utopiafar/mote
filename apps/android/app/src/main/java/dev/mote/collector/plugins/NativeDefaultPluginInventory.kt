@@ -65,7 +65,8 @@ internal object NativeDefaultPluginInventory {
         NativeComponentOwner("receiver", component("QuickEntryWidget"), "dev.mote.system-entries", SystemEntriesPlugin.CAPABILITY),
 
         NativeComponentOwner("activity", component("RecordEditorActivity"), "dev.mote.notes", NotesPlugin.CAPABILITY),
-        NativeComponentOwner("activity", component("ConversationRecordEditorActivity"), "dev.mote.notes", NotesPlugin.CAPABILITY),
+        NativeComponentOwner("activity", component("ShareRecordActivity"), "dev.mote.notes", NotesPlugin.CAPABILITY),
+        NativeComponentOwner("activity", component("AnswerRecordActivity"), "dev.mote.notes", NotesPlugin.CAPABILITY),
         NativeComponentOwner("provider", "androidx.core.content.FileProvider", "dev.mote.notes", NotesPlugin.CAPABILITY),
 
         NativeComponentOwner("activity", component("CalendarActionsActivity"), "dev.mote.managed-calendar", ManagedCalendarPlugin.CAPABILITY),

@@ -45,7 +45,8 @@ class NativeAskEvidenceScopeTest {
         NativeAskEvidenceScope.writeInput(state, inherited); assertFalse(inherited.has("evidenceIds"))
         val id = UUID.randomUUID().toString(); NativeAskEvidenceScope.selectOnly(state, id)
         val selected = JSONObject(); NativeAskEvidenceScope.writeInput(state, selected); assertEquals(id, selected.getJSONArray("evidenceIds").getString(0))
-        assertTrue(NativeAskEvidenceScope.clear(state))
+        state.put("scopeLabel", "Generated scope title")
+        assertTrue(NativeAskEvidenceScope.clear(state)); assertFalse(state.has("scopeLabel"))
         val cleared = JSONObject(); NativeAskEvidenceScope.writeInput(state, cleared); assertTrue(cleared.has("evidenceIds")); assertTrue(cleared.isNull("evidenceIds"))
     }
     @Test fun `history restores accepted selection without undoing a local explicit clear`() {

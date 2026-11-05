@@ -43,7 +43,11 @@ internal class HomeCaptureRow(private val activity: Activity, private val open: 
 
     private fun present() {
         val line = shown ?: return
-        visibility = if (line.kind == CaptureOverview.Kind.HIDDEN) GONE else VISIBLE
+        // Normal capture and the never-started state stay off the home; only a
+        // pause or an actionable interruption is a status the owner can use.
+        val visible = HomeFrame.showsCaptureNotice(line.kind)
+        visibility = if (visible) VISIBLE else GONE
+        if (!visible) return
         val attention = line.kind == CaptureOverview.Kind.ATTENTION
         val paused = line.kind == CaptureOverview.Kind.SCREEN_PAUSED || line.kind == CaptureOverview.Kind.PAUSED
         // Existing interruption checks keep their identity; the quiet and paused states are new, separate tags.

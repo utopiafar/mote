@@ -6,5 +6,5 @@
     <string name="tile_send_pause">Pause sending</string>
     <string name="widget_label">Mote quick entries</string>
     <string name="widget_description">Ask and record from the home screen</string>
-    <string name="widget_ask">Ask…</string>
+    <string name="widget_ask">Ask</string>
 </resources>

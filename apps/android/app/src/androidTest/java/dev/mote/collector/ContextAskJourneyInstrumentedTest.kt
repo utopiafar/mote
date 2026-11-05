@@ -77,9 +77,9 @@ class ContextAskJourneyInstrumentedTest {
                 text.contains("My separate generated comment") && text.contains("Generated third-party original")
             } }
             capture("record-original")
-            clickText("基于这条记录提问")
+            clickText("围绕这份资料提问")
             until("Default record Ask is an anchor, with no context-selection decision") { main {
-                shown().filterIsInstance<TextView>().any { it.text.toString() == "参考这条记录，自动查找相关上下文" } && shown().filterIsInstance<EditText>().any { it.contentDescription == "你的问题" && it.isEnabled }
+                shown().filterIsInstance<TextView>().any { it.text.toString() == "My separate generated comment" } && shown().filterIsInstance<EditText>().any { it.contentDescription == "你的问题" && it.isEnabled }
             } }
             main { shown().filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated journey: explain this record with related context") }
             capture("ask-anchor")
@@ -105,7 +105,7 @@ class ContextAskJourneyInstrumentedTest {
             val old = main { activity() }
             main { old.recreate() }
             until("Recreated Ask restores its anchor and the original answer") { main {
-                activity() !== old && shown().filterIsInstance<TextView>().any { it.text.toString() == "参考这条记录，自动查找相关上下文" } && shown().filterIsInstance<TextView>().count { it.isClickable && it.text.contains("查看原文依据") } == 2
+                activity() !== old && shown().filterIsInstance<TextView>().any { it.text.toString() == "My separate generated comment" } && shown().filterIsInstance<TextView>().count { it.isClickable && it.text.contains("查看原文依据") } == 2
             } }
             click("Open the first exact evidence citation") { it is TextView && it.text.toString().startsWith("[1] ") && it.text.contains("查看原文依据") }
             until("Evidence action reads the saved original owner comment") { main { shown().filterIsInstance<TextView>().any { it.text.toString() == "My separate generated comment" } } }

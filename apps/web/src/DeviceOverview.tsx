@@ -5,6 +5,7 @@ import type {CapturePreview} from '@mote/shared';
 import {Activity,ChevronLeft,ChevronRight,Laptop,Layers3,Lock,Monitor,QrCode,RefreshCw,Smartphone,Upload} from 'lucide-react';
 import {ago,dateTime,deviceLabels,errorMessage,type Api,type Device} from './api';
 import {useResource} from './useResource';
+import {devicePageRoute} from './device-route';
 const modes={realtime:'实时同步',interval:'定时同步',batch:'批量同步',manual:'手动同步'};
 const states={unconfigured:'尚未配置节点',idle:'已同步',waiting:'等待同步条件',uploading:'正在上传',error:'发送需要处理',manual:'等待手动同步'};
 const platforms:Record<string,string>={macos:'macOS',windows:'Windows',linux:'Linux',android:'Android',ios:'iOS',import:moteText('导入')};
@@ -30,7 +31,7 @@ export function DeviceOverview({api,devices,onConnect,onAdd,onSources,onOpen,onR
  const read=()=>new URLSearchParams(window.location.hash.split('?')[1]).get('deviceId');
  const [selection,setSelection]=useState<{owner:Api;id:string|null}>(()=>({owner:api,id:read()})),[tab,setTab]=useState<'status'|'received'>('status');const owner=useRef(api),opener=useRef<HTMLElement|null>(null);
  const selected=selection.owner===api?selection.id:null,chosen=devices.find(device=>device.deviceId===selected);
- const choose=(id:string|null)=>{setSelection({owner:api,id});setTab('status');const query=new URLSearchParams(window.location.hash.split('?')[1]);if(id)query.set('deviceId',id);else query.delete('deviceId');window.history.replaceState(null,'','#/connections/devices'+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));};
+ const choose=(id:string|null)=>{setSelection({owner:api,id});setTab('status');const query=new URLSearchParams(window.location.hash.split('?')[1]);if(id)query.set('deviceId',id);else query.delete('deviceId');window.history.replaceState(null,'','#/'+devicePageRoute+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));};
  useEffect(()=>{const sync=()=>setSelection({owner:api,id:read()});window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync);},[api]);
  useLayoutEffect(()=>{if(owner.current!==api){owner.current=api;choose(null);}if(!chosen&&opener.current?.isConnected)opener.current.focus({preventScroll:true});},[api,Boolean(chosen)]);
  return <section className={'device-overview final-devices'+(chosen?' has-device-selection':'')}>

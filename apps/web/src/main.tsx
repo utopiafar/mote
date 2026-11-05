@@ -52,6 +52,7 @@ import { PresentationSurface } from './presentation';
 import { GlobalRetrieval } from './plugins/search';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { pageLabels,readPage,routes,type Page } from './navigation';
+import { redirectDeviceRoute } from './device-route';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';
 import { webViewPage } from './deep-link';
 import { isSettingsContext,primaryDestination,WorkspaceNavigation } from './WorkspaceNavigation';
@@ -127,7 +128,6 @@ function App() {
   const pageRef = useRef(page); pageRef.current = page;
   useEffect(() => {
     const navigate = () => {
-      const next = readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);
       const allowed=allowedImportHash.current===location.hash;allowedImportHash.current=undefined;
       if (location.hash !== currentHash.current && !allowed && !confirmNavigation()) {
         const owner=apiRef.current,parent=owner&&readPage(currentHash.current)==='imports'?importOrigin(owner,history.state,'moteImportParent'):undefined;
@@ -140,6 +140,9 @@ function App() {
         else history.replaceState(currentHistoryState.current, '', currentHash.current);
         return;
       }
+      const redirected=redirectDeviceRoute(location.hash);
+      if(redirected)history.replaceState(history.state,'',redirected);
+      const next = readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);
       const prepared=preparedImport.current;
       if(next.page==='imports'&&readPage(currentHash.current)!=='imports'&&prepared?.api===apiRef.current&&prepared.origin.hash===currentHash.current)history.replaceState({...history.state,moteImportOrigin:prepared.origin.token},'',location.href);
       preparedImport.current=undefined;
@@ -410,7 +413,7 @@ function App() {
       toolbar={
         <header className="topbar">
           {api&&verified&&page!=='featureGuide'&&guideVisit(api).returnAvailable&&webFeatures.page('featureGuide')&&<button className="guide-return" onClick={()=>{window.location.hash='#/guide';}}><span aria-hidden="true">← </span>{moteText('全部功能')}</button>}
-            <details className="shell-menu shell-mobile-menu"><summary aria-label={moteText('全部功能')}>{pageLabel??moteText("更多")}</summary><div>{Object.entries({overview:moteText("首页"),archive:moteText("资料库"),sources:moteText("来源"),connections:moteText("AI 接入"),ask:moteText("问一问"),activity:moteText("后台活动")}).map(([target,label])=><button key={target} onClick={event=>{event.currentTarget.closest("details")!.open=false;onPage(target);}}>{label}</button>)}
+            <details className="shell-menu shell-mobile-menu"><summary aria-label={moteText('全部功能')}>{pageLabel??moteText("更多")}</summary><div>{Object.entries({overview:moteText("首页"),archive:moteText("资料库"),sources:moteText("来源"),ask:moteText("问一问"),connections:moteText("AI 接入"),activity:moteText("活动")}).map(([target,label])=><button key={target} onClick={event=>{event.currentTarget.closest("details")!.open=false;onPage(target);}}>{label}</button>)}
               <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button>
               <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('about');}}>{moteText('设置')}</button>
               <button onClick={event=>{event.currentTarget.closest('details')!.open=false;setShowConnect(true);}}>{moteText('登录 Mote')}</button>
@@ -546,6 +549,8 @@ function App() {
 
 document.documentElement.lang = getLocale();
 document.documentElement.dir = 'ltr';
+const initialRedirect=redirectDeviceRoute(location.hash);
+if(initialRedirect)history.replaceState(history.state,'',initialRedirect);
 const bootstrapLifetime=attachBootstrapLifetime({ready:featuresReady,scopes:featureScopes,host:webFeatures,unmount:()=>root?.unmount()});
 // Best-effort: async teardown cannot be guaranteed before unload; the real
 // owner release path is close(), also used by controlled shutdown.

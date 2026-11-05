@@ -21,7 +21,15 @@ public enum MoteStorage {
     }
 
     public static func connectionStore(fileManager: FileManager = .default) throws -> ConnectionStore {
-        ConnectionStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Connection", isDirectory: true))
+        #if DEBUG && targetEnvironment(simulator)
+        if let service = ProcessInfo.processInfo.environment["MOTE_TEST_CONNECTION_SERVICE"] {
+            let root = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                           appropriateFor: nil, create: true)
+            return ConnectionStore(directoryURL: root.appendingPathComponent("UITestConnection-\(service)", isDirectory: true),
+                                   fileManager: fileManager)
+        }
+        #endif
+        return ConnectionStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Connection", isDirectory: true))
     }
 
     private static func containerURL(fileManager: FileManager) throws -> URL {
