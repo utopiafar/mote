@@ -78,7 +78,7 @@ for(const status of [403,404,503])test('rolling time selection retains display o
 });
 
 const when='2026-10-14T01:00:00Z';
-const capture=(title:string):CapturePreview=>({id:'aaaaaaaa-aaaa-4aaa-8aaa-'+createHash('sha256').update(title).digest('hex').slice(0,12),capturedAt:when,deviceId:'generated-device',deviceName:'Generated device',platform:'other',source:'note',appName:'随手记',windowTitle:title,textPreview:'Generated original',hasImage:false,durationMs:0,ocr:{status:'not_applicable'}});
+const capture=(title:string):CapturePreview=>({id:'aaaaaaaa-aaaa-4aaa-8aaa-'+createHash('sha256').update(title).digest('hex').slice(0,12),capturedAt:when,deviceId:'generated-device',deviceName:'Generated device',platform:'other',source:'note',appName:'记录',windowTitle:title,textPreview:'Generated original',hasImage:false,durationMs:0,ocr:{status:'not_applicable'}});
 const page=(title?:string,nextCursor:string|null=null):CaptureTimelinePage=>{const record=title?capture(title):undefined;return {revision:'generated-current-revision',items:record?[{type:'record',id:'opaque-date-row-'+record.id,day:'2026-10-14',firstAt:when,lastAt:when,sampleCount:null,record}]:[],nextCursor};};
 const devices=[{deviceId:'generated-device',deviceName:'Generated device',platform:'other',status:'online',queueDepth:0,lastSeenAt:when}];
 for(const empty of [false,true])test('record timeline retains '+(empty?'empty':'populated')+' content while its current page refreshes',async t=>{

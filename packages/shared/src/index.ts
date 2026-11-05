@@ -113,7 +113,7 @@ export type NoteInput = z.infer<typeof noteSchema>;
 export function noteCapture(note: NoteInput): CaptureInput {
   return captureSchema.parse({
     id:note.id,deviceId:note.deviceId,deviceName:note.deviceName,platform:note.platform,capturedAt:note.capturedAt,
-    source:'note',durationMs:0,appId:note.client === 'web' ? 'dev.mote.web.notes' : 'dev.mote.notes',appName:'随手记',windowTitle:'',ocrText:note.text,
+    source:'note',durationMs:0,appId:note.client === 'web' ? 'dev.mote.web.notes' : 'dev.mote.notes',appName:'记录',windowTitle:'',ocrText:note.text,
     ...(note.mood === undefined ? {} : {mood:note.mood}),privacy:{excluded:false,redacted:false,mode:'none'},
     ...(note.metadata === undefined ? {} : {metadata:note.metadata}),
   });

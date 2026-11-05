@@ -1,6 +1,6 @@
 import { moteText } from '@mote/shared/i18n';
 /** Exact protocol fields only. Human-supplied titles and source names stay literal. */
-const kinds: Record<string, string> = { 'mote.screen-segment': '屏幕片段', 'mote.ui-page-object': '页面资料', 'mote.capture-event': '采集事件', 'mote.state-series': '设备状态线索', 'mote.note': '随手记', 'mote.file': '文件与录音', 'mote.message': '消息', 'mote.calendar': '日历安排', 'mote.coding-session': 'Coding Agent 会话' };
+const kinds: Record<string, string> = { 'mote.screen-segment': '屏幕片段', 'mote.ui-page-object': '页面资料', 'mote.capture-event': '采集事件', 'mote.state-series': '设备状态线索', 'mote.note': '记录', 'mote.file': '文件与录音', 'mote.message': '消息', 'mote.calendar': '日历安排', 'mote.coding-session': 'Coding Agent 会话' };
 export function materialKind(kind: string, registered?: string) { return registered ? moteText(registered) : moteText(kinds[kind] ?? '其他资料'); }
 /** Existing wire kinds, including generic kinds without a custom card renderer. */
 export function materialKindOptions(){return Object.keys(kinds).map(kind=>({kind,label:materialKind(kind)}));}

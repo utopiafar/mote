@@ -69,7 +69,7 @@ class NotesDiagnosticsInstrumentedTest {
         val config = original.copy(server = url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime", uploadedRetentionDays = 0, deviceName = "Android generated-note fixture")
         try {
             assertEquals(0, context.queue().depth()); settings.save(config)
-            val id = QuickNotes.save(context, "合成随手记：今天完成了本机模型和离线同步验证。", "平静（合成）")
+            val id = QuickNotes.save(context, "合成记录：今天完成了本机模型和离线同步验证。", "平静（合成）")
             val deadline = System.nanoTime() + 45_000_000_000L
             while (context.queue().depth() > 0 && System.nanoTime() < deadline) Thread.sleep(100)
             assertEquals("Central must acknowledge the generated note", 0, context.queue().depth())
