@@ -130,7 +130,6 @@ internal class CentralContent(
     private lateinit var addAction: TextView
     private lateinit var status: TextView
     private lateinit var title: TextView
-    private lateinit var headerDivider: View
     private lateinit var collectionBar: LinearLayout
     private lateinit var composer: LinearLayout
     private var insightMoreAction: (() -> Unit)? = null
