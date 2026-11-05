@@ -8,7 +8,29 @@ public struct AttentionPost: Equatable, Sendable {
     public let identifier: String
     public let status: CaptureStatusID
     public let operation: CaptureStatusOperation
+    /// Notification title.
     public let text: String
+    /// Notification body line; empty when the status has no detail to show.
+    public let body: String
+}
+
+/// Values the notification bodies need beyond the status table itself.
+public struct AttentionContext: Equatable, Sendable {
+    /// Central host name only, never a scheme or path.
+    public let centralHost: String?
+    /// Names of the sources still waiting for capture permission.
+    public let waitingSources: [String]
+
+    public init(centralHost: String? = nil, waitingSources: [String] = []) {
+        self.centralHost = centralHost
+        self.waitingSources = waitingSources
+    }
+
+    /// Builds the context from the saved Central endpoint, keeping only its host.
+    public init(centralEndpoint: String, waitingSources: [String] = []) {
+        self.centralHost = URLComponents(string: centralEndpoint)?.host
+        self.waitingSources = waitingSources
+    }
 }
 
 /// One local notification per issue: the same needs-action status alerts once
@@ -21,7 +43,11 @@ public struct AttentionDedup: Codable, Equatable, Sendable {
         self.notified = notified
     }
 
-    public mutating func update(_ status: CaptureStatusRow, platform: CaptureStatusPlatform = .ios) -> AttentionPost? {
+    public mutating func update(
+        _ status: CaptureStatusRow,
+        platform: CaptureStatusPlatform = .ios,
+        context: AttentionContext = AttentionContext()
+    ) -> AttentionPost? {
         guard let notification = status.notification, notification.platforms.contains(platform) else {
             notified = nil
             return nil
@@ -32,8 +58,24 @@ public struct AttentionDedup: Codable, Equatable, Sendable {
             identifier: "\(MoteCore.bundleIdentifier).attention.\(status.id.rawValue)",
             status: status.id,
             operation: notification.operation,
-            text: notification.titleKey
+            text: notification.titleKey,
+            body: Self.body(for: status.id, context: context)
         )
+    }
+
+    private static func body(for status: CaptureStatusID, context: AttentionContext) -> String {
+        switch status {
+        case .reconnect:
+            return context.centralHost ?? ""
+        case .storageFull:
+            return "新的记录暂时无法保存"
+        case .permission:
+            return context.waitingSources.joined(separator: "、")
+        case .sendAttention:
+            return "发送失败"
+        default:
+            return ""
+        }
     }
 }
 
@@ -59,15 +101,15 @@ public final class AttentionNotifier {
     }
 
     @discardableResult
-    public func update(facts: CaptureStatusFacts) -> AttentionPost? {
-        update(status: CaptureStatusMapping.status(for: facts))
+    public func update(facts: CaptureStatusFacts, context: AttentionContext = AttentionContext()) -> AttentionPost? {
+        update(status: CaptureStatusMapping.status(for: facts), context: context)
     }
 
     @discardableResult
-    public func update(status: CaptureStatusRow) -> AttentionPost? {
+    public func update(status: CaptureStatusRow, context: AttentionContext = AttentionContext()) -> AttentionPost? {
         lock.lock()
         let previous = dedup
-        let post = dedup.update(status, platform: platform)
+        let post = dedup.update(status, platform: platform, context: context)
         if dedup != previous { try? persist() }
         lock.unlock()
         if let post { poster(post) }
@@ -104,6 +146,7 @@ public enum SystemAttentionPoster {
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = post.text
+            content.body = post.body
             content.sound = .default
             content.threadIdentifier = "mote-attention"
             content.userInfo = ["status": post.status.rawValue, "operation": post.operation.rawValue]

@@ -41,6 +41,40 @@ final class AttentionNotificationsTests: XCTestCase {
         }
     }
 
+    func testBodiesForIOSNeedsActionRows() throws {
+        let context = AttentionContext(centralHost: "mote.example.net", waitingSources: ["媒体"])
+        let expected: [(name: String, id: CaptureStatusID, title: String, body: String)] = [
+            ("reconnect", .reconnect, "需要重新连接", "mote.example.net"),
+            ("storage-full", .storageFull, "本机空间已满", "新的记录暂时无法保存"),
+            ("permission-missing", .permission, "等待采集权限", "媒体"),
+            ("send-attention", .sendAttention, "发送需要处理", "发送失败"),
+        ]
+        for row in expected {
+            var dedup = AttentionDedup()
+            let post = try XCTUnwrap(dedup.update(try status(row.name), context: context), row.name)
+            XCTAssertEqual(post.status, row.id, row.name)
+            XCTAssertEqual(post.text, row.title, row.name)
+            XCTAssertEqual(post.body, row.body, row.name)
+        }
+    }
+
+    func testPermissionBodyJoinsWaitingSources() throws {
+        var dedup = AttentionDedup()
+        let post = try XCTUnwrap(dedup.update(try status("partial-permission"), context: AttentionContext(waitingSources: ["媒体", "通知"])))
+        XCTAssertEqual(post.text, "等待采集权限")
+        XCTAssertEqual(post.body, "媒体、通知")
+    }
+
+    func testReconnectBodyUsesHostFromCentralEndpoint() throws {
+        var dedup = AttentionDedup()
+        let post = try XCTUnwrap(dedup.update(
+            try status("reconnect"),
+            context: AttentionContext(centralEndpoint: "https://mote.example.net:8443/central")
+        ))
+        XCTAssertEqual(post.text, "需要重新连接")
+        XCTAssertEqual(post.body, "mote.example.net")
+    }
+
     func testSameIssueAlertsOnceUntilRecovery() throws {
         let storage = try status("storage-full")
         let send = try status("send-attention")

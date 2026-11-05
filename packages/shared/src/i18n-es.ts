@@ -10129,5 +10129,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "失联": "Sin contacto",
   "采集中 · 待同步 {0} 条": "Capturando · Pendientes: {0}",
   "采集中 · 发送已暂停": "Capturando · Envío en pausa",
-  "采集中 · 发送需要处理": "Capturando · El envío requiere atención"
+  "采集中 · 发送需要处理": "Capturando · El envío requiere atención",
+  "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
+  "发送失败": "Error al enviar"
 };
