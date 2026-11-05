@@ -1,18 +1,29 @@
 import SwiftUI
+import MoteDesign
+import MoteStorage
 
 @main
 struct MoteApp: App {
     private let arguments = ProcessInfo.processInfo.arguments
+    private let editorStore: EditorDraftStore?
+
+    init() {
+        editorStore = try? MoteStorage.editorDraftStore()
+    }
 
     var body: some Scene {
         WindowGroup {
-            if arguments.contains("-MoteComponentPreview") {
-                ComponentPreview()
-                    .preferredColorScheme(previewScheme)
-            } else {
-                Color(uiColor: .systemBackground)
-                    .ignoresSafeArea()
+            Group {
+                if arguments.contains("-MoteComponentPreview") {
+                    ComponentPreview()
+                } else if let editorStore {
+                    EditorFlowView(store: editorStore, arguments: arguments)
+                } else {
+                    Text("草稿未能打开")
+                        .foregroundStyle(MoteDesignTokens.danger.color)
+                }
             }
+            .preferredColorScheme(previewScheme)
         }
     }
 

@@ -12,15 +12,24 @@ public enum MoteStorage {
         DraftStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Draft", isDirectory: true))
     }
 
+    public static func editorDraftStore(fileManager: FileManager = .default) throws -> EditorDraftStore {
+        EditorDraftStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Draft", isDirectory: true))
+    }
+
     public static func sendQueue(fileManager: FileManager = .default) throws -> SendQueue {
         SendQueue(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("SendQueue", isDirectory: true))
     }
 
     private static func containerURL(fileManager: FileManager) throws -> URL {
-        guard let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: MoteCore.appGroupIdentifier) else {
-            throw MoteStorageError.appGroupUnavailable
+        if let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: MoteCore.appGroupIdentifier) {
+            return url
         }
-        return url
+        #if targetEnvironment(simulator)
+        return fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Shared", isDirectory: true)
+        #else
+        throw MoteStorageError.appGroupUnavailable
+        #endif
     }
 }
 

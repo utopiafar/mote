@@ -9,8 +9,13 @@ cd "$IOS_DIR"
 
 xcodegen generate
 swift test --package-path MoteKit
+DESTINATION="${MOTE_IOS_DESTINATION:-platform=iOS Simulator,name=iPhone 17}"
+XCODEBUILD_ARGS=(-destination "$DESTINATION")
+if [[ -n "${MOTE_IOS_DERIVED_DATA_PATH:-}" ]]; then
+  XCODEBUILD_ARGS+=(-derivedDataPath "$MOTE_IOS_DERIVED_DATA_PATH")
+fi
 xcodebuild test \
   -project Mote.xcodeproj \
   -scheme Mote \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  "${XCODEBUILD_ARGS[@]}" \
   CODE_SIGNING_ALLOWED=NO
