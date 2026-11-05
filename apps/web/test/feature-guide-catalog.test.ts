@@ -109,7 +109,7 @@ test('note attachments describe existing files and Coding progress uses the regi
   assert.equal(attachments.target.pageId,'notes');
   assert.match(attachments.title,/已有图片或音频/);
   assert.ok(attachments.actions.includes('选择并上传已有图片或音频文件'));
-  assert.ok(attachments.caveats.includes('随手记附件入口用于上传已有文件。'));
+  assert.ok(attachments.caveats.includes('记录附件入口用于上传已有文件。'));
   const coding=units.find(unit=>unit.id==='A15');
   assert.ok(coding);
   const collection=webFeatures.collections().find(entry=>entry.featureId==='mote.coding');

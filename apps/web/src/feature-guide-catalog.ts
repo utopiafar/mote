@@ -12,7 +12,7 @@ export const guideSections:GuideSection[] = [
     "groups": [
       {
         "id": "G05",
-        "title": "随手记与已有附件",
+        "title": "记录与已有附件",
         "purpose": "立即记下文字，保留草稿和待同步笔记，上传已有图片或音频附件。",
         "setting": "草稿保存在当前浏览器；已有附件的识字与转写在模型与服务中设置。",
         "links": [
@@ -21,8 +21,8 @@ export const guideSections:GuideSection[] = [
             "href": "#/library/notes",
             "collectionId": null,
             "categoryId": null,
-            "label": "随手记",
-            "path": "资料库工具 → 随手记",
+            "label": "记录",
+            "path": "资料库工具 → 记录",
             "where": "笔记编辑器下方查看草稿、待同步队列和历史。"
           }
         ],
@@ -30,7 +30,7 @@ export const guideSections:GuideSection[] = [
           {
             "id": "C12",
             "priority": "core",
-            "title": "随手记下文字",
+            "title": "记录下文字",
             "purpose": "保存快速笔记，保留本地草稿，并查看离线待同步或已经保存的记录。",
             "actions": [
               "写入并保存笔记",
@@ -45,8 +45,8 @@ export const guideSections:GuideSection[] = [
               "href": "#/library/notes",
               "collectionId": null,
               "categoryId": null,
-              "label": "随手记",
-              "path": "资料库工具 → 随手记",
+              "label": "记录",
+              "path": "资料库工具 → 记录",
               "where": "笔记编辑器下方查看草稿、待同步队列和历史。"
             },
             "otherTargets": [],
@@ -74,8 +74,8 @@ export const guideSections:GuideSection[] = [
               "href": "#/library/notes",
               "collectionId": null,
               "categoryId": null,
-              "label": "随手记",
-              "path": "资料库工具 → 随手记 → 图片与语音附件",
+              "label": "记录",
+              "path": "资料库工具 → 记录 → 图片与语音附件",
               "where": "在编辑器附件入口选择已有图片或音频文件；保存后从历史或资料库打开证据。"
             },
             "otherTargets": [],
@@ -103,7 +103,7 @@ export const guideSections:GuideSection[] = [
             "caveats": [
               "目前最多 10 个附件，每个 50 MiB。",
               "保存附件与识字、转写完成是不同阶段。",
-              "随手记附件入口用于上传已有文件。"
+              "记录附件入口用于上传已有文件。"
             ],
             "condition": null
           }
@@ -1763,7 +1763,7 @@ export const guideSections:GuideSection[] = [
             "categoryId": null,
             "label": "全部资料",
             "path": "资料库 → 分类",
-            "where": "使用资料库分类切换视图；导入、随手记和洞察属于「资料库工具」。"
+            "where": "使用资料库分类切换视图；导入、记录和洞察属于「资料库工具」。"
           },
           {
             "pageId": "archive",
@@ -1793,7 +1793,7 @@ export const guideSections:GuideSection[] = [
               "categoryId": null,
               "label": "全部资料",
               "path": "资料库 → 分类",
-              "where": "使用资料库分类切换视图；导入、随手记和洞察属于「资料库工具」。"
+              "where": "使用资料库分类切换视图；导入、记录和洞察属于「资料库工具」。"
             },
             "otherTargets": [
               {
@@ -3224,8 +3224,8 @@ export const quickLinks:GuideTarget[] = [
     "href": "#/library/notes",
     "collectionId": null,
     "categoryId": null,
-    "label": "写随手记",
-    "path": "资料库工具 → 随手记",
+    "label": "写记录",
+    "path": "资料库工具 → 记录",
     "where": "笔记编辑器下方查看草稿、待同步队列和历史。"
   },
   {

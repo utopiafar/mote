@@ -9,14 +9,14 @@ const output = process.env.MOTE_ASK_FIXTURE_OUTPUT;
 if (!output || !require('node:path').isAbsolute(output)) throw Error('Set private absolute MOTE_ASK_FIXTURE_OUTPUT');
 app.setPath('userData', join(output, 'profile'));
 const id = '11111111-2222-4333-8444-555555555555';
-const excerpt = '【生成随手记】实际发生于9月18日，9月27日补记。预算480元是旧估价，最终上限320元。活动日期、场地回复与完成结果均未知。\n'.repeat(8) + '原文末尾：蓝色夹子只是临时固定纸样。';
+const excerpt = '【生成记录】实际发生于9月18日，9月27日补记。预算480元是旧估价，最终上限320元。活动日期、场地回复与完成结果均未知。\n'.repeat(8) + '原文末尾：蓝色夹子只是临时固定纸样。';
 const answer = '**事件日期与补记日期不同。** [' + id + ']\n\n' + ['- **更正：**预算改为320元。','- **明确：**先做小样。','- **未知：**没有完成记录。'].map(x=>x+' ['+id+']').join('\n') + '\n\n' + '生成回答中的限定需要完整呈现。'.repeat(16);
 let window;
 const deadline = setTimeout(() => { app.exit(1); }, 30000);
 app.whenReady().then(async () => {
   await mkdir(output, { recursive: true, mode: 0o700 }); await chmod(output, 0o700);
   const root = resolve(__dirname, '..');
-  const entry = `import { renderAskAnswer, renderAskCitation } from ${JSON.stringify(join(root, 'src/ask-presentation.ts'))};\nwindow.fixtureRender = () => {const box=document.querySelector('#ask-messages');box.replaceChildren(); const article=document.createElement('article');const c=${JSON.stringify({id,appName:'生成随手记',capturedAt:'2026-09-27',excerpt})};const open=id=>window.fixtureOpened=id;article.append(renderAskAnswer(document,${JSON.stringify(answer)},[c],open),renderAskCitation(document,c,open));box.append(article);};`;
+  const entry = `import { renderAskAnswer, renderAskCitation } from ${JSON.stringify(join(root, 'src/ask-presentation.ts'))};\nwindow.fixtureRender = () => {const box=document.querySelector('#ask-messages');box.replaceChildren(); const article=document.createElement('article');const c=${JSON.stringify({id,appName:'生成记录',capturedAt:'2026-09-27',excerpt})};const open=id=>window.fixtureOpened=id;article.append(renderAskAnswer(document,${JSON.stringify(answer)},[c],open),renderAskCitation(document,c,open));box.append(article);};`;
   await build({ stdin: { contents: entry, resolveDir: root, loader: 'ts' }, bundle: true, platform: 'browser', outfile: join(output, 'renderer.js') });
   const css = (await readFile(join(root,'src/design-tokens.css'),'utf8')) + '\n' + (await readFile(join(root,'src/styles.css'),'utf8')) + '\n' + (await readFile(join(root,'src/art-direction.css'),'utf8'));
   await writeFile(join(output,'fixture.html'), `<!doctype html><meta charset="UTF-8"><style>${css}</style><main style="margin:0;padding:24px;width:100%"><h1>生成 Ask 布局回归</h1><div class="ask-layout"><aside class="panel">生成对话历史</aside><section class="panel"><div id="ask-messages"></div><p>回答已完成</p><textarea aria-label="你的问题"></textarea></section></div></main><script src="renderer.js"></script>`, {mode:0o600});

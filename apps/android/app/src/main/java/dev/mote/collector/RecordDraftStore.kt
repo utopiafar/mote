@@ -37,9 +37,45 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
         atomic(File(directory, "$id.enc"), cipher.seal(bytes))
         return JSONObject().put("id", id).put("name", name.take(250)).put("mime", mime).put("size", bytes.size)
     }
+
+    /** Streams an attachment original into the same store without loading it whole. */
+    @Synchronized fun stageFile(source: File, name: String, mime: String, stagedId: String? = null): JSONObject {
+        require(source.isFile)
+        val size = source.length()
+        require(size in 1..CentralAttachments.MAX_BYTES.toLong())
+        directory.mkdirs()
+        val id = stagedId?.let { UUID.fromString(it).toString() } ?: UUID.randomUUID().toString()
+        val target = File(directory, "$id.enc")
+        DurableQueue.exclusive {
+            val replaced = if (target.exists()) target.length() else 0L
+            if (diskBytes() - replaced + size > availableBytes()) throw QueueFull()
+            val temp = File(directory, UUID.randomUUID().toString() + ".tmp")
+            try {
+                FileOutputStream(temp).use { output ->
+                    source.inputStream().use { input -> cipher.seal(input, output) }
+                    output.fd.sync()
+                }
+                check(temp.renameTo(target))
+            } finally { temp.delete() }
+        }
+        return JSONObject().put("id", id).put("name", name.take(250)).put("mime", mime).put("size", size)
+    }
+
+    /** Appends one staged attachment to the retained draft. */
+    @Synchronized fun attach(attachment: JSONObject) {
+        UUID.fromString(attachment.getString("id"))
+        require(attachment.getLong("size") in 1..CentralAttachments.MAX_BYTES.toLong())
+        val state = state(); val draft = state.getJSONObject("draft"); val attachments = draft.getJSONArray("attachments")
+        val id = attachment.getString("id")
+        if ((0 until attachments.length()).any { attachments.getJSONObject(it).getString("id") == id }) return
+        require(attachments.length() < 10) { MoteI18n.text("最多 10 个附件") }
+        attachments.put(JSONObject(attachment.toString()))
+        write(state)
+    }
+
     @Synchronized fun prepare(origin: String, create: (JSONObject) -> JSONObject): JSONObject {
         val state = state(); val draft = state.getJSONObject("draft")
-        require(draft.getString("text").isNotBlank() || draft.getJSONArray("attachments").length() > 0 || draft.getJSONObject("origin").optString("text").isNotBlank()) { MoteI18n.text("请先填写随手记") }
+        require(draft.getString("text").isNotBlank() || draft.getJSONArray("attachments").length() > 0 || draft.getJSONObject("origin").optString("text").isNotBlank()) { MoteI18n.text("请先填写记录") }
         val prepared = draft.optJSONObject("prepared")
         if (prepared != null) { require(draft.getString("server") == origin); return JSONObject(prepared.toString()) }
         val event = create(draft)

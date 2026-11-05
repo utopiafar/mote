@@ -41,11 +41,11 @@ test('a late result from the previous query never replaces the current query',as
   controller.submit();
   const second=calls.filter(call=>call.path.startsWith('/api/library/browse?')).at(-1)!;
   assert.ok(first.signal.aborted,'changing the query cancels the old read');
-  second.result.resolve({schemaVersion:1,revision:'second',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'随手记'},items:[],nextCursor:null});
+  second.result.resolve({schemaVersion:1,revision:'second',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'记录'},items:[],nextCursor:null});
   await turn();
   assert.equal(controller.getSnapshot().query,'second query');
   assert.equal(controller.getSnapshot().page.data?.revision,'second');
-  first.result.resolve({schemaVersion:1,revision:'first',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'随手记'},items:[],nextCursor:null});
+  first.result.resolve({schemaVersion:1,revision:'first',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'记录'},items:[],nextCursor:null});
   await turn();
   assert.equal(controller.getSnapshot().query,'second query','the current query remains selected');
   assert.equal(controller.getSnapshot().page.data?.revision,'second','a late old response cannot overwrite the new page');
@@ -54,10 +54,10 @@ test('a late result from the previous query never replaces the current query',as
 test('switching owner clears query state, result handles and the old owner cache',async t=>{
   const {dom,window,document}=runtime();
   const firstApi={request:async(path:string)=>path.startsWith('/api/library/browse?')
-    ? {schemaVersion:1,revision:'first-owner',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'随手记'},items:[],nextCursor:null}
+    ? {schemaVersion:1,revision:'first-owner',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'记录'},items:[],nextCursor:null}
     : {items:[],nextCursor:null}} as Api;
   const secondApi={request:async(path:string)=>path.startsWith('/api/library/browse?')
-    ? {schemaVersion:1,revision:'second-owner',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'随手记'},items:[],nextCursor:null}
+    ? {schemaVersion:1,revision:'second-owner',types:[],sources:[],sourcesTruncated:false,noteOrigin:{origin:'notes',label:'记录'},items:[],nextCursor:null}
     : {items:[],nextCursor:null}} as Api;
   const controller=new SearchController({api:firstApi,adoptHash:false,window,document});
   controller.start();

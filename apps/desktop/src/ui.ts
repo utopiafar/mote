@@ -643,7 +643,7 @@ function renderDraft(value: import('./note-draft').NoteDraft): void {
   draft = value; byId<HTMLTextAreaElement>('note-text').value = value.text;byId<HTMLTextAreaElement>('note-description').value=value.description;byId<HTMLDetailsElement>('note-description-panel').open=Boolean(value.description);
   for(const id of ['note-text','note-description'])byId<HTMLTextAreaElement>(id).readOnly=Boolean(value.prepared);
 }
-void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) {byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("发现上次未完成的保存，点击保存可用原 ID 重试。");} }).catch(() => feedback(moteText("无法恢复随手记草稿，请重启应用。")));
+void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) {byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("发现上次未完成的保存，点击保存可用原 ID 重试。");} }).catch(() => feedback(moteText("无法恢复记录草稿，请重启应用。")));
 for (const id of ['note-text','note-description']) {
   byId(id).addEventListener('compositionstart', () => { noteComposing = true; });
   byId(id).addEventListener('compositionend', () => { noteComposing = false; });
@@ -892,7 +892,7 @@ const updateInstallUi=createUpdateInstallUi(document,{
   status:()=>desktopApi.updateStatus(),
   allowed(){
     if(settingsDirty){feedback(moteText('请先保存或还原设置修改，再安装更新。'));return false;}
-    if(noteSaving||noteComposing){feedback(moteText('请先完成当前随手记输入，再安装更新。'));return false;}
+    if(noteSaving||noteComposing){feedback(moteText('请先完成当前记录输入，再安装更新。'));return false;}
     return true;
   },
   async install(){await perform(async()=>{
@@ -952,7 +952,7 @@ function clearConnectionPreview(): void { connectionPreview = undefined; byId('c
 function showConnectionPreview(value: import('./connection').ConnectionPreview): void {
   connectionPreview = value; byId<HTMLTextAreaElement>('connection-input').value = ''; byId<HTMLInputElement>('connection-confirm-origin').checked = false;
   byId('connection-origin').textContent = value.serverUrl; byId('connection-expiry').textContent = moteText("邀请到期：") + new Date(value.expiresAt).toLocaleString(getLocale());
-  byId('connection-resume').textContent = value.serverUrl === currentStatus?.config.serverUrl ? moteText("同一节点重新授权后，现有待传截图、随手记和来源版本将继续发往此地址。节点身份以此地址和 HTTPS 证书为准；请确认它仍由你控制。") : moteText("更换节点时，本机必须没有待传截图、随手记或来源版本；设备 ID、隐私设置和本地模型将保留。");
+  byId('connection-resume').textContent = value.serverUrl === currentStatus?.config.serverUrl ? moteText("同一节点重新授权后，现有待传截图、记录和来源版本将继续发往此地址。节点身份以此地址和 HTTPS 证书为准；请确认它仍由你控制。") : moteText("更换节点时，本机必须没有待传截图、记录或来源版本；设备 ID、隐私设置和本地模型将保留。");
   byId('connection-confirmation').hidden = false; byId<HTMLButtonElement>('connection-connect').disabled = true;
 }
 byId('connection-input').addEventListener('input', () => { clearConnectionPreview(); void desktopApi.cancelConnection(); });
@@ -1034,7 +1034,7 @@ function updateLocalBacklog(): void {
   byId('local-backlog-confirmation').hidden = !currentStatus.sync.localBacklogUnbound;
   let destination = moteText("你填写的节点");
   try { destination = new URL(readInput('server-url')).origin; } catch { /* Blank means local-only. */ }
-  byId('local-backlog-copy').textContent = moteText("本机有 {0} 条尚未绑定节点的待传记录，及可能尚未完成保存的随手记。确认后将归属 {1}，按上传策略发送。", currentStatus.sync.pendingRecords, destination);
+  byId('local-backlog-copy').textContent = moteText("本机有 {0} 条尚未绑定节点的待传记录，及可能尚未完成保存的记录。确认后将归属 {1}，按上传策略发送。", currentStatus.sync.pendingRecords, destination);
 }
 function updateTokenField(): void {
   byId('node-token-field').hidden = Boolean(currentStatus?.config.tokenConfigured && readInput('server-url').trim().replace(/\/$/, '') === currentStatus.config.serverUrl.replace(/\/$/, ''));

@@ -17,7 +17,7 @@ internal class CentralNoteStore(private val directory: File, private val cipher:
     }
     @Synchronized fun enqueue(deviceId: String, deviceName: String): JSONObject {
         val state = read(); val draft = state.getJSONObject("draft")
-        require(draft.getString("text").isNotBlank()) { MoteI18n.text("请先填写随手记") }
+        require(draft.getString("text").isNotBlank()) { MoteI18n.text("请先填写记录") }
         val note = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", deviceId).put("deviceName", deviceName)
             .put("platform", "android").put("capturedAt", java.time.Instant.now().toString()).put("text", draft.getString("text"))
         if (draft.optString("mood").isNotBlank()) note.put("mood", draft.getString("mood"))
