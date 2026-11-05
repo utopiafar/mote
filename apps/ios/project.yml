@@ -1,0 +1,57 @@
+name: Mote
+options:
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+packages:
+  MoteKit:
+    path: MoteKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Mote:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: MoteKit
+        product: MoteDesign
+      - package: MoteKit
+        product: MoteCore
+      - package: MoteKit
+        product: MoteCentral
+      - package: MoteKit
+        product: MoteStorage
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios
+        CODE_SIGN_ENTITLEMENTS: App/Mote.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+  MoteUITests:
+    type: com.apple.product-type.bundle.ui-testing
+    platform: iOS
+    sources:
+      - MoteUITests
+    dependencies:
+      - target: Mote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Mote:
+    build:
+      targets:
+        Mote: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MoteUITests
