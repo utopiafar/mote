@@ -2,7 +2,7 @@ require('./fixture-background.cjs');
 require('./fixture-language.cjs');
 /** Manual visual check: the same owner scenes from Web, Mac and (optionally) Android side by side.
  * Generated data and private temporary profiles only; no model, personal capture or network beyond loopback. */
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, nativeTheme } = require('electron');
 const { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve, relative } = require('node:path');
@@ -11,7 +11,10 @@ const { randomBytes, randomUUID } = require('node:crypto');
 const net = require('node:net');
 const assert = require('node:assert/strict');
 
-const repo = resolve(__dirname, '..'), root = mkdtempSync(join(tmpdir(), 'mote-cross-client-')), out = join(repo, '.mote/cross-client');
+const repo = resolve(__dirname, '..'), root = mkdtempSync(join(tmpdir(), 'mote-cross-client-'));
+// Optional light/dark capture: MOTE_SNAPSHOT_SCHEME keeps both sheets instead of overwriting one.
+const scheme = ['light', 'dark'].includes(process.env.MOTE_SNAPSHOT_SCHEME) ? process.env.MOTE_SNAPSHOT_SCHEME : undefined;
+const out = join(repo, '.mote/cross-client' + (scheme ? '-' + scheme : ''));
 const androidArgument = process.argv.indexOf('--android'), androidDirectory = androidArgument > 0 ? resolve(process.argv[androidArgument + 1] ?? '') : undefined;
 // Scene ids are the shared primary destinations plus settings; each client contributes its own route or fixture file.
 const scenes = [
@@ -73,7 +76,7 @@ function captureDesktop() {
   const target = join(out, 'desktop', 'ui-fixture.png');
   mkdirSync(join(out, 'desktop'), { recursive: true, mode: 0o700 });
   return new Promise((done, fail) => {
-    const child = spawn(process.execPath, ['scripts/ui-smoke.cjs'], { cwd: join(repo, 'apps/desktop'), env: { ...process.env, MOTE_UI_SCREENSHOT: target }, stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(process.execPath, ['scripts/ui-smoke.cjs'], { cwd: join(repo, 'apps/desktop'), env: { ...process.env, MOTE_UI_SCREENSHOT: target, ...(scheme ? { MOTE_UI_SCHEME: scheme } : {}) }, stdio: ['ignore', 'ignore', 'pipe'] });
     let log = ''; child.stderr.on('data', chunk => { log = (log + chunk).slice(-8000); });
     child.on('exit', code => code === 0 ? done() : fail(Error('Mac fixture failed: ' + log)));
   });
@@ -90,6 +93,7 @@ function writeSheet() {
 }
 
 app.whenReady().then(async () => {
+  if (scheme) nativeTheme.themeSource = scheme;
   let code = 0;
   try {
     await captureWeb();
