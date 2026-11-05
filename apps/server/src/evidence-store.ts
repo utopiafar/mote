@@ -188,6 +188,14 @@ export class EvidenceStore {
       return {id:p.input.id,duplicate:true,blobHash:prior.blob_hash,indexingStatus:prior.index_status};
     }
     if(this.db.prepare("SELECT seq FROM changes WHERE id=? AND operation='delete' LIMIT 1").get(p.input.id))throw new StoreError('This event was deleted; queued retries cannot restore it. Import into a fresh vault or create a new explicitly authorized event.',410);
+    // iOS has no system notification identity; Shortcuts derives one from the
+    // content. Identical deliveries on one device acknowledge the stored record
+    // instead of adding another copy.
+    const notificationKey=p.input.platform==='ios'&&p.input.source==='notification'&&p.input.metadata?.notification?.action==='posted'?p.input.metadata.notification.notificationKey:undefined;
+    if(notificationKey){
+      const stored=this.db.prepare("SELECT id,blob_hash,index_status FROM captures WHERE device_id=? AND json_extract(json,'$.platform')='ios' AND json_extract(json,'$.source')='notification' AND json_extract(json,'$.metadata.notification.notificationKey')=? LIMIT 1").get(p.input.deviceId,notificationKey) as {id:string;blob_hash:string|null;index_status:CaptureRecord['indexingStatus']}|undefined;
+      if(stored)return {id:stored.id,duplicate:true,blobHash:stored.blob_hash,indexingStatus:stored.index_status};
+    }
     const {imageBase64:_,imageMime,...metadata}=p.input;
     const json=JSON.stringify(metadata);
     const known=p.hash ? this.db.prepare('SELECT hash FROM assets WHERE hash=?').get(p.hash):null;

@@ -90,13 +90,13 @@ object QueueArchive {
     }
     /** Same IDs merge idempotently; a conflicting existing record is rejected before any writes. */
     fun restore(prepared: Prepared, target: DurableQueue, origin: String, maxBytes: Long): Int = DurableQueue.exclusive {
-        require(prepared.origin == origin) { MoteI18n.text("备份属于不同中央节点；请连接原节点后导入") }
+        require(prepared.origin == origin) { MoteI18n.text("备份属于不同中央。连接原节点后导入") }
         val source = prepared.queue()
         val ids = source.dedupeIds()
         for (id in ids) {
             val archived = requireNotNull(source.archiveRecord(id)).first
             validateAuthorization(archived)
-            require(!archived.has("_archiveOrigin") || archived.getString("_archiveOrigin") == origin.trim().trimEnd('/')) { MoteI18n.text("备份属于不同中央节点；请连接原节点后导入") }
+            require(!archived.has("_archiveOrigin") || archived.getString("_archiveOrigin") == origin.trim().trimEnd('/')) { MoteI18n.text("备份属于不同中央。连接原节点后导入") }
             val existing = target.archiveRecord(id) ?: continue
             val incoming = requireNotNull(source.archiveRecord(id))
             require(SourceRules.canonical(wire(existing.first)) == SourceRules.canonical(wire(incoming.first)) && existing.second.contentEquals(incoming.second)) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }

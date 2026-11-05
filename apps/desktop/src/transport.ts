@@ -14,7 +14,7 @@ export class DeletedCaptureFailure extends TransportFailure {}
 
 export async function uploadCapture(config: Config, event: CaptureEvent, image?: Buffer, signal?: AbortSignal, onBytes?: (bytes: number) => void): Promise<void> {
   const origin = validateServerUrl(config.serverUrl);
-  if (!connectionToken(config)) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
+  if (!connectionToken(config)) throw new TransportFailure(moteText("配置中央访问令牌"), 'CONFIG_INVALID');
   let response: Response;
   try {
     response = await fetch(`${origin}/api/captures`, {
@@ -23,15 +23,15 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
       body: meteredBody(JSON.stringify({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) }), onBytes),
       ...({ duplex: 'half' } as object),
     });
-  } catch (error) { const code = failureCode(error, 'UPLOAD'); throw new TransportFailure(moteText("无法连接中央节点，已保留本地队列并等待重试"), code === 'RESPONSE' ? 'NETWORK' : code); }
+  } catch (error) { const code = failureCode(error, 'UPLOAD'); throw new TransportFailure(moteText("无法连接中央，已保留本地队列并等待重试"), code === 'RESPONSE' ? 'NETWORK' : code); }
   if (response.status !== 200 && response.status !== 201) {
     await response.body?.cancel().catch(() => undefined);
-    if (response.status === 401 || response.status === 403) throw new TransportFailure(moteText("中央节点拒绝访问，请检查令牌；队列已保留"), 'AUTH', response.status);
-    if (response.status === 409) throw new TransportFailure(moteText("中央节点报告事件 ID 冲突；队列已保留，请检查服务端"), 'CONFLICT', response.status);
-    throw new TransportFailure(moteText("中央节点返回 HTTP {0}；队列已保留", response.status), httpFailure(response.status), response.status);
+    if (response.status === 401 || response.status === 403) throw new TransportFailure(moteText("中央拒绝访问；检查令牌。队列已保留"), 'AUTH', response.status);
+    if (response.status === 409) throw new TransportFailure(moteText("中央报告事件 ID 冲突；队列已保留。检查服务端"), 'CONFLICT', response.status);
+    throw new TransportFailure(moteText("中央返回 HTTP {0}；队列已保留", response.status), httpFailure(response.status), response.status);
   }
   try { requireIngressReceipt(JSON.parse(await readResponseText(response, 16384)),{kind:'capture',id:event.id}); }
-  catch { throw new TransportFailure(moteText("中央节点确认格式无效；队列已保留"), 'RESPONSE', response.status); }
+  catch { throw new TransportFailure(moteText("中央确认格式无效；队列已保留"), 'RESPONSE', response.status); }
 }
 
 export async function heartbeat(config: Config, body: object, events?: EventJournal, signal?: AbortSignal): Promise<void> {
@@ -47,7 +47,7 @@ export async function heartbeat(config: Config, body: object, events?: EventJour
 }
 
 export async function uploadCaptureBatch(config: Config, entries: { event: CaptureEvent; image?: Buffer }[], signal?: AbortSignal, onBytes?: (bytes: number) => void, onReceipt?: (id: string, status: number) => void): Promise<Map<string, number>> {
-  if (!connectionToken(config)) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
+  if (!connectionToken(config)) throw new TransportFailure(moteText("配置中央访问令牌"), 'CONFIG_INVALID');
   const origin = validateServerUrl(config.serverUrl);
   let response: Response;
   try { response = await fetch(`${origin}/api/captures/batch`, {
@@ -57,7 +57,7 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
     ...({ duplex: 'half' } as object),
   }); } catch (error) {
     const code = failureCode(error, 'UPLOAD');
-    throw new TransportFailure(moteText("无法连接中央节点，已保留本地队列并等待重试"), code === 'RESPONSE' ? 'NETWORK' : code);
+    throw new TransportFailure(moteText("无法连接中央，已保留本地队列并等待重试"), code === 'RESPONSE' ? 'NETWORK' : code);
   }
   if (response.status===413&&entries.length>1) {
     await response.body?.cancel();
@@ -68,7 +68,7 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
   if (response.status !== 200) { await response.body?.cancel(); throw new TransportFailure(moteText("批量上传未确认（HTTP {0}）", response.status), httpFailure(response.status), response.status); }
   let body: { results?: {id: string; status: number;receipt?:unknown}[] } | null;
   try { body = JSON.parse(await readResponseText(response, 65536)); }
-  catch { throw new TransportFailure(moteText("中央节点确认格式无效；队列已保留"), 'RESPONSE', response.status); }
+  catch { throw new TransportFailure(moteText("中央确认格式无效；队列已保留"), 'RESPONSE', response.status); }
   const expected = new Set(entries.map(entry => entry.event.id)), result = new Map<string, number>();
   if (!body || !Array.isArray(body.results) || body.results.length > entries.length) throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
   for (const receipt of body.results) {

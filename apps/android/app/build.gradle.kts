@@ -72,6 +72,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { buildConfig = true }
     sourceSets.getByName("test").resources.srcDir(rootProject.file("../../adapters/ui/fixtures"))
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("../../packages/shared/test-fixtures"))
     sourceSets.getByName("test").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("androidTest").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("development").apply {

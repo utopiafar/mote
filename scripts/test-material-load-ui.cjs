@@ -144,7 +144,7 @@ async function run(){
      const text='GENERATED LOAD FOREGROUND NOTE\nSeparate from the fixed 400 source materials.';
      await js("location.hash='/notes'");await until(()=>js("!!document.querySelector('#note-text')"),'Notes input');
      await js(`(()=>{const e=document.querySelector('#note-text');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,${JSON.stringify(text)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-     await click('保存并同步');await until(()=>js(`document.body.innerText.includes('随手记已同步到你的中央节点。')`),'foreground note synchronized');report.frontendNote={textSha256:sha(text),savedAt:Date.now(),additionalToPlanned400:true};await materials();
+     await click('保存并同步');await until(()=>js(`document.body.innerText.includes('记录已同步到你的中央。')`),'foreground note synchronized');report.frontendNote={textSha256:sha(text),savedAt:Date.now(),additionalToPlanned400:true};await materials();
     });}
     slot.endedAt=Date.now();
    }

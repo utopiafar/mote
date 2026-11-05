@@ -4,7 +4,7 @@ body { margin: 0; padding: 15px 18px; user-select: none; }
 header { display: flex; align-items: center; justify-content: space-between; -webkit-app-region: drag; }
 header strong { font-size: 13px; }
 button { font: inherit; cursor: pointer; color: inherit; -webkit-app-region: no-drag; }
-#permission-help-close { border: 0; background: transparent; font-size: 20px; line-height: 20px; border-radius: 4px; }
+#permission-help-close { border: 0; background: transparent; font-size: 20px; line-height: 20px; border-radius: var(--mote-radius-control); }
 p { margin: 10px 0; line-height: 1.5; }
 #permission-help-app { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px dashed var(--mote-control-border); border-radius: var(--mote-radius-control); background: var(--mote-tint); cursor: grab; -webkit-user-drag: element; }
 #permission-help-app:active { cursor: grabbing; }

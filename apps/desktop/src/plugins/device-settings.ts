@@ -20,7 +20,7 @@ import {ConnectionOnboarding, testConnection} from '../connection';
 import {ConnectionController} from '../connection-controller';
 import {loginRequest} from '../login-session';
 import {PermissionGuide} from '../permission-guide';
-import {permissionKind, type DragPermissionKind, type PermissionStatus, type SettingsWindow} from '../permission-types';
+import {permissionKind, permissionSettingsUrl, type DragPermissionKind, type PermissionStatus, type SettingsWindow} from '../permission-types';
 import {SettingsCoordinator, type SettingsDependencies} from '../settings-coordinator';
 import {failureCode, safeErrorName, type EventJournal, type EventStage} from '../support';
 import {deviceSettingsChannels} from '../desktop-ipc-channels';
@@ -115,7 +115,7 @@ const connectionStage = (channel: string): EventStage | undefined =>
 
 const operationLabel = (channel: string): string | undefined => {
   if (channel === deviceSettingsChannels.configure) return moteText('正在应用设置或迁移存储');
-  if (channel === deviceSettingsChannels.connectionConfirm) return moteText('正在连接中央节点');
+  if (channel === deviceSettingsChannels.connectionConfirm) return moteText('正在连接中央');
   if (channel === deviceSettingsChannels.connectionTest) return moteText('正在测试连接');
   return undefined;
 };
@@ -231,10 +231,9 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
       const openPermissionSettings = async (raw: unknown): Promise<void> => {
         const kind = permissionKind(raw);
         const generation = ++permissionSettingsGeneration;
-        const panes = {screen: 'Privacy_ScreenCapture', accessibility: 'Privacy_Accessibility', calendar: 'Privacy_Calendars', files: 'Privacy_AllFiles'};
         permissionGuide.close();
         if (options.platform !== 'macos') return;
-        await d.openExternal('x-apple.systempreferences:com.apple.preference.security?' + panes[kind]);
+        await d.openExternal(permissionSettingsUrl(kind));
         if (kind !== 'calendar' && generation === permissionSettingsGeneration) await permissionGuide.open(kind);
       };
       const permissionStatus = async (): Promise<PermissionStatus> => ({
@@ -301,7 +300,7 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
             if (relocating && changingConnection) throw new Error(moteText('请先保存截图位置，再单独保存节点连接；每次切换均会自动应用'));
             if (changingConnection && updated.token) {
               const identity = await testConnection(updated, fetch, false);
-              if (!identity.capabilities.archiveRead) throw new Error(moteText('请升级中央节点后再登录。'));
+              if (!identity.capabilities.archiveRead) throw new Error(moteText('升级中央后再登录'));
               if (identity.credential.id === 'owner' || identity.credential.deviceId !== updated.deviceId) {
                 const grant = await loginRequest(updated, '/api/login/session', {
                   serverUrl: updated.serverUrl, deviceId: updated.deviceId, deviceName: updated.deviceName,

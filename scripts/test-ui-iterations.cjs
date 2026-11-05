@@ -598,7 +598,7 @@ async function run() {
   for (const [labels, path, name] of [
     [['新增数据源'], 'connections/add', 'add source'],
     [['导入资料', '导入文件'], 'library/import', 'import existing files'],
-    [['写随手记', '随手记'], 'library/notes', 'quick note'],
+    [['写记录', '记录'], 'library/notes', 'quick note'],
     [['全部功能'], 'guide', 'all features and settings'],
   ]) {
     await route('today', '.home-page');

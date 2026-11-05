@@ -153,7 +153,7 @@ const larkPlugin: SourcePlugin = {
   catalog: {
     title: () => moteText('飞书文档与日历'),
     body: () => moteText('选择账号、历史范围和持续同步'),
-    note: () => moteText('中央节点只读同步，默认回溯 30 天、每 15 分钟检查。与录音授权分开。'),
+    note: () => moteText('中央只读同步，默认回溯 30 天、每 15 分钟检查。与录音授权分开。'),
     state: context => sourcePluginStateLabel(larkPlugin, context),
     target: { pageId: 'lark', href: '#/connections/lark' },
     icon: FileText,
@@ -210,7 +210,7 @@ export function sourcePluginStatus(plugin: SourcePlugin, catalog: SourceCatalogS
 
 function RecordingSourceConnection({ api, sourceId, provider, status, onOpen }: { api: Api; sourceId: string; provider: string; status?: RecordingStatus; onOpen: (ref: string) => void }) {
   const page = useResource<RecordingStatus>(api, '/api/connectors/' + encodeURIComponent(provider) + '-recordings', 3000);
-  if (page.error) return <div><p role="alert">{moteText('状态读取失败，请重试。')}</p><details className="source-final-diagnostics"><summary>{moteText('技术详情')}</summary><pre>{errorMessage(page.error)}</pre></details></div>;
+  if (page.error) return <div><p role="alert">{moteText('状态读取失败。')}</p><details className="source-final-diagnostics"><summary>{moteText('技术详情')}</summary><pre>{errorMessage(page.error)}</pre></details></div>;
   const current = page.data ?? status;
   if (!current) return <p role="status">{moteText('正在读取…')}</p>;
   if (current.provider !== provider || current.sourceId !== sourceId) return <p role="status">{moteText('此来源未绑定当前录音账号')}</p>;
