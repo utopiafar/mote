@@ -93,12 +93,16 @@ internal object MoteUi {
         // Native text editing drawables are retained by the View; retint them in place.
         listOf(textCursorDrawable, textSelectHandle, textSelectHandleLeft, textSelectHandleRight).filterNotNull().forEach { it.mutate().setTint(MoteTheme.accent) }
     }
+    /** Field surface: resting control border, or a 2dp accent ring when focused (Base canvas). */
+    fun fieldShape(context: Context, focused: Boolean): GradientDrawable =
+        if (focused) shape(context,NativeColorRole.SURFACE,NativeRadiusRole.CONTROL,true,NativeColorRole.ACCENT).apply { setStroke(context.moteDp(2*MoteTheme.borderWidth),NativeColorRole.ACCENT.color()) }
+        else shape(context,NativeColorRole.SURFACE,NativeRadiusRole.CONTROL,true,NativeColorRole.CONTROL_BORDER)
     private fun inputBackground(field:EditText) {
         field.backgroundTintList=null
         field.background=android.graphics.drawable.StateListDrawable().apply {
             addState(intArrayOf(-android.R.attr.state_enabled),shape(field.context,NativeColorRole.BACKGROUND,NativeRadiusRole.CONTROL,true,NativeColorRole.CONTROL_BORDER))
-            addState(intArrayOf(android.R.attr.state_focused),shape(field.context,NativeColorRole.SURFACE,NativeRadiusRole.CONTROL,true,NativeColorRole.ACCENT))
-            addState(intArrayOf(),shape(field.context,NativeColorRole.SURFACE,NativeRadiusRole.CONTROL,true,NativeColorRole.CONTROL_BORDER))
+            addState(intArrayOf(android.R.attr.state_focused),fieldShape(field.context,focused=true))
+            addState(intArrayOf(),fieldShape(field.context,focused=false))
         }
     }
     fun field(field: EditText): EditText = field.apply {

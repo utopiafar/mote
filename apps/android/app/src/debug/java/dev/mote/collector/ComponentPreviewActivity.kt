@@ -120,8 +120,7 @@ class ComponentPreviewActivity : MoteActivity() {
             orientation = LinearLayout.HORIZONTAL; gravity = if (top) Gravity.TOP else Gravity.CENTER_VERTICAL; isBaselineAligned = false
             if (minHeight > 0) this.minimumHeight = moteDp(minHeight) else minimumHeight = moteDp(MoteTheme.controlHeight)
             setPadding(moteDp(12), moteDp(if (top) 10 else 0), moteDp(12), moteDp(if (top) 10 else 0))
-            background = MoteUi.shape(this@ComponentPreviewActivity, NativeColorRole.SURFACE, NativeRadiusRole.CONTROL, true,
-                if (focused) NativeColorRole.ACCENT else NativeColorRole.CONTROL_BORDER)
+            background = MoteUi.fieldShape(this@ComponentPreviewActivity, focused)
             icon?.let { addView(MoteComponents.icon(context, it), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = moteDp(8) }) }
             addView(TextView(context).apply {
                 this.text = text ?: placeholder; MoteUi.type(this, NativeFontRole.BODY)
