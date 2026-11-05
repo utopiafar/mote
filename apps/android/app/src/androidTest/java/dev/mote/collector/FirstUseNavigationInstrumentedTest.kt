@@ -53,7 +53,7 @@ class FirstUseNavigationInstrumentedTest {
             assertEquals(StartUsingActivity.INSTALL_PROMPT,main { context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString() })
             click("查看安装提示词"); screenshot("install-prompt")
             click("现在先记下来"); until("Offline editor") { activity() is RecordEditorActivity && shown().filterIsInstance<EditText>().any { it.contentDescription=="正在想什么" && it.isEnabled } }
-            main { shown().filterIsInstance<EditText>().single { it.contentDescription=="正在想什么" }.setText(original) }; click("资料说明（选填）")
+            main { shown().filterIsInstance<EditText>().single { it.contentDescription=="正在想什么" }.setText(original) }; click("资料说明")
             main { shown().filterIsInstance<EditText>().single { it.tag=="record-description" }.setText(description) }; screenshot("first-editor")
             assertEquals(0,context.queue().depth()); click("保存")
             until("Local receipt after explicit save") { activity() is MainActivity && shown().filterIsInstance<TextView>().any { it.text.toString()=="• 本机已保存" } }; screenshot("local-saved-receipt")

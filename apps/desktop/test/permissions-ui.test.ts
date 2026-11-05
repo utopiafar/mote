@@ -3,6 +3,9 @@ import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
 import { configureLocale } from '@mote/shared/i18n';
 import { createPermissionsUi } from '../src/permissions-ui';
+import { createCaptureSyncUi } from '../src/capture-sync-ui';
+import type { Status } from '../src/contracts';
+import { permissionSettingsUrl } from '../src/permission-types';
 import type { PermissionStatus } from '../src/permission-types';
 
 let dom: JSDOM, ui: ReturnType<typeof createPermissionsUi>;
@@ -95,4 +98,17 @@ it('disables unsupported grants, provides no drag claim for unpackaged runs, and
   el<HTMLButtonElement>('#permissions-refresh').click(); window.dispatchEvent(new dom.window.Event('focus'));
   await vi.advanceTimersByTimeAsync(5000);
   expect(api.permissionStatus).toHaveBeenCalledTimes(calls); expect(api.requestPermission).not.toHaveBeenCalled();
+});
+
+it('opens the screen recording settings pane from the capture and sync window', async () => {
+  const api = { permissionSettings: vi.fn(async () => {}), storageStatistics: vi.fn(async () => ({ bytes: 0, files: 0, skipped: 0, generatedAt: '2026-11-06T00:00:00.000Z', timeZone: 'UTC' as const, dateBasis: 'modified' as const, days: [], types: [] })) };
+  const capture = createCaptureSyncUi(api, { start: vi.fn(), stop: vi.fn(), addSource: vi.fn(), openChrome: vi.fn(), openCalendar: vi.fn(), openSources: vi.fn(), sendNow: vi.fn(), setPaused: vi.fn(), failure: vi.fn() });
+  capture.update({ running: false, state: 'permission_required', message: 'Generated', queueDepth: 0, queueBytes: 0, screenPermission: 'denied', platform: 'macos', encryptedTokenStorage: true, sync: { state: 'idle', mode: 'realtime', message: 'Generated', pendingRecords: 0 }, config: { serverUrl: '', tokenConfigured: false, syncPaused: false, chromeOrigins: [] } } as Status, []);
+  el<HTMLButtonElement>('#capture-sync-screen-settings').click(); await flush();
+  expect(api.permissionSettings).toHaveBeenCalledWith('screen');
+  capture.dispose();
+});
+
+it('links screen recording to the exact macOS privacy pane', () => {
+  expect(permissionSettingsUrl('screen')).toBe('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
 });
