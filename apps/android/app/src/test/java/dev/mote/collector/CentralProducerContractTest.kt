@@ -65,6 +65,20 @@ class CentralProducerContractTest {
         CentralAttachments.upload(client, file, "Generated original.txt", "text/plain", deviceId, { time }, identityScope = scope, progress = progress)
     private fun begins() = exchanges.filter { it.path == "/api/file-sync/v1/uploads" }
 
+    @Test fun deviceContactProjectionKeepsReportedDeviceRowsReadableByCentralClient() {
+        val result = client().get("/api/devices")
+        val devices = result.getJSONArray("items")
+        val device = (0 until devices.length()).map { devices.getJSONObject(it) }
+            .single { it.getString("deviceId") == "generated-contact-contract" }
+        assertEquals("capturing", device.getString("status"))
+        assertEquals("interval", device.getJSONObject("sync").getString("mode"))
+        assertFalse("Contact loss is a Central projection, not a reported device field", device.has("disconnected"))
+        val lost = result.getJSONArray("disconnectedDeviceIds")
+        assertTrue((0 until lost.length()).any { lost.getString(it) == "generated-contact-contract" })
+        val denied = assertThrows(CentralFailure::class.java) { client(collector).get("/api/devices") }
+        assertEquals(403, denied.status)
+    }
+
     @Test fun realPartialAndLostFinalAcksResumeExactRevisionWithoutResendingConfirmedParts() {
         val bytes = ByteArray(4 * 1024 * 1024 + 157) { (it % 251).toByte() }
         val original = file(bytes); val scope = UUID.randomUUID().toString()
