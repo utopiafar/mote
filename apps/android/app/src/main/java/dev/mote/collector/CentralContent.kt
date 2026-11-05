@@ -111,7 +111,8 @@ internal class CentralContent(
     }
 
     val root: LinearLayout
-    private lateinit var backButton: TextView
+    private lateinit var backButton: ImageButton
+    private lateinit var headerDivider: View
     val isDestroyed get() = activity.isDestroyed
     val isFinishing get() = activity.isFinishing
     fun recreate() = activity.recreate()
@@ -229,9 +230,8 @@ internal class CentralContent(
         }
         val heading = if (compactHeader) LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL } else header
         val actions = if (compactHeader) LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL } else header
-        backButton = TextView(this).apply {
-            text = "‹"; contentDescription = MoteI18n.text("返回上级"); textSize = 28f; gravity = Gravity.CENTER
-            isFocusable = true; minHeight = moteDp(48); setOnClickListener { if (!back()) { if (openLocalPage != null) localPage("OVERVIEW") else activity.finish() } }
+        backButton = MoteComponents.iconButton(this, MoteGlyph.BACK, "返回上级") {
+            if (!back()) { if (openLocalPage != null) localPage("OVERVIEW") else activity.finish() }
         }
         heading.addView(backButton, LinearLayout.LayoutParams(moteDp(44), -2))
         title = TextView(this).apply { tag = "central-title"; MoteUi.type(this, NativeFontRole.APPBAR, medium = true); maxLines = Int.MAX_VALUE; ellipsize = null; MoteUi.textColor(this, NativeColorRole.INK) }
@@ -254,13 +254,14 @@ internal class CentralContent(
         conversationMoreAction = headerAction("⋯", "对话更多") { screens?.conversationMore() }
         memoryFilterAction = MoteComponents.iconButton(this, MoteGlyph.SLIDERS, "筛选") { memoryFilter?.invoke() }.apply { tag = "memory-filter" }
         actions.addView(memoryFilterAction, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
-        header.minimumHeight = moteDp(66)
+        header.minimumHeight = moteDp(if (page == "memories") 56 else 66)
         if (compactHeader) {
             header.addView(heading, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(6) })
             header.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(6) })
         }
         shell.header(header)
-        shell.header(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER); layoutParams = LinearLayout.LayoutParams(-1,moteDp(1));if(embeddedActions)visibility=View.GONE })
+        headerDivider = View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER); layoutParams = LinearLayout.LayoutParams(-1,moteDp(1));if(embeddedActions)visibility=View.GONE }
+        shell.header(headerDivider)
         if(embeddedActions){require(initialPage=="actions");header.visibility=View.GONE}
         status = TextView(this).apply {
             tag = "central-status"
@@ -370,6 +371,7 @@ internal class CentralContent(
         settingsAction.visibility = if (ask || page == "insights" || page == "memories") View.GONE else View.VISIBLE
         moreAction.visibility = if (ask || page == "memories") View.GONE else View.VISIBLE
         memoryFilterAction.visibility = View.GONE
+        headerDivider.visibility = if (page == "memories") View.GONE else View.VISIBLE
         historyAction.visibility = if (ask && client != null) View.VISIBLE else View.GONE
         newConversationAction.visibility = historyAction.visibility
         conversationMoreAction.visibility = View.GONE

@@ -124,9 +124,18 @@ internal class CentralMemoryTopics(
     private fun list(directory: MemoryTopicCatalog) {
         searchTask?.let(body::removeCallbacks); searchTask = null
         body.removeAllViews(); screens.clearBack()
+        body.setPadding(ui.moteDp(16), 0, ui.moteDp(16), ui.moteDp(24))
+        var more: View? = null
         fun filters() = LibraryBrowseUi.filters(ui, listOf("all" to "全部记忆", "personal" to "个人记忆", "event" to "事件记忆"), kind,
             { value -> kind = value; MemoryBrowseCriteria.select(navigation, value); list(directory) },
-            history = history to { enabled -> history = enabled; navigation.first(); list(directory) })
+            history = history to { enabled -> history = enabled; navigation.first(); list(directory) },
+            manage = {
+                val section = more as? LinearLayout
+                val trigger = section?.getChildAt(0)
+                val content = section?.getChildAt(1)
+                if (content?.visibility == View.VISIBLE) { trigger?.performClick(); section.visibility = View.GONE }
+                else { section?.visibility = View.VISIBLE; trigger?.performClick() }
+            })
         ui.memoryLibraryHeader(::filters)
         ui.text(MoteI18n.text("资料与记忆"), NativeFontRole.TITLE_MOBILE).setPadding(ui.moteDp(4), 0, 0, ui.moteDp(12))
         body.addView(LibraryBrowseUi.tabs(ui, "memories") { selected -> if (selected == "materials") ui.openLibraryMaterials() }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(10) })
@@ -140,7 +149,7 @@ internal class CentralMemoryTopics(
                 setSpan(ForegroundColorSpan(NativeColorRole.ACCENT.color()), match.start, match.endExclusive, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
-        var more: View? = null
+        var moreTrigger: View? = null
         fun readPage() {
             val api = screens.client; val stamp = generation; val version = ++loadVersion
             val path = MemoryBrowseCriteria.path(navigation, query, history)
@@ -188,7 +197,6 @@ internal class CentralMemoryTopics(
                     if (error is CentralFailure && error.status == 409) navigation.first()
                     failure(error)
                 }
-                more?.visibility = if (query.isBlank()) View.VISIBLE else View.GONE
                 ui.scheduleMemoryTopicsPoll()
             }
         }
@@ -227,7 +235,9 @@ internal class CentralMemoryTopics(
             }
             ui.button(MoteI18n.text("刷新"), parent = management) { screens.refresh() }
         }
-        more?.visibility = if (query.isBlank()) View.VISIBLE else View.GONE
+        moreTrigger = (more as? LinearLayout)?.getChildAt(0)
+        moreTrigger?.visibility = View.GONE
+        more?.visibility = View.GONE
     }
     private fun edits(): List<Pair<MemoryTopicEdit, String>> {
         fun children(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()

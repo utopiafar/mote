@@ -16,6 +16,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.mote.collector.DesignTokens
 import dev.mote.collector.MoteI18n
 import dev.mote.collector.MoteTheme
 import dev.mote.collector.MoteUi
@@ -229,9 +230,10 @@ internal object MoteComponents {
     /** Inner items are capsule buttons; the frame radius is the button radius + gap. */
     internal class MoteSegmented(context: Context, options: List<Pair<String, String>>, private val onSelect: (String) -> Unit) : LinearLayout(context) {
         private val gap get() = context.moteDp(2)
+        private val itemHeight get() = context.moteDp(DesignTokens.controlHeight)
         private val entries = options.map { (id, key) -> id to TextView(context).apply {
             text = MoteI18n.text(key); contentDescription = text; gravity = Gravity.CENTER
-            minimumHeight = context.moteDp(MoteTheme.controlHeight); minHeight = minimumHeight
+            minHeight = itemHeight
             MoteUi.type(this, NativeFontRole.ACTION, medium = true); isFocusable = true
             setOnClickListener { onSelect(id) }
         } }
@@ -240,9 +242,9 @@ internal object MoteComponents {
             setPadding(gap, gap, gap, gap)
             bind(this, "segmented") {
                 it.background = NativeThemeShape(resources.displayMetrics.density, NativeColorRole.SURFACE_HOVER,
-                    { MoteTheme.controlHeight / 2 + 2 }, false, NativeColorRole.HAIR)
+                    { DesignTokens.controlHeight / 2 + 2 }, false, NativeColorRole.HAIR)
             }
-            entries.forEach { (_, view) -> addView(view, LayoutParams(0, -2, 1f)) }
+            entries.forEach { (_, view) -> addView(view, LayoutParams(0, itemHeight, 1f)) }
         }
         fun select(id: String) {
             entries.forEach { (entryId, view) ->

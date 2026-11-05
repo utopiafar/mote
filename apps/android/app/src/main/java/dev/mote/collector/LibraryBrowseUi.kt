@@ -54,7 +54,9 @@ internal object LibraryBrowseUi {
 
     fun filters(context: Context, choices: List<Pair<String, String>>, selected: String,
                 choose: (String) -> Unit, history: Pair<Boolean, (Boolean) -> Unit>? = null,
-                date: (() -> Unit)? = null, dateLabel: String = "") {
+                date: (() -> Unit)? = null, dateLabel: String = "",
+                location: Pair<String, (String) -> Unit>? = null, refresh: (() -> Unit)? = null,
+                manage: (() -> Unit)? = null) {
         val dialog = Dialog(context)
         val sheet = MoteComponents.sheet(context)
         val heading = LinearLayout(context).apply {
@@ -81,6 +83,23 @@ internal object LibraryBrowseUi {
             group.addView(row)
         }
         sheet.addView(group, LinearLayout.LayoutParams(-1, -2).apply { setMargins(context.moteDp(16), context.moteDp(6), context.moteDp(16), 0) })
+        if (location != null) {
+            val places = MoteComponents.group(context)
+            listOf("" to "全部位置", "local" to "本机", "central" to "中央可读").forEachIndexed { index, (value, label) ->
+                if (index > 0) places.addView(MoteComponents.divider(context))
+                val check = if (value == location.first) MoteComponents.icon(context, MoteGlyph.CHECK, NativeColorRole.ACCENT) else null
+                places.addView(MoteComponents.row(context, title = MoteI18n.text(label), trailing = check).apply {
+                    tag = "library-location:$value"
+                    isSelected = value == location.first
+                    isFocusable = true
+                    contentDescription = MoteI18n.text(label)
+                    background = MoteUi.clickable(context, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false)
+                    setOnClickListener { location.second(value); dialog.dismiss() }
+                    layoutParams = LinearLayout.LayoutParams(-1, context.moteDp(56))
+                })
+            }
+            sheet.addView(places, LinearLayout.LayoutParams(-1, -2).apply { setMargins(context.moteDp(16), context.moteDp(12), context.moteDp(16), 0) })
+        }
         if (history != null || date != null) {
             val extra = MoteComponents.group(context)
             if (history != null) {
@@ -96,6 +115,25 @@ internal object LibraryBrowseUi {
                 layoutParams = LinearLayout.LayoutParams(-1, context.moteDp(56))
             })
             sheet.addView(extra, LinearLayout.LayoutParams(-1, -2).apply { setMargins(context.moteDp(16), context.moteDp(12), context.moteDp(16), 0) })
+        }
+        if (refresh != null || manage != null) {
+            val actions = MoteComponents.group(context)
+            var first = true
+            if (refresh != null) {
+                actions.addView(MoteComponents.row(context, MoteGlyph.REFRESH, MoteI18n.text("刷新"), onClick = { dialog.dismiss(); refresh() }).apply {
+                    tag = "library-refresh"
+                    layoutParams = LinearLayout.LayoutParams(-1, context.moteDp(56))
+                })
+                first = false
+            }
+            if (manage != null) {
+                if (!first) actions.addView(MoteComponents.divider(context))
+                actions.addView(MoteComponents.row(context, title = MoteI18n.text("管理记忆"), onClick = { dialog.dismiss(); manage() }).apply {
+                    tag = "memory-manage"
+                    layoutParams = LinearLayout.LayoutParams(-1, context.moteDp(56))
+                })
+            }
+            sheet.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { setMargins(context.moteDp(16), context.moteDp(12), context.moteDp(16), 0) })
         }
         sheet.addView(View(context), LinearLayout.LayoutParams(1, context.moteDp(24)))
         sheet.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)

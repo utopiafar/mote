@@ -19,7 +19,6 @@ internal class LibraryCaptureView(
     parent: LinearLayout,
     state: Bundle?,
     private val capture: (LinearLayout, JSONObject, Boolean, String, String) -> Unit,
-    private val retention: () -> Unit,
 ) {
     private val task = UiTask(activity)
     private val projection = dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).captureProjection()
@@ -36,8 +35,6 @@ internal class LibraryCaptureView(
     private var category = state?.getString("category")?.takeIf { it in setOf("all", "records", "images", "notifications", "files") } ?: "all"
     private var source = when (category) { "records" -> "note"; "notifications" -> "notification"; else -> "" }
     private var location = state?.getString("location")?.takeIf { it in setOf("local", "central", "") } ?: "local"
-    private lateinit var locations: NativeSectionTabs
-    private var locationSelector: Spinner? = null
     private var query = state?.getString("query").orEmpty()
     private var day = state?.getString("day").orEmpty()
     private var localCursor: String? = null
@@ -77,35 +74,6 @@ internal class LibraryCaptureView(
     private var anchor = state?.getString("anchor")
     private var anchorTop = state?.getInt("anchorTop") ?: 0
     init {
-        // The existing local/Central scope switch stays available above search.
-        val scopeRow = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; isBaselineAligned = false }
-        locations = NativeSectionTabs(activity, listOf("local" to "本机", "central" to "中央资料"), "library-locations", changed = { value ->
-            location = value; locations.select(value); locationSelector?.setSelection(if (value == "local") 1 else 2)
-            searchTick?.let(uiHandler::removeCallbacks); searchView.clear()
-            if (query.isNotBlank()) searchView.reset(query, category, day, value) else render()
-        }, choiceStyle = true)
-        locations.select(location)
-        val selector = Spinner(activity).apply {
-            contentDescription = MoteI18n.text("资料位置")
-            adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item,
-                listOf(MoteI18n.text("全部位置"), MoteI18n.text("本机"), MoteI18n.text("中央可读")))
-            setSelection(if (location == "local") 1 else if (location == "central") 2 else 0)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                    val value = listOf("", "local", "central")[position]
-                    if (location == value) return
-                    location = value; locations.select(value)
-                    searchTick?.let(uiHandler::removeCallbacks); searchView.clear()
-                    if (query.isNotBlank()) searchView.reset(query, category, day, value) else { render(); resetFilter() }
-                }
-            }
-        }
-        locationSelector = selector
-        scopeRow.addView(locations, LinearLayout.LayoutParams(0, -2, 1f))
-        scopeRow.addView(selector, LinearLayout.LayoutParams(activity.moteDp(124), activity.moteDp(42)).apply { marginStart = activity.moteDp(8) })
-        parent.addView(scopeRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(12) })
-
         val search = LibraryBrowseUi.search(activity, "搜索资料", query)
         parent.addView(search, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(16) })
         search.addTextChangedListener(object : TextWatcher {
@@ -121,13 +89,12 @@ internal class LibraryCaptureView(
         sourceView.restore(state?.getBundle("sourceView"))
         parent.addView(status); parent.addView(rows)
         more.text = MoteI18n.text("加载更多"); more.setOnClickListener { if (query.isNotBlank()) searchView.more() else { if (!task.busy) load(); sourceView.load() } }; parent.addView(MoteUi.button(more))
-        val actions = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
-        actions.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("刷新"); setOnClickListener { refresh() } }), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = activity.moteDp(8) })
-        actions.addView(TextView(activity).apply {
-            text = MoteI18n.text("上传后的本机保留设置") + "  ›"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.ACCENT)
-            minHeight = activity.moteDp(48); gravity = android.view.Gravity.CENTER_VERTICAL; isFocusable = true; setOnClickListener { retention() }
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        parent.addView(actions)
+    }
+    private fun selectLocation(value: String) {
+        if (location == value) return
+        location = value
+        searchTick?.let(uiHandler::removeCallbacks); searchView.clear()
+        if (query.isNotBlank()) searchView.reset(query, category, day, value) else { render(); resetFilter() }
     }
     fun showFilters() = LibraryBrowseUi.filters(activity, listOf("all" to "全部", "records" to "记录", "images" to "截图与照片", "notifications" to "通知", "files" to "网页与文件"), category, { value ->
         category = value; source = when (value) { "records" -> "note"; "notifications" -> "notification"; else -> "" }; resetFilter()
@@ -136,7 +103,7 @@ internal class LibraryCaptureView(
         DatePickerDialog(activity, { _, year, month, dateOfMonth -> day = LocalDate.of(year, month + 1, dateOfMonth).toString(); resetFilter() }, current.year, current.monthValue - 1, current.dayOfMonth).apply {
             setButton(android.content.DialogInterface.BUTTON_NEUTRAL, MoteI18n.text("全部日期")) { _, _ -> day = ""; resetFilter() }
         }.show()
-    }, dateLabel = day)
+    }, dateLabel = day, location = location to ::selectLocation, refresh = ::refresh)
     fun saveState(): Bundle = Bundle().apply {
         putBundle("sourceView", sourceView.save()); putString("category", category); putString("location", location); putString("query", query); putString("day", day); putInt("pages", pages.coerceAtLeast(1))
         val row = descendants(rows).firstOrNull { it.transitionName != null && it.getGlobalVisibleRect(android.graphics.Rect()) }
