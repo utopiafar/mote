@@ -9,12 +9,12 @@
 .owner-maintenance-heading { margin:0 0 30px; }
 .owner-maintenance-heading h1 { font-size:25px; line-height:35px; font-weight:600; margin:0; }
 .owner-maintenance-page .panel { border:0; border-radius:0; box-shadow:none; background:transparent; padding:0; margin:0; }
-.owner-maintenance-page .button { font-size:12px; line-height:20px; min-height:35px; padding:6px 12px; border-radius:5px; box-shadow:none; border-color:var(--mote-border); }
+.owner-maintenance-page .button { font-size:12px; line-height:20px; min-height:35px; padding:6px 12px; border-radius:var(--mote-radius-control); box-shadow:none; }
 .owner-maintenance-page .text-button { font-size:12px; line-height:19.8px; min-height:0; padding:0; color:var(--mote-muted); text-decoration:none; }
-.owner-maintenance-page input:not([type=checkbox]),.owner-maintenance-page select { font-size:12px; line-height:20px; min-height:30px; border-radius:5px; padding:4px 9px; border-color:var(--mote-border); background:var(--mote-surface); }
+.owner-maintenance-page input:not([type=checkbox]),.owner-maintenance-page select { font-size:12px; line-height:20px; min-height:30px; border-radius:var(--mote-radius-control); padding:4px 9px; border-color:var(--mote-control-border); background:var(--mote-surface); }
 .owner-maintenance-page label { font-size:12px; }
 .owner-maintenance-page .fine-print { font-size:12px; line-height:1.9; }
-.owner-maintenance-page .owner-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; padding:23px 0; margin:23px 0; border-top:1px solid var(--mote-border); border-bottom:1px solid var(--mote-border); }
+.owner-maintenance-page .owner-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; padding:23px 0; margin:23px 0; border-top:1px solid var(--mote-hair); border-bottom:1px solid var(--mote-hair); }
 .owner-metrics>div { min-width:0; }
 .owner-metrics span,.owner-metrics small { display:block; font-size:11px; line-height:1.65; color:var(--mote-muted); }
 .owner-metrics strong { display:block; font-size:25px; line-height:1.65; font-weight:500; margin:6px 0 2px; overflow-wrap:anywhere; }
@@ -23,13 +23,13 @@
 .owner-filter-line label { display:flex; align-items:center; gap:8px; }
 .owner-maintenance-page .owner-filter-line select { height:30px; min-height:30px; line-height:normal; padding:6px 9px; color:var(--mote-muted); }
 .owner-filter-line>small { font-size:12px; color:var(--mote-muted); }
-.owner-presets { display:inline-flex; padding:2px; border:1px solid var(--mote-border); border-radius:5px; }
-.owner-presets button { font-size:12px; line-height:19.8px; padding:5px 9px; border-radius:3px; color:var(--mote-muted); }
+.owner-presets { display:inline-flex; padding:2px; border:1px solid var(--mote-hair); border-radius:var(--mote-radius-container); }
+.owner-presets button { font-size:12px; line-height:19.8px; padding:5px 9px; border-radius:var(--mote-radius-control); color:var(--mote-muted); }
 .owner-presets button[aria-pressed=true] { background:#e8e4dd; color:var(--mote-ink); }
 [data-color-scheme=dark] .owner-presets button[aria-pressed=true] { background:var(--mote-surface-hover); }
 .owner-usage-summary { width:100%; border-collapse:collapse; font-size:12px; text-align:left; }
 .owner-usage-summary th { font-size:11px; line-height:1.65; color:var(--mote-muted); font-weight:400; padding:13px 10px 13px 0; border-bottom:1px solid var(--mote-border); }
-.owner-usage-summary td { padding:17px 10px 17px 0; border-bottom:1px solid var(--mote-border); vertical-align:middle; }
+.owner-usage-summary td { padding:17px 10px 17px 0; border-bottom:1px solid var(--mote-hair); vertical-align:middle; }
 .owner-usage-summary th:first-child { width:24%; }
 .owner-usage-summary th:nth-child(2) { width:14%; }
 .owner-usage-summary th:nth-child(3) { width:32%; }
@@ -44,15 +44,15 @@
 .owner-disclosure .usage-filter { margin:16px 0; }
 .owner-maintenance-page .owner-section { margin-top:28px; }
 .owner-section>h2 { font-size:12px; line-height:20px; font-weight:400; color:var(--mote-muted); margin:0 0 10px; }
-.owner-row { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:18px 0; border-bottom:1px solid var(--mote-border); }
+.owner-row { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:18px 0; border-bottom:1px solid var(--mote-hair); }
 .owner-row h2,.owner-row h3 { margin:0; font-size:14px; line-height:24px; font-weight:600; }
 .owner-row p { margin:4px 0 0; color:var(--mote-muted); font-size:12px; line-height:22.8px; }
 .owner-row-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
 .owner-maintenance-page .owner-storage-metrics { margin-top:0; }
 .owner-maintenance-page .content-storage { margin-top:28px; }
-.owner-maintenance-page .content-storage .check-field { display:flex; align-items:center; justify-content:space-between; flex-direction:row-reverse; padding:18px 0; border-bottom:1px solid var(--mote-border); gap:20px; font-size:14px; }
+.owner-maintenance-page .content-storage .check-field { display:flex; align-items:center; justify-content:space-between; flex-direction:row-reverse; padding:18px 0; border-bottom:1px solid var(--mote-hair); gap:20px; font-size:14px; }
 .owner-maintenance-page .content-storage .check-field input { margin:0; flex-shrink:0; }
-.content-storage input[role=switch] { appearance:none; width:34px; height:21px; border:1px solid var(--mote-border); border-radius:12px; background:#e8e4dd; padding:0; cursor:pointer; }
+.content-storage input[role=switch] { appearance:none; width:34px; height:21px; border:1px solid var(--mote-control-border); border-radius:var(--mote-radius-indicator); background:#e8e4dd; padding:0; cursor:pointer; }
 [data-color-scheme=dark] .content-storage input[role=switch]:not(:checked) { background:var(--mote-surface-hover); }
 .content-storage input[role=switch]::after { content:''; display:block; width:13px; height:13px; margin:3px; border-radius:50%; background:var(--mote-muted); }
 .content-storage input[role=switch]:checked { background:var(--mote-accent); border-color:var(--mote-accent); }

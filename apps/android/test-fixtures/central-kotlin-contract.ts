@@ -46,6 +46,7 @@ try {
   const invitation = await central.app.inject({method: 'POST', url: '/api/connections/collector-invitations',
     headers: {authorization: 'Bearer ' + token}, payload: {serverUrl: origin, label: 'Generated Kotlin contract', deviceId: 'generated-kotlin-phone'}});
   assert.equal(invitation.statusCode, 200, 'Generated collector invitation failed');
+  assert.deepEqual(invitation.json().invitation.platforms, ['android', 'macos', 'ios', 'windows', 'linux'], 'Central must declare the client platforms it accepts');
   const granted = await central.app.inject({method: 'POST', url: '/api/connections/redeem', payload: {
     code: invitation.json().invitation.code, deviceId: 'generated-kotlin-phone', deviceName: 'Generated phone', platform: 'android'}});
   assert.equal(granted.statusCode, 200, 'Generated collector redemption failed');
