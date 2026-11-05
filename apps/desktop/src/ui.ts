@@ -232,7 +232,7 @@ document.addEventListener('keydown', event => {
 });
 desktopApi.onNavigate?.(page => {
   if(page==='capture-start'){if(showPage('screen',true,true))byId('start').click();}
-  else if (page === 'central') byId('central').click();
+  else if (page === 'central') openCentral('overview');
   else if (pageNames.includes(page)) showPage(page);
 });
 showPage(quickNote ? 'notes' : 'overview', false);
@@ -450,8 +450,6 @@ function render(status: import('./contracts').Status): void {
   const firstCollection = needsCollectionSetup({ reviewed: setupReviewed, running: status.running, hasCapture: Boolean(status.lastCaptureAt), queuedRecords: status.queueDepth, recoveryRequired: status.state === 'error' || Boolean(status.storage?.recoveryRequired) });
   byId('setup-prompt').hidden = !firstCollection;
   byId('collection-workbench').hidden = firstCollection;
-  setText('sidebar-device',status.config.deviceName||moteText('这台 Mac'));
-  setText('sidebar-state',centralTitle);
   setText('pause-sending',status.config.syncPaused?moteText('恢复全部发送'):moteText('暂停全部发送'));
   byId<HTMLButtonElement>('retry').disabled=busy||Boolean(status.config.syncPaused);
   updateNoteAction();
@@ -632,15 +630,11 @@ desktopApi.onStatus(render);
 void desktopApi.status().then(render).catch(() => feedback(moteText("无法连接采集器进程，请重新打开 Mote。")));
 
 byId('note-attachments').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('notes')));
-byId('central').addEventListener('click', () => {
+function openCentral(page: string): void {
   if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央，即可打开中央仓库。")); return; }
-
-  void perform(() => desktopApi.openCentral('overview'));
-});
-byId('home-feature-guide').addEventListener('click', () => {
-  if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央，即可打开中央仓库。")); return; }
-  void perform(() => desktopApi.openCentral('guide'));
-});
+  void perform(() => desktopApi.openCentral(page));
+}
+byId('home-feature-guide').addEventListener('click', () => openCentral('guide'));
 let draft: import('./note-draft').NoteDraft | undefined;
 let noteSaving = false;
 let noteComposing = false;
