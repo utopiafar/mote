@@ -94,6 +94,20 @@ test('iOS is a first-class connection platform',async t=>{
   assert.equal(self.json().credential.platform,'ios');assert.equal(self.json().credential.deviceId,'generated-iphone');
 });
 
+test('connection invitations declare central client platforms so iOS can check before connecting',async t=>{
+  const {app}=await fixture(t);
+  const created=await invite(app);assert.equal(created.statusCode,200);
+  const {invitation,uri}=created.json();
+  assert.deepEqual(invitation.platforms,['android','macos','ios','windows','linux']);
+  assert.deepEqual(parseConnectionInvitation(uri).platforms,invitation.platforms,'The QR carries the same declaration as the invitation file');
+  const withoutIos=parseConnectionInvitation(JSON.stringify({...invitation,platforms:invitation.platforms.filter((platform:string)=>platform!=='ios')}));
+  assert.equal(withoutIos.platforms?.includes('ios'),false,'A central without iOS is not treated as iOS-capable');
+  const undeclared=parseConnectionInvitation(JSON.stringify({format:'mote.connection',version:1,serverUrl:'https://synthetic.invalid',code:'a'.repeat(43),expiresAt:new Date(Date.now()+600000).toISOString()}));
+  assert.equal(undeclared.platforms,undefined,'A central that does not declare platforms never implies iOS support');
+  const granted=await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.code,deviceId:'generated-iphone',deviceName:'Generated iPhone',platform:'ios'}});
+  assert.equal(granted.statusCode,200,'The declaring central accepts an iOS credential');
+});
+
 test('expired, cancelled and restart-lost invitations cannot mint credentials',async t=>{
   let now=Date.now();const {app,connections,store,sources}=await fixture(t,{clock:()=>now});
   const expired=(await invite(app)).json().invitation.code;now+=600001;
