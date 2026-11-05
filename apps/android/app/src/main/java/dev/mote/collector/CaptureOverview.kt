@@ -27,13 +27,34 @@ internal object CaptureOverview {
     /** Capture facts only; sending keeps its own line and never turns a live capture into an attention state. */
     fun attention(enabled: Boolean, state: String, live: Boolean, missingSource: Boolean, queueFull: Boolean): Boolean {
         // A safe stop leaves the old error state behind; it is still an interruption the owner must repair.
-        val interrupted = state in setOf("permission_required", "error")
+        val interrupted = interrupted(state)
         return CaptureStatusMapping.status(CaptureStatusFacts(
             connection = CaptureConnection.CONNECTED, captureEnabled = enabled || interrupted, captureLive = live,
             permission = if (missingSource) CapturePermission.MISSING else null, storageFull = queueFull && enabled,
             interrupted = interrupted, syncState = CaptureSyncState.IDLE
         )).level == CaptureStatusLevel.NEEDS_ACTION
     }
+
+    /** The shared status row view of these device facts; the ongoing notification and Quick Settings tiles read it. */
+    fun statusFacts(f: Facts): CaptureStatusFacts {
+        val interrupted = interrupted(f.state)
+        return CaptureStatusFacts(
+            connection = if (f.connected) CaptureConnection.CONNECTED else CaptureConnection.UNCONFIGURED,
+            captureEnabled = f.enabled || interrupted, captureLive = f.live,
+            screenPausedAt = f.screenPausedAt?.let { Instant.ofEpochMilli(it).toString() },
+            permission = if (f.missingSource) CapturePermission.MISSING else null,
+            storageFull = f.queueFull && f.enabled, interrupted = interrupted,
+            syncState = when (f.sendState) {
+                "unconfigured" -> CaptureSyncState.UNCONFIGURED; "waiting" -> CaptureSyncState.WAITING
+                "uploading" -> CaptureSyncState.UPLOADING; "paused" -> CaptureSyncState.PAUSED
+                "blocked" -> CaptureSyncState.BLOCKED; "error" -> CaptureSyncState.ERROR
+                else -> CaptureSyncState.IDLE
+            },
+            pending = f.pending
+        )
+    }
+
+    private fun interrupted(state: String) = state in setOf("permission_required", "error")
 
     fun kind(f: Facts): Kind = when {
         attention(f.enabled, f.state, f.live, f.missingSource, f.queueFull) -> Kind.ATTENTION
