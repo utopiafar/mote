@@ -113,7 +113,7 @@ class ContextJourneyInstrumentedTest {
         try {
             settings.save(original.copy(server = "", token = ""), confirmCentralEndpoint = true)
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use {
-                until("Home menu available"){main{shown().any{it.contentDescription=="打开菜单"&&it.isClickable}}};main{shown().single{it.contentDescription=="打开菜单"&&it.isClickable}.performClick()};clickTag("menu:资料与记忆")
+                until("Home menu available"){main{shown().any{it.tag=="home-m-action"&&it.isClickable}}};main{shown().single{it.tag=="home-m-action"&&it.isClickable}.performClick()};clickTag("menu:资料与记忆")
                 until("Materials and memories are primary Library views") { main {
                     val tabs = shown().singleOrNull { it.tag == "library-primary-views" }
                     tabs != null && views(tabs).filterIsInstance<TextView>().map { it.text.toString() }.containsAll(listOf("我的资料", "我的记忆"))

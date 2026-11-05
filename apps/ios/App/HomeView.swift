@@ -14,9 +14,16 @@ enum HomeAction: Equatable {
     case microphone
 }
 
+struct RecordingBarState {
+    let elapsed: TimeInterval
+    let paused: Bool
+}
+
 /// The feature owning a destination handles the corresponding action.
 struct HomeView: View {
     let presentation: HomePresentation
+    var recording: RecordingBarState? = nil
+    var onRecordingStop: () -> Void = {}
     let onAction: (HomeAction) -> Void
 
     var body: some View {
@@ -78,7 +85,16 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
         }
         .background(MoteDesignTokens.background.color)
-        .safeAreaInset(edge: .bottom, spacing: 0) { dock }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                if let recording {
+                    RecordingBar(state: recording, open: { onAction(.record) }, stop: onRecordingStop)
+                        .padding(.horizontal, MoteMetrics.pageMargin)
+                        .padding(.bottom, 10)
+                }
+                dock
+            }
+        }
     }
 
     private var topBar: some View {
@@ -129,6 +145,54 @@ struct HomeView: View {
         formatter.doesRelativeDateFormatting = true
         return formatter.string(from: date)
     }
+}
+
+private struct RecordingBar: View {
+    let state: RecordingBarState
+    let open: () -> Void
+    let stop: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: open) {
+                HStack(spacing: 10) {
+                    MoteIcon(state.paused ? .pause : .wave, size: 20)
+                        .foregroundStyle(MoteDesignTokens.accent.color)
+                    Text(state.paused ? "录音已暂停" : "录音")
+                        .foregroundStyle(MoteDesignTokens.ink.color)
+                    Text(recordingDuration(state.elapsed))
+                        .monospacedDigit()
+                        .foregroundStyle(MoteDesignTokens.muted.color)
+                    Spacer(minLength: 0)
+                }
+                .font(MoteFont.body)
+                .padding(.leading, 16)
+                .frame(height: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("mote-recording-bar")
+            Button(action: stop) {
+                MoteIcon(.stop, size: 16)
+                    .foregroundStyle(MoteDesignTokens.ink.color)
+                    .frame(width: 42, height: 34)
+                    .background(MoteDesignTokens.fill.color, in: Capsule())
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("停止录音")
+            .accessibilityIdentifier("mote-home-recording-stop")
+        }
+        .padding(.trailing, 4)
+        .frame(minHeight: 44)
+        .background(MoteDesignTokens.surface.color, in: Capsule())
+        .overlay { Capsule().strokeBorder(MoteDesignTokens.hair.color, lineWidth: 1) }
+    }
+}
+
+func recordingDuration(_ duration: TimeInterval) -> String {
+    let seconds = max(0, Int(duration))
+    return String(format: "%02d:%02d", seconds / 60, seconds % 60)
 }
 
 private struct HomeContentRow: View {

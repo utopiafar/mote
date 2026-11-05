@@ -130,6 +130,13 @@ public final class EditorDraftStore {
         )
     }
 
+    /// Reserve a normal draft attachment path for a progressively written WAV.
+    public func recordingAttachment() throws -> EditorAttachment {
+        try fileManager.createDirectory(at: attachmentsURL, withIntermediateDirectories: true)
+        let id = UUID().uuidString
+        return EditorAttachment(id: id, kind: .audio, fileName: "录音.wav", storedFileName: "\(id).wav")
+    }
+
     public func fileURL(for attachment: EditorAttachment) -> URL {
         attachmentsURL.appendingPathComponent(attachment.storedFileName)
     }

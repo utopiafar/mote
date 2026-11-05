@@ -35,7 +35,6 @@ export const desktopDestination:Record<UiDestination,DesktopPage>={home:'overvie
 // The desktop connection destination is the central/device link, not Agent access.
 const labels:Record<UiDestination,string>={...Object.fromEntries(Object.entries(uiDestinationPresentation).map(([id,item])=>[id,item.label])) as Record<UiDestination,string>,home:'工作台',library:'内容',activity:'同步与活动',connections:'连接与设备'};
 export const desktopIconSymbols:Record<UiDestinationIcon,string>={home:'home',library:'storage',ask:'ask',sources:'link',agent:'access',activity:'activity'};
-const glyphs:Record<UiDestination,string>={home:'⌂',library:'▤',ask:'◌',sources:'↗',activity:'⇄',connections:'↗'};
 
 /** Presentation receives stable DOM slots and navigation commands, never the preload API.
  * Replacing it cannot recreate editors, restart work, or acquire platform capabilities. */
@@ -49,7 +48,8 @@ export const defaultDesktopRenderer:DesktopLayoutRenderer={
     const buttons=layout.primary.map(destination=>{
       const button=nav.ownerDocument.createElement('button');button.type='button';button.className='nav-item';button.dataset.nav=desktopDestination[destination];button.dataset.presentationNav='';
       if(destination==='ask')button.id='ask-central';
-      const icon=nav.ownerDocument.createElement('span');icon.className='nav-symbol';icon.setAttribute('aria-hidden','true');icon.textContent=glyphs[destination];
+      const icon=nav.ownerDocument.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('class','icon');icon.setAttribute('aria-hidden','true');
+      const use=nav.ownerDocument.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#icon-'+desktopIconSymbols[uiDestinationPresentation[destination].icon]);icon.append(use);
       const label=nav.ownerDocument.createElement('span');label.textContent=moteText(labels[destination]);button.append(icon,label);return button;
     });
     nav.replaceChildren(...buttons);
