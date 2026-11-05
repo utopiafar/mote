@@ -22,7 +22,7 @@ async function fixture(t:TestContext,request:Api['request']){
  t.after(async()=>{await act(async()=>root.unmount());configureLocale(()=>locale);for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
  await act(async()=>root.render(React.createElement(Harness)));
  const open=async()=>{await act(async()=>{dom.window.document.querySelector<HTMLButtonElement>('#opener')!.focus();dom.window.document.querySelector<HTMLButtonElement>('#opener')!.click();});};
- const close=async()=>{await act(async()=>dom.window.document.querySelector<HTMLButtonElement>('[aria-label="收起随手记"]')!.click());};
+ const close=async()=>{await act(async()=>dom.window.document.querySelector<HTMLButtonElement>('[aria-label="收起记录"]')!.click());};
  const submit=async()=>{await act(async()=>dom.window.document.querySelector('form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));};
  return {d:dom.window.document,w:dom.window,outbox,open,close,submit,get saved(){return saved;}};
 }

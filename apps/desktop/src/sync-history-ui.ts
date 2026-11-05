@@ -5,7 +5,7 @@ import type { DesktopPage } from './navigation';
 import type { SyncHistoryPage, SyncHistoryItem, SyncSource, SyncHistoryRun } from './sync-history';
 
 const names: Record<SyncSource, () => string> = {
-  screen: () => moteText('截图'), ui_page: () => moteText('页面内容采集'), note: () => moteText('随手记'), activity: () => moteText('应用活动'), notification: () => moteText('通知'), media: () => moteText('媒体状态'),
+  screen: () => moteText('截图'), ui_page: () => moteText('页面内容采集'), note: () => moteText('记录'), activity: () => moteText('应用活动'), notification: () => moteText('通知'), media: () => moteText('媒体状态'),
   file: () => moteText('文件与目录'), calendar: () => moteText('系统日历'), coding: () => 'Coding Agent',
 };
 const escape = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));

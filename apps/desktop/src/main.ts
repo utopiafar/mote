@@ -85,7 +85,7 @@ function refreshApplicationMenu() {
       { role: 'editMenu', label: moteText("编辑") },
       { label: moteText("前往"), submenu: [
         { label: moteText("首页"), accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
-        { label: moteText("随手记"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
+        { label: moteText("记录"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
         { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
       ] },
       { label: moteText("显示"), submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }, ...(developmentProfile ? [{role:'toggleDevTools' as const}] : [])] },
@@ -186,7 +186,7 @@ function updateUi(status: Status): void {
     { label: moteText("待上传 {0} 条", status.queueDepth), enabled: false },
     { type: 'separator' },
     { label: moteText("打开 Mote"), click: () => showClientPage('overview') },
-    { label: moteText("随手记"), click: () => showClientPage('notes') },
+    { label: moteText("记录"), click: () => showClientPage('notes') },
     { label: moteText("打开中央仓库"), click: () => showClientPage('central') },
     { label: moteText("设置…"), click: () => showClientPage('settings') },
     { label: status.running ? moteText("停止采集") : moteText("开始采集"), click: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); } },
@@ -405,7 +405,7 @@ else {
     await registerBuiltinDesktopPlugins({ host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain }, [notes, library, deviceSettings, workHistory, sourcesPlugin!, chromePlugin!, capturePlugin!, localStorageBackup, systemTools, capabilityPublisher]);
     openQuickNote=async()=>{
       if(quickNoteWindow&&!quickNoteWindow.isDestroyed()){quickNoteWindow.show();quickNoteWindow.focus();return;}
-      const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('随手记'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
+      const noteWindow=new BrowserWindow({width:580,height:466,useContentSize:true,minWidth:380,minHeight:420,title:moteText('记录'),backgroundColor:appearanceBackground(),webPreferences:{preload:join(__dirname,'preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:developmentProfile}});
       quickNoteWindow=noteWindow;
       const noteSenderId = noteWindow.webContents.id;
       host.registerWindow(noteSenderId, 'quick-note', [hostCapability, notesReadCapability, notesWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability]);

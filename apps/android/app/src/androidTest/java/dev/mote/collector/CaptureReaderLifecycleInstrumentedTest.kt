@@ -67,16 +67,16 @@ class CaptureReaderLifecycleInstrumentedTest {
         val rows = visible(reader)
         val scope = rows.filterIsInstance<Spinner>().singleOrNull { it.adapter.count == 2 && it.getItemAtPosition(0).toString() == MoteI18n.text("本机记录") }
         val kind = rows.filterIsInstance<Spinner>().singleOrNull { it.adapter.count == 7 }
-        return scope?.selectedItemPosition == 0 && kind?.selectedItem?.toString() == MoteI18n.text("随手记") &&
+        return scope?.selectedItemPosition == 0 && kind?.selectedItem?.toString() == MoteI18n.text("记录") &&
             rows.filterIsInstance<TextView>().any { it.text.toString() == date.toString() } &&
-            rows.filterIsInstance<TextView>().any { it.tag == "detail-title" && it.text.toString() == MoteI18n.text("随手记") }
+            rows.filterIsInstance<TextView>().any { it.tag == "detail-title" && it.text.toString() == MoteI18n.text("记录") }
     }
     private fun matchingList(reader: CaptureRecordsActivity, date: LocalDate, id: String) = dialogRoots().isEmpty() &&
         sourceAndDate(reader, date) && GeneratedWindowRendering.hasNoPendingLabels(reader.window.decorView) &&
         visible(reader).any { it.tag == "capture:$id" }
     private fun emptyNoteDay(reader: CaptureRecordsActivity, date: LocalDate) = dialogRoots().isEmpty() &&
         sourceAndDate(reader, date) && GeneratedWindowRendering.hasNoPendingLabels(reader.window.decorView) &&
-        visible(reader).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("当天没有随手记。选择其他日期，或添加一条随手记。") }
+        visible(reader).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("当天没有记录。选择其他日期，或添加一条记录。") }
 
     private fun recreateReader(reader: CaptureRecordsActivity): Pair<CaptureRecordsActivity, Bundle> {
         val application = context.applicationContext as Application
@@ -136,10 +136,10 @@ class CaptureReaderLifecycleInstrumentedTest {
                     main.onActivity { ready = visible(it).filterIsInstance<TextView>().any { view -> view.text.toString() == MoteI18n.text("草稿已载入") } }
                     ready
                 }
-                main.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single().setText(original); click(activity, "保存随手记") }
+                main.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single().setText(original); click(activity, "保存记录") }
                 waitFor("The actual note action must save the generated original") {
                     var ready = false
-                    main.onActivity { ready = visible(it).filterIsInstance<TextView>().any { view -> view.text.toString() == MoteI18n.text("随手记已保存；同步按你的设置运行") } }
+                    main.onActivity { ready = visible(it).filterIsInstance<TextView>().any { view -> view.text.toString() == MoteI18n.text("记录已保存；同步按你的设置运行") } }
                     ready
                 }
                 val items = context.queue().capturePage("1970-01-01T00:00:00Z", Instant.now().plusSeconds(1).toString(), source = "note").getJSONArray("items")

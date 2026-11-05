@@ -129,7 +129,7 @@ app.on('browser-window-created', (_event, window) => {
       responseToken = 'replacement-synthetic-owner-' + 'r'.repeat(32);
       await js('document.querySelector("#connection-input").value=' + JSON.stringify(JSON.stringify(invitation)) + '; document.querySelector("#connection-preview").click()');
       await until(() => js('!document.querySelector("#connection-confirmation").hidden'));
-      assert((await js('document.querySelector("#connection-resume").textContent')).includes('待传截图、随手记和来源版本'));
+      assert((await js('document.querySelector("#connection-resume").textContent')).includes('待传截图、记录和来源版本'));
       assert(await js('document.querySelector("#connection-connect").disabled'));
       uploadsAllowed = true;
       await js('document.querySelector("#connection-confirm-origin").click(); document.querySelector("#connection-connect").click()');

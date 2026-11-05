@@ -65,7 +65,7 @@ class AnrRegressionInstrumentedTest {
             .single { it.isShown && it.isClickable && it.text.toString() == text }.also { assertTrue(it.performClick()) }
         when (label) {
             "来源" -> activity.openMoteLocalPage("SOURCES")
-            "随手记" -> activity.addContent(MoteAddAction.NOTE)
+            "记录" -> activity.addContent(MoteAddAction.NOTE)
             "设置" -> click("设置")
             "概览" -> assertTrue(click("首页").isSelected)
             else -> click(label)
@@ -100,7 +100,7 @@ class AnrRegressionInstrumentedTest {
                 // Cold view inflation gets more budget than an input callback, but cannot wait on the 20 s lock.
                 assertTrue("home must launch without waiting for queue work",
                     SystemClock.elapsedRealtime() - launchedAt < 4000)
-                for (label in listOf("设置", "随手记", "来源", "概览")) {
+                for (label in listOf("设置", "记录", "来源", "概览")) {
                     val started = SystemClock.elapsedRealtime()
                     scenario!!.onActivity { activity -> navigate(activity, label) }
                     assertTrue("$label must remain interactive while the queue lock is occupied",
@@ -180,7 +180,7 @@ class AnrRegressionInstrumentedTest {
         val scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
         var id: String? = null
         try {
-            scenario.onActivity { activity -> navigate(activity, "随手记") }
+            scenario.onActivity { activity -> navigate(activity, "记录") }
             val deadline = SystemClock.elapsedRealtime() + 10000; var editorReady = false
             while (!editorReady && SystemClock.elapsedRealtime() < deadline) { scenario.onActivity { activity -> editorReady = views(activity.window.decorView).filterIsInstance<android.widget.EditText>().single { it.hint?.toString() == "记下此刻的想法…" }.isEnabled }; if (!editorReady) Thread.sleep(25) }
             assertTrue(editorReady)
@@ -193,7 +193,7 @@ class AnrRegressionInstrumentedTest {
                 val started = SystemClock.elapsedRealtime()
                 scenario.onActivity { activity ->
                     views(activity.window.decorView).filterIsInstance<TextView>()
-                        .single { it.isShown && it.text.toString() == "保存随手记" }.performClick()
+                        .single { it.isShown && it.text.toString() == "保存记录" }.performClick()
                     navigate(activity, "来源"); navigate(activity, "设置")
                 }
                 assertTrue("saving a note cannot join the locked queue on the UI thread", SystemClock.elapsedRealtime() - started < 1000)

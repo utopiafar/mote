@@ -19,7 +19,9 @@ test('one failed presentation observer does not split the committed binding acro
 test('native assets, CSS and the compiled theme derive from the same selected design',()=>{
   execFileSync(process.execPath,[fileURLToPath(new URL('../../../scripts/generate-design-tokens.mjs',import.meta.url)),'--check'],{cwd:tmpdir()});
   const asset=JSON.parse(readFileSync(new URL('../../../apps/android/app/src/main/assets/ui-presentation.json',import.meta.url),'utf8'));
-  assert.equal(asset.schemaVersion,1);assert.deepEqual(asset.theme,linearUiTheme);assert.deepEqual(asset.layout,androidUiLayout);
+  const androidTokens=values=>Object.fromEntries(Object.entries(values).map(([key,value])=>[key,/^#[\da-f]{8}$/i.test(value)?`#${value.slice(7,9)}${value.slice(1,7)}`:value]));
+  const androidTheme={...linearUiTheme,tokens:androidTokens(linearUiTheme.tokens),schemes:Object.fromEntries(Object.entries(linearUiTheme.schemes).map(([scheme,values])=>[scheme,androidTokens(values)]))};
+  assert.equal(asset.schemaVersion,1);assert.deepEqual(asset.theme,androidTheme);assert.deepEqual(asset.layout,androidUiLayout);
 });
 test('presentation changes atomically and disposal restores the built-in provider',()=>{
   const host=fixture();

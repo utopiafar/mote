@@ -121,7 +121,7 @@ class MainActivity : MoteActivity() {
     private var currentPage = Page.OVERVIEW
     private var draftGeneration = 0
     private enum class Page(private val titleKey: String, val parent: String? = null) {
-        OVERVIEW("首页"), MANAGE("我的 Mote", "OVERVIEW"), LIBRARY("资料与记忆", "MANAGE"), ASK("问一问", "OVERVIEW"), ACTIVITY("活动", "MANAGE"), NOTES("随手记", "LIBRARY"), SOURCES("采集与同步", "MANAGE"), SETTINGS("设置", "MANAGE"),
+        OVERVIEW("首页"), MANAGE("我的 Mote", "OVERVIEW"), LIBRARY("资料与记忆", "MANAGE"), ASK("问一问", "OVERVIEW"), ACTIVITY("活动", "MANAGE"), NOTES("记录", "LIBRARY"), SOURCES("采集与同步", "MANAGE"), SETTINGS("设置", "MANAGE"),
         CONNECTION("连接与同步", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
         PROCESSING("图像质量与去重", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("采集范围", "SETTINGS"), PERMISSIONS("系统权限与后台运行", "DEVICE_OPTIONS"),
@@ -549,10 +549,10 @@ class MainActivity : MoteActivity() {
                 if (receipt != null) {
                     val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=MoteUi.shape(this@MainActivity,NativeColorRole.SURFACE,NativeRadiusRole.CONTAINER,true); setPadding(dp(16),dp(16),dp(16),dp(12)) }
                     card.addView(TextView(this).apply { text="• "+MoteI18n.text("本机已保存"); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.ACCENT) })
-                    card.addView(TextView(this).apply { text=NativeRecordPreview.text(receipt).ifBlank { MoteI18n.text("随手记") }; MoteUi.type(this,NativeFontRole.BODY); MoteUi.textColor(this,NativeColorRole.INK); maxLines=5; setPadding(0,dp(12),0,dp(16)) })
+                    card.addView(TextView(this).apply { text=NativeRecordPreview.text(receipt).ifBlank { MoteI18n.text("记录") }; MoteUi.type(this,NativeFontRole.BODY); MoteUi.textColor(this,NativeColorRole.INK); maxLines=5; setPadding(0,dp(12),0,dp(16)) })
                     val row=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL }
                     val at=runCatching { java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT).withLocale(MoteI18n.locale()).withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(receipt.getString("capturedAt"))) }.getOrDefault("")
-                    row.addView(TextView(this).apply { text=listOf(MoteI18n.text("随手记"),at).filter(String::isNotBlank).joinToString(" · "); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(0,-2,1f))
+                    row.addView(TextView(this).apply { text=listOf(MoteI18n.text("记录"),at).filter(String::isNotBlank).joinToString(" · "); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(0,-2,1f))
                     lightTextAction(MoteI18n.text("查看原文")+" →",row) { startActivity(Intent(this@MainActivity,CaptureRecordsActivity::class.java).putExtra("recordId",receipt.getString("id")).putExtra("directReader",true)) }.contentDescription=MoteI18n.text("查看原文")
                     card.addView(row); homeRecordReceipt.addView(card,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(18) })
                     if(loadedConfig.hasSyncConnection()) lightTextAction(MoteI18n.text("查看 Central 的接收结果")+" ↗",homeRecordReceipt) { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(loadedConfig.server))) }
@@ -601,10 +601,10 @@ class MainActivity : MoteActivity() {
         }
     }
     private fun addCaptureRow(parent: LinearLayout, item: org.json.JSONObject, remote: Boolean = false, location: String = "", scope: String = "") {
-        val title = item.optString("appName").ifBlank { if (item.optString("source") == "note") MoteI18n.text("随手记") else MoteI18n.text("采集记录") }
+        val title = item.optString("appName").ifBlank { if (item.optString("source") == "note") MoteI18n.text("记录") else MoteI18n.text("采集记录") }
         val note = item.optString("source") == "note"
         val timestamp = runCatching { java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT).withLocale(resources.configuration.locales[0]).withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(item.getString("capturedAt"))) }.getOrDefault(item.optString("capturedAt"))
-        val kind = MoteI18n.text(if (note) "随手记" else "采集记录")
+        val kind = MoteI18n.text(if (note) "记录" else "采集记录")
         val provenance = if (title == kind) timestamp else "$kind · $timestamp"
         addContentRow(parent, title, NativeRecordPreview.text(item), "library-record:" + item.getString("id"), if (note) "notes" else "capture", listOf(provenance, location).filter(String::isNotBlank).joinToString(" · ")) {
             startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", dev.mote.collector.plugins.NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", dev.mote.collector.plugins.NativeLibraryPlugin.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
@@ -815,7 +815,7 @@ class MainActivity : MoteActivity() {
         }
         content = connectionContent
         button(MoteI18n.text("立即重试同步"), true) { retrySync() }
-        menu(MoteI18n.text("待上传队列"), MoteI18n.text("查看采集、随手记和来源待发条目"), "sync") { startActivity(Intent(this, SyncQueueActivity::class.java)) }
+        menu(MoteI18n.text("待上传队列"), MoteI18n.text("查看采集、记录和来源待发条目"), "sync") { startActivity(Intent(this, SyncQueueActivity::class.java)) }
         menu(MoteI18n.text("同步与恢复"), MoteI18n.text("两端检查、补传与冲突处理"), "sync") { startActivity(Intent(this, SyncRecoveryActivity::class.java)) }
         val advancedSync = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         button(MoteI18n.text("高级同步设置")) { advancedSync.visibility = if (advancedSync.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
@@ -997,24 +997,24 @@ class MainActivity : MoteActivity() {
             result.onSuccess { replace(it); readable = true; editable(true); progress.text = MoteI18n.text("草稿已载入") }
                 .onFailure { progress.text = MoteI18n.text("草稿读取失败，原文件保留。明确点击新建才清除旧草稿。") }
         }
-        button(MoteI18n.text("保存随手记"), true) {
+        button(MoteI18n.text("保存记录"), true) {
             if (!task.busy && readable) {
                 val value = note.text.toString() to ""
                 editable(false)
-                task.start(MoteI18n.text("正在保存随手记…"), { progress.text = it }, { controller.save(value.first, value.second) }) { result ->
+                task.start(MoteI18n.text("正在保存记录…"), { progress.text = it }, { controller.save(value.first, value.second) }) { result ->
                     editable(true); controller.clearPersistence()
-                    result.onSuccess { replace(NoteDraft()); controller.clearPersistence(); progress.text = MoteI18n.text("随手记已保存；同步按你的设置运行"); refreshStatus() }
-                        .onFailure { progress.text = it.message ?: MoteI18n.text("随手记保存失败，草稿已保留") }
+                    result.onSuccess { replace(NoteDraft()); controller.clearPersistence(); progress.text = MoteI18n.text("记录已保存；同步按你的设置运行"); refreshStatus() }
+                        .onFailure { progress.text = it.message ?: MoteI18n.text("记录保存失败，草稿已保留") }
                 }
             }
         }
         button(MoteI18n.text("新建一条 · 清除草稿")) {
-            if (!task.busy) MoteDialogBuilder(this).setTitle(MoteI18n.text("清除当前草稿？")).setMessage(MoteI18n.text("此操作仅清除正在编辑的本机草稿。已保存的随手记不受影响。"))
+            if (!task.busy) MoteDialogBuilder(this).setTitle(MoteI18n.text("清除当前草稿？")).setMessage(MoteI18n.text("此操作仅清除正在编辑的本机草稿。已保存的记录不受影响。"))
                 .setNegativeButton(MoteI18n.text("继续编辑"), null).setPositiveButton(MoteI18n.text("清除并新建")) { _, _ ->
                     if (!task.busy) {
                         editable(false)
                         task.start(MoteI18n.text("正在清除草稿…"), { progress.text = it }, { controller.clear() }) { result ->
-                            result.onSuccess { replace(NoteDraft()); controller.clearPersistence(); readable = true; progress.text = MoteI18n.text("可以开始新随手记") }
+                            result.onSuccess { replace(NoteDraft()); controller.clearPersistence(); readable = true; progress.text = MoteI18n.text("可以开始新记录") }
                                 .onFailure { progress.text = MoteI18n.text("草稿清除失败") }
                             editable(readable)
                         }
@@ -1024,7 +1024,7 @@ class MainActivity : MoteActivity() {
         content = pageContent
         text(MoteI18n.text("图片与语音附件"), NativeFontRole.SUPPORT, NativeColorRole.ACCENT).apply {
             minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
-            contentDescription = MoteI18n.text("在中央随手记中添加附件")
+            contentDescription = MoteI18n.text("在中央记录中添加附件")
             setOnClickListener { openCentral("notes") }
         }
         text(MoteI18n.text("草稿自动保存在本机，保存后按同步设置上传。正文最多 100000 字符，心情最多 80 字符。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
@@ -1080,7 +1080,7 @@ class MainActivity : MoteActivity() {
         }
         appPolicies.addTextChangedListener(rulesWatcher); excludes.addTextChangedListener(rulesWatcher)
         section(MoteI18n.text("开启前预览"))
-        text(MoteI18n.text("保存范围后开始，系统权限按需申请。拒绝授权不影响文件和随手记。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("保存范围后开始，系统权限按需申请。拒绝授权不影响文件和记录。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         button(MoteI18n.text("预览当前配置的记录格式")) {
             val candidate = runCatching { draft().also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("请检查设置")); return@button }
             showCapturePreview(candidate)
@@ -1732,7 +1732,7 @@ class MainActivity : MoteActivity() {
         val syncQueue = "${pending?.let { MoteI18n.text("待同步 {0} 条", it) } ?: MoteI18n.text("队列暂不可读取")}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}"
         val syncFacts = NativeStatus.summary(nativeFacts)
         val syncText = "$syncQueue\n$syncMessage\n$syncFacts"
-        val periodTotals = if (stats == null) MoteI18n.text("累计统计暂不可读取") else MoteI18n.text("本周期累计页面 {0}    截图 {1}    活动 {2}    媒体 {3}    随手记 {4}\n本周期已同步 {5} 条", stats.optLong("PAGE_QUEUED"), stats.optLong("SCREEN_QUEUED"), stats.optLong("ACTIVITY_QUEUED"), stats.optLong("MEDIA_QUEUED"), stats.optLong("NOTE_QUEUED"), stats.optLong("PAGE_ACK") + stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK") + stats.optLong("SYSTEM_EVENT_ACK"))
+        val periodTotals = if (stats == null) MoteI18n.text("累计统计暂不可读取") else MoteI18n.text("本周期累计页面 {0}    截图 {1}    活动 {2}    媒体 {3}    记录 {4}\n本周期已同步 {5} 条", stats.optLong("PAGE_QUEUED"), stats.optLong("SCREEN_QUEUED"), stats.optLong("ACTIVITY_QUEUED"), stats.optLong("MEDIA_QUEUED"), stats.optLong("NOTE_QUEUED"), stats.optLong("PAGE_ACK") + stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK") + stats.optLong("SYSTEM_EVENT_ACK"))
         val totalsText = periodTotals + if (QueueStorage.maintaining) MoteI18n.text(" · 后台整理中，可正常采集") else ""
         val technicalText = MoteI18n.text("{0}\n{1}\n{2}\n{3}\n无障碍 {4} · 使用情况 {5}\n最近采集 {6}", state, totals, syncText, settings.uploadStatus(), if (CaptureAccessibilityService.connected) MoteI18n.text("已连接") else MoteI18n.text("未连接"), if (ForegroundApps.usageAllowed(this)) MoteI18n.text("已授权") else MoteI18n.text("未授权"), settings.lastCapture() ?: MoteI18n.text("无")) + "\n" + MoteI18n.text("屏幕采集：{0}", settings.screenStatus())
         val connectionState = c?.takeIf { it.hasSyncConnection() }?.let { ConnectionClient(this).status() } ?: "unchecked"
