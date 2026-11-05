@@ -10154,7 +10154,6 @@ export const german: Readonly<Record<string, string>> = {
   "已清空": "Gelöscht",
   "已收到": "Empfangen",
   "后台处理": "Hintergrundverarbeitung",
-  "本人设备": "Mein Gerät",
   "待同步 {0}": "Ausstehend {0}",
   "新的记录暂时无法保存": "Neue Aufzeichnungen können derzeit nicht gespeichert werden",
   "发送失败": "Senden fehlgeschlagen",
@@ -10165,5 +10164,16 @@ export const german: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Warten auf Aufnahmeberechtigung · Bildschirmaufnahme",
   "Chrome 页面": "Chrome-Seiten",
   "暂停发送": "Senden pausieren",
-  "待发送 {0} 条": "Ausstehende Sendungen: {0}"
+  "待发送 {0} 条": "Ausstehende Sendungen: {0}",
+  "粘贴邀请": "Einladung einfügen",
+  "邀请已失效": "Einladung abgelaufen",
+  "此中央尚不支持 iOS，升级中央后重试": "Diese Zentrale unterstützt iOS noch nicht. Aktualisiere sie und versuche es erneut.",
+  "我的 iPhone": "Mein iPhone",
+  "连接后发送": "Nach dem Verbinden senden",
+  "正在连接…": "Verbindung wird hergestellt…",
+  "连接未完成": "Verbindung nicht abgeschlossen",
+  "暂时无法读取": "Vorübergehend nicht lesbar",
+  "设备名称无效": "Ungültiger Gerätename",
+  "有待发送记录，无法更换中央": "Ausstehende Einträge verhindern den Wechsel der Zentrale",
+  "扫描中央生成的连接二维码。": "Den von der Zentrale erzeugten Verbindungs-QR-Code scannen."
 };

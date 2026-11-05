@@ -10154,7 +10154,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "已清空": "Borrado",
   "已收到": "Recibidos",
   "后台处理": "Procesamiento en segundo plano",
-  "本人设备": "Mi dispositivo",
   "待同步 {0}": "Pendientes {0}",
   "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
   "发送失败": "Error al enviar",
@@ -10165,5 +10164,16 @@ export const spanish: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Esperando permiso de captura · Grabación de pantalla",
   "Chrome 页面": "Páginas de Chrome",
   "暂停发送": "Pausar envío",
-  "待发送 {0} 条": "Envíos pendientes: {0}"
+  "待发送 {0} 条": "Envíos pendientes: {0}",
+  "粘贴邀请": "Pegar invitación",
+  "邀请已失效": "La invitación ha caducado",
+  "此中央尚不支持 iOS，升级中央后重试": "Este central aún no admite iOS. Actualízalo y vuelve a intentarlo.",
+  "我的 iPhone": "Mi iPhone",
+  "连接后发送": "Enviar después de conectar",
+  "正在连接…": "Conectando…",
+  "连接未完成": "Conexión incompleta",
+  "暂时无法读取": "No se puede leer temporalmente",
+  "设备名称无效": "Nombre de dispositivo no válido",
+  "有待发送记录，无法更换中央": "Los registros pendientes impiden cambiar de central",
+  "扫描中央生成的连接二维码。": "Escanear el código QR de conexión generado por el central."
 };
