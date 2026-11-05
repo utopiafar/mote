@@ -114,6 +114,9 @@ internal object MoteSystemEntries {
         val availability = SystemEntriesPlugin.availability(context)
         MoteShortcuts.publish(context)
         runCatching { QuickEntryWidget.refresh(context) }
-        if (availability.active) runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, ScreenCaptureTileService::class.java)) }
+        if (availability.active) {
+            runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, ScreenCaptureTileService::class.java)) }
+            runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, SendPauseTileService::class.java)) }
+        }
     }
 }
