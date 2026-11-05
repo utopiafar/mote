@@ -155,6 +155,17 @@ class CaptureSyncPresentationTest {
         assertEquals(listOf(false, false, false, false, true), CaptureSyncPresentation.addKinds.map { it.opensCentral })
     }
 
+    @Test fun addSourceHidesSingleInstanceKindsThatAreAlreadyAdded() {
+        assertEquals(listOf("导入文件", "同步文件夹", "连接本机日历", "屏幕与应用活动", "云端来源"),
+            CaptureSyncPresentation.availableAddKinds(emptySet()).map { it.titleKey })
+        assertEquals(listOf("导入文件", "同步文件夹", "云端来源"),
+            CaptureSyncPresentation.availableAddKinds(setOf(CaptureSyncPresentation.SourceKind.CALENDAR, CaptureSyncPresentation.SourceKind.SCREEN)).map { it.titleKey })
+        assertEquals(listOf("导入文件", "同步文件夹", "屏幕与应用活动", "云端来源"),
+            CaptureSyncPresentation.availableAddKinds(setOf(CaptureSyncPresentation.SourceKind.CALENDAR)).map { it.titleKey })
+        assertEquals(listOf("导入文件", "同步文件夹", "连接本机日历", "云端来源"),
+            CaptureSyncPresentation.availableAddKinds(setOf(CaptureSyncPresentation.SourceKind.SCREEN)).map { it.titleKey })
+    }
+
     @Test fun storageUsesHumanSizes() {
         assertEquals("1.2 GB", CaptureSyncPresentation.storageLabel(1288490189L))
         assertEquals("36.0 MiB", CaptureSyncPresentation.storageLabel(37748736L))

@@ -34,6 +34,7 @@ class SourcesAddSheetInstrumentedTest {
         try {
             MoteI18n.select(context, "zh-CN"); MoteAppearance.select(context, AppearancePreference.LIGHT)
             settings.enabled = false
+            settings.save(settings.read().copy(screenCollectionEnabled = false), confirmCentralEndpoint = true)
             ActivityScenario.launch(SourcesActivity::class.java).use { scenario ->
                 until("sources-add row") { var ready = false; scenario.onActivity { a -> ready = views(a.window.decorView).any { it.isShown && it.tag == "sources-add" } }; ready }
                 scenario.onActivity { a -> assertTrue(views(a.window.decorView).single { it.isShown && it.tag == "sources-add" }.performClick()) }

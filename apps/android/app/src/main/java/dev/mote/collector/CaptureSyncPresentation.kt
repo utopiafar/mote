@@ -16,6 +16,15 @@ internal object CaptureSyncPresentation {
     }
     val addKinds = AddKind.entries.toList()
 
+    /** Single-instance kinds leave the panel once the overview already lists them. */
+    fun availableAddKinds(added: Set<SourceKind>): List<AddKind> = addKinds.filterNot { kind ->
+        when (kind) {
+            AddKind.CALENDAR -> SourceKind.CALENDAR in added
+            AddKind.SCREEN -> SourceKind.SCREEN in added
+            else -> false
+        }
+    }
+
     /** Source states the owner must handle before syncing continues. */
     private val attentionStatuses = mapOf(
         "permission" to "等待采集权限",

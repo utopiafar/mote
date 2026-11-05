@@ -18,6 +18,7 @@ import dev.mote.collector.plugins.SourceProviderPlugin
 import dev.mote.collector.plugins.SourceSnapshot
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.MoteIconButtonStyle
 import java.util.concurrent.Executors
 
 /** Native opt-in connection UI. No calendar query occurs before the user requests a connection. */
@@ -213,7 +214,9 @@ class SourcesActivity : MoteActivity() {
             addTo(sourcesGroup, view, index == 0)
         }
         addTo(sourcesGroup, MoteComponents.row(this, MoteGlyph.PLUS, MoteI18n.text("添加来源"),
-            titleColor = NativeColorRole.ACCENT, iconColor = NativeColorRole.ACCENT, chevron = false) { showAddSheet() }.apply { tag = "sources-add" }, overview.rows.isEmpty())
+            titleColor = NativeColorRole.ACCENT, iconColor = NativeColorRole.ACCENT, chevron = false) {
+            showAddSheet(overview.rows.map { it.kind }.toSet())
+        }.apply { tag = "sources-add" }, overview.rows.isEmpty())
         list.addView(sourcesGroup, LinearLayout.LayoutParams(-1, -2))
         val sendGroup = MoteComponents.group(this)
         sendGroup.addView(MoteComponents.row(this, MoteGlyph.SEND, overview.send.host, subtitle = overview.send.text,
@@ -324,25 +327,32 @@ class SourcesActivity : MoteActivity() {
         dialog.show()
     }
 
-    private fun showAddSheet() {
+    private fun showAddSheet(added: Set<CaptureSyncPresentation.SourceKind>) {
         val sheetDialog = Dialog(this)
-        val options = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val sheet = MoteComponents.sheet(this)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
+            setPadding(moteDp(20), 0, moteDp(6), 0)
+        }
         header.addView(TextView(this).apply {
-            text = MoteI18n.text("添加来源"); MoteUi.type(this, NativeFontRole.SECTION, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(MoteComponents.iconButton(this, MoteGlyph.CLOSE, description = MoteI18n.text("关闭")) { sheetDialog.dismiss() })
-        options.addView(header, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(8) })
+            text = MoteI18n.text("添加来源"); gravity = Gravity.CENTER_VERTICAL
+            MoteUi.type(this, 16, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
+        }, LinearLayout.LayoutParams(0, moteDp(48), 1f))
+        header.addView(MoteComponents.iconButton(this, MoteGlyph.CLOSE, description = MoteI18n.text("关闭"),
+            style = MoteIconButtonStyle.MUTED) { sheetDialog.dismiss() }, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
+        sheet.addView(header, LinearLayout.LayoutParams(-1, -2))
         val kindsGroup = MoteComponents.group(this)
-        CaptureSyncPresentation.addKinds.forEachIndexed { index, kind ->
+        CaptureSyncPresentation.availableAddKinds(added).forEachIndexed { index, kind ->
             if (index > 0) kindsGroup.addView(MoteComponents.divider(this))
             kindsGroup.addView(MoteComponents.row(this, glyphFor(kind), MoteI18n.text(kind.titleKey),
                 trailing = if (kind.opensCentral) MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16) else null) {
                 sheetDialog.dismiss(); openAddKind(kind)
             }.apply { tag = "add-source:${kind.name}" })
         }
-        options.addView(kindsGroup)
-        sheetDialog.setContentView(MoteComponents.sheet(this, options))
+        sheet.addView(kindsGroup, LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(moteDp(16), moteDp(8), moteDp(16), moteDp(32))
+        })
+        sheetDialog.setContentView(sheet)
         sheetDialog.window?.let { window ->
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_DIM_BEHIND)

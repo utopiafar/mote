@@ -170,6 +170,12 @@ class SourcesOverviewInstrumentedTest {
                 scenario.onActivity { a -> views(a.window.decorView).single { it.isShown && it.tag == "sources-add" }.performClick() }
                 until("add sheet") { var ready = false; main { ready = WindowInspector.getGlobalWindowViews().any { root -> root.isShown && views(root).any { it.isShown && it.tag == "add-source:CLOUD" } } }; ready }
                 instrumentation.waitForIdleSync()
+                main {
+                    val sheet = WindowInspector.getGlobalWindowViews().single { root -> root.isShown && views(root).any { it.isShown && it.tag == "add-source:CLOUD" } }
+                    val names = views(sheet).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
+                    assertEquals(listOf("导入文件", "同步文件夹", "云端来源"),
+                        names.filter { it in CaptureSyncPresentation.addKinds.map { kind -> MoteI18n.text(kind.titleKey) } })
+                }
                 screenshot("impl-adding-light")
             }
             ActivityScenario.launch(SourcesActivity::class.java).use { scenario ->
