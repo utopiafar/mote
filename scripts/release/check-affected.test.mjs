@@ -20,6 +20,9 @@ test('local checks use independent light scopes, never broad component or heavy 
   const android = checkPlan(selectScopes(['apps/android/new.kt'])).at(-1);
   assert.equal(android.command, 'apps/android/gradlew');
   assert.ok(android.args.includes(':app:testDebugUnitTest'));
+  assert.deepEqual(checkPlan(selectScopes(['apps/ios/project.yml'])), [
+    { command: 'apps/ios/scripts/test.sh', args: [] },
+  ]);
 });
 
 test('local intake checks run the real Kotlin consumer once, focused for producers and combined for Android consumers', () => {
@@ -88,6 +91,16 @@ test('actual CLI includes committed, staged, unstaged and untracked inputs; expl
   const committed = dryRun('--head', 'HEAD');
   assert.equal(committed.status, 0, committed.stderr);
   assert.deepEqual(JSON.parse(committed.stdout).affected, { scopes: ['server', 'i18n'], fallback: [], serverGroups: ['all'] });
+});
+
+test('iOS-only CLI input selects only the real iOS test entrypoint', t => {
+  const { write, dryRun } = repository(t);
+  write('apps/ios/project.yml');
+  const result = dryRun();
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.deepEqual(plan.affected, { scopes: ['ios'], fallback: [] });
+  assert.deepEqual(plan.checks, [{ command: 'apps/ios/scripts/test.sh', args: [] }]);
 });
 
 test('documentation-only CLI skips builds, while moving runtime code into docs retains the old consumer', t => {

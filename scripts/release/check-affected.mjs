@@ -15,6 +15,7 @@ export function checkPlan(selection, { event = 'local', directory = '.' } = {}) 
   else if (automatic.android) plan.push({
     command: 'apps/android/gradlew', args: ['-p', 'apps/android', '--no-daemon', ':app:testDebugUnitTest'],
   });
+  if (selection.scopes.includes('ios')) plan.push({ command: 'apps/ios/scripts/test.sh', args: [] });
   return plan;
 }
 
