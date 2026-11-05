@@ -10150,7 +10150,6 @@ export const english: Readonly<Record<string, string>> = {
   "已清空": "Cleared",
   "已收到": "Received",
   "后台处理": "Background processing",
-  "本人设备": "My device",
   "待同步 {0}": "Pending sync {0}",
   "新的记录暂时无法保存": "New records cannot be saved for now",
   "发送失败": "Sending failed",
@@ -10161,5 +10160,17 @@ export const english: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Waiting for capture permission · Screen Recording",
   "Chrome 页面": "Chrome pages",
   "暂停发送": "Pause sending",
-  "待发送 {0} 条": "Pending send: {0}"
+  "待发送 {0} 条": "Pending send: {0}",
+  "正在保存发送设置…": "Saving send settings…",
+  "仅非计费 Wi-Fi": "Unmetered Wi-Fi only",
+  "通知与设备事件": "Notifications and device events",
+  "云端来源": "Cloud sources",
+  "昨天": "Yesterday",
+  "需要确认发送范围": "Send scope needs confirmation",
+  "资料说明冲突": "Source description conflict",
+  "资料说明等待确认": "Source description awaiting confirmation",
+  "暂时无法读取": "Temporarily unreadable",
+  "中央已暂停": "Paused on Central",
+  "已同步 · {0}": "Synced · {0}",
+  "仅 Wi-Fi": "Wi-Fi only"
 };

@@ -10150,7 +10150,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "已清空": "Borrado",
   "已收到": "Recibidos",
   "后台处理": "Procesamiento en segundo plano",
-  "本人设备": "Mi dispositivo",
   "待同步 {0}": "Pendientes {0}",
   "新的记录暂时无法保存": "Los registros nuevos no se pueden guardar por ahora",
   "发送失败": "Error al enviar",
@@ -10161,5 +10160,17 @@ export const spanish: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Esperando permiso de captura · Grabación de pantalla",
   "Chrome 页面": "Páginas de Chrome",
   "暂停发送": "Pausar envío",
-  "待发送 {0} 条": "Envíos pendientes: {0}"
+  "待发送 {0} 条": "Envíos pendientes: {0}",
+  "正在保存发送设置…": "Guardando ajustes de envío…",
+  "仅非计费 Wi-Fi": "Solo Wi-Fi no medido",
+  "通知与设备事件": "Notificaciones y eventos del dispositivo",
+  "云端来源": "Fuentes en la nube",
+  "昨天": "Ayer",
+  "需要确认发送范围": "El alcance de envío necesita confirmación",
+  "资料说明冲突": "Conflicto en la descripción de la fuente",
+  "资料说明等待确认": "Descripción de la fuente pendiente de confirmación",
+  "暂时无法读取": "Lectura no disponible por ahora",
+  "中央已暂停": "Pausado en el central",
+  "已同步 · {0}": "Sincronizado · {0}",
+  "仅 Wi-Fi": "Solo Wi-Fi"
 };

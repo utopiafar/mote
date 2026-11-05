@@ -10150,7 +10150,6 @@ export const german: Readonly<Record<string, string>> = {
   "已清空": "Gelöscht",
   "已收到": "Empfangen",
   "后台处理": "Hintergrundverarbeitung",
-  "本人设备": "Mein Gerät",
   "待同步 {0}": "Ausstehend {0}",
   "新的记录暂时无法保存": "Neue Aufzeichnungen können derzeit nicht gespeichert werden",
   "发送失败": "Senden fehlgeschlagen",
@@ -10161,5 +10160,17 @@ export const german: Readonly<Record<string, string>> = {
   "等待采集权限 · 屏幕录制": "Warten auf Aufnahmeberechtigung · Bildschirmaufnahme",
   "Chrome 页面": "Chrome-Seiten",
   "暂停发送": "Senden pausieren",
-  "待发送 {0} 条": "Ausstehende Sendungen: {0}"
+  "待发送 {0} 条": "Ausstehende Sendungen: {0}",
+  "正在保存发送设置…": "Sendeeinstellungen werden gespeichert…",
+  "仅非计费 Wi-Fi": "Nur über ungedrosseltes WLAN",
+  "通知与设备事件": "Mitteilungen und Geräteereignisse",
+  "云端来源": "Cloud-Quellen",
+  "昨天": "Gestern",
+  "需要确认发送范围": "Sendebereich muss bestätigt werden",
+  "资料说明冲突": "Konflikt bei der Quellenbeschreibung",
+  "资料说明等待确认": "Quellenbeschreibung wartet auf Bestätigung",
+  "暂时无法读取": "Vorübergehend nicht lesbar",
+  "中央已暂停": "Zentral pausiert",
+  "已同步 · {0}": "Synchronisiert · {0}",
+  "仅 Wi-Fi": "Nur WLAN"
 };
