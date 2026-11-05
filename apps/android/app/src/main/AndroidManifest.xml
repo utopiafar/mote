@@ -145,6 +145,11 @@
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
+        <service android:name=".SendPauseTileService" android:exported="true" android:label="@string/tile_send_pause"
+            android:icon="@drawable/ic_tile_send" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
         <receiver android:name=".QuickEntryWidget" android:exported="true" android:label="@string/widget_label">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>

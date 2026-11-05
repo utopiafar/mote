@@ -1,6 +1,6 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
-  "网页": "Webseite",
+  "网页": "Web",
   "截图与照片": "Screenshots und Fotos",
   "网页与文件": "Webseiten und Dateien",
   "按时间回看": "Nach Datum ansehen",
@@ -10195,13 +10195,13 @@ export const german: Readonly<Record<string, string>> = {
   "有待发送记录，无法更换中央": "Ausstehende Einträge verhindern den Wechsel der Zentrale",
   "扫描中央生成的连接二维码。": "Den von der Zentrale erzeugten Verbindungs-QR-Code scannen.",
   "本人设备": "Dieses Gerät",
+  "附件超过 50 MiB": "Anhang überschreitet 50 MiB",
+  "未能保存": "Speichern fehlgeschlagen",
   "管理记忆": "Erinnerungen verwalten",
   "详情": "Details",
   "已整理，可搜索": "Aufbereitet, durchsuchbar",
   "整理未完成": "Aufbereitung unvollständig",
   "引用它的对话": "Konversationen, die es zitieren",
-  "网页": "Web",
   "参考整份资料": "Gesamtes Material",
-  "昨天": "Gestern",
   "{0}月{1}日": "{1}.{0}."
 };
