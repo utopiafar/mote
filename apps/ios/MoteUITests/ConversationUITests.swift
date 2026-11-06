@@ -51,6 +51,9 @@ final class ConversationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '合同第 4 页写的是两个月'")).firstMatch.exists)
         XCTAssertGreaterThanOrEqual(app.buttons["停止"].frame.width, 44)
         XCTAssertGreaterThanOrEqual(app.buttons["停止"].frame.height, 44)
+        let save = app.buttons.matching(identifier: "保存为记录").firstMatch
+        XCTAssertTrue(save.exists)
+        XCTAssertTrue(save.isEnabled, "Completed answers stay actionable while the next answer streams")
         screenshot("conversation-streaming-light")
     }
 

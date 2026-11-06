@@ -295,16 +295,13 @@ struct ConversationView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(model.busy)
             .accessibilityLabel(Text("保存为记录"))
             answerAction(icon: .copy, label: "复制") {
                 UIPasteboard.general.string = answer
             }
-            .disabled(model.busy)
             answerAction(icon: .more, label: "更多") {
                 model.showDetails(turn)
             }
-            .disabled(model.busy)
         }
         .padding(.top, -6)
         .padding(.leading, -10)
