@@ -4,6 +4,7 @@ import XCTest
 final class MoteSourceUITests: XCTestCase {
     func testCaptureNavigationPersistsSourceTextRules() {
         let app = XCUIApplication()
+        app.launchEnvironment = ["MOTE_TEST_RESET_SHORTCUT_SOURCES": "1"]
         app.launch()
         XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 15))
         app.buttons["我的 Mote"].tap()

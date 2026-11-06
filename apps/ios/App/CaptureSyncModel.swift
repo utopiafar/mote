@@ -13,6 +13,13 @@ final class CaptureSyncModel {
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["MOTE_TEST_RESET_SHORTCUT_SOURCES"] == "1",
+           let store = try? MoteStorage.shortcutSourceStore(fileManager: fileManager) {
+            try? store.remove(.notification)
+            try? store.remove(.screenshot)
+        }
+        #endif
         let state = Self.readState(fileManager: fileManager)
         presentation = state.presentation
         centralURL = state.centralURL
