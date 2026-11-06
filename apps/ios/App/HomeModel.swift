@@ -16,6 +16,8 @@ final class HomeModel {
     private let session: URLSession
     private let fileManager: FileManager
     private var originals: [HomeOriginal] = []
+    private var highlights: [HomeHighlight] = []
+    private var loadedConnection: StoredConnection?
     private var refreshGeneration = 0
 
     init(calendar: Calendar = .current, session: URLSession = .shared, fileManager: FileManager = .default) {
@@ -30,19 +32,37 @@ final class HomeModel {
         refreshGeneration += 1
         let generation = refreshGeneration
         let local = Self.readLocalState(fileManager: fileManager)
-        presentation = Self.makePresentation(local: local, originals: originals, calendar: calendar)
+        if local.connection != loadedConnection {
+            loadedConnection = local.connection
+            originals = []
+            highlights = []
+        }
+        presentation = Self.makePresentation(local: local, originals: originals, highlights: highlights, calendar: calendar)
 
         guard let connection = local.connection,
               let client = try? CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
         else {
             originals = []
-            presentation = Self.makePresentation(local: local, originals: [], calendar: calendar)
+            highlights = []
+            presentation = Self.makePresentation(local: local, originals: [], highlights: [], calendar: calendar)
             return
         }
 
-        guard let page = try? await client.originals(limit: 30), generation == refreshGeneration else { return }
-        originals = page.items.map { Self.original(from: $0) }
-        presentation = Self.makePresentation(local: local, originals: originals, calendar: calendar)
+        if let page = try? await client.originals(limit: 30), generation == refreshGeneration,
+           Self.readLocalState(fileManager: fileManager).connection == connection {
+            originals = page.items.map { Self.original(from: $0) }
+            presentation = Self.makePresentation(local: local, originals: originals, highlights: highlights, calendar: calendar)
+        }
+        do {
+            let needs = try await client.calendarNeeds()
+            guard generation == refreshGeneration, Self.readLocalState(fileManager: fileManager).connection == connection else { return }
+            highlights = needs
+        } catch CentralError.http(let status, _) where status == 401 || status == 403 {
+            guard generation == refreshGeneration else { return }
+            highlights = []
+        } catch { }
+        guard generation == refreshGeneration, Self.readLocalState(fileManager: fileManager).connection == connection else { return }
+        presentation = Self.makePresentation(local: local, originals: originals, highlights: highlights, calendar: calendar)
     }
 
     private struct LocalState {
@@ -62,6 +82,7 @@ final class HomeModel {
     private static func makePresentation(
         local: LocalState,
         originals: [HomeOriginal],
+        highlights: [HomeHighlight] = [],
         calendar: Calendar
     ) -> HomePresentation {
         let connected = local.connection != nil
@@ -77,7 +98,7 @@ final class HomeModel {
         return HomePresentation(
             facts: facts,
             hasDraft: local.hasDraft,
-            highlights: [],
+            highlights: highlights,
             originals: originals,
             calendar: calendar
         )

@@ -25,7 +25,10 @@ struct MoteApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if arguments.contains("-MoteComponentPreview") {
+                if arguments.contains("-MoteSchedulePreview") {
+                    SchedulePreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteComponentPreview") {
                     ComponentPreview()
                         .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteHomePreview") {

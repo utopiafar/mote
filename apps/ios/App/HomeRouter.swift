@@ -135,6 +135,8 @@ struct HomeDestinationView: View {
             ConversationFlowView(scope: scope, onDismiss: { dismiss() }, onAddImage: {})
         case .profile:
             ProfileMenuView(onOpenConnection: onOpenConnection)
+        case .highlight(.schedule, _):
+            ScheduleScreen(onBack: { dismiss() })
         case .captureStatus:
             CaptureSyncScreen(onOpenConnection: onOpenConnection, onOpenOriginal: onOpenOriginal)
         default:
