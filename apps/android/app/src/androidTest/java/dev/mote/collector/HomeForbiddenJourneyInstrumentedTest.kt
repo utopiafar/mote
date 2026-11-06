@@ -48,6 +48,8 @@ class HomeForbiddenJourneyInstrumentedTest {
     private val context: Context get() = instrumentation.targetContext
     private val conversation = "6c1a8d2f-4e5b-4c7a-9d3e-1f2a3b4c5d6e"
     private val action = "2f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"
+    private val feedPhoto = "5d1e7a3c-9b2f-4e6a-8c4d-2f3a5b7c9e01"
+    private val feedNote = "3c9f5e7b-1d4a-4f8c-b6e2-7a9c1d3f5b24"
     private fun views(root: View): List<View> = listOf(root) + if (root is ViewGroup) (0 until root.childCount).flatMap { views(root.getChildAt(it)) } else emptyList()
     private fun shown(activity: Activity) = views(activity.window.decorView).filter { it.isShown }
     private fun inStage(vararg stages: Stage): List<Activity> {
@@ -76,7 +78,7 @@ class HomeForbiddenJourneyInstrumentedTest {
     private fun retry(activity: Activity, sectionTag: String) = inside(activity, sectionTag) { it is TextView && it.text == MoteI18n.text("重试") && it.isClickable }
     private fun tagged(activity: Activity, tag: String) = shown(activity).any { it.tag == tag }
     private fun hasText(activity: Activity, value: String) = shown(activity).any { it is TextView && it.text.toString() == value }
-    private fun emptyConversationLabel(activity: Activity) = inside(activity, "home-recent-conversations") { it is TextView && it.text.toString().startsWith("还没有对话") }
+    private fun emptyFeedLabel(activity: Activity) = inside(activity, "home-feed") { it is TextView && it.text.toString() == "暂无记录。" }
 
     private fun connect(fixture: Fixture) {
         val settings = Settings(context)
@@ -98,11 +100,11 @@ class HomeForbiddenJourneyInstrumentedTest {
         check(context.getSharedPreferences("mote", Context.MODE_PRIVATE).edit().putBoolean("debugHttp", true).commit())
     }
     private fun sessionGeneration() = CentralSession.get(context).generation
-    private fun conversationRead(home: Activity): Pair<UiTask, HomeReadGate> {
+    private fun feedRead(home: Activity): Pair<UiTask, HomeReadGate> {
         var value: Pair<UiTask, HomeReadGate>? = null
         instrumentation.runOnMainSync {
-            val section = shown(home).single { it.tag == "home-recent-conversations" }
-            fun field(name: String) = HomeConversationView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(section)
+            val section = shown(home).single { it.tag == "home-feed" }
+            fun field(name: String) = HomeFeedView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(section)
             value = (field("task") as UiTask) to (field("gate") as HomeReadGate)
         }
         return requireNotNull(value)
@@ -134,7 +136,7 @@ class HomeForbiddenJourneyInstrumentedTest {
         var navigated = false
         instrumentation.runOnMainSync {
             if (requireHomeIdle) {
-                val sections = views(home.window.decorView).filter { it.tag in setOf("home-recent-conversations", "home-calendar-needs", "home-existing-discovery") }
+                val sections = views(home.window.decorView).filter { it.tag in setOf("home-feed", "home-calendar-needs", "home-existing-discovery") }
                 assertEquals("all three production sections participate in the boundary", 3, sections.size)
                 if (sections.any { section -> (section.javaClass.getDeclaredField("task").apply { isAccessible = true }.get(section) as UiTask).busy }) return@runOnMainSync
             }
@@ -380,8 +382,8 @@ class HomeForbiddenJourneyInstrumentedTest {
                 try {
                     context.queue().capturePage("1970-01-01T00:00:00Z", "2100-01-01T00:00:00Z", source = "note")
                     ActivityScenario.launch(MainActivity::class.java).use {
-                        val home = onTop("the fifth calendar page and real conversations render") { activity ->
-                            tagged(activity, "home-conversation:$conversation") && tagged(activity, "home-calendar-need:$action") && tagged(activity, "home-discovery-history")
+                        val home = onTop("the fifth calendar page, discovery and the grouped feed render") { activity ->
+                            tagged(activity, "home-original:$feedPhoto") && tagged(activity, "home-calendar-need:$action") && tagged(activity, "home-discovery-history")
                         }
                         Thread.sleep(60_000)
                         instrumentation.runOnMainSync {
@@ -392,15 +394,15 @@ class HomeForbiddenJourneyInstrumentedTest {
                         // hidden-page work rather than the completion of a pre-pause request.
                         until("accepted home reads finish before the atomic leave") { navigate(home, "MANAGE", requireHomeIdle = true) }
                         val idle = fixture.requests.toList()
-                        val conversations = idle.count { it.startsWith("/api/conversations?") }
+                        val feed = idle.count { it.startsWith("/api/capture-browser?") }
                         val discovery = idle.count { it.startsWith("/api/insights?") }
                         val calendar = idle.count { it == "/api/actions?cursor=0" }
                         val pages = idle.count { it.startsWith("/api/actions?") }
-                        assertTrue("conversations: $conversations", conversations in 1..2)
+                        assertTrue("feed: $feed", feed in 1..2)
                         assertTrue("discovery: $discovery", discovery in 1..2)
                         assertTrue("calendar logical reads: $calendar", calendar in 1..2)
                         assertEquals("every calendar read retains the complete five-page scan", calendar * 5, pages)
-                        android.util.Log.i("MoteAcceptance", "Home 60s logical=$conversations/$discovery/$calendar httpHome=${conversations + discovery + pages} httpAll=${idle.size} calendarPages=$pages")
+                        android.util.Log.i("MoteAcceptance", "Home 60s logical=$feed/$discovery/$calendar httpHome=${feed + discovery + pages} httpAll=${idle.size} calendarPages=$pages")
                         val offHome = fixture.requests.size
                         Thread.sleep(2_500)
                         navigate(home, "SOURCES")
@@ -409,7 +411,7 @@ class HomeForbiddenJourneyInstrumentedTest {
                         navigate(home, "OVERVIEW")
                         until("returning home immediately reads all three sections") {
                             val returned = fixture.requests.toList().drop(offHome)
-                            returned.any { it.startsWith("/api/conversations?") } && returned.any { it.startsWith("/api/insights?") } && returned.any { it == "/api/actions?cursor=4" }
+                            returned.any { it.startsWith("/api/capture-browser?") } && returned.any { it.startsWith("/api/insights?") } && returned.any { it == "/api/actions?cursor=4" }
                         }
                     }
                     traceTailControl()
@@ -426,49 +428,49 @@ class HomeForbiddenJourneyInstrumentedTest {
             connect(fixture)
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 val home = onTop("The generated rows come from the production home sections") { activity ->
-                    tagged(activity, "home-conversation:$conversation") && tagged(activity, "home-calendar-need:$action") && tagged(activity, "home-discovery-history")
+                    tagged(activity, "home-original:$feedPhoto") && tagged(activity, "home-calendar-need:$action") && tagged(activity, "home-discovery-history")
                 }
                 // The first resolve selects the origin and bumps the lazy generation; the
                 // same-session baseline only exists once the rows proved that resolve happened.
                 val generation = sessionGeneration()
-                // Revoke while a held conversations read lets the owner pause before its callback.
-                fixture.holdConversations = true
+                // Revoke while a held feed read lets the owner pause before its callback.
+                fixture.holdFeedRead = true
                 fixture.forbidden = true
                 scenario.moveToState(Lifecycle.State.STARTED)
                 scenario.moveToState(Lifecycle.State.RESUMED)
-                assertTrue("the denied conversations read is in flight", fixture.conversationsEntered.await(15, TimeUnit.SECONDS))
+                assertTrue("the denied feed read is in flight", fixture.feedReadEntered.await(15, TimeUnit.SECONDS))
                 scenario.moveToState(Lifecycle.State.STARTED) // pause between the probe and the callback
-                fixture.releaseConversations.countDown()
+                fixture.releaseFeedRead.countDown()
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 until("A 403 withdraws the rows and every denied section offers a retry") {
-                    !tagged(home, "home-conversation:$conversation") && !tagged(home, "home-calendar-need:$action") && !tagged(home, "home-discovery-history") &&
-                        retry(home, "home-recent-conversations") != null && retry(home, "home-calendar-needs") != null && retry(home, "home-existing-discovery") != null
+                    !tagged(home, "home-original:$feedPhoto") && !tagged(home, "home-calendar-need:$action") && !tagged(home, "home-discovery-history") &&
+                        retry(home, "home-feed") != null && retry(home, "home-calendar-needs") != null && retry(home, "home-existing-discovery") != null
                 }
                 scenario.moveToState(Lifecycle.State.STARTED)
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 until("The denied affordances survive leaving and returning home") {
-                    !tagged(home, "home-conversation:$conversation") &&
-                        retry(home, "home-recent-conversations") != null && retry(home, "home-calendar-needs") != null && retry(home, "home-existing-discovery") != null
+                    !tagged(home, "home-original:$feedPhoto") &&
+                        retry(home, "home-feed") != null && retry(home, "home-calendar-needs") != null && retry(home, "home-existing-discovery") != null
                 }
                 // A same-generation resolution failure hides the affordances; the denied state survives
                 // without a session change and re-renders once resolution recovers.
                 blockResolve()
                 until("A resolve failure clears the sections without reviving reads or retries") {
-                    !tagged(home, "home-conversation:$conversation") && retry(home, "home-recent-conversations") == null &&
+                    !tagged(home, "home-original:$feedPhoto") && retry(home, "home-feed") == null &&
                         retry(home, "home-calendar-needs") == null && retry(home, "home-existing-discovery") == null
                 }
                 unblockResolve()
                 until("The denied retry returns once access resolves again on the same session") {
-                    retry(home, "home-recent-conversations") != null && retry(home, "home-calendar-needs") != null && retry(home, "home-existing-discovery") != null
+                    retry(home, "home-feed") != null && retry(home, "home-calendar-needs") != null && retry(home, "home-existing-discovery") != null
                 }
                 assertEquals("the transient failure must not change the session generation", generation, sessionGeneration())
                 fixture.forbidden = false
-                clickInside(home, "home-recent-conversations") { it is TextView && it.text == MoteI18n.text("重试") }
-                until("The conversations retry issues a fresh read and restores the row") { tagged(home, "home-conversation:$conversation") }
+                clickInside(home, "home-feed") { it is TextView && it.text == MoteI18n.text("重试") }
+                until("The feed retry issues a fresh read and restores its rows") { tagged(home, "home-original:$feedPhoto") }
                 clickInside(home, "home-calendar-needs") { it is TextView && it.text == MoteI18n.text("重试") }
                 until("The calendar retry restores its row") { tagged(home, "home-calendar-need:$action") }
                 clickInside(home, "home-existing-discovery") { it is TextView && it.text == MoteI18n.text("重试") }
-                until("The discovery retry restores its card") { tagged(home, "home-discovery-history") }
+                until("The discovery retry restores its row") { tagged(home, "home-discovery-history") }
                 assertEquals("the explicit retry recovers on the same session", generation, sessionGeneration())
             }
         }
@@ -476,17 +478,17 @@ class HomeForbiddenJourneyInstrumentedTest {
 
     @Test fun aDeniedArchiveProbeShowsRetryNotAFalseEmptyHome() {
         Fixture().use { fixture ->
-            fixture.conversationsEmpty = true
+            fixture.feedEmpty = true
             fixture.probeForbidden = true
             fixture.holdProbe = true
             connect(fixture)
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                val home = onTop("The home opens with a resumable conversations section") { it is MainActivity }
+                val home = onTop("The home opens with a resumable feed section") { it is MainActivity }
                 // Hold the real archive probe, then let its 403 complete while the stamp is still
                 // current — but drop its UI callback across a pause: the denied affordance must
                 // come from a real re-read, never a fake empty home.
-                assertTrue("the empty-conversations read reached the archive probe", fixture.probeEntered.await(15, TimeUnit.SECONDS))
-                val (task, gate) = conversationRead(home)
+                assertTrue("the empty-feed read reached the archive probe", fixture.probeEntered.await(15, TimeUnit.SECONDS))
+                val (task, gate) = feedRead(home)
                 val stamp = HomeReadGate::class.java.getDeclaredField("epoch").apply { isAccessible = true }.getLong(gate)
                 val generation = sessionGeneration()
                 DeliveryBarrier(task).use { delivery ->
@@ -502,22 +504,22 @@ class HomeForbiddenJourneyInstrumentedTest {
                     assertTrue("publication was released within the original hold timeout", delivery.releasedInTime)
                     assertFalse("the actual UI delivery was dropped while paused", delivery.delivered)
                     instrumentation.runOnMainSync {
-                        assertNull("the paused failure cannot render a retry", retry(home, "home-recent-conversations"))
+                        assertNull("the paused failure cannot render a retry", retry(home, "home-feed"))
                     }
                 }
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 until("A denied probe fails the read instead of claiming an empty archive") {
-                    retry(home, "home-recent-conversations") != null && emptyConversationLabel(home) == null &&
+                    retry(home, "home-feed") != null && emptyFeedLabel(home) == null &&
                         !tagged(home, "home-notice-connect")
                 }
                 assertTrue("the dropped probe answer did not mark the archive; the read probes again", fixture.probeRequests.get() >= 2)
                 fixture.probeForbidden = false
-                clickInside(home, "home-recent-conversations") { it is TextView && it.text == MoteI18n.text("重试") }
+                clickInside(home, "home-feed") { it is TextView && it.text == MoteI18n.text("重试") }
                 until("A recovered probe confirms the empty archive and the first-use home shows") {
-                    !tagged(home, "home-recent-conversations") && !tagged(home, "home-notice-connect")
+                    !tagged(home, "home-feed") && !tagged(home, "home-notice-connect")
                 }
                 instrumentation.runOnMainSync {
-                    assertFalse("the confirmed empty archive hides the section rather than faking rows", tagged(home, "home-conversation:$conversation"))
+                    assertTrue("the confirmed empty archive hides the feed rather than faking rows", shown(home).none { it.tag?.toString()?.startsWith("home-original:") == true })
                 }
             }
         }
@@ -525,13 +527,13 @@ class HomeForbiddenJourneyInstrumentedTest {
 
     @Test fun anInconclusiveProbeKeepsAnHonestEmptyUntilTheNextSessionRechecks() {
         Fixture().use { fixture ->
-            fixture.conversationsEmpty = true
+            fixture.feedEmpty = true
             fixture.malformedCaptures = true
             connect(fixture)
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                val home = onTop("The home opens with a resumable conversations section") { it is MainActivity }
+                val home = onTop("The home opens with a resumable feed section") { it is MainActivity }
                 until("A malformed storage.captures probe is inconclusive: truthful empty label, no first-use hide") {
-                    emptyConversationLabel(home) != null && !tagged(home, "home-notice-connect")
+                    emptyFeedLabel(home) != null && !tagged(home, "home-notice-connect")
                 }
                 // A session change re-arms the probe; a held answer released while paused still
                 // cannot mark the new generation done, so the next read probes for real. The
@@ -544,7 +546,7 @@ class HomeForbiddenJourneyInstrumentedTest {
                 until("the disconnected session is observed before reconnecting") { sessionGeneration() != previous }
                 connect(fixture)
                 assertTrue("the new session reached the archive probe", fixture.probeEntered.await(15, TimeUnit.SECONDS))
-                val (task, _) = conversationRead(home)
+                val (task, _) = feedRead(home)
                 DeliveryBarrier(task).use { delivery ->
                     scenario.moveToState(Lifecycle.State.STARTED)
                     fixture.releaseProbe.countDown()
@@ -557,7 +559,7 @@ class HomeForbiddenJourneyInstrumentedTest {
                 }
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 until("The rechecked probe confirms the empty archive and the first-use home shows") {
-                    !tagged(home, "home-recent-conversations") && !tagged(home, "home-notice-connect")
+                    !tagged(home, "home-feed") && !tagged(home, "home-notice-connect")
                 }
                 assertTrue("the malformed and held answers never stood in for a real probe", fixture.probeRequests.get() >= 3)
             }
@@ -572,15 +574,30 @@ class HomeForbiddenJourneyInstrumentedTest {
         @Volatile var probeForbidden = false
         @Volatile var conversationsEmpty = false
         @Volatile var malformedCaptures = false
-        @Volatile var holdConversations = false
+        @Volatile var holdFeedRead = false
         @Volatile var holdProbe = false
         @Volatile var calendarFivePages = false
+        @Volatile var feedEmpty = false
         val requests = ConcurrentLinkedQueue<String>()
         val probeRequests = AtomicInteger()
-        val conversationsEntered = CountDownLatch(1)
-        val releaseConversations = CountDownLatch(1)
+        val feedReadEntered = CountDownLatch(1)
+        val releaseFeedRead = CountDownLatch(1)
         val probeEntered = CountDownLatch(1)
         val releaseProbe = CountDownLatch(1)
+        private val zone = java.time.ZoneId.systemDefault()
+        private val dayStart = java.time.LocalDate.now(zone).atStartOfDay(zone)
+        private val feedItems = JSONArray()
+            .put(JSONObject().put("id", feedPhoto).put("capturedAt", java.time.Instant.now().toString()).put("source", "screen")
+                .put("deviceId", "generated-device").put("hasImage", true)
+                .put("windowTitle", "生成的设计稿.png").put("appName", "生成设计工具").put("textPreview", "生成的设计稿标注内容"))
+            .put(JSONObject().put("id", feedNote).put("capturedAt", dayStart.minusHours(3).toInstant().toString()).put("source", "note")
+                .put("deviceId", "generated-device").put("hasImage", false)
+                .put("windowTitle", "生成的会议纪要.txt").put("appName", "生成文本编辑器").put("textPreview", "生成的纪要正文摘要"))
+        private val thumbnail: ByteArray by lazy {
+            val bitmap = android.graphics.Bitmap.createBitmap(96, 64, android.graphics.Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(bitmap).apply { drawColor(0xFF33608C.toInt()); drawRect(8f, 8f, 88f, 56f, android.graphics.Paint().apply { color = 0xFFE8C468.toInt() }) }
+            java.io.ByteArrayOutputStream().also { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray()
+        }
         private val executor = Executors.newCachedThreadPool()
         init {
             executor.submit {
@@ -597,10 +614,16 @@ class HomeForbiddenJourneyInstrumentedTest {
                 if (probe) probeRequests.incrementAndGet()
                 val heldProbe = probe && holdProbe
                 if (heldProbe) { probeEntered.countDown(); releaseProbe.await(30, TimeUnit.SECONDS) }
-                if (path.startsWith("/api/conversations?") && holdConversations) { conversationsEntered.countDown(); releaseConversations.await(30, TimeUnit.SECONDS) }
+                if (path.startsWith("/api/capture-browser/") && path.contains("/image")) {
+                    val bytes = thumbnail
+                    it.getOutputStream().apply { write("HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(bytes); flush() }
+                    return
+                }
+                if (path.startsWith("/api/capture-browser?") && holdFeedRead) { feedReadEntered.countDown(); releaseFeedRead.await(30, TimeUnit.SECONDS) }
                 val status: Int; val payload: JSONObject
                 when {
                     forbidden || (probeForbidden && probe) -> { status = 403; payload = JSONObject().put("error", JSONObject().put("code", "forbidden")) }
+                    path.startsWith("/api/capture-browser?") -> { status = 200; payload = JSONObject().put("items", if (feedEmpty) JSONArray() else feedItems) }
                     path.startsWith("/api/conversations?") -> {
                         status = 200; payload = JSONObject().put("items", if (conversationsEmpty) JSONArray() else JSONArray().put(JSONObject()
                             .put("id", conversation).put("title", "生成的跨设备对话").put("updatedAt", "2026-10-30T10:00:00Z").put("turnCount", 2)))

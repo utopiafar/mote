@@ -16,6 +16,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -50,6 +51,9 @@ class HomeJourneyInstrumentedTest {
     private val conversation = "5b0f6c1e-3d0a-4f4c-9a51-2f7f3a1d8c42"
     private val action = "8a6b2f0e-1c4d-4e7a-b2d3-6f5e4c3b2a19"
     private val settled = "3f9d2c4b-7a1e-4b6f-8c5d-0e2a9b7c6d15"
+    private val feedPhoto = "7c1e5a2b-9d4f-4e8a-b6c3-1f2a5d8e9b04"
+    private val feedAudio = "2b8f4d6a-3c1e-4a5b-9d7f-6e5c4b3a2d10"
+    private val feedNote = "9e7d2c5b-4a6f-4b8c-a1d3-5f6e7c8b9a01"
     private fun views(root: View): List<View> = listOf(root) + if (root is ViewGroup) (0 until root.childCount).flatMap { views(root.getChildAt(it)) } else emptyList()
     private fun shown(activity: Activity) = views(activity.window.decorView).filter { it.isShown }
     private fun texts(activity: Activity) = shown(activity).filterIsInstance<TextView>().map { it.text.toString() }
@@ -116,18 +120,39 @@ class HomeJourneyInstrumentedTest {
             for (appearance in listOf(AppearancePreference.LIGHT, AppearancePreference.DARK)) {
                 MoteAppearance.select(context, appearance)
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                    val home = onTop("Recent conversation and the waiting calendar item come from the generated Central") { activity ->
-                        shown(activity).any { it.tag == "home-conversation:$conversation" } && shown(activity).any { it.tag == "home-calendar-need:$action" }
+                    val home = onTop("The waiting calendar item and the grouped originals come from the generated Central") { activity ->
+                        shown(activity).any { it.tag == "home-original:$feedPhoto" } && shown(activity).any { it.tag == "home-calendar-need:$action" }
                     }
                     instrumentation.runOnMainSync {
                         val tags = shown(home).mapNotNull { it.tag?.toString() }
                         for (tag in listOf("home-ask-action", "home-record-action", "home-photo-action", "home-audio-action", "home-search-action")) assertTrue(tag, tag in tags)
                         assertTrue("Capture that was never started shows its shared pause reminder", tags.any { it == "home-notice-reminder" } && "采集已暂停" in texts(home))
                         assertFalse("The large prompt only belongs to first use", "想问什么？" in texts(home))
-                        assertTrue("等你补充" in texts(home) && "时间待补充" in texts(home) && "生成的设计评审" in texts(home))
+                        val homeTexts = texts(home)
+                        assertTrue("时间待补充" in homeTexts && "生成的设计评审" in homeTexts)
+                        assertTrue("生成的设计稿标注内容" in homeTexts && homeTexts.any { it.endsWith(" · 照片") })
+                        assertTrue("生成的纪要正文摘要" in homeTexts && homeTexts.any { it.contains("录音 10:42") })
+                        assertTrue("Day groups lead with today and yesterday" , "今天" in homeTexts && "昨天" in homeTexts)
+                        // H08: waiting items and discoveries lead in the same row style with no
+                        // group heading; H07: day groups follow, newest day first.
+                        fun top(tag: String) = IntArray(2).also { shown(home).first { it.tag == tag }.getLocationOnScreen(it) }[1]
+                        val need = top("home-calendar-need:$action")
+                        val today = IntArray(2).also { shown(home).filterIsInstance<TextView>().first { it.text.toString() == "今天" }.getLocationOnScreen(it) }[1]
+                        val photo = top("home-original:$feedPhoto")
+                        val yesterday = IntArray(2).also { shown(home).filterIsInstance<TextView>().first { it.text.toString() == "昨天" }.getLocationOnScreen(it) }[1]
+                        val note = top("home-original:$feedNote")
+                        assertTrue("The waiting item leads without a group heading", need < today)
+                        assertTrue("The day heading precedes its rows", today < photo && photo < yesterday && yesterday < note)
                         val ask = IntArray(2).also { shown(home).first { it.tag == "home-ask-action" }.getLocationOnScreen(it) }
                         val record = IntArray(2).also { shown(home).first { it.tag == "home-record-action" }.getLocationOnScreen(it) }
                         assertTrue("Ask sits above the quick records in the thumb zone", ask[1] < record[1])
+                    }
+                    until("The photo row decodes its thumbnail") {
+                        var ready = false
+                        instrumentation.runOnMainSync {
+                            ready = shown(home).any { it.tag == "home-original-thumb:$feedPhoto" && it is ImageView && it.drawable != null }
+                        }
+                        ready
                     }
                     capture(home, "home-regular-" + appearance.name.lowercase())
                     scenario.onActivity { activity ->
@@ -145,12 +170,17 @@ class HomeJourneyInstrumentedTest {
                     capture(draftHome, "home-draft-" + appearance.name.lowercase())
                     context.recordDraftStore().edit("", JSONArray(), JSONObject().put("kind", "manual"))
                     if (appearance == AppearancePreference.LIGHT) {
-                        click(draftHome) { it is Button && it.text == "补充时间" }
+                        click(draftHome) { it.tag == "home-calendar-need:$action" }
                         val calendar = resumed(CalendarActionsActivity::class.java, "Completing a time opens the existing calendar page")
                         instrumentation.runOnMainSync { calendar.finish() }
                         val back = resumed(MainActivity::class.java, "Calendar returns to the home")
+                        click(back) { it.tag == "home-original:$feedPhoto" }
+                        val reader = resumed(CaptureRecordsActivity::class.java, "A grouped row opens the original reader")
+                        assertEquals(feedPhoto, reader.intent.getStringExtra("recordId"))
+                        instrumentation.runOnMainSync { reader.finish() }
+                        resumed(MainActivity::class.java, "The reader returns to the home")
                         click(back) { it.tag == "home-m-action" }
-                        onTop("Memories are one step from the menu") { activity -> shown(activity).any { it.tag == "menu:我的记忆" } && shown(activity).any { it.tag == "menu:资料与记忆" } }
+                        onTop("Memories are one step from the menu") { activity -> shown(activity).any { it.tag == "menu:资料与记忆" } }
                     }
                 }
             }
@@ -406,6 +436,24 @@ class HomeJourneyInstrumentedTest {
         @Volatile var searchQuery: String? = null
         @Volatile var writes = 0
         private val executor = Executors.newSingleThreadExecutor()
+        // Generated feed rows: one photo today, a recording and a note yesterday, all synthetic.
+        private val zone = java.time.ZoneId.systemDefault()
+        private val dayStart = java.time.LocalDate.now(zone).atStartOfDay(zone)
+        private val feedItems = JSONArray()
+            .put(JSONObject().put("id", feedPhoto).put("capturedAt", java.time.Instant.now().toString()).put("source", "screen")
+                .put("deviceId", "generated-device").put("hasImage", true)
+                .put("windowTitle", "生成的设计稿.png").put("appName", "生成设计工具").put("textPreview", "生成的设计稿标注内容"))
+            .put(JSONObject().put("id", feedAudio).put("capturedAt", dayStart.minusHours(2).toInstant().toString()).put("source", "media")
+                .put("deviceId", "generated-device").put("hasImage", false).put("durationMs", 642000)
+                .put("windowTitle", "生成的录音").put("appName", "录音机").put("textPreview", ""))
+            .put(JSONObject().put("id", feedNote).put("capturedAt", dayStart.minusHours(3).toInstant().toString()).put("source", "note")
+                .put("deviceId", "generated-device").put("hasImage", false)
+                .put("windowTitle", "生成的会议纪要.txt").put("appName", "生成文本编辑器").put("textPreview", "生成的纪要正文摘要"))
+        private val thumbnail: ByteArray by lazy {
+            val bitmap = Bitmap.createBitmap(96, 64, Bitmap.Config.ARGB_8888)
+            Canvas(bitmap).apply { drawColor(0xFF33608C.toInt()); drawRect(8f, 8f, 88f, 56f, android.graphics.Paint().apply { color = 0xFFE8C468.toInt() }) }
+            java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 80, it) }.toByteArray()
+        }
         init { executor.submit {
             while (!listener.isClosed) runCatching { listener.accept() }.getOrNull()?.use { socket ->
                 val input = socket.getInputStream().bufferedReader()
@@ -415,6 +463,12 @@ class HomeJourneyInstrumentedTest {
                 while (!input.readLine().isNullOrBlank()) Unit
                 if (method != "GET") writes++
                 val body = when {
+                    path.startsWith("/api/capture-browser/") && path.contains("/image") -> {
+                        val bytes = thumbnail
+                        socket.getOutputStream().apply { write("HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(bytes); flush() }
+                        return@use
+                    }
+                    path.startsWith("/api/capture-browser?") -> JSONObject().put("items", feedItems)
                     path.startsWith("/api/conversations?") -> JSONObject().put("items", JSONArray().put(JSONObject().put("id", conversation).put("title", "周五评审需要准备什么？").put("updatedAt", "2026-10-30T10:00:00Z").put("turnCount", 2)))
                     path == "/api/status" -> JSONObject().put("storage", JSONObject().put("captures", 3))
                     // A newer suggestion that needs nothing comes first, so the home has to follow the cursor to the waiting one.
