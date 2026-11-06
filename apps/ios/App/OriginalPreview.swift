@@ -17,7 +17,8 @@ struct OriginalPreview: View {
                     arguments: arguments,
                     onAsk: { _ in },
                     onClearScope: { self.destination = .ask(nil) },
-                    onOpenConnection: {}
+                    onOpenConnection: {},
+                    onOpenOriginal: { _ in }
                 )
             } else {
                 OriginalView(
