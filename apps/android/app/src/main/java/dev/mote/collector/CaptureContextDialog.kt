@@ -8,6 +8,8 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 import java.util.concurrent.Executors
 
 /** Only explicitly saved owner descriptions enter the source-context outbox. */
@@ -68,7 +70,8 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
         val heading = LinearLayout(activity).apply {
             gravity = android.view.Gravity.CENTER_VERTICAL; setPadding(activity.moteDp(20),activity.moteDp(10),activity.moteDp(8),activity.moteDp(10))
             addView(TextView(activity).apply { text = MoteI18n.text("采集来源说明"); MoteUi.type(this,NativeFontRole.ACTION,medium = true); MoteUi.textColor(this,NativeColorRole.INK) },LinearLayout.LayoutParams(0,-2,1f))
-            addView(TextView(activity).apply { text = "×"; contentDescription = MoteI18n.text("关闭"); gravity = android.view.Gravity.CENTER; MoteUi.type(this,NativeFontRole.ACTION); MoteUi.textColor(this,NativeColorRole.MUTED); minHeight = activity.moteDp(44); isFocusable = true; setOnClickListener { dialog.dismiss() } },LinearLayout.LayoutParams(activity.moteDp(44),-2))
+            addView(MoteComponents.iconButton(activity, MoteGlyph.CLOSE, MoteI18n.text("关闭")) { dialog.dismiss() },
+                LinearLayout.LayoutParams(activity.moteDp(48), activity.moteDp(48)))
         }
         dialog = MoteDialogBuilder(activity).setCustomTitle(heading)
             .setView(ScrollView(activity).apply { addView(body) })

@@ -4502,7 +4502,7 @@
   "用户主动重置": "Réinitialisation par l'utilisateur",
   "首次建立统计，之前历史不可用": "Première base de statistiques ; historique antérieur indisponible",
   "统计起点：{0}\n": "Base des statistiques : {0}\n",
-  "⚠ 曾有统计写入失败，本周期数据不完整。\n": "⚠ Certaines écritures de statistiques ont échoué ; cette période est incomplète.\n",
+  "曾有统计写入失败，本周期数据不完整。": "Certaines écritures de statistiques ont échoué ; cette période est incomplète.",
   "\n累计结果\n截图请求 {0} · 收到画面 {1}\n": "\nTotaux\nDemandes de captures d'écran {0} · Images reçues {1}\n",
   "累计截图记录 {0} · 已保存记录 {1}\n": "Enregistrements de captures d'écran {0} · Notes enregistrées {1}\n",
   "系统事件已保存 {0} · 已确认 {1}\n": "Événements système enregistrés {0} · Confirmés {1}\n",
