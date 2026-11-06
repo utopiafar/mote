@@ -90,9 +90,18 @@ class Ua08AcceptanceCaptureInstrumentedTest {
         until("Material scope chip is gone") { !seen { it.contentDescription?.toString()?.startsWith("material:") == true } }
     }
 
+    private fun connect() {
+        val settings = Settings(context)
+        settings.save(settings.read().copy(server = origin, token = "", debugHttp = true, authSignedOut = false, syncMode = "manual"), confirmCentralEndpoint = true)
+        CentralSession.get(context).select(origin)
+        CentralSession.get(context).signIn(origin, "generated-native-discovery-owner-token")
+    }
+
     private fun perTheme(unscoped: Boolean = false, block: (ActivityScenario<CentralActivity>, String) -> Unit) {
         val before = MoteAppearance.preference()
+        control("reset")
         try {
+            connect()
             for (theme in listOf(AppearancePreference.LIGHT, AppearancePreference.DARK)) {
                 main { MoteAppearance.select(context, theme) }
                 draft(state().getString("askConversationId"))

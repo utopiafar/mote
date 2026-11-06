@@ -19,10 +19,10 @@ class AskGenerationPresentationTest {
         assertFalse(state.canSend)
     }
 
-    @Test fun `an adopted answering run also offers only stop`() {
+    @Test fun `an adopted answering run keeps stop and its read-only check`() {
         val state = AskGenerationPresentation.read(running(adopted = true), text = "", imagesPending = false, offline = false)
         assertTrue(state.stop)
-        assertFalse(state.check)
+        assertTrue(state.check)
         assertFalse(state.canSend)
     }
 

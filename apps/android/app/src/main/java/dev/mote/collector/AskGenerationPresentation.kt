@@ -24,15 +24,16 @@ internal object AskGenerationPresentation {
         val running = state.optString("runStatus") == "running"
         val pending = state.has("pending")
         val busy = running || pending
+        // An adopted run has no local request. Keep the check action reachable
+        // instead of inventing a request body or a terminal state.
+        val adopted = running && !state.has("activeRequest")
         return State(
             busy = busy,
             offline = offline,
             canSend = allowed && !busy && !offline && text.isNotBlank() && !imagesPending,
             stop = !offline && running && !pending,
             retry = !offline && pending,
-            // An adopted run has no local request to re-submit; its stop action
-            // already owns the composer while the run is running.
-            check = !offline && pending,
+            check = !offline && (pending || adopted),
         )
     }
 }
