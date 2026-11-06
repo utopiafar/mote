@@ -4,27 +4,86 @@ import MoteCore
 import MoteStorage
 import Observation
 
+/// Local facts tests can inject without touching disk. Production refresh
+/// still reads the connection, draft and send-queue through `LocalState`.
+struct HomeLocalState: Sendable {
+    let connection: StoredConnection?
+    let hasDraft: Bool
+    let pendingCount: Int
+
+    init(connection: StoredConnection?, hasDraft: Bool, pendingCount: Int) {
+        self.connection = connection
+        self.hasDraft = hasDraft
+        self.pendingCount = pendingCount
+    }
+}
+
 /// Loads the saved connection, the single draft and durable local records.
 /// Central rows remain scoped to the connection that supplied them.
-/// Calendar needs are an independent read and do not replace local saved rows.
+/// Calendar needs and archived discoveries are independent reads and do not
+/// replace local saved rows.
 @MainActor
 @Observable
 final class HomeModel {
+    typealias LocalStateLoader = @MainActor () -> HomeLocalState
+    typealias InsightLoader = @MainActor (StoredConnection) async throws -> [InsightReport]
+    typealias OriginalsLoader = @MainActor (StoredConnection) async throws -> [CapturePreview]
+    typealias CalendarNeedsLoader = @MainActor (StoredConnection) async throws -> [HomeHighlight]
+
     private(set) var presentation: HomePresentation
 
     private let calendar: Calendar
     private let session: URLSession
     private let fileManager: FileManager
+    private let localStateLoader: () -> LocalState
+    private let insightLoader: InsightLoader
+    private let originalsLoader: OriginalsLoader?
+    private let calendarNeedsLoader: CalendarNeedsLoader
     private var centralOriginals: [HomeOriginal] = []
     private var centralOrigin: String?
-    private var highlights: [HomeHighlight] = []
+    private var scheduleHighlights: [HomeHighlight] = []
+    private var discoveryHighlights: [HomeHighlight] = []
     private var refreshGeneration = 0
 
-    init(calendar: Calendar = .current, session: URLSession = .shared, fileManager: FileManager = .default) {
+    private var highlights: [HomeHighlight] {
+        scheduleHighlights + discoveryHighlights
+    }
+
+    init(calendar: Calendar = .current, session: URLSession = .shared, fileManager: FileManager = .default,
+         localState: LocalStateLoader? = nil, insightLoader: InsightLoader? = nil,
+         originalsLoader: OriginalsLoader? = nil, calendarNeedsLoader: CalendarNeedsLoader? = nil) {
         self.calendar = calendar
         self.session = session
         self.fileManager = fileManager
-        let local = Self.readLocalState(fileManager: fileManager)
+        let injected = localState != nil || insightLoader != nil || originalsLoader != nil
+        self.localStateLoader = {
+            if let localState {
+                let injectedState = localState()
+                return LocalState(
+                    connection: injectedState.connection,
+                    hasDraft: injectedState.hasDraft,
+                    pendingCount: injectedState.pendingCount,
+                    originals: []
+                )
+            }
+            return Self.readLocalState(fileManager: fileManager)
+        }
+        self.insightLoader = insightLoader ?? { connection in
+            let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
+            return try await client.insights(limit: 30).items
+        }
+        self.originalsLoader = originalsLoader
+        if let calendarNeedsLoader {
+            self.calendarNeedsLoader = calendarNeedsLoader
+        } else if injected {
+            self.calendarNeedsLoader = { _ in [] }
+        } else {
+            self.calendarNeedsLoader = { connection in
+                let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
+                return try await client.calendarNeeds()
+            }
+        }
+        let local = self.localStateLoader()
         let origin = local.connection?.serverUrl ?? ""
         centralOrigin = local.connection?.serverUrl
         presentation = Self.makePresentation(
@@ -35,28 +94,36 @@ final class HomeModel {
     func refresh() async {
         refreshGeneration += 1
         let generation = refreshGeneration
-        let local = Self.readLocalState(fileManager: fileManager)
+        let local = localStateLoader()
         let origin = local.connection?.serverUrl
         if centralOrigin != origin {
             centralOrigin = origin
             centralOriginals = []
-            highlights = []
+            scheduleHighlights = []
+            discoveryHighlights = []
         }
         render(local)
 
-        guard let connection = local.connection,
-              let client = try? CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
-        else { return }
+        guard let connection = local.connection else { return }
 
         do {
-            let page = try await client.originals(limit: 30)
+            let items: [CapturePreview]
+            if let originalsLoader {
+                items = try await originalsLoader(connection)
+            } else {
+                let client = try CentralClient(
+                    serverUrl: connection.serverUrl, token: connection.token, session: session
+                )
+                items = try await client.originals(limit: 30).items
+            }
             guard generation == refreshGeneration else { return }
-            centralOriginals = page.items.map { Self.original(from: $0) }
+            centralOriginals = items.map { Self.original(from: $0) }
             render(local)
         } catch CentralError.http(let status, _) where status == 401 || status == 403 {
             guard generation == refreshGeneration else { return }
             centralOriginals = []
-            highlights = []
+            scheduleHighlights = []
+            discoveryHighlights = []
             render(local)
             return
         } catch {
@@ -65,16 +132,32 @@ final class HomeModel {
         }
 
         do {
-            let needs = try await client.calendarNeeds()
+            let needs = try await calendarNeedsLoader(connection)
             guard generation == refreshGeneration else { return }
-            highlights = needs
+            scheduleHighlights = needs
             render(local)
         } catch CentralError.http(let status, _) where status == 401 || status == 403 {
             guard generation == refreshGeneration else { return }
-            highlights = []
+            scheduleHighlights = []
             render(local)
         } catch {
             guard generation == refreshGeneration else { return }
+            render(local)
+        }
+
+        // Discovery is an independent read of archived reports. Any failure,
+        // including a stopped insight capability or a revoked read, only
+        // clears this block; recent records and calendar needs stay as they are.
+        do {
+            let insights = try await insightLoader(connection)
+            guard generation == refreshGeneration else { return }
+            discoveryHighlights = InsightPresentation.featured(insights).flatMap {
+                InsightPresentation.homeHighlight($0, calendar: calendar)
+            }.map { [$0] } ?? []
+            render(local)
+        } catch {
+            guard generation == refreshGeneration else { return }
+            discoveryHighlights = []
             render(local)
         }
     }

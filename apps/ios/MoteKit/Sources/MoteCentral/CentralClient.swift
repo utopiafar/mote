@@ -219,6 +219,21 @@ public struct CentralClient: Sendable {
         return try await request("GET", "/api/context/search", query: queryItems)
     }
 
+    /// Archived insight history. This is a read of reports Central already
+    /// saved; the client never asks Central to generate one.
+    public func insights(limit: Int = 30, cursor: String? = nil) async throws -> CentralPage<InsightReport> {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor, !cursor.isEmpty { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await request("GET", "/api/insights", query: query)
+    }
+
+    /// One saved insight by its result identity, the same route Android reads.
+    public func insight(id: String) async throws -> InsightReport {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: allowed) ?? id
+        return try await request("GET", "/api/insights/\(encoded)")
+    }
+
     func request<Response: Decodable>(_ method: String, _ path: String,
                                       query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> Response {
         try await perform(try makeRequest(method, path, query: query, authenticated: authenticated))

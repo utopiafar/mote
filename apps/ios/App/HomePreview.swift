@@ -56,6 +56,9 @@ struct HomePreview: View {
         let highlights: [HomeHighlight] = state == "highlights" ? [
             HomeHighlight(id: "generated-schedule", kind: .schedule, title: "生成的日程", detail: "待补充"),
             HomeHighlight(id: "generated-discovery", kind: .discovery, title: "生成的发现", detail: "查看发现"),
+        ] : state == "discovery" ? [
+            HomeHighlight(id: "generated-insight-heating", kind: .discovery,
+                          title: "这个月的暖气费约定", detail: "发现 · 2026年11月5日"),
         ] : []
         return HomePresentation(facts: facts, hasDraft: state == "draft", highlights: highlights, originals: originals, calendar: calendar)
     }

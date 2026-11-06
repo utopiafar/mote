@@ -151,6 +151,8 @@ targets:
       - package: MoteKit
         product: MoteCore
       - package: MoteKit
+        product: MoteCentral
+      - package: MoteKit
         product: MoteStorage
     settings:
       base:

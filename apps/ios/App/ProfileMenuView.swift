@@ -1,3 +1,5 @@
+import MoteCentral
+import MoteCore
 import MoteDesign
 import MoteStorage
 import SwiftUI
@@ -13,9 +15,11 @@ struct ProfileMenuView: View {
         case library
         case schedule
         case original(String)
+        case discovery
     }
 
     private let onOpenConnection: (() -> Void)?
+    private let onAsk: ((OriginalAskScope) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var screen: Screen
     @State private var model: ProfileMenuModel
@@ -26,12 +30,14 @@ struct ProfileMenuView: View {
         model: ProfileMenuModel = ProfileMenuModel(),
         settingsModel: SettingsModel = SettingsModel(),
         screen: Screen = .menu,
-        onOpenConnection: (() -> Void)? = nil
+        onOpenConnection: (() -> Void)? = nil,
+        onAsk: ((OriginalAskScope) -> Void)? = nil
     ) {
         _model = State(initialValue: model)
         _settingsModel = State(initialValue: settingsModel)
         _screen = State(initialValue: screen)
         self.onOpenConnection = onOpenConnection
+        self.onAsk = onAsk
     }
 
     var body: some View {
@@ -60,6 +66,8 @@ struct ProfileMenuView: View {
                     onDeleted: { screen = .library },
                     onAsk: { _ in showingUnavailable = true }
                 )
+            case .discovery:
+                DiscoveryHistoryView(onBack: { screen = .menu }, onOpenConnection: onOpenConnection, onAsk: onAsk)
             }
         }
         .alert("此功能将在后续版本提供", isPresented: $showingUnavailable) {
@@ -88,7 +96,7 @@ struct ProfileMenuView: View {
                     MoteGroup {
                         MoteRow(icon: .library, title: "资料与记忆") { screen = .library }
                             .accessibilityIdentifier("menu-library")
-                        MoteRow(icon: .pulse, title: "发现历史", topDivider: true) { unavailable() }
+                        MoteRow(icon: .pulse, title: "发现历史", topDivider: true) { screen = .discovery }
                         MoteRow(icon: .calendar, title: "日程与待办", topDivider: true) { screen = .schedule }
                             .accessibilityIdentifier("menu-schedule")
                     }
