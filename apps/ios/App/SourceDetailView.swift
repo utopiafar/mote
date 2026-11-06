@@ -76,7 +76,7 @@ struct SourceDetailView: View {
                         )
                     }
                     .padding(.horizontal, MoteMetrics.pageMargin)
-                    .padding(.top, 32)
+                    .padding(.top, 40)
                 }
                 .padding(.bottom, 34)
             }
@@ -101,7 +101,7 @@ struct ShortcutSetupView: View {
                 .foregroundStyle(MoteDesignTokens.ink.color)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
-                .padding(.bottom, 14)
+                .padding(.bottom, 18)
 
             MoteGroup {
                 ForEach(presentation.steps) { step in
@@ -129,7 +129,7 @@ struct ShortcutSetupView: View {
                         }
                     }
                     .padding(.horizontal, 14)
-                    .frame(minHeight: 50)
+                    .frame(minHeight: 52)
                     .overlay(alignment: .top) {
                         if step.number > 1 {
                             Rectangle()
@@ -139,7 +139,7 @@ struct ShortcutSetupView: View {
                     }
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, MoteMetrics.pageMargin)
 
             if presentation.phase == .waiting {
                 MoteGroup {
@@ -190,6 +190,7 @@ struct ShortcutSetupView: View {
                 }
             }
             .padding(.horizontal, MoteMetrics.pageMargin)
+            Color.clear.frame(height: 34)
         }
         .background(MoteDesignTokens.background.color.ignoresSafeArea())
     }
@@ -244,7 +245,7 @@ private struct SourceSectionTitle: View {
             .foregroundStyle(MoteDesignTokens.muted.color)
             .padding(.horizontal, 30)
             .padding(.top, topPadding)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
     }
 }
 
@@ -336,7 +337,8 @@ private struct SourceSettingRowView: View {
                 MoteChevron()
             }
             .padding(.horizontal, 14)
-            .frame(minHeight: 44)
+            .padding(.vertical, 2)
+            .frame(minHeight: 46)
             .contentShape(Rectangle())
             .overlay(alignment: .top) {
                 if topDivider {
