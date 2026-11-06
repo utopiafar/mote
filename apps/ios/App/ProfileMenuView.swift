@@ -10,6 +10,8 @@ struct ProfileMenuView: View {
         case menu
         case capture
         case settings
+        case library
+        case original(String)
     }
 
     private let onOpenConnection: (() -> Void)?
@@ -43,6 +45,18 @@ struct ProfileMenuView: View {
                 CaptureSyncScreen(onBack: { dismiss() }, onOpenConnection: onOpenConnection)
             case .settings:
                 SettingsScreen(model: settingsModel, onBack: { screen = .menu }, onOpenConnection: onOpenConnection)
+            case .library:
+                LibraryMemoriesView(
+                    onBack: { screen = .menu },
+                    onOpenCapture: { id in screen = .original(id) },
+                    onConnect: onOpenConnection
+                )
+            case .original(let id):
+                OriginalRootView(
+                    id: id,
+                    onDeleted: { screen = .library },
+                    onAsk: { _ in showingUnavailable = true }
+                )
             }
         }
         .alert("此功能将在后续版本提供", isPresented: $showingUnavailable) {
@@ -69,7 +83,8 @@ struct ProfileMenuView: View {
                         .padding(.bottom, 18)
 
                     MoteGroup {
-                        MoteRow(icon: .library, title: "资料与记忆") { unavailable() }
+                        MoteRow(icon: .library, title: "资料与记忆") { screen = .library }
+                            .accessibilityIdentifier("menu-library")
                         MoteRow(icon: .pulse, title: "发现历史", topDivider: true) { unavailable() }
                         MoteRow(icon: .calendar, title: "日程与待办", topDivider: true) { unavailable() }
                     }
