@@ -1,6 +1,5 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
-  "昨天": "Ayer",
   "离开页面会停止录音，并保留草稿。": "Al salir de esta página se detiene la grabación y se conserva el borrador.",
   "网页": "Web",
   "截图与照片": "Capturas de pantalla y fotos",
@@ -6471,6 +6470,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "中央管理令牌": "Token de propietario central",
   "本次应用会话": "Esta sesión de la app",
   "暂无记录": "Sin registros",
+  "暂无记录。": "Aún no hay registros.",
   "高级 JSON": "JSON avanzado",
   "模型配置": "Configuración del modelo",
   "并发与执行设置": "Configuración de concurrencia y ejecución",
@@ -10177,7 +10177,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "需要确认发送范围": "El alcance de envío necesita confirmación",
   "资料说明冲突": "Conflicto en la descripción de la fuente",
   "资料说明等待确认": "Descripción de la fuente pendiente de confirmación",
-  "暂时无法读取": "Lectura no disponible por ahora",
   "中央已暂停": "Pausado en el central",
   "已同步 · {0}": "Sincronizado · {0}",
   "仅 Wi-Fi": "Solo Wi-Fi",
@@ -10186,6 +10185,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "录音已暂停": "Grabación en pausa",
   "暂停录音": "Pausar grabación",
   "继续录音": "Reanudar grabación",
+  "回到编辑器": "Volver al editor",
   "麦克风权限未开启": "El acceso al micrófono no está autorizado",
   "录音未能开始": "No se pudo iniciar la grabación",
   "录音未能继续": "No se pudo reanudar la grabación",

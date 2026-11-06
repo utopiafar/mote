@@ -1,6 +1,5 @@
 /* Authored interface messages only; never translate captured content. */
 export const french: Readonly<Record<string, string>> = {
-  "昨天": "Hier",
   "离开页面会停止录音，并保留草稿。": "Quitter cette page arrête l’enregistrement et conserve le brouillon.",
   "网页": "Web",
   "截图与照片": "Captures d’écran et photos",
@@ -6471,6 +6470,7 @@ export const french: Readonly<Record<string, string>> = {
   "中央管理令牌": "Jeton du propriétaire central",
   "本次应用会话": "Cette session de l'application",
   "暂无记录": "Aucun enregistrement",
+  "暂无记录。": "Aucun enregistrement pour l’instant.",
   "高级 JSON": "JSON avancé",
   "模型配置": "Configuration du modèle",
   "并发与执行设置": "Paramètres de concurrence et d'exécution",
@@ -10186,6 +10186,7 @@ export const french: Readonly<Record<string, string>> = {
   "录音已暂停": "Enregistrement en pause",
   "暂停录音": "Mettre l'enregistrement en pause",
   "继续录音": "Reprendre l'enregistrement",
+  "回到编辑器": "Retour à l’éditeur",
   "麦克风权限未开启": "L'accès au microphone n'est pas autorisé",
   "录音未能开始": "L'enregistrement n'a pas pu démarrer",
   "录音未能继续": "L'enregistrement n'a pas pu reprendre",

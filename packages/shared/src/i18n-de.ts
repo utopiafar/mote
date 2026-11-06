@@ -1,6 +1,5 @@
 /* Authored interface messages only; never translate captured content. */
 export const german: Readonly<Record<string, string>> = {
-  "昨天": "Gestern",
   "离开页面会停止录音，并保留草稿。": "Beim Verlassen dieser Seite wird die Aufnahme gestoppt und der Entwurf gespeichert.",
   "网页": "Web",
   "截图与照片": "Screenshots und Fotos",
@@ -6471,6 +6470,7 @@ export const german: Readonly<Record<string, string>> = {
   "中央管理令牌": "Zentrales Eigentümer-Token",
   "本次应用会话": "Diese App-Sitzung",
   "暂无记录": "Keine Aufzeichnungen",
+  "暂无记录。": "Noch keine Aufzeichnungen.",
   "高级 JSON": "Erweitertes JSON",
   "模型配置": "Modellkonfiguration",
   "并发与执行设置": "Parallelitäts- und Ausführungseinstellungen",
@@ -10186,6 +10186,7 @@ export const german: Readonly<Record<string, string>> = {
   "录音已暂停": "Aufnahme pausiert",
   "暂停录音": "Aufnahme pausieren",
   "继续录音": "Aufnahme fortsetzen",
+  "回到编辑器": "Zurück zum Editor",
   "麦克风权限未开启": "Mikrofonzugriff ist nicht erlaubt",
   "录音未能开始": "Aufnahme konnte nicht gestartet werden",
   "录音未能继续": "Aufnahme konnte nicht fortgesetzt werden",
