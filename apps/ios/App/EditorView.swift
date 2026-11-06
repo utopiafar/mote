@@ -198,7 +198,7 @@ private struct EditorView: View {
                 .contentShape(Rectangle())
             }
             Button {
-                model.save()
+                if model.save() { onClose?() }
             } label: {
                 Text("保存")
                     .font(MoteFont.action)
@@ -211,6 +211,7 @@ private struct EditorView: View {
             .buttonStyle(.plain)
             .frame(height: 44)
             .contentShape(Rectangle())
+            .disabled(!model.canSave || model.isSaving)
         }
         .padding(.leading, 6)
         .padding(.trailing, 12)

@@ -103,6 +103,94 @@ final class HomePresentationTests: XCTestCase {
         XCTAssertTrue(empty.days.isEmpty)
     }
 
+    func testLocalRecordShowsSavedDetailWithoutConnection() {
+        let capturedAt = date("2026-11-06T00:00:00Z")
+        let local = HomeOriginal(
+            id: "generated-local",
+            deviceId: "generated-iphone",
+            capturedAt: capturedAt,
+            title: "生成的本机记录",
+            detail: HomeFeed.detail(capturedAt: capturedAt, kind: "记录", saved: true, timeZone: .gmt),
+            saved: true
+        )
+
+        let merged = HomeFeed.merge(local: [local], central: [], origin: "")
+
+        XCTAssertEqual(merged, [local])
+        XCTAssertTrue(merged[0].saved)
+        XCTAssertTrue(merged[0].detail.hasSuffix(" · 记录 · 已保存"))
+    }
+
+    func testCentralAcknowledgementDeduplicatesBoundLocalRecord() {
+        let capturedAt = date("2026-11-06T00:00:00Z")
+        let local = HomeOriginal(
+            id: "generated-shared-id",
+            deviceId: "generated-iphone",
+            capturedAt: capturedAt,
+            title: "生成的待确认记录",
+            detail: "08:00 · 记录 · 已保存",
+            saved: true,
+            archiveOrigin: "https://central.generated.invalid"
+        )
+        let central = HomeOriginal(
+            id: local.id,
+            deviceId: local.deviceId,
+            capturedAt: capturedAt,
+            title: "生成的中央记录",
+            detail: "08:00 · 记录"
+        )
+
+        let merged = HomeFeed.merge(local: [local], central: [central], origin: "https://central.generated.invalid")
+
+        XCTAssertEqual(merged, [central])
+        XCTAssertFalse(merged[0].saved)
+        XCTAssertFalse(merged[0].detail.contains("已保存"))
+    }
+
+    func testRevokedCentralReadKeepsLocalRecord() {
+        let local = HomeOriginal(
+            id: "generated-revoked",
+            deviceId: "generated-iphone",
+            capturedAt: date("2026-11-06T00:00:00Z"),
+            title: "生成的本机保留记录",
+            detail: "08:00 · 记录 · 已保存",
+            saved: true,
+            archiveOrigin: "https://central.generated.invalid"
+        )
+
+        let merged = HomeFeed.merge(local: [local], central: [], origin: "https://central.generated.invalid")
+
+        XCTAssertEqual(merged.map(\.id), [local.id])
+        XCTAssertTrue(merged[0].saved)
+    }
+
+    func testChangedCentralDoesNotJoinLocalRecordFromAnotherOrigin() {
+        let local = HomeOriginal(
+            id: "generated-origin-id",
+            deviceId: "generated-iphone",
+            capturedAt: date("2026-11-06T00:00:00Z"),
+            title: "生成的旧中央本机记录",
+            detail: "08:00 · 记录 · 已保存",
+            saved: true,
+            archiveOrigin: "https://old.generated.invalid"
+        )
+        let central = HomeOriginal(
+            id: local.id,
+            deviceId: local.deviceId,
+            capturedAt: local.capturedAt,
+            title: "生成的新中央记录",
+            detail: "08:00 · 记录"
+        )
+
+        let switched = HomeFeed.merge(local: [local], central: [central], origin: "https://new.generated.invalid")
+        let revoked = HomeFeed.merge(local: [local], central: [], origin: "")
+
+        XCTAssertEqual(switched.count, 2)
+        XCTAssertTrue(switched.contains(local))
+        XCTAssertTrue(switched.contains(central))
+        XCTAssertEqual(revoked, [local])
+    }
+
     func testEverySharedCaptureCaseRendersTheHomeColumn() throws {
         let fixtures = try JSONDecoder().decode([CaptureFixture].self, from: Data(contentsOf: Self.fixtureURL))
         XCTAssertEqual(fixtures.count, 20)

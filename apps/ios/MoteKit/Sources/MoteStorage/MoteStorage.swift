@@ -17,7 +17,9 @@ public enum MoteStorage {
     }
 
     public static func sendQueue(fileManager: FileManager = .default) throws -> SendQueue {
-        SendQueue(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("SendQueue", isDirectory: true))
+        let directoryURL = try containerURL(fileManager: fileManager).appendingPathComponent("SendQueue", isDirectory: true)
+        let connection = (try? connectionStore(fileManager: fileManager).read()) ?? nil
+        return SendQueue(directoryURL: directoryURL, archiveOrigin: connection?.serverUrl)
     }
 
     public static func shortcutSourceStore(fileManager: FileManager = .default) throws -> ShortcutSourceStore {
@@ -101,10 +103,12 @@ public final class DraftStore {
 public struct SendQueueItem: Codable, Equatable, Sendable {
     public let id: String
     public let payload: Data
+    public let archiveOrigin: String?
 
-    public init(id: String, payload: Data) {
+    public init(id: String, payload: Data, archiveOrigin: String? = nil) {
         self.id = id
         self.payload = payload
+        self.archiveOrigin = archiveOrigin
     }
 }
 
@@ -180,11 +184,13 @@ public final class SendQueue: @unchecked Sendable {
     // The app delegate and the connection may reopen the same queue independently.
     private static let lock = NSLock()
     public let directoryURL: URL
+    public let archiveOrigin: String?
     private let fileURL: URL
     private let fileManager: FileManager
 
-    public init(directoryURL: URL, fileManager: FileManager = .default) {
+    public init(directoryURL: URL, fileManager: FileManager = .default, archiveOrigin: String? = nil) {
         self.directoryURL = directoryURL.standardizedFileURL
+        self.archiveOrigin = archiveOrigin
         self.fileURL = directoryURL.appendingPathComponent("queue.json")
         self.fileManager = fileManager
     }
@@ -204,7 +210,7 @@ public final class SendQueue: @unchecked Sendable {
         // A previous acknowledgment may have committed just before the process exited.
         let oldBody = bodyURL(id: id)
         if fileManager.fileExists(atPath: oldBody.path) { try fileManager.removeItem(at: oldBody) }
-        let item = SendQueueItem(id: id, payload: payload)
+        let item = SendQueueItem(id: id, payload: payload, archiveOrigin: archiveOrigin)
         try write(items + [item])
         return item
     }
