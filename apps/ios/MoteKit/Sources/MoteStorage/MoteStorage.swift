@@ -110,12 +110,23 @@ public struct StoredConnection: Codable, Equatable, Sendable {
     public let token: String
     public let credentialId: String
     public let scope: String
+    public let deviceName: String?
+    public let connectedAt: Date?
 
-    public init(serverUrl: String, token: String, credentialId: String, scope: String) {
+    public init(
+        serverUrl: String,
+        token: String,
+        credentialId: String,
+        scope: String,
+        deviceName: String? = nil,
+        connectedAt: Date? = nil
+    ) {
         self.serverUrl = serverUrl
         self.token = token
         self.credentialId = credentialId
         self.scope = scope
+        self.deviceName = deviceName
+        self.connectedAt = connectedAt
     }
 }
 

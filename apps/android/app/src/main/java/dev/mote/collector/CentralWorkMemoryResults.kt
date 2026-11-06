@@ -145,7 +145,7 @@ internal class CentralWorkMemoryResults(
             (field.tag as? MemoryTopicEdit)?.takeIf { it.forceDirty||it.initial!=field.text.toString() }?.let { it to field.text.toString() }
         }.toMutableList()
         draftKey()?.let(WorkMemoryDrafts::take)?.edits?.forEach { (key,value)->
-            val label=when(key){"statement"->MoteI18n.text("陈述");"title"->MoteI18n.text("标题");"uncertainty"->MoteI18n.text("不确定性");else->return@forEach}
+            val label=when(key){"statement"->MoteI18n.text("纠正后的内容");"title"->MoteI18n.text("标题");"uncertainty"->MoteI18n.text("判断的边界");"validFrom"->MoteI18n.text("生效时间");"validUntil"->MoteI18n.text("失效时间");else->return@forEach}
             if(drafts.none{it.first.key==key})drafts.add(MemoryTopicEdit(label,"",key,forceDirty=true) to value)
         }
         restoringSelection=false
