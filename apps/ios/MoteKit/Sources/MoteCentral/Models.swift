@@ -599,17 +599,30 @@ public struct Answer: Codable, Equatable, Sendable {
         public let appName: String
         public let excerpt: String
         public let contentAt: String?
+        public let title: String?
+        public let location: String?
     }
     public struct Trace: Codable, Equatable, Sendable {
         public let tool: String
         public let arguments: JSONValue
         public let count: Int
     }
+    public struct Usage: Codable, Equatable, Sendable {
+        public let model: String?
+        public let estimatedCost: Double?
+        public let currency: String?
+    }
+    public struct ModelSelection: Codable, Equatable, Sendable {
+        public let profileName: String?
+        public let model: String?
+    }
 
     public let answer: String
     public let runId: String
     public let citations: [Citation]
     public let trace: [Trace]
+    public let usage: Usage?
+    public let modelSelection: ModelSelection?
     public let createdAt: String?
     public let id: String?
 }
@@ -682,6 +695,70 @@ public struct MemoryRecord: Codable, Equatable, Sendable {
 public struct MemoryEvidencePage: Codable, Equatable, Sendable {
     public let items: [OriginalRecord]
     public let status: String
+}
+
+/// One page of the owner library browse: existing notes and Materials in
+/// content-time order. The entry kind is explicit, never inferred from a title.
+public struct LibraryBrowsePage: Codable, Equatable, Sendable {
+    public let items: [LibraryBrowseEntry]
+    public let nextCursor: String?
+}
+
+public struct LibraryBrowseEntry: Codable, Equatable, Sendable {
+    public let entryType: String
+    public let ref: String
+    public let contentAt: String
+    public let capture: CapturePreview?
+    public let material: LibraryMaterialSummary?
+}
+
+/// One literal search hit from the existing context search route. `id` is the
+/// capture identity; the page reads its exact body before showing a row.
+public struct ContextSearchPage: Codable, Sendable {
+    public struct Card: Codable, Equatable, Sendable {
+        public struct Origin: Codable, Equatable, Sendable {
+            public let source: CaptureSource
+            public let capturedAt: String
+        }
+
+        public let id: String
+        public let title: String
+        public let snippet: String
+        public let origin: Origin
+    }
+
+    public let items: [Card]
+    public let nextCursor: String?
+}
+
+public struct LibraryMaterialSummary: Codable, Equatable, Sendable {
+    public struct Origin: Codable, Equatable, Sendable {
+        public let sourceId: String?
+        public let firstAt: String?
+        public let lastAt: String?
+    }
+
+    public let title: String
+    public let kind: String
+    public let origin: Origin?
+}
+
+/// The owner's existing context-tree catalog. Nodes only select fields the
+/// server already assigned; the app never classifies prose.
+public struct ContextTreeCatalog: Codable, Equatable, Sendable {
+    public struct Tree: Codable, Equatable, Sendable {
+        public struct Node: Codable, Equatable, Sendable {
+            public let id: String
+            public let label: String
+            public let parentId: String?
+        }
+
+        public let id: String
+        public let label: String
+        public let nodes: [Node]
+    }
+
+    public let items: [Tree]
 }
 
 public struct DeletionReceipt: Codable, Equatable, Sendable {
