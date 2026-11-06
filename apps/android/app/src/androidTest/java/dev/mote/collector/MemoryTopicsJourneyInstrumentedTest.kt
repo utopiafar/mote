@@ -52,6 +52,10 @@ class MemoryTopicsJourneyInstrumentedTest {
     private fun revealManagement() { if(settled()) shown().filterIsInstance<TextView>().singleOrNull { it.text.toString()==MoteI18n.text("更多")+"  ›"&&it.isClickable&&it.isEnabled }?.performClick() }
     private fun click(label: String) { until(label) { main { if(settled()&&!text(label))revealManagement();settled() && shown().filterIsInstance<TextView>().any { it.text.toString() == label && it.isClickable && it.isEnabled } } }; main { shown().filterIsInstance<TextView>().first { it.text.toString() == label && it.isClickable && it.isEnabled }.performClick() } }
     private fun clickTag(tag: String) { until(tag) { main { if(settled()&&shown().none { it.tag==tag })revealManagement();settled() && shown().any { it.tag == tag && it.isEnabled } } }; main { shown().single { it.tag == tag }.performClick() } }
+    private fun editStatement(value: String) {
+        clickTag("memory-more-correct")
+        main { shown().filterIsInstance<EditText>().single { (it.tag as? MemoryTopicEdit)?.key == "statement" }.setText(value) }
+    }
     private fun back() { instrumentation.uiAutomation.executeShellCommand("input keyevent 4").close() }
     private fun open() = ActivityScenario.launch<CentralActivity>(Intent(context, CentralActivity::class.java).putExtra("page", "memories"))
     private fun capture(name: String) = main {
@@ -106,13 +110,13 @@ class MemoryTopicsJourneyInstrumentedTest {
         open().use {
             chooseTree("合成项目"); topic("review")
             clickTag("topic-memory:" + fixture.getString("firstMemory"))
-            until("editable detail") { main { settled() && text("保存校正") } }
-            main { shown().filterIsInstance<EditText>().first().setText("UNSAVED synthetic correction") }
+            until("editable detail") { main { settled() && text("查看原文依据 1") } }
+            editStatement("UNSAVED synthetic correction")
             api.post("/api/__fixture/mode", JSONObject().put("mode", "offline"))
-            until("poll error preserves draft") { main { settled() && text("UNSAVED synthetic correction") && text("保存校正") } }
+            until("poll error preserves draft") { main { settled() && text("UNSAVED synthetic correction") && text("纠正") } }
             // Wait for an actual scheduled poll, not merely the pre-poll state.
             Thread.sleep(5500)
-            assertTrue(main { text("UNSAVED synthetic correction") && text("保存校正") })
+            assertTrue(main { text("UNSAVED synthetic correction") && text("纠正") })
             api.post("/api/__fixture/mode", JSONObject().put("mode", "online")); back()
             until("cancel returns to same topic") { main { settled() && members() == 1 } }
             assertFalse(api.get("/api/memories/" + fixture.getString("firstMemory")).getString("statement").contains("UNSAVED"))
@@ -128,7 +132,7 @@ class MemoryTopicsJourneyInstrumentedTest {
                 click("下一页")
                 clickTag("topic-memory:" + fixture.getString("firstMemory"))
                 until("selected detail") { main { settled() && text("查看原文依据 1") } }
-                main { shown().filterIsInstance<EditText>().first().setText("UNSAVED owner edit") }
+                editStatement("UNSAVED owner edit")
                 when (change) {
                     "delete" -> api.post("/api/__fixture/invalidate", JSONObject())
                     "deny" -> api.post("/api/__fixture/detail-mode", JSONObject().put("mode", "denied"))
@@ -137,7 +141,7 @@ class MemoryTopicsJourneyInstrumentedTest {
                         api.post("/api/memories/" + fixture.getString("firstMemory") + "/correct", JSONObject().put("version", row.getInt("version")).put("title", "Synthetic replacement").put("statement", "Synthetic updated statement").put("uncertainty", "Fixture only"))
                     }
                 }
-                until("invalid selected detail clears despite available directory") { main { settled() && !text("查看原文依据 1") && !text("保存校正") && !text("Synthetic topic memory 0") } }
+                until("invalid selected detail clears despite available directory") { main { settled() && !text("查看原文依据 1") && !text("纠正") && !text("Synthetic topic memory 0") } }
                 if (change == "version") Thread.sleep(6000)
                 assertTrue(main { text("UNSAVED owner edit") && text("有未保存的更改") })
                 assertTrue(api.get("/api/context-trees").getJSONArray("items").length() > 0)
@@ -151,7 +155,7 @@ class MemoryTopicsJourneyInstrumentedTest {
             api.post("/api/__fixture/hold-original", JSONObject()); click("查看原文依据 1")
             until("original response held") { state().optBoolean("held") }
             api.post("/api/__fixture/invalidate", JSONObject()); api.post("/api/__fixture/release-detail", JSONObject())
-            until("withdrawn original and detail cleared") { main { settled() && !text("查看原文依据 1") && !text("保存校正") && !text("Synthetic native topic original 0") } }
+            until("withdrawn original and detail cleared") { main { settled() && !text("查看原文依据 1") && !text("纠正") && !text("Synthetic native topic original 0") } }
         }
     }
     @Test fun offlineAndDeniedReadsClearOldMembersAndRetryActualNativeRoute() {

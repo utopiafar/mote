@@ -3,6 +3,8 @@ package dev.mote.collector
 import android.app.DatePickerDialog
 import android.graphics.BitmapFactory
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -492,74 +494,173 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             ui.text(row.getString("title"), NativeFontRole.TITLE_MOBILE)
             ui.text(memoryStatus(row) + " · " + evidenceIds.length() + " " + MoteI18n.text("条证据"))
             ui.text(row.optString("statement"))
-            val facts = ui.card()
-            ui.text(MoteI18n.text("版本 {0}", row.optInt("version", 1)), parent = facts)
-            listOf("validFrom" to "生效于", "validUntil" to "失效于").forEach { (field, label) ->
-                if (!row.isNull(field) && row.optString(field).isNotBlank()) ui.text(MoteI18n.text(label) + " · " + row.getString(field), parent = facts)
-            }
-            if (!row.isNull("correction") && row.has("correction")) ui.text(MoteI18n.text("这是用户主动纠正的版本，原始说明已保留。"), parent = facts)
-            row.optJSONObject("admission")?.let { admission ->
-                ui.text(MoteI18n.text(if (admission.optString("layer") == "memory") "精选记忆" else "事件与资料"), NativeFontRole.SECTION, facts)
-                ui.text(admission.optString("reason"), parent = facts); ui.text(admission.optString("scope"), parent = facts)
-                if (admission.optString("attribution").isNotBlank()) ui.text(admission.getString("attribution"), parent = facts)
-            }
-            // Applicability, relationships and evidence validity remain direct facts.
-            listOf("coding", "scopeRefs", "relations", "supersededBy", "supersededAt", "staleReason").forEach { field ->
-                if (!row.isNull(field) && row.has(field)) values(JSONObject().put(field, row.get(field)), facts)
-            }
-            ui.text(MoteI18n.text("不确定性"), NativeFontRole.SECTION, facts)
-            ui.text(row.optString("uncertainty"), parent = facts)
-            ui.disclosure(MoteI18n.text("元数据")) { target -> ui.text(row.toString(2), parent = target) }
-            for (i in 0 until evidenceIds.length()) ui.button(MoteI18n.text("查看原文依据") + " " + (i + 1)) {
-                if (returnTo == null) captureEvidence(evidenceIds.getString(i))
-                else if (verify == null) capture(evidenceIds.getString(i), id, accept)
-                else {
-                    val exact=reference?.invoke() ?: return@button
-                    capture(evidenceIds.getString(i), id, accept, workMemory = exact, returnToWork = returnTo, memoryFailure = onFailure)
-                }
-            }
-            val statement = ui.field(MoteI18n.text("陈述"), row.optString("statement"), multiline = true)
-            val title = ui.field(MoteI18n.text("标题"), row.optString("title"))
-            val uncertainty = ui.field(MoteI18n.text("不确定性"), row.optString("uncertainty"), multiline = true)
-            if (returnTo != null) {
-                statement.tag = MemoryTopicEdit(MoteI18n.text("陈述"), statement.text.toString(),"statement")
-                title.tag = MemoryTopicEdit(MoteI18n.text("标题"), title.text.toString(),"title")
-                uncertainty.tag = MemoryTopicEdit(MoteI18n.text("不确定性"), uncertainty.text.toString(),"uncertainty")
-            }
-            ui.button(MoteI18n.text("保存校正"), true) {
-                val corrected = JSONObject().put("title", title.text.toString()).put("statement", statement.text.toString()).put("uncertainty", uncertainty.text.toString()).put("version", row.optInt("version", 1))
-                val exact=reference?.invoke()
-                if(reference!=null && exact==null) { onFailure?.invoke(WorkMemoryUnavailable());return@button }
-                val visit=ui.readVisit()
-                ui.work(MoteI18n.text("正在保存…"), { runCatching {
-                    exact?.verify(api,evidenceIds.getString(0))
-                    if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-                    api.post("/api/memories/" + enc(id) + "/correct", corrected)
-                } }) { result ->
-                    result.onSuccess {
-                        if(reference!=null) { returnTo?.invoke();android.widget.Toast.makeText(ui,MoteI18n.text("已保存"),android.widget.Toast.LENGTH_SHORT).show() }
-                        else memory(id, returnTo, accept, verify, reference, onOpened, onFailure)
-                    }.onFailure { error->if(onFailure!=null)onFailure(error) else ui.requestFailure(error) }
-                }
-            }
-            ui.button(MoteI18n.text("删除记忆")) { screens.confirm(MoteI18n.text("删除记忆"), MoteI18n.text("原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。")) {
-                val exact=reference?.invoke()
-                if(reference!=null && exact==null) { onFailure?.invoke(WorkMemoryUnavailable());return@confirm }
-                val visit=ui.readVisit()
-                ui.work(MoteI18n.text("正在删除…"), { runCatching {
-                    exact?.verify(api,evidenceIds.getString(0))
-                    if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-                    api.delete("/api/memories/" + enc(id))
-                } }) { result ->
-                    val receipt=result.getOrElse { error->if(onFailure!=null)onFailure(error) else ui.requestFailure(error);return@work }
-                    val message = when {
-                        receipt.optString("externalErase") == "pending" -> MoteI18n.text("记忆已禁止使用；外部清除仍待确认。")
-                        receipt.optString("externalErase") == "acknowledged" && !receipt.optBoolean("physicalEraseVerified") -> MoteI18n.text("记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。")
-                        else -> MoteI18n.text("记忆已禁止使用。")
+            MemoryDetailPanel.validityRange(row).takeIf(String::isNotBlank)?.let { ui.text(it, NativeFontRole.META) }
+            if (evidenceIds.length() > 0) {
+                ui.text(MoteI18n.text("证据"), NativeFontRole.SECTION)
+                for (i in 0 until evidenceIds.length()) ui.button(MoteI18n.text("查看原文依据") + " " + (i + 1)) {
+                    if (returnTo == null) captureEvidence(evidenceIds.getString(i))
+                    else if (verify == null) capture(evidenceIds.getString(i), id, accept)
+                    else {
+                        val exact=reference?.invoke() ?: return@button
+                        capture(evidenceIds.getString(i), id, accept, workMemory = exact, returnToWork = returnTo, memoryFailure = onFailure)
                     }
-                    memoryDeletionNotice = api to message; returnTo?.invoke() ?: screens.refresh()
                 }
-            } }
+            }
+            if (row.optString("uncertainty").isNotBlank()) {
+                ui.text(MoteI18n.text("判断的边界"), NativeFontRole.SECTION)
+                ui.text(row.optString("uncertainty"))
+            }
+            ui.disclosure(MoteI18n.text("更多"), eager = true) { more ->
+                lateinit var correctionCard: LinearLayout
+                lateinit var historyCard: LinearLayout
+                lateinit var generatedCard: LinearLayout
+                val menu = MoteComponents.group(ui)
+                more.addView(menu, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(12) })
+                fun menuRow(glyph: MoteGlyph, label: String, danger: Boolean = false, action: () -> Unit): android.view.View =
+                    MoteComponents.row(ui, glyph, MoteI18n.text(label),
+                        titleColor = if (danger) NativeColorRole.DANGER else NativeColorRole.INK, onClick = { action() })
+                val correctRow = menuRow(MoteGlyph.COMPOSE, MemoryDetailPanel.moreItems[0]) {
+                    correctionCard.visibility = if (correctionCard.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE
+                    historyCard.visibility = android.view.View.GONE; generatedCard.visibility = android.view.View.GONE
+                }
+                correctRow.tag = "memory-more-correct"
+                menu.addView(correctRow)
+                menu.addView(MoteComponents.divider(ui))
+                val historyRow = menuRow(MoteGlyph.HISTORY, MemoryDetailPanel.moreItems[1]) {
+                    val show = historyCard.visibility != android.view.View.VISIBLE
+                    correctionCard.visibility = android.view.View.GONE; generatedCard.visibility = android.view.View.GONE
+                    historyCard.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+                    if (show && historyCard.childCount == 0) {
+                        ui.text(MoteI18n.text("历史与有效时间"), NativeFontRole.SECTION, historyCard)
+                        val versions = MoteComponents.group(ui)
+                        historyCard.addView(versions, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(12) })
+                        val currentRange = MemoryDetailPanel.validityRange(row)
+                        versions.addView(MoteComponents.row(ui, null,
+                            MoteI18n.text("当前版本") + " · " + row.getString("title"),
+                            subtitle = currentRange.takeIf(String::isNotBlank)))
+                        ui.work(MoteI18n.text("正在读取…"), { MemoryDetailPanel.history(api, id) }) { history ->
+                            history.filter { it.optString("id") != id }.forEach { item ->
+                                versions.addView(MoteComponents.divider(ui))
+                                val range = MemoryDetailPanel.validityRange(item)
+                                versions.addView(MoteComponents.row(ui, null,
+                                    MoteI18n.text("历史版本") + " · " + item.optString("title"),
+                                    subtitle = MoteI18n.text(if (item.has("correction") && !item.isNull("correction")) "用户纠正" else "模型生成") + " · " +
+                                        MoteI18n.text("保存修订 {0}", item.optInt("version", 1)) + range.takeIf(String::isNotBlank)?.let { " · " + it }.orEmpty()))
+                            }
+                        }
+                    }
+                }
+                historyRow.tag = "memory-more-history"
+                menu.addView(historyRow)
+                menu.addView(MoteComponents.divider(ui))
+                val generationRow = menuRow(MoteGlyph.CLOCK, MemoryDetailPanel.moreItems[2]) {
+                    val show = generatedCard.visibility != android.view.View.VISIBLE
+                    correctionCard.visibility = android.view.View.GONE; historyCard.visibility = android.view.View.GONE
+                    generatedCard.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+                    if (show && generatedCard.childCount == 0) {
+                        ui.text(MoteI18n.text("生成信息"), NativeFontRole.SECTION, generatedCard)
+                        val info = MoteComponents.group(ui)
+                        generatedCard.addView(info, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(12) })
+                        val corrected = row.has("correction") && !row.isNull("correction")
+                        row.optJSONObject("admission")?.let { admission ->
+                            info.addView(MoteComponents.row(ui, null, MoteI18n.text("类型"),
+                                value = MoteI18n.text(if (admission.optString("layer") == "memory") "精选记忆" else "事件与资料")))
+                            info.addView(MoteComponents.divider(ui))
+                            if (admission.optString("reason").isNotBlank()) { ui.text(admission.optString("reason"), parent = generatedCard) }
+                            if (admission.optString("scope").isNotBlank()) { ui.text(admission.optString("scope"), parent = generatedCard) }
+                            if (admission.optString("attribution").isNotBlank()) { ui.text(admission.getString("attribution"), parent = generatedCard) }
+                        }
+                        info.addView(MoteComponents.row(ui, null, MoteI18n.text("来源"),
+                            value = MoteI18n.text(if (corrected) "用户纠正" else "模型生成")))
+                        info.addView(MoteComponents.divider(ui))
+                        info.addView(MoteComponents.row(ui, null, MoteI18n.text("生成时间"),
+                            value = MemoryDetailPanel.displayTime(row.optString("createdAt"))))
+                        if (!corrected) row.optString("model").takeIf(String::isNotBlank)?.let {
+                            info.addView(MoteComponents.divider(ui))
+                            info.addView(MoteComponents.row(ui, null, MoteI18n.text("模型"), value = it))
+                        }
+                        row.optString("skillVersion").takeIf(String::isNotBlank)?.let {
+                            info.addView(MoteComponents.divider(ui))
+                            info.addView(MoteComponents.row(ui, null, MoteI18n.text("Skill 版本"), value = it))
+                        }
+                        ui.text(MoteI18n.text(if (corrected) "这是你的主动纠正；原始说明和旧版本均已保留。" else "这是从原始资料中提取的模型判断。"), parent = generatedCard)
+                        // Applicability, relationships and raw source metadata remain reachable.
+                        listOf("coding", "scopeRefs", "relations", "supersededBy", "supersededAt", "staleReason").forEach { field ->
+                            if (!row.isNull(field) && row.has(field)) values(JSONObject().put(field, row.get(field)), generatedCard)
+                        }
+                        ui.disclosure(MoteI18n.text("元数据"), parent = generatedCard) { target -> ui.text(row.toString(2), parent = target) }
+                    }
+                }
+                generationRow.tag = "memory-more-generation"
+                menu.addView(generationRow)
+                menu.addView(MoteComponents.divider(ui))
+                val deleteRow = menuRow(MoteGlyph.TRASH, MemoryDetailPanel.moreItems[3], danger = true) {
+                    screens.confirm(MoteI18n.text(MemoryDetailPanel.deleteTitle), MoteI18n.text(MemoryDetailPanel.deleteMessage), MoteI18n.text(MemoryDetailPanel.deleteConfirm)) {
+                        val exact=reference?.invoke()
+                        if(reference!=null && exact==null) { onFailure?.invoke(WorkMemoryUnavailable());return@confirm }
+                        val visit=ui.readVisit()
+                        ui.work(MoteI18n.text("正在删除…"), { runCatching {
+                            exact?.verify(api,evidenceIds.optString(0))
+                            if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                            MemoryDetailPanel.delete(api, id)
+                        } }) { result ->
+                            val receipt=result.getOrElse { error->if(onFailure!=null)onFailure(error) else ui.requestFailure(error);return@work }
+                            memoryDeletionNotice = api to MemoryDetailPanel.deletionNotice(receipt); returnTo?.invoke() ?: screens.refresh()
+                        }
+                    }
+                }
+                deleteRow.tag = "memory-more-delete"
+                menu.addView(deleteRow)
+                correctionCard = ui.card(more).apply { visibility = android.view.View.GONE }
+                historyCard = ui.card(more).apply { visibility = android.view.View.GONE }
+                generatedCard = ui.card(more).apply { visibility = android.view.View.GONE }
+                ui.text(MoteI18n.text("纠正这条记忆"), NativeFontRole.SECTION, correctionCard)
+                val title = ui.field(MoteI18n.text(MemoryDetailPanel.correctionFields[0]), row.optString("title"), parent = correctionCard)
+                val statement = ui.field(MoteI18n.text(MemoryDetailPanel.correctionFields[1]), row.optString("statement"), multiline = true, parent = correctionCard)
+                val uncertainty = ui.field(MoteI18n.text(MemoryDetailPanel.correctionFields[2]), row.optString("uncertainty"), multiline = true, parent = correctionCard)
+                val validFrom = ui.field(MoteI18n.text(MemoryDetailPanel.correctionFields[3]), MemoryDetailPanel.editTime(MemoryDetailPanel.text(row, "validFrom")), parent = correctionCard)
+                val validUntil = ui.field(MoteI18n.text(MemoryDetailPanel.correctionFields[4]), MemoryDetailPanel.editTime(MemoryDetailPanel.text(row, "validUntil")), parent = correctionCard)
+                if (returnTo != null) {
+                    statement.tag = MemoryTopicEdit(MoteI18n.text("纠正后的内容"), statement.text.toString(),"statement")
+                    title.tag = MemoryTopicEdit(MoteI18n.text("标题"), title.text.toString(),"title")
+                    uncertainty.tag = MemoryTopicEdit(MoteI18n.text("判断的边界"), uncertainty.text.toString(),"uncertainty")
+                    validFrom.tag = MemoryTopicEdit(MoteI18n.text("生效时间"), validFrom.text.toString(),"validFrom")
+                    validUntil.tag = MemoryTopicEdit(MoteI18n.text("失效时间"), validUntil.text.toString(),"validUntil")
+                }
+                val actions = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false }
+                fun saveCorrection() {
+                    val corrected = runCatching {
+                        MemoryDetailPanel.correctionRequest(title.text.toString(), statement.text.toString(), uncertainty.text.toString(),
+                            validFrom.text.toString(), validUntil.text.toString(), row.optInt("version", 1))
+                    }.getOrElse { error -> ui.notice(error.message ?: MoteI18n.text("操作失败")); return }
+                    val exact=reference?.invoke()
+                    if(reference!=null && exact==null) { onFailure?.invoke(WorkMemoryUnavailable());return }
+                    val visit=ui.readVisit()
+                    ui.work(MoteI18n.text("正在保存…"), { runCatching {
+                        exact?.verify(api,evidenceIds.optString(0))
+                        if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                        MemoryDetailPanel.correct(api, id, corrected)
+                    } }) { result ->
+                        result.onSuccess {
+                            if(reference!=null) { returnTo?.invoke();android.widget.Toast.makeText(ui,MoteI18n.text("已保存"),android.widget.Toast.LENGTH_SHORT).show() }
+                            else memory(id, returnTo, accept, verify, reference, onOpened, onFailure)
+                        }.onFailure { error->if(onFailure!=null)onFailure(error) else ui.requestFailure(error) }
+                    }
+                }
+                val cancel = Button(ui).apply {
+                    text = MoteI18n.text(MemoryDetailPanel.correctionCancel)
+                    setOnClickListener { correctionCard.visibility = android.view.View.GONE }
+                }
+                MoteUi.button(cancel)
+                actions.addView(cancel, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.moteDp(8) })
+                val save = Button(ui).apply {
+                    text = MoteI18n.text(MemoryDetailPanel.correctionAction)
+                    setOnClickListener { saveCorrection() }
+                }
+                MoteUi.button(save, true)
+                actions.addView(save, LinearLayout.LayoutParams(0, -2, 1f))
+                correctionCard.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(8) })
+            }
             if (onOpened != null) onOpened() else if (returnTo != null) ui.scheduleMemoryTopicsPoll()
         }
     }
