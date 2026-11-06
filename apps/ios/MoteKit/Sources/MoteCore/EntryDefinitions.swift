@@ -67,6 +67,28 @@ public enum MoteEntry: String, CaseIterable, Equatable, Sendable {
     }
 }
 
+/// Stable identities used by WidgetKit to associate a system control with
+/// the same entry that the app and shortcuts already use.
+public enum MoteSystemControl: String, CaseIterable, Sendable {
+    case record
+    case photo
+    case recording
+    case ask
+    case pauseSending
+
+    public var entry: MoteEntry {
+        switch self {
+        case .record: .record
+        case .photo: .photo
+        case .recording: .recording
+        case .ask: .ask
+        case .pauseSending: .pauseSending
+        }
+    }
+
+    public var kind: String { "dev.mote.ios.controls.\(rawValue)" }
+}
+
 public enum MoteCaptureShortcut: String, CaseIterable, Sendable {
     case screenshot
     case notification

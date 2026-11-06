@@ -128,16 +128,10 @@ struct HomeDestinationView: View {
             ConnectionView()
         case .original(let id):
             OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
-        case .ask(.none):
-            // IOS11: 问一问 opens the conversation history; opening or sending
-            // a conversation is wired by the conversation unit (IOS10).
-            ConversationHistoryView(
-                model: .live(), now: Date(), calendar: .current,
-                onBack: { dismiss() },
-                onOpen: { _ in },
-                onSend: { _ in },
-                onAddImage: {}
-            )
+        case .ask(let scope):
+            // IOS12: 问一问 opens history; rows and the composer push the
+            // conversation page. Scoped ask roots at a fresh conversation.
+            ConversationFlowView(scope: scope, onDismiss: { dismiss() }, onAddImage: {})
         case .profile:
             ProfileMenuView(onOpenConnection: onOpenConnection)
         case .captureStatus:

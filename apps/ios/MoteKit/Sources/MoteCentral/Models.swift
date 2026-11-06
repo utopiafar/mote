@@ -599,17 +599,30 @@ public struct Answer: Codable, Equatable, Sendable {
         public let appName: String
         public let excerpt: String
         public let contentAt: String?
+        public let title: String?
+        public let location: String?
     }
     public struct Trace: Codable, Equatable, Sendable {
         public let tool: String
         public let arguments: JSONValue
         public let count: Int
     }
+    public struct Usage: Codable, Equatable, Sendable {
+        public let model: String?
+        public let estimatedCost: Double?
+        public let currency: String?
+    }
+    public struct ModelSelection: Codable, Equatable, Sendable {
+        public let profileName: String?
+        public let model: String?
+    }
 
     public let answer: String
     public let runId: String
     public let citations: [Citation]
     public let trace: [Trace]
+    public let usage: Usage?
+    public let modelSelection: ModelSelection?
     public let createdAt: String?
     public let id: String?
 }
