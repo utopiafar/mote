@@ -210,6 +210,24 @@ extension ConversationPresentation {
         return (position - index - 1) % 2 == 1
     }
 
+    /// The answer quoted by the save-as-record panel: the readable answer
+    /// without inline citation chips, matching the iOS-Share canvas.
+    public static func quotedAnswer(_ answer: String, numbers: [String: Int]) -> String {
+        let display = formatAnswer(answer, numbers: numbers)
+        guard !display.citations.isEmpty else { return display.text }
+        let characters = Array(display.text)
+        var output = String()
+        var cursor = 0
+        for span in display.citations.sorted(by: { $0.start < $1.start })
+        where span.start >= cursor && span.end <= characters.count {
+            output.append(contentsOf: characters[cursor..<span.start])
+            cursor = span.end
+        }
+        guard cursor < characters.count else { return output }
+        output.append(contentsOf: characters[cursor...])
+        return output
+    }
+
     /// `**x**`/`__x__` bold and `*x*` italic, mirroring the shared marks
     /// pattern; runs containing `*`/`\n` (or `_`/`\n` for `__`) never match.
     private static func markMatches(_ text: [Character]) -> [MarkMatch] {

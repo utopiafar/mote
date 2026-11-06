@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "没有连上中央": "Not connected to Central",
+  "继续问": "Ask again",
+  "第 {0} 行": "Row {0}",
   "离开页面会停止录音，并保留草稿。": "Leaving this page stops recording and keeps the draft.",
   "网页": "Web",
   "截图与照片": "Screenshots and photos",

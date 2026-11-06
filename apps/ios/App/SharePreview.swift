@@ -66,6 +66,7 @@ final class SharePreviewModel: ObservableObject {
     init(state: String) {
         request = SharePreviewModel.fixtures(state: state)
         content = request.panelContent
+        note = state == "answer" ? "周五前把账单照片发给房东。" : "周末试一下，6 小时那版。"
         isDescriptionExpanded = state == "describe"
         saved = state == "done"
     }
@@ -73,7 +74,8 @@ final class SharePreviewModel: ObservableObject {
     var canSave: Bool {
         !saved && (!note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !request.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || request.link != nil || !request.attachments.isEmpty)
+            || request.link != nil || !request.attachments.isEmpty
+            || request.conversation != nil)
     }
 
     func save() {
@@ -109,6 +111,14 @@ final class SharePreviewModel: ObservableObject {
             domain: "seriouseats.com"
         )
         switch state {
+        case "answer":
+            return ShareRequest(conversation: ShareConversationQuote(
+                question: "暖气费是怎么约定的？",
+                answer: "按实际用量分摊暖气费，月底前把账单照片发给房东；押金下个月退，需要收据。",
+                displayAnswer: "按实际用量分摊暖气费，月底前把账单照片发给房东；押金下个月退，需要收据。",
+                conversationId: "11111111-2222-3333-4444-555555555555",
+                turnId: "turn-1"
+            ))
         case "images":
             let images = [image(lines: true), image(document: true), image(landscape: true)]
             let attachments = images.enumerated().map { index, data in

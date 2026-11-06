@@ -60,11 +60,9 @@ class HomeNavigationInstrumentedTest {
         MoteAppearance.select(context, AppearancePreference.LIGHT)
     }
 
-    /** The home no longer lists conversations; the same native Ask state owns entry through its history page. */
+    /** The home no longer lists conversations; the Ask entry opens the conversation list. */
     private fun openGeneratedConversation(scenario: ActivityScenario<MainActivity>) {
         scenario.onActivity { activity -> shown(activity).single { it.tag == "home-ask-action" }.performClick() }
-        waitFor(scenario, "The Ask page offers its history") { shown(it).any { row -> row.contentDescription == "对话历史" } }
-        scenario.onActivity { activity -> shown(activity).single { it.contentDescription == "对话历史" }.performClick() }
         waitFor(scenario, "The history lists the generated conversation") { shown(it).any { row -> row.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true } }
         scenario.onActivity { activity -> shown(activity).single { it.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true }.performClick() }
         waitFor(scenario, "The selected conversation loads its answer") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString().contains("这是已提交的生成回答。") } }
@@ -127,8 +125,6 @@ class HomeNavigationInstrumentedTest {
             fixture.failure = "http"
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity -> shown(activity).single { it.tag == "home-ask-action" }.performClick() }
-                waitFor(scenario, "The Ask page offers its history") { shown(it).any { row -> row.contentDescription == "对话历史" } }
-                scenario.onActivity { activity -> shown(activity).single { it.contentDescription == "对话历史" }.performClick() }
                 waitFor(scenario, "A failed history read is reported on its own page") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "对话暂不可读取，请稍后重试。" } }
                 scenario.onActivity { assertFalse(shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "还没有对话。" }) }
             }

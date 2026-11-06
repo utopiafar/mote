@@ -10,6 +10,14 @@ final class MoteSharePreviewUITests: XCTestCase {
         capture(state: "link", appearance: "dark")
     }
 
+    func testAnswerLight() {
+        captureAnswer(appearance: "light")
+    }
+
+    func testAnswerDark() {
+        captureAnswer(appearance: "dark")
+    }
+
     func testShareImagesFileAndDescriptionStates() {
         for state in ["images", "file", "describe"] {
             let app = launch(state: state, appearance: "light")
@@ -45,6 +53,23 @@ final class MoteSharePreviewUITests: XCTestCase {
         app.buttons["保存"].tap()
         XCTAssertTrue(app.staticTexts["已保存"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["已关闭"].waitForExistence(timeout: 5))
+    }
+
+    private func captureAnswer(appearance: String) {
+        let app = launch(state: "answer", appearance: appearance)
+        XCTAssertTrue(app.staticTexts["保存为记录"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["按实际用量分摊暖气费，月底前把账单照片发给房东；押金下个月退，需要收据。"].exists)
+        XCTAssertEqual(app.textFields["mote-share-note"].value as? String, "周五前把账单照片发给房东。")
+        for label in ["取消", "保存", "资料说明"] {
+            let button = app.buttons[label].firstMatch
+            XCTAssertTrue(button.exists, "\(label) is missing")
+            XCTAssertGreaterThanOrEqual(button.frame.width, 44, "\(label) target is too narrow")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(label) target is too short")
+        }
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "share-answer-\(appearance)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func capture(state: String, appearance: String) {
