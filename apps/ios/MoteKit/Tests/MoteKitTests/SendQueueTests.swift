@@ -40,6 +40,16 @@ final class SendQueueTests: XCTestCase {
         XCTAssertEqual(try SendQueue(directoryURL: directoryURL).pending(), [])
     }
 
+    func testPendingRecordKeepsItsCentralOriginAcrossReopen() throws {
+        let queue = SendQueue(directoryURL: directoryURL, archiveOrigin: "https://central.generated.invalid")
+        let item = try queue.enqueue(Data("generated record".utf8), id: "generated-bound")
+
+        let reopened = try SendQueue(directoryURL: directoryURL).pending()
+
+        XCTAssertEqual(reopened, [item])
+        XCTAssertEqual(reopened.first?.archiveOrigin, "https://central.generated.invalid")
+    }
+
     func testReusingAPendingIDCannotReplaceTheBodyBeingUploaded() throws {
         let queue = SendQueue(directoryURL: directoryURL)
         let first = try queue.enqueue(Data("original".utf8), id: "generated-send")

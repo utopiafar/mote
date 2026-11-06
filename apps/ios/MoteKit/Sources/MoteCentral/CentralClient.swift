@@ -89,6 +89,21 @@ public struct CentralClient: Sendable {
         try await request("GET", "/api/capture-browser/\(id.uuidString.lowercased())")
     }
 
+    /// The calendar suggestions and delivery targets the owner review pages read.
+    public func calendarActions(cursor: Int = 0) async throws -> CalendarActionPage {
+        try await request("GET", "/api/actions", query: [URLQueryItem(name: "cursor", value: String(cursor))])
+    }
+
+    func confirmCalendarAction(id: String, request confirmation: CalendarActionConfirmation) async throws -> CalendarAction {
+        guard let id = UUID(uuidString: id) else { throw CentralError.invalidRequest }
+        return try await request("POST", "/api/actions/\(id.uuidString.lowercased())/confirm", body: confirmation)
+    }
+
+    func dismissCalendarAction(id: String, version: Int) async throws -> CalendarAction {
+        guard let id = UUID(uuidString: id) else { throw CentralError.invalidRequest }
+        return try await request("POST", "/api/actions/\(id.uuidString.lowercased())/dismiss", body: CalendarDismissal(version: version))
+    }
+
     @discardableResult
     public func deleteOriginal(id: UUID, expectedKind: OriginalDeletionKind) async throws -> DeletionReceipt {
         let pathID = id.uuidString.lowercased()
@@ -284,4 +299,8 @@ private struct RedemptionRequest: Codable {
     let deviceId: String
     let deviceName: String
     let platform: CentralPlatform
+}
+
+private struct CalendarDismissal: Codable {
+    let version: Int
 }

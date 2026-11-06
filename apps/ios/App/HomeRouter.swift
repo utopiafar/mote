@@ -43,7 +43,7 @@ final class HomeRouter {
 enum HomeDestination: Equatable, Identifiable {
     // Destination: 我的 Mote 菜单；其余条目由 IOS16 补齐
     case profile
-    // Destination: 中央原文搜索（后续单元）
+    // Destination: 中央原文搜索（IOS-SEARCH）
     case search
     // Destination: IOS11 iOS 对话列表
     case ask(OriginalAskScope?)
@@ -87,7 +87,7 @@ enum HomeDestination: Equatable, Identifiable {
     var title: String {
         switch self {
         case .profile: "我的 Mote"
-        case .search: "搜索"
+        case .search: "搜索资料"
         case .ask: "问一问"
         case .editor(.record): "记录"
         case .editor(.camera): "拍照"
@@ -140,6 +140,14 @@ struct HomeDestinationView: View {
             ConversationFlowView(scope: scope, onDismiss: { dismiss() }, onAddImage: {})
         case .profile:
             ProfileMenuView(onOpenConnection: onOpenConnection, onAsk: onAsk)
+        case .search:
+            SearchRecordsView(
+                onClose: { dismiss() },
+                onOpenOriginal: onOpenOriginal,
+                onConnect: onOpenConnection
+            )
+        case .highlight(.schedule, _):
+            ScheduleScreen(onBack: { dismiss() })
         case .captureStatus:
             CaptureSyncScreen(onOpenConnection: onOpenConnection, onOpenOriginal: onOpenOriginal)
         case .discovery:

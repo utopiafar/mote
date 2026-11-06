@@ -13,6 +13,7 @@ struct ProfileMenuView: View {
         case capture
         case settings
         case library
+        case schedule
         case original(String)
         case discovery
     }
@@ -51,6 +52,8 @@ struct ProfileMenuView: View {
                 CaptureSyncScreen(onBack: { dismiss() }, onOpenConnection: onOpenConnection)
             case .settings:
                 SettingsScreen(model: settingsModel, onBack: { screen = .menu }, onOpenConnection: onOpenConnection)
+            case .schedule:
+                ScheduleScreen(onBack: { screen = .menu })
             case .library:
                 LibraryMemoriesView(
                     onBack: { screen = .menu },
@@ -94,7 +97,8 @@ struct ProfileMenuView: View {
                         MoteRow(icon: .library, title: "资料与记忆") { screen = .library }
                             .accessibilityIdentifier("menu-library")
                         MoteRow(icon: .pulse, title: "发现历史", topDivider: true) { screen = .discovery }
-                        MoteRow(icon: .calendar, title: "日程与待办", topDivider: true) { unavailable() }
+                        MoteRow(icon: .calendar, title: "日程与待办", topDivider: true) { screen = .schedule }
+                            .accessibilityIdentifier("menu-schedule")
                     }
                     .padding(.horizontal, MoteMetrics.pageMargin)
 

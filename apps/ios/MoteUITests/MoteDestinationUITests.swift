@@ -14,7 +14,8 @@ final class MoteDestinationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 20))
 
         open(app, "搜索")
-        XCTAssertTrue(app.staticTexts["搜索"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["搜索资料"].waitForExistence(timeout: 10), "搜索 did not open 搜索资料")
+        XCTAssertFalse(app.staticTexts["此功能将在后续版本提供"].exists)
         app.buttons["关闭"].tap()
         XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 10))
 

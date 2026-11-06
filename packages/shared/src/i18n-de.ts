@@ -10220,5 +10220,6 @@ export const german: Readonly<Record<string, string>> = {
   "整理未完成": "Aufbereitung unvollständig",
   "引用它的对话": "Konversationen, die es zitieren",
   "参考整份资料": "Gesamtes Material",
+  "开始、结束时间或时区无效": "Startzeit, Endzeit oder Zeitzone ist ungültig",
   "{0}月{1}日": "{1}.{0}."
 };

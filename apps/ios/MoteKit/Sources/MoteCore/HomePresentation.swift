@@ -4,17 +4,66 @@ import Foundation
 /// remain the responsibility of the feature that owns those operations.
 public struct HomeOriginal: Equatable, Sendable, Identifiable {
     public let id: String
+    public let deviceId: String
     public let capturedAt: Date
     public let title: String
     public let detail: String
     public let thumbnail: Data?
+    public let saved: Bool
+    public let archiveOrigin: String?
 
-    public init(id: String, capturedAt: Date, title: String, detail: String, thumbnail: Data? = nil) {
+    public init(
+        id: String,
+        deviceId: String = "",
+        capturedAt: Date,
+        title: String,
+        detail: String,
+        thumbnail: Data? = nil,
+        saved: Bool = false,
+        archiveOrigin: String? = nil
+    ) {
         self.id = id
+        self.deviceId = deviceId
         self.capturedAt = capturedAt
         self.title = title
         self.detail = detail
         self.thumbnail = thumbnail
+        self.saved = saved
+        self.archiveOrigin = archiveOrigin
+    }
+}
+
+public enum HomeFeed {
+    private struct Key: Hashable {
+        let scope: String
+        let deviceId: String
+        let id: String
+    }
+
+    public static func merge(local: [HomeOriginal], central: [HomeOriginal], origin: String) -> [HomeOriginal] {
+        var rows: [Key: HomeOriginal] = [:]
+        var keys: [Key] = []
+        for item in local {
+            let archiveOrigin = item.archiveOrigin ?? ""
+            let scope = archiveOrigin.isEmpty ? "local:\(item.deviceId)" : archiveOrigin
+            let key = Key(scope: scope, deviceId: item.deviceId, id: item.id)
+            if rows[key] == nil { keys.append(key) }
+            rows[key] = item
+        }
+        for item in central {
+            let key = Key(scope: origin, deviceId: item.deviceId, id: item.id)
+            if rows[key] == nil { keys.append(key) }
+            rows[key] = item
+        }
+        return keys.compactMap { rows[$0] }
+    }
+
+    public static func detail(capturedAt: Date, kind: String, saved: Bool, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeStyle = .short
+        formatter.timeZone = timeZone
+        return "\(formatter.string(from: capturedAt)) · \(kind)" + (saved ? " · 已保存" : "")
     }
 }
 

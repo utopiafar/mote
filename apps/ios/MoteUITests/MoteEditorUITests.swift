@@ -32,24 +32,25 @@ final class MoteEditorUITests: XCTestCase {
         XCTAssertEqual(description.value as? String, "生成的资料说明")
     }
 
-    func testEditSaveAndProcessRestartKeepOneDraft() throws {
+    func testEditSaveReturnsWithAnEmptyDraftAcrossRestart() throws {
         let app = launch(fixture: "typed")
         let text = editorText(in: app)
         XCTAssertTrue(text.waitForExistence(timeout: 10))
         text.tap()
         text.typeText("追加")
-        let expected = try XCTUnwrap(text.value as? String)
         app.buttons["保存"].tap()
-        XCTAssertEqual(text.value as? String, expected)
-        XCTAssertTrue(app.buttons["移除照片"].exists)
-        XCTAssertTrue(app.buttons["播放录音"].exists)
+        XCTAssertTrue(app.buttons["记录"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["继续草稿"].exists)
+        XCTAssertFalse(editorText(in: app).exists)
 
         app.terminate()
         app.launchArguments = ["-MoteEditorPreview", "-MoteAppearance", "light"]
         app.launch()
-        XCTAssertEqual(editorText(in: app).value as? String, expected)
-        XCTAssertTrue(app.buttons["移除照片"].exists)
-        XCTAssertTrue(app.buttons["播放录音"].exists)
+        XCTAssertTrue(editorText(in: app).waitForExistence(timeout: 10))
+        XCTAssertEqual(editorText(in: app).value as? String, "")
+        XCTAssertFalse(app.buttons["移除照片"].exists)
+        XCTAssertFalse(app.buttons["播放录音"].exists)
+        XCTAssertFalse(app.buttons["保存"].isEnabled)
     }
 
     func testSourceDescriptionStartsCollapsedAndExpandsWithoutExampleText() {
@@ -135,12 +136,50 @@ final class MoteEditorUITests: XCTestCase {
         resetDraft()
     }
 
+    func testHomeSavedRecordLight() {
+        captureHomeSavedRecord(appearance: "light")
+    }
+
+    func testHomeSavedRecordDark() {
+        captureHomeSavedRecord(appearance: "dark")
+    }
+
     func testEditorReferencesLight() {
         captureEditorReferences(appearance: "light")
     }
 
     func testEditorReferencesDark() {
         captureEditorReferences(appearance: "dark")
+    }
+
+    private func captureHomeSavedRecord(appearance: String) {
+        resetRecords()
+        let app = XCUIApplication()
+        app.launchArguments = ["-MoteAppearance", appearance]
+        app.launch()
+        XCTAssertTrue(app.buttons["记录"].waitForExistence(timeout: 10))
+        app.buttons["记录"].tap()
+        let text = editorText(in: app)
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        text.tap()
+        text.typeText("生成的本机保存记录")
+        app.buttons["保存"].tap()
+
+        let title = "生成的本机保存记录"
+        let row = app.buttons.matching(NSPredicate(
+            format: "label CONTAINS %@ AND label CONTAINS %@",
+            title,
+            " · 记录 · 已保存"
+        )).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["今天"].exists)
+        XCTAssertTrue(app.buttons["记录"].exists)
+        XCTAssertFalse(app.buttons["继续草稿"].exists)
+        XCTAssertFalse(editorText(in: app).exists)
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "home-saved-\(appearance)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func captureEditorReferences(appearance: String) {
@@ -166,6 +205,14 @@ final class MoteEditorUITests: XCTestCase {
             add(attachment)
             app.terminate()
         }
+    }
+
+    private func resetRecords() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-MoteEditorPreview", "-MoteEditorFixture", "reset-records"]
+        app.launch()
+        XCTAssertTrue(app.textFields["mote-editor-text"].waitForExistence(timeout: 10))
+        app.terminate()
     }
 
     private func resetDraft() {

@@ -25,7 +25,10 @@ struct MoteApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if arguments.contains("-MoteComponentPreview") {
+                if arguments.contains("-MoteSchedulePreview") {
+                    SchedulePreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteComponentPreview") {
                     ComponentPreview()
                         .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteHomePreview") {
@@ -66,6 +69,9 @@ struct MoteApp: App {
                         .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteDiscoveryPreview") {
                     DiscoveryPreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteSearchPreview") {
+                    SearchRecordsPreview()
                         .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteMemoryDetailPreview") {
                     MemoryDetailPreview()

@@ -10220,5 +10220,6 @@ export const english: Readonly<Record<string, string>> = {
   "整理未完成": "Organization incomplete",
   "引用它的对话": "Conversations referencing it",
   "参考整份资料": "The whole material",
+  "开始、结束时间或时区无效": "Invalid start time, end time or time zone",
   "{0}月{1}日": "{0}/{1}"
 };

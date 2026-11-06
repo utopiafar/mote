@@ -4,8 +4,8 @@ import MoteCore
 import MoteStorage
 import Observation
 
-/// Local facts the home screen reads today. Loading and opening content remain
-/// the responsibility of the feature that owns each operation.
+/// Local facts tests can inject without touching disk. Production refresh
+/// still reads the connection, draft and send-queue through `LocalState`.
 struct HomeLocalState: Sendable {
     let connection: StoredConnection?
     let hasDraft: Bool
@@ -18,82 +18,179 @@ struct HomeLocalState: Sendable {
     }
 }
 
-/// Loads the saved connection, the single draft, the durable send queue and
-/// the owner's existing archived discoveries. Records come from Central only
-/// when a connection exists; there is no sample data on this path.
+/// Loads the saved connection, the single draft and durable local records.
+/// Central rows remain scoped to the connection that supplied them.
+/// Calendar needs and archived discoveries are independent reads and do not
+/// replace local saved rows.
 @MainActor
 @Observable
 final class HomeModel {
     typealias LocalStateLoader = @MainActor () -> HomeLocalState
     typealias InsightLoader = @MainActor (StoredConnection) async throws -> [InsightReport]
     typealias OriginalsLoader = @MainActor (StoredConnection) async throws -> [CapturePreview]
+    typealias CalendarNeedsLoader = @MainActor (StoredConnection) async throws -> [HomeHighlight]
 
     private(set) var presentation: HomePresentation
 
     private let calendar: Calendar
-    private let localStateLoader: LocalStateLoader
+    private let session: URLSession
+    private let fileManager: FileManager
+    private let localStateLoader: () -> LocalState
     private let insightLoader: InsightLoader
-    private let originalsLoader: OriginalsLoader
-    private var originals: [HomeOriginal] = []
+    private let originalsLoader: OriginalsLoader?
+    private let calendarNeedsLoader: CalendarNeedsLoader
+    private var centralOriginals: [HomeOriginal] = []
+    private var centralOrigin: String?
+    private var scheduleHighlights: [HomeHighlight] = []
+    private var discoveryHighlights: [HomeHighlight] = []
     private var refreshGeneration = 0
+
+    private var highlights: [HomeHighlight] {
+        scheduleHighlights + discoveryHighlights
+    }
 
     init(calendar: Calendar = .current, session: URLSession = .shared, fileManager: FileManager = .default,
          localState: LocalStateLoader? = nil, insightLoader: InsightLoader? = nil,
-         originalsLoader: OriginalsLoader? = nil) {
+         originalsLoader: OriginalsLoader? = nil, calendarNeedsLoader: CalendarNeedsLoader? = nil) {
         self.calendar = calendar
-        let loader = localState ?? { Self.readLocalState(fileManager: fileManager) }
-        self.localStateLoader = loader
+        self.session = session
+        self.fileManager = fileManager
+        let injected = localState != nil || insightLoader != nil || originalsLoader != nil
+        self.localStateLoader = {
+            if let localState {
+                let injectedState = localState()
+                return LocalState(
+                    connection: injectedState.connection,
+                    hasDraft: injectedState.hasDraft,
+                    pendingCount: injectedState.pendingCount,
+                    originals: []
+                )
+            }
+            return Self.readLocalState(fileManager: fileManager)
+        }
         self.insightLoader = insightLoader ?? { connection in
             let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
             return try await client.insights(limit: 30).items
         }
-        self.originalsLoader = originalsLoader ?? { connection in
+        self.originalsLoader = originalsLoader
+        self.calendarNeedsLoader = calendarNeedsLoader ?? (injected ? { _ in [] } : { connection in
             let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
-            return try await client.originals(limit: 30).items
-        }
-        let local = loader()
-        presentation = Self.makePresentation(local: local, highlights: [], originals: [], calendar: calendar)
+            return try await client.calendarNeeds()
+        })
+        let local = self.localStateLoader()
+        let origin = local.connection?.serverUrl ?? ""
+        centralOrigin = local.connection?.serverUrl
+        presentation = Self.makePresentation(
+            local: local, central: [], origin: origin, highlights: [], calendar: calendar
+        )
     }
 
     func refresh() async {
         refreshGeneration += 1
         let generation = refreshGeneration
         let local = localStateLoader()
-        presentation = Self.makePresentation(local: local, highlights: [], originals: originals, calendar: calendar)
+        let origin = local.connection?.serverUrl
+        if centralOrigin != origin {
+            centralOrigin = origin
+            centralOriginals = []
+            scheduleHighlights = []
+            discoveryHighlights = []
+        }
+        render(local)
 
-        guard let connection = local.connection else {
-            originals = []
-            presentation = Self.makePresentation(local: local, highlights: [], originals: [], calendar: calendar)
+        guard let connection = local.connection else { return }
+
+        do {
+            let items: [CapturePreview]
+            if let originalsLoader {
+                items = try await originalsLoader(connection)
+            } else {
+                let client = try CentralClient(
+                    serverUrl: connection.serverUrl, token: connection.token, session: session
+                )
+                items = try await client.originals(limit: 30).items
+            }
+            guard generation == refreshGeneration else { return }
+            centralOriginals = items.map { Self.original(from: $0) }
+            render(local)
+        } catch CentralError.http(let status, _) where status == 401 || status == 403 {
+            guard generation == refreshGeneration else { return }
+            centralOriginals = []
+            scheduleHighlights = []
+            discoveryHighlights = []
+            render(local)
             return
+        } catch {
+            guard generation == refreshGeneration else { return }
+            render(local)
+        }
+
+        do {
+            let needs = try await calendarNeedsLoader(connection)
+            guard generation == refreshGeneration else { return }
+            scheduleHighlights = needs
+            render(local)
+        } catch CentralError.http(let status, _) where status == 401 || status == 403 {
+            guard generation == refreshGeneration else { return }
+            scheduleHighlights = []
+            render(local)
+        } catch {
+            guard generation == refreshGeneration else { return }
+            render(local)
         }
 
         // Discovery is an independent read of archived reports. Any failure,
         // including a stopped insight capability or a revoked read, only
-        // clears this block; recent records keep loading on their own.
-        let insights = (try? await insightLoader(connection)) ?? []
-        guard generation == refreshGeneration else { return }
-        let highlights = InsightPresentation.featured(insights).flatMap {
-            InsightPresentation.homeHighlight($0, calendar: calendar)
-        }.map { [$0] } ?? []
-
-        let page = try? await originalsLoader(connection)
-        guard generation == refreshGeneration else { return }
-        originals = page?.map { Self.original(from: $0) } ?? []
-        presentation = Self.makePresentation(local: local, highlights: highlights, originals: originals, calendar: calendar)
+        // clears this block; recent records and calendar needs stay as they are.
+        do {
+            let insights = try await insightLoader(connection)
+            guard generation == refreshGeneration else { return }
+            discoveryHighlights = InsightPresentation.featured(insights).flatMap {
+                InsightPresentation.homeHighlight($0, calendar: calendar)
+            }.map { [$0] } ?? []
+            render(local)
+        } catch {
+            guard generation == refreshGeneration else { return }
+            discoveryHighlights = []
+            render(local)
+        }
     }
 
-    private static func readLocalState(fileManager: FileManager) -> HomeLocalState {
+    private struct LocalState {
+        let connection: StoredConnection?
+        let hasDraft: Bool
+        let pendingCount: Int
+        let originals: [HomeOriginal]
+    }
+
+    private static func readLocalState(fileManager: FileManager) -> LocalState {
         let connection = (try? MoteStorage.connectionStore(fileManager: fileManager).read()) ?? nil
         let hasDraft = (try? MoteStorage.editorDraftStore(fileManager: fileManager).load())
             .map { !$0.isEmpty } ?? false
-        let pendingCount = (try? MoteStorage.sendQueue(fileManager: fileManager).pending().count) ?? 0
-        return HomeLocalState(connection: connection, hasDraft: hasDraft, pendingCount: pendingCount)
+        let items = (try? MoteStorage.sendQueue(fileManager: fileManager).pending()) ?? []
+        return LocalState(
+            connection: connection,
+            hasDraft: hasDraft,
+            pendingCount: items.count,
+            originals: localOriginals(items)
+        )
+    }
+
+    private func render(_ local: LocalState) {
+        presentation = Self.makePresentation(
+            local: local,
+            central: centralOriginals,
+            origin: centralOrigin ?? "",
+            highlights: highlights,
+            calendar: calendar
+        )
     }
 
     private static func makePresentation(
-        local: HomeLocalState,
-        highlights: [HomeHighlight],
-        originals: [HomeOriginal],
+        local: LocalState,
+        central: [HomeOriginal],
+        origin: String,
+        highlights: [HomeHighlight] = [],
         calendar: Calendar
     ) -> HomePresentation {
         let connected = local.connection != nil
@@ -110,37 +207,68 @@ final class HomeModel {
             facts: facts,
             hasDraft: local.hasDraft,
             highlights: highlights,
-            originals: originals,
+            originals: HomeFeed.merge(local: local.originals, central: central, origin: origin),
             calendar: calendar
         )
+    }
+
+    private static func localOriginals(_ items: [SendQueueItem]) -> [HomeOriginal] {
+        items.compactMap { item -> HomeOriginal? in
+            guard let capture = try? JSONDecoder().decode(CaptureUpload.self, from: item.payload),
+                  let capturedAt = CentralTimestamp.parse(capture.capturedAt)
+            else { return nil }
+            let kind = kindLabel(for: capture)
+            return HomeOriginal(
+                id: capture.id,
+                deviceId: capture.deviceId,
+                capturedAt: capturedAt,
+                title: title(for: capture),
+                detail: HomeFeed.detail(capturedAt: capturedAt, kind: kind, saved: true),
+                thumbnail: capture.imageBase64.flatMap { Data(base64Encoded: $0) },
+                saved: true,
+                archiveOrigin: item.archiveOrigin
+            )
+        }
+        .sorted {
+            if $0.capturedAt == $1.capturedAt { return $0.id > $1.id }
+            return $0.capturedAt > $1.capturedAt
+        }
+        .prefix(30)
+        .map { $0 }
     }
 
     private static func original(from preview: CapturePreview) -> HomeOriginal {
         let capturedAt = CentralTimestamp.parse(preview.capturedAt) ?? Date()
         return HomeOriginal(
             id: preview.id,
+            deviceId: preview.deviceId,
             capturedAt: capturedAt,
             title: title(for: preview),
-            detail: detail(for: preview, capturedAt: capturedAt),
+            detail: HomeFeed.detail(capturedAt: capturedAt, kind: kindLabel(for: preview), saved: false),
             thumbnail: nil
         )
     }
 
     private static func title(for preview: CapturePreview) -> String {
-        for candidate in [preview.textPreview, preview.windowTitle, preview.appName] {
-            guard let line = candidate.split(whereSeparator: \.isNewline).first else { continue }
+        firstLine([preview.textPreview, preview.windowTitle, preview.appName]) ?? sourceLabel(preview.source)
+    }
+
+    private static func title(for capture: CaptureUpload) -> String {
+        firstLine([
+            capture.ocrText,
+            capture.metadata?.noteOrigin?.text,
+            capture.windowTitle,
+            capture.appName,
+        ]) ?? sourceLabel(capture.source)
+    }
+
+    private static func firstLine(_ candidates: [String?]) -> String? {
+        for candidate in candidates {
+            guard let line = candidate?.split(whereSeparator: \.isNewline).first else { continue }
             let trimmed = String(line).trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty { return String(trimmed.prefix(80)) }
         }
-        return sourceLabel(preview.source)
-    }
-
-    private static func detail(for preview: CapturePreview, capturedAt: Date) -> String {
-        let time = capturedAt.formatted(
-            Date.FormatStyle(date: .omitted, time: .shortened)
-                .locale(Locale(identifier: "zh_CN"))
-        )
-        return "\(time) · \(kindLabel(for: preview))"
+        return nil
     }
 
     private static func kindLabel(for preview: CapturePreview) -> String {
@@ -149,6 +277,14 @@ final class HomeModel {
             return String(format: "录音 %d:%02d", seconds / 60, seconds % 60)
         }
         return sourceLabel(preview.source)
+    }
+
+    private static func kindLabel(for capture: CaptureUpload) -> String {
+        if capture.source == .media, capture.durationMs > 0 {
+            let seconds = capture.durationMs / 1000
+            return String(format: "录音 %d:%02d", seconds / 60, seconds % 60)
+        }
+        return sourceLabel(capture.source)
     }
 
     private static func sourceLabel(_ source: CaptureSource) -> String {

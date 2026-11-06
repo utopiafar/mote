@@ -5,6 +5,15 @@ import MoteStorage
 enum EditorFixture {
     static func makeDraft(name: String, store: EditorDraftStore) throws -> EditorDraft {
         guard name != "empty" else { return EditorDraft() }
+        if name == "reset-records" {
+            let queue = try MoteStorage.sendQueue()
+            let attachments = try MoteStorage.shareAttachmentStore()
+            for item in try queue.pending() {
+                if let id = UUID(uuidString: item.id) { try? attachments.remove(recordId: id) }
+                try queue.acknowledge(id: item.id)
+            }
+            return EditorDraft()
+        }
         if name == "recording" {
             return EditorDraft(text: "周四和房东确认：暖气费按实际用量分摊，月底前把账单照片发给他。")
         }
