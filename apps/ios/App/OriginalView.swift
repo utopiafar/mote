@@ -16,8 +16,9 @@ struct OriginalRootView: View {
     let onDeleted: () -> Void
     let onAsk: (OriginalAskScope) -> Void
 
-    init(id: String, onDeleted: @escaping () -> Void, onAsk: @escaping (OriginalAskScope) -> Void) {
-        _model = State(initialValue: OriginalModel(id: id))
+    init(id: String, highlightedPhrase: String? = nil,
+         onDeleted: @escaping () -> Void, onAsk: @escaping (OriginalAskScope) -> Void) {
+        _model = State(initialValue: OriginalModel(id: id, highlightedPhrase: highlightedPhrase))
         self.onDeleted = onDeleted
         self.onAsk = onAsk
     }

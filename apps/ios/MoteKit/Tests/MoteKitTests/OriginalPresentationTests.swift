@@ -14,6 +14,14 @@ final class OriginalPresentationTests: XCTestCase {
         XCTAssertNil(ConversationScope().anchorEvidenceIds)
     }
 
+    func testHighlightedPhraseIsCarriedForCitationReturn() throws {
+        let phrase = "押金为两个月租金"
+        let presentation = try OriginalPresentation(record: record(), conversations: [],
+                                                    highlightedPhrase: phrase)
+        XCTAssertEqual(presentation.highlightedPhrase, phrase)
+        XCTAssertNil(try OriginalPresentation(record: record(), conversations: []).highlightedPhrase)
+    }
+
     func testDetailUsesReceiptTimesAndCountsEveryExistingReferenceKind() throws {
         let material = "material:mat_" + String(repeating: "a", count: 64) + "@" + String(repeating: "b", count: 64)
         let conversations = try [

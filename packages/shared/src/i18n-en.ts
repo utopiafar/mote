@@ -10185,6 +10185,7 @@ export const english: Readonly<Record<string, string>> = {
   "录音已暂停": "Recording paused",
   "暂停录音": "Pause recording",
   "继续录音": "Resume recording",
+  "回到编辑器": "Back to editor",
   "麦克风权限未开启": "Microphone permission is off",
   "录音未能开始": "Recording could not start",
   "录音未能继续": "Recording could not resume",
