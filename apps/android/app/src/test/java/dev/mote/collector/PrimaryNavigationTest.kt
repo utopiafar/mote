@@ -56,6 +56,7 @@ class PrimaryNavigationTest {
         assertEquals("about", MoteNavigation.centralParent("plugins"))
         assertEquals("about", MoteNavigation.centralParent("extensions"))
         listOf("overview", "archive", "ask", "about").forEach { assertNull(MoteNavigation.centralParent(it)) }
+        assertNull("The conversation list returns to its host home, not Central overview", MoteNavigation.centralParent("conversations"))
     }
 
     @Test fun offlineNotesAndExistingRecordsNeverBecomeAnEmptyFirstUseScreen() {
