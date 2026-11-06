@@ -109,6 +109,10 @@ export const systemToolsChannels = {
   supportExport: 'mote:support-export',
   eventsRead: 'mote:events-read',
   eventsRaw: 'mote:events-raw',
+  logSettings: 'mote:log-settings',
+  logSettingsSave: 'mote:log-settings-save',
+  logDirectoryOpen: 'mote:log-directory-open',
+  logExport: 'mote:log-export',
 } as const;
 
 export const capabilityPublisherChannels = {

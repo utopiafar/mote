@@ -10221,5 +10221,18 @@ export const english: Readonly<Record<string, string>> = {
   "引用它的对话": "Conversations referencing it",
   "参考整份资料": "The whole material",
   "开始、结束时间或时区无效": "Invalid start time, end time or time zone",
-  "{0}月{1}日": "{0}/{1}"
+  "{0}月{1}日": "{0}/{1}",
+  "运行日志": "Runtime logs",
+  "记录运行日志": "Record runtime logs",
+  "保存日志设置": "Save log settings",
+  "打开文件夹": "Open folder",
+  "导出日志": "Export logs",
+  "日志位于应用私有空间；关闭后停止新增，已有日志保留。": "Logs are stored in private app storage. Disabling stops new entries and keeps existing logs.",
+  "当前浏览器日志": "Current browser logs",
+  "日志写入失败，请检查浏览器存储。": "Could not write logs. Check browser storage.",
+  "日志读取失败，请检查浏览器存储。": "Could not read logs. Check browser storage.",
+  "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Stored in this browser’s site storage. Clearing site data deletes the logs.",
+  "数值诊断和运行日志分别设置。": "Numeric diagnostics and runtime logging are configured separately.",
+  "启用本机数值诊断": "Enable local numeric diagnostics",
+  "日志已导出。": "Logs exported."
 };

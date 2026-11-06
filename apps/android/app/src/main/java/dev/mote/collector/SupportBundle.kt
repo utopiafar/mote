@@ -9,13 +9,14 @@ import java.io.File
 object SupportEvents {
     fun record(context: Context, stage: EventStage, code: EventCode, elapsedMs: Long? = null, httpStatus: Int? = null, errorName: String? = null, sourceId: String? = null) {
         runCatching { runtime(context).event(stage, code, elapsedMs, httpStatus, errorName, sourceId) }
-        if (!context.getSharedPreferences("mote", Context.MODE_PRIVATE).getBoolean("diagnosticsEnabled", RuntimeProfile.current.detailedDiagnostics)) return
+        if (!context.getSharedPreferences("mote", Context.MODE_PRIVATE).getBoolean("diagnosticsEnabled", RuntimeProfile.current.detailedDiagnostics) ||
+            !RuntimeLogSettings(context).read().allows(EventJournal.level(code))) return
         // Diagnostic storage failure never changes capture/queue correctness.
         runCatching { journal(context).record(stage, code, elapsedMs, httpStatus, errorName, sourceId) }
     }
     fun failure(context: Context, stage: EventStage, error: Throwable, elapsedMs: Long? = null, httpStatus: Int? = null, sourceId: String? = null) =
         record(context, stage, EventJournal.failure(error, stage), elapsedMs, httpStatus, errorName = EventJournal.errorName(error), sourceId = sourceId)
-    fun runtime(context: Context) = RuntimeLog(File(context.noBackupFilesDir, "mote.log"))
+    fun runtime(context: Context) = RuntimeLog(File(context.noBackupFilesDir, "mote.log"), policy = { RuntimeLogSettings(context).read() })
     fun journal(context: Context) = EventJournal(File(context.noBackupFilesDir, "support-events.json"))
     fun export(context: Context, hours: Int = 24): String {
         require(hours in setOf(1, 24, 168))

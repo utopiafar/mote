@@ -18,6 +18,17 @@ it('puts actual diagnostic samples after controls and before exports while retai
  renderSettingsWorkspace(status());expect(facts.hidden).toBe(true);expect(facts.textContent).toBe('');expect(interval.value).toBe('90');
 });
 
+it('keeps runtime log controls separate from the capture settings draft',()=>{
+ const form=el<HTMLFormElement>('settings'),changed=vi.fn();form.addEventListener('change',changed);
+ const enabled=el<HTMLInputElement>('runtime-log-enabled'),level=el<HTMLSelectElement>('runtime-log-level');
+ expect(enabled.closest('[data-page]')?.getAttribute('data-page')).toBe('developer');
+ expect([...level.options].map(option=>option.value)).toEqual(['debug','info','warn','error']);
+ enabled.dispatchEvent(new dom.window.Event('change',{bubbles:true}));level.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
+ expect(changed).not.toHaveBeenCalled();
+ expect(el('runtime-log-save').getAttribute('type')).toBe('button');
+ expect(el('runtime-log-export').getAttribute('type')).toBe('button');
+});
+
 it('a failed explicit refresh followed by later automatic samples does not disclose facts',()=>{
  const view=status();renderSettingsWorkspace(view);beginDiagnosticFactsRefresh();const counters={saved:0,blocked:0,failed:0,imageBytes:0,uploadedBytes:0,inferenceMs:0,ocrMs:0,captureMs:0};view.diagnostics={enabled:true,sampleCount:1,fileBytes:1,counters,latest:{at:'2026-10-30T01:00:00Z',rssBytes:1048576,cpuUserMicros:1,cpuSystemMicros:1,processId:1,queueBytes:0,modelBytes:0,counters}};renderSettingsWorkspace(view);expect(el('diagnostics-current-facts').hidden).toBe(true);view.diagnostics.latest!.at='2026-10-30T01:02:00Z';renderSettingsWorkspace(view);expect(el('diagnostics-current-facts').hidden).toBe(true);const rejected=beginDiagnosticFactsRefresh();rejected({...view,diagnostics:{...view.diagnostics,error:'Generated sample write failure'}});expect(el('diagnostics-current-facts').hidden).toBe(true);
 });

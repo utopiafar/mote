@@ -972,6 +972,33 @@ class MainActivity : MoteActivity() {
 
     private fun buildDiagnostics(config: CollectorConfig) {
         page(Page.DIAGNOSTICS,null)
+        val logSettings = RuntimeLogSettings(this)
+        val logPolicy = logSettings.read()
+        section(MoteI18n.text("运行日志"))
+        val logEnabled = CheckBox(this).apply {
+            text = MoteI18n.text("记录运行日志"); isChecked = logPolicy.enabled
+            MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.INK)
+        }
+        content.addView(logEnabled)
+        text(MoteI18n.text("日志级别"), NativeFontRole.SUPPORT)
+        val logLevels = RuntimeLogPolicy.levels
+        val logLevel = Spinner(this).apply {
+            contentDescription = MoteI18n.text("日志级别")
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, logLevels.map { it.uppercase() })
+            setSelection(logLevels.indexOf(logPolicy.level))
+        }
+        content.addView(logLevel)
+        button(MoteI18n.text("保存日志设置")) {
+            if (logSettings.save(RuntimeLogPolicy(logEnabled.isChecked, logLevels[logLevel.selectedItemPosition]))) {
+                toast(MoteI18n.text("已保存，立即生效。"))
+            } else toast(MoteI18n.text("无法持久保存设置，请检查存储空间"))
+        }
+        text(MoteI18n.text("日志目录") + ": " + noBackupFilesDir.absolutePath, NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("日志位于应用私有空间；关闭后停止新增，已有日志保留。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        button(MoteI18n.text("导出日志")) {
+            @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("text/plain").putExtra(Intent.EXTRA_TITLE,"mote.log"),107)
+        }
+        section(MoteI18n.text("诊断与支持"))
         diagnosticEnabled=sourceCheck("记录数值与事件诊断",config.diagnosticsEnabled)
         text(MoteI18n.text("最多 1440 条数值样本。电量变化是整机变化，不能归因于 Mote。支持包不含截图、正文、笔记、令牌或审查理由。"),NativeFontRole.SUPPORT,NativeColorRole.MUTED)
         button(MoteI18n.text("打开本地日志查看器")){startActivity(Intent(this,LogViewerActivity::class.java))}
@@ -1593,14 +1620,18 @@ class MainActivity : MoteActivity() {
             }
             return
         }
-        if (requestCode in setOf(103, 104)) {
+        if (requestCode in setOf(103, 104, 107)) {
             fun feedback(message:String){diagnosticExportStatus?.apply { text=message;visibility=View.VISIBLE }}
             if(resultCode!=RESULT_OK || data?.data==null){feedback(MoteI18n.text("导出已取消，记录与设置保留。"));return}
             val uri = data.data!!; val app = applicationContext; val tools = systemTools
             uiTask.start(MoteI18n.text("正在导出诊断包…"), { feedback(it) }, {
-                val body = if (requestCode == 104) tools.supportBundle(app, logExportHours) else tools.diagnostics(app).export()
+                val body = when (requestCode) {
+                    104 -> tools.supportBundle(app, logExportHours)
+                    107 -> SupportEvents.runtime(app).exportRange(0, System.currentTimeMillis() + 1).getString("text")
+                    else -> tools.diagnostics(app).export()
+                }
                 app.contentResolver.openOutputStream(uri)!!.use { it.write(body.toByteArray()) }
-            }) { result -> feedback(if (result.isSuccess) MoteI18n.text("诊断包已导出") else MoteI18n.text("诊断导出失败")) }
+            }) { result -> feedback(if (result.isSuccess) MoteI18n.text(if (requestCode == 107) "日志已导出。" else "诊断包已导出") else MoteI18n.text("诊断导出失败")) }
             return
         }
         if (requestCode == 100 && resultCode == RESULT_OK && data != null) {

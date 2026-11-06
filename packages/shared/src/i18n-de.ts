@@ -10221,5 +10221,18 @@ export const german: Readonly<Record<string, string>> = {
   "引用它的对话": "Konversationen, die es zitieren",
   "参考整份资料": "Gesamtes Material",
   "开始、结束时间或时区无效": "Startzeit, Endzeit oder Zeitzone ist ungültig",
-  "{0}月{1}日": "{1}.{0}."
+  "{0}月{1}日": "{1}.{0}.",
+  "运行日志": "Laufzeitprotokolle",
+  "记录运行日志": "Laufzeitprotokolle aufzeichnen",
+  "保存日志设置": "Protokolleinstellungen speichern",
+  "打开文件夹": "Ordner öffnen",
+  "导出日志": "Protokolle exportieren",
+  "日志位于应用私有空间；关闭后停止新增，已有日志保留。": "Protokolle liegen im privaten App-Speicher. Beim Ausschalten werden keine neuen Einträge erstellt; vorhandene bleiben erhalten.",
+  "当前浏览器日志": "Protokolle dieses Browsers",
+  "日志写入失败，请检查浏览器存储。": "Protokolle konnten nicht geschrieben werden. Prüfe den Browserspeicher.",
+  "日志读取失败，请检查浏览器存储。": "Protokolle konnten nicht gelesen werden. Prüfe den Browserspeicher.",
+  "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Im Website-Speicher dieses Browsers gespeichert. Beim Löschen der Websitedaten werden die Protokolle entfernt.",
+  "数值诊断和运行日志分别设置。": "Numerische Diagnose und Laufzeitprotokolle werden getrennt eingestellt.",
+  "启用本机数值诊断": "Lokale numerische Diagnose aktivieren",
+  "日志已导出。": "Protokolle exportiert."
 };

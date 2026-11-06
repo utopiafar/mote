@@ -38,6 +38,21 @@ class SettingsStorageInstrumentedTest {
         assertTrue("settings callback", complete.await(30, TimeUnit.SECONDS))
         return result!!.getOrThrow()
     }
+    @Test fun runtimeLogPreferencesSurviveReopeningWithoutChangingCaptureSettings() {
+        val name = "generated-log-settings-${UUID.randomUUID()}"
+        val generated = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getSharedPreferences(ignored: String, mode: Int): SharedPreferences = context.getSharedPreferences(name, mode)
+        }
+        try {
+            val originalCapture = Settings(context).read()
+            val log = RuntimeLogSettings(generated)
+            assertEquals(RuntimeLogPolicy(true, "debug"), log.read())
+            assertTrue(log.save(RuntimeLogPolicy(false, "warn")))
+            assertEquals(RuntimeLogPolicy(false, "warn"), RuntimeLogSettings(generated).read())
+            assertEquals(originalCapture, Settings(context).read())
+        } finally { context.deleteSharedPreferences(name) }
+    }
     @Test fun freshSettingsWriteCompleteCurrentSnapshotAndRejectMissingFields() {
         val name = "generated-settings-${UUID.randomUUID()}"
         val directory = File(context.cacheDir, name).apply { mkdirs() }

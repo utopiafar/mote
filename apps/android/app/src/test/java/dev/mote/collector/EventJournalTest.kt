@@ -88,7 +88,7 @@ class EventJournalTest {
     }
     @Test fun `runtime failure log retains operational level and bounded private rotation without arbitrary detail`() {
         val path = File(folder.root, "safe-runtime.log")
-        val log = RuntimeLog(path, 2, detailed = false)
+        val log = RuntimeLog(path, 2, policy = { RuntimeLogPolicy(true, "info") })
         log.event(EventStage.SOURCE, EventCode.STARTED, errorName = "Error")
         assertFalse(path.exists())
         repeat(20) { index ->
@@ -102,6 +102,30 @@ class EventJournalTest {
             assertEquals(2, file.readLines().size)
             assertEquals(setOf(java.nio.file.attribute.PosixFilePermission.OWNER_READ, java.nio.file.attribute.PosixFilePermission.OWNER_WRITE), java.nio.file.Files.getPosixFilePermissions(file.toPath()))
         }
+    }
+
+    @Test fun `runtime settings affect new events without removing retained history`() {
+        val path = File(folder.root, "levels.log")
+        var policy = RuntimeLogPolicy.defaults(false)
+        val log = RuntimeLog(path, policy = { policy })
+        log.event(EventStage.UPLOAD, EventCode.STARTED)
+        log.event(EventStage.UPLOAD, EventCode.OK)
+        policy = RuntimeLogPolicy(true, "debug")
+        log.event(EventStage.UPLOAD, EventCode.STARTED)
+        policy = RuntimeLogPolicy(true, "warn")
+        log.event(EventStage.UPLOAD, EventCode.OK)
+        log.event(EventStage.UPLOAD, EventCode.WAIT_NETWORK)
+        log.event(EventStage.UPLOAD, EventCode.AUTH)
+        policy = RuntimeLogPolicy(true, "error")
+        log.event(EventStage.UPLOAD, EventCode.WAIT_NETWORK)
+        log.event(EventStage.UPLOAD, EventCode.AUTH)
+        policy = RuntimeLogPolicy(false, "debug")
+        log.event(EventStage.UPLOAD, EventCode.AUTH)
+        val lines = log.readRaw().lines().filter(String::isNotBlank)
+        assertEquals(5, lines.size)
+        assertTrue(lines[0].contains("INFO")); assertTrue(lines[1].contains("DEBUG"))
+        assertTrue(lines[2].contains("WARN")); assertTrue(lines[3].contains("AUTH")); assertTrue(lines[4].contains("AUTH"))
+        assertEquals("debug", RuntimeLogPolicy.defaults(true).level)
     }
 
 }

@@ -10221,5 +10221,18 @@ export const spanish: Readonly<Record<string, string>> = {
   "引用它的对话": "Conversaciones que lo citan",
   "参考整份资料": "Todo el material",
   "开始、结束时间或时区无效": "La hora de inicio, la hora de fin o la zona horaria no es válida",
-  "{0}月{1}日": "{1}/{0}"
+  "{0}月{1}日": "{1}/{0}",
+  "运行日志": "Registros de ejecución",
+  "记录运行日志": "Registrar la ejecución",
+  "保存日志设置": "Guardar configuración del registro",
+  "打开文件夹": "Abrir carpeta",
+  "导出日志": "Exportar registros",
+  "日志位于应用私有空间；关闭后停止新增，已有日志保留。": "Los registros se guardan en el espacio privado de la aplicación. Al desactivar se conservan los registros existentes.",
+  "当前浏览器日志": "Registros del navegador actual",
+  "日志写入失败，请检查浏览器存储。": "No se pudieron escribir los registros. Comprueba el almacenamiento del navegador.",
+  "日志读取失败，请检查浏览器存储。": "No se pudieron leer los registros. Comprueba el almacenamiento del navegador.",
+  "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Se guardan en los datos del sitio de este navegador. Al borrar esos datos también se borran los registros.",
+  "数值诊断和运行日志分别设置。": "Los diagnósticos numéricos y los registros se configuran por separado.",
+  "启用本机数值诊断": "Activar diagnósticos numéricos locales",
+  "日志已导出。": "Registros exportados."
 };

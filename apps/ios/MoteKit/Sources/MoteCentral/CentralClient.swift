@@ -1,4 +1,5 @@
 import Foundation
+import MoteStorage
 
 public enum CentralError: Error, Equatable {
     case invalidInvitation
@@ -261,8 +262,22 @@ public struct CentralClient: Sendable {
     }
 
     private func perform<Response: Decodable>(_ request: URLRequest) async throws -> Response {
-        let (data, response) = try await session.data(for: request, delegate: RejectRedirects.shared)
-        return try Self.decode(data: data, response: response)
+        #if os(iOS)
+        try? MoteStorage.runtimeLog().record(.requestStarted)
+        #endif
+        do {
+            let (data, response) = try await session.data(for: request, delegate: RejectRedirects.shared)
+            let decoded: Response = try Self.decode(data: data, response: response)
+            #if os(iOS)
+            try? MoteStorage.runtimeLog().record(.requestCompleted)
+            #endif
+            return decoded
+        } catch {
+            #if os(iOS)
+            try? MoteStorage.runtimeLog().record(.requestFailed)
+            #endif
+            throw error
+        }
     }
 
     static func decode<Response: Decodable>(data: Data, response: URLResponse) throws -> Response {

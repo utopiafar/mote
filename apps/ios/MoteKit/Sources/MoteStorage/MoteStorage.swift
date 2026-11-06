@@ -8,6 +8,10 @@ public enum MoteStorageError: Error, Equatable {
 public enum MoteStorage {
     public static let moduleName = "MoteStorage"
 
+    public static func runtimeLog(fileManager: FileManager = .default) throws -> RuntimeLogStore {
+        RuntimeLogStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Diagnostics", isDirectory: true), fileManager: fileManager)
+    }
+
     public static func draftStore(fileManager: FileManager = .default) throws -> DraftStore {
         DraftStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Draft", isDirectory: true))
     }

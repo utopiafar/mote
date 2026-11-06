@@ -17,9 +17,12 @@ final class AppSendPipeline {
 
     func reconcileAndSend() async {
         guard !MoteSendPause.isPaused(), let pipeline else { return }
+        try? MoteStorage.runtimeLog().record(.sendStarted)
         do {
             try await pipeline.reconcileAndSend()
+            try? MoteStorage.runtimeLog().record(.sendCompleted)
         } catch {
+            try? MoteStorage.runtimeLog().record(.sendFailed)
             logger.error("Reconciliation or upload scheduling failed: \(String(describing: error), privacy: .private)")
         }
     }
@@ -30,6 +33,7 @@ final class AppSendPipeline {
             let session = try BackgroundUploadSession.shared(queue: queue, identifier: identifier)
             session.handleEvents(completionHandler: completionHandler)
         } catch {
+            try? MoteStorage.runtimeLog().record(.backgroundRestoreFailed)
             logger.error("Could not restore the background upload session: \(String(describing: error), privacy: .private)")
             completionHandler()
         }

@@ -56,7 +56,7 @@ class IssueOneRegressionTest {
         assertEquals(1, target.depth()); assertNull(target.capture(first.getString("id"))); prepared.close()
     }
     @Test fun originalLogHasTimeLevelThreadAndLoggerAndBoundedHistory() {
-        val file = File(folder.root, "mote.log"); val log = RuntimeLog(file, 3, detailed = true)
+        val file = File(folder.root, "mote.log"); val log = RuntimeLog(file, 3, policy = { RuntimeLogPolicy(true, "debug") })
         log.event(EventStage.APP, EventCode.STARTED)
         log.event(EventStage.UPLOAD, EventCode.OK, 12, 200)
         log.event(EventStage.UPLOAD, EventCode.WAIT_NETWORK)

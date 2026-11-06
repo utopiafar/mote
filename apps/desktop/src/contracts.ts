@@ -179,6 +179,10 @@ export interface DesktopApi {
   exportDiagnostics(): Promise<{ canceled: boolean }>;
   readRawEvents(): Promise<string>;
   readEvents(): Promise<import('./contracts/operations').SupportEvent[]>;
+  logSettings(): Promise<import('./contracts/settings').RuntimeLogPolicy & {directory: string}>;
+  saveLogSettings(input: import('./contracts/settings').RuntimeLogPolicy): Promise<import('./contracts/settings').RuntimeLogPolicy & {directory: string}>;
+  openLogDirectory(): Promise<void>;
+  exportLogs(): Promise<{canceled:boolean}>;
   sampleDiagnostics(): Promise<Status>;
   configure(update: ConfigUpdate): Promise<Status>;
   start(): Promise<Status>;

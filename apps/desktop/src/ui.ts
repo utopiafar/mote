@@ -697,7 +697,7 @@ function renderLogs(): void {
   const output = document.createElement('textarea'); output.readOnly = true;
   output.setAttribute('aria-label', moteText("原始日志")); output.spellcheck = false;
   output.className = 'raw-log-output'; output.wrap = logWrap ? 'soft' : 'off'; output.value = logText;
-  output.placeholder = moteText("暂无日志。诊断关闭时停止新增，历史仍可查看。");
+  output.placeholder = moteText("暂无日志。");
   const notice = document.createElement('p'); notice.setAttribute('role', 'status');
   notice.textContent = moteText("按文件原始顺序显示，可拖动选中或使用 ⌘/Ctrl+A、C 复制。");
   for (const label of [moteText("刷新日志"), moteText("复制全部"), moteText("全选"), moteText("自动换行")]) {
@@ -726,6 +726,21 @@ async function loadLogs(): Promise<void> {
   finally { logLoading = false; }
 }
 byId('events-open').addEventListener('click', () => void loadLogs());
+
+async function loadLogSettings(): Promise<void> {
+  const settings = await desktopApi.logSettings();
+  byId<HTMLInputElement>('runtime-log-enabled').checked = settings.enabled;
+  byId<HTMLSelectElement>('runtime-log-level').value = settings.level;
+  byId('runtime-log-directory').textContent = `${moteText('日志目录')}: ${settings.directory}`;
+  for (const id of ['runtime-log-enabled','runtime-log-level','runtime-log-save','runtime-log-open','runtime-log-export']) byId<HTMLInputElement>(id).disabled = false;
+}
+void loadLogSettings().catch(() => feedback(moteText('日志读取失败，请重试；原文件保留。')));
+byId('runtime-log-save').addEventListener('click', () => void perform(async () => {
+  await desktopApi.saveLogSettings({enabled:byId<HTMLInputElement>('runtime-log-enabled').checked,level:byId<HTMLSelectElement>('runtime-log-level').value as import('./contracts/settings').RuntimeLogLevel});
+  feedback(moteText('已保存，立即生效。'), true);
+}));
+byId('runtime-log-open').addEventListener('click', () => void perform(() => desktopApi.openLogDirectory()));
+byId('runtime-log-export').addEventListener('click', () => void perform(async () => {const result=await desktopApi.exportLogs();if(!result.canceled)feedback(moteText('日志已导出。'),true);}));
 
 byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(Number(byId<HTMLSelectElement>('log-export-hours').value)); if (!result.canceled) feedback(moteText("支持包已导出；只含数值、配置开关和固定阶段事件。"), true); }));
 
