@@ -15,7 +15,8 @@ import { validateRecord, validateImage, type QueueArchive, type QueueRecord } fr
 import type { BackgroundRequest, WorkProgress } from './background';
 import { encodeLocalContent, readLocalContent } from './local-content';
 
-async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void,signal?:Pick<AbortSignal,'aborted'|'throwIfAborted'>): Promise<unknown> {
+type WorkerSignal = Pick<AbortSignal,'aborted'|'throwIfAborted'> & {beginCommit:()=>void};
+async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void,signal?:WorkerSignal): Promise<unknown> {
   switch (request.kind) {
     case 'spool-original': return spoolOriginal(request.path,request.directory,request.expected);
     case 'original-part': return originalPart(request.spool,request.part);
@@ -91,8 +92,12 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       } catch (error) { await file.close(); await unlink(temporary).catch(() => {}); throw error; }
       await file.close();
       try {
-        signal?.throwIfAborted();
+        // The CAS is the commit boundary: cancellation that wins it leaves the
+        // existing destination untouched; after it the rename owns the result.
+        signal?.beginCommit();
+        progress({message:moteText("正在导出队列"),phase:'committing'});
         await rename(temporary, request.path);
+        progress({message:moteText("导出文件已生成"),phase:'committed'});
       } catch (error) { await unlink(temporary).catch(() => {}); throw error; }
       return;
     }
@@ -133,16 +138,25 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
   }
 }
 let chain = Promise.resolve();
-parentPort!.on('message', ({ id, request, locale,cancellation }: { locale?: Locale; id: number; request: BackgroundRequest;cancellation?:SharedArrayBuffer }) => {
+parentPort!.on('message', ({ id, request, locale,cancellation,progressAck }: { locale?: Locale; id: number; request: BackgroundRequest;cancellation?:SharedArrayBuffer;progressAck?:boolean }) => {
   chain = chain.then(async () => {
     let lastProgress = 0;
     try {
       configureLocale(() => locale ?? 'zh-CN');
       const flag=cancellation?new Int32Array(cancellation):undefined;
-      const signal=flag?{get aborted(){return Atomics.load(flag,0)!==0;},throwIfAborted(){if(Atomics.load(flag,0)!==0)throw new DOMException('Coding scan cancelled','AbortError');}}:undefined;
+      const signal:WorkerSignal|undefined=flag?{
+        get aborted(){return Atomics.load(flag,0)===1;},
+        throwIfAborted(){if(Atomics.load(flag,0)===1)throw new DOMException('Background operation cancelled','AbortError');},
+        beginCommit(){if(Atomics.compareExchange(flag,0,0,2)!==0)throw new DOMException('Background operation cancelled','AbortError');},
+      }:undefined;
       const value = await execute(request, progress => {
-        const now = Date.now(); if (now - lastProgress < 100 && progress.completed !== progress.total) return;
-        lastProgress = now; parentPort!.postMessage({ id, progress });
+        const now = Date.now(); if (!progress.phase && now - lastProgress < 100 && progress.completed !== progress.total) return;
+        lastProgress = now;
+        const sequence=progressAck&&flag?Atomics.load(flag,1):undefined;
+        parentPort!.postMessage({ id, progress });
+        // An observed progress callback must run before an abortable export
+        // advances, so revocation can win before the final rename.
+        if(sequence!==undefined&&flag)Atomics.wait(flag,1,sequence);
       },signal);
       parentPort!.postMessage({ id, value });
     } catch (error) { parentPort!.postMessage({ id, error: error instanceof Error ? error.message : moteText("后台处理失败") }); }
