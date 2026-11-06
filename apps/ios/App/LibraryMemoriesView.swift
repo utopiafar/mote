@@ -13,6 +13,8 @@ struct LibraryMemoriesView: View {
     @State private var model: LibraryMemoriesModel
     @State private var pendingDate = Date()
     @State private var showingUnavailable = false
+    @State private var selectedMemoryID: String?
+    @State private var selectedOriginalID: String?
     @FocusState private var focusedField: FocusedField?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -36,6 +38,48 @@ struct LibraryMemoriesView: View {
     }
 
     var body: some View {
+        Group {
+            if let selectedOriginalID {
+                OriginalRootView(
+                    id: selectedOriginalID,
+                    onDeleted: {
+                        self.selectedOriginalID = nil
+                        Task { await model.reloadCurrent() }
+                    },
+                    onAsk: { _ in showingUnavailable = true }
+                )
+            } else if let selectedMemoryID {
+                if model.previewMode {
+                    MemoryDetailPreview()
+                } else {
+                    MemoryDetailRootView(
+                        id: selectedMemoryID,
+                        onBack: {
+                            self.selectedMemoryID = nil
+                            Task { await model.reloadCurrent() }
+                        },
+                        onOpenCapture: { id in selectedOriginalID = id },
+                        onChanged: {
+                            Task { await model.reloadCurrent() }
+                        }
+                    )
+                }
+            } else {
+                libraryScreen
+            }
+        }
+        .onChange(of: model.libraryQuery) { _, _ in
+            Task { await model.loadLibraryAfterQueryChange() }
+        }
+        .onChange(of: model.memoryQuery) { _, _ in
+            Task { await model.loadMemoriesAfterQueryChange() }
+        }
+        .alert("此功能将在后续版本提供", isPresented: $showingUnavailable) {
+            Button("好", role: .cancel) {}
+        }
+    }
+
+    private var libraryScreen: some View {
         ZStack {
             MoteDesignTokens.background.color
                 .ignoresSafeArea()
@@ -60,15 +104,6 @@ struct LibraryMemoriesView: View {
         .statusBarHidden()
         .task {
             await model.reloadCurrent()
-        }
-        .onChange(of: model.libraryQuery) { _, _ in
-            Task { await model.loadLibraryAfterQueryChange() }
-        }
-        .onChange(of: model.memoryQuery) { _, _ in
-            Task { await model.loadMemoriesAfterQueryChange() }
-        }
-        .alert("此功能将在后续版本提供", isPresented: $showingUnavailable) {
-            Button("好", role: .cancel) {}
         }
     }
 
@@ -354,7 +389,7 @@ struct LibraryMemoriesView: View {
 
     private func memoryRow(_ row: MemoryBrowseRow, divided: Bool) -> some View {
         Button {
-            showingUnavailable = true
+            selectedMemoryID = row.id
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 highlighted(row.title, query: model.memoryQuery)
