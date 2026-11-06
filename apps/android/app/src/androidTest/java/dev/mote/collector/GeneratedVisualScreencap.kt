@@ -18,8 +18,11 @@ import java.util.concurrent.TimeUnit
 internal object GeneratedVisualScreencap {
     data class WindowImage(val bitmap: Bitmap, val x: Int, val y: Int)
 
+    private fun generated(context: Context) = context.packageName in
+        setOf("dev.mote.collector.dev", "dev.mote.collector.test", "dev.mote.collector.filefixture") && Build.FINGERPRINT.contains("emu64a")
+
     fun save(context: Context, directory: File, name: String) {
-        require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.contains("emu64a"))
+        require(generated(context))
         directory.mkdirs()
         ParcelFileDescriptor.AutoCloseInputStream(
             InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("screencap -p")
@@ -32,7 +35,7 @@ internal object GeneratedVisualScreencap {
         lateinit var result: WindowImage
         var status = -1
         scenario.onActivity { activity ->
-            require(activity.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.contains("emu64a"))
+            require(generated(activity))
             check(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0) { "Generated visual window must remain secure" }
             val root = activity.window.decorView
             val position = IntArray(2); root.getLocationOnScreen(position)

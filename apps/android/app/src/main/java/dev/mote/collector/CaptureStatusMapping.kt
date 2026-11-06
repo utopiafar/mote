@@ -45,7 +45,7 @@ internal object CaptureStatusMapping {
 
     val table: List<CaptureStatusRow> = listOf(
         CaptureStatusRow(CaptureStatusId.CAPTURING, CaptureStatusLevel.NORMAL, null, null, "采集中", CaptureStatusMacIcon.NORMAL, CaptureStatusCentral("正在采集", CaptureStatusTone.OK)),
-        CaptureStatusRow(CaptureStatusId.PENDING_SYNC, CaptureStatusLevel.NORMAL, null, null, "采集中 · 待同步 {0} 条", CaptureStatusMacIcon.NORMAL, CaptureStatusCentral("正在采集", CaptureStatusTone.OK)),
+        CaptureStatusRow(CaptureStatusId.PENDING_SYNC, CaptureStatusLevel.NORMAL, null, null, "采集中", CaptureStatusMacIcon.NORMAL, CaptureStatusCentral("正在采集", CaptureStatusTone.OK)),
         CaptureStatusRow(CaptureStatusId.SCREEN_PAUSED, CaptureStatusLevel.REMINDER, home("屏幕采集已暂停", CaptureStatusOperation.RESUME_CAPTURE), null, "屏幕采集已暂停", CaptureStatusMacIcon.PAUSED, CaptureStatusCentral("正在采集", CaptureStatusTone.OK)),
         CaptureStatusRow(CaptureStatusId.PAUSED, CaptureStatusLevel.REMINDER, home("采集已暂停", CaptureStatusOperation.RESUME_CAPTURE), null, "采集已暂停", CaptureStatusMacIcon.PAUSED, CaptureStatusCentral("已暂停", CaptureStatusTone.NEUTRAL)),
         CaptureStatusRow(CaptureStatusId.SEND_PAUSED, CaptureStatusLevel.REMINDER, home("发送已暂停", CaptureStatusOperation.RESUME_SEND), null, "采集中 · 发送已暂停", CaptureStatusMacIcon.NORMAL, null),

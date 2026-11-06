@@ -29,8 +29,8 @@ internal class CaptureAttentionDedup {
 
 /** The ongoing title is the shared status row; the local count lives only in
  * 采集与存储详情. */
-internal fun ongoingCaptureTitle(row: CaptureStatusRow, pending: Int?): String? =
-    row.androidOngoing?.let { MoteI18n.text(it, pending ?: 0) }
+internal fun ongoingCaptureTitle(row: CaptureStatusRow): String? =
+    row.androidOngoing?.let { MoteI18n.text(it) }
 
 internal fun captureAttentionTitle(row: CaptureStatusRow): String? =
     row.notification?.titleKey?.let { MoteI18n.text(it) }
@@ -111,7 +111,7 @@ internal class Notifications(
         val config = runCatching { settings?.read() }.getOrNull()
         if (settings == null || config == null) {
             val row = CaptureStatusMapping.row(CaptureStatusId.CAPTURING)
-            return CaptureNotificationStatus(row, ongoingCaptureTitle(row, null), "", false, false, false, false)
+            return CaptureNotificationStatus(row, ongoingCaptureTitle(row), "", false, false, false, false)
         }
         val state = localState
         val projection = config.effectiveMode() == "projection"
@@ -152,7 +152,7 @@ internal class Notifications(
         val screenCapturing = config.screenCollectionEnabled && (screenLive || screenStatus != null) && row.level != CaptureStatusLevel.NEEDS_ACTION
         return CaptureNotificationStatus(
             row = row,
-            title = ongoingCaptureTitle(row, state?.pending),
+            title = ongoingCaptureTitle(row),
             detail = detail(row, config, settings, state, screenLive, systemLive, screenUnavailable, systemUnavailable),
             screenCapturing = screenCapturing,
             screenPaused = screenPaused,
