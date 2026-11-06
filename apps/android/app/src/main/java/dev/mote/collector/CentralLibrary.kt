@@ -182,7 +182,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     private fun highlightCitation(view: TextView, excerpt: String?) {
         val range = ConversationCitationPresentation.locate(view.text?.toString().orEmpty(), excerpt ?: return) ?: return
         val styled = android.text.SpannableString(view.text)
-        styled.setSpan(android.text.style.BackgroundColorSpan(NativeColorRole.WARNING_TINT.color()), range.first, range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        styled.setSpan(android.text.style.BackgroundColorSpan(NativeColorRole.TINT.color()), range.first, range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         view.text = styled
         ui.scrollToText(view, range.first)
     }

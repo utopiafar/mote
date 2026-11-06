@@ -639,7 +639,7 @@ class CaptureRecordsActivity : MoteActivity() {
     private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply {
         val range = ConversationCitationPresentation.locate(value, citationExcerpt ?: "")
         text = if (range == null) value else android.text.SpannableString(value).apply {
-            setSpan(android.text.style.BackgroundColorSpan(NativeColorRole.WARNING_TINT.color()), range.first, range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(android.text.style.BackgroundColorSpan(NativeColorRole.TINT.color()), range.first, range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         MoteUi.type(this, size.toInt()); MoteUi.textColor(this, NativeColorRole.INK); setPadding(0, moteDp(5), 0, moteDp(5))
         if (range != null) scrollToCitation(this, range.first)
