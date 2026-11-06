@@ -67,6 +67,17 @@ public enum MoteEntry: String, CaseIterable, Equatable, Sendable {
     }
 }
 
+public extension MoteEntry {
+    /// The four entries shown by the small widget, in visual order.
+    static let widgetSmall: [MoteEntry] = [.record, .photo, .recording, .ask]
+
+    /// The full-width action above the record entries in the medium widget.
+    static let widgetMediumPrimary: MoteEntry = .ask
+
+    /// The record entries below the ask action in the medium widget.
+    static let widgetMediumActions: [MoteEntry] = [.record, .photo, .recording]
+}
+
 public enum MoteCaptureShortcut: String, CaseIterable, Sendable {
     case screenshot
     case notification
