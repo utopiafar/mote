@@ -2,8 +2,8 @@ package dev.mote.collector.plugins
 
 import android.app.Activity
 import android.content.Context
-import dev.mote.collector.CaptureOverview
-import dev.mote.collector.HomeCaptureRow
+import dev.mote.collector.HomeNotice
+import dev.mote.collector.HomeNoticeRow
 import dev.mote.collector.HomeConversationView
 import dev.mote.collector.HomeLocalSignature
 import dev.mote.collector.HomeLocalState
@@ -135,9 +135,9 @@ internal class DailyHomeOwner internal constructor(
         return DailyHomeSections()
     }
 
-    internal fun captureRow(activity: Activity, open: (() -> Unit)?, act: (CaptureOverview.Action) -> Unit): HomeCaptureRow {
+    internal fun noticeRow(activity: Activity, open: (HomeNotice) -> Unit, act: (HomeNotice) -> Unit): HomeNoticeRow {
         check(active) { "Daily home plugin is stopped" }
-        return HomeCaptureRow(activity, open, act)
+        return HomeNoticeRow(activity, open, act)
     }
 
     internal fun conversation(activity: MoteActivity, archiveEmpty: (Boolean) -> Unit = {}, open: (String) -> Unit): HomeConversationView {

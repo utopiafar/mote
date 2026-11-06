@@ -1178,9 +1178,11 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         }
     }
 
-    fun confirm(title: String, message: String, action: () -> Unit) {
+    fun confirm(title: String, message: String, action: () -> Unit) =
+        confirm(title, message, MoteI18n.text("确认"), action)
+    fun confirm(title: String, message: String, positive: String, action: () -> Unit) {
         MoteDialogBuilder(ui).setTitle(title).setMessage(message).setNegativeButton(MoteI18n.text("取消"), null)
-            .setPositiveButton(MoteI18n.text("确认")) { _, _ -> action() }.show()
+            .setPositiveButton(positive) { _, _ -> action() }.show()
     }
     companion object {
         fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")

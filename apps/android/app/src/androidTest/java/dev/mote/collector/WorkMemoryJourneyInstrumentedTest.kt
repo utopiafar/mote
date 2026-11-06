@@ -44,6 +44,11 @@ class WorkMemoryJourneyInstrumentedTest {
     private fun has(value:String)=main{shown().filterIsInstance<TextView>().any{it.text.toString().contains(value)}}
     private fun click(value:String){until("Action $value"){main{shown().any{it.isEnabled&&it.isClickable&&(it.contentDescription==value||(it as? TextView)?.text.toString()==value)}}};main{shown().first{it.isEnabled&&it.isClickable&&(it.contentDescription==value||(it as? TextView)?.text.toString()==value)}.also{it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true)}.performClick()}}
     private fun tag(value:String){until("Tagged action $value"){main{shown().any{it.tag==value&&it.isEnabled}}};main{shown().single{it.tag==value}.also{it.requestRectangleOnScreen(android.graphics.Rect(0,0,it.width,it.height),true)}.performClick()}}
+    private fun hasExact(value:String)=main{shown().filterIsInstance<TextView>().any{it.text.toString()==value}}
+    private fun more(){until("More"){main{shown().any{it.isEnabled&&it.isClickable&&(it as? TextView)?.text?.toString()==MoteI18n.text("更多")+"  ›"}}};main{shown().first{it.isEnabled&&it.isClickable&&(it as? TextView)?.text?.toString()==MoteI18n.text("更多")+"  ›"}.performClick()}}
+    private fun openCorrection(){if(main{shown().filterIsInstance<EditText>().any{(it.tag as? MemoryTopicEdit)?.key=="statement"}})return;if(!main{shown().any{it.tag=="memory-more-correct"&&it.isEnabled}})more();tag("memory-more-correct")}
+    private fun editStatement(value:String){openCorrection();main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.key=="statement"}.setText(value)}}
+    private fun deleteMemory(){if(!main{shown().any{it.tag=="memory-more-delete"&&it.isEnabled}})more();tag("memory-more-delete")}
     private fun physical(view:View) {
         main{view.requestRectangleOnScreen(android.graphics.Rect(0,0,view.width,view.height),true)};Thread.sleep(350)
         val point=main{val p=IntArray(2);view.getLocationOnScreen(p);(p[0]+view.width/2f) to (p[1]+view.height/2f)}
@@ -62,9 +67,24 @@ class WorkMemoryJourneyInstrumentedTest {
         instrumentation.waitForIdleSync();until("Focused window $name"){main{WindowInspector.getGlobalWindowViews().any{it.isShown&&it.hasWindowFocus()&&it.width>0&&it.height>0}}}
         main{val root=WindowInspector.getGlobalWindowViews().last{it.isShown&&it.hasWindowFocus()};val bitmap=android.graphics.Bitmap.createBitmap(root.width,root.height,android.graphics.Bitmap.Config.ARGB_8888);try{root.draw(android.graphics.Canvas(bitmap));File(context.filesDir,"work-memory-generated").apply{mkdirs()}.resolve("$name.png").outputStream().use{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}}finally{bitmap.recycle()}}
     }
+    private fun visual(scenario:ActivityScenario<CentralActivity>, name:String){
+        instrumentation.waitForIdleSync()
+        scenario.onActivity{activity->
+            val root=activity.window.decorView
+            val image=android.graphics.Bitmap.createBitmap(root.width,root.height,android.graphics.Bitmap.Config.ARGB_8888)
+            try{
+                val canvas=android.graphics.Canvas(image);root.draw(canvas)
+                val origin=IntArray(2);root.getLocationOnScreen(origin)
+                val overlays=WindowInspector.getGlobalWindowViews().filter{it!==root&&it.isShown&&it.width>0&&it.height>0}
+                if(overlays.isNotEmpty())canvas.drawColor(android.graphics.Color.argb(82,0,0,0))
+                overlays.forEach{overlay->val at=IntArray(2);overlay.getLocationOnScreen(at);canvas.save();canvas.translate((at[0]-origin[0]).toFloat(),(at[1]-origin[1]).toFloat());overlay.draw(canvas);canvas.restore()}
+                File(context.getExternalFilesDir(null),"ua16-visual").apply{mkdirs()}.resolve("$name.png").outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+            }finally{image.recycle()}
+        }
+    }
     private fun fixture(block:(Fake)->Unit){
         assumeTrue(InstrumentationRegistry.getArguments().getString("generatedWorkMemory") == "true")
-        require(context.packageName=="dev.mote.collector.dev"&&Build.FINGERPRINT.contains("emu64a"))
+        require(context.packageName=="dev.mote.collector.dev"&&Build.FINGERPRINT.contains("emu64a")) { "Generated Work fixture needs dev.mote.collector.dev on an emulator (${context.packageName} ${Build.FINGERPRINT})" }
         // Refuse all retained native state before opening a queue or changing connection state.
         for(name in listOf("central-native","file-archives")) {
             val directory=File(context.noBackupFilesDir,name)
@@ -123,11 +143,11 @@ class WorkMemoryJourneyInstrumentedTest {
             fun position():Pair<Int,Int> = main { val row=shown().single{it.tag=="work-memory:$first"};val location=IntArray(2);row.getLocationOnScreen(location);shown().filterIsInstance<android.widget.ScrollView>().first().scrollY to location[1] }
             val before=position();tag("work-memory:$first");until("Exact first-page Memory opens"){has(fake.statement(first))};assertFalse(has(fake.statement(fake.ids[18])));record("memory-first-page")
             click("查看原文依据 1");until("The selected Memory's exact original opens"){has("Generated exact Memory evidence")};scenario.onActivity{it.onBackPressed()};until("Original returns to the same Memory"){has(fake.statement(first))}
-            click("删除记忆");until("Delete confirmation") { has(memoryDeletePromise) };click("取消");until("Cancellation returns to the same Memory"){has(fake.statement(first))};assertEquals(0,fake.deletes.get())
+            deleteMemory();until("Delete confirmation") { has(memoryDeletePromise) };click("取消");until("Cancellation returns to the same Memory"){has(fake.statement(first))};assertEquals(0,fake.deletes.get())
             scenario.onActivity{it.onBackPressed()};until("Same work and first result page return"){has(fake.goal)&&has(fake.title(first))};Thread.sleep(500);instrumentation.waitForIdleSync();assertEquals("Same result scroll returns",before.first,position().first);assertTrue("Same result row returns to the same screen position",kotlin.math.abs(before.second-position().second)<=2);assertFalse(has(fake.title(fake.ids[20])))
             click("下一页");until("Only the remaining Memory results appear"){has(fake.title(fake.ids[20]))&&has(fake.title(fake.ids.last()))};assertFalse(has(fake.title(fake.ids.first())))
             val second=fake.ids[20];tag("work-memory:$second");until("Exact second-page Memory opens"){has(fake.statement(second))}
-            click("删除记忆");until("Delete confirmation") { has(memoryDeletePromise) };click("确认");until("Deleted result disappears from the same activity page"){fake.deletes.get()==1&&has(fake.goal)&&!has(fake.title(second))&&has(fake.title(fake.ids.last()))};record("memory-second-page-after-delete")
+            deleteMemory();until("Delete confirmation") { has(memoryDeletePromise) };click("确认删除");until("Deleted result disappears from the same activity page"){fake.deletes.get()==1&&has(fake.goal)&&!has(fake.title(second))&&has(fake.title(fake.ids.last()))};record("memory-second-page-after-delete")
             main{shown().filterIsInstance<Spinner>().single{it.contentDescription=="工作详情"}.setSelection(0)};until("Overview reflects the deletion"){has("22 项已保存成果")}
             assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
@@ -267,10 +287,10 @@ class WorkMemoryJourneyInstrumentedTest {
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Initially authorized Memory opens"){has(fake.statement(id))};idle(scenario)
             readerTick(fake);idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated local correction")}
+            editStatement("Generated local correction")
             readerTick(fake) { fake.forbidden=true }
             until("A revoked owner read withdraws the open Memory"){has("当前连接没有执行此操作的权限")&&!has(fake.statement(id))};assertFalse(has(fake.title(id)));assertEquals(0,fake.deletes.get());assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
-            assertTrue(has("Generated local correction"));assertFalse(has("保存校正"))
+            assertTrue(has("Generated local correction"));assertFalse(hasExact("纠正"))
         }
     }
     private fun automaticReaderWithdrawal(change:(Fake,String)->Unit)=fixture{fake->
@@ -279,13 +299,13 @@ class WorkMemoryJourneyInstrumentedTest {
             until("The completed work's exact Memory opens"){has(fake.statement(id))};idle(scenario)
             readerTick(fake);idle(scenario)
             val edit="Generated unsent automatic-withdrawal edit"
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText(edit)}
+            editStatement(edit)
             readerTick(fake) { change(fake,id) }
             // Keep the original 30s outcome timeout; only the request cadence has the tighter check.
             until("Automatic revalidation withdraws owner content and retains only the unsent edit") {
                 has("请求的资源不存在或已删除。") && !has(fake.statement(id)) && !has(fake.title(id)) && has(edit)
             }
-            assertFalse(has("保存校正"));assertFalse(has("删除记忆"))
+            assertFalse(hasExact("纠正"));assertFalse(has("删除记忆"))
             assertEquals(0,fake.deletes.get());assertEquals(0,fake.corrections.get())
             assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
@@ -311,10 +331,10 @@ class WorkMemoryJourneyInstrumentedTest {
     @Test fun changedEvidenceCannotOpenAndOnlyUserEditsSurvive()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated local correction")}
+            editStatement("Generated local correction")
             fake.swapEvidence=true;click("查看原文依据 1")
             until("Changed evidence withdraws the old Memory"){has("请求的资源不存在或已删除。")&&has("有未保存的更改")}
-            assertTrue(has("Generated local correction"));assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(has("保存校正"));assertFalse(has("Generated exact Memory evidence"));assertEquals(0,fake.captureReads.get())
+            assertTrue(has("Generated local correction"));assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(hasExact("纠正"));assertFalse(has("Generated exact Memory evidence"));assertEquals(0,fake.captureReads.get())
         }
     }
     @Test fun changedStatementAtTheSameVersionIsNotTreatedAsTheOriginal()=fixture{fake->
@@ -367,32 +387,32 @@ class WorkMemoryJourneyInstrumentedTest {
         fake.holdCapture=1
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated local correction")};click("查看原文依据 1")
+            editStatement("Generated local correction");click("查看原文依据 1")
             assertTrue("The file original GET is held",fake.captureEntered.await(10,TimeUnit.SECONDS));fake.forbidden=true;fake.captureRelease.countDown()
             until("A revoked owner withdraws the old Memory immediately"){has("当前连接没有执行此操作的权限")&&!has(fake.statement(id))&&has("Generated local correction")}
-            assertFalse(has(fake.title(id)));assertFalse(has("Generated exact Memory evidence"));assertFalse(has("保存校正"));assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+            assertFalse(has(fake.title(id)));assertFalse(has("Generated exact Memory evidence"));assertFalse(hasExact("纠正"));assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
     }
     @Test fun fileOriginalReturnsTheSameMemoryAndUnsentEdits()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated unsent correction")};click("查看原文依据 1")
+            editStatement("Generated unsent correction");click("查看原文依据 1")
             until("File original opens"){has("Generated exact Memory evidence")};scenario.onActivity{it.onBackPressed()}
-            until("Same Memory and unsent edit return"){has(fake.statement(id))&&has("Generated unsent correction")};assertEquals(0,fake.corrections.get());assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
+            until("Same Memory returns"){has(fake.statement(id))};openCorrection();assertTrue(has("Generated unsent correction"));assertEquals(0,fake.corrections.get());assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
     }
     @Test fun fileReturnAfterRemovalWithdrawsOldTextAndKeepsOnlyEdits()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated unsent correction")};click("查看原文依据 1")
+            editStatement("Generated unsent correction");click("查看原文依据 1")
             until("File original opens"){has("Generated exact Memory evidence")};fake.removed.add(id);scenario.onActivity{it.onBackPressed()}
-            until("Removed Memory withdraws old text but retains the edit"){has("请求的资源不存在或已删除。")&&has("Generated unsent correction")};assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(has("保存校正"));assertEquals(0,fake.corrections.get())
+            until("Removed Memory withdraws old text but retains the edit"){has("请求的资源不存在或已删除。")&&has("Generated unsent correction")};assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(hasExact("纠正"));assertEquals(0,fake.corrections.get())
         }
     }
     @Test fun signOutWhileFileOriginalIsOpenCannotRestoreTheOldOwnerViews()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated prior-owner edit")};click("查看原文依据 1");until("File original opens"){has("Generated exact Memory evidence")}
+            editStatement("Generated prior-owner edit");click("查看原文依据 1");until("File original opens"){has("Generated exact Memory evidence")}
             Settings(context).signOut();until("Sign out shows the login screen"){has("登录并继续")&&!has("Generated exact Memory evidence")};scenario.onActivity{it.onBackPressed()};Thread.sleep(300)
             assertFalse(has(fake.statement(id)));assertFalse(has("Generated prior-owner edit"))
         }
@@ -410,12 +430,12 @@ class WorkMemoryJourneyInstrumentedTest {
         fake.source="note"
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated pending correction")}
+            editStatement("Generated pending correction")
             click("查看原文依据 1");until("Independent note opens"){has("Generated exact Memory evidence")};fake.failPage.set(true)
             instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
             until("Return failure gives a retry without old remote content"){has("中央服务暂不可用（503）")&&has("Generated pending correction")}
-            assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(has("保存校正"));assertFalse(has("请求的资源不存在或已删除。"))
-            click("重试");until("Retry restores the same verified Memory and local edit"){has(fake.statement(id))&&has("Generated pending correction")};assertTrue(has("保存校正"))
+            assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(hasExact("纠正"));assertFalse(has("请求的资源不存在或已删除。"))
+            click("重试");until("Retry restores the same verified Memory and local edit"){has(fake.statement(id))&&has("Generated pending correction")};openCorrection();assertTrue(hasExact("纠正"))
         }
     }
     @Test fun newSessionDuringIndependentNoteReadCannotReuseTheOldClick()=fixture{fake->
@@ -443,52 +463,94 @@ class WorkMemoryJourneyInstrumentedTest {
         fake.source="note"
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated paused edit")};click("查看原文依据 1");until("Independent note opens"){has("Generated exact Memory evidence")}
+            editStatement("Generated paused edit");click("查看原文依据 1");until("Independent note opens"){has("Generated exact Memory evidence")}
             fake.holdPage.set(true);instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
             assertTrue("The return membership check is held",fake.pageEntered.await(10,TimeUnit.SECONDS));assertFalse(has(fake.statement(id)))
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED);fake.pageRelease.countDown();Thread.sleep(400);scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-            until("Resume revalidates and restores the Memory and edit"){has(fake.statement(id))&&has("Generated paused edit")};assertEquals(0,fake.corrections.get())
+            until("Resume revalidates and restores the Memory"){has(fake.statement(id))};openCorrection();assertTrue(has("Generated paused edit"));assertEquals(0,fake.corrections.get())
         }
     }
     @Test fun removedResultBeforeDeleteConfirmationCannotWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
-            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has(memoryDeletePromise)}
-            fake.removed.add(id);click("确认");until("A removed result cannot be deleted from the old screen"){has("请求的资源不存在或已删除。")&&!has(fake.statement(id))};assertEquals(0,fake.deletes.get())
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};deleteMemory();until("Delete confirmation opens"){has(memoryDeletePromise)}
+            fake.removed.add(id);click("确认删除");until("A removed result cannot be deleted from the old screen"){has("请求的资源不存在或已删除。")&&!has(fake.statement(id))};assertEquals(0,fake.deletes.get())
+        }
+    }
+    @Test fun detailMoreCorrectionHistoryGenerationAndDeletion()=fixture{fake->
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
+            click("查看原文依据 1");until("The selected Memory's exact original opens"){has("Generated exact Memory evidence")}
+            scenario.onActivity{it.onBackPressed()};until("Original returns to the same Memory"){has(fake.statement(id))};idle(scenario)
+            more()
+            assertTrue("More contains correction",hasExact("纠正这条记忆"))
+            assertTrue("More contains history and validity",hasExact("历史与有效时间"))
+            assertTrue("More contains generation details",hasExact("生成信息"))
+            assertTrue("More contains deletion",hasExact("删除记忆"))
+            tag("memory-more-correct")
+            for(field in listOf("标题","纠正后的内容","判断的边界","生效时间","失效时间"))assertTrue("Correction field $field",hasExact(field))
+            assertTrue("Correction action replaces the old label",hasExact("纠正")&&!hasExact("保存校正"))
+            tag("memory-more-history");until("History and validity shows the current version"){has("当前版本")};idle(scenario)
+            tag("memory-more-generation");until("Generation details shows the generated time"){has("生成时间")}
+            tag("memory-more-delete");until("Delete confirmation"){has(memoryDeletePromise)}
+            assertTrue("Delete title matches web",hasExact("删除这条记忆？"))
+            assertTrue("Delete confirmation action matches web",hasExact("确认删除"))
+            assertTrue("Delete cancellation matches web",hasExact("取消"))
+            click("取消");until("Cancelling deletion returns to the same Memory"){has(fake.statement(id))&&!has(memoryDeletePromise)}
+            assertEquals(0,fake.deletes.get());assertEquals(0,fake.corrections.get())
+        }
+    }
+    @Test fun detailVisualPairs()=fixture{fake->
+        ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
+            visual(scenario,"memory-detail-light")
+            more();visual(scenario,"memory-more-light")
+            tag("memory-more-correct");visual(scenario,"memory-correction-light")
+            tag("memory-more-history");until("History shows current version"){has("当前版本")};idle(scenario);visual(scenario,"memory-history-light")
+            tag("memory-more-generation");until("Generation details visible"){has("生成时间")};visual(scenario,"memory-generation-light")
+            tag("memory-more-delete");until("Delete confirmation visible"){has(memoryDeletePromise)};visual(scenario,"memory-delete-light");click("取消")
+            MoteAppearance.select(context,AppearancePreference.DARK);scenario.recreate()
+            until("Dark Memory restores"){has(fake.statement(id))};idle(scenario)
+            visual(scenario,"memory-detail-dark")
+            more();visual(scenario,"memory-more-dark")
+            tag("memory-more-correct");visual(scenario,"memory-correction-dark")
+            tag("memory-more-history");until("Dark history shows current version"){has("当前版本")};idle(scenario);visual(scenario,"memory-history-dark")
+            tag("memory-more-generation");until("Dark generation details visible"){has("生成时间")};visual(scenario,"memory-generation-dark")
+            tag("memory-more-delete");until("Dark delete confirmation visible"){has(memoryDeletePromise)};visual(scenario,"memory-delete-dark");click("取消")
         }
     }
     @Test fun correctionRevalidatesAndReturnsToTheSameWork()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated correction")};click("保存校正")
+            editStatement("Generated correction");click("纠正")
             until("Successful correction returns to the same work"){fake.corrections.get()==1&&has(fake.goal)&&has(fake.title(id))};assertEquals(0,fake.queryWrites.get());assertEquals(0,fake.captureWrites.get())
         }
     }
     @Test fun removedResultBeforeCorrectionCannotWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated correction")};fake.removed.add(id);click("保存校正")
+            editStatement("Generated correction");fake.removed.add(id);click("纠正")
             until("A removed result cannot be corrected from the old screen"){has("请求的资源不存在或已删除。")&&has("Generated correction")};assertEquals(0,fake.corrections.get());assertFalse(has(fake.statement(id)))
         }
     }
     @Test fun leavingDuringDeleteVerificationCannotSendTheOldWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
-            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has(memoryDeletePromise)}
-            fake.holdPage.set(true);click("确认");assertTrue("The delete membership read is held",fake.pageEntered.await(10,TimeUnit.SECONDS));scenario.onActivity{it.navigate("overview")};fake.pageRelease.countDown()
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};deleteMemory();until("Delete confirmation opens"){has(memoryDeletePromise)}
+            fake.holdPage.set(true);click("确认删除");assertTrue("The delete membership read is held",fake.pageEntered.await(10,TimeUnit.SECONDS));scenario.onActivity{it.navigate("overview")};fake.pageRelease.countDown()
             until("The new page becomes idle"){var ready=false;scenario.onActivity{ready=!it.isWorking};ready};assertEquals("Leaving before the guarded write sends no DELETE",0,fake.deletes.get());assertFalse(has(fake.statement(id)))
         }
     }
     @Test fun leavingDuringCorrectionVerificationCannotSendTheOldWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated correction")};fake.holdPage.set(true);click("保存校正")
+            editStatement("Generated correction");fake.holdPage.set(true);click("纠正")
             assertTrue("The correction membership read is held",fake.pageEntered.await(10,TimeUnit.SECONDS));scenario.onActivity{it.navigate("overview")};fake.pageRelease.countDown()
             until("The new page becomes idle"){var ready=false;scenario.onActivity{ready=!it.isWorking};ready};assertEquals("Leaving before the guarded write sends no correction",0,fake.corrections.get());assertFalse(has(fake.statement(id)))
         }
     }
     @Test fun signingOutDuringDeleteVerificationCannotSendTheOldWrite()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
-            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("删除记忆");until("Delete confirmation opens"){has(memoryDeletePromise)}
-            fake.holdPage.set(true);click("确认");assertTrue("The delete membership read is held",fake.pageEntered.await(10,TimeUnit.SECONDS));Settings(context).signOut();CentralAccess.resolve(context);fake.pageRelease.countDown()
+            openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};deleteMemory();until("Delete confirmation opens"){has(memoryDeletePromise)}
+            fake.holdPage.set(true);click("确认删除");assertTrue("The delete membership read is held",fake.pageEntered.await(10,TimeUnit.SECONDS));Settings(context).signOut();CentralAccess.resolve(context);fake.pageRelease.countDown()
             until("Signed-out view is visible"){has("登录并继续")};assertEquals("A superseded session sends no DELETE",0,fake.deletes.get());assertFalse(has(fake.statement(id)))
         }
     }
@@ -496,7 +558,7 @@ class WorkMemoryJourneyInstrumentedTest {
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);click("下一页");until("Second page opens"){has(fake.title(fake.ids.last()))&&!has(fake.title(fake.ids.first()))};scenario.recreate()
             until("Same session restores the second page"){has(fake.title(fake.ids.last()))&&!has(fake.title(fake.ids.first()))};val id=fake.ids[20];tag("work-memory:$id");until("Selected Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated retained recreation edit")}
+            editStatement("Generated retained recreation edit")
             val app=context.applicationContext as android.app.Application;val state=AtomicReference<android.os.Bundle>()
             val callback=object:android.app.Application.ActivityLifecycleCallbacks {
                 override fun onActivitySaveInstanceState(activity:android.app.Activity,out:android.os.Bundle){if(activity is CentralActivity)state.set(android.os.Bundle(out))}
@@ -504,7 +566,7 @@ class WorkMemoryJourneyInstrumentedTest {
             }
             app.registerActivityLifecycleCallbacks(callback);try{scenario.recreate()}finally{app.unregisterActivityLifecycleCallbacks(callback)}
             assertNotNull(state.get());assertFalse("User text is never placed in saved state",bundleStrings(state.get()).any{it.contains("Generated retained recreation edit")})
-            until("Same session revalidates and restores the same Memory and edit"){has(fake.statement(id))&&has("Generated retained recreation edit")}
+            until("Same session revalidates and restores the same Memory"){has(fake.statement(id))};openCorrection();assertTrue(has("Generated retained recreation edit"))
             val settings=Settings(context);settings.signOut();CentralAccess.resolve(context);settings.saveConnection(fake.origin,fake.token,"Generated activity memory",true);CentralAccess.resolve(context)
             scenario.recreate();until("A new session does not replay the old Memory"){has(fake.goal)&&!has(fake.statement(id))};assertFalse(has(fake.title(id)));assertFalse(has("Generated retained recreation edit"))
         }
@@ -512,41 +574,41 @@ class WorkMemoryJourneyInstrumentedTest {
     @Test fun changedMemoryOnRecreationRetainsOnlyTheUserEdit()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated retained recreation edit")};fake.mutateStatement=true;scenario.recreate()
+            editStatement("Generated retained recreation edit");fake.mutateStatement=true;scenario.recreate()
             until("Changed remote Memory is withdrawn but the user edit survives"){has("请求的资源不存在或已删除。")&&has("Generated retained recreation edit")}
-            assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(has("保存校正"));assertEquals(0,fake.corrections.get())
+            assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(hasExact("纠正"));assertEquals(0,fake.corrections.get())
         }
     }
     @Test fun recreatedMemoryTemporaryFailureOffersRetryAndRetainsEdit()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated pending recreation edit")};fake.failMemory.set(true);scenario.recreate()
-            until("A recreated Memory offers retry while keeping only the edit"){has("中央服务暂不可用（503）")&&has("Generated pending recreation edit")&&has("重试")};assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(has("保存校正"))
-            click("重试");until("Retry verifies and restores the Memory and edit"){has(fake.statement(id))&&has("Generated pending recreation edit")};assertTrue(has("保存校正"));assertEquals(0,fake.corrections.get())
+            editStatement("Generated pending recreation edit");fake.failMemory.set(true);scenario.recreate()
+            until("A recreated Memory offers retry while keeping only the edit"){has("中央服务暂不可用（503）")&&has("Generated pending recreation edit")&&has("重试")};assertFalse(has(fake.statement(id)));assertFalse(has(fake.title(id)));assertFalse(hasExact("纠正"))
+            click("重试");until("Retry verifies and restores the Memory"){has(fake.statement(id))};openCorrection();assertTrue(has("Generated pending recreation edit"));assertTrue(hasExact("纠正"));assertEquals(0,fake.corrections.get())
         }
     }
     @Test fun intentionallyEmptyEditSurvivesRepeatedInvalidatedRecreation()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("")};fake.mutateStatement=true;scenario.recreate()
+            editStatement("");fake.mutateStatement=true;scenario.recreate()
             fun emptyEdit()=main{shown().filterIsInstance<EditText>().singleOrNull{(it.tag as? MemoryTopicEdit)?.key=="statement"}?.text.toString()==""}
             until("The cleared edit is retained when the Memory changes"){has("有未保存的更改")&&emptyEdit()&&!has(fake.statement(id))};scenario.recreate()
             until("The cleared edit survives a second recreation"){has("有未保存的更改")&&emptyEdit()&&!has(fake.statement(id))}
             main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.key=="statement"}.setText("\u0000")};scenario.recreate()
-            until("A NUL edit also survives recreation"){has("有未保存的更改")&&main{shown().filterIsInstance<EditText>().singleOrNull{(it.tag as? MemoryTopicEdit)?.key=="statement"}?.text.toString()=="\u0000"}};assertFalse(has("保存校正"));assertEquals(0,fake.corrections.get())
+            until("A NUL edit also survives recreation"){has("有未保存的更改")&&main{shown().filterIsInstance<EditText>().singleOrNull{(it.tag as? MemoryTopicEdit)?.key=="statement"}?.text.toString()=="\u0000"}};assertFalse(hasExact("纠正"));assertEquals(0,fake.corrections.get())
         }
     }
     @Test fun fileReaderRecreationRestoresOnlyTheSameAuthorizedMemoryAndEdit()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated file recreation edit")};click("查看原文依据 1");until("File original opens"){has("Generated exact Memory evidence")};scenario.recreate()
-            until("Recreation revalidates the Memory and retains its edit"){has(fake.statement(id))&&has("Generated file recreation edit")};assertFalse(has("Generated exact Memory evidence"));assertEquals(0,fake.corrections.get())
+            editStatement("Generated file recreation edit");click("查看原文依据 1");until("File original opens"){has("Generated exact Memory evidence")};scenario.recreate()
+            until("Recreation revalidates the Memory"){has(fake.statement(id))};openCorrection();assertTrue(has("Generated file recreation edit"));assertFalse(has("Generated exact Memory evidence"));assertEquals(0,fake.corrections.get())
         }
     }
     @Test fun anotherNodeAfterRecreationCannotReceiveTheOldEdit()=fixture{fake->
         ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","activity")).use{scenario->
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};idle(scenario)
-            main{shown().filterIsInstance<EditText>().single{(it.tag as? MemoryTopicEdit)?.label=="陈述"}.setText("Generated prior-node edit")}
+            editStatement("Generated prior-node edit")
             Settings(context).saveConnection("http://127.0.0.1:1","generated-other-node-owner-token-1234567890","Generated other node",true);CentralAccess.resolve(context);scenario.recreate()
             until("The other node cannot show the old Memory"){!has(fake.statement(id))&&!has(fake.title(id))&&!has("Generated prior-node edit")};Thread.sleep(1200);assertFalse(has("Generated prior-node edit"));assertEquals(0,fake.corrections.get())
         }

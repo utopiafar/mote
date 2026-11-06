@@ -14,6 +14,7 @@ final class RecordingController: ObservableObject {
     @Published private(set) var elapsed: TimeInterval = 0
     @Published var errorMessage: String?
     @Published private(set) var interruptionCause: String?
+    private(set) var activityRecordingID: UUID?
 
     let model: EditorModel?
     private let syntheticInput: Bool
@@ -69,6 +70,8 @@ final class RecordingController: ObservableObject {
         do {
             try startInput()
             state.start()
+            activityRecordingID = UUID()
+            RecordingLiveActivity.started(self)
             errorMessage = nil
         } catch {
             tearDownInput(closeWriter: true)
@@ -81,6 +84,7 @@ final class RecordingController: ObservableObject {
         interruptionCause = interrupted && CXCallObserver().calls.contains(where: { !$0.hasEnded }) ? "来电" : nil
         state.pause(interrupted: interrupted)
         tearDownInput(closeWriter: false)
+        RecordingLiveActivity.changed(self)
     }
 
     func resume() {
@@ -88,6 +92,7 @@ final class RecordingController: ObservableObject {
         do {
             try startInput()
             state.resume()
+            RecordingLiveActivity.changed(self)
             errorMessage = nil
         } catch {
             tearDownInput(closeWriter: false)
@@ -99,12 +104,15 @@ final class RecordingController: ObservableObject {
         guard isActive else { return }
         state.stop()
         tearDownInput(closeWriter: true)
+        RecordingLiveActivity.stopped(self)
+        activityRecordingID = nil
     }
 
-    func preparePreview(interrupted: Bool) async {
+    func preparePreview(interrupted: Bool, elapsed previewElapsed: TimeInterval = 134) async {
         guard syntheticInput else { return }
         await start()
-        elapsed = 134
+        elapsed = previewElapsed
+        RecordingLiveActivity.changed(self)
         if interrupted {
             pause(interrupted: true)
             interruptionCause = "来电"
@@ -165,7 +173,10 @@ final class RecordingController: ObservableObject {
         guard generation == id, state.phase == .recording, !data.isEmpty else { return }
         do {
             try writer?.appendPCM16(data)
-            if !visualFixture { elapsed += Double(data.count / 2) / currentSampleRate }
+            if !visualFixture {
+                elapsed += Double(data.count / 2) / currentSampleRate
+                RecordingLiveActivity.tick(self)
+            }
         } catch {
             pause()
             errorMessage = "录音未能保存"

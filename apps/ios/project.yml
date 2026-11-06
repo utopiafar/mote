@@ -19,6 +19,7 @@ targets:
     platform: iOS
     sources:
       - App
+      - LiveActivityShared
       - Share/SharePanel.swift
     dependencies:
       - package: MoteKit
@@ -31,6 +32,7 @@ targets:
         product: MoteStorage
       - package: MoteKit
         product: MoteWidgetUI
+      - target: MoteLiveActivity
       - target: MoteShare
         embed: true
       - target: MoteWidgets
@@ -48,6 +50,24 @@ targets:
       configs:
         Debug:
           INFOPLIST_PREPROCESSOR_DEFINITIONS: MOTE_DEVELOPMENT=1
+  MoteLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - LiveActivity
+      - LiveActivityShared
+    dependencies:
+      - package: MoteKit
+        product: MoteCore
+      - package: MoteKit
+        product: MoteDesign
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.live-activity
+        INFOPLIST_FILE: LiveActivity/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) MOTE_ACTIVITY_EXTENSION
   MoteShare:
     type: app-extension
     platform: iOS

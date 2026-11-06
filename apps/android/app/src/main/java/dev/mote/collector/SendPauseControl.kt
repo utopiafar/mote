@@ -22,4 +22,14 @@ internal object SendPauseControl {
         SyncSchedule.invalidate()
         SyncSchedule.schedule(context, settings.read())
     }
+
+    /** Send timing and network policy change together in one committed snapshot. */
+    fun setSendMethod(context: Context, mode: String, intervalMinutes: Int, batchSize: Int, wifiOnly: Boolean) {
+        check(Looper.myLooper() != Looper.getMainLooper())
+        val settings = Settings(context)
+        val current = settings.read()
+        settings.save(current.copy(syncMode = mode, syncIntervalMinutes = intervalMinutes, syncBatchSize = batchSize, wifiOnly = wifiOnly), expected = current)
+        SyncSchedule.invalidate()
+        SyncSchedule.schedule(context, settings.read())
+    }
 }
