@@ -67,6 +67,9 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteSharePreview") {
                     SharePreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteWidgetPreview") {
+                    WidgetPreview()
+                        .preferredColorScheme(previewScheme)
                 } else {
                     HomeRootView(arguments: arguments, editorStore: editorStore)
                 }

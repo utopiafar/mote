@@ -30,8 +30,12 @@ targets:
         product: MoteCentral
       - package: MoteKit
         product: MoteStorage
+      - package: MoteKit
+        product: MoteWidgetUI
       - target: MoteLiveActivity
       - target: MoteShare
+        embed: true
+      - target: MoteWidgets
         embed: true
       - target: MoteControls
         embed: true
@@ -86,6 +90,25 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Share/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: 保存到 Mote
+        SKIP_INSTALL: YES
+  MoteWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+    dependencies:
+      - package: MoteKit
+        product: MoteDesign
+      - package: MoteKit
+        product: MoteWidgetUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.widgets
+        PRODUCT_NAME: MoteWidgets
+        INFOPLIST_FILE: Widgets/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Mote
+        APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
   MoteControls:
     type: app-extension
