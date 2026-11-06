@@ -127,7 +127,8 @@ public enum CaptureSyncAction: Equatable, Sendable {
 }
 
 public struct CaptureSyncFacts: Equatable, Sendable {
-    public var shortcutEnabled: Bool
+    public var notificationShortcutEnabled: Bool
+    public var screenshotShortcutEnabled: Bool
     public var notificationLastReceived: String?
     public var screenshotLastReceived: String?
     public var mediaAdded: Bool
@@ -141,7 +142,8 @@ public struct CaptureSyncFacts: Equatable, Sendable {
     public var storageBytes: Int64?
 
     public init(
-        shortcutEnabled: Bool = true,
+        notificationShortcutEnabled: Bool = true,
+        screenshotShortcutEnabled: Bool = true,
         notificationLastReceived: String? = nil,
         screenshotLastReceived: String? = nil,
         mediaAdded: Bool = true,
@@ -154,7 +156,8 @@ public struct CaptureSyncFacts: Equatable, Sendable {
         sendPaused: Bool = false,
         storageBytes: Int64? = nil
     ) {
-        self.shortcutEnabled = shortcutEnabled
+        self.notificationShortcutEnabled = notificationShortcutEnabled
+        self.screenshotShortcutEnabled = screenshotShortcutEnabled
         self.notificationLastReceived = notificationLastReceived
         self.screenshotLastReceived = screenshotLastReceived
         self.mediaAdded = mediaAdded
@@ -182,12 +185,13 @@ public struct CaptureSyncPresentation: Equatable, Sendable {
 
     public init(facts: CaptureSyncFacts) {
         var sources: [CaptureSourcePresentation] = []
-        let shortcutProblem = facts.shortcutEnabled ? nil : (detail: "快捷指令未启用", action: CaptureSourceAction.openShortcutSetup)
+        let notificationProblem = facts.notificationShortcutEnabled ? nil : (detail: "快捷指令未启用", action: CaptureSourceAction.openShortcutSetup)
+        let screenshotProblem = facts.screenshotShortcutEnabled ? nil : (detail: "快捷指令未启用", action: CaptureSourceAction.openShortcutSetup)
         sources.append(Self.fixedSource(
-            .notification, title: "通知", lastReceived: facts.notificationLastReceived, shortcutProblem: shortcutProblem
+            .notification, title: "通知", lastReceived: facts.notificationLastReceived, shortcutProblem: notificationProblem
         ))
         sources.append(Self.fixedSource(
-            .screenshot, title: "截图", lastReceived: facts.screenshotLastReceived, shortcutProblem: shortcutProblem
+            .screenshot, title: "截图", lastReceived: facts.screenshotLastReceived, shortcutProblem: screenshotProblem
         ))
 
         if facts.mediaAdded {

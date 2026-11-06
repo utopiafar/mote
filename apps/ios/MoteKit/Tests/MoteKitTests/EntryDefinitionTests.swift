@@ -1,5 +1,6 @@
 import XCTest
 import MoteCore
+import MoteWidgetUI
 
 final class EntryDefinitionTests: XCTestCase {
     func testEverySystemEntryUsesOnlyEditorAskOrPause() {
@@ -23,6 +24,16 @@ final class EntryDefinitionTests: XCTestCase {
         XCTAssertNil(MoteEntry(url: URL(string: "https://mote.example/entry/record")!))
         XCTAssertNil(MoteEntry(url: URL(string: "mote://entry/record?source=shortcut")!))
         XCTAssertNil(MoteEntry(url: URL(string: "mote://entry/record#top")!))
+    }
+
+    func testWidgetLayoutsReuseTheUnifiedEntries() {
+        XCTAssertEqual(MoteEntry.widgetSmall, [.record, .photo, .recording, .ask])
+        XCTAssertEqual(MoteEntry.widgetMediumPrimary, .ask)
+        XCTAssertEqual(MoteEntry.widgetMediumActions, [.record, .photo, .recording])
+        XCTAssertEqual(Set(MoteEntry.widgetSmall.map(\.id)).count, MoteEntry.widgetSmall.count)
+        XCTAssertTrue(MoteEntry.widgetSmall.contains(MoteEntry.widgetMediumPrimary))
+        XCTAssertTrue(Set(MoteEntry.widgetMediumActions.map(\.id)).isSubset(of: Set(MoteEntry.widgetSmall.map(\.id))))
+        XCTAssertEqual(MoteEntry.widgetSmall.map(\.widgetIcon.rawValue), ["compose", "camera", "mic", "ask"])
     }
 
     func testShortcutNamesAndSiriPhrasesMatchThePublishedContract() {

@@ -70,7 +70,8 @@ struct HomeRootView: View {
             arguments: arguments,
             onAsk: { router.destination = .ask($0) },
             onClearScope: { router.destination = .ask(nil) },
-            onOpenConnection: { router.destination = .connection }
+            onOpenConnection: { router.destination = .connection },
+            onOpenOriginal: { router.destination = .original($0) }
         )
     }
 

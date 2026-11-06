@@ -52,11 +52,23 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteCaptureSyncPreview") {
                     CaptureSyncPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteSourcePreview") {
+                    SourceDetailPreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteShortcutSetupPreview") {
+                    ShortcutSetupPreview()
+                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteProfilePreview") {
                     ProfileMenuPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteLibraryPreview") {
+                    LibraryMemoriesPreview()
+                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteSharePreview") {
                     SharePreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteWidgetPreview") {
+                    WidgetPreview()
                         .preferredColorScheme(previewScheme)
                 } else {
                     HomeRootView(arguments: arguments, editorStore: editorStore)
