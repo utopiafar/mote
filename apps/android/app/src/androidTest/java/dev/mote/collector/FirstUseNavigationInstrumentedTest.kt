@@ -60,15 +60,19 @@ class FirstUseNavigationInstrumentedTest {
             assertEquals(0,context.queue().depth()); click("保存")
             until("Saved editor returns to the connection entry") { activity() is ConnectionActivity }
             click("稍后连接")
-            until("Local receipt after explicit save") { activity() is MainActivity && shown().filterIsInstance<TextView>().any { it.text.toString()=="• 本机已保存" } }; screenshot("local-saved-receipt")
+            val row=context.queue().peek()!!
+            until("Saved record is an ordinary home row") { activity() is MainActivity && shown().any { it.tag=="home-original:${row.getString("id")}" && it.contentDescription?.contains("已保存")==true } }; screenshot("home-saved-row-light")
+            main { MoteAppearance.select(context,AppearancePreference.DARK) }; screenshot("home-saved-row-dark")
+            main { MoteAppearance.select(context,AppearancePreference.LIGHT) }
             main {
                 assertFalse(shown().filterIsInstance<TextView>().any { it.text.toString() in setOf("先留下，再慢慢想。", "最近留下的内容") })
-                assertTrue(shown().any { it.tag == "home-record-receipt" })
+                assertFalse(shown().any { it.tag == "home-record-receipt" })
+                assertTrue(shown().single { it.tag=="home-original:${row.getString("id")}" }.contentDescription.toString().contains(original))
             }
-            val row=context.queue().peek()!!; assertEquals(original,row.getString("ocrText")); assertEquals(description,row.getJSONObject("metadata").getString("ownerDescription")); assertFalse(row.optBoolean("uploaded")); assertFalse(settings.read().hasSyncConnection())
-            click("查看原文"); until("Exact full-page local original") { activity() is CaptureRecordsActivity && shown().filterIsInstance<TextView>().any { it.text.toString()==original } }; screenshot("first-local-original")
+            assertEquals(original,row.getString("ocrText")); assertEquals(description,row.getJSONObject("metadata").getString("ownerDescription")); assertFalse(row.optBoolean("uploaded")); assertFalse(settings.read().hasSyncConnection())
+            main { shown().single { it.tag=="home-original:${row.getString("id")}" }.performClick() }; until("Exact full-page local original") { activity() is CaptureRecordsActivity && shown().filterIsInstance<TextView>().any { it.text.toString()==original } }; screenshot("first-local-original")
             main { assertEquals("原文",shown().filterIsInstance<TextView>().single { it.tag=="detail-title" }.text.toString()); assertTrue(shown().filterIsInstance<android.widget.Spinner>().isEmpty()) }
-            click("返回上一页"); until("Return to the same local receipt") { activity() is MainActivity && shown().filterIsInstance<TextView>().any { it.text.toString()=="• 本机已保存" } }
+            click("返回上一页"); until("Return to the same saved home row") { activity() is MainActivity && shown().any { it.tag=="home-original:${row.getString("id")}" && it.contentDescription?.contains("已保存")==true } }
             assertEquals(row.getString("id"),context.queue().peek()!!.getString("id")); assertEquals(1,context.queue().depth()); assertFalse(settings.enabled); assertFalse(ProjectionService.running)
         }
     }

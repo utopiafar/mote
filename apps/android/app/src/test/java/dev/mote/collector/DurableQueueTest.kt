@@ -191,4 +191,24 @@ class DurableQueueTest {
         assertEquals(2, next.getInt("totalCount")); assertTrue(next.isNull("nextCursor"))
     }
 
+    @Test fun `home recent page is bounded newest first and retains exact origin bindings`() {
+        val queue = DurableQueue(folder.newFolder(), cipher).apply { archiveOrigin = "https://generated.example" }
+        val older = event().put("source", "note").put("deviceId", "generated-device").put("ocrText", "Generated older")
+        val newer = event().put("source", "note").put("deviceId", "generated-device").put("ocrText", "Generated newer")
+            .put("capturedAt", "2027-01-01T00:00:00Z")
+        queue.enqueue(older, null, 100000)
+        queue.enqueue(newer, null, 100000)
+        queue.acknowledge(newer.getString("id"), retentionDays = 7)
+        queue.archiveOrigin = "https://other.example"
+
+        val page = queue.recentPage(limit = 1)
+        val items = page.getJSONArray("items")
+        assertEquals(1, items.length())
+        assertEquals(newer.getString("id"), items.getJSONObject(0).getString("id"))
+        assertEquals("Generated newer", items.getJSONObject(0).getString("textPreview"))
+        assertTrue(items.getJSONObject(0).getBoolean("uploaded"))
+        assertEquals("https://generated.example", page.getJSONObject("bindings").getString(newer.getString("id")))
+        assertEquals(older.getString("id"), queue.recentPage(limit = 2).getJSONArray("items").getJSONObject(1).getString("id"))
+    }
+
 }

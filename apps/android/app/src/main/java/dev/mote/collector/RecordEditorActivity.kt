@@ -546,7 +546,10 @@ open class RecordEditorActivity : MoteActivity() {
         val text = field.text.toString(); val files = JSONArray(attachments.toString()); val source = JSONObject(origin.toString()); val noteDescription = description.text.toString(); val presentation = originPresentation?.let { JSONObject(it.toString()) }; enabled(false)
         task.start("", {}, {
             notes.submit(text, files, source, noteDescription, presentation, intent.getBooleanExtra("firstUse", false))
-        }) { result -> result.onSuccess { setResult(RESULT_OK, Intent().putExtra("recordId", it)); finish() }.onFailure { enabled(true); status.text = it.message } }
+        }) { result -> result.onSuccess {
+            Toast.makeText(this, MoteI18n.text("已保存"), Toast.LENGTH_SHORT).show()
+            setResult(RESULT_OK, Intent().putExtra("recordId", it)); finish()
+        }.onFailure { enabled(true); status.text = it.message } }
     }
     override fun onStart() { super.onStart(); editorStarted = true; RecordingSession.observe(recordingObserver) }
     override fun onResume() { super.onResume(); editorResumed = true; maybeStartRecording(); renderRecording() }

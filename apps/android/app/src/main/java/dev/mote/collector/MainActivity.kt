@@ -24,7 +24,6 @@ import dev.mote.collector.plugins.DailyHomeOwner
 import dev.mote.collector.plugins.DailyHomePlugin
 import dev.mote.collector.plugins.DailyHomeSections
 import dev.mote.collector.plugins.NativeAdministrationPlugin
-import dev.mote.collector.plugins.NativeRecordReceipt
 import dev.mote.collector.plugins.NativeSystemToolsPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
@@ -92,8 +91,6 @@ class MainActivity : MoteActivity() {
     private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
     private lateinit var homeNoticeRow: HomeNoticeRow
-    private lateinit var homeRecordReceipt: LinearLayout
-    private var homeReceiptAvailable = false
     internal fun isFirstUseRecordEntry() = firstUse
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
@@ -314,7 +311,6 @@ class MainActivity : MoteActivity() {
         homeNoticeRow = home.noticeRow(this, open = ::openHomeNotice, act = ::runHomeNotice)
         content.addView(homeNoticeRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         if (!loadedConfig.hasSyncConnection() && !settings.enabled) homeNoticeRow.bind(HomeNotice.connect())
-        homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         // H08: waiting calendar items and existing discoveries lead the home list in the
         // shared row style; the feed below groups recent originals by day. Neither block
         // takes a position when its plugin has nothing to show.
@@ -335,7 +331,7 @@ class MainActivity : MoteActivity() {
             firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
         }) { original, origin ->
             startActivity(Intent(this, CaptureRecordsActivity::class.java)
-                .putExtra("recordId", original.id).putExtra("directReader", true).putExtra("recordRemote", true)
+                .putExtra("recordId", original.id).putExtra("directReader", true).putExtra("recordRemote", original.remote)
                 .putExtra("recordOrigin", origin).putExtra("recordDeviceId", original.deviceId)
                 .putExtra("recordSource", original.source).putExtra("recordDate", original.day))
         }
@@ -533,7 +529,6 @@ class MainActivity : MoteActivity() {
             }
             val captures = home.captures(LocalStatusProducer.get(applicationContext).state.value.revision.records,
                 applicationContext.recordDraftStore().draft(),
-                NativeRecordReceipt.recordId?.let { id -> QueueStorage(applicationContext).committedCapture(id)?.let { applicationContext.withNativeNotePreview(it) } },
                 pendingRecovery = { QueueStorage(applicationContext).stageRecoveryPending() }) {
                 HomeLocalCaptures.exists(
                     queue = { applicationContext.queue() },
@@ -547,24 +542,6 @@ class MainActivity : MoteActivity() {
                 // must still let independently readable drafts and source rows reach Home.
                 homeHasRecords = capturePage.isNull("hasAnyRecords") || capturePage.getBoolean("hasAnyRecords") || files.isNotEmpty() || sources.any { it.first.syncContinuously }
                 firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
-                val receipt = capturePage.optJSONObject("savedReceipt")
-                homeReceiptAvailable = receipt != null
-                val receiptSignature = home.receiptSignature(receipt?.optString("id").orEmpty(), receipt?.let(NativeRecordPreview::text).orEmpty(), receipt?.optString("capturedAt").orEmpty(), loadedConfig.hasSyncConnection())
-                if (home.receiptChanged(receiptSignature)) {
-                homeRecordReceipt.removeAllViews()
-                homeRecordReceipt.visibility = if (receipt == null) View.GONE else View.VISIBLE
-                if (receipt != null) {
-                    val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=MoteUi.shape(this@MainActivity,NativeColorRole.SURFACE,NativeRadiusRole.CONTAINER,true); setPadding(dp(16),dp(16),dp(16),dp(12)) }
-                    card.addView(TextView(this).apply { text="• "+MoteI18n.text("本机已保存"); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.ACCENT) })
-                    card.addView(TextView(this).apply { text=NativeRecordPreview.text(receipt).ifBlank { MoteI18n.text("记录") }; MoteUi.type(this,NativeFontRole.BODY); MoteUi.textColor(this,NativeColorRole.INK); maxLines=5; setPadding(0,dp(12),0,dp(16)) })
-                    val row=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL }
-                    val at=runCatching { java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT).withLocale(MoteI18n.locale()).withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(receipt.getString("capturedAt"))) }.getOrDefault("")
-                    row.addView(TextView(this).apply { text=listOf(MoteI18n.text("记录"),at).filter(String::isNotBlank).joinToString(" · "); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(0,-2,1f))
-                    lightTextAction(MoteI18n.text("查看原文")+" →",row) { startActivity(Intent(this@MainActivity,CaptureRecordsActivity::class.java).putExtra("recordId",receipt.getString("id")).putExtra("directReader",true)) }.contentDescription=MoteI18n.text("查看原文")
-                    card.addView(row); homeRecordReceipt.addView(card,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(18) })
-                    if(loadedConfig.hasSyncConnection()) lightTextAction(MoteI18n.text("查看 Central 的接收结果")+" ↗",homeRecordReceipt) { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(loadedConfig.server))) }
-                }
-                }
                 val sourceSignature = home.sourceSignature(sources.filter { it.first.syncContinuously }.map { (source, state) ->
                     Triple(source.id, source.name, LocalContentPresentation.sourceStatus(source, state) + state.optString("folderProgress").takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty())
                 })

@@ -11,13 +11,13 @@ import java.util.UUID
 /**
  * Drives the same `HomeLocalCaptures.collect` call `MainActivity.loadHomeContent` issues each
  * refresh cycle: the queue is opened for the existence check only when the local-records
- * revision changed; drafts, the saved receipt and the source rows pass through every cycle.
+ * revision changed; drafts and the source rows pass through every cycle.
  */
 class HomeLocalSignatureTest {
 
-    private fun collect(cache: RevisionCache, revision: Long, draft: JSONObject = JSONObject(), receipt: JSONObject? = null,
+    private fun collect(cache: RevisionCache, revision: Long, draft: JSONObject = JSONObject(),
                         pendingRecovery: () -> Boolean = { false }, exists: () -> Boolean) =
-        HomeLocalCaptures.collect(cache, revision, draft, receipt, pendingRecovery, exists)
+        HomeLocalCaptures.collect(cache, revision, draft, pendingRecovery, exists)
 
     @Test fun anUnchangedRecordsRevisionNeverReopensTheQueue() {
         val cache = RevisionCache()
@@ -288,14 +288,6 @@ class HomeLocalSignatureTest {
         .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 1000)
         .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")).put("source", "note")
 
-    @Test fun theSavedReceiptPassesThroughWhenPresent() {
-        val cache = RevisionCache()
-        val receipt = JSONObject().put("id", "r-1").put("capturedAt", "2026-10-31T10:00:00Z")
-        val withReceipt = collect(cache, 1, receipt = receipt) { true }
-        assertEquals("r-1", withReceipt.getJSONObject("savedReceipt").getString("id"))
-        assertNull("no receipt leaves no card key", collect(cache, 1, receipt = null) { true }.optJSONObject("savedReceipt"))
-    }
-
     @Test fun anUnsetSourceSignatureNeverMatchesAnEmptyList() {
         // Mirrors the activity's nullable initial signature: an empty first render must still
         // build so the "no folders yet" guidance is not skipped.
@@ -320,17 +312,4 @@ class HomeLocalSignatureTest {
         )
     }
 
-    @Test fun receiptSignaturesCoverTheWholeCard() {
-        val base = HomeLocalSignature.receipt("r1", "preview", "10:00", connected = true)
-        assertEquals(base, HomeLocalSignature.receipt("r1", "preview", "10:00", true))
-        assertNotEquals(base, HomeLocalSignature.receipt("r2", "preview", "10:00", true))
-        assertNotEquals(base, HomeLocalSignature.receipt("r1", "preview 2", "10:00", true))
-        assertNotEquals(base, HomeLocalSignature.receipt("r1", "preview", "10:01", true))
-        assertNotEquals("the Central link toggle changes the card", base, HomeLocalSignature.receipt("r1", "preview", "10:00", false))
-        assertNotEquals(
-            "separators inside the preview cannot collide with boundaries",
-            HomeLocalSignature.receipt("a\u0002b", "c", "d", true),
-            HomeLocalSignature.receipt("a", "b\u0002c", "d", true),
-        )
-    }
 }

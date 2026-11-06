@@ -23,6 +23,8 @@ internal object HomeFeed {
         val hasImage: Boolean,
         val day: String,
         val row: JSONObject,
+        val remote: Boolean = true,
+        val saved: Boolean = false,
     )
 
     class Day(val label: String, val items: List<Original>)
@@ -33,7 +35,23 @@ internal object HomeFeed {
         return (0 until rows.length()).map { original(rows.getJSONObject(it)) }
     }
 
-    fun original(item: JSONObject): Original {
+    fun localPage(read: () -> JSONObject): List<Original> {
+        val rows = read().getJSONArray("items")
+        return (0 until rows.length()).map { original(rows.getJSONObject(it), remote = false, saved = true) }
+    }
+
+    /** Only records bound to the selected Central and device join by id. Other local originals stay local. */
+    fun merge(local: List<Original>, localBindings: Map<String, String>, central: List<Original>, origin: String): List<Original> {
+        val rows = LinkedHashMap<Triple<String, String, String>, Original>()
+        local.forEach { item ->
+            val scope = localBindings[item.id].orEmpty().ifBlank { "local:${item.deviceId}" }
+            rows[Triple(scope, item.deviceId, item.id)] = item
+        }
+        central.forEach { item -> rows[Triple(origin, item.deviceId, item.id)] = item }
+        return rows.values.toList()
+    }
+
+    fun original(item: JSONObject, remote: Boolean = true, saved: Boolean = false): Original {
         val id = item.getString("id")
         require(UUID.fromString(id).toString() == id)
         val capturedAt = Instant.parse(item.getString("capturedAt"))
@@ -54,6 +72,8 @@ internal object HomeFeed {
             hasImage = item.optBoolean("hasImage"),
             day = capturedAt.atZone(zone).toLocalDate().toString(),
             row = item,
+            remote = remote,
+            saved = saved,
         )
     }
 
@@ -74,11 +94,11 @@ internal object HomeFeed {
         else -> DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(MoteI18n.locale()).format(date)
     }
 
-    /** The row meta is always "time · type", matching the capture rows elsewhere. */
+    /** The row meta is "time · type", plus the local save state until Central supplies the row. */
     fun detail(original: Original): String {
         val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
             .withLocale(MoteI18n.locale()).withZone(ZoneId.systemDefault()).format(original.capturedAt)
-        return "$time · ${original.kind}"
+        return "$time · ${original.kind}" + if (original.saved) " · " + MoteI18n.text("已保存") else ""
     }
 
     /** First readable line wins: captured text, then window title, then the app name. */

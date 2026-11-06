@@ -156,27 +156,19 @@ internal class DailyHomeOwner internal constructor(
     internal fun captures(
         recordsRevision: Long,
         draft: JSONObject,
-        savedReceipt: JSONObject?,
         pendingRecovery: () -> Boolean,
         exists: () -> Boolean,
     ): JSONObject {
         check(active) { "Daily home plugin is stopped" }
-        return local.captures(recordsRevision, draft, savedReceipt, pendingRecovery, exists)
+        return local.captures(recordsRevision, draft, pendingRecovery, exists)
     }
 
     internal fun sourceSignature(rows: List<Triple<String, String, String>>) =
         HomeLocalSignature.sources(rows)
 
-    internal fun receiptSignature(id: String, preview: String, capturedAt: String, connected: Boolean) =
-        HomeLocalSignature.receipt(id, preview, capturedAt, connected)
-
     /** True when the rendered sources changed; an unchanged signature reuses
      * the mounted rows without rebuilding them. */
     internal fun sourcesChanged(signature: String) = local.sourcesChanged(signature)
-
-    /** True when the saved-receipt card changed; an unchanged signature keeps
-     * the existing card. */
-    internal fun receiptChanged(signature: String) = local.receiptChanged(signature)
 
     internal fun close() {
         closed = true
