@@ -20,6 +20,7 @@ import android.widget.*
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
+import dev.mote.collector.ui.moteGlyph
 
 /** Shared, native presentation for the collector and its detail screens. */
 internal object MoteUi {
@@ -349,10 +350,12 @@ internal fun Activity.moteDetailPageContent(primary: MotePrimaryTab? = detailTab
     val root = NativeAppShell(this).apply { moteInsets() }
     val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(if (title == null) 66 else 48) }
     header.addView(if (title == null) TextView(this).apply {
-        text = "‹  " + MoteI18n.text("返回上级")
+        text = MoteI18n.text("返回上级")
+        moteGlyph(MoteGlyph.BACK, NativeColorRole.MUTED, 20, atStart = true)
         MoteUi.type(this, NativeFontRole.ACTION); MoteUi.textColor(this, NativeColorRole.MUTED)
         gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
         setPadding(moteDp(16), moteDp(4), moteDp(16), moteDp(4))
+        tag = "local-back"
         contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { onBack() }
     } else MoteComponents.iconButton(this, MoteGlyph.BACK, MoteI18n.text("返回上一页")) { onBack() }, if (title == null) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(moteDp(48), moteDp(48)).apply { marginStart = moteDp(6) })
     if (title != null) header.addView(TextView(this).apply {

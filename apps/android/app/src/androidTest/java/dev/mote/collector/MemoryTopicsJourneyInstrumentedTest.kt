@@ -49,7 +49,7 @@ class MemoryTopicsJourneyInstrumentedTest {
         fail(label + ": " + main { shown().filterIsInstance<TextView>().joinToString(" | ") { it.text.toString() } })
     }
     private fun settled() = (activity() as? CentralActivity)?.isWorking != true
-    private fun revealManagement() { if(settled()) shown().filterIsInstance<TextView>().singleOrNull { it.text.toString()==MoteI18n.text("更多")+"  ›"&&it.isClickable&&it.isEnabled }?.performClick() }
+    private fun revealManagement() { if(settled()) shown().filterIsInstance<TextView>().singleOrNull { it.tag=="disclosure:"+MoteI18n.text("更多")&&it.isClickable&&it.isEnabled }?.performClick() }
     private fun click(label: String) { until(label) { main { if(settled()&&!text(label))revealManagement();settled() && shown().filterIsInstance<TextView>().any { it.text.toString() == label && it.isClickable && it.isEnabled } } }; main { shown().filterIsInstance<TextView>().first { it.text.toString() == label && it.isClickable && it.isEnabled }.performClick() } }
     private fun clickTag(tag: String) { until(tag) { main { if(settled()&&shown().none { it.tag==tag })revealManagement();settled() && shown().any { it.tag == tag && it.isEnabled } } }; main { shown().single { it.tag == tag }.performClick() } }
     private fun editStatement(value: String) {

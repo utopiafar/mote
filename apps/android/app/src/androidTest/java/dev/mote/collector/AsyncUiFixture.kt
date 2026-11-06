@@ -72,7 +72,7 @@ fun Activity.openGeneratedMenu() {
         val rows = views(window.decorView)
         if (rows.any { it.isShown && it.tag == "menu:" + MoteI18n.text("资料与记忆") }) return
         rows.firstOrNull { it.isShown && it.tag == "home-m-action" }?.let { it.performClick(); return }
-        rows.firstOrNull { it.isShown && (it.tag?.toString()?.startsWith("local-back:") == true || (it is TextView && it.text.toString() == "‹")) }?.performClick()
+        rows.firstOrNull { it.isShown && (it.tag?.toString()?.startsWith("local-back") == true || it.contentDescription == MoteI18n.text("返回上一页")) }?.performClick()
     }
     error("Secondary menu unavailable")
 }
@@ -124,7 +124,7 @@ fun Activity.openGeneratedHome() {
     repeat(8) {
         val rows = views(window.decorView)
         if (rows.any { it.isShown && it.tag == "home-record-action" }) return
-        rows.firstOrNull { it.isShown && (it.tag?.toString()?.startsWith("local-back:") == true || (it is TextView && it.text.toString() == "‹")) }?.performClick()
+        rows.firstOrNull { it.isShown && (it.tag?.toString()?.startsWith("local-back") == true || it.contentDescription == MoteI18n.text("返回上一页")) }?.performClick()
     }
     error("Home return unavailable")
 }
