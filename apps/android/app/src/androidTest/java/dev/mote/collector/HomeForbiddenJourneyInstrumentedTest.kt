@@ -476,6 +476,53 @@ class HomeForbiddenJourneyInstrumentedTest {
         }
     }
 
+    @Test fun aLocalOriginalSurvivesCentralRevocationAndDisconnectWithoutDuplicates() {
+        val directory = File(QueueStorage(context).selected().path)
+        data class Saved(val bytes: ByteArray, val modified: Long)
+        val before = directory.listFiles().orEmpty().associate { it.name to Saved(it.readBytes(), it.lastModified()) }
+        val id = "7f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"
+        try {
+            val settings = Settings(context)
+            context.queue().enqueue(JSONObject().put("id", id).put("deviceId", settings.deviceId)
+                .put("capturedAt", java.time.Instant.now().toString()).put("platform", "android").put("source", "note")
+                .put("durationMs", 0).put("ocrText", "生成的离线首页记录")
+                .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")), null, 1_000_000)
+            Fixture().use { fixture ->
+                fixture.feedItems.put(JSONObject().put("id", id).put("capturedAt", java.time.Instant.now().toString())
+                    .put("source", "note").put("deviceId", settings.deviceId).put("hasImage", false)
+                    .put("textPreview", "生成的离线首页记录"))
+                connect(fixture)
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    val home = onTop("The retained local row and its Central row share one identity") { activity ->
+                        tagged(activity, "home-original:$id") && tagged(activity, "home-original:$feedPhoto")
+                    }
+                    assertEquals("the same id renders once", 1, shown(home).count { it.tag == "home-original:$id" })
+                    fixture.forbidden = true
+                    scenario.moveToState(Lifecycle.State.STARTED)
+                    scenario.moveToState(Lifecycle.State.RESUMED)
+                    until("Revocation withdraws Central rows but keeps the local original and retry") {
+                        tagged(home, "home-original:$id") && !tagged(home, "home-original:$feedPhoto") && retry(home, "home-feed") != null
+                    }
+                    assertEquals("the local row remains singular", 1, shown(home).count { it.tag == "home-original:$id" })
+                    disconnect()
+                    until("Disconnect leaves the same local row without a Central retry") {
+                        tagged(home, "home-original:$id") && !tagged(home, "home-original:$feedPhoto") && retry(home, "home-feed") == null
+                    }
+                    clickInside(home, "home-feed") { it.tag == "home-original:$id" }
+                    onTop("The local row still opens its exact original after disconnect") { activity ->
+                        activity is CaptureRecordsActivity && hasText(activity, "生成的离线首页记录")
+                    }
+                }
+            }
+        } finally {
+            DurableQueue.exclusive {
+                directory.listFiles().orEmpty().forEach { check(it.delete()) }
+                before.forEach { (name, saved) -> File(directory, name).writeBytes(saved.bytes); File(directory, name).setLastModified(saved.modified) }
+            }
+            LocalStateChanges.changed(records = true, immediate = true)
+        }
+    }
+
     @Test fun aDeniedArchiveProbeShowsRetryNotAFalseEmptyHome() {
         Fixture().use { fixture ->
             fixture.feedEmpty = true
@@ -586,7 +633,7 @@ class HomeForbiddenJourneyInstrumentedTest {
         val releaseProbe = CountDownLatch(1)
         private val zone = java.time.ZoneId.systemDefault()
         private val dayStart = java.time.LocalDate.now(zone).atStartOfDay(zone)
-        private val feedItems = JSONArray()
+        val feedItems = JSONArray()
             .put(JSONObject().put("id", feedPhoto).put("capturedAt", java.time.Instant.now().toString()).put("source", "screen")
                 .put("deviceId", "generated-device").put("hasImage", true)
                 .put("windowTitle", "生成的设计稿.png").put("appName", "生成设计工具").put("textPreview", "生成的设计稿标注内容"))

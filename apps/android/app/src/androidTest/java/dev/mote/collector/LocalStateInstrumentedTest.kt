@@ -61,7 +61,7 @@ class LocalStateInstrumentedTest {
             val revision = LocalStateChanges.revisions.value.records
             val cache = RevisionCache()
             val collect = {
-                HomeLocalCaptures.collect(cache, revision, JSONObject(), null,
+                HomeLocalCaptures.collect(cache, revision, JSONObject(),
                     pendingRecovery = { QueueStorage(context).stageRecoveryPending() }) {
                     HomeLocalCaptures.exists(
                         queue = { QueueStorage(context).openQueue() },

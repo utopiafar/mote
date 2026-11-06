@@ -131,4 +131,34 @@ class HomeFeedTest {
             TimeZone.setDefault(previous)
         }
     }
+
+    @Test fun `offline local original is a saved row and its central acknowledgement joins by exact identity`() {
+        val id = "3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"
+        val localRow = row(id, "2026-11-06T03:00:00Z", "note").put("textPreview", "生成的离线记录")
+        val local = HomeFeed.localPage { JSONObject().put("items", JSONArray().put(localRow)) }
+        assertFalse(local.single().remote)
+        assertTrue(local.single().saved)
+        assertTrue(HomeFeed.detail(local.single()).endsWith(" · " + MoteI18n.text("已保存")))
+
+        val central = listOf(HomeFeed.original(localRow))
+        val joined = HomeFeed.merge(local, mapOf(id to "https://central.invalid"), central, "https://central.invalid")
+        assertEquals("the acknowledged id appears once", 1, joined.size)
+        assertTrue(joined.single().remote)
+        assertFalse(joined.single().saved)
+    }
+
+    @Test fun `connection switching never joins another origin or device and access loss keeps local rows`() {
+        val id = "3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"
+        val local = HomeFeed.localPage { JSONObject().put("items", JSONArray().put(row(id, "2026-11-06T03:00:00Z", "note"))) }
+        val central = listOf(
+            HomeFeed.original(row(id, "2026-11-06T03:00:00Z", "note")),
+            HomeFeed.original(row(id, "2026-11-06T03:00:00Z", "note").put("deviceId", "other-device")),
+        )
+        val switched = HomeFeed.merge(local, mapOf(id to "https://old.invalid"), central, "https://new.invalid")
+        assertEquals(3, switched.size)
+        val revoked = HomeFeed.merge(local, mapOf(id to "https://old.invalid"), emptyList(), "")
+        assertEquals(1, revoked.size)
+        assertFalse(revoked.single().remote)
+        assertTrue(revoked.single().saved)
+    }
 }

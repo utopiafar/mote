@@ -75,9 +75,8 @@ class DailyHomePluginTest {
         var queueReads = 0
         val exists = { queueReads++; true }
         val draft = JSONObject().put("text", "generated draft")
-        val receipt = JSONObject().put("id", "r-1").put("capturedAt", "2026-11-04T00:00:00Z")
-        val first = owner.captures(7, draft, receipt, { false }, exists)
-        val second = owner.captures(7, draft, receipt, { false }, exists)
+        val first = owner.captures(7, draft, { false }, exists)
+        val second = owner.captures(7, draft, { false }, exists)
         assertTrue(first.getBoolean("hasAnyRecords"))
         assertTrue(second.getBoolean("hasAnyRecords"))
         assertEquals("an unchanged records revision never reopens the queue", 1, queueReads)
@@ -86,11 +85,6 @@ class DailyHomePluginTest {
         assertTrue("the first content builds its rows", owner.sourcesChanged(sources))
         assertFalse("the same content does not rebuild", owner.sourcesChanged(sources))
         assertTrue("new progress rebuilds", owner.sourcesChanged(owner.sourceSignature(listOf(Triple("s1", "Photos", "13/40")))))
-
-        val card = owner.receiptSignature("r-1", "generated", "2026-11-04T00:00:00Z", connected = true)
-        assertTrue(owner.receiptChanged(card))
-        assertFalse(owner.receiptChanged(card))
-        assertTrue(owner.receiptChanged(owner.receiptSignature("r-1", "generated", "2026-11-04T00:00:00Z", connected = false)))
 
         // A new mount has no rows yet, so the same content must build again.
         owner.sections()

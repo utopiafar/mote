@@ -11,26 +11,21 @@ internal object HomeLocalSignature {
     fun sources(rows: List<Triple<String, String, String>>): String =
         rows.joinToString("") { (id, name, status) -> fields(id, name, status) }
 
-    /** The saved-receipt card: record id, rendered preview, capture time and the Central link visibility. */
-    fun receipt(id: String, preview: String, capturedAt: String, connected: Boolean): String =
-        fields(id, preview, capturedAt, connected.toString())
-
     /** Length-prefixed fields cannot collide no matter what the values contain. */
     private fun fields(vararg values: String): String = values.joinToString("") { "${it.length}:$it" }
 }
 
 /**
  * The plugin-owned local read state: the record revision cache plus the last rendered source
- * and receipt signatures. An unchanged revision or signature reuses the previous answer, so the
- * home neither reopens the queue nor rebuilds rows that still show the same content.
+ * signature. An unchanged revision or signature reuses the previous answer, so the home neither
+ * reopens the queue nor rebuilds rows that still show the same content.
  */
 internal class HomeLocalState {
     private val records = RevisionCache()
     private var sources: String? = null
-    private var receipt: String? = null
 
-    fun captures(recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, pendingRecovery: () -> Boolean, exists: () -> Boolean): JSONObject =
-        HomeLocalCaptures.collect(records, recordsRevision, draft, savedReceipt, pendingRecovery, exists)
+    fun captures(recordsRevision: Long, draft: JSONObject, pendingRecovery: () -> Boolean, exists: () -> Boolean): JSONObject =
+        HomeLocalCaptures.collect(records, recordsRevision, draft, pendingRecovery, exists)
 
     fun sourcesChanged(signature: String): Boolean {
         if (signature == sources) return false
@@ -38,17 +33,10 @@ internal class HomeLocalState {
         return true
     }
 
-    fun receiptChanged(signature: String): Boolean {
-        if (signature == receipt) return false
-        receipt = signature
-        return true
-    }
-
     /** A new home mount has no rendered rows yet; its first render must build
      * even when the content signature still matches the previous Activity. */
     fun resetSignatures() {
         sources = null
-        receipt = null
     }
 }
 
@@ -69,8 +57,8 @@ internal class RevisionCache {
 }
 
 /**
- * The local inventory payload the home reads: the draft flag, the existence check keyed by
- * [recordsRevision] and the saved receipt. [exists] is invoked only when the revision changed —
+ * The local inventory payload the home reads: the draft flag and the existence check keyed by
+ * [recordsRevision]. [exists] is invoked only when the revision changed —
  * or whenever [pendingRecovery] reports stage work still awaiting replay, because the revision
  * cannot see accepted-but-uncommitted inputs.
  */
@@ -88,7 +76,7 @@ internal object HomeLocalCaptures {
     fun exists(queue: () -> DurableQueue, committedProbe: () -> Boolean): Boolean =
         runCatching { queue().anyStored() }.getOrElse { committedProbe() }
 
-    fun collect(cache: RevisionCache, recordsRevision: Long, draft: JSONObject, savedReceipt: JSONObject?, pendingRecovery: () -> Boolean, exists: () -> Boolean): JSONObject {
+    fun collect(cache: RevisionCache, recordsRevision: Long, draft: JSONObject, pendingRecovery: () -> Boolean, exists: () -> Boolean): JSONObject {
         val captures = JSONObject()
         captures.put("hasDraft", draft.optString("text").isNotBlank() || draft.optString("description").isNotBlank() || (draft.optJSONArray("attachments")?.length() ?: 0) > 0 || draft.optJSONObject("origin")?.optString("text").orEmpty().isNotBlank())
         // Pending stage recovery bypasses the revision cache: an unchanged records revision
@@ -96,11 +84,10 @@ internal object HomeLocalCaptures {
         // bypassed answer is never cached, so each cycle re-checks until recovery commits. When
         // the read itself cannot determine the inventory, the last known answer stands instead
         // of a false empty. With no known answer, publish explicit unknown alongside the
-        // independently readable draft/receipt; the next cycle must still retry recovery.
+        // independently readable draft; the next cycle must still retry recovery.
         captures.put("hasAnyRecords", if (pendingRecovery()) {
             try { exists() } catch (_: Exception) { cache.lastOrNull() ?: JSONObject.NULL }
         } else cache.hasRecords(recordsRevision, exists))
-        savedReceipt?.let { captures.put("savedReceipt", it) }
         return captures
     }
 }
