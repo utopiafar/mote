@@ -10186,6 +10186,7 @@ export const german: Readonly<Record<string, string>> = {
   "录音已暂停": "Aufnahme pausiert",
   "暂停录音": "Aufnahme pausieren",
   "继续录音": "Aufnahme fortsetzen",
+  "回到编辑器": "Zurück zum Editor",
   "麦克风权限未开启": "Mikrofonzugriff ist nicht erlaubt",
   "录音未能开始": "Aufnahme konnte nicht gestartet werden",
   "录音未能继续": "Aufnahme konnte nicht fortgesetzt werden",
