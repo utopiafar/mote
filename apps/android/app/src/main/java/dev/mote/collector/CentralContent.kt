@@ -14,6 +14,7 @@ import android.widget.*
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.moteGlyph
 import java.io.File
 
 /** A reader handoff keeps the visible reference title, never a rewritten evidence ID. */
@@ -602,7 +603,8 @@ internal class CentralContent(
             setPadding(0, moteDp(4), 0, 0)
         })
         addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(TextView(this@CentralContent).apply { text = "›"; textSize = 20f; MoteUi.textColor(this, NativeColorRole.ACCENT) }, LinearLayout.LayoutParams(moteDp(20), -2))
+        addView(MoteComponents.icon(this@CentralContent, MoteGlyph.CHEV, NativeColorRole.ACCENT, 20),
+            LinearLayout.LayoutParams(moteDp(20), moteDp(20)))
         setOnClickListener { if (!task.busy) runCatching { action(); MoteUi.styleSelects(body) }.onFailure { notice(it.message ?: MoteI18n.text("操作失败")) } }
     }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(4) }) }
     internal fun disclosure(label: String, parent: LinearLayout = body, eager: Boolean = false, build: (LinearLayout) -> Unit): LinearLayout {
@@ -611,10 +613,14 @@ internal class CentralContent(
         var built = false
         fun ensure() { if (!built) { build(content); built = true } }
         if (eager) ensure()
-        button(label + "  ›", parent = section) {
+        button(label, parent = section) {
             ensure()
             content.visibility = if (content.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        }.apply { contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        }.apply {
+            tag = "disclosure:$label"
+            moteGlyph(MoteGlyph.CHEV, NativeColorRole.MUTED)
+            contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
         section.addView(content)
         return section
     }

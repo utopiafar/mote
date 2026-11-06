@@ -16,6 +16,8 @@ import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
+import dev.mote.collector.ui.moteDisclosureGlyph
+import dev.mote.collector.ui.moteGlyph
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -272,8 +274,8 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
             minimumHeight = ui.moteDp(30); setPadding(ui.moteDp(12), 0, ui.moteDp(4), 0)
         }.also { chipFrame.addView(it, android.widget.FrameLayout.LayoutParams(-2, ui.moteDp(30)).apply { gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL }) }
-        scopeIcon = MoteComponents.icon(ui, MoteGlyph.FILE, NativeColorRole.ACCENT, 16).also {
-            scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2).apply { marginEnd = ui.moteDp(6) })
+        scopeIcon = MoteComponents.icon(ui, MoteGlyph.PLUS, NativeColorRole.MUTED, 16).also {
+            scopeChip!!.addView(it, LinearLayout.LayoutParams(ui.moteDp(16), ui.moteDp(16)).apply { marginEnd = ui.moteDp(6) })
         }
         scopeLabel = TextView(ui).apply {
             MoteUi.type(this, 13)
@@ -366,7 +368,9 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 text = label; contentDescription = MoteI18n.text(description); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)
                 isFocusable = true; minHeight = ui.moteDp(48); gravity = android.view.Gravity.CENTER; setPadding(ui.moteDp(8), 0, ui.moteDp(8), 0)
             }
-            val modelRow = action("▸ " + MoteI18n.text("本次模型"), "本次模型")
+            val modelRow = action(MoteI18n.text("本次模型"), "本次模型").apply {
+                moteDisclosureGlyph(expanded = false, gapDp = 4)
+            }
             meta.addView(modelRow, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
             modelRow.setOnClickListener { modelBoxVisibility(label = modelRow) }
             val box = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
@@ -453,7 +457,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val box = modelBox ?: return
         val show = box.visibility != android.view.View.VISIBLE
         box.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
-        label.text = (if (show) "▾ " else "▸ ") + MoteI18n.text("本次模型")
+        label.moteDisclosureGlyph(show, gapDp = 4)
     }
 
     private fun askBusy() = ask.busy()
@@ -657,7 +661,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             material != null -> MoteI18n.text("参考整份资料")
             strict -> MoteI18n.text("仅查这条记录")
             anchored -> MoteI18n.text("参考这条记录，自动查找相关上下文")
-            else -> "＋ " + MoteI18n.text("参考资料")
+            else -> MoteI18n.text("参考资料")
         }
         val label = if (scoped) ask.scopeLabel() ?: fallback else fallback
         scopeBox?.visibility = if (scoped || askState.optString("conversationId").isBlank()) android.view.View.VISIBLE else android.view.View.GONE
@@ -669,7 +673,15 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 }
             }
         }
-        scopeIcon?.visibility = if (scoped) android.view.View.VISIBLE else android.view.View.GONE
+        scopeIcon?.let { icon ->
+            icon.visibility = android.view.View.VISIBLE
+            NativePresentationStyles.bind(icon, "scope-glyph") { value ->
+                (value as ImageView).apply {
+                    setImageResource((if (scoped) MoteGlyph.FILE else MoteGlyph.PLUS).drawable)
+                    imageTintList = android.content.res.ColorStateList.valueOf((if (scoped) NativeColorRole.ACCENT else NativeColorRole.MUTED).color())
+                }
+            }
+        }
         scopeLabel?.let { view ->
             view.text = label
             view.contentDescription = material ?: label

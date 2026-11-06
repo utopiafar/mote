@@ -120,6 +120,26 @@ internal data class MoteIconButtonSpec(
     companion object { const val MIN_TOUCH_DP = 48 }
 }
 
+/** A Lucide compound glyph on text actions, refreshed with the active theme. */
+internal fun TextView.moteGlyph(glyph: MoteGlyph, color: NativeColorRole = NativeColorRole.MUTED,
+                                sizeDp: Int = 20, atStart: Boolean = false, gapDp: Int = 6): TextView = apply {
+    NativePresentationStyles.bind(this, "mote-glyph") { value ->
+        (value as TextView).apply {
+            val drawable = context.getDrawable(glyph.drawable)?.mutate()
+            drawable?.setBounds(0, 0, context.moteDp(sizeDp), context.moteDp(sizeDp))
+            drawable?.setTint(color.color())
+            if (atStart) setCompoundDrawablesRelative(drawable, null, null, null)
+            else setCompoundDrawablesRelative(null, null, drawable, null)
+            compoundDrawablePadding = context.moteDp(gapDp)
+        }
+    }
+}
+
+/** Disclosure actions use the same Lucide chevron pair as the shared secondary rows. */
+internal fun TextView.moteDisclosureGlyph(expanded: Boolean, color: NativeColorRole = NativeColorRole.MUTED,
+                                          sizeDp: Int = 20, gapDp: Int = 6): TextView =
+    moteGlyph(if (expanded) MoteGlyph.DOWN else MoteGlyph.CHEV, color, sizeDp, atStart = true, gapDp = gapDp)
+
 /** Shared components: grouped rows, capsule buttons, segmented control,
  * banners, bottom sheet, toast, badges, switch and the m mark. */
 internal object MoteComponents {

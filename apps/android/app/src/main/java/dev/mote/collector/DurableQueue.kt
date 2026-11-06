@@ -727,6 +727,22 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         display(dir, read(file))
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
+    /** The newest retained originals for Home, independent of capture-date windows. */
+    fun recentPage(limit: Int = 30): JSONObject {
+        prepareIndex(requireStatistics = false)
+        return guarded {
+            require(limit in 1..60)
+            val selected = browseIndex().entries(browseFiles(), ::read, requireStatistics = false)
+                .sortedWith(compareByDescending<JSONObject> { it.getString("capturedAt") }.thenByDescending { it.getString("id") })
+                .take(limit)
+            val items = selected.map { row -> read(File(dir, "${row.getString("id")}.event")) }
+            val bindings = JSONObject()
+            items.forEach { event -> bindings.put(event.getString("id"), event.optString("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))) }
+            JSONObject().put("items", JSONArray(items.map { event ->
+                display(dir, JSONObject(event.toString())).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") }
+            })).put("bindings", bindings)
+        }
+    }
     fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null, libraryBindings: Boolean = false, libraryVersion: ((JSONObject, String?) -> String)? = null): JSONObject {
         prepareIndex(requireStatistics = true)
         val (items, result) = guarded {

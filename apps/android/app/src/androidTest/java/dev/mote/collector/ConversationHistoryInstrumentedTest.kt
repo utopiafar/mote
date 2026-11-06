@@ -184,6 +184,12 @@ class ConversationHistoryInstrumentedTest {
                 ready(scenario, "The conversation page owns the selected thread") { activity ->
                     views(activity.window.decorView).filterIsInstance<EditText>().any { it.contentDescription == "你的问题" }
                 }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                ready(scenario, "Back from the conversation returns to its list") { activity ->
+                    views(activity.window.decorView).any { it.isShown && it.contentDescription?.toString()?.startsWith("暖气费是怎么约定的？. ") == true }
+                }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                until("Back from standalone history returns to its caller") { scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED }
             }
         }
     }
