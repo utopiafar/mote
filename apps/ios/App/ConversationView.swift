@@ -100,13 +100,16 @@ struct ConversationView: View {
             .foregroundStyle(MoteDesignTokens.ink.color)
             .padding(.horizontal, 15)
             .padding(.vertical, 10)
+            // The canvas bubble is 44pt tall through its 1.45 line height;
+            // SwiftUI's 15pt line is shorter, so keep the same minimum.
+            .frame(minHeight: 44)
             .background(MoteDesignTokens.surface.color,
                         in: RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusBubble, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusBubble, style: .continuous)
                     .strokeBorder(MoteDesignTokens.hair.color, lineWidth: 1)
             }
-            .frame(maxWidth: 280, alignment: .trailing)
+            .frame(maxWidth: 304, alignment: .trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
@@ -156,8 +159,9 @@ struct ConversationView: View {
     }
 
     /// Builds the answer as one text run so inline citation chips keep the
-    /// canvas geometry: a tinted 18pt pill whose baseline sits 2pt below the
-    /// text baseline.
+    /// canvas geometry: an 18pt tinted pill centred on the text's ink box.
+    /// The chip image is drawn at its natural size and nudged down from the
+    /// default baseline attachment so it does not clip above the first line.
     private func answerText(_ display: ConversationPresentation.Display) -> Text {
         var attributed = AttributedString(display.text)
         for emphasis in display.emphasis {
@@ -171,7 +175,7 @@ struct ConversationView: View {
                 output = output + Text(slice)
             }
             output = output + Text(Image(uiImage: CitationChip.image(number: span.number, colorScheme: colorScheme)))
-                .baselineOffset(-2)
+                .baselineOffset(-4)
             // Keep closing punctuation bound to the chip so a CJK line never
             // starts with the punctuation alone.
             output = output + Text("\u{2060}")
@@ -220,7 +224,7 @@ struct ConversationView: View {
                 Button {
                     Task { await model.openCitation(turn: turn, citation: citation) }
                 } label: {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         citationChip(numbers[citation.id] ?? index + 1)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(ConversationPresentation.citationName(citation))
@@ -236,7 +240,9 @@ struct ConversationView: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .frame(minHeight: MoteMetrics.touchTarget)
+                    // Canvas rows are 1.45 line-height: about 60pt tall even
+                    // though the two text lines alone need only 35pt.
+                    .frame(minHeight: 60)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -277,7 +283,7 @@ struct ConversationView: View {
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
             MoteIcon(icon, size: 20)
-                .foregroundStyle(MoteDesignTokens.ink.color)
+                .foregroundStyle(MoteDesignTokens.muted.color)
                 .frame(width: MoteMetrics.touchTarget, height: MoteMetrics.touchTarget)
                 .contentShape(Rectangle())
         }
@@ -291,9 +297,8 @@ struct ConversationView: View {
             .foregroundStyle(model.runningTextIsStatusOnly
                              ? MoteDesignTokens.muted.color
                              : MoteDesignTokens.ink.color)
-        + Text(" ▌")
-            .font(MoteFont.reading)
-            .foregroundStyle(MoteDesignTokens.ink.color.opacity(0.6)))
+        + Text(Image(uiImage: AnswerCaret.image(colorScheme: colorScheme)))
+            .baselineOffset(-2))
             .lineSpacing(7)
     }
 
@@ -403,7 +408,7 @@ struct ConversationView: View {
         .padding(.trailing, 5)
         .frame(minHeight: MoteMetrics.touchTarget)
         .background(MoteDesignTokens.warningTint.color)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(Capsule())
         .accessibilityElement(children: .contain)
     }
 

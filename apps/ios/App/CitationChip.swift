@@ -49,3 +49,26 @@ enum CitationChip {
         UIColor(MoteColorToken.color(hex: dark ? token.dark : token.light))
     }
 }
+
+/// Draws the streaming caret at the canvas size: an 8x16 ink block at 60%
+/// opacity with a 2pt left margin, sitting 2pt below the text baseline.
+@MainActor
+enum AnswerCaret {
+    private static var cache: [Bool: UIImage] = [:]
+
+    static func image(colorScheme: ColorScheme) -> UIImage {
+        let dark = colorScheme == .dark
+        if let cached = cache[dark] { return cached }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        format.scale = UIScreen.main.scale
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 16), format: format).image { _ in
+            let color = UIColor(MoteColorToken.color(hex: dark ? MoteDesignTokens.ink.dark : MoteDesignTokens.ink.light))
+                .withAlphaComponent(0.6)
+            color.setFill()
+            UIRectFill(CGRect(x: 2, y: 0, width: 8, height: 16))
+        }
+        cache[dark] = image
+        return image
+    }
+}
