@@ -21,7 +21,9 @@ final class ConnectionStoreTests: XCTestCase {
             serverUrl: "https://mote.example.com",
             token: "generated-token",
             credentialId: "generated-credential",
-            scope: "owner"
+            scope: "owner",
+            deviceName: "生成的 iPhone",
+            connectedAt: Date(timeIntervalSince1970: 1_790_000_000)
         )
         try store.save(connection)
 

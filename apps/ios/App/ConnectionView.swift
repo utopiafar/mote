@@ -354,7 +354,9 @@ struct ConnectionView: View {
                     serverUrl: connection.credential.serverUrl,
                     token: connection.credential.token,
                     credentialId: connection.credential.credentialId,
-                    scope: connection.credential.scope
+                    scope: connection.credential.scope,
+                    deviceName: name,
+                    connectedAt: Date()
                 ))
                 connectionState = .ready
                 connected = true
