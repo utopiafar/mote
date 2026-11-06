@@ -2,8 +2,13 @@ package dev.mote.collector
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.graphics.Bitmap
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -13,6 +18,7 @@ import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.util.UUID
 
 /** Temporary fixture: leaves generated pending records and live capture on the dedicated emulator for adb screenshots. */
@@ -21,6 +27,7 @@ class NotificationPendingSyncInstrumentedTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val automation = instrumentation.uiAutomation
+    private val outDir by lazy { File(context.getExternalFilesDir(null), "acceptance") }
 
     private fun until(label: String, timeoutMs: Long = 30_000, check: () -> Boolean) {
         val end = SystemClock.elapsedRealtime() + timeoutMs
@@ -30,6 +37,51 @@ class NotificationPendingSyncInstrumentedTest {
 
     private fun shell(command: String) = automation.executeShellCommand(command).use {
         String(java.io.FileInputStream(it.fileDescriptor).readBytes()).trim()
+    }
+
+    private fun screencap(name: String) {
+        outDir.mkdirs()
+        ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("screencap -p")).use { input ->
+            File(outDir, "$name.png").outputStream().use { input.copyTo(it) }
+        }
+    }
+
+    private fun windowPng(scenario: ActivityScenario<out android.app.Activity>, name: String) {
+        outDir.mkdirs()
+        val image = GeneratedVisualScreencap.window(scenario).bitmap
+        try { File(outDir, "$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        finally { image.recycle() }
+    }
+
+    /** The shade follows the system night mode; app windows follow the app's own appearance preference. */
+    private fun appearance(pref: AppearancePreference) {
+        MoteAppearance.select(context, pref)
+        shell("cmd uimode night ${if (pref == AppearancePreference.DARK) "yes" else "no"}")
+        Thread.sleep(1_000)
+    }
+
+    /** 采集与存储详情 keeps the count inside the inventory line; the view text does not start with it. */
+    private fun awaitTextContaining(scenario: ActivityScenario<out android.app.Activity>, needle: String) {
+        fun contains(view: View): Boolean = (view is TextView && view.text.contains(needle)) ||
+            (view is ViewGroup && (0 until view.childCount).any { contains(view.getChildAt(it)) })
+        until("$needle must appear") { var found = false; scenario.onActivity { found = contains(it.window.decorView) }; found }
+    }
+
+    private fun captureDetails(mode: String) {
+        ActivityScenario.launch(CaptureStatusActivity::class.java).use { sheet ->
+            sheet.awaitUiText("待同步")
+            windowPng(sheet, "impl-statussheet-pending-$mode")
+        }
+        ActivityScenario.launch(ActivityStatsActivity::class.java).use { stats ->
+            awaitTextContaining(stats, "待同步")
+            windowPng(stats, "impl-details-pending-$mode")
+        }
+    }
+
+    private fun captureShade(mode: String) {
+        shell("cmd statusbar expand-notifications"); Thread.sleep(1_500)
+        screencap("impl-notification-pending-$mode")
+        shell("cmd statusbar collapse"); Thread.sleep(1_000)
     }
 
     @Test fun pendingSyncTitleIsStatusOnlyAndCountStaysInDetails() {
@@ -47,8 +99,9 @@ class NotificationPendingSyncInstrumentedTest {
         settings.capturePreviewAccepted()
         val listener = "${context.packageName}/${MediaCollectionService::class.java.name}"
         val existing = shell("settings get secure enabled_notification_listeners")
-        if (!existing.split(':').contains(listener))
-            shell("settings put secure enabled_notification_listeners ${if (existing.isBlank() || existing == "null") listener else "$existing:$listener"}")
+        if (!existing.split(':').contains(listener)) {
+            shell("cmd notification allow_listener $listener 0")
+        }
         until("The notification listener binds under instrumentation", 60_000) { MediaCollectionService.connected }
         settings.enabled = true
         settings.status("capturing", "生成的采集状态")
@@ -68,9 +121,14 @@ class NotificationPendingSyncInstrumentedTest {
                 title == "采集中" && !title.contains("待同步")
             }
             Thread.sleep(3_000)
-            ActivityScenario.launch(ActivityStatsActivity::class.java).use { stats ->
-                stats.awaitUiText("待同步")
-            }
+            val previous = MoteAppearance.preference()
+            appearance(AppearancePreference.LIGHT)
+            captureShade("light")
+            captureDetails("light")
+            appearance(AppearancePreference.DARK)
+            captureShade("dark")
+            captureDetails("dark")
+            appearance(previous)
             assertTrue("Pending records stay queued for manual sync", context.queue().inventory().records >= 2)
         }
     }

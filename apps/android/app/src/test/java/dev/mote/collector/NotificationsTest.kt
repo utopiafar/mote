@@ -65,14 +65,12 @@ class NotificationsTest {
         assertEquals(20, cases.length())
         for (index in 0 until cases.length()) {
             val case = cases.getJSONObject(index)
-            val facts = case.getJSONObject("facts")
             val expected = case.getJSONObject("expected")
             val name = case.getString("name")
             val id = CaptureStatusId.entries.first { it.wire == expected.getString("id") }
             val status = row(id)
-            val pending = if (facts.has("pending") && !facts.isNull("pending")) facts.getInt("pending") else 0
             val ongoing = if (expected.isNull("androidOngoing")) null else expected.getString("androidOngoing")
-            assertEquals("$name: ongoing", ongoing?.replace("{0}", pending.toString()), ongoingCaptureTitle(status, pending))
+            assertEquals("$name: ongoing", ongoing, ongoingCaptureTitle(status))
             val notification = expected.optJSONObject("notification")
             assertEquals("$name: notification", notification?.getString("titleKey"), captureAttentionTitle(status))
         }
