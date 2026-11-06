@@ -11,7 +11,7 @@ public enum OriginalDeletion {
     }
 }
 
-public struct OriginalAskScope: Equatable, Sendable {
+public struct OriginalAskScope: Equatable, Hashable, Sendable {
     public let id: String
     public let title: String
 
@@ -75,7 +75,8 @@ public struct OriginalPresentation: Equatable, Sendable {
         self.askScope = OriginalAskScope(id: id, title: title)
     }
 
-    public init(record: OriginalRecord, conversations: [ConversationSummary]?) throws {
+    public init(record: OriginalRecord, conversations: [ConversationSummary]?,
+                highlightedPhrase: String? = nil) throws {
         let normalizedID = record.id.lowercased()
         guard UUID(uuidString: normalizedID) != nil,
               let capturedAt = CentralTimestamp.parse(record.capturedAt),
@@ -93,7 +94,8 @@ public struct OriginalPresentation: Equatable, Sendable {
             indexingStatus: record.indexingStatus,
             sourceDescription: "\(Self.sourceLabel(record.source)) · \(record.deviceName)",
             referenceCount: conversations?.filter { Self.references($0.scope, record: record) }.count,
-            deletionKind: record.deletion?.available == true ? record.deletion?.kind : nil
+            deletionKind: record.deletion?.available == true ? record.deletion?.kind : nil,
+            highlightedPhrase: highlightedPhrase
         )
     }
 
