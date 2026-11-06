@@ -180,16 +180,23 @@ open class MoteActivity : Activity() {
     private var stopUiObservation: (() -> Unit)? = null
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     override fun attachBaseContext(newBase: Context) { super.attachBaseContext(MoteAppearance.wrap(MoteI18n.wrap(newBase))) }
+    /** Panel windows use a translucent theme so they ride over the screen that opened them. */
+    protected open fun sheetWindow(): Boolean = false
+    private fun themeFor(light: Boolean) = when {
+        !sheetWindow() -> if (light) R.style.AppThemeLight else R.style.AppThemeDark
+        light -> R.style.AppThemeSheetLight
+        else -> R.style.AppThemeSheetDark
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         displayedLanguage = MoteI18n.language()
         displayedUiRevision = NativeUiPacks.registry.revision
-        setTheme(if (lightSurface()) R.style.AppThemeLight else R.style.AppThemeDark)
+        setTheme(themeFor(lightSurface()))
         super.onCreate(savedInstanceState)
         stopUiObservation = NativeUiPacks.registry.observe { uiHandler.post { applyUiRevision() } }
         window.decorView.layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
         applyWindowPresentation()
     }
-    private fun lightSurface(): Boolean {
+    protected fun lightSurface(): Boolean {
         val color = MoteTheme.background
         return (android.graphics.Color.red(color) * 299 + android.graphics.Color.green(color) * 587 + android.graphics.Color.blue(color) * 114) >= 128000
     }
@@ -200,12 +207,13 @@ open class MoteActivity : Activity() {
             if (light) Configuration.UI_MODE_NIGHT_NO else Configuration.UI_MODE_NIGHT_YES
         @Suppress("DEPRECATION")
         resources.updateConfiguration(appearanceConfig, resources.displayMetrics)
-        setTheme(if (light) R.style.AppThemeLight else R.style.AppThemeDark)
-        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(MoteTheme.background))
+        setTheme(themeFor(light))
+        val chrome = if (sheetWindow()) android.graphics.Color.TRANSPARENT else MoteTheme.background
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(chrome))
         @Suppress("DEPRECATION")
-        window.statusBarColor = MoteTheme.background
+        window.statusBarColor = chrome
         @Suppress("DEPRECATION")
-        window.navigationBarColor = MoteTheme.background
+        window.navigationBarColor = chrome
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             val appearance = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
             window.insetsController?.setSystemBarsAppearance(if (light) appearance else 0, appearance)
