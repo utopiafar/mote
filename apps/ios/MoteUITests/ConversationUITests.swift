@@ -50,6 +50,8 @@ final class ConversationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["发送"].exists)
         XCTAssertFalse(app.buttons["history-send"].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '合同第 4 页写的是两个月'")).firstMatch.exists)
+        XCTAssertGreaterThanOrEqual(app.buttons["停止"].frame.width, 44)
+        XCTAssertGreaterThanOrEqual(app.buttons["停止"].frame.height, 44)
         screenshot("conversation-streaming-light")
     }
 
@@ -63,6 +65,8 @@ final class ConversationUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "押金是多少？")
         XCTAssertTrue(app.buttons["发送"].waitForExistence(timeout: 5),
                       app.staticTexts["conversation-preview-state"].label)
+        XCTAssertGreaterThanOrEqual(app.buttons["发送"].frame.width, 44)
+        XCTAssertGreaterThanOrEqual(app.buttons["发送"].frame.height, 44)
     }
 
     // A08: offline shows the notice and retry action.

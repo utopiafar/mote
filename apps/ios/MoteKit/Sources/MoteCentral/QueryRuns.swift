@@ -46,13 +46,21 @@ public struct QueryRunInput: Equatable, Sendable {
         case values([String])
     }
 
+    /// The material anchor is one reference string on the wire, unlike the
+    /// evidence lists, so it keeps its own tri-state.
+    public enum MaterialReferenceField: Equatable, Sendable {
+        case unset
+        case cleared
+        case value(String)
+    }
+
     public var question: String
     public var timeZone: String
     public var conversationId: String?
     public var attachmentIds: [String]?
     public var evidenceIds: ReferenceField = .unset
     public var anchorEvidenceIds: ReferenceField = .unset
-    public var anchorMaterialRef: ReferenceField = .unset
+    public var anchorMaterialRef: MaterialReferenceField = .unset
 
     public init(question: String, timeZone: String, conversationId: String? = nil,
                 attachmentIds: [String]? = nil) {
@@ -77,7 +85,11 @@ extension QueryRunInput: Codable {
         try container.encodeIfPresent(attachmentIds, forKey: .attachmentIds)
         try encodeReference(evidenceIds, into: &container, key: .evidenceIds)
         try encodeReference(anchorEvidenceIds, into: &container, key: .anchorEvidenceIds)
-        try encodeReference(anchorMaterialRef, into: &container, key: .anchorMaterialRef)
+        switch anchorMaterialRef {
+        case .unset: break
+        case .cleared: try container.encodeNil(forKey: .anchorMaterialRef)
+        case .value(let reference): try container.encode(reference, forKey: .anchorMaterialRef)
+        }
     }
 
     private func encodeReference(_ field: ReferenceField,
@@ -98,7 +110,13 @@ extension QueryRunInput: Codable {
         attachmentIds = try container.decodeIfPresent([String].self, forKey: .attachmentIds)
         evidenceIds = try Self.decodeReference(container, key: .evidenceIds)
         anchorEvidenceIds = try Self.decodeReference(container, key: .anchorEvidenceIds)
-        anchorMaterialRef = try Self.decodeReference(container, key: .anchorMaterialRef)
+        if !container.contains(.anchorMaterialRef) {
+            anchorMaterialRef = .unset
+        } else if try container.decodeNil(forKey: .anchorMaterialRef) {
+            anchorMaterialRef = .cleared
+        } else {
+            anchorMaterialRef = .value(try container.decode(String.self, forKey: .anchorMaterialRef))
+        }
     }
 
     private static func decodeReference(_ container: KeyedDecodingContainer<CodingKeys>,
@@ -244,7 +262,7 @@ public struct ConversationSession: Equatable, Sendable {
         } else {
             if let ids = scope.evidenceIds, !ids.isEmpty { input.evidenceIds = .values(ids) }
             if let ids = scope.anchorEvidenceIds, !ids.isEmpty { input.anchorEvidenceIds = .values(ids) }
-            if let ref = scope.anchorMaterialRef, !ref.isEmpty { input.anchorMaterialRef = .values([ref]) }
+            if let ref = scope.anchorMaterialRef, !ref.isEmpty { input.anchorMaterialRef = .value(ref) }
         }
         let admission = QueryRunAdmission(id: newId(), input: input)
         pending = admission

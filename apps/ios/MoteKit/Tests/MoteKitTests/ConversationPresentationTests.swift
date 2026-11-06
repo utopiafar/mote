@@ -30,7 +30,7 @@ final class ConversationPresentationTests: XCTestCase {
         let display = ConversationPresentation.formatAnswer(
             "按实际用量分摊[ev_1]，月底前给账单照片[ev_1]；押金需要收据[ev_2]。",
             numbers: ["ev_1": 1, "ev_2": 2])
-        XCTAssertEqual(display.text, "按实际用量分摊[1]，月底前给账单照片[1]；押金需要收据[2]。")
+        XCTAssertEqual(display.text, "按实际用量分摊\u{2009}1\u{2009}，月底前给账单照片\u{2009}1\u{2009}；押金需要收据\u{2009}2\u{2009}。")
         XCTAssertEqual(display.citations.map(\.number), [1, 1, 2])
         XCTAssertEqual(display.citations.map(\.id), ["ev_1", "ev_1", "ev_2"])
     }
@@ -100,6 +100,9 @@ final class ConversationPresentationTests: XCTestCase {
         XCTAssertEqual(ConversationPresentation.scopeLabel(
             scope: ConversationScope(anchorEvidenceIds: ["ev_1"]), materialTitle: nil),
             "参考这条记录，自动查找相关上下文")
+        XCTAssertEqual(ConversationPresentation.scopeLabel(
+            scope: ConversationScope(anchorEvidenceIds: ["ev_1"]), materialTitle: "暖气费按实际用量分摊"),
+            "暖气费按实际用量分摊")
         XCTAssertEqual(ConversationPresentation.scopeLabel(
             scope: ConversationScope(evidenceIds: ["ev_1"]), materialTitle: nil), "仅查这条记录")
         XCTAssertNil(ConversationPresentation.scopeLabel(scope: ConversationScope(), materialTitle: nil))

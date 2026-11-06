@@ -136,6 +136,21 @@ final class ConversationSessionTests: XCTestCase {
         XCTAssertTrue(clearedBody.contains("\"anchorMaterialRef\":null"))
     }
 
+    func testRestoredMaterialScopeWritesOneReferenceString() throws {
+        let material = "material:mat_" + String(repeating: "a", count: 64) + "@" + String(repeating: "b", count: 64)
+        var session = ConversationSession()
+        session.selectConversation(try conversation(scope: ConversationScope(anchorMaterialRef: material)))
+        session.editQuestion("这份资料说了什么？")
+        let admission = try XCTUnwrap(session.admission(timeZone: "Asia/Shanghai", newId: { self.runId }))
+        let data = try JSONEncoder().encode(admission)
+        let body = String(data: data, encoding: .utf8)!
+        XCTAssertTrue(body.contains("\"anchorMaterialRef\":\"\(material)\""))
+        XCTAssertFalse(body.contains("[\"material:"))
+        let decoded = try JSONDecoder().decode(QueryRunAdmission.self, from: data)
+        XCTAssertEqual(decoded.input.anchorMaterialRef, .value(material))
+        XCTAssertEqual(decoded.input.anchorEvidenceIds, .unset)
+    }
+
     func testSelectConversationClearsTheAcceptedRunIdentity() throws {
         var session = ConversationSession()
         session.editQuestion("押金是多少？")

@@ -100,6 +100,8 @@ struct ConversationPreview: View {
         case "streaming":
             session.editQuestion("押金是多少？")
             _ = session.admission(timeZone: "Asia/Shanghai", newId: { ConversationPreview.runId })
+            // The composer clears the committed question, matching send().
+            session.editQuestion("")
             _ = try! session.receive(try! Self.fixtureRun())
             model.applyFixture(conversation: try! Self.fixtureConversation(streaming: true),
                                session: session, partialAnswer: "合同第 4 页写的是两个月")

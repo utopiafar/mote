@@ -16,6 +16,7 @@ struct ConversationView: View {
     let onAddImage: () -> Void
 
     @State private var sentInitial = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,6 +47,7 @@ struct ConversationView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .background(MoteDesignTokens.background.color)
+        .statusBarHidden()
         .safeAreaInset(edge: .bottom, spacing: 0) { dock }
         .task {
             await model.open()
@@ -126,7 +128,7 @@ struct ConversationView: View {
         }
         if let result = turn.result {
             let display = ConversationPresentation.formatAnswer(result.answer, numbers: model.citationNumbers)
-            Text(answerAttributed(display))
+            answerText(display)
                 .font(MoteFont.reading)
                 .foregroundStyle(MoteDesignTokens.ink.color)
                 .lineSpacing(7)
@@ -153,19 +155,43 @@ struct ConversationView: View {
         }
     }
 
-    private func answerAttributed(_ display: ConversationPresentation.Display) -> AttributedString {
+    /// Builds the answer as one text run so inline citation chips keep the
+    /// canvas geometry: a tinted 18pt pill whose baseline sits 2pt below the
+    /// text baseline.
+    private func answerText(_ display: ConversationPresentation.Display) -> Text {
         var attributed = AttributedString(display.text)
         for emphasis in display.emphasis {
             guard let range = Self.range(in: attributed, text: display.text, start: emphasis.start, end: emphasis.end) else { continue }
             attributed[range].font = emphasis.bold ? Font.system(size: 16, weight: .semibold) : Font.system(size: 16).italic()
         }
-        for span in display.citations {
-            guard let range = Self.range(in: attributed, text: display.text, start: span.start, end: span.end) else { continue }
-            attributed[range].foregroundColor = MoteDesignTokens.accent.color
-            attributed[range].backgroundColor = MoteDesignTokens.tint.color
-            attributed[range].font = .system(size: 11, weight: .medium)
+        var output = Text("")
+        var cursor = 0
+        for span in display.citations where span.start >= cursor {
+            if let slice = Self.slice(attributed, text: display.text, from: cursor, to: span.start) {
+                output = output + Text(slice)
+            }
+            output = output + Text(Image(uiImage: CitationChip.image(number: span.number, colorScheme: colorScheme)))
+                .baselineOffset(-2)
+            // Keep closing punctuation bound to the chip so a CJK line never
+            // starts with the punctuation alone.
+            output = output + Text("\u{2060}")
+            cursor = span.end
         }
-        return attributed
+        if let slice = Self.slice(attributed, text: display.text, from: cursor, to: display.text.count) {
+            output = output + Text(slice)
+        }
+        return output
+    }
+
+    private static func slice(_ attributed: AttributedString, text: String,
+                              from: Int, to: Int) -> AttributedString? {
+        guard from >= 0, from < to, to <= text.count,
+              let lower = text.index(text.startIndex, offsetBy: from, limitedBy: text.endIndex),
+              let upper = text.index(text.startIndex, offsetBy: to, limitedBy: text.endIndex),
+              let lowerBound = AttributedString.Index(lower, within: attributed),
+              let upperBound = AttributedString.Index(upper, within: attributed),
+              lowerBound < upperBound else { return nil }
+        return AttributedString(attributed[lowerBound..<upperBound])
     }
 
     private static func range(in attributed: AttributedString, text: String,
@@ -180,10 +206,10 @@ struct ConversationView: View {
 
     private func citationChip(_ number: Int) -> some View {
         Text("\(number)")
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(MoteDesignTokens.accent.color)
-            .frame(minWidth: 18, minHeight: 18)
             .padding(.horizontal, 4)
+            .frame(minWidth: 18, minHeight: 18)
             .background(MoteDesignTokens.tint.color, in: Capsule())
     }
 
@@ -194,7 +220,7 @@ struct ConversationView: View {
                 Button {
                     Task { await model.openCitation(turn: turn, citation: citation) }
                 } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         citationChip(numbers[citation.id] ?? index + 1)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(ConversationPresentation.citationName(citation))
@@ -222,9 +248,9 @@ struct ConversationView: View {
             }
         }
         .background(MoteDesignTokens.surface.color)
-        .clipShape(RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusControlMobile, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: MoteDesignTokens.Dimens.radiusControlMobile, style: .continuous)
+            RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous)
                 .strokeBorder(MoteDesignTokens.hair.color, lineWidth: 1)
         }
         .accessibilityElement(children: .contain)
@@ -234,17 +260,29 @@ struct ConversationView: View {
         HStack(spacing: 2) {
             // The 保存为记录 action arrives with the record panel (IOS15);
             // until then only copy and more are placed.
-            MoteIconButton(icon: .copy, label: "复制") {
+            answerAction(icon: .copy, label: "复制") {
                 UIPasteboard.general.string = answer
             }
             .disabled(model.busy)
-            MoteIconButton(icon: .more, label: "更多") {
+            answerAction(icon: .more, label: "更多") {
                 model.showDetails(turn)
             }
             .disabled(model.busy)
         }
         .padding(.top, -6)
         .padding(.leading, -10)
+    }
+
+    private func answerAction(icon: MoteIconName, label: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            MoteIcon(icon, size: 20)
+                .foregroundStyle(MoteDesignTokens.ink.color)
+                .frame(width: MoteMetrics.touchTarget, height: MoteMetrics.touchTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
     }
 
     private var runningAnswer: some View {
@@ -415,6 +453,7 @@ struct ConversationView: View {
                         .foregroundStyle(MoteDesignTokens.ink.color)
                         .frame(width: 36, height: 36)
                         .background(MoteDesignTokens.fill.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .frame(width: MoteMetrics.touchTarget, height: MoteMetrics.touchTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -427,6 +466,7 @@ struct ConversationView: View {
                         .foregroundStyle(MoteDesignTokens.primaryInk.color)
                         .frame(width: 40, height: 40)
                         .background(MoteDesignTokens.primaryBackground.color, in: Circle())
+                        .frame(width: MoteMetrics.touchTarget, height: MoteMetrics.touchTarget)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -434,7 +474,7 @@ struct ConversationView: View {
             }
         }
         .padding(.leading, 2)
-        .padding(.trailing, 4)
+        .padding(.trailing, 0)
         .frame(minHeight: MoteMetrics.touchTarget)
         .background(MoteDesignTokens.surface.color, in: Capsule())
         .overlay {

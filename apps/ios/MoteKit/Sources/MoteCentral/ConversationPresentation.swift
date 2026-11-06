@@ -96,13 +96,16 @@ public enum ConversationPresentation {
         return nil
     }
 
-    /// The scope chip above the composer: the resolved material title, or the
-    /// fixed label for each remaining scope kind.
+    /// The scope chip above the composer: the resolved material title, the
+    /// record title carried by the reader entry point, or the fixed label for
+    /// each remaining scope kind.
     public static func scopeLabel(scope: ConversationScope, materialTitle: String?) -> String? {
         if scope.anchorMaterialRef?.isEmpty == false {
             return materialTitle ?? "参考整份资料"
         }
-        if scope.anchorEvidenceIds?.isEmpty == false { return "参考这条记录，自动查找相关上下文" }
+        if scope.anchorEvidenceIds?.isEmpty == false {
+            return materialTitle ?? "参考这条记录，自动查找相关上下文"
+        }
         if scope.evidenceIds?.isEmpty == false { return "仅查这条记录" }
         return nil
     }
@@ -176,7 +179,9 @@ extension ConversationPresentation {
             if match.range.lowerBound > 0, text[match.range.lowerBound - 1] == "!" { continue }
             output.append(contentsOf: text[offset..<match.range.lowerBound])
             let start = output.count
-            let label = "[\(number)]"
+            // Bare number padded so the tinted span reads as a pill, matching
+            // the canvas's round citation chips.
+            let label = " \(number) "
             output.append(contentsOf: label)
             citations.append(CitationSpan(start: start, end: output.count, id: match.id, number: number))
             replacements.append((match.range.lowerBound, match.range.upperBound, label.count))
