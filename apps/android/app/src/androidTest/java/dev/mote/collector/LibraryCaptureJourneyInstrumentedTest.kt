@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Spinner
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -156,11 +155,11 @@ class LibraryCaptureJourneyInstrumentedTest {
             fun localCardShown(): Boolean { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).any { it.isShown && it.tag == "library-record:$id" } }; return found }
             waitFor("offline local original remains visible") { localCardShown() }
             scenario.recreate(); waitFor("offline local original restored") { localCardShown() }
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.contentDescription == MoteI18n.text("资料类型") }.setSelection(8) }
+            scenario.chooseLibraryCategory("images")
             waitFor("empty source filter has an explicit empty state") {
-                var empty = false; scenario.onActivity { activity -> empty = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains("这里还没有内容") } }; !localCardShown() && empty
+                var empty = false; scenario.onActivity { activity -> empty = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.contains("当前筛选下暂无本机资料") } }; !localCardShown() && empty
             }
-            scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<Spinner>().single { it.contentDescription == MoteI18n.text("资料类型") }.setSelection(4) }
+            scenario.chooseLibraryCategory("all")
             waitFor("return from empty source restores local note") { localCardShown() }
             val monitor = instrumentation.addMonitor(CaptureRecordsActivity::class.java.name, null, false)
             try {
@@ -215,7 +214,10 @@ class LibraryCaptureJourneyInstrumentedTest {
                     if (mode == "forbidden") assertEquals("403 must clear remote content in the same signed-in session", generation, CentralAccess.resolve(context).generation)
                     else assertNull("The existing HTTP 401 handler invalidates the revoked session", CentralAccess.resolve(context).client)
                     location(2)
-                    waitFor("Central filter has no stale readable row after denial") { shown("这里还没有内容") && !shown("My separate generated comment") }
+                    waitFor("Central filter keeps the denial status without stale readable rows or a false empty claim") {
+                        (shown("当前连接没有执行此操作的权限") || shown("先登录中央，各页面会共用这次登录")) &&
+                            !shown("My separate generated comment") && !shown("这里还没有内容")
+                    }
                     location(0)
                     waitFor("local original survives server denial") { shown("My separate generated comment") }
                 }

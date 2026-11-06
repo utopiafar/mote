@@ -41,6 +41,7 @@ open class ShareRecordActivity : MoteActivity() {
     private lateinit var preview: LinearLayout
     private lateinit var panel: View
     private lateinit var done: View
+    private lateinit var sheetBottom: View
     private var request: ShareRecordRequest? = null
     private var attachments = JSONArray()
     private var saved = false
@@ -57,8 +58,7 @@ open class ShareRecordActivity : MoteActivity() {
         if (state != null) {
             note.setText(state.getString("note").orEmpty()); description.setText(state.getString("description").orEmpty())
             val expanded = state.getBoolean("descriptionExpanded")
-            description.visibility = if (expanded) View.VISIBLE else View.GONE
-            descriptionToggle.visibility = if (expanded) View.GONE else View.VISIBLE
+            showDescription(expanded)
         }
         if (saved) showSaved(true)
         else if (state == null && request?.streamUris?.isNotEmpty() == true) stageUris(request!!.streamUris)
@@ -120,7 +120,7 @@ open class ShareRecordActivity : MoteActivity() {
 
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(moteDp(16), moteDp(12), moteDp(16), moteDp(16))
+            setPadding(moteDp(16), moteDp(12), moteDp(16), 0)
         }
         preview = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         body.addView(preview)
@@ -149,16 +149,16 @@ open class ShareRecordActivity : MoteActivity() {
         }
         descriptionToggle = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(48)
+            setPadding(moteDp(4), 0, 0, 0)
             contentDescription = MoteI18n.text("资料说明"); isFocusable = true; tag = "share-description-toggle"
             background = MoteUi.clickable(this@ShareRecordActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTROL, false)
-            addView(MoteComponents.icon(context, MoteGlyph.PLUS, NativeColorRole.ACCENT, 18))
+            addView(MoteComponents.icon(context, MoteGlyph.PLUS, NativeColorRole.ACCENT, 16))
             addView(TextView(context).apply {
                 text = MoteI18n.text("资料说明"); MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.ACCENT)
-            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = moteDp(10) })
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = moteDp(6) })
             setOnClickListener {
                 // The canvas shows the quiet "资料说明" action only while the field is folded away.
-                description.visibility = View.VISIBLE
-                visibility = View.GONE
+                showDescription(true)
             }
         }
         body.addView(descriptionToggle, LinearLayout.LayoutParams(-2, -2).apply { topMargin = moteDp(12) })
@@ -169,19 +169,30 @@ open class ShareRecordActivity : MoteActivity() {
         }
         body.addView(status)
         sheet.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(-1, -2))
-        sheet.addView(View(this), LinearLayout.LayoutParams(1, moteDp(44)))
+        sheetBottom = View(this)
+        sheet.addView(sheetBottom, LinearLayout.LayoutParams(1, moteDp(32)))
         done = savedView().apply { visibility = View.GONE; tag = "share-done" }
         container.addView(done, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
-        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        window.attributes = window.attributes.apply {
-            dimAmount = 0.35f; gravity = Gravity.BOTTOM; width = ViewGroup.LayoutParams.MATCH_PARENT; height = ViewGroup.LayoutParams.WRAP_CONTENT
+        NativePresentationStyles.bind(root, "share-window") {
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.attributes = window.attributes.apply {
+                dimAmount = if (MoteAppearance.dark()) 0.55f else 0.30f
+                gravity = Gravity.BOTTOM; width = ViewGroup.LayoutParams.MATCH_PARENT; height = ViewGroup.LayoutParams.WRAP_CONTENT
+            }
         }
         renderPreview()
         initialError?.let(::showError)
         note.addTextChangedListener(submitWatcher)
         description.addTextChangedListener(submitWatcher)
+    }
+
+    private fun showDescription(expanded: Boolean) {
+        description.visibility = if (expanded) View.VISIBLE else View.GONE
+        descriptionToggle.visibility = if (expanded) View.GONE else View.VISIBLE
+        // The 48dp toggle overlaps the otherwise empty lower inset by 12dp.
+        sheetBottom.layoutParams = sheetBottom.layoutParams.apply { height = moteDp(if (expanded) 44 else 32) }
     }
 
     private fun savedView(): View = LinearLayout(this).apply {
@@ -249,14 +260,15 @@ open class ShareRecordActivity : MoteActivity() {
             setPadding(moteDp(14), moteDp(10), moteDp(14), moteDp(10))
         }
         row.addView(FrameLayout(this).apply {
-            background = MoteUi.shape(context, NativeColorRole.FILL, NativeRadiusRole.CONTROL, false)
-            addView(MoteComponents.icon(context, glyph, NativeColorRole.MUTED, 22), FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            background = MoteUi.shape(context, NativeColorRole.SURFACE_SUNKEN, NativeRadiusRole.THUMB, true, NativeColorRole.HAIR)
+            addView(MoteComponents.icon(context, glyph, NativeColorRole.MUTED, 20), FrameLayout.LayoutParams(moteDp(20), moteDp(20), Gravity.CENTER))
         }, LinearLayout.LayoutParams(moteDp(40), moteDp(40)).apply { marginEnd = moteDp(12) })
         row.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(context).apply {
                 text = title; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-                MoteUi.type(this, NativeFontRole.BODY, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
+                MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.INK)
+                NativePresentationStyles.bind(this, "share-preview-weight") { (it as TextView).typeface = android.graphics.Typeface.create(android.graphics.Typeface.create(MoteTheme.fontFamily(false), android.graphics.Typeface.NORMAL), 500, false) }
             })
             addView(TextView(context).apply {
                 text = subtitle; maxLines = 1; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)

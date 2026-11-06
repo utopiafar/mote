@@ -78,15 +78,7 @@ class ConversationHistoryInstrumentedTest {
         val frames = CountDownLatch(1)
         scenario.onActivity { activity -> activity.window.decorView.postOnAnimation { activity.window.decorView.postOnAnimation { frames.countDown() } } }
         assertTrue(frames.await(5, TimeUnit.SECONDS))
-        scenario.onActivity { activity ->
-            val root = activity.window.decorView
-            val image = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
-            try {
-                root.draw(Canvas(image))
-                screenshots.mkdirs()
-                File(screenshots, "$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            } finally { image.recycle() }
-        }
+        GeneratedVisualScreencap.capture(context, scenario, screenshots, name)
     }
 
     private fun clickGlobal(label: String) {
@@ -192,6 +184,12 @@ class ConversationHistoryInstrumentedTest {
                 ready(scenario, "The conversation page owns the selected thread") { activity ->
                     views(activity.window.decorView).filterIsInstance<EditText>().any { it.contentDescription == "你的问题" }
                 }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                ready(scenario, "Back from the conversation returns to its list") { activity ->
+                    views(activity.window.decorView).any { it.isShown && it.contentDescription?.toString()?.startsWith("暖气费是怎么约定的？. ") == true }
+                }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                until("Back from standalone history returns to its caller") { scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED }
             }
         }
     }
@@ -212,6 +210,9 @@ class ConversationHistoryInstrumentedTest {
                 Thread.sleep(150)
                 assertTrue("send appears with text", viewsOf(scenario).any { it.contentDescription == "发送" && it.isShown })
                 capture(scenario, "impl-typing-light")
+                main { MoteAppearance.select(context, AppearancePreference.DARK) }; instrumentation.waitForIdleSync()
+                capture(scenario, "impl-typing-dark")
+                main { MoteAppearance.select(context, AppearancePreference.LIGHT) }; instrumentation.waitForIdleSync()
                 clickView(scenario) { it.contentDescription == "发送" }
                 until("The generated Central received one new question") { fixture.posted.get() != null }
                 val body = requireNotNull(fixture.posted.get())

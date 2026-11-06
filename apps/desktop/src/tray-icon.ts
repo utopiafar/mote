@@ -1,4 +1,4 @@
-import {captureStatus,type CaptureStatusMacIcon} from '@mote/shared/native-status';
+import {captureStatus,type CaptureStatusMacIcon,type CaptureStatusRow} from '@mote/shared/native-status';
 import type {Status} from './contracts';
 
 export type TrayIconStatus={
@@ -17,8 +17,12 @@ const trayIconNames:Readonly<Record<CaptureStatusMacIcon,string>>={
   alert:'moteAlertTemplate.png',
 };
 
+export function trayIconNameForRow(row:Pick<CaptureStatusRow,'macIcon'>):string{
+  return trayIconNames[row.macIcon??'normal'];
+}
+
 export function trayIconName(status:TrayIconStatus):string{
-  const state=captureStatus({
+  return trayIconNameForRow(captureStatus({
     connection:status.config.authSignedOut?'reconnect':status.config.serverUrl&&status.config.tokenConfigured?'connected':'unconfigured',
     captureEnabled:status.running,
     captureLive:status.running&&(status.state==='capturing'||status.state==='paused'),
@@ -27,6 +31,5 @@ export function trayIconName(status:TrayIconStatus):string{
     interrupted:status.state==='error',
     syncState:status.config.syncPaused?'paused':status.facts?.sync.state??(status.sync.state==='manual'?'waiting':status.sync.state),
     pending:status.sync.pendingRecords,
-  }).macIcon??'normal';
-  return trayIconNames[state];
+  }));
 }

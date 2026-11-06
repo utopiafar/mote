@@ -16,6 +16,8 @@ import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
+import dev.mote.collector.ui.moteDisclosureGlyph
+import dev.mote.collector.ui.moteGlyph
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -252,7 +254,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
     private fun buildAsk() {
         body.removeAllViews()
-        body.setPadding(ui.moteDp(20), ui.moteDp(18), ui.moteDp(20), ui.moteDp(24))
+        body.setPadding(ui.moteDp(20), ui.moteDp(10), ui.moteDp(20), ui.moteDp(24))
         messages = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
         runStatus = ui.text("", parent = messages!!).apply { visibility = android.view.View.GONE; setPadding(0,0,0,0) }
         val conversation = askState.optString("conversationId").isNotBlank()
@@ -272,8 +274,8 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
             minimumHeight = ui.moteDp(30); setPadding(ui.moteDp(12), 0, ui.moteDp(4), 0)
         }.also { chipFrame.addView(it, android.widget.FrameLayout.LayoutParams(-2, ui.moteDp(30)).apply { gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL }) }
-        scopeIcon = MoteComponents.icon(ui, MoteGlyph.FILE, NativeColorRole.ACCENT, 16).also {
-            scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2).apply { marginEnd = ui.moteDp(6) })
+        scopeIcon = MoteComponents.icon(ui, MoteGlyph.PLUS, NativeColorRole.MUTED, 16).also {
+            scopeChip!!.addView(it, LinearLayout.LayoutParams(ui.moteDp(16), ui.moteDp(16)).apply { marginEnd = ui.moteDp(6) })
         }
         scopeLabel = TextView(ui).apply {
             MoteUi.type(this, 13)
@@ -366,7 +368,9 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 text = label; contentDescription = MoteI18n.text(description); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)
                 isFocusable = true; minHeight = ui.moteDp(48); gravity = android.view.Gravity.CENTER; setPadding(ui.moteDp(8), 0, ui.moteDp(8), 0)
             }
-            val modelRow = action("▸ " + MoteI18n.text("本次模型"), "本次模型")
+            val modelRow = action(MoteI18n.text("本次模型"), "本次模型").apply {
+                moteDisclosureGlyph(expanded = false, gapDp = 4)
+            }
             meta.addView(modelRow, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
             modelRow.setOnClickListener { modelBoxVisibility(label = modelRow) }
             val box = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
@@ -453,7 +457,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val box = modelBox ?: return
         val show = box.visibility != android.view.View.VISIBLE
         box.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
-        label.text = (if (show) "▾ " else "▸ ") + MoteI18n.text("本次模型")
+        label.moteDisclosureGlyph(show, gapDp = 4)
     }
 
     private fun askBusy() = ask.busy()
@@ -657,7 +661,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             material != null -> MoteI18n.text("参考整份资料")
             strict -> MoteI18n.text("仅查这条记录")
             anchored -> MoteI18n.text("参考这条记录，自动查找相关上下文")
-            else -> "＋ " + MoteI18n.text("参考资料")
+            else -> MoteI18n.text("参考资料")
         }
         val label = if (scoped) ask.scopeLabel() ?: fallback else fallback
         scopeBox?.visibility = if (scoped || askState.optString("conversationId").isBlank()) android.view.View.VISIBLE else android.view.View.GONE
@@ -669,7 +673,15 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 }
             }
         }
-        scopeIcon?.visibility = if (scoped) android.view.View.VISIBLE else android.view.View.GONE
+        scopeIcon?.let { icon ->
+            icon.visibility = android.view.View.VISIBLE
+            NativePresentationStyles.bind(icon, "scope-glyph") { value ->
+                (value as ImageView).apply {
+                    setImageResource((if (scoped) MoteGlyph.FILE else MoteGlyph.PLUS).drawable)
+                    imageTintList = android.content.res.ColorStateList.valueOf((if (scoped) NativeColorRole.ACCENT else NativeColorRole.MUTED).color())
+                }
+            }
+        }
         scopeLabel?.let { view ->
             view.text = label
             view.contentDescription = material ?: label
@@ -793,8 +805,13 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 var touchScroll: Int? = null
                 val answerView = ui.text("", parent = target).apply {
                     tag = "ask-answer:" + turn.getString("id"); text = styled; MoteUi.type(this, 16); MoteUi.textColor(this, NativeColorRole.INK)
-                    setLineSpacing(ui.moteDp(6).toFloat(), 1.35f)
-                    setPadding(0,ui.moteDp(12),0,ui.moteDp(10)); setTextIsSelectable(true)
+                    NativePresentationStyles.bind(this, "ask-answer-lines") { view ->
+                        (view as TextView).apply {
+                            includeFontPadding = false
+                            lineHeight = (textSize * 1.7f).toInt()
+                        }
+                    }
+                    setPadding(0, ui.moteDp(16), 0, ui.moteDp(16)); setTextIsSelectable(true)
                     setOnTouchListener { view, event ->
                         when (event.actionMasked) {
                             android.view.MotionEvent.ACTION_DOWN -> touchScroll = ui.contentScroll()
@@ -822,14 +839,16 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                     val newCitations = citations.filter { shownCitationIds.add(it.getString("id")) }
                     if (newCitations.isNotEmpty()) citationCards(target, newCitations, citationNumbers) { citation -> openAskCitation(id,turn.getString("id"),citation.getString("id")) }
                 }
-                val actions = LinearLayout(ui).apply { gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL; setPadding(0,ui.moteDp(4),0,ui.moteDp(20)) }.also(target::addView)
+                val actions = LinearLayout(ui).apply { gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, ui.moteDp(16)) }.also(target::addView)
                 val save = TextView(ui).apply {
                     text = MoteI18n.text("保存为记录"); contentDescription = text
-                    MoteUi.type(this, 13); MoteUi.textColor(this, NativeColorRole.ACCENT)
-                    setCompoundDrawablesWithIntrinsicBounds(MoteGlyph.MEMORY.drawable, 0, 0, 0)
+                    MoteUi.type(this, 14); MoteUi.textColor(this, NativeColorRole.ACCENT)
+                    NativePresentationStyles.bind(this, "ask-action-weight") { (it as TextView).typeface = android.graphics.Typeface.create(android.graphics.Typeface.create(MoteTheme.fontFamily(false), android.graphics.Typeface.NORMAL), 500, false) }
+                    val icon = ui.getDrawable(MoteGlyph.MEMORY.drawable)!!.mutate().apply { setBounds(0, 0, ui.moteDp(16), ui.moteDp(16)) }
+                    setCompoundDrawables(icon, null, null, null)
                     compoundDrawablePadding = ui.moteDp(6)
                     setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(MoteUi.accent))
-                    minHeight = ui.moteDp(44); gravity = android.view.Gravity.CENTER; isFocusable = true
+                    minHeight = ui.moteDp(48); gravity = android.view.Gravity.CENTER; isFocusable = true
                     setPadding(0, 0, ui.moteDp(14), 0)
                     setOnClickListener {
                         if (!ui.isWorking) {
@@ -839,7 +858,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                         }
                     }
                 }
-                actions.addView(save, LinearLayout.LayoutParams(-2, ui.moteDp(44)))
+                actions.addView(save, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
                 actions.addView(MoteComponents.iconButton(ui, MoteGlyph.COPY, "复制", MoteIconButtonStyle.MUTED) {
                     if (!ui.isWorking) {
                         val clipboard = ui.getSystemService(android.content.ClipboardManager::class.java)
@@ -859,7 +878,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         if(askBusy())updateAskFailureAction()
     }
     private fun questionBubble(parent: LinearLayout, question: String) {
-        val row = LinearLayout(ui).apply { gravity = android.view.Gravity.END; setPadding(0, ui.moteDp(6), 0, ui.moteDp(16)) }
+        val row = LinearLayout(ui).apply { gravity = android.view.Gravity.END }
         val maxWidth = (ui.resources.displayMetrics.widthPixels * 0.78f).toInt()
         row.addView(TextView(ui).apply {
             text = question; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK)
@@ -879,7 +898,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             val name = presentation.name
             val row = LinearLayout(ui).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
-                minimumHeight = ui.moteDp(62); setPadding(ui.moteDp(14), ui.moteDp(9), ui.moteDp(14), ui.moteDp(9))
+                minimumHeight = ui.moteDp(48); setPadding(ui.moteDp(14), ui.moteDp(9), ui.moteDp(14), ui.moteDp(9))
                 isFocusable = true; contentDescription = MoteI18n.text("查看引用 {0}", number) + " · " + name
                 background = MoteUi.clickable(ui, NativeColorRole.TRANSPARENT, 0, false)
                 setOnClickListener { if (!ui.isWorking) open(citation) }
@@ -888,17 +907,21 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 text = number.toString(); gravity = android.view.Gravity.CENTER; MoteUi.type(this, 11, medium = true)
                 MoteUi.textColor(this, NativeColorRole.ACCENT)
                 background = MoteUi.shape(ui, NativeColorRole.TINT, NativeRadiusRole.PILL, false)
-            }, LinearLayout.LayoutParams(ui.moteDp(24), ui.moteDp(24)).apply { marginEnd = ui.moteDp(12) })
+            }, LinearLayout.LayoutParams(ui.moteDp(18), ui.moteDp(18)).apply { marginEnd = ui.moteDp(10) })
             val labels = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
-            labels.addView(TextView(ui).apply { text = name; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
             labels.addView(TextView(ui).apply {
-                text = presentation.detail; MoteUi.type(this, 13); MoteUi.textColor(this, NativeColorRole.MUTED)
+                text = name; MoteUi.type(this, 14); MoteUi.textColor(this, NativeColorRole.INK)
+                NativePresentationStyles.bind(this, "citation-title-weight") { (it as TextView).typeface = android.graphics.Typeface.create(android.graphics.Typeface.create(MoteTheme.fontFamily(false), android.graphics.Typeface.NORMAL), 500, false) }
+                maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            labels.addView(TextView(ui).apply {
+                text = presentation.detail; MoteUi.type(this, 12); MoteUi.textColor(this, NativeColorRole.MUTED)
                 setPadding(0, ui.moteDp(2), 0, 0)
             })
             row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
             group.addView(row, LinearLayout.LayoutParams(-1, -2))
         }
-        parent.addView(group, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.moteDp(2) })
+        parent.addView(group, LinearLayout.LayoutParams(-1, -2))
     }
     private fun conversationAction(parent: LinearLayout, label: String, action: () -> Unit) = TextView(ui).apply {
         text = MoteI18n.text(label); contentDescription = text; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED)

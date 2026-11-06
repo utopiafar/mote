@@ -22,6 +22,7 @@ internal class LibraryCaptureView(
 ) {
     private val task = UiTask(activity)
     private val projection = dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).captureProjection()
+    private val readState = LibraryReadState()
     private val status = TextView(activity)
     private val host = parent
     private val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
@@ -29,7 +30,7 @@ internal class LibraryCaptureView(
     private var deniedOrigin: String? = null
     private val sourceView by lazy { LibrarySourceView(activity, { render() }, { origin ->
         deniedOrigin = origin; projection.clearCentral(origin); remoteCursor = null; remoteMore = false; render()
-    }, { origin -> deniedOrigin != origin }) }
+    }, { origin -> deniedOrigin != origin }, readState) }
     private val searchView by lazy { LibrarySearchView(activity) { render() } }
     private var searchTick: Runnable? = null
     private var category = state?.getString("category")?.takeIf { it in setOf("all", "records", "images", "notifications", "files") } ?: "all"
@@ -49,7 +50,6 @@ internal class LibraryCaptureView(
     private var activeDay = ""
     private var session: Pair<String, Long>? = null
     private var files = emptyList<JSONObject>()
-    private var remoteNotice = ""
     @Volatile private var verifiedConnection: Pair<String, Long>? = null
     private val refreshPolicy = LocalStatusProducer.get(activity).state.value.let { dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).refreshPolicy(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -175,9 +175,9 @@ internal class LibraryCaptureView(
             val saved = saveState(); anchor = saved.getString("anchor"); anchorTop = saved.getInt("anchorTop"); restorePages = pages
         }
         deniedOrigin = null
-        stamp++; projection.clear(); files = emptyList(); localCursor = null; remoteCursor = null; remoteBoundary = null
+        stamp++; readState.begin(); projection.clear(); files = emptyList(); localCursor = null; remoteCursor = null; remoteBoundary = null
         localMore = true; remoteMore = true; pages = 0; before = Instant.now().plusSeconds(1).toString()
-        remoteNotice = ""; sourceView.refresh(source, day); render()
+        sourceView.refresh(source, day); render()
         if (task.busy) refreshPending = true else load()
     }
     private data class Loaded(val local: JSONObject?, val central: Result<JSONObject>?, val files: List<JSONObject>, val needsFullRefresh: Boolean = false)
@@ -188,7 +188,7 @@ internal class LibraryCaptureView(
         val selection = CentralAccess.resolve(activity)
         val identity = selection.server to selection.generation
         if (session != identity) { session = identity; projection.clear(); localCursor = null; remoteCursor = null; remoteBoundary = null; localMore = true; remoteMore = true; pages = 0 }
-        val generation = stamp
+        val generation = stamp; val readEpoch = readState.epoch
         val filter = source; val selectedDay = day; activeFilter = filter; activeDay = selectedDay; val bound = before
         val after = selectedDay.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: "1970-01-01T00:00:00Z"
         val until = selectedDay.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: bound
@@ -199,33 +199,41 @@ internal class LibraryCaptureView(
         val priorCandidates = projection.candidates(selection.server)
         more.isEnabled = false
         task.start(MoteI18n.text("正在读取…"), { status.text = it }, {
-            requestPage(selection, identity, generation, filter, after, until, nextLocal, nextRemote, readLocal, readRemote, priorCandidates)
+            requestPage(selection, identity, generation, readEpoch, filter, after, until, nextLocal, nextRemote, readLocal, readRemote, priorCandidates)
         }) { result ->
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && identity == (current.server to current.generation)) {
                 result.onSuccess { loaded ->
                     files = loaded.files
                     applyLocal(loaded.local)
-                    loaded.central?.onSuccess { page ->
+                    val central = loaded.central
+                    if (central == null) readState.centralSkipped(readEpoch, LibraryReadState.Stream.CAPTURES)
+                    central?.onSuccess { page ->
                         if (deniedOrigin == selection.server) return@onSuccess
-                        remoteNotice = ""; val items = page.getJSONArray("items")
+                        readState.centralReadable(readEpoch, LibraryReadState.Stream.CAPTURES)
+                        val items = page.getJSONArray("items")
                         repeat(items.length()) { projection.central(items.getJSONObject(it), selection.server) }
                         val matches = page.getJSONArray("matches")
                         repeat(matches.length()) { val match = matches.getJSONObject(it); projection.availability(selection.server, match.getString("deviceId"), match.getString("id"), match.getString("state") == "readable", match.optInt("observationCount"), match.optString("libraryVersion")) }
                         remoteCursor = page.optString("nextCursor").takeUnless { it.isBlank() || it == "null" }; remoteMore = remoteCursor != null
                         remoteBoundary = if (remoteMore) refreshPolicy.extendCentralCoverage(remoteBoundary, remotePosition(items)) else null
                     }?.onFailure {
+                        readState.centralFailed(readEpoch, LibraryReadState.Stream.CAPTURES,
+                            LibraryReadState.centralFailure(it, CentralAccess.resolve(activity).client == null))
                         if (it is CentralFailure && (it.status in setOf(401, 403) || it.code == "connection_revoked")) {
                             deniedOrigin = selection.server; sourceView.clearRemote()
                             projection.clearCentral(selection.server); remoteCursor = null
                         }
                         if (it is CentralFailure && it.status == 409) { refreshPending = true; pages = 0; restorePages = 1 }
-                        remoteNotice = if (it is java.io.IOException) MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试") else it.message.orEmpty(); remoteMore = false
+                        remoteMore = false
                     }
                     if (filter in setOf("file", "source", "material")) remoteMore = false
                     pages++; render()
                     if (pages < restorePages && (localMore || remoteMore)) load() else restoreAnchor()
-                }.onFailure { status.text = MoteI18n.text("资料暂不可读取，请稍后重试。"); more.isEnabled = true }
+                }.onFailure {
+                    readState.localFailed(readEpoch, LibraryReadState.Stream.CAPTURES, MoteI18n.text("资料暂不可读取，请稍后重试。"))
+                    status.text = MoteI18n.text("资料暂不可读取，请稍后重试。"); more.isEnabled = true; render()
+                }
             } else { projection.clear(); files = emptyList(); render(); refreshPending = true }
             if (refreshPending) { refreshPending = false; incrementalPending = false; refresh() }
             else if (incrementalPending) { incrementalPending = false; incrementalRefresh() }
@@ -237,7 +245,7 @@ internal class LibraryCaptureView(
         val selection = CentralAccess.resolve(activity)
         val identity = selection.server to selection.generation
         if (session != identity) { refresh(); return }
-        val generation = stamp
+        val generation = stamp; val readEpoch = readState.epoch
         val filter = source; val selectedDay = day
         val after = selectedDay.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: "1970-01-01T00:00:00Z"
         val until = selectedDay.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: Instant.now().plusSeconds(1).toString()
@@ -247,7 +255,7 @@ internal class LibraryCaptureView(
         val boundary = remoteBoundary; val hadMore = remoteMore
         more.isEnabled = false
         task.start(MoteI18n.text("正在读取…"), { status.text = it }, {
-            requestPage(selection, identity, generation, filter, after, until, null, null, readLocal = true, readRemote = true, priorCandidates, AppendRead(insertions, priorLocal))
+            requestPage(selection, identity, generation, readEpoch, filter, after, until, null, null, readLocal = true, readRemote = true, priorCandidates, AppendRead(insertions, priorLocal))
         }) { result ->
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && identity == (current.server to current.generation)) {
@@ -267,9 +275,12 @@ internal class LibraryCaptureView(
                         }) { refreshPending = true; return@onSuccess }
                     }
                     applyLocal(loaded.local, updateCursor = false)
-                    loaded.central?.onSuccess { page ->
+                    val central = loaded.central
+                    if (central == null) readState.centralSkipped(readEpoch, LibraryReadState.Stream.CAPTURES)
+                    central?.onSuccess { page ->
                         if (deniedOrigin == selection.server) return@onSuccess
-                        remoteNotice = ""; val items = page.getJSONArray("items")
+                        readState.centralReadable(readEpoch, LibraryReadState.Stream.CAPTURES)
+                        val items = page.getJSONArray("items")
                         repeat(items.length()) { projection.central(items.getJSONObject(it), selection.server) }
                         val matches = page.getJSONArray("matches")
                         repeat(matches.length()) { val match = matches.getJSONObject(it); projection.availability(selection.server, match.getString("deviceId"), match.getString("id"), match.getString("state") == "readable", match.optInt("observationCount"), match.optString("libraryVersion")) }
@@ -279,22 +290,26 @@ internal class LibraryCaptureView(
                         // A previous successful read cannot claim current Central
                         // availability after this read failed. Keep local originals
                         // and the cursors so a later append can revalidate the range.
+                        readState.centralFailed(readEpoch, LibraryReadState.Stream.CAPTURES,
+                            LibraryReadState.centralFailure(it, CentralAccess.resolve(activity).client == null))
                         projection.clearCentral(selection.server)
                         if (it is CentralFailure && (it.status in setOf(401, 403) || it.code == "connection_revoked")) {
                             deniedOrigin = selection.server; sourceView.clearRemote()
                             remoteCursor = null; remoteMore = false
                         }
                         if (it is CentralFailure && it.status == 409) { refreshPending = true; pages = 0; restorePages = 1 }
-                        remoteNotice = if (it is java.io.IOException) MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试") else it.message.orEmpty()
                     }
                     render(); restoreAnchor()
-                }.onFailure { status.text = MoteI18n.text("资料暂不可读取，请稍后重试。"); more.isEnabled = localMore || remoteMore }
+                }.onFailure {
+                    readState.localFailed(readEpoch, LibraryReadState.Stream.CAPTURES, MoteI18n.text("资料暂不可读取，请稍后重试。"))
+                    status.text = MoteI18n.text("资料暂不可读取，请稍后重试。"); more.isEnabled = localMore || remoteMore; render()
+                }
             } else { projection.clear(); files = emptyList(); render(); refreshPending = true }
             if (refreshPending) { refreshPending = false; incrementalPending = false; refresh() }
             else if (incrementalPending) { incrementalPending = false; incrementalRefresh() }
         }
     }
-    private fun requestPage(selection: CentralAccess.Selection, identity: Pair<String, Long>, generation: Int, filter: String, after: String, until: String, nextLocal: String?, nextRemote: String?, readLocal: Boolean, readRemote: Boolean, priorCandidates: List<LibraryCaptureProjection.Identity>, append: AppendRead? = null): Loaded {
+    private fun requestPage(selection: CentralAccess.Selection, identity: Pair<String, Long>, generation: Int, readEpoch: Int, filter: String, after: String, until: String, nextLocal: String?, nextRemote: String?, readLocal: Boolean, readRemote: Boolean, priorCandidates: List<LibraryCaptureProjection.Identity>, append: AppendRead? = null): Loaded {
         val context = activity.applicationContext
         val local = if (readLocal && filter !in setOf("file", "source", "material")) context.withNativeNotePreviews(context.queue().capturePage(after, until, nextLocal, source = filter, libraryBindings = true, libraryVersion = context::captureLibraryVersion)) else null
         val localFiles = emptyList<JSONObject>()
@@ -311,10 +326,10 @@ internal class LibraryCaptureView(
             if (generation == stamp && identity == (current.server to current.generation)) {
                 if (append == null) {
                     files = localFiles
-                    applyLocal(local); render()
+                    applyLocal(local); readState.localSettled(readEpoch, LibraryReadState.Stream.CAPTURES); render()
                     status.append("\n" + MoteI18n.text("正在读取…"))
                 } else {
-                    applyLocal(local, updateCursor = false); render(); restoreAnchor(keep = true)
+                    applyLocal(local, updateCursor = false); readState.localSettled(readEpoch, LibraryReadState.Stream.CAPTURES); render(); restoreAnchor(keep = true)
                 }
             }
         }
@@ -401,9 +416,16 @@ internal class LibraryCaptureView(
                 })
             }
         }
-        status.text = remoteNotice; status.visibility = if (remoteNotice.isBlank()) View.GONE else View.VISIBLE
-        if (!sourceView.isLoading && entries.isEmpty()) rows.addView(TextView(activity).apply { text = MoteI18n.text("这里还没有内容。点击添加，选择文件、屏幕或记录。") })
-        sourceView.renderFooter(rows)
+        val message = readState.status()
+        status.text = message; status.visibility = if (message.isBlank()) View.GONE else View.VISIBLE
+        if (entries.isEmpty()) {
+            val filtered = category != "all" || day.isNotBlank() || source.isNotBlank()
+            val localMore = localMore || sourceView.localMorePages
+            val more = localMore || remoteMore || sourceView.hasMore
+            readState.emptyText(location, filtered, localMore, more)?.let { empty ->
+                rows.addView(TextView(activity).apply { text = empty })
+            }
+        }
         more.visibility = if (localMore || remoteMore || sourceView.hasMore) View.VISIBLE else View.GONE
         more.isEnabled = !task.busy || !sourceView.isLoading
     }

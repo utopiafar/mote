@@ -14,6 +14,7 @@ import android.widget.*
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.moteGlyph
 import java.io.File
 
 /** A reader handoff keeps the visible reference title, never a rewritten evidence ID. */
@@ -370,8 +371,9 @@ internal class CentralContent(
         addAction.visibility = View.GONE
         val ask = page == "ask"
         val conversations = page == "conversations"
-        headerBar.minimumHeight = moteDp(if (conversations) 48 else if (page == "memories") 56 else 66)
-        headerBar.setPadding(moteDp(if (conversations) 6 else 12), 0, moteDp(if (conversations) 6 else 12), 0)
+        (backButton.layoutParams as LinearLayout.LayoutParams).width = moteDp(if (conversations || ask) 48 else 44)
+        headerBar.minimumHeight = moteDp(if (conversations || ask) 48 else if (page == "memories") 56 else 66)
+        headerBar.setPadding(moteDp(if (conversations || ask) 6 else 12), 0, moteDp(if (conversations || ask) 6 else 12), 0)
         headerDivider.visibility = if (conversations || page == "memories" || embeddedActions) View.GONE else View.VISIBLE
         title.tag = if (conversations) null else "central-title"
         moreAction.tag = if (page == "insights") "insight-more" else null
@@ -385,7 +387,7 @@ internal class CentralContent(
     internal fun hostActivity(): MoteActivity = activity
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
-        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(8),moteDp(20),moteDp(22)) }.also(composer::addView)
+        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16),moteDp(8),moteDp(16),moteDp(12)) }.also(composer::addView)
     }
     /** The AND-History dock: page background, no divider, the pill composer inside. */
     internal fun conversationComposer(): LinearLayout {
@@ -601,7 +603,8 @@ internal class CentralContent(
             setPadding(0, moteDp(4), 0, 0)
         })
         addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(TextView(this@CentralContent).apply { text = "›"; textSize = 20f; MoteUi.textColor(this, NativeColorRole.ACCENT) }, LinearLayout.LayoutParams(moteDp(20), -2))
+        addView(MoteComponents.icon(this@CentralContent, MoteGlyph.CHEV, NativeColorRole.ACCENT, 20),
+            LinearLayout.LayoutParams(moteDp(20), moteDp(20)))
         setOnClickListener { if (!task.busy) runCatching { action(); MoteUi.styleSelects(body) }.onFailure { notice(it.message ?: MoteI18n.text("操作失败")) } }
     }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(4) }) }
     internal fun disclosure(label: String, parent: LinearLayout = body, eager: Boolean = false, build: (LinearLayout) -> Unit): LinearLayout {
@@ -610,10 +613,14 @@ internal class CentralContent(
         var built = false
         fun ensure() { if (!built) { build(content); built = true } }
         if (eager) ensure()
-        button(label + "  ›", parent = section) {
+        button(label, parent = section) {
             ensure()
             content.visibility = if (content.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        }.apply { contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        }.apply {
+            tag = "disclosure:$label"
+            moteGlyph(MoteGlyph.CHEV, NativeColorRole.MUTED)
+            contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
         section.addView(content)
         return section
     }

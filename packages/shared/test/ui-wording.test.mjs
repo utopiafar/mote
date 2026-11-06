@@ -103,18 +103,22 @@ test('changed prompts state the condition without 请',()=>{
 });
 
 test('promise copy stays verbatim across clients',()=>{
+  const memoryTitle='删除这条记忆？';
   const memoryDelete='原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。';
+  const memoryConfirm='确认删除';
   const conversationTitle='删除整段对话？';
   const conversationBody='会删除这段对话的所有问答。已单独保存的记录保留。';
   const conversationAction='删除对话';
-  for(const copy of [memoryDelete,conversationTitle,conversationBody,conversationAction]){
+  for(const copy of [memoryTitle,memoryDelete,memoryConfirm,conversationTitle,conversationBody,conversationAction]){
     assert.ok(catalog.includes(copy),`Promise copy missing from the Chinese catalog: ${copy}`);
   }
   const required=new Map([
-    ['apps/web/src/plugins/memory/MemoryDeleteDialog.tsx',[memoryDelete]],
-    ['apps/android/app/src/main/java/dev/mote/collector/MemoryDetailPanel.kt',[memoryDelete]],
+    ['apps/web/src/plugins/memory/MemoryDeleteDialog.tsx',[memoryTitle,memoryDelete,memoryConfirm]],
+    ['apps/android/app/src/main/java/dev/mote/collector/MemoryDetailPanel.kt',[memoryTitle,memoryDelete,memoryConfirm]],
+    ['apps/ios/MoteKit/Sources/MoteCentral/MemoryDetail.swift',[memoryTitle,memoryDelete,memoryConfirm]],
     ['apps/web/src/plugins/ask/Conversations.tsx',[conversationTitle,conversationBody,conversationAction]],
     ['apps/android/app/src/main/java/dev/mote/collector/CentralScreens.kt',[conversationTitle,conversationBody,conversationAction]],
+    ['apps/ios/App/ConversationHistoryView.swift',[conversationTitle,conversationBody,conversationAction]],
   ]);
   for(const [file,copies] of required){
     const text=readFileSync(join(repo,file),'utf8');
