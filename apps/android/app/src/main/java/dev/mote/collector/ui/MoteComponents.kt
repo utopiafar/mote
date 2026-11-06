@@ -184,12 +184,13 @@ internal object MoteComponents {
         trailing: View? = null,
         chevron: Boolean = true,
         verticalPaddingDp: Int = 9,
+        iconSizeDp: Int = 24,
         onClick: ((View) -> Unit)? = null,
     ): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
         minimumHeight = context.moteDp(MoteTheme.controlHeight)
         setPadding(context.moteDp(14), context.moteDp(verticalPaddingDp), context.moteDp(14), context.moteDp(verticalPaddingDp))
-        icon?.let { addView(MoteComponents.icon(context, it, iconColor), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = context.moteDp(12) }) }
+        icon?.let { addView(MoteComponents.icon(context, it, iconColor, iconSizeDp), LinearLayout.LayoutParams(context.moteDp(iconSizeDp), context.moteDp(iconSizeDp)).apply { marginEnd = context.moteDp(12) }) }
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(context).apply { text = title; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, titleColor) })

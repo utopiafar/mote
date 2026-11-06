@@ -116,7 +116,10 @@ open class RecordEditorActivity : MoteActivity() {
             hint = MoteI18n.text("记录"); contentDescription = MoteI18n.text("正在想什么")
             gravity = Gravity.TOP; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
             filters = arrayOf(android.text.InputFilter.LengthFilter(100000)); MoteUi.field(this)
-            NativePresentationStyles.bind(this, "record-editor-lines") { (it as EditText).apply { background = null; setPadding(0, moteDp(6), 0, 0) } }
+            NativePresentationStyles.bind(this, "record-editor-lines") { (it as EditText).apply {
+                background = null; textSize = 16f; includeFontPadding = false
+                lineHeight = (textSize * 1.65f).toInt(); setPadding(0, 0, 0, 0)
+            } }
         }
         body.addView(field, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = moteDp(20); rightMargin = moteDp(20) })
         attachmentsView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -148,7 +151,11 @@ open class RecordEditorActivity : MoteActivity() {
 
         description = EditText(this).apply {
             tag = "record-description"; hint = MoteI18n.text("资料说明"); contentDescription = MoteI18n.text("资料说明")
-            MoteUi.textInput(this, android.text.InputType.TYPE_CLASS_TEXT, multiline = true); filters = arrayOf(android.text.InputFilter.LengthFilter(12000)); MoteUi.field(this); minLines = 3
+            MoteUi.textInput(this, android.text.InputType.TYPE_CLASS_TEXT, multiline = true); filters = arrayOf(android.text.InputFilter.LengthFilter(12000)); MoteUi.field(this)
+            NativePresentationStyles.bind(this, "record-description-area") { (it as EditText).apply {
+                minLines = 2; minHeight = moteDp(76); minimumHeight = minHeight
+                setPadding(moteDp(12), moteDp(10), moteDp(12), moteDp(10))
+            } }
         }
         describeToggle = TextView(this).apply {
             tag = "record-describe-toggle"
@@ -156,6 +163,9 @@ open class RecordEditorActivity : MoteActivity() {
             MoteUi.type(this, NativeFontRole.SUPPORT, medium = true); MoteUi.textColor(this, NativeColorRole.ACCENT)
             val icon = getDrawable(MoteGlyph.PLUS.drawable)!!.mutate().apply { setTint(NativeColorRole.ACCENT.color()); setBounds(0, 0, moteDp(16), moteDp(16)) }
             setCompoundDrawablesRelative(icon, null, null, null); compoundDrawablePadding = moteDp(6)
+            NativePresentationStyles.bind(this, "record-describe-icon") { view ->
+                (view as TextView).compoundDrawablesRelative.firstOrNull()?.setTint(NativeColorRole.ACCENT.color())
+            }
             minHeight = moteDp(48); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
             background = MoteUi.clickable(this@RecordEditorActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false)
             setPadding(moteDp(4), 0, moteDp(8), 0)
@@ -336,7 +346,7 @@ open class RecordEditorActivity : MoteActivity() {
                 try { temp.writeBytes(notes.bytes(id)); MediaMetadataRetriever().apply { setDataSource(temp.absolutePath) }.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() } finally { temp.delete() }
             }.getOrNull()
             if (duration != null && duration > 0) {
-                val label = "%d:%02d".format(duration / 60000, duration / 1000 % 60)
+                val label = HomeRecordingBarPolicy.label(duration)
                 audioMeta[id] = label; runOnUiThread { view.text = label }
             }
         }
@@ -466,8 +476,8 @@ open class RecordEditorActivity : MoteActivity() {
             val recording = current.active
             NativePresentationStyles.bind(field, "recording-editor-type") { view ->
                 (view as EditText).apply {
-                    textSize = if (recording) 16f else NativeFontRole.BODY.size().toFloat()
-                    setLineSpacing(0f, if (recording) 1.3f else MoteTheme.lineBody)
+                    textSize = 16f
+                    lineHeight = (textSize * if (recording) 1.3f else 1.65f).toInt()
                 }
             }
         }

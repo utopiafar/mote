@@ -216,30 +216,30 @@ class SourcesActivity : MoteActivity() {
             val trailing = row.actionLabel?.let { label -> MoteComponents.smallButton(this, label) { handleSourceRow(row) } }
             val view = MoteComponents.row(this, glyphFor(row.kind), row.title, value = row.detail.takeIf(String::isNotBlank),
                 valueFont = NativeFontRole.BODY,
-                valueColor = if (row.warn) NativeColorRole.WARNING else NativeColorRole.MUTED, trailing = trailing) {
+                valueColor = if (row.warn) NativeColorRole.WARNING else NativeColorRole.MUTED, trailing = trailing, iconSizeDp = 20) {
                 if (row.actionLabel != null) handleSourceRow(row) else openSourceRow(row)
             }
             addTo(sourcesGroup, view, index == 0)
         }
         addTo(sourcesGroup, MoteComponents.row(this, MoteGlyph.PLUS, MoteI18n.text("添加来源"),
-            titleColor = NativeColorRole.ACCENT, iconColor = NativeColorRole.ACCENT, chevron = false) {
+            titleColor = NativeColorRole.ACCENT, iconColor = NativeColorRole.ACCENT, chevron = false, iconSizeDp = 20) {
             showAddSheet(overview.rows.map { it.kind }.toSet())
         }.apply { tag = "sources-add" }, overview.rows.isEmpty())
         list.addView(sourcesGroup, LinearLayout.LayoutParams(-1, -2))
         val sendGroup = MoteComponents.group(this)
         sendGroup.addView(MoteComponents.row(this, MoteGlyph.SEND, overview.send.host, subtitle = overview.send.text,
-            subtitleColor = if (overview.send.warn) NativeColorRole.WARNING else NativeColorRole.MUTED,
+            subtitleColor = if (overview.send.warn) NativeColorRole.WARNING else NativeColorRole.MUTED, iconSizeDp = 20,
             trailing = overview.send.actionLabel?.let { label -> MoteComponents.smallButton(this, label) { sendAction(overview.send) } }))
         sendGroup.addView(MoteComponents.divider(this))
         sendGroup.addView(MoteComponents.row(this, MoteGlyph.CLOCK, MoteI18n.text("发送方式"), value = overview.sendMethod,
-            valueFont = NativeFontRole.BODY) { showSendMethod() })
+            valueFont = NativeFontRole.BODY, iconSizeDp = 20) { showSendMethod() })
         sendGroup.addView(MoteComponents.divider(this))
         sendGroup.addView(MoteComponents.row(this, MoteGlyph.PAUSE, MoteI18n.text("暂停发送"),
-            trailing = MoteComponents.switch(this, overview.sendPaused, MoteI18n.text("暂停发送")) { changeSendPause(it) }))
+            iconSizeDp = 20, trailing = MoteComponents.switch(this, overview.sendPaused, MoteI18n.text("暂停发送")) { changeSendPause(it) }))
         list.addView(sendGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(24) })
         val storageGroup = MoteComponents.group(this)
         storageGroup.addView(MoteComponents.row(this, MoteGlyph.DISK, MoteI18n.text("本机存储"),
-            value = overview.storageText.takeIf(String::isNotBlank), valueFont = NativeFontRole.BODY) { openMoteLocalPage("STORAGE") })
+            value = overview.storageText.takeIf(String::isNotBlank), valueFont = NativeFontRole.BODY, iconSizeDp = 20) { openMoteLocalPage("STORAGE") })
         list.addView(storageGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(24) })
     }
 
@@ -354,19 +354,25 @@ class SourcesActivity : MoteActivity() {
         CaptureSyncPresentation.availableAddKinds(added).forEachIndexed { index, kind ->
             if (index > 0) kindsGroup.addView(MoteComponents.divider(this))
             kindsGroup.addView(MoteComponents.row(this, glyphFor(kind), MoteI18n.text(kind.titleKey),
-                trailing = if (kind.opensCentral) MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16) else null) {
+                iconSizeDp = 20, trailing = if (kind.opensCentral) MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16) else null) {
                 sheetDialog.dismiss(); openAddKind(kind)
             }.apply { tag = "add-source:${kind.name}" })
         }
         sheet.addView(kindsGroup, LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(moteDp(16), moteDp(8), moteDp(16), moteDp(32))
+            // The system navigation area supplies the remaining bottom spacing.
+            setMargins(moteDp(16), moteDp(8), moteDp(16), moteDp(8))
         })
         sheetDialog.setContentView(sheet)
         sheetDialog.window?.let { window ->
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            window.attributes = window.attributes.apply {
-                gravity = Gravity.BOTTOM; width = WindowManager.LayoutParams.MATCH_PARENT; dimAmount = 0.5f
+            NativePresentationStyles.bind(sheet, "sources-add-window") {
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = NativeColorRole.SURFACE_RAISED.color()
+                window.attributes = window.attributes.apply {
+                    gravity = Gravity.BOTTOM; width = WindowManager.LayoutParams.MATCH_PARENT
+                    dimAmount = if (MoteAppearance.dark()) 0.55f else 0.30f
+                }
             }
         }
         sheetDialog.show()

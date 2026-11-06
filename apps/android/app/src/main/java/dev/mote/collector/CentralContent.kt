@@ -370,8 +370,9 @@ internal class CentralContent(
         addAction.visibility = View.GONE
         val ask = page == "ask"
         val conversations = page == "conversations"
-        headerBar.minimumHeight = moteDp(if (conversations) 48 else if (page == "memories") 56 else 66)
-        headerBar.setPadding(moteDp(if (conversations) 6 else 12), 0, moteDp(if (conversations) 6 else 12), 0)
+        (backButton.layoutParams as LinearLayout.LayoutParams).width = moteDp(if (conversations || ask) 48 else 44)
+        headerBar.minimumHeight = moteDp(if (conversations || ask) 48 else if (page == "memories") 56 else 66)
+        headerBar.setPadding(moteDp(if (conversations || ask) 6 else 12), 0, moteDp(if (conversations || ask) 6 else 12), 0)
         headerDivider.visibility = if (conversations || page == "memories" || embeddedActions) View.GONE else View.VISIBLE
         title.tag = if (conversations) null else "central-title"
         moreAction.tag = if (page == "insights") "insight-more" else null
@@ -385,7 +386,7 @@ internal class CentralContent(
     internal fun hostActivity(): MoteActivity = activity
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
-        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(8),moteDp(20),moteDp(22)) }.also(composer::addView)
+        return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16),moteDp(8),moteDp(16),moteDp(12)) }.also(composer::addView)
     }
     /** The AND-History dock: page background, no divider, the pill composer inside. */
     internal fun conversationComposer(): LinearLayout {

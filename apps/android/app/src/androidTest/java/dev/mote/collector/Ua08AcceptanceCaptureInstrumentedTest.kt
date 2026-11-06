@@ -63,6 +63,7 @@ class Ua08AcceptanceCaptureInstrumentedTest {
         s.onActivity { a -> shown(a).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText(value) }
     }
     private fun save(root: View, name: String) {
+        GeneratedVisualScreencap.save(context, File(context.getExternalFilesDir(null), "ua08"), name)
         val image = android.graphics.Bitmap.createBitmap(root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
         try {
             root.draw(android.graphics.Canvas(image))
@@ -73,7 +74,7 @@ class Ua08AcceptanceCaptureInstrumentedTest {
     }
     private fun shot(s: ActivityScenario<CentralActivity>, name: String) {
         instrumentation.waitForIdleSync()
-        s.onActivity { save(it.window.decorView, name) }
+        GeneratedVisualScreencap.capture(context, s, File(context.getExternalFilesDir(null), "ua08"), name)
     }
     /** The original reader is its own Activity window; capture the window that
      * currently renders the highlighted original text. */
@@ -130,7 +131,9 @@ class Ua08AcceptanceCaptureInstrumentedTest {
             assertTrue("numbered citation markers", visible.filterIsInstance<TextView>().any { it.text.contains("按实际用量分摊") })
             assertTrue("citation card position", visible.any { it.contentDescription?.toString() == "查看引用 2 · 租房合同 2026.pdf" })
             assertTrue("citation card location", visible.filterIsInstance<TextView>().any { it.text.toString() == "第 4 页" })
-            assertTrue("answer actions", visible.filterIsInstance<TextView>().any { it.text.toString() == "保存为记录" })
+            assertTrue("each completed answer remains individually saveable", visible.filterIsInstance<TextView>().count { it.text.toString() == "保存为记录" } == 2)
+            assertTrue("each completed answer remains individually copyable", visible.count { it.contentDescription?.toString() == "复制" } == 2)
+            assertTrue("each completed answer keeps its details action", visible.count { it.contentDescription?.toString() == "更多" } == 2)
             val minimumTouchTarget = (48 * a.resources.displayMetrics.density).toInt()
             for (label in listOf("复制", "更多", "添加图片")) {
                 val controls = visible.filter { it.contentDescription?.toString() == label }
@@ -186,7 +189,7 @@ class Ua08AcceptanceCaptureInstrumentedTest {
                     shown(a).none { it is TextView && it.text.contains("正在读取对话") }
             }
             instrumentation.waitForIdleSync()
-            s.onActivity { save(it.window.decorView, "list-$theme") }
+            shot(s, "list-$theme")
             assertTrue("No history action on the thread", seen { it.contentDescription?.toString() == "对话历史" }.not())
             assertTrue("No new conversation action on the thread", seen { it.contentDescription?.toString() == "新对话" }.not())
             click(s, "Reopen the generated conversation") { it.contentDescription?.toString()?.startsWith("暖气费是怎么约定的？") == true }
@@ -213,7 +216,7 @@ class Ua08AcceptanceCaptureInstrumentedTest {
                     }
             }
             instrumentation.waitForIdleSync()
-            s.onActivity { save(it.window.decorView, "streaming-$theme") }
+            shot(s, "streaming-$theme")
             click(s, "Stop the generated answer") { it.tag == "ask-stop" }
             until("The actual server cancellation is stored") { saved().optString("runStatus") == "cancelled" }
             ready(s, "Stopped answer keeps the conversation") { a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString().contains("按实际用量分摊") } }
@@ -231,7 +234,7 @@ class Ua08AcceptanceCaptureInstrumentedTest {
             ready(s, "Composer is replaced by the offline notice") { a -> shown(a).none { it.isShown && it.contentDescription?.toString() == "发送" } }
             assertTrue("No raw transport text", !seen { it is TextView && (it.text.contains("okhttp") || it.text.contains("unexpected end of stream")) })
             instrumentation.waitForIdleSync()
-            s.onActivity { save(it.window.decorView, "offline-$theme") }
+            shot(s, "offline-$theme")
             control("online")
             click(s, "Retry the unreachable conversation") { it is TextView && it.text.toString() == "重试" }
             until("Offline notice clears after retry") { !seen { it is TextView && it.text.toString() == "没有连上中央" } }

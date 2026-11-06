@@ -37,15 +37,24 @@ class EditorVisualEvidenceInstrumentedTest {
         val latch = java.util.concurrent.CountDownLatch(1)
         scenario.onActivity { it.window.decorView.postOnAnimation { it.window.decorView.postOnAnimation { latch.countDown() } } }
         assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS))
-        scenario.onActivity { activity ->
-            val root = activity.window.decorView
-            val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
-            try { root.draw(Canvas(bitmap)); File(context.filesDir, "ui-v1-evidence").apply { mkdirs() }.resolve("$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } } finally { bitmap.recycle() }
-        }
+        GeneratedVisualScreencap.capture(context, scenario, File(context.filesDir, "ui-v1-evidence"), name)
     }
     private fun both(scenario: ActivityScenario<RecordEditorActivity>, state: String) {
         for (theme in listOf(AppearancePreference.LIGHT, AppearancePreference.DARK)) {
-            MoteAppearance.select(context, theme); instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync { MoteAppearance.select(context, theme) }
+            val expected = NativeColorRole.BACKGROUND.color()
+            until("$state ${theme.name} presentation applied") {
+                var matches = false
+                scenario.onActivity { activity ->
+                    val root = activity.window.decorView
+                    val pixel = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+                    try {
+                        val canvas = Canvas(pixel); canvas.translate(-1f, -(root.height / 2).toFloat()); root.draw(canvas)
+                        matches = pixel.getPixel(0, 0) == expected
+                    } finally { pixel.recycle() }
+                }
+                matches
+            }
             shot(scenario, "editor-canvas-$state-" + theme.name.lowercase())
         }
     }
@@ -61,12 +70,22 @@ class EditorVisualEvidenceInstrumentedTest {
         canvas.drawLine(784f, 528f, 856f, 600f, check); canvas.drawLine(856f, 600f, 992f, 448f, check)
         val out = java.io.ByteArrayOutputStream(); image.compress(Bitmap.CompressFormat.JPEG, 95, out); image.recycle(); return out.toByteArray()
     }
-    private fun generatedAudio(): ByteArray {
+    private fun generatedRecording(): ByteArray {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.RECORD_AUDIO)
         val file = File(context.cacheDir, "generated-evidence-audio.m4a")
         val recorder = MediaRecorder().apply { setAudioSource(MediaRecorder.AudioSource.MIC); setOutputFormat(MediaRecorder.OutputFormat.MPEG_4); setAudioEncoder(MediaRecorder.AudioEncoder.AAC); setOutputFile(file.absolutePath); prepare(); start() }
         Thread.sleep(1400); recorder.stop(); recorder.release()
         return file.readBytes().also { file.delete() }
+    }
+    private fun generatedAudio(): ByteArray {
+        // A 2:14 generated silent PCM fixture matches the canvas without recording a device.
+        val samplesPerSecond = 8000
+        val dataSize = samplesPerSecond * 2 * 134
+        return java.nio.ByteBuffer.allocate(44 + dataSize).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(36 + dataSize); put("WAVEfmt ".toByteArray()); putInt(16)
+            putShort(1); putShort(1); putInt(samplesPerSecond); putInt(samplesPerSecond * 2)
+            putShort(2); putShort(16); put("data".toByteArray()); putInt(dataSize)
+        }.array()
     }
     private fun staged(name: String, bytes: ByteArray, mime: String) =
         context.recordDraftStore().stage(bytes, name, mime, UUID.nameUUIDFromBytes(name.toByteArray()).toString())
@@ -82,7 +101,8 @@ class EditorVisualEvidenceInstrumentedTest {
         val manual = JSONObject().put("kind", "manual")
         try {
             val photo = staged("photo-generated-evidence.jpg", generatedPhoto(), "image/jpeg")
-            val audio = staged("record-microphone-generated-evidence.m4a", generatedAudio(), "audio/mp4")
+            val recording = staged("record-microphone-generated-evidence.m4a", generatedRecording(), "audio/mp4")
+            val audio = staged("record-microphone-generated-evidence.wav", generatedAudio(), "audio/wav")
             store.clear()
             ActivityScenario.launch(RecordEditorActivity::class.java).use { scenario ->
                 until("Empty editor ready") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).filterIsInstance<EditText>().singleOrNull { it.contentDescription == "正在想什么" }?.isEnabled == true }; ready }
@@ -90,11 +110,21 @@ class EditorVisualEvidenceInstrumentedTest {
 
                 store.edit(text, JSONArray().put(photo), JSONObject(manual.toString()), "")
                 scenario.recreate(); until("Photo draft restored") { store.draft().getJSONArray("attachments").length() == 1 }
-                until("Photo tile drawn") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).any { it.contentDescription == MoteI18n.text("照片") } }; ready }
+                until("Photo tile drawn") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).any { it is android.widget.ImageView && it.contentDescription == MoteI18n.text("照片") && it.drawable != null } }; ready }
                 both(scenario, "audio-false")
 
+                store.edit(text, JSONArray().put(photo).put(recording), JSONObject(manual.toString()), "")
+                scenario.recreate(); until("Encoded recording row drawn") { var ready = false; scenario.onActivity {
+                    val shown = views(it.window.decorView)
+                    ready = shown.any { view -> view.contentDescription == MoteI18n.text("播放") } &&
+                        shown.any { view -> view is TextView && view.tag == "record-audio-duration" && view.text.toString().isNotBlank() }
+                }; ready }
                 store.edit(text, JSONArray().put(photo).put(audio), JSONObject(manual.toString()), "")
-                scenario.recreate(); until("Audio row drawn") { var ready = false; scenario.onActivity { ready = views(it.window.decorView).any { it.contentDescription == MoteI18n.text("播放") } }; ready }
+                scenario.recreate(); until("Audio duration and photo drawn") { var ready = false; scenario.onActivity {
+                    val shown = views(it.window.decorView)
+                    ready = shown.any { view -> view is TextView && view.tag == "record-audio-duration" && view.text.toString() == "02:14" } &&
+                        shown.any { view -> view is android.widget.ImageView && view.contentDescription == MoteI18n.text("照片") && view.drawable != null }
+                }; ready }
                 both(scenario, "editor")
 
                 scenario.onActivity { views(it.window.decorView).single { it.tag == "record-describe-toggle" }.performClick() }
