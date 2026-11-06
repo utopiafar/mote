@@ -508,13 +508,13 @@ class HomeForbiddenJourneyInstrumentedTest {
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 until("A denied probe fails the read instead of claiming an empty archive") {
                     retry(home, "home-recent-conversations") != null && emptyConversationLabel(home) == null &&
-                        !tagged(home, "home-first-use-guide")
+                        !tagged(home, "home-notice-connect")
                 }
                 assertTrue("the dropped probe answer did not mark the archive; the read probes again", fixture.probeRequests.get() >= 2)
                 fixture.probeForbidden = false
                 clickInside(home, "home-recent-conversations") { it is TextView && it.text == MoteI18n.text("重试") }
                 until("A recovered probe confirms the empty archive and the first-use home shows") {
-                    tagged(home, "home-first-use-guide") && !tagged(home, "home-recent-conversations")
+                    !tagged(home, "home-recent-conversations") && !tagged(home, "home-notice-connect")
                 }
                 instrumentation.runOnMainSync {
                     assertFalse("the confirmed empty archive hides the section rather than faking rows", tagged(home, "home-conversation:$conversation"))
@@ -531,7 +531,7 @@ class HomeForbiddenJourneyInstrumentedTest {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 val home = onTop("The home opens with a resumable conversations section") { it is MainActivity }
                 until("A malformed storage.captures probe is inconclusive: truthful empty label, no first-use hide") {
-                    emptyConversationLabel(home) != null && !tagged(home, "home-first-use-guide")
+                    emptyConversationLabel(home) != null && !tagged(home, "home-notice-connect")
                 }
                 // A session change re-arms the probe; a held answer released while paused still
                 // cannot mark the new generation done, so the next read probes for real. The
@@ -557,7 +557,7 @@ class HomeForbiddenJourneyInstrumentedTest {
                 }
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 until("The rechecked probe confirms the empty archive and the first-use home shows") {
-                    tagged(home, "home-first-use-guide") && !tagged(home, "home-recent-conversations")
+                    !tagged(home, "home-recent-conversations") && !tagged(home, "home-notice-connect")
                 }
                 assertTrue("the malformed and held answers never stood in for a real probe", fixture.probeRequests.get() >= 3)
             }

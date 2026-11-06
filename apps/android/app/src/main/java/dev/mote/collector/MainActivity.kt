@@ -90,7 +90,7 @@ class MainActivity : MoteActivity() {
     private var homeSections: DailyHomeSections? = null
     private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
-    private lateinit var homeCaptureRow: HomeCaptureRow
+    private lateinit var homeNoticeRow: HomeNoticeRow
     private lateinit var homeConversationsSection: LinearLayout
     private lateinit var homeRecordReceipt: LinearLayout
     private var homeReceiptAvailable = false
@@ -99,14 +99,9 @@ class MainActivity : MoteActivity() {
     private var libraryState: Bundle? = null
     private var processingSave: Button? = null
     private var libraryRecordsRevision = -1L
-    private var firstUseGuide: LinearLayout? = null
     private var firstUse = true
     private var homeArchiveEmpty = false
     private var homeHasRecords = false
-    private var homeConnectionTitle: TextView? = null
-    private var homeConnectionState: TextView? = null
-    private var homeConnectionAction: Button? = null
-    private var homeConnectionHelp: TextView? = null
     private val controls = mutableListOf<View>()
     private val controlPages = mutableMapOf<View, Page>()
     private val stableControlKeys = mutableMapOf<View, String>()
@@ -192,7 +187,7 @@ class MainActivity : MoteActivity() {
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
         val totals: String, val technical: String, val connectionTitle: String, val connection: String,
         val media: String, val config: CollectorConfig?, val syncQueue: String, val syncPolicy: String, val syncFacts: String, val captureAttention: Boolean,
-        val overview: CaptureOverview.Line?)
+        val notice: HomeNotice?)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); loadHomeContent(); handler.postDelayed(this, 2000) }
     }
@@ -310,9 +305,10 @@ class MainActivity : MoteActivity() {
         homeSections?.close()
         val sections = home.sections()
         homeSections = sections
-        // Look at the top, act at the bottom: one capture line here, Ask and quick records in the thumb zone.
-        homeCaptureRow = home.captureRow(this, open = { startActivity(Intent(this, CaptureStatusActivity::class.java)) }, act = ::runCaptureAction)
-        content.addView(homeCaptureRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
+        // Look at the top, act at the bottom: one shared status notice here, Ask and quick records in the thumb zone.
+        homeNoticeRow = home.noticeRow(this, open = ::openHomeNotice, act = ::runHomeNotice)
+        content.addView(homeNoticeRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        if (!loadedConfig.hasSyncConnection() && !settings.enabled) homeNoticeRow.bind(HomeNotice.connect())
         // Work and discovery own their home blocks: a stopped plugin publishes none.
         val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
         val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
@@ -323,19 +319,6 @@ class MainActivity : MoteActivity() {
         }
         homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         val pageContent = content
-        val guide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-first-use-guide" }
-        content.addView(guide); firstUseGuide = guide; content = guide
-        val connection = lightControl(MoteI18n.text("连接你的 Mote"), MoteI18n.text("连接")) {
-            if (loadedConfig.hasSyncConnection()) startActivity(Intent(this,SyncQueueActivity::class.java)) else startActivity(Intent(this,ConnectionActivity::class.java).putExtra("firstUse",firstUse))
-        }
-        homeConnectionTitle = (connection.first.parent as LinearLayout).getChildAt(0) as TextView
-        homeConnectionState = connection.first; homeConnectionAction = connection.second
-        connection.first.text = MoteI18n.text("让记录进入资料库，供其他设备和 AI 使用。")
-        homeConnectionHelp = lightTextAction(MoteI18n.text("还没有自己的 Mote？")) { startActivity(Intent(this,StartUsingActivity::class.java).putExtra("firstUse",firstUse)) }
-        text(MoteI18n.text("也可以自动留下"),NativeFontRole.META,NativeColorRole.MUTED).apply { (layoutParams as LinearLayout.LayoutParams).topMargin = dp(24) }
-        val capture = lightControl(MoteI18n.text("屏幕与应用记录"),MoteI18n.text("设置")) { showPage(Page.PRIVACY) }
-        capture.first.text = MoteI18n.text("需要时再选范围、开权限")
-        content = pageContent
         homeConversationsSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(homeConversationsSection, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
         content = homeConversationsSection
@@ -366,13 +349,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun updateFirstUse() {
-        val connected = loadedConfig.hasSyncConnection()
-        val firstReceipt=homeReceiptAvailable && NativeRecordReceipt.fromFirstUse
-        homeConnectionTitle?.text = MoteI18n.text(if (connected) "已连接你的 Mote" else "连接你的 Mote")
-        homeConnectionState?.text = MoteI18n.text(if (connected) "自动采集尚未开启。" else "让记录进入资料库，供其他设备和 AI 使用。")
-        homeConnectionAction?.text = MoteI18n.text(if (connected) "查看状态" else "连接")
-        homeConnectionHelp?.visibility = if (connected) View.GONE else View.VISIBLE
-        firstUseGuide?.visibility = if (firstUse || firstReceipt) View.VISIBLE else View.GONE
+        val firstReceipt = homeReceiptAvailable && NativeRecordReceipt.fromFirstUse
         homeConversationsSection.visibility = if (firstUse || firstReceipt) View.GONE else View.VISIBLE
     }
 
@@ -1685,6 +1662,36 @@ class MainActivity : MoteActivity() {
             CaptureOverview.Action.STORAGE -> showPage(Page.STORAGE)
         }
     }
+
+    /** The row opens the place that explains the state; its one action repairs it. */
+    private fun openHomeNotice(notice: HomeNotice) {
+        when (val operation = notice.operation) {
+            HomeNotice.Operation.Connect -> openConnection()
+            is HomeNotice.Operation.Capture -> when (operation.operation) {
+                CaptureStatusOperation.RECONNECT -> openConnection()
+                CaptureStatusOperation.RESUME_SEND, CaptureStatusOperation.OPEN_SYNC -> startActivity(Intent(this, SyncQueueActivity::class.java))
+                else -> startActivity(Intent(this, CaptureStatusActivity::class.java))
+            }
+        }
+    }
+
+    private fun runHomeNotice(notice: HomeNotice) {
+        when (val operation = notice.operation) {
+            HomeNotice.Operation.Connect -> openConnection()
+            is HomeNotice.Operation.Capture -> when (operation.operation) {
+                CaptureStatusOperation.RESUME_CAPTURE -> runCaptureAction(CaptureOverview.Action.RESUME)
+                CaptureStatusOperation.RESUME_SEND, CaptureStatusOperation.OPEN_SYNC -> startActivity(Intent(this, SyncQueueActivity::class.java))
+                CaptureStatusOperation.RECONNECT -> openConnection()
+                CaptureStatusOperation.RESTART_CAPTURE -> runCaptureAction(CaptureOverview.Action.RESTART)
+                CaptureStatusOperation.OPEN_PERMISSIONS -> showPage(Page.PERMISSIONS)
+                CaptureStatusOperation.OPEN_STORAGE -> showPage(Page.STORAGE)
+            }
+        }
+    }
+
+    private fun openConnection() {
+        startActivity(Intent(this, ConnectionActivity::class.java).putExtra("firstUse", firstUse))
+    }
     private fun resumeCapture() {
         if (ConnectionGuard.changing() || RuntimeSettings.stopping || applyingSettings) { toast(MoteI18n.text("正在应用设置，请稍后重试")); return }
         if (settings.screenPausedAt() == null || loadedConfig.screenCollectionEnabled) { startCapture(); return }
@@ -1763,7 +1770,7 @@ class MainActivity : MoteActivity() {
                     homeSyncRate.text = MoteI18n.text("上传速率") + " · " + UploadMeter.label()
                     refreshManageMenu()
                     renderConnectionPage()
-                    snapshot.overview?.let(homeCaptureRow::bind)
+                    homeNoticeRow.bind(snapshot.notice)
                     captureTitle.text = snapshot.title
                     if (captureAction.text != snapshot.action) {
                         captureAction.text = snapshot.action
@@ -1847,8 +1854,44 @@ class MainActivity : MoteActivity() {
             else -> MoteI18n.text("节点：{0} · 最近一次验证成功", c.server)
         }
         val captureState = state + if (c?.screenCollectionEnabled == true && settings.enabled) "\n" + MoteI18n.text("屏幕采集：{0}", settings.screenStatus()) else ""
-        val overview = c?.let { config -> runCatching { CaptureOverview.line(CaptureOverview.facts(this, settings, config, local)) }.getOrNull() }
-        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, queueFull), overview)
+        val notice = c?.let { config ->
+            val interrupted = (settings.enabled && (config.screenCollectionEnabled || config.observesSystem()) && !live && !missingSource) ||
+                (!settings.enabled && settings.state() in setOf("permission_required", "error"))
+            val screenPausedAt = settings.screenPausedAt()?.takeIf { !config.screenCollectionEnabled }
+            // The shared row treats `captureLive` as a running capture service: a screen-only pause keeps it true.
+            val captureServiceLive = CaptureAccessibilityService.connected || ProjectionService.running || MediaCollectionService.connected || screenPausedAt != null
+            runCatching {
+                HomeNotice.from(CaptureStatusFacts(
+                    connection = when {
+                        config.hasSyncConnection() -> CaptureConnection.CONNECTED
+                        config.server.isNotBlank() && config.token.isNotBlank() -> CaptureConnection.RECONNECT
+                        else -> CaptureConnection.UNCONFIGURED
+                    },
+                    captureEnabled = settings.enabled || interrupted,
+                    captureLive = captureServiceLive,
+                    screenPausedAt = screenPausedAt?.let { Instant.ofEpochMilli(it).toString() },
+                    permission = if (missingSource) CapturePermission.MISSING else null,
+                    storageFull = queueFull && settings.enabled,
+                    interrupted = interrupted,
+                    syncState = when {
+                        !config.hasSyncConnection() -> CaptureSyncState.UNCONFIGURED
+                        config.syncPaused -> CaptureSyncState.PAUSED
+                        local.error != null || (local.active?.blocked ?: 0) > 0 -> CaptureSyncState.BLOCKED
+                        settings.syncState() == "error" -> CaptureSyncState.ERROR
+                        settings.syncState() == "uploading" -> CaptureSyncState.UPLOADING
+                        settings.syncState() == "waiting" -> CaptureSyncState.WAITING
+                        settings.syncState() == "paused" -> CaptureSyncState.PAUSED
+                        else -> CaptureSyncState.IDLE
+                    },
+                    pending = local.pending,
+                )).let { notice ->
+                    if (notice?.titleKey == "屏幕采集已暂停" && screenPausedAt != null)
+                        notice.copy(detail = CaptureOverview.since(screenPausedAt, Instant.now(), ZoneId.systemDefault()))
+                    else notice
+                }
+            }.getOrNull()
+        }
+        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, queueFull), notice)
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))

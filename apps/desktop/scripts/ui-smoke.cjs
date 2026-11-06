@@ -110,7 +110,7 @@ app.on('browser-window-created', (_event, window) => {
       ipcMain.removeHandler('mote:start');
       ipcMain.handle('mote:start', () => { startRequested = true; return status; });
       assert.equal(status.sync.state, 'unconfigured');
-      assert.deepEqual(await js(`Array.from(document.querySelectorAll('.main-nav [data-nav]')).map(b => b.lastElementChild.textContent.trim())`), ['工作台','内容','来源','问一问']);
+      assert.deepEqual(await js(`Array.from(document.querySelectorAll('.main-nav [data-nav]')).map(b => b.lastElementChild.textContent.trim())`), ['首页','资料库','来源','问一问']);
       assert(await js(`!document.querySelector('[data-page=overview]').hidden`),'A new profile opens Workbench');
       await navigate('overview');
       assert.equal(await js(`document.querySelectorAll('#home-onboarding [data-add-choice]').length`), 4, 'First use offers note, import, source and capture setup actions');

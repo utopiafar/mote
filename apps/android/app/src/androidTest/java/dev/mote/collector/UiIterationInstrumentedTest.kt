@@ -709,7 +709,7 @@ class UiIterationInstrumentedTest {
                 render("screen-scope")
                 assertFalse(Settings(context).enabled)
             }
-            ActivityScenario.launch(SourcesActivity::class.java).awaitUiText(MoteI18n.text("尚未连接来源。权限只在点击连接时申请。")).use { scenario ->
+            ActivityScenario.launch(SourcesActivity::class.java).awaitUiText(MoteI18n.text("添加来源")).use { scenario ->
                 scenario.onActivity { activity ->
                     GeneratedWindowRendering.save(activity, directory, "sources")
                     File(directory, "sources.txt").writeText(views(activity.window.decorView).filterIsInstance<TextView>().filter { it.isShown }.joinToString("\n") { it.text.toString() })

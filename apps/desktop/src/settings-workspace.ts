@@ -122,7 +122,7 @@ export function showBackupOperation(kind:'import'|'export',phase:'working'|'canc
   if(phase==='complete'){
     const actions=root.createElement('div');actions.className='actions';
     const done=root.createElement('button');done.type='button';done.className='primary';done.textContent=kind==='import'?moteText('检查本机内容'):moteText('完成');done.addEventListener('click',()=>root.querySelector<HTMLButtonElement>(kind==='import'?'.main-nav [data-nav="records"]':'[data-nav="backup"]')!.click());actions.append(done);
-    if(kind==='import'){const sending=root.createElement('button');sending.type='button';sending.className='secondary';sending.textContent=moteText('同步与活动');sending.addEventListener('click',()=>root.querySelector<HTMLButtonElement>('aside [data-nav="work"]')!.click());actions.append(sending);}panel.append(actions);
+    if(kind==='import'){const sending=root.createElement('button');sending.type='button';sending.className='secondary';sending.textContent=moteText('同步与活动');sending.addEventListener('click',()=>root.querySelector<HTMLButtonElement>('[data-nav="work"]')!.click());actions.append(sending);}panel.append(actions);
   }
   if(phase==='error'&&kind==='export'){const retry=root.createElement('button');retry.type='button';retry.className='primary';retry.textContent=moteText('重新导出');retry.addEventListener('click',()=>root.getElementById('export')!.click());panel.append(retry);}
   for(const id of ['export','import'])(root.getElementById(id) as HTMLButtonElement).disabled=phase==='working';
