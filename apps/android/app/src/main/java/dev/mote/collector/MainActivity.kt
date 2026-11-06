@@ -79,6 +79,7 @@ class MainActivity : MoteActivity() {
     private var pendingPageRuleResult: Pair<Int, Intent?>? = null
     private val scrollPositions = mutableMapOf<Page, Int>()
     private lateinit var navigation: MotePrimaryNavigation
+    private lateinit var homeRecordingBar: HomeRecordingBar
     private lateinit var todaySummary: TextView
     private lateinit var manageScreenSwitch: MoteComponents.MoteSwitch
     private lateinit var manageSendSwitch: MoteComponents.MoteSwitch
@@ -258,6 +259,11 @@ class MainActivity : MoteActivity() {
             text = MoteI18n.text("保存设置"); setOnClickListener { saveConfig() }
         }, true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(12) })
         root.footer(saveBar)
+        homeRecordingBar = HomeRecordingBar(this) { openRecordEditor() }
+        root.footer(homeRecordingBar)
+        homeRecordingBar.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            leftMargin = dp(16); rightMargin = dp(16); bottomMargin = dp(10)
+        }
         navigation = MotePrimaryNavigation(this) { showPage(Page.valueOf(it.localPage)) }
         root.navigation(navigation)
         setContentView(root)
@@ -2046,6 +2052,7 @@ class MainActivity : MoteActivity() {
         val enteringAsk = page == Page.ASK && currentPage != page
         val enteringActivity = page == Page.ACTIVITY && currentPage != page
         currentPage = page
+        if (::homeRecordingBar.isInitialized) homeRecordingBar.setHome(page == Page.OVERVIEW)
         val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.LIBRARY)
         headerTitle.text = if (page == Page.OVERVIEW) "Mote" else page.title
         headerTitle.visibility = if (page == Page.OVERVIEW || designHeader) View.GONE else View.VISIBLE
