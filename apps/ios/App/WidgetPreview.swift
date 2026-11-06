@@ -18,6 +18,7 @@ struct WidgetPreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MoteDesignTokens.background.color)
         .statusBarHidden()
+        .persistentSystemOverlays(.hidden)
     }
 
     private func widget(_ layout: MoteWidgetLayout, width: CGFloat, height: CGFloat) -> some View {
