@@ -97,9 +97,13 @@ struct LibraryMemoriesView: View {
     }
 
     private var controls: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 5) {
             MoteSegmentedControl(options: [LibraryMemoriesModel.Tab.library.title, LibraryMemoriesModel.Tab.memories.title],
                                  selection: tabSelection)
+                // The component keeps a 44pt target around a 34pt pill. The
+                // canvas puts the pill 5pt higher; pull the drawing up without
+                // shrinking the target and let the 5pt band form the gap.
+                .padding(.top, -4)
                 .accessibilityIdentifier("library-primary-views")
             searchField
         }
@@ -288,7 +292,7 @@ struct LibraryMemoriesView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(MoteDesignTokens.muted.color)
                         .padding(.leading, 31)
-                        .padding(.top, 22)
+                        .padding(.top, 25)
                         .padding(.bottom, 8)
                     MoteGroup {
                         ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
@@ -321,7 +325,7 @@ struct LibraryMemoriesView: View {
         Button {
             open(row)
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(row.title)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(MoteDesignTokens.ink.color)
@@ -352,7 +356,7 @@ struct LibraryMemoriesView: View {
         Button {
             showingUnavailable = true
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 4) {
                 highlighted(row.title, query: model.memoryQuery)
                     .font(.system(size: 15, weight: .medium))
                     .lineLimit(1)
@@ -507,11 +511,7 @@ struct LibraryMemoriesView: View {
                             .font(MoteFont.body)
                             .foregroundStyle(MoteDesignTokens.ink.color)
                         Spacer(minLength: 0)
-                        Toggle("", isOn: .constant(model.includeHistory))
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .tint(MoteDesignTokens.accent.color)
-                            .allowsHitTesting(false)
+                        MoteSwitchIndicator(isOn: model.includeHistory)
                             .accessibilityHidden(true)
                     }
                     .padding(.horizontal, 14)
@@ -630,5 +630,29 @@ struct LibraryMemoriesView: View {
             .ignoresSafeArea()
             .contentShape(Rectangle())
             .accessibilityHidden(true)
+    }
+}
+
+/// The canvas switch: a warm border track with a white thumb. The surrounding
+/// row owns the 44pt target and the accessibility value.
+private struct MoteSwitchIndicator: View {
+    let isOn: Bool
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Capsule()
+                .fill(isOn ? MoteDesignTokens.accent.color : MoteDesignTokens.border.color)
+            Circle()
+                .fill(.white)
+                .frame(width: 27, height: 27)
+                .overlay {
+                    Circle().strokeBorder(.black.opacity(0.08), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.12), radius: 1.5, y: 2)
+                .padding(2)
+                .offset(x: isOn ? 20 : 0)
+        }
+        .frame(width: 51, height: 31)
+        .animation(.easeOut(duration: 0.15), value: isOn)
     }
 }

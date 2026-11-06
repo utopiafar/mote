@@ -108,16 +108,33 @@ final class LibraryMemoriesModel {
     static func live() -> LibraryMemoriesModel {
         let model = LibraryMemoriesModel()
         model.libraryLoader = { request in
-            let page = try await Self.client().library(
-                query: request.query.isEmpty ? nil : request.query,
+            let client = try Self.client()
+            if request.query.isEmpty {
+                let page = try await client.originals(
+                    after: request.after,
+                    before: request.before,
+                    cursor: request.cursor
+                )
+                return LibraryPage(
+                    rows: page.items.map { Self.libraryRow($0) },
+                    nextCursor: page.nextCursor
+                )
+            }
+            let page = try await client.contextSearch(
+                query: request.query,
                 after: request.after,
                 before: request.before,
                 cursor: request.cursor
             )
-            return LibraryPage(
-                rows: page.items.compactMap(Self.libraryRow),
-                nextCursor: page.nextCursor
-            )
+            var rows: [LibraryBrowseRow] = []
+            rows.reserveCapacity(page.items.count)
+            for card in page.items {
+                guard let id = UUID(uuidString: card.id) else { throw CentralError.invalidResponse }
+                let record = try await client.original(id: id)
+                guard record.id == card.id else { throw CentralError.invalidResponse }
+                rows.append(Self.libraryRow(record))
+            }
+            return LibraryPage(rows: rows, nextCursor: page.nextCursor)
         }
         model.memoryLoader = { request in
             let client = try Self.client()
@@ -229,20 +246,30 @@ final class LibraryMemoriesModel {
         libraryLoading = true
         do {
             let range = reviewRange
-            let page = try await libraryLoader(LibraryRequest(
-                query: libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500).description,
-                after: range?.after,
-                before: range?.before,
-                cursor: cursor
-            ))
+            let pageLimit = libraryQuery.isEmpty ? 8 : 3
+            var collected: [LibraryBrowseRow] = []
+            var nextCursor = cursor
+            var pages = 0
+            repeat {
+                let page = try await libraryLoader(LibraryRequest(
+                    query: libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500).description,
+                    after: range?.after,
+                    before: range?.before,
+                    cursor: nextCursor
+                ))
+                guard generation == libraryGeneration else { return }
+                collected += page.rows.filter { libraryCategory.matches($0) }
+                nextCursor = page.nextCursor == nextCursor ? nil : page.nextCursor
+                pages += 1
+            } while collected.isEmpty && nextCursor != nil && pages < pageLimit && !Task.isCancelled
             guard generation == libraryGeneration else { return }
             if reset {
-                libraryRows = page.rows
+                libraryRows = collected
             } else {
                 let known = Set(libraryRows.map(\.id))
-                libraryRows += page.rows.filter { !known.contains($0.id) }
+                libraryRows += collected.filter { !known.contains($0.id) }
             }
-            libraryNextCursor = page.nextCursor == cursor ? nil : page.nextCursor
+            libraryNextCursor = nextCursor
             connected = true
         } catch LibraryMemoriesError.notConnected {
             guard generation == libraryGeneration else { return }
@@ -346,41 +373,9 @@ final class LibraryMemoriesModel {
         return try CentralClient(serverUrl: connection.serverUrl, token: connection.token)
     }
 
-    private static func libraryRow(_ entry: LibraryBrowseEntry) -> LibraryBrowseRow? {
-        let date = CentralTimestamp.parse(entry.contentAt)
-        if let material = entry.material {
-            let isImage = LibraryBrowsePresentation.isImage(
-                source: "",
-                kind: material.kind,
-                isMaterial: true,
-                durationMs: 0
-            )
-            return LibraryBrowseRow(
-                id: entry.ref,
-                title: LibraryBrowsePresentation.title(
-                    source: "",
-                    textPreview: "",
-                    windowTitle: "",
-                    appName: "",
-                    materialTitle: material.title
-                ),
-                timeLabel: LibraryBrowsePresentation.timeLabel(date),
-                sourceLabel: LibraryBrowsePresentation.sourceLabel(
-                    source: "",
-                    kind: material.kind,
-                    isMaterial: true,
-                    appName: "",
-                    durationMs: 0
-                ),
-                date: date,
-                source: "",
-                kind: material.kind,
-                isMaterial: true,
-                isImage: isImage
-            )
-        }
-        guard let capture = entry.capture else { return nil }
+    private static func libraryRow(_ capture: CapturePreview) -> LibraryBrowseRow {
         let source = capture.source.rawValue
+        let date = CentralTimestamp.parse(capture.capturedAt)
         let isImage = LibraryBrowsePresentation.isImage(
             source: source,
             kind: "",
@@ -388,7 +383,7 @@ final class LibraryMemoriesModel {
             durationMs: capture.durationMs
         )
         return LibraryBrowseRow(
-            id: entry.ref,
+            id: capture.id,
             title: LibraryBrowsePresentation.title(
                 source: source,
                 textPreview: capture.textPreview,
@@ -409,6 +404,40 @@ final class LibraryMemoriesModel {
             isMaterial: false,
             isImage: isImage,
             captureID: capture.id
+        )
+    }
+
+    private static func libraryRow(_ record: OriginalRecord) -> LibraryBrowseRow {
+        let source = record.source.rawValue
+        let date = CentralTimestamp.parse(record.capturedAt)
+        let isImage = LibraryBrowsePresentation.isImage(
+            source: source,
+            kind: "",
+            isMaterial: false,
+            durationMs: record.durationMs
+        )
+        return LibraryBrowseRow(
+            id: record.id,
+            title: LibraryBrowsePresentation.title(
+                source: source,
+                textPreview: record.ocrText,
+                windowTitle: record.windowTitle,
+                appName: record.appName
+            ),
+            timeLabel: LibraryBrowsePresentation.timeLabel(date),
+            sourceLabel: LibraryBrowsePresentation.sourceLabel(
+                source: source,
+                kind: "",
+                isMaterial: false,
+                appName: record.appName,
+                durationMs: record.durationMs
+            ),
+            date: date,
+            source: source,
+            kind: "",
+            isMaterial: false,
+            isImage: isImage,
+            captureID: record.id
         )
     }
 

@@ -156,6 +156,21 @@ final class MoteCentralTests: XCTestCase {
         XCTAssertTrue(library.items.contains { entry in
             entry.entryType == "capture" && entry.capture?.id == note.id
         })
+        let captures = try await client.originals(after: "2026-09-30T00:00:00Z", before: "2026-10-02T00:00:00Z")
+        XCTAssertTrue(captures.items.contains { $0.id == note.id && $0.textPreview == "Generated iOS original" })
+        let search = try await client.contextSearch(query: "Generated iOS original")
+        XCTAssertTrue(search.items.contains { $0.id == note.id && $0.origin.source == .note })
+    }
+
+    func testContextSearchDecodesCaptureCards() throws {
+        let json = #"""
+        {"items":[{"id":"00000000-0000-4000-8000-000000000002","title":"Generated note","snippet":"Generated iOS original","origin":{"source":"note","capturedAt":"2026-10-01T00:00:00Z"}}],"nextCursor":"generated-cursor"}
+        """#
+        let page = try JSONDecoder().decode(ContextSearchPage.self, from: Data(json.utf8))
+        XCTAssertEqual(page.nextCursor, "generated-cursor")
+        XCTAssertEqual(page.items.first?.id, "00000000-0000-4000-8000-000000000002")
+        XCTAssertEqual(page.items.first?.origin.source, .note)
+        XCTAssertEqual(page.items.first?.origin.capturedAt, "2026-10-01T00:00:00Z")
     }
 
     func testLibraryBrowseDecodesMaterialAndCaptureEntries() throws {

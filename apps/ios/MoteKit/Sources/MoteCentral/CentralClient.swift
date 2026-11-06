@@ -177,6 +177,20 @@ public struct CentralClient: Sendable {
         return try await request("GET", "/api/context-trees/\(treeID)/nodes/\(nodeID)", query: queryItems)
     }
 
+    /// Literal capture search used by the library page and Android's search.
+    /// The caller reads each exact capture body only when it needs row details.
+    public func contextSearch(query: String, after: String? = nil, before: String? = nil,
+                              cursor: String? = nil, limit: Int = 20) async throws -> ContextSearchPage {
+        var queryItems = [
+            URLQueryItem(name: "query", value: query),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        for (name, value) in [("after", after), ("before", before), ("cursor", cursor)] {
+            if let value, !value.isEmpty { queryItems.append(URLQueryItem(name: name, value: value)) }
+        }
+        return try await request("GET", "/api/context/search", query: queryItems)
+    }
+
     private func request<Response: Decodable>(_ method: String, _ path: String,
                                                query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> Response {
         try await perform(try makeRequest(method, path, query: query, authenticated: authenticated))

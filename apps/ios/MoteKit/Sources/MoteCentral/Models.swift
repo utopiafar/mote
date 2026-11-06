@@ -699,6 +699,25 @@ public struct LibraryBrowseEntry: Codable, Equatable, Sendable {
     public let material: LibraryMaterialSummary?
 }
 
+/// One literal search hit from the existing context search route. `id` is the
+/// capture identity; the page reads its exact body before showing a row.
+public struct ContextSearchPage: Codable, Sendable {
+    public struct Card: Codable, Equatable, Sendable {
+        public struct Origin: Codable, Equatable, Sendable {
+            public let source: CaptureSource
+            public let capturedAt: String
+        }
+
+        public let id: String
+        public let title: String
+        public let snippet: String
+        public let origin: Origin
+    }
+
+    public let items: [Card]
+    public let nextCursor: String?
+}
+
 public struct LibraryMaterialSummary: Codable, Equatable, Sendable {
     public struct Origin: Codable, Equatable, Sendable {
         public let sourceId: String?
