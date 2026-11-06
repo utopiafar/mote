@@ -35,7 +35,7 @@
       "level": "normal",
       "home": null,
       "notification": null,
-      "androidOngoing": "采集中 · 待同步 {0} 条",
+      "androidOngoing": "采集中",
       "macIcon": "normal",
       "central": {
         "textKey": "正在采集",

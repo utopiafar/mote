@@ -76,10 +76,10 @@ const captureMobileDesktop:readonly CaptureStatusPlatform[]=['android','macos'];
 const captureHome=(titleKey:string,operation:CaptureStatusOperation):CaptureStatusHome=>({titleKey,operation});
 const captureNotification=(titleKey:string,operation:CaptureStatusOperation,platforms:readonly CaptureStatusPlatform[]=capturePlatforms):CaptureStatusNotification=>({titleKey,operation,platforms:[...platforms]});
 
-/** The only capture status table. `{0}` in the Android title receives the pending count. */
+/** The only capture status table. `androidOngoing` is the Android ongoing-notification title; it names the state and never carries the pending count, which stays in 采集与存储详情. */
 export const captureStatusTable:readonly CaptureStatusRow[]=[
   {id:'capturing',level:'normal',home:null,notification:null,androidOngoing:'采集中',macIcon:'normal',central:{textKey:'正在采集',tone:'ok'}},
-  {id:'pending_sync',level:'normal',home:null,notification:null,androidOngoing:'采集中 · 待同步 {0} 条',macIcon:'normal',central:{textKey:'正在采集',tone:'ok'}},
+  {id:'pending_sync',level:'normal',home:null,notification:null,androidOngoing:'采集中',macIcon:'normal',central:{textKey:'正在采集',tone:'ok'}},
   {id:'screen_paused',level:'reminder',home:captureHome('屏幕采集已暂停','resume_capture'),notification:null,androidOngoing:'屏幕采集已暂停',macIcon:'paused',central:{textKey:'正在采集',tone:'ok'}},
   {id:'paused',level:'reminder',home:captureHome('采集已暂停','resume_capture'),notification:null,androidOngoing:'采集已暂停',macIcon:'paused',central:{textKey:'已暂停',tone:'neutral'}},
   {id:'send_paused',level:'reminder',home:captureHome('发送已暂停','resume_send'),notification:null,androidOngoing:'采集中 · 发送已暂停',macIcon:'normal',central:null},
