@@ -7,9 +7,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
-import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.text.Editable
@@ -19,6 +20,10 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.NotesEditor
+import dev.mote.collector.recording.RecordingPhase
+import dev.mote.collector.recording.RecordingService
+import dev.mote.collector.recording.RecordingSession
+import dev.mote.collector.recording.mergeRecordedAttachments
 import dev.mote.collector.plugins.NotesPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
@@ -40,7 +45,31 @@ open class RecordEditorActivity : MoteActivity() {
     private lateinit var microphone: ImageButton
     private lateinit var undoToast: View
     private val mediaActions = mutableListOf<ImageButton>()
-    private lateinit var recordingNote: TextView
+    private lateinit var recordingPanel: LinearLayout
+    private lateinit var recordingTools: LinearLayout
+    private lateinit var recordingNotice: View
+    private lateinit var recordingTime: TextView
+    private lateinit var recordingWave: RecordingWave
+    private lateinit var recordingPause: ImageButton
+    private val recordingHandler = Handler(Looper.getMainLooper())
+    private var editorStarted = false
+    private var editorResumed = false
+    private var pendingRecordingStart = false
+    private var permissionRequested = false
+    private var wasRecording = false
+    private var refreshingRecording = false
+    private var recordingRecoveryBlocked = false
+    private var saveAfterRecording = false
+    private val recordingObserver: () -> Unit = { renderRecording() }
+    private val recordingTick = object : Runnable {
+        override fun run() {
+            if (!::recordingTime.isInitialized) return
+            val elapsed = RecordingSession.snapshot().elapsedMs / 1000
+            recordingTime.text = "%02d:%02d".format(elapsed / 60, elapsed % 60)
+            recordingWave.invalidate()
+            if (RecordingSession.snapshot().active && editorResumed) recordingHandler.postDelayed(this, 180)
+        }
+    }
     private var attachments = JSONArray()
     private var origin = JSONObject().put("kind", "manual")
     private var originPresentation: JSONObject? = null
@@ -52,8 +81,6 @@ open class RecordEditorActivity : MoteActivity() {
     private val io get() = notes.io
     private lateinit var task: UiTask
     private lateinit var attachmentTask: UiTask
-    private var recorder: MediaRecorder? = null
-    private var recordingFile: File? = null
     private var player: MediaPlayer? = null
     private var cameraPath: String? = null
     private var cameraResultReady = false
@@ -63,6 +90,10 @@ open class RecordEditorActivity : MoteActivity() {
         super.onCreate(state)
         notes = NotesPlugin.owner(applicationContext).view()
         cameraPath = state?.getString("cameraPath"); cameraResultReady = state?.getBoolean("cameraResultReady") ?: false
+        pendingRecordingStart = state?.getBoolean("pendingRecordingStart")
+            ?: (this is MicrophoneRecordEditorActivity && intent.getStringExtra("startMedia") == "audio")
+        permissionRequested = state?.getBoolean("recordingPermissionRequested") ?: false
+        saveAfterRecording = state?.getBoolean("saveAfterRecording") ?: false
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         task = UiTask(this, io, ownsExecutor = false)
         attachmentTask = UiTask(this, io, ownsExecutor = false)
@@ -70,7 +101,7 @@ open class RecordEditorActivity : MoteActivity() {
 
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(MoteTheme.controlHeight); setPadding(moteDp(6), 0, moteDp(12), 0) }
         header.addView(MoteComponents.iconButton(this, MoteGlyph.BACK) { finish() })
-        header.addView(View(this), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         clearButton = MoteComponents.button(this, MoteI18n.text("清空"), MoteUi.ButtonRole.TEXT) { clearDraft() }
         MoteUi.textColor(clearButton, NativeColorRole.MUTED)
         header.addView(clearButton)
@@ -90,8 +121,6 @@ open class RecordEditorActivity : MoteActivity() {
         body.addView(field, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = moteDp(20); rightMargin = moteDp(20) })
         attachmentsView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         body.addView(attachmentsView, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = moteDp(16); rightMargin = moteDp(16); topMargin = moteDp(16) })
-        recordingNote = TextView(this).apply { text = MoteI18n.text("离开页面会停止录音，并保留草稿。"); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED); visibility = View.GONE; tag = "record-leave-notice" }
-        body.addView(recordingNote, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = moteDp(20); rightMargin = moteDp(20); topMargin = moteDp(10) })
         status = TextView(this).apply { MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) }
         body.addView(status, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = moteDp(20); rightMargin = moteDp(20); topMargin = moteDp(10) })
         root.content(ScrollView(this).apply { isFillViewport = true; addView(body) })
@@ -100,18 +129,20 @@ open class RecordEditorActivity : MoteActivity() {
         undoToast = MoteComponents.toast(this, MoteI18n.text("已清空"), MoteI18n.text("撤销")) { undoClear() }
         footer.addView(undoToast, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = moteDp(16); rightMargin = moteDp(16); bottomMargin = moteDp(12) })
         undoToast.visibility = View.GONE
-        val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; setPadding(moteDp(8), moteDp(4), moteDp(8), moteDp(4)) }
+        val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false; setPadding(moteDp(8), moteDp(4), moteDp(8), moteDp(4)) }; recordingTools = tools
         fun tool(glyph: MoteGlyph, label: String, run: () -> Unit): ImageButton =
             MoteComponents.iconButton(this, glyph, label, MoteIconButtonStyle.PLAIN).also { button ->
-                button.setOnClickListener { if (ready && !task.busy && !attachmentTask.busy && (recorder == null || button === microphone)) run() }
+                button.setOnClickListener { if (ready && !task.busy && !attachmentTask.busy && (!RecordingSession.snapshot().active || button === microphone)) run() }
                 mediaActions.add(button); tools.addView(button)
             }
         tool(MoteGlyph.CAMERA, MoteI18n.text("拍照")) { if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) camera() else requestPermissions(arrayOf(Manifest.permission.CAMERA), 21) }
         tool(MoteGlyph.PHOTO, MoteI18n.text("照片")) { pick("image/*", 11) }
-        microphone = tool(MoteGlyph.MIC, MoteI18n.text("录音")) { if (recorder != null) stopRecording() else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 22) }
+        microphone = tool(MoteGlyph.MIC, MoteI18n.text("录音")) { pendingRecordingStart = true; maybeStartRecording() }
         tool(MoteGlyph.FILE, MoteI18n.text("文件")) { pick("*/*", 12) }
         footer.addView(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.HAIR); layoutParams = LinearLayout.LayoutParams(-1, moteDp(MoteTheme.borderWidth)) })
         footer.addView(tools)
+        recordingPanel = createRecordingPanel()
+        footer.addView(recordingPanel)
         root.footer(footer)
         setContentView(root)
 
@@ -141,23 +172,29 @@ open class RecordEditorActivity : MoteActivity() {
             override fun afterTextChanged(s: Editable?) { if (ready) persist() }
         })
         enabled(false)
-        task.start("", {}, { notes.draft() }) { outcome -> outcome.onSuccess { draft ->
+        task.start("", {}, {
+            val recovery = runCatching { RecordingService.recover(applicationContext) }
+            notes.draft() to recovery.isFailure
+        }) { outcome -> outcome.onSuccess { (draft, recoveryFailed) ->
+            recordingRecoveryBlocked = recoveryFailed
+            if (recoveryFailed) status.text = MoteI18n.text("本机存储恢复失败")
             attachments = draft.getJSONArray("attachments"); origin = draft.getJSONObject("origin"); originPresentation = draft.optJSONObject("originPresentation"); field.setText(draft.getString("text")); description.setText(draft.optString("description")); ready = true; enabled(!attachmentTask.busy); renderAttachments()
             if (cameraResultReady) stageCamera() else if (state == null) recoverPendingMedia()
             // Home and launcher quick records add media to the same draft; saving remains an explicit tap.
             if (state == null && !attachmentTask.busy) when (intent.getStringExtra("startMedia")) {
                 "camera" -> if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) camera() else requestPermissions(arrayOf(Manifest.permission.CAMERA), 21)
-                "audio" -> if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRecording() else requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 22)
                 else -> Unit
             }
+            maybeStartRecording()
+            renderRecording()
+            submitAfterRecordingIfReady()
         }.onFailure { status.text = it.message; enabled(false) } }
     }
     private fun enabled(value: Boolean) { field.isEnabled = value; description.isEnabled = value; save.isEnabled = value && canSubmit(); renderDraftState() }
     private fun hasContent() = field.text.isNotBlank() || attachments.length() > 0 || origin.optString("text").isNotBlank() || description.text.isNotBlank()
     private fun renderDraftState() {
-        clearButton.visibility = if (hasContent()) View.VISIBLE else View.GONE
-        recordingNote.visibility = if (recorder != null) View.VISIBLE else View.GONE
-        mediaActions.forEach { it.isEnabled = ready && !task.busy && !attachmentTask.busy && (recorder == null || it === microphone) }
+        clearButton.visibility = if (hasContent() && !RecordingSession.snapshot().active) View.VISIBLE else View.GONE
+        mediaActions.forEach { it.isEnabled = ready && !task.busy && !attachmentTask.busy && !recordingRecoveryBlocked && (!RecordingSession.snapshot().active || it === microphone) }
         if (::describeToggle.isInitialized) renderDescribe()
     }
     private fun renderDescribe() {
@@ -165,20 +202,29 @@ open class RecordEditorActivity : MoteActivity() {
         attachmentsView.removeView(describeToggle); attachmentsView.removeView(description)
         attachmentsView.addView(describeToggle, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(if (attachmentsView.childCount == 0) 0 else 10) })
         attachmentsView.addView(description, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(if (attachmentsView.childCount == 1) 0 else 10) })
-        describeToggle.visibility = if (!expanded && hasContent()) View.VISIBLE else View.GONE
-        description.visibility = if (expanded) View.VISIBLE else View.GONE
+        val recording = RecordingSession.snapshot().active
+        describeToggle.visibility = if (!recording && !expanded && hasContent()) View.VISIBLE else View.GONE
+        description.visibility = if (!recording && expanded) View.VISIBLE else View.GONE
     }
-    private fun canSubmit() = recorder == null && (field.text.isNotBlank() || attachments.length() > 0 || origin.optString("text").isNotBlank())
+    private fun canSubmit(): Boolean {
+        val phase = RecordingSession.snapshot().phase
+        return !saveAfterRecording && !refreshingRecording && !recordingRecoveryBlocked && phase != RecordingPhase.STOPPING &&
+            (phase != RecordingPhase.IDLE || field.text.isNotBlank() || attachments.length() > 0 || origin.optString("text").isNotBlank())
+    }
     private fun persist() {
         if (undoArmed || clearedSnapshot != null) { undoArmed = false; clearedSnapshot = null; undoToast.visibility = View.GONE }
         val text = field.text.toString(); val files = JSONArray(attachments.toString()); val source = JSONObject(origin.toString()); val noteDescription = description.text.toString(); val presentation = originPresentation?.let { JSONObject(it.toString()) }
         save.isEnabled = canSubmit() && !task.busy && !attachmentTask.busy
         renderDraftState()
-        io.execute { runCatching { notes.edit(text, files, source, noteDescription, presentation) }.onFailure { error -> runOnUiThread { status.text = error.message } } }
+        val recordingIds = if (RecordingSession.snapshot().active || wasRecording || refreshingRecording) RecordingSession.segmentIds else null
+        io.execute { runCatching {
+            val merged = if (recordingIds == null) files else mergeRecordedAttachments(files, notes.draft().getJSONArray("attachments"), recordingIds)
+            notes.edit(text, merged, source, noteDescription, presentation)
+        }.onFailure { error -> runOnUiThread { status.text = error.message } } }
     }
     /** Clear is the only way the one draft ends; the toast offers the single undo restore. */
     private fun clearDraft() {
-        if (!ready || task.busy || attachmentTask.busy || recorder != null || undoArmed || clearedSnapshot != null) return
+        if (!ready || task.busy || attachmentTask.busy || RecordingSession.snapshot().active || refreshingRecording || undoArmed || clearedSnapshot != null) return
         undoArmed = true
         ready = false
         field.setText(""); description.setText(""); attachments = JSONArray()
@@ -212,11 +258,18 @@ open class RecordEditorActivity : MoteActivity() {
             }.onFailure { file.delete(); status.text = it.message } }
         }.onFailure { cameraPath?.let { File(it).delete() }; cameraPath = null; status.text = it.message }
     }
-    override fun onSaveInstanceState(out: Bundle) { cameraPath?.let { out.putString("cameraPath", it) }; out.putBoolean("cameraResultReady", cameraResultReady); super.onSaveInstanceState(out) }
+    override fun onSaveInstanceState(out: Bundle) {
+        cameraPath?.let { out.putString("cameraPath", it) }
+        out.putBoolean("cameraResultReady", cameraResultReady)
+        out.putBoolean("pendingRecordingStart", pendingRecordingStart); out.putBoolean("recordingPermissionRequested", permissionRequested)
+        out.putBoolean("saveAfterRecording", saveAfterRecording)
+        super.onSaveInstanceState(out)
+    }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
-        if (results.firstOrNull() != PackageManager.PERMISSION_GRANTED) { status.text = MoteI18n.text("权限未授予"); return }
-        if (requestCode == 21) camera() else if (requestCode == 22) startRecording()
+        if (requestCode == 22) permissionRequested = false
+        if (results.firstOrNull() != PackageManager.PERMISSION_GRANTED) { pendingRecordingStart = false; status.text = MoteI18n.text("权限未授予"); return }
+        if (requestCode == 21) camera() else if (requestCode == 22) maybeStartRecording()
     }
     @Suppress("DEPRECATION") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -361,35 +414,149 @@ open class RecordEditorActivity : MoteActivity() {
         player?.release(); val temp = File.createTempFile("record-preview-", ".audio", cacheDir)
         runCatching { temp.writeBytes(notes.bytes(item.getString("id"))); player = MediaPlayer().apply { setDataSource(temp.absolutePath); setOnCompletionListener { release(); player = null; temp.delete() }; prepare(); start() }; temp.delete() }.onFailure { temp.delete(); status.text = it.message }
     }
-    @Suppress("DEPRECATION") private fun startRecording() {
-        runCatching {
-            val directory = File(filesDir, "record-pending").apply { mkdirs() }; val file = File.createTempFile("record-microphone-", ".m4a", directory); recordingFile = file
-            notes.holdMedia(mediaDescriptor(file, "audio/mp4"))
-            recorder = MediaRecorder().apply { setAudioSource(MediaRecorder.AudioSource.MIC); setOutputFormat(MediaRecorder.OutputFormat.MPEG_4); setAudioEncoder(MediaRecorder.AudioEncoder.AAC); setMaxFileSize(CentralAttachments.MAX_BYTES.toLong()); setOutputFile(file.absolutePath); prepare(); start() }
-            microphone.setImageResource(MoteGlyph.STOP.drawable); microphone.contentDescription = MoteI18n.text("停止录音"); save.isEnabled = false
-            renderDraftState()
-        }.onFailure { recorder?.release(); recorder = null; recordingFile?.delete(); recordingFile = null; status.text = it.message }
+    private fun maybeStartRecording() {
+        if (!pendingRecordingStart || !editorResumed || !ready || notes.closed || isFinishing || RecordingSession.snapshot().active || recordingRecoveryBlocked || saveAfterRecording) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (!permissionRequested) { permissionRequested = true; requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 22) }
+            return
+        }
+        pendingRecordingStart = false
+        RecordingService.startFromEditor(this) { !notes.closed }
     }
-    private fun stopRecording() {
-        val active = recorder ?: return; recorder = null
-        val file = recordingFile; recordingFile = null
-        val stopped = runCatching { active.stop() }; active.release(); microphone.setImageResource(MoteGlyph.MIC.drawable); microphone.contentDescription = MoteI18n.text("录音"); save.isEnabled = ready && canSubmit()
-        renderDraftState()
-        if (file == null) return
-        if (stopped.isSuccess && file.length() > 0) stagePending(mediaDescriptor(file, "audio/mp4")) else { file.delete(); io.execute { notes.finishMedia(mediaDescriptor(file, "audio/mp4").getString("id")) } }
+
+    private fun createRecordingPanel(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(moteDp(20), moteDp(18), moteDp(20), moteDp(16))
+        MoteUi.backgroundColor(this, NativeColorRole.SURFACE)
+        recordingNotice = LinearLayout(context).apply {
+            tag = "recording-paused-notice"; orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(moteDp(12), 0, moteDp(12), 0); minimumHeight = moteDp(48)
+            NativePresentationStyles.bind(this, "recording-notice") { it.background = MoteUi.shape(context, NativeColorRole.SURFACE, NativeRadiusRole.PILL, true, NativeColorRole.BORDER) }
+            addView(MoteComponents.icon(context, MoteGlyph.PAUSE), LinearLayout.LayoutParams(moteDp(20), moteDp(20)))
+            addView(TextView(context).apply { text = MoteI18n.text("录音已暂停"); MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.INK); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = moteDp(12) })
+        }
+        addView(recordingNotice, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(16) })
+        val meter = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        recordingTime = TextView(context).apply { tag = "recording-time"; MoteUi.type(this, 34, medium = true); MoteUi.textColor(this, NativeColorRole.INK); text = "00:00" }
+        meter.addView(recordingTime, LinearLayout.LayoutParams(moteDp(104), -2))
+        recordingWave = RecordingWave(context).apply { tag = "recording-wave" }
+        meter.addView(recordingWave, LinearLayout.LayoutParams(0, moteDp(40), 1f).apply { marginStart = moteDp(16) })
+        addView(meter)
+        val actions = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val close = MoteComponents.iconButton(context, MoteGlyph.DOWN, MoteI18n.text("收起")) { finish() }
+        actions.addView(close, LinearLayout.LayoutParams(moteDp(48), moteDp(64)))
+        actions.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
+        val stop = MoteComponents.iconButton(context, dev.mote.collector.ui.MoteIconButtonSpec(MoteGlyph.STOP, "停止录音", MoteIconButtonStyle.SOLID, 64)) { RecordingService.command(this@RecordEditorActivity, RecordingService.ACTION_STOP) }
+        stop.tag = "recording-stop"; actions.addView(stop, LinearLayout.LayoutParams(moteDp(64), moteDp(64)))
+        actions.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
+        recordingPause = MoteComponents.iconButton(context, MoteGlyph.PAUSE, MoteI18n.text("暂停录音"), MoteIconButtonStyle.FILLED) {
+            val action = if (RecordingSession.snapshot().phase == RecordingPhase.PAUSED) RecordingService.ACTION_RESUME else RecordingService.ACTION_PAUSE
+            RecordingService.command(this@RecordEditorActivity, action)
+        }
+        recordingPause.tag = "recording-pause"; actions.addView(recordingPause, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
+        addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(16) })
+        visibility = View.GONE
     }
+
+    private fun renderRecording() {
+        if (!::recordingPanel.isInitialized) return
+        val current = RecordingSession.snapshot()
+        recordingPanel.visibility = if (current.active) View.VISIBLE else View.GONE
+        if (wasRecording != current.active) {
+            val recording = current.active
+            NativePresentationStyles.bind(field, "recording-editor-type") { view ->
+                (view as EditText).apply {
+                    textSize = if (recording) 16f else NativeFontRole.BODY.size().toFloat()
+                    setLineSpacing(0f, if (recording) 1.3f else MoteTheme.lineBody)
+                }
+            }
+        }
+        if (!wasRecording && current.active) {
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(field.windowToken, 0)
+            field.clearFocus()
+            description.clearFocus()
+            recordingPanel.isFocusableInTouchMode = true
+            recordingPanel.requestFocus()
+        }
+        if (wasRecording && !current.active && ready) {
+            refreshingRecording = true
+            io.execute {
+                val recovery = runCatching { RecordingService.recover(applicationContext) }
+                val loaded = runCatching { notes.draft().getJSONArray("attachments") }
+                runOnUiThread {
+                    refreshingRecording = false
+                    recordingRecoveryBlocked = recovery.isFailure
+                    if (recordingRecoveryBlocked) status.text = MoteI18n.text("本机存储恢复失败")
+                    loaded.onSuccess { attachments = it; renderAttachments() }.onFailure { status.text = it.message }
+                    if (loaded.isFailure || current.error != null) saveAfterRecording = false
+                    enabled(!task.busy && !attachmentTask.busy)
+                    submitAfterRecordingIfReady()
+                    if (!editorStarted && !saveAfterRecording) RecordingSession.remove(recordingObserver)
+                }
+            }
+        }
+        wasRecording = current.active
+        recordingTools.visibility = if (current.active) View.GONE else View.VISIBLE
+        recordingNotice.visibility = if (current.phase == RecordingPhase.PAUSED) View.VISIBLE else View.GONE
+        recordingPause.setImageResource(if (current.phase == RecordingPhase.PAUSED) MoteGlyph.PLAY.drawable else MoteGlyph.PAUSE.drawable)
+        recordingPause.contentDescription = MoteI18n.text(if (current.phase == RecordingPhase.PAUSED) "继续录音" else "暂停录音")
+        recordingPause.isEnabled = current.phase == RecordingPhase.RECORDING || current.phase == RecordingPhase.PAUSED
+        current.error?.let { status.text = MoteI18n.text(it) }
+        if (ready) { save.isEnabled = canSubmit() && !task.busy && !attachmentTask.busy; renderDraftState() }
+        recordingHandler.removeCallbacks(recordingTick)
+        if (current.active && editorResumed) recordingTick.run()
+    }
+
+    private class RecordingWave(context: android.content.Context) : View(context) {
+        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            paint.strokeWidth = context.moteDp(3).toFloat(); paint.strokeCap = android.graphics.Paint.Cap.ROUND
+            val step = context.moteDp(6).toFloat(); val center = height / 2f
+            val levels = synchronized(RecordingSession.lock) { RecordingSession.levels.toList() }
+            var x = paint.strokeWidth / 2; var index = 0
+            while (x < width && index < 30) {
+                val used = index < levels.size
+                paint.color = if (used) NativeColorRole.INK.color() else NativeColorRole.BORDER.color()
+                val half = context.moteDp(3) + (if (used) levels[index] * context.moteDp(15) else 0f)
+                canvas.drawLine(x, center - half, x, center + half, paint)
+                x += step; index++
+            }
+        }
+    }
+    private fun submitAfterRecordingIfReady() {
+        if (!saveAfterRecording || !ready || notes.closed || task.busy || attachmentTask.busy || refreshingRecording || RecordingSession.snapshot().active) return
+        saveAfterRecording = false
+        if (!editorStarted) RecordingSession.remove(recordingObserver)
+        enabled(true)
+        if (recordingRecoveryBlocked || RecordingSession.snapshot().error != null) return
+        submit()
+    }
+
     private fun submit() {
-        if (!ready || task.busy || attachmentTask.busy || recorder != null) return
+        if (!ready || notes.closed || task.busy || attachmentTask.busy || refreshingRecording || recordingRecoveryBlocked) return
+        if (RecordingSession.snapshot().active) {
+            if (RecordingSession.snapshot().phase == RecordingPhase.STOPPING || saveAfterRecording) return
+            saveAfterRecording = true
+            save.isEnabled = false
+            RecordingService.command(this, RecordingService.ACTION_STOP)
+            return
+        }
         if (notes.pendingMedia().length() > 0) { status.text = MoteI18n.text("请先处理未保存的附件"); return }
         val text = field.text.toString(); val files = JSONArray(attachments.toString()); val source = JSONObject(origin.toString()); val noteDescription = description.text.toString(); val presentation = originPresentation?.let { JSONObject(it.toString()) }; enabled(false)
         task.start("", {}, {
             notes.submit(text, files, source, noteDescription, presentation, intent.getBooleanExtra("firstUse", false))
         }) { result -> result.onSuccess { setResult(RESULT_OK, Intent().putExtra("recordId", it)); finish() }.onFailure { enabled(true); status.text = it.message } }
     }
-    override fun onPause() { if (recorder != null) stopRecording(); player?.release(); player = null; super.onPause() }
-    override fun onDestroy() { notes.close(); super.onDestroy() }
+    override fun onStart() { super.onStart(); editorStarted = true; RecordingSession.observe(recordingObserver) }
+    override fun onResume() { super.onResume(); editorResumed = true; maybeStartRecording(); renderRecording() }
+    override fun onPause() { editorResumed = false; recordingHandler.removeCallbacks(recordingTick); player?.release(); player = null; super.onPause() }
+    override fun onStop() { editorStarted = false; if (!saveAfterRecording) RecordingSession.remove(recordingObserver); super.onStop() }
+    override fun onDestroy() { RecordingSession.remove(recordingObserver); recordingHandler.removeCallbacks(recordingTick); notes.close(); super.onDestroy() }
 }
+/** Internal entrypoints may request recording; exported sharing never starts the microphone. */
+class MicrophoneRecordEditorActivity : RecordEditorActivity()
 internal fun android.app.Activity.openRecordEditor(text: String? = null, conversationId: String? = null, turnId: String? = null, question: String? = null, citations: List<String>? = null, quoteOrigin: String? = null, media: String? = null) {
-    val target = if (text == null) RecordEditorActivity::class.java else AnswerRecordActivity::class.java
-    startActivity(Intent(this, target).apply { putExtra("firstUse",(this@openRecordEditor as? MainActivity)?.isFirstUseRecordEntry() ?: this@openRecordEditor.intent.getBooleanExtra("firstUse",false)); text?.let { putExtra("recordText", it) }; conversationId?.let { putExtra("conversationId", it) }; turnId?.let { putExtra("turnId", it) }; question?.let { putExtra("quoteQuestion", it) }; citations?.let { putStringArrayListExtra("quoteCitations", ArrayList(it)) }; quoteOrigin?.let { putExtra("quoteOrigin",it) }; media?.let { putExtra("startMedia", it) } })
+    val editor = when { text != null -> AnswerRecordActivity::class.java; media == "audio" -> MicrophoneRecordEditorActivity::class.java; else -> RecordEditorActivity::class.java }
+    startActivity(Intent(this, editor).apply { putExtra("firstUse",(this@openRecordEditor as? MainActivity)?.isFirstUseRecordEntry() ?: this@openRecordEditor.intent.getBooleanExtra("firstUse",false)); text?.let { putExtra("recordText", it) }; conversationId?.let { putExtra("conversationId", it) }; turnId?.let { putExtra("turnId", it) }; question?.let { putExtra("quoteQuestion", it) }; citations?.let { putStringArrayListExtra("quoteCitations", ArrayList(it)) }; quoteOrigin?.let { putExtra("quoteOrigin",it) }; media?.let { putExtra("startMedia", it) } })
 }

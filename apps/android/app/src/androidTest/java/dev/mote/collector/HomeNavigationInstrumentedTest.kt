@@ -69,7 +69,7 @@ class HomeNavigationInstrumentedTest {
                     assertTrue(shown(activity).any { it.tag == "home-record-action" })
                     assertTrue(shown(activity).any { it.tag == "home-ask-action" })
                     assertFalse(shown(activity).any { it.tag?.toString()?.startsWith("primary:") == true })
-                    assertFalse("An intentional capture pause is not a home error", shown(activity).any { it.tag == "home-attention" })
+                    assertFalse("An intentional capture pause is not a home error", shown(activity).any { it.tag == "home-notice-needs-action" })
                     activity.openGeneratedMenu()
                     for (label in listOf("资料与记忆", "发现历史", "日程与待办", "采集与同步", "设置", "中央工作台"))
                         assertTrue("Secondary capability remains reachable: $label", shown(activity).any { it.tag == "menu:$label" })
@@ -117,13 +117,13 @@ class HomeNavigationInstrumentedTest {
         context.recordDraftStore().edit("", JSONArray(), JSONObject().put("kind", "manual"))
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             waitFor(scenario, "First use without a draft shows the record action") { activity ->
-                shown(activity).any { it.tag == "home-first-use-guide" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
+                shown(activity).any { it.tag == "home-notice-connect" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
             }
             screenshot(scenario, "home-first-use")
             MoteAppearance.select(context, AppearancePreference.DARK)
             scenario.recreate(); scenario.awaitMainUi()
             waitFor(scenario, "First use without a draft keeps the record action in dark") { activity ->
-                shown(activity).any { it.tag == "home-first-use-guide" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
+                shown(activity).any { it.tag == "home-notice-connect" } && shown(activity).any { it.contentDescription == "记录" } && shown(activity).none { it.contentDescription == "继续草稿" }
             }
             screenshot(scenario, "home-first-use-dark")
             MoteAppearance.select(context, AppearancePreference.LIGHT)
@@ -155,7 +155,7 @@ class HomeNavigationInstrumentedTest {
             settings.status("permission_required", "生成的权限中断，请恢复权限")
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario, "A service interruption stays visible after capture safely stops") { shown(it).any { row -> row.tag == "home-attention" } }
+                    waitFor(scenario, "A service interruption stays visible after capture safely stops") { shown(it).any { row -> row.tag == "home-notice-needs-action" } }
                     waitFor(scenario, "Conversation row is ready") { shown(it).any { row -> row.tag == "home-conversation:$conversation" } }
                     scenario.onActivity { activity ->
                         val stale = shown(activity).single { it.tag == "home-conversation:$conversation" }
@@ -178,9 +178,9 @@ class HomeNavigationInstrumentedTest {
             settings.save(settings.read().copy(server = fixture.origin, token = "generated-home-owner-token-1234567890", debugHttp = true, syncMode = "manual", authSignedOut = false), confirmCentralEndpoint = true)
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario,"Confirmed empty connected archive shows its first-use guide") { shown(it).any { row -> row.tag == "home-first-use-guide" } }
+                    waitFor(scenario,"Confirmed empty connected archive hides the conversation section") { shown(it).none { row -> row.tag == "home-recent-conversations" } }
                     scenario.onActivity { activity ->
-                        assertTrue(shown(activity).filterIsInstance<TextView>().any { it.text.toString() == "已连接你的 Mote" })
+                        assertFalse("A connected archive needs no first-use connection prompt", shown(activity).any { it.tag == "home-notice-connect" })
                         assertFalse(shown(activity).filterIsInstance<TextView>().any { it.text.toString() == "还没有自己的 Mote？" })
                         assertFalse(settings.enabled)
                     }
@@ -190,7 +190,7 @@ class HomeNavigationInstrumentedTest {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     waitFor(scenario,"History read completed") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "还没有对话。" } }
                     scenario.onActivity { activity ->
-                        assertFalse("An unavailable inventory must not be declared empty",shown(activity).any { it.tag == "home-first-use-guide" })
+                        assertFalse("An unavailable inventory must not be declared empty",shown(activity).any { it.tag == "home-notice-connect" })
                         assertFalse(settings.enabled)
                     }
                 }

@@ -122,7 +122,7 @@ class HomeJourneyInstrumentedTest {
                     instrumentation.runOnMainSync {
                         val tags = shown(home).mapNotNull { it.tag?.toString() }
                         for (tag in listOf("home-ask-action", "home-record-action", "home-photo-action", "home-audio-action", "home-search-action")) assertTrue(tag, tag in tags)
-                        assertTrue("Capture that was never started stays off the home", tags.none { it in setOf("home-capture-state", "home-capture-paused", "home-attention") })
+                        assertTrue("Capture that was never started shows its shared pause reminder", tags.any { it == "home-notice-reminder" } && "采集已暂停" in texts(home))
                         assertFalse("The large prompt only belongs to first use", "想问什么？" in texts(home))
                         assertTrue("等你补充" in texts(home) && "时间待补充" in texts(home) && "生成的设计评审" in texts(home))
                         val ask = IntArray(2).also { shown(home).first { it.tag == "home-ask-action" }.getLocationOnScreen(it) }
@@ -160,27 +160,28 @@ class HomeJourneyInstrumentedTest {
     @Test fun captureLineSeparatesAPauseFromAnInterruption() {
         val settings = Settings(context)
         settings.capturePreviewAccepted()
+        settings.save(settings.read().copy(server = "http://127.0.0.1:47999", token = "generated-journey-owner-token-1234567890", debugHttp = true, syncMode = "manual", syncPaused = false), confirmCentralEndpoint = true)
         // MainActivity replaces its intent on onNewIntent; ActivityScenario then loses it, so this journey owns the activity.
         context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         try {
-            val paused = onTop("An intentional stop is quiet and offers resume") { activity -> shown(activity).any { it.tag == "home-capture-paused" } }
+            val paused = onTop("An intentional stop is quiet and offers resume") { activity -> shown(activity).any { it.tag == "home-notice-reminder" } }
             instrumentation.runOnMainSync {
-                assertTrue("采集已暂停" in texts(paused) && "恢复采集" in texts(paused))
-                assertFalse("A pause is not an error", shown(paused).any { it.tag == "home-attention" })
+                assertTrue("采集已暂停" in texts(paused) && "恢复" in texts(paused))
+                assertFalse("A pause is not an error", shown(paused).any { it.tag == "home-notice-needs-action" })
             }
             capture(paused, "home-paused")
-            settings.save(settings.read().copy(screenCollectionEnabled = false)); settings.screenPaused(System.currentTimeMillis())
-            val screen = onTop("A temporary screen pause names when it started") { activity -> "屏幕采集已暂停" in texts(activity) && texts(activity).any { it.endsWith(" 起") } }
+            settings.save(settings.read().copy(screenCollectionEnabled = false)); settings.enabled = true; settings.screenPaused(System.currentTimeMillis())
+            val screen = onTop("A temporary screen pause keeps its shared reminder") { activity -> "屏幕采集已暂停" in texts(activity) && "恢复" in texts(activity) }
             capture(screen, "home-screen-paused")
-            settings.save(settings.read().copy(notificationCollectionEnabled = true))
+            settings.save(settings.read().copy(notificationCollectionEnabled = true)); settings.enabled = false
             onTop("Stopped while other sources are selected is a full pause, not a screen pause") { activity ->
-                "采集已暂停" in texts(activity) && "屏幕采集已暂停" !in texts(activity) && "恢复采集" in texts(activity)
+                "采集已暂停" in texts(activity) && "屏幕采集已暂停" !in texts(activity) && "恢复" in texts(activity)
             }
             settings.status("permission_required", "生成的中断：采集服务被系统停止")
-            val broken = onTop("An actionable interruption is amber with its repair") { activity -> shown(activity).any { it.tag == "home-attention" } }
-            instrumentation.runOnMainSync { assertTrue("采集已中断" in texts(broken) && "重新开启" in texts(broken) && "生成的中断：采集服务被系统停止" in texts(broken)) }
+            val broken = onTop("An actionable interruption is amber with its repair") { activity -> shown(activity).any { it.tag == "home-notice-needs-action" } }
+            instrumentation.runOnMainSync { assertTrue("采集已中断" in texts(broken) && "重新开启" in texts(broken)) }
             capture(broken, "home-interrupted")
-            click(broken) { it.tag == "home-attention" }
+            click(broken) { it.tag == "home-notice-needs-action" }
             val panel = resumed(CaptureStatusActivity::class.java, "The line opens the capture status panel")
             onTop("The panel reads the same facts") { activity -> shown(activity).any { it.tag == "capture-status-screen-state" && (it as TextView).text.isNotBlank() } && shown(activity).any { it.tag == "capture-status-all" } }
             instrumentation.runOnMainSync {
@@ -189,8 +190,8 @@ class HomeJourneyInstrumentedTest {
             }
             capture(panel, "capture-status")
             instrumentation.runOnMainSync { panel.onBackPressedDispatcherCompat() }
-            val home = onTop("Back from the panel returns to the home") { activity -> activity is MainActivity && shown(activity).any { it.tag == "home-attention" } }
-            click(home) { it.tag == "home-attention" }
+            val home = onTop("Back from the panel returns to the home") { activity -> activity is MainActivity && shown(activity).any { it.tag == "home-notice-needs-action" } }
+            click(home) { it.tag == "home-notice-needs-action" }
             val again = resumed(CaptureStatusActivity::class.java, "The amber line opens the panel again")
             onTop("The panel is ready") { activity -> shown(activity).any { it.tag == "capture-status-screen" } }
             click(again) { it.tag == "capture-status-screen" }
@@ -364,14 +365,14 @@ class HomeJourneyInstrumentedTest {
         try {
             until("Local storage finished its startup recovery") { !QueueStorage.recovering }
             val settings = Settings(context)
-            settings.save(settings.read().copy(screenCollectionEnabled = true, mode = "accessibility"))
+            settings.save(settings.read().copy(screenCollectionEnabled = true, mode = "accessibility", server = "http://127.0.0.1:47999", token = "generated-journey-owner-token-1234567890", debugHttp = true))
             settings.capturePreviewAccepted()
             shell("settings put secure enabled_accessibility_services $service"); shell("settings put secure accessibility_enabled 1")
             until("The task-owned emulator binds the capture service") { CaptureAccessibilityService.connected }
             settings.enabled = true; settings.status("capturing", "生成的采集状态")
             ActivityScenario.launch(MainActivity::class.java).use {
                 val home = onTop("Normal capture stays quiet on the home") { activity ->
-                    shown(activity).any { it.tag == "home-record-action" } && shown(activity).none { it.tag in setOf("home-capture-state", "home-capture-paused", "home-attention") } && "采集中" !in texts(activity)
+                    shown(activity).any { it.tag == "home-record-action" } && shown(activity).none { it.tag in setOf("home-notice-reminder", "home-notice-needs-action", "home-notice-connect") } && "采集中" !in texts(activity)
                 }
                 capture(home, "home-capturing")
                 until("The service's own notification pauses only the screen") {
@@ -382,7 +383,7 @@ class HomeJourneyInstrumentedTest {
                 shell("cmd statusbar click-tile $tile")
                 until("Quick Settings pauses only the screen") { !settings.read().screenCollectionEnabled && settings.screenPausedAt() != null }
                 shell("cmd statusbar collapse")
-                val paused = onTop("The home shows the temporary pause with resume") { activity -> "屏幕采集已暂停" in texts(activity) && "恢复采集" in texts(activity) }
+                val paused = onTop("The home shows the resulting pause with resume") { activity -> "采集已暂停" in texts(activity) && "恢复" in texts(activity) }
                 capture(paused, "home-after-tile-pause")
             }
         } finally {
