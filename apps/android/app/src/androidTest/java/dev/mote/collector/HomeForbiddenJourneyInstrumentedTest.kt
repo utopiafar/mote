@@ -519,7 +519,7 @@ class HomeForbiddenJourneyInstrumentedTest {
                     !tagged(home, "home-feed") && !tagged(home, "home-notice-connect")
                 }
                 instrumentation.runOnMainSync {
-                    assertTrue("the confirmed empty archive hides the feed rather than faking rows", shown(home).none { it.tag.toString().startsWith("home-original:") })
+                    assertTrue("the confirmed empty archive hides the feed rather than faking rows", shown(home).none { it.tag?.toString()?.startsWith("home-original:") == true })
                 }
             }
         }

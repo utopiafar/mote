@@ -16,7 +16,7 @@ import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 /** Build-native provider for the daily home. The plugin owns the home read
- * cadence and local render signatures, the capture line and the grouped
+ * cadence and local render signatures, the shared notice row and the grouped
  * originals feed. The Activity only mounts the returned sections and
  * routes their actions; a hidden home never refreshes a section. */
 internal object DailyHomePlugin {

@@ -200,6 +200,7 @@ internal class HomeFeedView(
     }
 
     private fun label(value: String) {
+        visibility = View.VISIBLE
         addView(TextView(activity).apply {
             text = value; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED)
             setPadding(0, activity.moteDp(16), 0, activity.moteDp(16))
