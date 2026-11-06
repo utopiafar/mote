@@ -240,7 +240,9 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 else lastConversation?.takeIf { it.optString("id") == conversationId }?.let(::renderConversation)
             }
             remote.exceptionOrNull()?.let { error ->
-                ui.button(MoteI18n.text("重试"), parent = messages ?: body) { refresh() }
+                // An unreachable Central is owned by the composer notice and its
+                // retry; other read failures still need an inline retry here.
+                if (error is CentralFailure) ui.button(MoteI18n.text("重试"), parent = messages ?: body) { refresh() }
                 ui.requestFailure(error)
             }
             ui.requestedAskConversation()?.let { selectConversation(it,fromIntent=true) }
