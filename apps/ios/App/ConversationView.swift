@@ -1,3 +1,4 @@
+import Combine
 import MoteCentral
 import MoteDesign
 import SwiftUI
@@ -14,8 +15,11 @@ struct ConversationView: View {
     var initialQuestion: String? = nil
     let onBack: () -> Void
     let onAddImage: () -> Void
+    var saveAnswerRecord: SaveAnswerRecordAction = SaveAnswerRecord.save
 
     @State private var sentInitial = false
+    @State private var saveTurn: ConversationTurn?
+    @State private var keyboardHeight: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -68,7 +72,18 @@ struct ConversationView: View {
             Text(model.turnFailure ?? "")
         }
         .overlay(alignment: .bottom) {
-            if let turn = model.detailTurn { detailsSheet(turn) }
+            if let turn = model.detailTurn {
+                detailsSheet(turn)
+            } else if let turn = saveTurn, let result = turn.result {
+                saveAnswerSheet(turn: turn, answer: result.answer)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+            guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            keyboardHeight = max(0, UIScreen.main.bounds.maxY - frame.minY)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardHeight = 0
         }
     }
 
@@ -264,8 +279,24 @@ struct ConversationView: View {
 
     private func answerActions(turn: ConversationTurn, answer: String) -> some View {
         HStack(spacing: 2) {
-            // The 保存为记录 action arrives with the record panel (IOS15);
-            // until then only copy and more are placed.
+            Button {
+                saveTurn = turn
+            } label: {
+                HStack(spacing: 8) {
+                    MoteIcon(.memory, size: 16)
+                    Text("保存为记录")
+                        .font(MoteFont.action)
+                }
+                .foregroundStyle(MoteDesignTokens.accent.color)
+                .padding(.horizontal, 8)
+                // Whole-point width keeps the following 44pt icon targets on
+                // whole points, so their measured touch targets stay 44pt.
+                .frame(minWidth: 116, minHeight: MoteMetrics.touchTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.busy)
+            .accessibilityLabel(Text("保存为记录"))
             answerAction(icon: .copy, label: "复制") {
                 UIPasteboard.general.string = answer
             }
@@ -300,6 +331,32 @@ struct ConversationView: View {
         + Text(Image(uiImage: AnswerCaret.image(colorScheme: colorScheme)))
             .baselineOffset(-2))
             .lineSpacing(7)
+    }
+
+    // MARK: - Save-as-record sheet
+
+    private func saveAnswerSheet(turn: ConversationTurn, answer: String) -> some View {
+        ZStack(alignment: .bottom) {
+            ShareScrim()
+                .contentShape(Rectangle())
+                .onTapGesture { saveTurn = nil }
+            if let conversationId = model.conversation?.id {
+                SaveAnswerPanel(
+                    quote: ShareConversationQuote(
+                        question: turn.question,
+                        answer: answer,
+                        displayAnswer: ConversationPresentation.quotedAnswer(
+                            answer, numbers: model.citationNumbers),
+                        conversationId: conversationId,
+                        turnId: turn.id
+                    ),
+                    save: saveAnswerRecord,
+                    onClose: { saveTurn = nil }
+                )
+                .padding(.bottom, keyboardHeight)
+            }
+        }
+        .ignoresSafeArea()
     }
 
     // MARK: - Details sheet

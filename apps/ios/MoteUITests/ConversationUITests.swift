@@ -12,7 +12,6 @@ final class ConversationUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["对话历史"].exists)
         XCTAssertFalse(app.buttons["新对话"].exists)
         XCTAssertFalse(app.staticTexts["新对话"].exists)
-        XCTAssertFalse(app.buttons["保存为记录"].exists)
     }
 
     // A05: back returns to the conversation list.
@@ -86,16 +85,45 @@ final class ConversationUITests: XCTestCase {
         screenshot("conversation-anchored-light")
     }
 
-    // Copy and more actions exist per answer; 保存为记录 waits for IOS15.
-    func testAnswerActionsAreCopyAndMoreOnly() {
+    // A07: every completed answer offers 保存为记录 next to 复制 and 更多.
+    func testAnswerActionsIncludeSaveCopyAndMore() {
         let app = launch(state: "answered")
         XCTAssertTrue(app.buttons["conversation-back"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.buttons.matching(identifier: "保存为记录").count, 2)
         XCTAssertEqual(app.buttons.matching(identifier: "复制").count, 2)
         XCTAssertEqual(app.buttons.matching(identifier: "更多").count, 2)
-        XCTAssertFalse(app.buttons["保存为记录"].exists)
+        let save = app.buttons.matching(identifier: "保存为记录").element(boundBy: 0)
+        XCTAssertGreaterThanOrEqual(save.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(save.frame.height, 44)
         app.buttons.matching(identifier: "更多").element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["本轮详情"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["使用模型"].exists)
+    }
+
+    // S05: the panel quotes the answer, takes a supplement, and saves a record
+    // without opening or changing the editor draft.
+    func testSaveAsRecordShowsQuoteSupplementAndDescription() {
+        let app = launch(state: "answered")
+        let save = app.buttons.matching(identifier: "保存为记录").element(boundBy: 0)
+        XCTAssertTrue(save.waitForExistence(timeout: 10))
+        save.tap()
+        XCTAssertTrue(app.staticTexts["保存为记录"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["按实际用量分摊，月底前把账单照片发给房东；押金下个月退，需要收据。"].exists)
+
+        let note = app.textFields["mote-share-note"]
+        XCTAssertTrue(note.exists)
+        note.tap()
+        note.typeText("周一确认")
+        XCTAssertTrue(app.buttons["资料说明"].exists)
+        XCTAssertFalse(app.textFields["mote-editor-text"].exists)
+
+        app.buttons["保存"].tap()
+        XCTAssertTrue(app.staticTexts["已保存"].waitForExistence(timeout: 5))
+        let payload = app.staticTexts["conversation-preview-saved"]
+        XCTAssertTrue(payload.waitForExistence(timeout: 5))
+        XCTAssertTrue(payload.label.hasPrefix("暖气费是怎么约定的？\n\n按实际用量分摊"))
+        XCTAssertTrue(payload.label.contains("周一确认"))
+        XCTAssertFalse(app.textFields["mote-editor-text"].exists)
     }
 
     private let ConversationId = "11111111-2222-3333-4444-555555555555"
@@ -114,13 +142,14 @@ final class ConversationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["conversation-back"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["暖气费是怎么约定的？"].exists)
         XCTAssertTrue(app.staticTexts["记录 · 今天 14:20"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "保存为记录").count, 2)
         XCTAssertEqual(app.buttons.matching(identifier: "复制").count, 2)
         XCTAssertEqual(app.buttons.matching(identifier: "更多").count, 2)
         for label in ["返回", "添加图片"] {
             XCTAssertGreaterThanOrEqual(app.buttons[label].frame.width, 44, label)
             XCTAssertGreaterThanOrEqual(app.buttons[label].frame.height, 44, label)
         }
-        for label in ["复制", "更多"] {
+        for label in ["保存为记录", "复制", "更多"] {
             let matches = app.buttons.matching(identifier: label)
             for index in 0..<matches.count {
                 let element = matches.element(boundBy: index)
