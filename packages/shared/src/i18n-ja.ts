@@ -1,6 +1,5 @@
 /* Authored interface messages only; never translate captured content. */
 export const japanese: Readonly<Record<string, string>> = {
-  "昨天": "昨日",
   "离开页面会停止录音，并保留草稿。": "このページを離れると録音を停止し、下書きを保持します。",
   "网页": "ウェブ",
   "截图与照片": "スクリーンショットと写真",
@@ -6471,6 +6470,7 @@ export const japanese: Readonly<Record<string, string>> = {
   "中央管理令牌": "中央オーナートークン",
   "本次应用会话": "このアプリセッション",
   "暂无记录": "記録なし",
+  "暂无记录。": "記録はまだありません。",
   "高级 JSON": "詳細 JSON",
   "模型配置": "モデル設定",
   "并发与执行设置": "同時実行数と実行設定",
@@ -10177,7 +10177,6 @@ export const japanese: Readonly<Record<string, string>> = {
   "需要确认发送范围": "送信範囲の確認が必要",
   "资料说明冲突": "資料の説明が競合しています",
   "资料说明等待确认": "資料の説明が確認待ちです",
-  "暂时无法读取": "一時的に読み取れません",
   "中央已暂停": "中央ノードで一時停止中",
   "已同步 · {0}": "同期済み · {0}",
   "仅 Wi-Fi": "Wi-Fiのみ",

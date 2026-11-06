@@ -5,6 +5,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.mote.collector.ui.MoteComponents
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
@@ -58,22 +59,28 @@ internal class HomeDiscoveryView(private val activity: MoteActivity, private val
             clear();rendered=finding.toString()
             val id=requireNotNull(InsightPresentation.id(finding))
             fun current()=active&&!closed&&gate.current(stamp)&&runCatching{CentralAccess.resolve(activity).let{it.client!=null&&it.generation==access.generation&&it.server==access.server}}.getOrDefault(false)
-            val heading=LinearLayout(activity).apply{gravity=Gravity.CENTER_VERTICAL}
-            heading.addView(label(MoteI18n.text("最近结果"),NativeFontRole.META).apply{MoteUi.type(this,12)},LayoutParams(0,-2,1f))
-            heading.addView(MoteUi.action(android.widget.Button(activity).apply{text=MoteI18n.text("发现历史");tag="home-discovery-history";setOnClickListener{if(current())open(null)}},MoteUi.ButtonRole.TEXT).apply{MoteUi.type(this,10);MoteUi.textColor(this,NativeColorRole.MUTED)})
-            addView(heading)
-            val card=LinearLayout(activity).apply{
-                orientation=VERTICAL;setPadding(activity.moteDp(19),activity.moteDp(19),activity.moteDp(19),activity.moteDp(19));background=MoteUi.clickable(activity,NativeColorRole.SURFACE,7,true)
-                tag="home-discovery:$id";isFocusable=true;setOnClickListener{if(current())open(id)}
-            }
+            // H08: the saved result leads the home list in the same row style as recent content —
+            // no heading or card chrome, and the row opens the existing report page.
             val whenText=finding.optString("createdAt").ifBlank{finding.optJSONObject("artifact")?.optString("createdAt").orEmpty()}
             val date=runCatching{DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(MoteI18n.locale()).withZone(ZoneId.systemDefault()).format(Instant.parse(whenText))}.getOrDefault(whenText)
-            card.addView(label(MoteI18n.text("发现")+" · "+date,NativeFontRole.META))
-            card.addView(label(InsightPresentation.title(finding),NativeFontRole.SECTION).apply{MoteUi.type(this,17);NativePresentationStyles.bind(this,"home-result-title"){(it as TextView).apply{typeface=android.graphics.Typeface.create(android.graphics.Typeface.create(MoteTheme.fontFamily(false),android.graphics.Typeface.NORMAL),500,false);setLineSpacing(0f,1.7f)}}})
-            val formatted=JSONObject(finding.toString()).put("answer",NativeAnswerPresentation.format(finding.optString("answer"),emptyList()).text)
-            card.addView(label(InsightPresentation.preview(formatted),NativeFontRole.SUPPORT))
-            card.addView(label(MoteI18n.text("查看结果与依据 →"),NativeFontRole.ACTION).apply{MoteUi.textColor(this,NativeColorRole.ACCENT)})
-            addView(card,LayoutParams(-1,-2).apply{bottomMargin=activity.moteDp(26)});visibility=View.VISIBLE;present(true)
+            val title=InsightPresentation.title(finding)
+            val group=LinearLayout(activity).apply{orientation=VERTICAL;tag="home-discovery-history"}
+            val row=LinearLayout(activity).apply{
+                orientation=HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
+                minimumHeight=activity.moteDp(62)
+                setPadding(activity.moteDp(14),activity.moteDp(10),activity.moteDp(14),activity.moteDp(10))
+                this.tag="home-discovery:$id";isFocusable=true
+                contentDescription=title+"，"+MoteI18n.text("发现")+" · "+date
+                background=MoteUi.clickable(activity,NativeColorRole.TRANSPARENT,NativeRadiusRole.CONTAINER,false)
+                val words=LinearLayout(activity).apply{orientation=VERTICAL}
+                words.addView(TextView(activity).apply{text=title;MoteUi.type(this,NativeFontRole.ROW,medium=true);MoteUi.textColor(this,NativeColorRole.INK);maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END})
+                words.addView(TextView(activity).apply{text=MoteI18n.text("发现")+" · "+date;MoteUi.type(this,NativeFontRole.META);MoteUi.textColor(this,NativeColorRole.MUTED);maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(0,activity.moteDp(1),0,0)})
+                addView(words,LayoutParams(0,-2,1f))
+                setOnClickListener{if(current())open(id)}
+            }
+            group.addView(row)
+            addView(MoteComponents.group(activity).apply{addView(group)},LayoutParams(-1,-2).apply{bottomMargin=activity.moteDp(10)})
+            visibility=View.VISIBLE;present(true)
         }
     }
     private fun denied(){clear();visibility=View.VISIBLE;rendered="denied";label(MoteI18n.text("暂不可读取"),NativeFontRole.META).also{addView(it)};addView(TextView(activity).apply{text=MoteI18n.text("重试");MoteUi.type(this,11);MoteUi.textColor(this,NativeColorRole.ACCENT);setPadding(0,activity.moteDp(5),0,activity.moteDp(5));isClickable=true;isFocusable=true;setOnClickListener{if(active&&!closed){denied=false;gate.retry();refresh()}}})}

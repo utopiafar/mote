@@ -1,6 +1,5 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
-  "昨天": "Yesterday",
   "离开页面会停止录音，并保留草稿。": "Leaving this page stops recording and keeps the draft.",
   "网页": "Web",
   "截图与照片": "Screenshots and photos",
@@ -6471,6 +6470,7 @@ export const english: Readonly<Record<string, string>> = {
   "中央管理令牌": "Central owner token",
   "本次应用会话": "This app session",
   "暂无记录": "No records",
+  "暂无记录。": "No records yet.",
   "高级 JSON": "Advanced JSON",
   "模型配置": "Model configuration",
   "并发与执行设置": "Concurrency and execution settings",
@@ -10177,7 +10177,6 @@ export const english: Readonly<Record<string, string>> = {
   "需要确认发送范围": "Send scope needs confirmation",
   "资料说明冲突": "Source description conflict",
   "资料说明等待确认": "Source description awaiting confirmation",
-  "暂时无法读取": "Temporarily unreadable",
   "中央已暂停": "Paused on Central",
   "已同步 · {0}": "Synced · {0}",
   "仅 Wi-Fi": "Wi-Fi only",

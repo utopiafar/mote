@@ -91,7 +91,6 @@ class MainActivity : MoteActivity() {
     private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
     private lateinit var homeNoticeRow: HomeNoticeRow
-    private lateinit var homeConversationsSection: LinearLayout
     private lateinit var homeRecordReceipt: LinearLayout
     private var homeReceiptAvailable = false
     internal fun isFirstUseRecordEntry() = firstUse
@@ -309,7 +308,10 @@ class MainActivity : MoteActivity() {
         homeNoticeRow = home.noticeRow(this, open = ::openHomeNotice, act = ::runHomeNotice)
         content.addView(homeNoticeRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         if (!loadedConfig.hasSyncConnection() && !settings.enabled) homeNoticeRow.bind(HomeNotice.connect())
-        // Work and discovery own their home blocks: a stopped plugin publishes none.
+        homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
+        // H08: waiting calendar items and existing discoveries lead the home list in the
+        // shared row style; the feed below groups recent originals by day. Neither block
+        // takes a position when its plugin has nothing to show.
         val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
         val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
         if (NativeWorkDiscoveryPlugin.HomeSection.CALENDAR_NEEDS in workHomeSections) {
@@ -317,40 +319,23 @@ class MainActivity : MoteActivity() {
                 sections.add(it); content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
             }
         }
-        homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
-        val pageContent = content
-        homeConversationsSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(homeConversationsSection, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
-        content = homeConversationsSection
-        text(MoteI18n.text("最近对话"), NativeFontRole.META, NativeColorRole.MUTED).apply {
-            setPadding(0, dp(9), 0, dp(1))
-        }
-        val conversations = home.conversation(this, archiveEmpty = { empty ->
-            homeArchiveEmpty = empty
-            firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
-            updateFirstUse()
-        }) { id ->
-            // The same native Ask state owns the draft and the selected conversation.
-            intent.removeExtra("moteConversationOrigin");intent.removeExtra("moteConversationGeneration");intent.putExtra("conversationId", id)
-            centralContent?.captureAskConversationIntent()
-            showPage(Page.ASK)
-        }
-        sections.add(conversations)
-        content.addView(conversations)
-        content = pageContent
-        // Existing discoveries follow the continuing work; the home never generates a new one.
         if (NativeWorkDiscoveryPlugin.HomeSection.DISCOVERY in workHomeSections) {
             workDiscovery.homeDiscovery(this) { id ->
                 startActivity(Intent(this,CentralActivity::class.java).putExtra("page","insights").apply{if(id!=null)putExtra("insightId",id)})
             }.also { sections.add(it); content.addView(it) }
         }
+        val feed = home.feed(this, archiveEmpty = { empty ->
+            homeArchiveEmpty = empty
+            firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
+        }) { original, origin ->
+            startActivity(Intent(this, CaptureRecordsActivity::class.java)
+                .putExtra("recordId", original.id).putExtra("directReader", true).putExtra("recordRemote", true)
+                .putExtra("recordOrigin", origin).putExtra("recordDeviceId", original.deviceId)
+                .putExtra("recordSource", original.source).putExtra("recordDate", original.day))
+        }
+        sections.add(feed)
+        content.addView(feed)
         sections.show()
-        updateFirstUse()
-    }
-
-    private fun updateFirstUse() {
-        val firstReceipt = homeReceiptAvailable && NativeRecordReceipt.fromFirstUse
-        homeConversationsSection.visibility = if (firstUse || firstReceipt) View.GONE else View.VISIBLE
     }
 
     private fun buildManagement() {
@@ -558,7 +543,6 @@ class MainActivity : MoteActivity() {
                 firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
                 val receipt = capturePage.optJSONObject("savedReceipt")
                 homeReceiptAvailable = receipt != null
-                updateFirstUse()
                 val receiptSignature = home.receiptSignature(receipt?.optString("id").orEmpty(), receipt?.let(NativeRecordPreview::text).orEmpty(), receipt?.optString("capturedAt").orEmpty(), loadedConfig.hasSyncConnection())
                 if (home.receiptChanged(receiptSignature)) {
                 homeRecordReceipt.removeAllViews()
@@ -1946,7 +1930,7 @@ class MainActivity : MoteActivity() {
                 if (snapshot.active.records > 0 || (snapshot.sourcePending ?: 0) > 0) homeHasRecords = true
                 val nextFirstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
                 if (nextFirstUse != firstUse) {
-                    firstUse = nextFirstUse; updateFirstUse()
+                    firstUse = nextFirstUse
                 } else if (::todaySummary.isInitialized) todaySummary.text = snapshot.imageLabel()
             }
             loadHomeContent()
