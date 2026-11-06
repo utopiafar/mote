@@ -125,7 +125,7 @@ public struct MemoryDetailContent: Equatable, Sendable {
         calendar: Calendar = .current
     ) -> MemoryDetailContent {
         let versionRecords = [record] + history.filter { $0.id != record.id }
-        let versionRows = versionRecords.enumerated().map { index, version in
+        let versionRows = versionRecords.map { version in
             let isCurrent = version.supersededBy == nil
             let subtitle: String
             if isCurrent {
