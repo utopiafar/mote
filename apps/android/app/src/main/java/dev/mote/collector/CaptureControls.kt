@@ -32,32 +32,68 @@ class PauseScreenReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = holdUntilDone { done -> CapturePlugin.controls().pauseScreen(context) { done() } }
 }
 
+// Android 10–13 only offer the Intent form; Android 14+ uses the PendingIntent form below.
+@android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")
+private fun TileService.openStatus() {
+    val intent = Intent(this, CaptureStatusActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val open = {
+        if (Build.VERSION.SDK_INT >= 34) startActivityAndCollapse(PendingIntent.getActivity(this, 300, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        else @Suppress("DEPRECATION") startActivityAndCollapse(intent)
+    }
+    if (isLocked) unlockAndRun { open() } else open()
+}
+
 /** Quick Settings pauses screen capture in one tap. Starting or resuming opens the app instead. */
 class ScreenCaptureTileService : TileService() {
     override fun onStartListening() { super.onStartListening(); refresh() }
     override fun onClick() {
         super.onClick()
         // Decide from the saved state at click time; the tile may not have been listening before this click.
-        CapturePlugin.controls().screenState(this) { capturing, _, _ ->
-            if (capturing) CapturePlugin.controls().pauseScreen(this) { refresh() } else if (isLocked) unlockAndRun { openStatus() } else openStatus()
+        CapturePlugin.controls().overviewFacts(this) { facts ->
+            if (facts != null && facts.enabled && facts.screenSelected) CapturePlugin.controls().pauseScreen(this) { refresh() } else openStatus()
         }
     }
     private fun refresh() {
-        CapturePlugin.controls().screenState(this) { capturing, paused, live ->
-            val tile = qsTile ?: return@screenState
-            tile.state = if (capturing) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        CapturePlugin.controls().overviewFacts(this) { facts ->
+            val tile = qsTile ?: return@overviewFacts
+            val face = CaptureTiles.screen(facts?.let(CaptureOverview::statusFacts))
+            tile.state = if (face.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             tile.label = MoteI18n.text("屏幕采集")
-            tile.subtitle = MoteI18n.text(if (capturing && live) "采集中" else if (capturing) "需要处理" else if (paused) "已暂停" else "关闭")
-            tile.contentDescription = MoteI18n.text(if (capturing) "暂停屏幕采集" else "采集状态")
+            tile.subtitle = face.subtitle
+            tile.contentDescription = MoteI18n.text(if (face.active) "暂停屏幕采集" else "采集状态")
             tile.icon = Icon.createWithResource(this, R.drawable.ic_tile_screen)
             tile.updateTile()
         }
     }
-    // Android 10–13 only offer the Intent form; Android 14+ uses the PendingIntent form below.
-    @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")
-    private fun openStatus() {
-        val intent = Intent(this, CaptureStatusActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (Build.VERSION.SDK_INT >= 34) startActivityAndCollapse(PendingIntent.getActivity(this, 300, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        else @Suppress("DEPRECATION") startActivityAndCollapse(intent)
+}
+
+/** Quick Settings pauses or resumes sending in one tap. With no configured central it only opens the status panel. */
+class SendPauseTileService : TileService() {
+    override fun onStartListening() { super.onStartListening(); refresh() }
+    override fun onClick() {
+        super.onClick()
+        CapturePlugin.controls().overviewFacts(this) { facts ->
+            if (facts != null && facts.connected) CapturePlugin.controls().setSendingPaused(this, !facts.sendPaused) { refresh() } else openStatus()
+        }
+    }
+    private fun refresh() {
+        CapturePlugin.controls().overviewFacts(this) { facts ->
+            val tile = qsTile ?: return@overviewFacts
+            val face = CaptureTiles.send(
+                facts?.connected == true, facts?.sendPaused == true, facts?.sendState in setOf("error", "blocked")
+            )
+            tile.state = if (face.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            tile.label = MoteI18n.text("暂停发送")
+            tile.subtitle = face.subtitle
+            tile.contentDescription = MoteI18n.text(
+                when {
+                    facts?.connected != true -> "发送状态"
+                    face.active -> "恢复全部发送"
+                    else -> "暂停发送"
+                }
+            )
+            tile.icon = Icon.createWithResource(this, R.drawable.ic_tile_send)
+            tile.updateTile()
+        }
     }
 }

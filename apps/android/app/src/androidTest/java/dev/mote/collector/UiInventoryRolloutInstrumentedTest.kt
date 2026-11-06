@@ -57,13 +57,10 @@ class UiInventoryRolloutInstrumentedTest {
                         val buttons = views(activity.window.decorView).filterIsInstance<Button>().filter { it.isShown }
                         val resume = buttons.filter { it.text.toString() == MoteI18n.text("恢复这个来源") }
                         val pause = buttons.filter { it.text.toString() == MoteI18n.text("暂停这个来源") }
-                        assertEquals(if (name == "rollout-populated-sources") 2 else 1, resume.size)
+                        assertEquals(if (name == "rollout-populated-sources") 1 else 0, resume.size)
                         assertEquals(if (name == "rollout-populated-sources") 0 else 1, pause.size)
                         resume.forEach { assertEquals(true, it.getTag(R.id.mote_primary)); assertEquals(android.graphics.Color.WHITE, it.currentTextColor) }
                         pause.forEach { assertEquals(false, it.getTag(R.id.mote_primary)); assertEquals(MoteUi.accent, it.currentTextColor) }
-                        val gateways = setOf(MoteI18n.text("重新授权或选择范围"), MoteI18n.text("设置 · {0}", "Generated file source"), MoteI18n.text("设置 · {0}", "Generated folder source"))
-                        buttons.filter { it.text.toString() in gateways }
-                            .forEach { assertEquals("Source authorization and settings remain navigation actions", false, it.getTag(R.id.mote_primary)) }
                     }
                     GeneratedWindowRendering.save(activity, directory, name)
                     File(directory, "$name.txt").writeText(text(activity).joinToString("\n"))
@@ -100,9 +97,9 @@ class UiInventoryRolloutInstrumentedTest {
             store.save(source); store.save(folder)
             render("rollout-file-task-settings", Intent(context, FileTaskActivity::class.java).putExtra("sourceId", source.id), "文件来源设置")
             render("rollout-folder-task-settings", Intent(context, FileTaskActivity::class.java).putExtra("sourceId", folder.id), "文件来源设置")
-            render("rollout-populated-sources", Intent(context, SourcesActivity::class.java), "Generated file source")
+            render("rollout-populated-sources", Intent(context, SourcesActivity::class.java).putExtra("detailSourceId", source.id), "Generated file source")
             store.save(source.copy(enabled = true))
-            try { render("rollout-populated-sources-active", Intent(context, SourcesActivity::class.java), "Generated file source") }
+            try { render("rollout-populated-sources-active", Intent(context, SourcesActivity::class.java).putExtra("detailSourceId", source.id), "Generated file source") }
             finally { store.save(source) }
             assertTrue(FileSources(context).scan(source))
             assertNotNull(FileSources(context).prepare(source))

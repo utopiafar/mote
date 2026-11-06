@@ -1,0 +1,123 @@
+import XCTest
+import MoteCentral
+import MoteStorage
+
+final class ShareRecordTests: XCTestCase {
+    private var directoryURL: URL!
+
+    override func setUpWithError() throws {
+        directoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try FileManager.default.removeItem(at: directoryURL)
+    }
+
+    func testLinkShareEncodesManualCollectorAndSharedOrigin() throws {
+        let link = ShareLinkPreview(
+            url: "https://www.seriouseats.com/ribs",
+            title: "低温慢烤牛肋排的时间表",
+            domain: "seriouseats.com"
+        )
+        let request = ShareRequest(text: "低温慢烤牛肋排的时间表", link: link)
+        let shared = try ShareRecord.make(
+            request: request,
+            note: "周末试一下，6 小时那版。",
+            description: "生成的资料说明",
+            attachments: [],
+            deviceId: "generated-iphone",
+            deviceName: "Generated iPhone",
+            id: UUID(uuidString: "00000000-0000-4000-8000-000000000001")!,
+            capturedAt: "2026-11-06T02:00:00.000Z"
+        )
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: ShareRecord.payload(shared.capture)) as? [String: Any])
+        XCTAssertEqual(object["id"] as? String, "00000000-0000-4000-8000-000000000001")
+        XCTAssertEqual(object["source"] as? String, "note")
+        XCTAssertEqual(object["platform"] as? String, "ios")
+        XCTAssertEqual(object["appId"] as? String, "dev.mote.notes")
+        XCTAssertEqual(object["appName"] as? String, "记录")
+        XCTAssertEqual(object["ocrText"] as? String, "周末试一下，6 小时那版。")
+        XCTAssertNil(object["imageBase64"])
+
+        let metadata = try XCTUnwrap(object["metadata"] as? [String: Any])
+        XCTAssertEqual(metadata["version"] as? Int, 1)
+        XCTAssertEqual(metadata["ownerDescription"] as? String, "生成的资料说明")
+        XCTAssertNil(metadata["attachments"])
+        let collector = try XCTUnwrap(metadata["collector"] as? [String: Any])
+        XCTAssertEqual(collector["method"] as? String, "manual")
+        let origin = try XCTUnwrap(metadata["noteOrigin"] as? [String: Any])
+        XCTAssertEqual(origin["kind"] as? String, "share")
+        XCTAssertEqual(origin["url"] as? String, link.url)
+        XCTAssertEqual(origin["text"] as? String, "低温慢烤牛肋排的时间表")
+    }
+
+    func testSharedMediaIsStagedAsFileAndTheDraftStaysUntouched() throws {
+        let draftStore = EditorDraftStore(directoryURL: directoryURL.appendingPathComponent("Draft", isDirectory: true))
+        let draft = EditorDraft(text: "草稿保持原样", sourceDescription: "生成的草稿说明")
+        try draftStore.save(draft)
+        let queue = SendQueue(directoryURL: directoryURL.appendingPathComponent("Queue", isDirectory: true))
+        let attachments = ShareAttachmentStore(directoryURL: directoryURL.appendingPathComponent("Shared", isDirectory: true))
+        let recordId = UUID(uuidString: "00000000-0000-4000-8000-000000000002")!
+
+        let image = Data("生成的照片".utf8)
+        let file = Data("生成的文件".utf8)
+        let request = ShareRequest(attachments: [
+            ShareAttachmentData(data: image, fileName: "照片.png", mimeType: "image/png"),
+            ShareAttachmentData(data: file, fileName: "季度计划.pdf", mimeType: "application/pdf"),
+        ])
+        let shared = try ShareSubmission.save(
+            request: request,
+            note: "",
+            description: "",
+            deviceId: "generated-iphone",
+            deviceName: "Generated iPhone",
+            recordId: recordId,
+            capturedAt: "2026-11-06T02:01:00.000Z",
+            queue: queue,
+            attachmentStore: attachments
+        )
+
+        XCTAssertEqual(try queue.pending().count, 1)
+        XCTAssertEqual(try queue.pending().first?.id, recordId.uuidString.lowercased())
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(queue.pending().first).payload) as? [String: Any])
+        let metadata = try XCTUnwrap(object["metadata"] as? [String: Any])
+        XCTAssertEqual((metadata["collector"] as? [String: Any])?["method"] as? String, "manual")
+        XCTAssertNil(metadata["attachments"])
+        let origin = try XCTUnwrap(metadata["noteOrigin"] as? [String: Any])
+        XCTAssertEqual(origin["kind"] as? String, "share")
+        XCTAssertEqual(origin["text"] as? String, "照片.png\n季度计划.pdf")
+
+        let manifest = try XCTUnwrap(try attachments.manifest(recordId: recordId))
+        XCTAssertEqual(manifest.map(\.kind), [.file, .file])
+        XCTAssertEqual(manifest.map(\.fileName), ["照片.png", "季度计划.pdf"])
+        let encodedManifest = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(manifest)) as? [[String: Any]])
+        XCTAssertEqual(encodedManifest.map { $0["kind"] as? String }, ["file", "file"])
+        XCTAssertEqual(try Data(contentsOf: attachments.fileURL(recordId: recordId, attachment: manifest[0])), image)
+        XCTAssertEqual(try Data(contentsOf: attachments.fileURL(recordId: recordId, attachment: manifest[1])), file)
+
+        XCTAssertEqual(shared.capture.source, .note)
+        XCTAssertEqual(try draftStore.load(), draft)
+    }
+
+    func testDuplicateSaveKeepsOneQueueItemAndOneJournal() throws {
+        let queue = SendQueue(directoryURL: directoryURL.appendingPathComponent("Queue", isDirectory: true))
+        let attachments = ShareAttachmentStore(directoryURL: directoryURL.appendingPathComponent("Shared", isDirectory: true))
+        let recordId = UUID(uuidString: "00000000-0000-4000-8000-000000000003")!
+        let request = ShareRequest(text: "分享的文字")
+
+        _ = try ShareSubmission.save(
+            request: request, note: "", description: "", deviceId: "generated-iphone",
+            deviceName: "Generated iPhone", recordId: recordId,
+            capturedAt: "2026-11-06T02:02:00.000Z", queue: queue, attachmentStore: attachments
+        )
+        XCTAssertThrowsError(try ShareSubmission.save(
+            request: request, note: "", description: "", deviceId: "generated-iphone",
+            deviceName: "Generated iPhone", recordId: recordId,
+            capturedAt: "2026-11-06T02:04:00.000Z", queue: queue, attachmentStore: attachments
+        )) {
+            XCTAssertEqual($0 as? SendQueueError, .duplicateID)
+        }
+        XCTAssertEqual(try queue.pending().count, 1)
+    }
+}
