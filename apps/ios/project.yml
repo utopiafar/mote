@@ -33,6 +33,8 @@ targets:
       - target: MoteLiveActivity
       - target: MoteShare
         embed: true
+      - target: MoteControls
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios
@@ -85,6 +87,25 @@ targets:
         INFOPLIST_FILE: Share/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: 保存到 Mote
         SKIP_INSTALL: YES
+  MoteControls:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Controls
+      - App/SystemControlIntents.swift
+    dependencies:
+      - package: MoteKit
+        product: MoteCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.controls
+        PRODUCT_NAME: MoteControls
+        CODE_SIGN_ENTITLEMENTS: Controls/MoteControls.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Controls/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Mote
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) MOTE_CONTROL_EXTENSION"
+        SKIP_INSTALL: YES
   MoteUITests:
     type: com.apple.product-type.bundle.ui-testing
     platform: iOS
@@ -96,6 +117,19 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.uitests
         GENERATE_INFOPLIST_FILE: YES
+  MoteUnitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - MoteUnitTests
+    dependencies:
+      - target: Mote
+      - package: MoteKit
+        product: MoteCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   Mote:
     build:
@@ -106,4 +140,5 @@ schemes:
     test:
       config: Debug
       targets:
+        - MoteUnitTests
         - MoteUITests
