@@ -338,7 +338,14 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(40), ui.moteDp(40)).apply { marginStart = ui.moteDp(4) }) }
         stopAction = MoteComponents.iconButton(ui, MoteGlyph.STOP, "停止回答", MoteIconButtonStyle.FILLED) { stopAsk() }.apply {
             tag = "ask-stop"
-        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(40), ui.moteDp(40)).apply { marginStart = ui.moteDp(4) }) }
+            // 48dp touch target around the 40dp visible disc.
+            NativePresentationStyles.bind(this, "ask-stop-inset") { value ->
+                value.background = android.graphics.drawable.InsetDrawable(
+                    MoteUi.clickable(ui, NativeColorRole.FILL, NativeRadiusRole.PILL, false),
+                    ui.moteDp(4), ui.moteDp(4), ui.moteDp(4), ui.moteDp(4),
+                )
+            }
+        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48)).apply { marginStart = ui.moteDp(4) }) }
         watch(question!!) { askState.put("question", question!!.text.toString()); persistAsk(); controlsAsk() }
 
         if (!conversation) {
