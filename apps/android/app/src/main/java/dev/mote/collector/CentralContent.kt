@@ -604,12 +604,14 @@ internal class CentralContent(
         addView(TextView(this@CentralContent).apply { text = "›"; textSize = 20f; MoteUi.textColor(this, NativeColorRole.ACCENT) }, LinearLayout.LayoutParams(moteDp(20), -2))
         setOnClickListener { if (!task.busy) runCatching { action(); MoteUi.styleSelects(body) }.onFailure { notice(it.message ?: MoteI18n.text("操作失败")) } }
     }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(4) }) }
-    internal fun disclosure(label: String, parent: LinearLayout = body, build: (LinearLayout) -> Unit): LinearLayout {
+    internal fun disclosure(label: String, parent: LinearLayout = body, eager: Boolean = false, build: (LinearLayout) -> Unit): LinearLayout {
         val section = card(parent)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         var built = false
+        fun ensure() { if (!built) { build(content); built = true } }
+        if (eager) ensure()
         button(label + "  ›", parent = section) {
-            if (!built) { build(content); built = true }
+            ensure()
             content.visibility = if (content.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }.apply { contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         section.addView(content)
