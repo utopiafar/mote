@@ -1365,8 +1365,8 @@ class MainActivity : MoteActivity() {
         permissionBadges[name]?.apply {
             text = if (tag == "permission-detail") status else MoteI18n.text(name) + " · " + status
             if (tag == "permission-detail") { MoteUi.textColor(this,NativeColorRole.MUTED); return@apply }
-            MoteUi.textColor(this, if (allowed == true) NativeColorRole.SUCCESS else if (allowed == false) NativeColorRole.DANGER else NativeColorRole.WARNING)
-            background = MoteUi.shape(this@MainActivity, if (allowed == true) NativeColorRole.SUCCESS_TINT else if (allowed == false) NativeColorRole.DANGER_TINT else NativeColorRole.WARNING_TINT, NativeRadiusRole.CONTAINER)
+            MoteUi.textColor(this, if (allowed == true) NativeColorRole.SUCCESS else NativeColorRole.WARNING)
+            background = MoteUi.shape(this@MainActivity, if (allowed == true) NativeColorRole.SUCCESS_TINT else NativeColorRole.WARNING_TINT, NativeRadiusRole.CONTAINER)
         }
     }
 

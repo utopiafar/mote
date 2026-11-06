@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteGlyph
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -200,7 +201,7 @@ class SyncQueueActivity : MoteActivity() {
                     val title = if (source == null) item.optString("displayTitle").ifBlank { item.optString("appName").ifBlank { sourceLabel(item.optString("source")) } } else item.optString("name")
                     val timestamp = if (source == null) java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")) else ""
                     val detail = listOf(item.optString("preview").takeIf { it.isNotBlank() && it != title }, listOf(if (source == null) sourceLabel(item.optString("source")) else source.name, timestamp).filter(String::isNotBlank).joinToString(" · "), item.getString("status")).filterNotNull().joinToString("\n")
-                    SecondaryUi.row(rows, title, detail, icon = if (item.optString("source") == "note") "✎" else "▤") {
+                    SecondaryUi.row(rows, title, detail, icon = if (item.optString("source") == "note") MoteGlyph.COMPOSE else MoteGlyph.FILE) {
                         startActivity(if (source == null) Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")) else Intent(this, SourcesActivity::class.java).putExtra("detailSourceId", source.id))
                     }
                 }
