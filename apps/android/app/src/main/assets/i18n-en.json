@@ -1,4 +1,8 @@
 {
+  "没有连上中央": "Not connected to Central",
+  "继续问": "Ask again",
+  "第 {0} 行": "Row {0}",
+  "昨天": "Yesterday",
   "离开页面会停止录音，并保留草稿。": "Leaving this page stops recording and keeps the draft.",
   "网页": "Web",
   "截图与照片": "Screenshots and photos",
@@ -10172,7 +10176,6 @@
   "仅非计费 Wi-Fi": "Unmetered Wi-Fi only",
   "通知与设备事件": "Notifications and device events",
   "云端来源": "Cloud sources",
-  "昨天": "Yesterday",
   "需要确认发送范围": "Send scope needs confirmation",
   "资料说明冲突": "Source description conflict",
   "资料说明等待确认": "Source description awaiting confirmation",

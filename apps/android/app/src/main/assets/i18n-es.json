@@ -1,4 +1,8 @@
 {
+  "没有连上中央": "Sin conexión con Central",
+  "继续问": "Seguir preguntando",
+  "第 {0} 行": "Fila {0}",
+  "昨天": "Ayer",
   "离开页面会停止录音，并保留草稿。": "Al salir de esta página se detiene la grabación y se conserva el borrador.",
   "网页": "Web",
   "截图与照片": "Capturas de pantalla y fotos",
@@ -10172,7 +10176,6 @@
   "仅非计费 Wi-Fi": "Solo Wi-Fi no medido",
   "通知与设备事件": "Notificaciones y eventos del dispositivo",
   "云端来源": "Fuentes en la nube",
-  "昨天": "Ayer",
   "需要确认发送范围": "El alcance de envío necesita confirmación",
   "资料说明冲突": "Conflicto en la descripción de la fuente",
   "资料说明等待确认": "Descripción de la fuente pendiente de confirmación",
