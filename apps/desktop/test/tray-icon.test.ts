@@ -1,7 +1,8 @@
 import {describe,expect,it} from 'vitest';
 import {resolve} from 'node:path';
 import sharp from 'sharp';
-import {trayIconName,type TrayIconStatus} from '../src/tray-icon';
+import {captureStatusTable} from '@mote/shared/native-status';
+import {trayIconName,trayIconNameForRow,type TrayIconStatus} from '../src/tray-icon';
 
 const capturing:TrayIconStatus={
   running:true,
@@ -26,6 +27,13 @@ describe('tray icon selection',()=>{
 
   it('lets the shared needs-action mapping win over a temporary pause',()=>{
     expect(trayIconName({...capturing,state:'paused',sync:{state:'error',pendingRecords:1}})).toBe('moteAlertTemplate.png');
+  });
+
+  it('renders every shared Mac menu-bar cell with its template',()=>{
+    const templates={normal:'moteNormalTemplate.png',paused:'motePausedTemplate.png',alert:'moteAlertTemplate.png'} as const;
+    const cells=captureStatusTable.filter(row=>row.macIcon!==null);
+    expect(cells).toHaveLength(11);
+    for(const row of cells)expect(trayIconNameForRow(row)).toBe(templates[row.macIcon!]);
   });
 
   it('ships one 18-point template and Retina counterpart for each state',async()=>{

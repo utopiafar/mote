@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -9,6 +10,7 @@ import org.junit.Test
 /** The ongoing title is the shared status row; the local count belongs to
  * 采集与存储详情, and only an interruption reaches the 需要处理 channel. */
 class NotificationsTest {
+    private val cases by lazy { JSONArray(javaClass.classLoader!!.getResource("capture-status-cases.json")!!.readText()) }
     private fun row(id: CaptureStatusId) = CaptureStatusMapping.row(id)
 
     @Test fun theOngoingTitleIsTheCurrentStatusAndNeverTheLocalCount() {
@@ -45,5 +47,22 @@ class NotificationsTest {
         assertEquals("采集已中断", captureAttentionTitle(row(CaptureStatusId.INTERRUPTED)))
         assertEquals("本机空间已满", captureAttentionTitle(row(CaptureStatusId.STORAGE_FULL)))
         assertNull(captureAttentionTitle(row(CaptureStatusId.CAPTURING)))
+    }
+
+    @Test fun everySharedCaseRendersTheOngoingAndNotificationColumns() {
+        assertEquals(20, cases.length())
+        for (index in 0 until cases.length()) {
+            val case = cases.getJSONObject(index)
+            val facts = case.getJSONObject("facts")
+            val expected = case.getJSONObject("expected")
+            val name = case.getString("name")
+            val id = CaptureStatusId.entries.first { it.wire == expected.getString("id") }
+            val status = row(id)
+            val pending = if (facts.has("pending") && !facts.isNull("pending")) facts.getInt("pending") else 0
+            val ongoing = if (expected.isNull("androidOngoing")) null else expected.getString("androidOngoing")
+            assertEquals("$name: ongoing", ongoing?.replace("{0}", pending.toString()), ongoingCaptureTitle(status, pending))
+            val notification = expected.optJSONObject("notification")
+            assertEquals("$name: notification", notification?.getString("titleKey"), captureAttentionTitle(status))
+        }
     }
 }
