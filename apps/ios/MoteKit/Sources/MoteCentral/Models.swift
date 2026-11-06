@@ -637,6 +637,9 @@ public struct MemoryEvidence: Codable, Equatable, Sendable {
     public let receivedAt: String
     public let recordedAt: String?
     public let occurredAt: String?
+    public let fileId: String?
+    public let path: String?
+    public let uri: String?
     public let offset: Int?
     public let length: Int?
     public let quote: String?
@@ -656,6 +659,21 @@ public struct MemorySummary: Codable, Equatable, Sendable {
     public let evidenceCount: Int
     public let admission: MemoryRecord.Admission
     public let disclosure: MemoryRecord.Disclosure?
+}
+
+/// An explicit stored replacement link. Contradictions remain separate.
+public struct MemoryRelation: Codable, Equatable, Sendable {
+    public let kind: String
+    public let memoryId: String
+    public let fingerprint: String?
+    public let version: Int?
+}
+
+/// The owner correction lineage attached to the version it created.
+public struct MemoryCorrection: Codable, Equatable, Sendable {
+    public let memoryId: String
+    public let fingerprint: String?
+    public let noteId: String
 }
 
 public struct MemoryRecord: Codable, Equatable, Sendable {
@@ -690,6 +708,45 @@ public struct MemoryRecord: Codable, Equatable, Sendable {
     public let kind: String
     public let admission: Admission
     public let disclosure: Disclosure?
+    public let relations: [MemoryRelation]?
+    public let supersededBy: String?
+    public let supersededAt: String?
+    public let validFrom: String?
+    public let validUntil: String?
+    public let correction: MemoryCorrection?
+}
+
+/// The owner correction payload from the canvas fields. Blank validity fields
+/// stay absent so Central applies its own "now" boundary.
+public struct MemoryCorrectionRequest: Codable, Equatable, Sendable {
+    public let title: String
+    public let statement: String
+    public let uncertainty: String
+    public let version: Int
+    public let validFrom: String?
+    public let validUntil: String?
+
+    public init(title: String, statement: String, uncertainty: String, version: Int,
+                validFrom: String? = nil, validUntil: String? = nil) {
+        self.title = title
+        self.statement = statement
+        self.uncertainty = uncertainty
+        self.version = version
+        self.validFrom = validFrom
+        self.validUntil = validUntil
+    }
+}
+
+public struct MemoryDeleteReceipt: Codable, Equatable, Sendable {
+    public let deleted: Int?
+    public let externalErase: String?
+    public let physicalEraseVerified: Bool?
+
+    public init(deleted: Int? = nil, externalErase: String? = nil, physicalEraseVerified: Bool? = nil) {
+        self.deleted = deleted
+        self.externalErase = externalErase
+        self.physicalEraseVerified = physicalEraseVerified
+    }
 }
 
 public struct MemoryEvidencePage: Codable, Equatable, Sendable {

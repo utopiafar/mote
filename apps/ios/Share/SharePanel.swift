@@ -17,15 +17,18 @@ struct SharePanelContent: Equatable {
     var link: ShareLinkPreview?
     var images: [Data] = []
     var files: [ShareFilePreview] = []
+    var quote: String?
 
-    init(link: ShareLinkPreview? = nil, images: [Data] = [], files: [ShareFilePreview] = []) {
+    init(link: ShareLinkPreview? = nil, images: [Data] = [], files: [ShareFilePreview] = [],
+         quote: String? = nil) {
         self.link = link
         self.images = images
         self.files = files
+        self.quote = quote
     }
 
     var isEmpty: Bool {
-        link == nil && images.isEmpty && files.isEmpty
+        link == nil && images.isEmpty && files.isEmpty && quote == nil
     }
 
     static func formatBytes(_ bytes: Int) -> String {
@@ -53,7 +56,8 @@ extension ShareRequest {
                 ))
             }
         }
-        return SharePanelContent(link: link, images: images, files: files)
+        return SharePanelContent(link: link, images: images, files: files,
+                                 quote: conversation?.displayAnswer)
     }
 }
 
@@ -81,8 +85,16 @@ struct SharePanelView: View {
     let saveEnabled: Bool
     let onCancel: () -> Void
     let onSave: () -> Void
-    var title = "保存到 Mote"
-    var notePlaceholder = "备注"
+    var title: String?
+    var notePlaceholder: String?
+
+    private var resolvedTitle: String {
+        title ?? (content.quote == nil ? "保存到 Mote" : "保存为记录")
+    }
+
+    private var resolvedNotePlaceholder: String {
+        notePlaceholder ?? (content.quote == nil ? "备注" : "我的补充")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -120,7 +132,7 @@ struct SharePanelView: View {
 
     private var header: some View {
         ZStack {
-            Text(title)
+            Text(resolvedTitle)
                 .font(MoteFont.appBar)
                 .foregroundStyle(MoteDesignTokens.ink.color)
                 .lineLimit(1)
@@ -218,6 +230,18 @@ struct SharePanelView: View {
             }
             .accessibilityIdentifier("mote-share-file")
         }
+        if let quote = content.quote {
+            Text(quote)
+                .font(MoteFont.body)
+                .foregroundStyle(MoteDesignTokens.ink.color)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(MoteDesignTokens.surfaceSunken.color)
+                .clipShape(RoundedRectangle(cornerRadius: MoteMetrics.fieldRadius, style: .continuous))
+                .accessibilityIdentifier("mote-share-quote")
+        }
     }
 
     private func thumbnail(icon: MoteIconName) -> some View {
@@ -258,7 +282,7 @@ struct SharePanelView: View {
     }
 
     private var noteField: some View {
-        TextField("", text: $note, prompt: Text(notePlaceholder).foregroundStyle(MoteDesignTokens.muted.color), axis: .vertical)
+        TextField("", text: $note, prompt: Text(resolvedNotePlaceholder).foregroundStyle(MoteDesignTokens.muted.color), axis: .vertical)
             .font(MoteFont.body)
             .lineSpacing(4)
             .tint(MoteDesignTokens.accent.color)
@@ -272,7 +296,7 @@ struct SharePanelView: View {
                 RoundedRectangle(cornerRadius: MoteMetrics.fieldRadius, style: .continuous)
                     .strokeBorder(MoteDesignTokens.controlBorder.color, lineWidth: 1)
             }
-            .accessibilityLabel(notePlaceholder)
+            .accessibilityLabel(resolvedNotePlaceholder)
             .accessibilityIdentifier("mote-share-note")
     }
 

@@ -77,6 +77,8 @@ final class LibraryMemoriesModel {
     private var previewMemoryRows: [MemoryBrowseRow] = []
     private var previewHistoricalRows: [MemoryBrowseRow] = []
 
+    var previewMode: Bool { isPreview }
+
     init() {}
 
     init(

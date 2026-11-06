@@ -136,6 +136,19 @@ public struct CentralClient: Sendable {
         try await request("GET", "/api/memories/\(id.uuidString.lowercased())/evidence")
     }
 
+    /// The same owner correction route and body as the web and Android detail.
+    @discardableResult
+    public func correctMemory(id: UUID, request correction: MemoryCorrectionRequest) async throws -> MemoryRecord {
+        try await request("POST", "/api/memories/\(id.uuidString.lowercased())/correct", body: correction)
+    }
+
+    /// The same owner DELETE as the web and Android detail. Central keeps the
+    /// original evidence; the receipt only describes the memory erasure.
+    @discardableResult
+    public func deleteMemory(id: UUID) async throws -> MemoryDeleteReceipt {
+        try await request("DELETE", "/api/memories/\(id.uuidString.lowercased())")
+    }
+
     /// Existing owner library browse used by the web and native library lists.
     public func library(query: String? = nil, after: String? = nil, before: String? = nil,
                         cursor: String? = nil, limit: Int = 30) async throws -> LibraryBrowsePage {
