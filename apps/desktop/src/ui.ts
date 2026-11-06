@@ -493,7 +493,6 @@ function render(status: import('./contracts').Status): void {
   setText('upload-speed', status.sync.state === 'uploading' ? `${((status.sync.uploadBytesPerSecond ?? 0) / 1024).toFixed(1)} KiB/s` : '0 KiB/s');
   setText('sync-upload-speed', byId('upload-speed').textContent ?? '0 KiB/s');
   setText('sync-message', moteText("{0} · 共 {1} 条待传（含本地来源）", status.sync.message, status.sync.pendingRecords.toLocaleString(getLocale())) + (status.facts ? `\n${nativeStatusSummary(status.facts)}` : ''));
-  setText('settings-sync-summary', `${syncModeLabels[status.sync.mode]} · ${status.sync.state === 'unconfigured' ? moteText("未连接时只在本机保存") : syncStateLabel}`);
   updateLocalBacklog();
   const uploadInfo = [];
   if (status.sync.nextUploadAt) uploadInfo.push(`${status.sync.state === 'error' ? moteText("计划重试") : moteText("计划上传")} ${new Date(status.sync.nextUploadAt).toLocaleString(getLocale(), { hour12: false })}`);
