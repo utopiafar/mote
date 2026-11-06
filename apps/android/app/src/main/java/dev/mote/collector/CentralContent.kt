@@ -623,8 +623,11 @@ internal class CentralContent(
     }
     internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun) }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
-        notice((if(page=="ask")screens?.askFailurePresentation(error) else null) ?: error.message ?: MoteI18n.text("操作失败"))
-        if (page == "ask" && networkFailure(error)) screens?.showOffline()
+        val offline = page == "ask" && networkFailure(error)
+        // The composer's own notice already says what happened; a raw transport
+        // message from the platform is not an authored interface string.
+        notice(if (offline) "" else (if(page=="ask")screens?.askFailurePresentation(error) else null) ?: error.message ?: MoteI18n.text("操作失败"))
+        if (offline) screens?.showOffline()
         if (client == null && body.childCount == 0) {
             button(MoteI18n.text("重试")) { recreate() }; connectionButton()
         }
@@ -646,7 +649,6 @@ internal class CentralContent(
         return false
     }
     internal fun retryAsk() { screens?.clearOffline(); navigate("ask") }
-    internal fun scrollToView(target: View) { scroll.post { scroll.scrollTo(0, target.top.coerceAtLeast(0)) } }
     internal fun scrollToText(target: TextView, offset: Int) {
         scroll.post {
             val layout = target.layout ?: return@post

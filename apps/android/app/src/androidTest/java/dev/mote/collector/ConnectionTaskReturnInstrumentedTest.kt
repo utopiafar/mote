@@ -53,7 +53,7 @@ class ConnectionTaskReturnInstrumentedTest {
         visible(activity).filterIsInstance<EditText>().any { it.tag == MoteI18n.text("设备名称") }
 
     private fun askShown(activity: Activity) = visible(activity).any { it.tag == "primary:ASK" && it.isSelected } &&
-        visible(activity).filterIsInstance<TextView>().any { it.tag == "central-title" && it.text.toString() == MoteI18n.text("问一问") } &&
+        visible(activity).filterIsInstance<TextView>().any { it.tag == "central-title" && it.text.toString() == MoteI18n.text("对话") } &&
         visible(activity).filterIsInstance<TextView>().any { it.isClickable && it.text.toString() == MoteI18n.text("连接设置") }
 
     private fun settingsShown(activity: Activity) = visible(activity).any { it.tag == "menu:${MoteI18n.text("连接与同步")}" } &&

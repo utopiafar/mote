@@ -334,7 +334,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 background = MoteUi.clickable(ui, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL, false)
             } }
         }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(40), ui.moteDp(40)).apply { marginStart = ui.moteDp(4) }) }
-        stopAction = MoteComponents.iconButton(ui, MoteGlyph.STOP, "停止", MoteIconButtonStyle.FILLED) { stopAsk() }.apply {
+        stopAction = MoteComponents.iconButton(ui, MoteGlyph.STOP, "停止回答", MoteIconButtonStyle.FILLED) { stopAsk() }.apply {
             tag = "ask-stop"
         }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(40), ui.moteDp(40)).apply { marginStart = ui.moteDp(4) }) }
         watch(question!!) { askState.put("question", question!!.text.toString()); persistAsk(); controlsAsk() }
@@ -389,24 +389,30 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private fun offlineRow(): LinearLayout = LinearLayout(ui).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
         minimumHeight = ui.moteDp(48); visibility = if (askOffline) android.view.View.VISIBLE else android.view.View.GONE
-        setPadding(ui.moteDp(14), 0, ui.moteDp(6), 0)
+        setPadding(ui.moteDp(16), 0, ui.moteDp(5), 0)
         NativePresentationStyles.bind(this, "ask-offline") {
             it.background = MoteUi.shape(ui, NativeColorRole.WARNING_TINT, NativeRadiusRole.PILL, false)
         }
-        addView(MoteComponents.icon(ui, MoteGlyph.ALERT, NativeColorRole.WARNING, 16),
-            LinearLayout.LayoutParams(ui.moteDp(16), ui.moteDp(16)).apply { marginEnd = ui.moteDp(10) })
+        addView(MoteComponents.icon(ui, MoteGlyph.ALERT, NativeColorRole.WARNING, 20),
+            LinearLayout.LayoutParams(ui.moteDp(20), ui.moteDp(20)).apply { marginEnd = ui.moteDp(10) })
         addView(TextView(ui).apply {
-            text = MoteI18n.text("没有连上中央"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.INK)
+            text = MoteI18n.text("没有连上中央"); MoteUi.type(this, NativeFontRole.ROW); MoteUi.textColor(this, NativeColorRole.INK)
         }, LinearLayout.LayoutParams(0, -2, 1f))
+        // The visible pill stays 34dp like every notice action; the inset keeps
+        // the whole 48dp Android touch target.
         addView(TextView(ui).apply {
             text = MoteI18n.text("重试"); contentDescription = MoteI18n.text("重试")
-            MoteUi.type(this, NativeFontRole.ACTION, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
-            gravity = android.view.Gravity.CENTER; isFocusable = true; minimumWidth = ui.moteDp(48); minimumHeight = ui.moteDp(48)
+            MoteUi.type(this, 13, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
+            gravity = android.view.Gravity.CENTER; isFocusable = true; maxLines = 1
+            minimumWidth = ui.moteDp(48); minimumHeight = ui.moteDp(48)
             setPadding(ui.moteDp(12), 0, ui.moteDp(12), 0)
             NativePresentationStyles.bind(this, "ask-offline-retry") {
-                it.background = MoteUi.clickable(ui, NativeColorRole.SURFACE, NativeRadiusRole.PILL, false)
+                it.background = android.graphics.drawable.InsetDrawable(
+                    MoteUi.clickable(ui, NativeColorRole.FILL, NativeRadiusRole.PILL, false),
+                    0, ui.moteDp(7), 0, ui.moteDp(7),
+                )
             }
-            setOnClickListener { if (!ui.isWorking) ui.retryAsk() }
+            setOnClickListener { if (!ui.isWorking && askOffline) ui.retryAsk() }
         }, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
     }.also { row -> row.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(8) } }
 

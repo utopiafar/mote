@@ -23,6 +23,7 @@ internal object ConversationCitationPresentation {
             else -> citation.optString("appName").ifBlank { MoteI18n.text("查看原文依据") }
         }
         val detail = when {
+            citation.optString("location").isNotBlank() -> citation.optString("location")
             file != null -> fileLocation(file)
             pathName != null -> MoteI18n.text("文件")
             else -> recordLocation(citation)
