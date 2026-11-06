@@ -10221,5 +10221,18 @@ export const french: Readonly<Record<string, string>> = {
   "引用它的对话": "Conversations qui le citent",
   "参考整份资料": "L'intégralité du document",
   "开始、结束时间或时区无效": "Heure de début, heure de fin ou fuseau horaire invalide",
-  "{0}月{1}日": "{1}/{0}"
+  "{0}月{1}日": "{1}/{0}",
+  "运行日志": "Journaux d’exécution",
+  "记录运行日志": "Enregistrer les journaux d’exécution",
+  "保存日志设置": "Enregistrer les paramètres du journal",
+  "打开文件夹": "Ouvrir le dossier",
+  "导出日志": "Exporter les journaux",
+  "日志位于应用私有空间；关闭后停止新增，已有日志保留。": "Les journaux sont stockés dans l’espace privé de l’application. La désactivation arrête les nouveaux enregistrements et conserve les anciens.",
+  "当前浏览器日志": "Journaux du navigateur actuel",
+  "日志写入失败，请检查浏览器存储。": "Impossible d’écrire les journaux. Vérifiez le stockage du navigateur.",
+  "日志读取失败，请检查浏览器存储。": "Impossible de lire les journaux. Vérifiez le stockage du navigateur.",
+  "保存在当前浏览器的站点存储中；清除站点数据会删除日志。": "Stockés dans les données de ce navigateur. Effacer les données du site supprime les journaux.",
+  "数值诊断和运行日志分别设置。": "Les diagnostics numériques et les journaux sont configurés séparément.",
+  "启用本机数值诊断": "Activer les diagnostics numériques locaux",
+  "日志已导出。": "Journaux exportés."
 };

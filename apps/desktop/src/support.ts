@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { constants } from 'node:fs';
 import type { Status } from './contracts';
 import type { DesktopProfile } from './profile';
+import type { RuntimeLogLevel } from './contracts/settings';
 
 export function eventLevel(code: EventCode): EventLevel {
   if (code === 'STARTED') return 'debug';
@@ -66,14 +67,15 @@ export function failureCode(error: unknown, stage: EventStage): EventCode {
   if (stage === 'UPLOAD' || stage === 'HEARTBEAT' || stage === 'MODEL_DOWNLOAD') return 'RESPONSE';
   return 'OTHER';
 }
-/** Opt-in fixed events only. Its failures must never change capture or ACK semantics. */
+/** Fixed events only. Its failures must never change capture or ACK semantics. */
 export class EventJournal {
   private chain: Promise<unknown> = Promise.resolve();
-  constructor(private readonly directory: string, private readonly enabled: () => boolean, private readonly limit = 500) {
+  constructor(private readonly directory: string, private readonly enabled: () => boolean, private readonly limit = 500,
+    private readonly allows: (level: RuntimeLogLevel) => boolean = () => true) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error(moteText("事件日志上限无效"));
   }
   record(stage: EventStage, code: EventCode, metrics: Pick<SupportEvent,'elapsedMs'|'httpStatus'|'errorName'|'operation'|'sourceId'|'sourceKind'> = {}): Promise<void> {
-    if (!this.enabled()) return Promise.resolve();
+    if (!this.enabled() || !this.allows(eventLevel(code))) return Promise.resolve();
     const event = cleanEvent({ atMs: Date.now(), stage, code, level: eventLevel(code), ...metrics });
     if (!event) return Promise.resolve();
     const task = this.chain.then(async () => {

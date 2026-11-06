@@ -1,4 +1,5 @@
 /** Local, bounded diagnostics. Only fixed enums and numeric metadata cross this boundary. */
+import {persistBrowserLog} from './browser-log-store';
 const events = ['api.request_started','api.request_completed','api.request_failed','api.request_rejected','api.response_invalid','auth.session_started','auth.session_cleared','auth.session_rejected','ui.unhandled_error','ui.unhandled_rejection'] as const;
 const routes = ['login','connections','configuration','status','captures','files','sources','devices','activity','query','insights','memories','plugins','models','other'] as const;
 const methods = ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'] as const;
@@ -11,6 +12,24 @@ export type LogEntry = Fields & {atMs:number;level:Exclude<LogLevel,'off'>;event
 const priorities:Record<LogLevel,number> = {debug:0,info:1,warn:2,error:3,off:4};
 const history:LogEntry[]=[];
 let level:LogLevel='warn';
+export type BrowserLogPolicy={enabled:boolean;level:Exclude<LogLevel,'off'>};
+const preferenceKey='mote-browser-log-settings';
+let browserPolicy:BrowserLogPolicy={enabled:true,level:'info'};
+export function initializeBrowserLogging(profile?:string) {
+  const defaults:BrowserLogPolicy={enabled:true,level:profile==='dev'?'debug':'info'};
+  try {
+    const stored=localStorage.getItem(preferenceKey);
+    if(stored){const value=JSON.parse(stored) as BrowserLogPolicy;if(typeof value.enabled==='boolean'&&['debug','info','warn','error'].includes(value.level))browserPolicy=value;else browserPolicy=defaults;}
+    else browserPolicy=defaults;
+  } catch {browserPolicy={...defaults,enabled:false};}
+  setLogLevel(browserPolicy.enabled?browserPolicy.level:'off');
+  return {...browserPolicy};
+}
+export function readBrowserLogPolicy(){return {...browserPolicy};}
+export function saveBrowserLogPolicy(value:BrowserLogPolicy){
+  if(typeof value.enabled!=='boolean'||!['debug','info','warn','error'].includes(value.level))throw Error('Invalid log settings');
+  localStorage.setItem(preferenceKey,JSON.stringify(value));browserPolicy={...value};setLogLevel(value.enabled?value.level:'off');return readBrowserLogPolicy();
+}
 export const logCapacity=200;
 export function setLogLevel(value:LogLevel) { if(Object.hasOwn(priorities,value))level=value; }
 export function clearLogs() { history.length=0; }
@@ -35,6 +54,7 @@ export function log(event:EventName,severity:Exclude<LogLevel,'off'>,fields:Fiel
   if(typeof fields.elapsedMs==='number'&&Number.isFinite(fields.elapsedMs)&&fields.elapsedMs>=0&&fields.elapsedMs<=Number.MAX_SAFE_INTEGER)entry.elapsedMs=Math.round(fields.elapsedMs);
   if(fields.requestId&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(fields.requestId))entry.requestId=fields.requestId;
   history.push(entry);if(history.length>logCapacity)history.shift();
+  persistBrowserLog(entry);
   // Logging cannot change API or UI outcomes, including when a console is unavailable.
   try { console[severity]('[mote]',{...entry}); } catch { /* local diagnostics only */ }
 }

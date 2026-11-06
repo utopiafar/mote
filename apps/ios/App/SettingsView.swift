@@ -9,6 +9,7 @@ struct SettingsScreen: View {
     enum Page: Equatable {
         case settings
         case connection
+        case diagnostics
     }
 
     private let onBack: () -> Void
@@ -40,7 +41,8 @@ struct SettingsScreen: View {
                     presentation: model.presentation,
                     version: Self.version,
                     onBack: onBack,
-                    onOpenConnection: { page = .connection }
+                    onOpenConnection: { page = .connection },
+                    onOpenDiagnostics: { page = .diagnostics }
                 )
             case .connection:
                 ConnectionDeviceView(
@@ -50,6 +52,8 @@ struct SettingsScreen: View {
                     onConnect: { onOpenConnection?() },
                     onDisconnect: { confirmingDisconnect = true }
                 )
+            case .diagnostics:
+                DiagnosticsSettingsView(onBack: { page = .settings })
             }
 
             if let notice {
@@ -89,6 +93,7 @@ private struct SettingsList: View {
     let version: String
     let onBack: () -> Void
     let onOpenConnection: () -> Void
+    let onOpenDiagnostics: () -> Void
     @State private var showingUnavailable = false
 
     var body: some View {
@@ -121,7 +126,7 @@ private struct SettingsList: View {
                             .accessibilityIdentifier("settings-appearance")
                         MoteRow(title: "备份与恢复", topDivider: true) { unavailable() }
                             .accessibilityIdentifier("settings-backup")
-                        MoteRow(title: "诊断与支持", topDivider: true) { unavailable() }
+                        MoteRow(title: "诊断与支持", topDivider: true, action: onOpenDiagnostics)
                             .accessibilityIdentifier("settings-diagnostics")
                     }
                     .padding(.horizontal, MoteMetrics.pageMargin)

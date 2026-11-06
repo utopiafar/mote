@@ -1,5 +1,5 @@
 import {associateChatScope,clearChatReloadDraft} from './plugins/ask/chat-drafts';
-import {installGlobalErrorLogging,log} from './logger';
+import {initializeBrowserLogging,installGlobalErrorLogging,log} from './logger';
 import { ClientLoginApproval } from './plugins/agent-access/ClientLoginApproval';
 import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';
 import { getLocale,moteText } from '@mote/shared/i18n';
@@ -88,6 +88,7 @@ import { confirmNavigation,hasUnsavedChanges } from './unsaved';
 import {ImportNavigationContext,clearImportReturn,importOrigin,importOriginOpener,markImportReturn,refreshImportOrigin,rememberImportOrigin,type ImportOrigin} from './import-navigation';
 
 
+initializeBrowserLogging();
 installGlobalErrorLogging(window);
 
 const periodNames: Record<string, string> = {
@@ -164,6 +165,8 @@ function App() {
   }, []);
   const [period, setPeriod] = useState<Period>(()=>readPeriod(connection));
   const [status, setStatus] = useState<Status | null>(null);
+  useEffect(()=>{if(status)initializeBrowserLogging(status.profile);},[status?.profile]);
+  useEffect(()=>{const changed=(event:StorageEvent)=>{if(event.key==='mote-browser-log-settings')initializeBrowserLogging(status?.profile);};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[status?.profile]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [activity, setActivity] = useState<Activity>({
     apps: [],

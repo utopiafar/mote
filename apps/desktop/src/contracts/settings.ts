@@ -1,6 +1,9 @@
 /** Renderer/main data contract. Keep platform and implementation dependencies outside this module. */
 import type { ReleaseChannel } from '@mote/shared/release';
 
+export type RuntimeLogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type RuntimeLogPolicy = {enabled: boolean; level: RuntimeLogLevel};
+
 export interface UploadGateConfig {
   enabled: boolean;
   blockedText: string[];

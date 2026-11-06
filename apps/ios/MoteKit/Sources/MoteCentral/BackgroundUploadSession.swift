@@ -86,7 +86,13 @@ final class BackgroundUploadEvents: @unchecked Sendable {
             let receipt: CaptureReceipt = try CentralClient.decode(data: data, response: response)
             guard receipt.id == itemID else { throw SendPipelineError.mismatchedReceipt }
             try queue.acknowledge(id: itemID)
+            #if os(iOS)
+            try? MoteStorage.runtimeLog().record(.backgroundUploadCompleted)
+            #endif
         } catch {
+            #if os(iOS)
+            try? MoteStorage.runtimeLog().record(.backgroundUploadFailed)
+            #endif
             // A failed or ambiguous receipt must leave the capture and its body in place.
             logger.error("Background upload or cleanup failed: \(String(describing: error), privacy: .private)")
         }

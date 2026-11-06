@@ -7,13 +7,13 @@
  * fixed services. */
 import {moteText} from '@mote/shared/i18n';
 import {writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
 import {net, session} from 'electron';
 import type {MessageBoxOptions} from 'electron';
 import type {Status} from '../contracts';
 import type {UpdateStatus} from '../contracts/settings';
 import type {DesktopProfile} from '../profile';
 import {EventJournal, buildSupportBundle, failureCode, safeErrorName, type EventStage} from '../support';
+import {RuntimeLogSettings} from '../runtime-log-settings';
 import {canSendFromTray, showTraySendFailure} from '../tray-send';
 import {DesktopUpdater, type UpdateDependencies} from '../updater';
 import {createUpdateNetwork} from '../update-network';
@@ -35,12 +35,13 @@ export interface SystemToolsOptions {
   readonly profile: DesktopProfile;
   readonly developmentBuild: boolean;
   readonly devDownloadsUrl: string;
-  readonly diagnosticsEnabled: () => boolean;
   readonly status: () => Status;
   readonly chooseSupportPath: () => Promise<string | undefined>;
+  readonly chooseLogPath?: () => Promise<string | undefined>;
   readonly sampleDiagnostics?: () => Promise<unknown>;
   readonly openExternal: (url: string) => Promise<unknown>;
   readonly reveal: (path: string) => void;
+  readonly openLogDirectory?: (path: string) => Promise<unknown>;
   readonly sendPending: () => Promise<unknown>;
   readonly showMessage: (options: MessageBoxOptions) => Promise<{response: number}>;
   readonly beforeInstall: () => Promise<void>;
@@ -61,7 +62,7 @@ export interface SystemToolsInitializeOptions {
 }
 
 export interface SystemToolsPlugin extends BuiltinDesktopPlugin {
-  /** Shared opt-in event journal; its records are fixed safe fields only. */
+  /** Shared configurable event journal; its records are fixed safe fields only. */
   readonly events: EventJournal;
   initialize(options: SystemToolsInitializeOptions): Promise<void>;
   acknowledgeStartup(argv?: readonly string[]): Promise<void>;
@@ -72,7 +73,8 @@ export interface SystemToolsPlugin extends BuiltinDesktopPlugin {
 }
 
 export function createSystemToolsPlugin(options: SystemToolsOptions): SystemToolsPlugin {
-  const events = new EventJournal(join(options.directory, 'diagnostics'), () => options.diagnosticsEnabled());
+  const logSettings = new RuntimeLogSettings(options.directory, options.developmentBuild || options.profile.name === 'dev');
+  const events = new EventJournal(logSettings.directory, () => true, 500, level => logSettings.allows(level));
   let updater: DesktopUpdater | undefined;
   let updatesDirectory: string | undefined;
   let bundlePath: string | undefined;
@@ -203,6 +205,16 @@ export function createSystemToolsPlugin(options: SystemToolsOptions): SystemTool
           execute(systemToolsChannels.eventsRead, undefined, undefined, () => events.read(true)));
         register(systemToolsChannels.eventsRaw, systemToolsReadCapability, () =>
           execute(systemToolsChannels.eventsRaw, undefined, undefined, () => events.readRaw()));
+        register(systemToolsChannels.logSettings, systemToolsReadCapability, () => logSettings.read());
+        register(systemToolsChannels.logSettingsSave, systemToolsManageCapability, args => logSettings.save(args[0]));
+        register(systemToolsChannels.logDirectoryOpen, systemToolsManageCapability, () => options.openLogDirectory?.(logSettings.directory));
+        register(systemToolsChannels.logExport, systemToolsManageCapability, async () => {
+          const path = await options.chooseLogPath?.();
+          if (!path) return {canceled:true};
+          const result = await events.exportRange(0, Date.now() + 1);
+          await writeFile(path, result.events.map(event => JSON.stringify(event)).join('\n') + (result.events.length ? '\n' : ''), {mode:0o600});
+          return {canceled:false};
+        });
 
         // An explicit quit waits for the updater to finish aborting; disabling
         // the scope aborts immediately and leaves the durable queue untouched.

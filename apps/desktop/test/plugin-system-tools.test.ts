@@ -50,7 +50,7 @@ const options=(directory:string,overrides:Partial<SystemToolsOptions>={}):System
   directory,currentVersion:'0.5.0',arch:'arm64',
   profile:{name:'dev',defaultProfile:true,dataDirectory:directory,defaultServerUrl:'http://127.0.0.1:47842'},
   developmentBuild:false,devDownloadsUrl:'https://github.com/utopiafar/mote/releases',
-  diagnosticsEnabled:()=>true,status:generatedStatus,
+  status:generatedStatus,
   chooseSupportPath:async()=>undefined,sampleDiagnostics:async()=>undefined,
   openExternal:async()=>undefined,reveal:()=>undefined,sendPending:async()=>undefined,
   showMessage:async()=>({response:0}),beforeInstall:async()=>undefined,quit:()=>undefined,
@@ -90,6 +90,31 @@ it('exports a privacy bounded support bundle and never includes secrets or priva
     expect(bundle.events).toContainEqual(expect.objectContaining({atMs:forgedAt,stage:'UPLOAD',code:'AUTH'}));
     expect((await stat(target)).mode&0o777).toBe(0o600);
   } finally { expect(host.stopScope('mote.system-tools')).toEqual([]); }
+});
+
+it('applies local log levels through the real settings IPC and retains them after reopening',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-system-tools-levels-'));directories.push(directory);
+  const logExport=join(directory,'export.ndjson');
+  const prod=options(directory,{profile:{name:'prod',defaultProfile:true,dataDirectory:directory,defaultServerUrl:'http://127.0.0.1:47832'},chooseLogPath:async()=>logExport});
+  expect(prod.status().config.diagnosticsEnabled).toBe(false);
+  const plugin=createSystemToolsPlugin(prod),fake=makeRouter(),host=new DesktopPluginHost({router:fake.router,native:new NativeProviderRegistry('mac')});
+  host.registerWindow(7,'main',[systemToolsReadCapability,systemToolsManageCapability]);await register(plugin,host);
+  try {
+    expect(await okValue(fake.invoke(systemToolsChannels.logSettings,view()))).toMatchObject({enabled:true,level:'info',directory:join(directory,'diagnostics')});
+    await plugin.events.record('UPLOAD','STARTED');await plugin.events.record('UPLOAD','OK');
+    await okValue(fake.invoke(systemToolsChannels.logSettingsSave,view(),[{enabled:true,level:'debug'}]));
+    await plugin.events.record('UPLOAD','STARTED');
+    await okValue(fake.invoke(systemToolsChannels.logSettingsSave,view(),[{enabled:false,level:'debug'}]));
+    await plugin.events.record('UPLOAD','AUTH');
+    expect((await plugin.events.read()).map(event=>event.code)).toEqual(['OK','STARTED']);
+    expect(await okValue(fake.invoke(systemToolsChannels.logExport,view()))).toEqual({canceled:false});
+    expect((await readFile(logExport,'utf8')).trim().split('\n').map(line=>JSON.parse(line).code)).toEqual(['OK','STARTED']);
+    const reopened=createSystemToolsPlugin(prod);
+    const nextFake=makeRouter(),nextHost=new DesktopPluginHost({router:nextFake.router,native:new NativeProviderRegistry('mac')});
+    nextHost.registerWindow(7,'main',[systemToolsReadCapability,systemToolsManageCapability]);await register(reopened,nextHost);
+    try {expect(await okValue(nextFake.invoke(systemToolsChannels.logSettings,view()))).toMatchObject({enabled:false,level:'debug'});}
+    finally {expect(nextHost.stopScope('mote.system-tools')).toEqual([]);}
+  } finally {expect(host.stopScope('mote.system-tools')).toEqual([]);}
 });
 
 it('aborts an in-flight update download when the plugin is disabled',async()=>{

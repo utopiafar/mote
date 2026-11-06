@@ -75,6 +75,21 @@ export function mountSettingsWorkspace(root:Document=document):void {
 
   const diagnostics=root.querySelector('[data-page="developer"] [data-page-title]');if(diagnostics)diagnostics.textContent=moteText('帮助与诊断');const diagnosticDetails=id('diagnostics-enabled').closest('details')!;diagnosticDetails.replaceWith(...Array.from(diagnosticDetails.children).filter(node=>node.tagName!=='SUMMARY'));
   const diagnosticPanel=id('diagnostics-enabled').closest('.panel')!;
+  const logSettings=element('section',undefined,'runtime-log-settings');
+  logSettings.append(element('h2',moteText('运行日志')));
+  const logToggle=element('label',undefined,'checkbox option-row'),logEnabled=element('input');logEnabled.type='checkbox';logEnabled.id='runtime-log-enabled';logEnabled.disabled=true;
+  logToggle.append(logEnabled,element('span',moteText('记录运行日志')));logSettings.append(logToggle);
+  const logLevelLabel=element('label');logLevelLabel.append(element('span',moteText('日志级别')));
+  const logLevel=element('select');logLevel.id='runtime-log-level';logLevel.disabled=true;
+  for(const level of ['debug','info','warn','error']){const option=element('option',level.toUpperCase());option.value=level;logLevel.append(option);}logLevelLabel.append(logLevel);logSettings.append(logLevelLabel);
+  const logLocation=element('p',undefined,'helper profile-path');logLocation.id='runtime-log-directory';logSettings.append(logLocation);
+  const logActions=element('div',undefined,'actions spaced');
+  const logSave=element('button',moteText('保存日志设置'),'secondary');logSave.id='runtime-log-save';logSave.type='button';logSave.disabled=true;
+  const logOpen=element('button',moteText('打开文件夹'),'secondary');logOpen.id='runtime-log-open';logOpen.type='button';logOpen.disabled=true;
+  const logExport=element('button',moteText('导出日志'),'secondary');logExport.id='runtime-log-export';logExport.type='button';logExport.disabled=true;
+  logActions.append(logSave,logOpen,logExport);logSettings.append(logActions);
+  for(const name of ['input','change'])logSettings.addEventListener(name,event=>event.stopPropagation());
+  diagnosticPanel.prepend(logSettings);
   const diagnosticHeading=diagnosticPanel.querySelector('.section-title')!;
   const numericDetails=element('details',undefined,'disclosure spaced');numericDetails.id='diagnostics-more';numericDetails.append(element('summary',moteText('更多')),diagnosticHeading,id('diagnostics-detail'));const currentFacts=element('section');currentFacts.id='diagnostics-current-facts';currentFacts.hidden=true;currentFacts.setAttribute('aria-live','polite');
   const diagnosticField=id('diagnostic-interval').closest('label')!;diagnosticField.classList.remove('narrow-field');diagnosticField.querySelector('span')!.textContent=moteText('采样间隔（秒）');

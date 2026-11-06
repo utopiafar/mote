@@ -117,15 +117,19 @@ const systemTools = createSystemToolsPlugin({
   profile,
   developmentBuild,
   devDownloadsUrl: desktopDevDownloadsUrl,
-  diagnosticsEnabled: () => Boolean(settings?.diagnosticsEnabled),
   status: () => clientStatus(),
   chooseSupportPath: async () => {
     const selected = await dialog.showSaveDialog(window!, { title: moteText("导出支持包（数值与固定事件，不含内容和令牌）"), defaultPath: `mote-support-${profile.name}.json`, filters: [{ name: 'JSON support bundle', extensions: ['json'] }] });
     return selected.canceled ? undefined : selected.filePath;
   },
+  chooseLogPath: async () => {
+    const selected = await dialog.showSaveDialog(window!, {title:moteText('导出日志'), defaultPath:`mote-${profile.name}.ndjson`, filters:[{name:'NDJSON',extensions:['ndjson']}]});
+    return selected.canceled ? undefined : selected.filePath;
+  },
   sampleDiagnostics: async () => { await diagnosticsRecorder?.sample(); },
   openExternal: url => shell.openExternal(url),
   reveal: path => shell.showItemInFolder(path),
+  openLogDirectory: async path => { await mkdir(path, {recursive:true, mode:0o700}); const error = await shell.openPath(path); if (error) throw new Error(error); },
   sendPending: async () => { await localSources?.sync(true); await collector.retry(); },
   showMessage: options => dialog.showMessageBox(options),
   beforeInstall: async () => { await prepareForUpdateInstall?.(); },
