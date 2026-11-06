@@ -13,10 +13,13 @@ final class OriginalModel {
     private let id: UUID?
     private let session: URLSession
     private let fileManager: FileManager
+    private let highlightedPhrase: String?
     private var loadGeneration = 0
 
-    init(id: String, session: URLSession = .shared, fileManager: FileManager = .default) {
+    init(id: String, highlightedPhrase: String? = nil,
+         session: URLSession = .shared, fileManager: FileManager = .default) {
         self.id = UUID(uuidString: id)
+        self.highlightedPhrase = highlightedPhrase
         self.session = session
         self.fileManager = fileManager
     }
@@ -35,7 +38,8 @@ final class OriginalModel {
             let record = try await client.original(id: id)
             let conversations = try? await allConversations(client: client)
             guard generation == loadGeneration else { return }
-            presentation = try OriginalPresentation(record: record, conversations: conversations)
+            presentation = try OriginalPresentation(record: record, conversations: conversations,
+                                                    highlightedPhrase: highlightedPhrase)
             isLoading = false
         } catch {
             guard generation == loadGeneration else { return }
