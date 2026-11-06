@@ -9,6 +9,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import dev.mote.collector.plugins.SystemEntriesPlugin
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 
 /** One list/detail surface. All edits write into the owning page's existing configuration draft. */
 internal class AppCaptureEditor(
@@ -181,7 +183,7 @@ internal class AppCaptureEditor(
                             addView(label((if (AppCapturePresentation.configured(current,app.id)) MoteI18n.text("单独设置") else MoteI18n.text("沿用默认")) + " · " + modeLabel(mode),NativeFontRole.META,NativeColorRole.MUTED))
                             if (needsWarning(current,app)) addView(label(capability(current,app),NativeFontRole.META,NativeColorRole.WARNING))
                         },LayoutParams(0,-2,1f))
-                        addView(label("›",NativeFontRole.SUPPORT,NativeColorRole.MUTED),LayoutParams(dp(18),-2))
+                        addView(MoteComponents.icon(activity, MoteGlyph.CHEV, NativeColorRole.MUTED, 20), LayoutParams(dp(20), dp(20)))
                         setOnClickListener { select(app.id) }
                     }
                 }

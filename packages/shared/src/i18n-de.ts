@@ -4503,7 +4503,7 @@ export const german: Readonly<Record<string, string>> = {
   "用户主动重置": "Vom Benutzer zurückgesetzt",
   "首次建立统计，之前历史不可用": "Erste Statistikbasis; früherer Verlauf nicht verfügbar",
   "统计起点：{0}\n": "Statistikbasis: {0}\n",
-  "⚠ 曾有统计写入失败，本周期数据不完整。\n": "⚠ Einige Statistikschreibvorgänge sind fehlgeschlagen; dieser Zeitraum ist unvollständig.\n",
+  "曾有统计写入失败，本周期数据不完整。": "Einige Statistikschreibvorgänge sind fehlgeschlagen; dieser Zeitraum ist unvollständig.",
   "\n累计结果\n截图请求 {0} · 收到画面 {1}\n": "\nGesamtsummen\nScreenshot-Anfragen {0} · Empfangene Frames {1}\n",
   "累计截图记录 {0} · 已保存记录 {1}\n": "Screenshot-Aufzeichnungen {0} · Gespeicherte Notizen {1}\n",
   "系统事件已保存 {0} · 已确认 {1}\n": "Systemereignisse gespeichert {0} · Bestätigt {1}\n",

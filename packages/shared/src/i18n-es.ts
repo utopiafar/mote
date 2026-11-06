@@ -4503,7 +4503,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "用户主动重置": "Restablecido por el usuario",
   "首次建立统计，之前历史不可用": "Primera base de estadísticas; historial anterior no disponible",
   "统计起点：{0}\n": "Base de estadísticas: {0}\n",
-  "⚠ 曾有统计写入失败，本周期数据不完整。\n": "⚠ Algunas escrituras de estadísticas fallaron; este período está incompleto.\n",
+  "曾有统计写入失败，本周期数据不完整。": "Algunas escrituras de estadísticas fallaron; este período está incompleto.",
   "\n累计结果\n截图请求 {0} · 收到画面 {1}\n": "\nTotales\nSolicitudes de captura {0} · Fotogramas recibidos {1}\n",
   "累计截图记录 {0} · 已保存记录 {1}\n": "Registros de capturas {0} · Notas guardadas {1}\n",
   "系统事件已保存 {0} · 已确认 {1}\n": "Eventos del sistema guardados {0} · Confirmados {1}\n",

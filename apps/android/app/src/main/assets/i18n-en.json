@@ -4502,7 +4502,7 @@
   "用户主动重置": "User reset",
   "首次建立统计，之前历史不可用": "First statistics baseline; earlier history unavailable",
   "统计起点：{0}\n": "Statistics baseline: {0}\n",
-  "⚠ 曾有统计写入失败，本周期数据不完整。\n": "⚠ Some statistics writes failed; this period is incomplete.\n",
+  "曾有统计写入失败，本周期数据不完整。": "Some statistics writes failed; this period is incomplete.",
   "\n累计结果\n截图请求 {0} · 收到画面 {1}\n": "\nTotals\nScreenshot requests {0} · Frames received {1}\n",
   "累计截图记录 {0} · 已保存记录 {1}\n": "Screenshot records {0} · Saved notes {1}\n",
   "系统事件已保存 {0} · 已确认 {1}\n": "System events saved {0} · Acknowledged {1}\n",
