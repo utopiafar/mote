@@ -66,7 +66,7 @@ struct HomeView: View {
                             .padding(.bottom, 8)
 
                         MoteGroup {
-                            ForEach(Array(day.originals.enumerated()), id: \.element.id) { index, original in
+                            ForEach(Array(day.originals.enumerated()), id: \.offset) { index, original in
                                 HomeContentRow(
                                     title: original.title,
                                     detail: original.detail,
