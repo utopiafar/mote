@@ -35,6 +35,13 @@ final class ConversationPresentationTests: XCTestCase {
         XCTAssertEqual(display.citations.map(\.id), ["ev_1", "ev_1", "ev_2"])
     }
 
+    func testQuotedAnswerKeepsReadableProseWithoutCitationChips() throws {
+        let quote = ConversationPresentation.quotedAnswer(
+            "按实际用量分摊[ev_1]，月底前给账单照片[ev_1]；押金需要收据[ev_2]。",
+            numbers: ["ev_1": 1, "ev_2": 2])
+        XCTAssertEqual(quote, "按实际用量分摊，月底前给账单照片；押金需要收据。")
+    }
+
     func testFormatAnswerLeavesUnknownMarkersAndProtectedRangesAlone() throws {
         let display = ConversationPresentation.formatAnswer(
             "未见引用[other]，代码 `[ev_1]`，链接 [ev_1](https://x)，图片 ![ev_1]，定义\n[ev_1]: https://x",

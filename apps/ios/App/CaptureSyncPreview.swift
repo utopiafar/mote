@@ -39,7 +39,8 @@ struct CaptureSyncPreview: View {
         default: .synced(at: "21:42")
         }
         return CaptureSyncPresentation(facts: CaptureSyncFacts(
-            shortcutEnabled: !shortcutsOff,
+            notificationShortcutEnabled: !shortcutsOff,
+            screenshotShortcutEnabled: !shortcutsOff,
             notificationLastReceived: "21:38",
             screenshotLastReceived: "18:02",
             mediaAdded: !minimal,

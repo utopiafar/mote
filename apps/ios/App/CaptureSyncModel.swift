@@ -3,9 +3,6 @@ import MoteCore
 import MoteStorage
 import Observation
 
-/// Loads the facts the capture and sync screen can read today: the saved
-/// connection, the durable send queue and the app group's storage use. Source
-/// configuration is owned by later units, so only the fixed sources appear.
 @MainActor
 @Observable
 final class CaptureSyncModel {
@@ -16,6 +13,13 @@ final class CaptureSyncModel {
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["MOTE_TEST_RESET_SHORTCUT_SOURCES"] == "1",
+           let store = try? MoteStorage.shortcutSourceStore(fileManager: fileManager) {
+            try? store.remove(.notification)
+            try? store.remove(.screenshot)
+        }
+        #endif
         let state = Self.readState(fileManager: fileManager)
         presentation = state.presentation
         centralURL = state.centralURL
@@ -35,6 +39,9 @@ final class CaptureSyncModel {
     private static func readState(fileManager: FileManager) -> State {
         let connection = (try? MoteStorage.connectionStore(fileManager: fileManager).read()) ?? nil
         let pending = (try? MoteStorage.sendQueue(fileManager: fileManager).pending().count) ?? 0
+        let sourceStore = try? MoteStorage.shortcutSourceStore(fileManager: fileManager)
+        let notifications = (try? sourceStore?.snapshot(for: .notification)) ?? nil
+        let screenshots = (try? sourceStore?.snapshot(for: .screenshot)) ?? nil
         let centralURL = connection.flatMap { URL(string: $0.serverUrl) }
         let host = centralURL?.host ?? connection?.serverUrl ?? "未连接"
         let sendState: SendSyncState
@@ -46,6 +53,10 @@ final class CaptureSyncModel {
             sendState = .reconnect
         }
         let facts = CaptureSyncFacts(
+            notificationShortcutEnabled: notifications?.settings.setupPhase == .enabled,
+            screenshotShortcutEnabled: screenshots?.settings.setupPhase == .enabled,
+            notificationLastReceived: notifications?.received.first.flatMap { SourceReceiptTime.format($0.capturedAt) },
+            screenshotLastReceived: screenshots?.received.first.flatMap { SourceReceiptTime.format($0.capturedAt) },
             centralHost: host,
             sendState: sendState,
             storageBytes: storageBytes(fileManager: fileManager)

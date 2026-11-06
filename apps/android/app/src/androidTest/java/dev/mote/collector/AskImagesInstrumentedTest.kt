@@ -107,7 +107,10 @@ class AskImagesInstrumentedTest {
             control("release-attachment-commit");ready(s,"Removed upload cannot append on late receipt"){a -> !a.isWorking}
             assertEquals(0,NativeAskImages.count(saved()));assertEquals("Generated later text while uploading",saved().getString("question"));assertEquals("generated-model-later",saved().getString("modelOverride"));s.onActivity { a -> assertFalse(shown(a).filterIsInstance<TextView>().any { it.text.toString()=="请先重试或移除尚未上传完成的图片。" }) };screenshot(s,"late-receipt-removed-selection")
             control("drop-attachment-ack");pick(s,listOf(image(4)));ready(s,"Second selection held for explicit recovery"){a -> !a.isWorking && NativeAskImages.pending(saved()).length()==1}
-            click(s,"New conversation with unfinished image"){it.contentDescription=="新对话"}
+            s.onActivity { it.navigate("conversations") }
+            ready(s,"Conversation list composer"){a -> !a.isWorking && shown(a).filterIsInstance<EditText>().any { it.contentDescription=="问一问" && it.isEnabled }}
+            s.onActivity { a -> shown(a).filterIsInstance<EditText>().single { it.contentDescription=="问一问" }.setText("Generated new conversation question") }
+            click(s,"Send from the conversation list"){it.contentDescription=="发送"}
             until("Explicit discard dialog"){main { WindowInspector.getGlobalWindowViews().flatMap(::views).filterIsInstance<TextView>().any { it.isShown && it.text.toString()=="舍弃并切换" } }}
             main { WindowInspector.getGlobalWindowViews().flatMap(::views).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString()=="舍弃并切换" }.performClick() }
             ready(s,"Explicit new conversation clears unfinished URI references"){a -> !a.isWorking && NativeAskImages.count(saved())==0 && saved().optString("question").isEmpty()};screenshot(s,"new-conversation-clears-image-references")

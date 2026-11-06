@@ -17,17 +17,43 @@ public struct ShareLinkPreview: Equatable, Sendable {
     }
 }
 
-/// What another app handed to the share extension. Attachments keep their bytes
+/// One conversation excerpt saved as a record. The stored original is the
+/// exact question and answer text; the panel shows only the readable answer.
+public struct ShareConversationQuote: Equatable, Sendable {
+    public let question: String
+    public let answer: String
+    public let displayAnswer: String
+    public let conversationId: String
+    public let turnId: String
+
+    public init(question: String, answer: String, displayAnswer: String,
+                conversationId: String, turnId: String) {
+        self.question = question
+        self.answer = answer
+        self.displayAnswer = displayAnswer
+        self.conversationId = conversationId
+        self.turnId = turnId
+    }
+
+    public var text: String { question + "\n\n" + answer }
+}
+
+/// One save request: what another app handed to the share extension, or one
+/// conversation answer the owner chose to keep. Attachments keep their bytes
 /// so the extension can stage them before the panel closes.
 public struct ShareRequest: Equatable, Sendable {
     public let text: String
     public let link: ShareLinkPreview?
     public let attachments: [ShareAttachmentData]
+    public let conversation: ShareConversationQuote?
 
-    public init(text: String = "", link: ShareLinkPreview? = nil, attachments: [ShareAttachmentData] = []) {
+    public init(text: String = "", link: ShareLinkPreview? = nil,
+                attachments: [ShareAttachmentData] = [],
+                conversation: ShareConversationQuote? = nil) {
         self.text = text
         self.link = link
         self.attachments = attachments
+        self.conversation = conversation
     }
 }
 
@@ -66,18 +92,35 @@ public enum ShareRecord {
             else { throw ShareRecordError.invalidRequest }
         }
 
-        let trimmedText = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = request.link.map { $0.title.isEmpty ? $0.url : $0.title }
-            ?? attachments.map(\.fileName).joined(separator: "\n")
-        let originText = trimmedText.isEmpty ? fallback : request.text
-        guard !originText.isEmpty else { throw ShareRecordError.invalidRequest }
+        let noteOrigin: NoteOrigin
+        if let quote = request.conversation {
+            guard !quote.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !quote.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !quote.conversationId.isEmpty, quote.conversationId.count <= 200,
+                  !quote.turnId.isEmpty, quote.turnId.count <= 200,
+                  quote.text.count <= maximumTextCharacters
+            else { throw ShareRecordError.invalidRequest }
+            noteOrigin = NoteOrigin(
+                kind: .conversation,
+                text: quote.text,
+                conversationId: quote.conversationId,
+                messageIds: [quote.turnId]
+            )
+        } else {
+            let trimmedText = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallback = request.link.map { $0.title.isEmpty ? $0.url : $0.title }
+                ?? attachments.map(\.fileName).joined(separator: "\n")
+            let originText = trimmedText.isEmpty ? fallback : request.text
+            guard !originText.isEmpty else { throw ShareRecordError.invalidRequest }
+            noteOrigin = NoteOrigin(kind: .share, text: String(originText.prefix(maximumTextCharacters)),
+                                    url: request.link?.url)
+        }
 
         let metadata = RecordMetadata(
             version: 1,
             observedAt: capturedAt,
             collector: CollectorMetadata(method: "manual"),
-            noteOrigin: NoteOrigin(kind: .share, text: String(originText.prefix(maximumTextCharacters)),
-                                   url: request.link?.url),
+            noteOrigin: noteOrigin,
             ownerDescription: description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : description
         )
         let capture = CaptureUpload(

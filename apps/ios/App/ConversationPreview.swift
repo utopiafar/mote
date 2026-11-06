@@ -17,6 +17,7 @@ struct ConversationPreview: View {
     final class ModelBox { var model: ConversationModel? }
 
     @State private var lastAction = "none"
+    @State private var savedPayload = "none"
     private let box = ModelBox()
     private let state: String
     private let now = ISO8601DateFormatter().date(from: "2026-11-05T08:00:00Z")!
@@ -41,7 +42,11 @@ struct ConversationPreview: View {
                 ConversationView(
                     model: box.model ?? fixtureModel(state: state), now: now, calendar: calendar,
                     onBack: { lastAction = "back" },
-                    onAddImage: { lastAction = "image" }
+                    onAddImage: { lastAction = "image" },
+                    saveAnswerRecord: { quote, note, description in
+                        savedPayload = "\(quote.text)\u{1F}\(note)\u{1F}\(description)"
+                        lastAction = "saved"
+                    }
                 )
             }
         }
@@ -51,6 +56,8 @@ struct ConversationPreview: View {
                     .accessibilityIdentifier("conversation-preview-action")
                 Text(box.model.map { "busy:\($0.busy) status:\($0.session.runStatus?.rawValue ?? "nil") draft:\($0.question)" } ?? "nomodel")
                     .accessibilityIdentifier("conversation-preview-state")
+                Text(savedPayload)
+                    .accessibilityIdentifier("conversation-preview-saved")
             }
             .font(.system(size: 1))
             .opacity(0.01)

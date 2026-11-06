@@ -118,7 +118,8 @@ final class CaptureSyncPresentationTests: XCTestCase {
         storageBytes: Int64? = 1_200_000_000
     ) -> CaptureSyncFacts {
         CaptureSyncFacts(
-            shortcutEnabled: shortcutEnabled,
+            notificationShortcutEnabled: shortcutEnabled,
+            screenshotShortcutEnabled: shortcutEnabled,
             notificationLastReceived: "21:38",
             screenshotLastReceived: "18:02",
             mediaAdded: mediaAdded,
