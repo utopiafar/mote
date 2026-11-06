@@ -50,7 +50,6 @@ object MoteNavigation {
         page == "processing" -> "activity"
         page in libraryPages -> "archive".takeUnless { page == it }
         page == "actions" -> "overview"
-        page == "conversations" -> "overview"
         page == "extensions" -> "about"
         page in groups.drop(2).flatMap { it.pages } -> "about".takeUnless { page == it }
         else -> null

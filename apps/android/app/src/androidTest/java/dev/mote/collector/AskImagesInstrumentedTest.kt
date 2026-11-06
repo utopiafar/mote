@@ -54,7 +54,7 @@ class AskImagesInstrumentedTest {
         val bitmap=Bitmap.createBitmap(80,60,Bitmap.Config.ARGB_8888).apply { eraseColor(0xff000000.toInt() or (index*7919+0x445566)) }
         try{file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }}finally{bitmap.recycle()};images.add(file);return file
     }
-    private fun pick(s:ActivityScenario<CentralActivity>,files:List<File>?) {
+    private fun pick(s:ActivityScenario<CentralActivity>,files:List<File>?,trigger:()->Unit={click(s,"Native image picker"){it.contentDescription=="添加图片"}}) {
         val hits=java.util.concurrent.atomic.AtomicInteger()
         val monitor=object:Instrumentation.ActivityMonitor(){override fun onStartActivity(intent:Intent):Instrumentation.ActivityResult? {
             if(intent.action!=Intent.ACTION_OPEN_DOCUMENT)return null
@@ -66,7 +66,7 @@ class AskImagesInstrumentedTest {
             if(uris.size==1)result.data=uris.single() else { val clip=ClipData.newRawUri("Generated selected images",uris.first());uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) };result.clipData=clip }
             return Instrumentation.ActivityResult(Activity.RESULT_OK,result)
         }}
-        instrumentation.addMonitor(monitor);try{click(s,"Native image picker"){it.contentDescription=="添加图片"};until("External picker result delivered"){hits.get()==1}}finally{instrumentation.removeMonitor(monitor)}
+        instrumentation.addMonitor(monitor);try{trigger();until("External picker result delivered"){hits.get()==1}}finally{instrumentation.removeMonitor(monitor)}
     }
     @Before fun generatedOnly(){
         assumeTrue(InstrumentationRegistry.getArguments().getString("nativeAskRecoveryFixture")=="true")
@@ -144,30 +144,49 @@ class AskImagesInstrumentedTest {
         }
     }
     @Test fun coarseComposerActionsKeepTheirActualHitAreaDraftAndRequestDisabling() {
-        fun tapBottom(s:ActivityScenario<CentralActivity>,description:String) {
+        fun bottomPoint(s:ActivityScenario<CentralActivity>,description:String):FloatArray {
             ready(s,"Action layout "+description){a -> shown(a).any { it.contentDescription==description && it.isLaidOut }}
             var point=floatArrayOf();s.onActivity { a -> val view=shown(a).single { it.contentDescription==description };view.requestRectangleOnScreen(android.graphics.Rect(0,0,view.width,view.height),true)
                 val bounds=android.graphics.Rect();assertTrue(view.getGlobalVisibleRect(bounds));assertEquals(view.height,bounds.height());point=floatArrayOf(bounds.exactCenterX(),bounds.bottom-2*context.resources.displayMetrics.density) }
+            return point
+        }
+        fun tap(point:FloatArray) {
             val now=SystemClock.uptimeMillis();instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_DOWN,point[0],point[1],0));instrumentation.sendPointerSync(android.view.MotionEvent.obtain(now,now+50,android.view.MotionEvent.ACTION_UP,point[0],point[1],0));instrumentation.waitForIdleSync()
         }
+        fun tapBottom(s:ActivityScenario<CentralActivity>,description:String) = tap(bottomPoint(s,description))
         open().use { s ->
             for(theme in listOf(AppearancePreference.LIGHT,AppearancePreference.DARK)) {
                 main { MoteAppearance.select(context,theme) }
-                ready(s,"Coarse action dimensions after actual theme layout"){a -> listOf("添加图片","本次模型","发送").all { description -> shown(a).single { it.contentDescription==description }.height >= (42*context.resources.displayMetrics.density).toInt() }}
-                s.onActivity { a -> assertFalse(shown(a).single { it.contentDescription=="发送" }.isEnabled) }
+                question(s,"")
+                s.onActivity { a -> val send=views(a.window.decorView).single { it.contentDescription=="发送" };assertFalse(send.isShown);assertFalse(send.isEnabled) }
                 screenshot(s,"coarse-compose-empty-"+theme.name.lowercase())
+                question(s,"Generated coarse private draft")
+                ready(s,"Coarse action dimensions after actual theme layout"){a -> listOf("添加图片","本次模型","发送").all { description ->
+                    shown(a).singleOrNull { it.contentDescription==description }?.let { it.isLaidOut && it.width >= a.moteDp(48) && it.height >= a.moteDp(48) } == true
+                }}
+                s.onActivity { a -> assertTrue(shown(a).single { it.contentDescription=="发送" }.isEnabled) }
             }
-            question(s,"Generated coarse private draft");tapBottom(s,"本次模型")
+            tapBottom(s,"本次模型")
             ready(s,"Bottom of coarse model control opens actual model fields"){a -> shown(a).filterIsInstance<EditText>().any { it.contentDescription?.toString()?.startsWith("模型 ID（")==true }}
-            model(s,"generated-model-coarse");tapBottom(s,"本次模型");pick(s,null)
+            model(s,"generated-model-coarse");tapBottom(s,"本次模型");pick(s,null) { tapBottom(s,"添加图片") }
             assertEquals("Generated coarse private draft",saved().getString("question"));assertEquals("generated-model-coarse",saved().getString("modelOverride"));assertEquals(0,NativeAskImages.count(saved()))
             screenshot(s,"coarse-compose-draft-after-clicks-dark")
             control("hold-query");control("drop-ask-ack");control("hide-ask")
             try {
-                tapBottom(s,"发送");ready(s,"Actual coarse send retains unknown original request"){a -> !a.isWorking && saved().has("pending")}
+                val sendPoint=bottomPoint(s,"发送")
+                var sendInset=floatArrayOf()
+                s.onActivity { a -> val send=shown(a).single { it.contentDescription=="发送" };val bounds=android.graphics.Rect()
+                    assertTrue((send.parent as View).getGlobalVisibleRect(bounds));sendInset=floatArrayOf(bounds.right-sendPoint[0],bounds.bottom-sendPoint[1]) }
+                tap(sendPoint);ready(s,"Actual coarse send retains unknown original request"){a -> !a.isWorking && saved().has("pending")}
                 val pending=saved().getJSONObject("pending").toString();assertEquals("Generated coarse private draft",JSONObject(pending).getJSONObject("input").getString("question"));assertEquals("generated-model-coarse",JSONObject(pending).getJSONObject("input").getString("modelOverride"))
-                s.onActivity { a -> for(description in listOf("发送","添加图片","你的问题"))assertFalse(description,shown(a).single { it.contentDescription==description }.isEnabled) }
-                val count=control("state").getJSONArray("seenAskRequests").length();tapBottom(s,"发送");assertEquals(count,control("state").getJSONArray("seenAskRequests").length());assertEquals(pending,saved().getJSONObject("pending").toString())
+                var lockedPoint=floatArrayOf()
+                s.onActivity { a ->
+                    for(description in listOf("添加图片","你的问题"))assertFalse(description,shown(a).single { it.contentDescription==description }.isEnabled)
+                    val send=views(a.window.decorView).single { it.contentDescription=="发送" };assertFalse(send.isShown);assertFalse(send.isEnabled)
+                    // The composer can move when recovery actions appear; probe the same area inside its current bounds.
+                    val bounds=android.graphics.Rect();assertTrue((send.parent as View).getGlobalVisibleRect(bounds));lockedPoint=floatArrayOf(bounds.right-sendInset[0],bounds.bottom-sendInset[1])
+                }
+                val count=control("state").getJSONArray("seenAskRequests").length();tap(lockedPoint);assertEquals(count,control("state").getJSONArray("seenAskRequests").length());assertEquals(pending,saved().getJSONObject("pending").toString())
                 screenshot(s,"coarse-compose-unknown-disabled-dark")
                 control("release-query");control("show-ask");click(s,"Recheck same generated request"){it is TextView && it.text.toString()=="检查结果"}
                 until("The actual terminal run confirms one request"){saved().optString("runStatus")=="completed" && !saved().has("pending")};assertEquals(1,control("state").getInt("queryCalls"))
