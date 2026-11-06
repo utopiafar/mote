@@ -9,7 +9,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-internal class LibrarySourceView(private val activity: MoteActivity, private val changed: () -> Unit, private val denied: (String) -> Unit, private val allowsCentral: (String) -> Boolean) {
+internal class LibrarySourceView(private val activity: MoteActivity, private val changed: () -> Unit, private val denied: (String) -> Unit, private val allowsCentral: (String) -> Boolean, private val readState: LibraryReadState) {
     private val task = UiTask(activity)
     private val localTask = UiTask(activity)
     private val candidates = java.util.ArrayDeque<List<JSONObject>>()
@@ -32,7 +32,6 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
     private var day = ""
     private var source = ""
     private var before = ""
-    private var notice = ""
     private var pendingRefresh = false
     private data class Loaded(val originals: JSONObject?, val materials: JSONObject?)
     private var sourceSelector: Spinner? = null
@@ -76,7 +75,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
         stamp++; filter = kind; day = selectedDay; identity = scope; activeCriteria = criteria
         projection.clear(); candidates.clear(); localCursor = null; originalCursor = null; materialCursor = null
         localMore = kind != "material"; originalMore = kind != "material"; materialMore = kind.isBlank() || kind == "material"
-        pages = 0; remotePages = 0; notice = ""; before = Instant.now().plusSeconds(1).toString(); remoteRequested = true
+        pages = 0; remotePages = 0; before = Instant.now().plusSeconds(1).toString(); remoteRequested = true
         changed(); load()
     }
     fun clearRemote() { projection.clearCentral(); candidates.clear(); remoteRequested = false; originalCursor = null; materialCursor = null; originalMore = false; materialMore = false; sourceChoices = listOf("" to MoteI18n.text("全部来源")); changed() }
@@ -89,9 +88,9 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
     /** Local pages never wait behind a socket, including while changing a filter offline. */
     fun load() {
         remoteRequested = true
-        if (!localMore) { fetchRemote(); return }
+        if (!localMore) { readState.localSettled(readState.epoch, LibraryReadState.Stream.SOURCES); fetchRemote(); return }
         if (localTask.busy) { localPending = true; return }
-        val generation = stamp; val access = CentralAccess.resolve(activity); val scope = access.server to access.generation
+        val generation = stamp; val readEpoch = readState.epoch; val access = CentralAccess.resolve(activity); val scope = access.server to access.generation
         val (after, until) = range(); val kind = filter; val sourceId = source; val cursor = localCursor
         localTask.start("", {}, { dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).localPage(activity.applicationContext, after, until, cursor, kind, sourceId) }) { result ->
             val current = CentralAccess.resolve(activity)
@@ -99,10 +98,14 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
                 result.onSuccess { page ->
                     page.items.forEach { projection.local(access.server.ifBlank { "local:" + Settings(activity).deviceId }, it) }
                     localCursor = page.cursor; localMore = page.cursor != null; pages++
+                    readState.localSettled(readEpoch, LibraryReadState.Stream.SOURCES)
                     if (page.items.isNotEmpty()) candidates.addLast(page.items)
                     changed(); fetchRemote()
                     if (pages < restore && localMore) load()
-                }.onFailure { notice = MoteI18n.text("资料暂不可读取，请稍后重试。"); localMore = false; changed(); fetchRemote() }
+                }.onFailure {
+                    readState.localFailed(readEpoch, LibraryReadState.Stream.SOURCES, MoteI18n.text("资料暂不可读取，请稍后重试。"))
+                    localMore = false; changed(); fetchRemote()
+                }
             } else if (generation == stamp) { refresh(filter, day) }
             if (localPending) { localPending = false; load() }
         }
@@ -110,14 +113,21 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
     private fun fetchRemote() {
         if (task.busy) return
         val access = CentralAccess.resolve(activity); val scope = access.server to access.generation
-        if (!allowsCentral(access.server)) { candidates.clear(); remoteRequested = false; return }
+        if (!allowsCentral(access.server)) {
+            readState.centralSkipped(readState.epoch, LibraryReadState.Stream.SOURCES)
+            candidates.clear(); remoteRequested = false; return
+        }
         if (!remoteRequested && candidates.isEmpty() && remotePages >= restore) return
         val local = if (candidates.isEmpty()) emptyList() else candidates.removeFirst()
-        if (!originalMore && !materialMore && local.isEmpty()) return
+        if (!originalMore && !materialMore && local.isEmpty()) {
+            readState.centralSkipped(readState.epoch, LibraryReadState.Stream.SOURCES)
+            return
+        }
         remoteRequested = false
-        val generation = stamp; val (after, until) = range(); val kind = filter; val sourceId = source
+        val generation = stamp; val readEpoch = readState.epoch; val (after, until) = range(); val kind = filter; val sourceId = source
         val originalPosition = originalCursor; val materialPosition = materialCursor
         val readOriginals = originalMore; val readMaterials = materialMore
+        readState.centralPending(readEpoch, LibraryReadState.Stream.SOURCES)
         task.start("", {}, {
             val matches = JSONArray()
             local.filter { !it.optBoolean("provisional") }.forEach { row ->
@@ -138,15 +148,21 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
                 result.onSuccess { data ->
                     fun apply(page: JSONObject?) { page ?: return; val items = page.getJSONArray("items"); repeat(items.length()) { projection.central(access.server, items.getJSONObject(it)) }; val matches = page.getJSONArray("matches"); repeat(matches.length()) { matches.getJSONObject(it).optJSONObject("original")?.let { projection.central(access.server, it) } } }
                     if (allowsCentral(access.server)) {
+                        readState.centralReadable(readEpoch, LibraryReadState.Stream.SOURCES)
                         apply(data.originals); apply(data.materials)
                         data.originals?.let { originalCursor = it.optString("nextCursor").takeUnless { value -> value.isBlank() || value == "null" }; originalMore = originalCursor != null }
                         data.materials?.let { materialCursor = it.optString("nextCursor").takeUnless { value -> value.isBlank() || value == "null" }; materialMore = materialCursor != null }
-                    } else clearRemote()
-                    remotePages++; notice = ""; changed()
+                    } else {
+                        readState.centralSkipped(readEpoch, LibraryReadState.Stream.SOURCES)
+                        clearRemote()
+                    }
+                    remotePages++; changed()
                 }.onFailure { error ->
+                    readState.centralFailed(readEpoch, LibraryReadState.Stream.SOURCES,
+                        LibraryReadState.centralFailure(error, CentralAccess.resolve(activity).client == null))
                     clearRemote()
                     if (error is CentralFailure && (error.status in setOf(401, 403) || error.code == "connection_revoked")) denied(access.server)
-                    notice = if (error is java.io.IOException) MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试") else error.message.orEmpty(); changed()
+                    changed()
                     if (error is CentralFailure && error.status == 409 && (originalPosition != null || materialPosition != null)) { restore = 1; pendingRefresh = true }
                 }
             } else if (generation == stamp) { refresh(filter, day) }
@@ -155,6 +171,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
         }
     }
     fun entries(location: String) = projection.visible(location)
+    val localMorePages get() = localMore
     val hasMore get() = localMore || originalMore || materialMore
     fun renderItem(parent: LinearLayout, row: LibrarySourceProjection.Row) {
             val item = row.item
@@ -176,9 +193,6 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
             }
             if (row.central != null && row.local != null) card.addView(MoteUi.button(Button(activity).apply { text = MoteI18n.text("查看中央版本"); setOnClickListener { LibrarySourceReaderActivity.open(activity, row.key.origin, row.key.type, row.key.source, row.key.external, row.key.device, row.key.revision, row.central.optString("captureId"), false) } }))
             parent.addView(card)
-    }
-    fun renderFooter(parent: LinearLayout) {
-        if (notice.isNotBlank()) parent.addView(TextView(activity).apply { text = notice })
     }
     fun close() { stamp++; task.close(); localTask.close() }
 }

@@ -157,6 +157,17 @@ fun ActivityScenario<MainActivity>.chooseLibraryLocation(value: String) {
     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 }
 
+/** The category choices live in the same filter sheet as location and refresh. */
+fun ActivityScenario<MainActivity>.chooseLibraryCategory(value: String) {
+    onActivity { activity -> generatedViews(activity.window.decorView).single { it.tag == "library-filter" }.performClick() }
+    awaitGeneratedTag("library-filter:$value")
+    onActivity {
+        android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::generatedViews)
+            .single { it.isShown && it.tag == "library-filter:$value" }.performClick()
+    }
+    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+}
+
 fun ActivityScenario<MainActivity>.refreshLibrary() {
     onActivity { activity -> generatedViews(activity.window.decorView).single { it.tag == "library-filter" }.performClick() }
     awaitGeneratedTag("library-refresh")
