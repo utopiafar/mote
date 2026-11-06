@@ -88,8 +88,8 @@ app.on('browser-window-created', (_event, window) => {
           const visible=()=>Array.from(document.querySelectorAll('[data-nav="${page}"]')).find(button=>button.getClientRects().length);
           if(!visible()){
             document.querySelector('aside [data-nav=settings]').click();await new Promise(resolve=>requestAnimationFrame(resolve));
-            if(['screen'].includes('${page}')){document.querySelector('aside [data-nav=sources]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=sources] [data-nav=screen]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
-            if(['sync','privacy'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=capture-sync]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=capture-sync] [data-nav=${page}]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
+            if(['screen'].includes('${page}')){document.querySelector('aside [data-nav=sources]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=sources] [data-nav=screen]').click();await new Promise(resolve=>setTimeout(resolve,180));return;}
+            if(['sync','privacy'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=capture-sync]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=capture-sync] [data-nav=${page}]').click();await new Promise(resolve=>setTimeout(resolve,180));return;}
             if(['storage','backup','restore'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=connection]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if(['capture','developer','about','preferences','chrome','statistics','activity','compression'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=mac-options]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
             if('${page}'==='compression'){document.querySelector('[data-page=mac-options] [data-nav=capture]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
@@ -164,7 +164,7 @@ app.on('browser-window-created', (_event, window) => {
       await navigate('screen');
       assert(await js(`!document.querySelector('#setup-prompt').hidden`), 'Screen recording has its own first-use scope setup');
       await js(`document.querySelector('#setup-primary').click(); new Promise(resolve => setTimeout(resolve, 100))`);
-      assert(await js(`!document.querySelector('[data-page="screen"]').hidden && document.querySelector('aside [data-nav="settings"]').getAttribute('aria-current') === 'page'`), 'Initial setup opens the actual application scope within screen capture');
+      assert(await js(`!document.querySelector('[data-page="screen"]').hidden && document.querySelector('aside [data-nav="sources"]').getAttribute('aria-current') === 'page'`), 'Initial setup opens the actual application scope within screen capture');
       assert(await js(`!document.querySelector('[data-page="screen"]').hidden && !document.querySelector('#collection-workbench').hidden&&document.querySelector('#default-collection').getClientRects().length>0`), 'Scope setup reveals the real application controls on the same page without requiring a node');
       await navigate('sources');
       assert(await js(`document.querySelector('aside [data-nav="sources"]').getAttribute('aria-current') === 'page' && document.querySelector('#workspace-back').hidden`),'Sources is a primary destination');
@@ -215,14 +215,14 @@ app.on('browser-window-created', (_event, window) => {
         await navigate('overview');
         await navigate('sources');await js(`document.querySelector('#source-add').click();document.querySelector('#source-cloud-choice').click();new Promise(resolve=>setTimeout(resolve,100))`);
         assert.deepEqual(centralPages,['sources'],'Connected cloud-source Add reaches the real Central source workspace through real preload IPC');
-        trayMenu.items.find(item => item.label === '打开中央仓库').click();
+        trayMenu.items.find(item => item.label === '打开中央工作台').click();
         await js(`new Promise(resolve => setTimeout(resolve, 100))`);
         assert.deepEqual(centralPages,['sources','overview'],'Tray Central reuses the existing renderer and preload owner-access path');
         assert.equal(await js(`document.querySelector('#ask-question').value`), 'generated offline question draft', 'Opening Central preserves the local question draft');
         let rejectCentral, pendingCentralCalls = 0;
         ipcMain.removeHandler('mote:central');
         ipcMain.handle('mote:central', () => { pendingCentralCalls++;return new Promise((_resolve,reject)=>{rejectCentral=reject;}); });
-        const centralShortcut = trayMenu.items.find(item => item.label === '打开中央仓库');
+        const centralShortcut = trayMenu.items.find(item => item.label === '打开中央工作台');
         centralShortcut.click(); centralShortcut.click();
         await js(`new Promise(resolve => setTimeout(resolve, 100))`);
         assert.equal(pendingCentralCalls,1,'Repeated tray clicks share the existing busy guard');
@@ -252,7 +252,7 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`!document.querySelector('[data-page="settings"]').hidden`), 'Native settings menu routes to Settings');
       currentPhase = 'tray shortcuts and draft protection';
       const traySettings = trayMenu.items.find(item => item.label === '设置…');
-      const trayCentral = trayMenu.items.find(item => item.label === '打开中央仓库');
+      const trayCentral = trayMenu.items.find(item => item.label === '打开中央工作台');
       assert(traySettings && trayCentral, 'Tray exposes local settings and Central beside the workbench');
       await navigate('overview');
       traySettings.click(); traySettings.click();
@@ -463,6 +463,8 @@ app.on('browser-window-created', (_event, window) => {
       writeFileSync(output, (await window.webContents.capturePage()).toPNG());
       await navigate('settings');
       writeFileSync(join(require('node:path').dirname(output), 'settings-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
+      await navigate('capture-sync');
+      writeFileSync(join(require('node:path').dirname(output), 'capture-sync-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       await navigate('sync');
       writeFileSync(join(require('node:path').dirname(output), 'sync-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       await navigate('capture');
@@ -533,7 +535,8 @@ app.on('browser-window-created', (_event, window) => {
       for(let i=0;i<200&&quick();i++)await new Promise(resolve=>setTimeout(resolve,25));
       assert.equal(quick(),undefined,'Save success closes the quick editor');
       await navigate('notes');assert.equal(await js(`document.querySelector('#note-text').value`),'','Saved note is not resurrected on reopen');await closeQuick();
-      assert.equal((await js('window.mote.status()')).operations.find(job=>job.id==='mote:note')?.message,'Saving quick note · Operation finished','Main-process operation labels follow the changed language');
+      await js(`window.mote.sampleDiagnostics().then(()=>new Promise(resolve=>requestAnimationFrame(resolve)))`);
+      assert.equal((await js('window.mote.status()')).operations.find(job=>job.id==='mote:diagnostics-sample')?.message,'Reading diagnostics · Operation finished','Main-process operation labels follow the changed language');
       window.setSize(820,620); await navigate('records');
       await js(`document.querySelector('#content-refresh').click();true;`);
       for(let i=0;i<200&&!await js(`!!document.querySelector('#content-feed [data-content-key="queue:${notificationId}"]')`);i++)await new Promise(resolve=>setTimeout(resolve,25));
