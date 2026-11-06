@@ -2,28 +2,44 @@ package dev.mote.collector
 
 import android.Manifest
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.SourceProviderPlugin
+import dev.mote.collector.plugins.SourceSnapshot
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.MoteIconButtonStyle
 import java.util.concurrent.Executors
 
 /** Native opt-in connection UI. No calendar query occurs before the user requests a connection. */
 class SourcesActivity : MoteActivity() {
     private lateinit var list: LinearLayout
     private var detailSourceId: String? = null
+    private var sourceKind: String? = null
     private var renderedSignature: String? = null
     private var localOffset = 0
     private val localPageSize = 20
     private val worker = Executors.newSingleThreadExecutor()
     private val task by lazy { UiTask(this, worker, ownsExecutor = false) }
     private val owner by lazy { SourceProviderPlugin.owner(this) }
-    private lateinit var operationStatus: TextView
+    private lateinit var operationStatusView: TextView
+    /** Blank status lines must not reserve the gap above the overview title. */
+    private var operationStatus: String
+        get() = operationStatusView.text.toString()
+        set(value) {
+            operationStatusView.text = value
+            operationStatusView.visibility = if (value.isBlank()) View.GONE else View.VISIBLE
+        }
     private var rendering = false
     private var editingSource: LocalSource? = null
     private val draftControls = linkedMapOf<String, android.view.View>()
@@ -36,30 +52,18 @@ class SourcesActivity : MoteActivity() {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         restoringDraft = lastNonConfigurationInstance as? Draft
         detailSourceId = intent.getStringExtra("detailSourceId")
+        sourceKind = intent.getStringExtra("kind")?.takeIf { it in setOf("local-files", "local-calendar") }
         localOffset = savedInstanceState?.getInt("localOffset") ?: 0
-        val content = moteDetailPage(title = MoteI18n.text(if (detailSourceId == null) "采集与同步" else "来源详情"))
-        operationStatus = SecondaryUi.text(content, "", muted = true).apply { accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
-        if (detailSourceId == null) {
-            val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; isBaselineAligned = false }.also(content::addView)
-            heading.addView(TextView(this).apply { text = MoteI18n.text("这台手机的来源"); MoteUi.type(this, NativeFontRole.SECTION, medium = true) }, LinearLayout.LayoutParams(0, -2, 1f))
-            SecondaryUi.action(heading, MoteI18n.text("＋ 添加")) { chooseSource() }.apply {
-                tag = "sources-add"
-                (layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0; marginEnd = 0 }
-            }
-        }
+        val overviewPage = detailSourceId == null && sourceKind == null
+        val content = moteDetailPage(title = MoteI18n.text(when {
+            detailSourceId != null -> "来源详情"
+            sourceKind == "local-files" -> "同步文件夹"
+            sourceKind == "local-calendar" -> "本机日历"
+            else -> ""
+        }))
+        content.setPadding(moteDp(16), moteDp(if (overviewPage) 0 else MoteTheme.spaceItem), moteDp(16), moteDp(MoteTheme.spaceGroup))
+        operationStatusView = SecondaryUi.text(content, "", muted = true).apply { visibility = View.GONE; accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
         list = SecondaryUi.column(content)
-        if (detailSourceId == null) {
-            SecondaryUi.text(content, MoteI18n.text("自动采集"), heading = true)
-            SecondaryUi.row(content, MoteI18n.text("屏幕与应用活动"), MoteI18n.text("采集来源、频率与电量策略"), icon = "▧") { startActivity(Intent(this, MainActivity::class.java).putExtra("page", "CAPTURE")) }
-            SecondaryUi.row(content, MoteI18n.text("通知与设备信息"), MoteI18n.text("独立选择采集内容"), icon = "◷") { startActivity(Intent(this, MainActivity::class.java).putExtra("page", "OBSERVATIONS")) }
-            SecondaryUi.row(content, MoteI18n.text("同步与上传"), icon = "⇄") { startActivity(Intent(this, SyncQueueActivity::class.java)) }
-            SecondaryUi.row(content, MoteI18n.text("其他来源"), MoteI18n.text("在中央工作台管理云端来源"), icon = "↗") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "sources")) }
-            SecondaryUi.text(content, MoteI18n.text("本机日历"), heading = true)
-            SecondaryUi.row(content, MoteI18n.text("日历来源"), MoteI18n.text("选择要同步的日历")) { connectCalendar() }
-            val options = SecondaryUi.disclosure(content, MoteI18n.text("来源限制与同步说明"), "sources-details")
-            SecondaryUi.text(options, MoteI18n.text("文件快照和原件归档都会上传完整文件，由中央解析或转写。快照处理后删除中央临时原件，保留提取正文；原件归档长期保留文件。每文件最多 512 MiB，支持断网续传。仅文件目录不读取正文。超限或扫描不完整不会推断文件已删除。\n系统后台任务约每 15 分钟检查一次。"), muted = true)
-            SecondaryUi.action(options, MoteI18n.text("立即扫描并同步")) { work(MoteI18n.text("正在调度扫描与同步…")) { owner.schedule(manual = true, syncExplicit = true) } }
-        }
         MoteUi.styleTree(content)
         if (restoringDraft != null) edit(restoringDraft!!.source, restoringDraft!!.newSource)
         else if (savedInstanceState == null) {
@@ -68,7 +72,7 @@ class SourcesActivity : MoteActivity() {
             }
             if (intent.getBooleanExtra("addCalendar", false)) connectCalendar()
             intent.getStringExtra("sourceId")?.let { id ->
-                task.start(MoteI18n.text("正在读取来源…"), { operationStatus.text = it }, { owner.source(id) }) { result -> result.getOrNull()?.let { edit(it) } }
+                task.start(MoteI18n.text("正在读取来源…"), { operationStatus = it }, { owner.source(id) }) { result -> result.getOrNull()?.let { edit(it) } }
             }
         }
     }
@@ -85,9 +89,13 @@ class SourcesActivity : MoteActivity() {
         if (isDestroyed || !::list.isInitialized || rendering || worker.isShutdown) return
         rendering = true
         worker.execute {
-            val rows = runCatching {
+            val overview = if (detailSourceId == null && sourceKind == null) runCatching {
                 owner.reconcileAuthorization()
-                owner.snapshots(detailSourceId, localOffset, localPageSize).map { snapshot ->
+                loadOverview()
+            } else null
+            val rows = if (overview == null) runCatching {
+                owner.reconcileAuthorization()
+                owner.snapshots(detailSourceId, localOffset, localPageSize).filter { sourceKind == null || it.source.kind == sourceKind }.map { snapshot ->
                     val source = snapshot.source
                     val state = snapshot.state
                     val pending = snapshot.pending
@@ -115,41 +123,272 @@ class SourcesActivity : MoteActivity() {
                     }
                     SourceRow(source, summary, presentationStatus, snapshot.local, snapshot.localTotal, snapshot.contextConflict)
                 }
-            }
+            } else null
             runOnUiThread {
                 rendering = false
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                val signature = rows.getOrNull()?.joinToString { row -> row.source.json().toString() + row.summary + row.presentationStatus + row.local.joinToString() + row.localTotal + row.contextConflict }
-                if (signature != null && signature == renderedSignature) return@runOnUiThread
-                renderedSignature = signature
-                list.removeAllViews()
-                if (rows.isFailure) SecondaryUi.text(list, MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。"))
-                else {
-                    if (rows.getOrThrow().isEmpty()) SecondaryUi.text(list, MoteI18n.text(if (detailSourceId == null) "尚未连接来源。权限只在点击连接时申请。" else "所选文件不可用"), muted = true)
-                    for (row in rows.getOrThrow()) {
-                        val source = row.source
-                        if (detailSourceId != null) showSourceDetail(row)
-                        else SecondaryUi.row(list, source.name, row.summary.removePrefix("\n${source.name}\n").lineSequence().filter { it.isNotBlank() }.take(2).joinToString("\n")) {
-                            startActivity(Intent(this, SourcesActivity::class.java).putExtra("detailSourceId", source.id))
-                        }.tag = "source:${source.id}"
+                if (overview != null) {
+                    val value = overview.getOrNull()
+                    val signature = value?.signature ?: "error"
+                    if (signature == renderedSignature) return@runOnUiThread
+                    renderedSignature = signature
+                    list.removeAllViews()
+                    if (value == null) SecondaryUi.text(list, MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。"))
+                    else showOverview(value)
+                } else {
+                    val signature = rows!!.getOrNull()?.joinToString { row -> row.source.json().toString() + row.summary + row.presentationStatus + row.local.joinToString() + row.localTotal + row.contextConflict }
+                    if (signature != null && signature == renderedSignature) return@runOnUiThread
+                    renderedSignature = signature
+                    list.removeAllViews()
+                    if (rows.isFailure) SecondaryUi.text(list, MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。"))
+                    else {
+                        if (rows.getOrThrow().isEmpty()) SecondaryUi.text(list, MoteI18n.text(if (detailSourceId == null) "尚未连接来源。权限只在点击连接时申请。" else "所选文件不可用"), muted = true)
+                        for (row in rows.getOrThrow()) {
+                            val source = row.source
+                            if (detailSourceId != null) showSourceDetail(row)
+                            else SecondaryUi.row(list, source.name, row.summary.removePrefix("\n${source.name}\n").lineSequence().filter { it.isNotBlank() }.take(2).joinToString("\n")) {
+                                startActivity(Intent(this, SourcesActivity::class.java).putExtra("detailSourceId", source.id))
+                            }.tag = "source:${source.id}"
+                        }
                     }
                 }
                 MoteUi.styleTree(list)
             }
         }
     }
-    private data class SourceRow(val source: LocalSource, val summary: String, val presentationStatus: String, val local: List<org.json.JSONObject>, val localTotal: Int, val contextConflict: Boolean)
-    private fun chooseSource() {
-        val labels = arrayOf(MoteI18n.text("导入文件"), MoteI18n.text("同步文件夹"), MoteI18n.text("连接本机日历"), MoteI18n.text("连接飞书文档"), MoteI18n.text("屏幕与应用活动"))
-        MoteDialogBuilder(this).setTitle(MoteI18n.text("添加来源")).setItems(labels) { _, index ->
-            when (index) {
-                0, 1 -> startActivity(Intent(this, FileTaskActivity::class.java).putExtra("addAction", if (index == 0) "FILE" else "FOLDER"))
-                2 -> connectCalendar()
-                3 -> startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "lark"))
-                4 -> startActivity(Intent(this, MainActivity::class.java).putExtra("page", "CAPTURE"))
-            }
-        }.setNegativeButton(MoteI18n.text("取消"), null).show()
+
+    private data class Overview(
+        val rows: List<CaptureSyncPresentation.SourceRow>, val send: CaptureSyncPresentation.SendView,
+        val sendMethod: String, val sendPaused: Boolean, val storageText: String,
+    ) { val signature get() = rows.toString() + send.toString() + sendMethod + sendPaused + storageText }
+
+    private fun loadOverview(): Overview {
+        val settings = Settings(this)
+        val config = settings.read()
+        val local = LocalStatusProducer.get(this).state.value
+        val latest = runCatching { queue().latestCapturedAt() }.getOrDefault(emptyMap())
+        fun lastAt(vararg sources: String) = sources.mapNotNull { latest[it] }.maxOrNull()
+        val snapshots = owner.snapshots(null, 0, 1)
+        fun facts(snapshot: SourceSnapshot) = CaptureSyncPresentation.SourceFacts(snapshot.source.id, snapshot.source.enabled,
+            snapshot.state.optString("status"), snapshot.state.optString("lastScan"))
+        val projection = config.effectiveMode() == "projection"
+        val screenLive = config.screenCollectionEnabled && (if (projection) ProjectionService.running else CaptureAccessibilityService.connected)
+        val observationSelected = config.notificationCollectionEnabled || config.deviceEventCollectionEnabled
+        val mediaSelected = config.mediaCollectionEnabled && config.metadataEnabled
+        val notifyPermission = MediaCollection.permissionAllowed(this)
+        val rows = CaptureSyncPresentation.sources(
+            screen = CaptureSyncPresentation.KindFacts(present = config.screenCollectionEnabled,
+                needsAction = settings.enabled && config.screenCollectionEnabled && !screenLive,
+                paused = !settings.enabled, lastAt = lastAt("screen", "activity", "ui_page")),
+            observations = CaptureSyncPresentation.KindFacts(present = observationSelected,
+                needsAction = settings.enabled && observationSelected && !notifyPermission,
+                paused = !settings.enabled, lastAt = lastAt("notification", "device_event")),
+            media = CaptureSyncPresentation.KindFacts(present = mediaSelected,
+                needsAction = settings.enabled && mediaSelected && !notifyPermission,
+                paused = !settings.enabled, lastAt = latest["media"]),
+            files = snapshots.filter { it.source.kind == "local-files" }.map(::facts),
+            calendars = snapshots.filter { it.source.kind == "local-calendar" }.map(::facts))
+        val sendState = when {
+            UploadHistoryRecovery.unavailable -> "error"
+            local.error != null || (local.active?.blocked ?: 0) > 0 -> "blocked"
+            else -> settings.syncState()
+        }
+        val send = CaptureSyncPresentation.send(config.server, config.hasSyncConnection(), config.syncPaused, sendState,
+            local.pending, settings.lastAcknowledgedAt())
+        val storageBytes = local.active?.diskBytes?.plus(local.quarantine?.diskBytes ?: 0)
+        return Overview(rows, send, CaptureSyncPresentation.sendMethodLabel(config.syncMode, config.wifiOnly),
+            config.syncPaused, CaptureSyncPresentation.storageLabel(storageBytes))
     }
+
+    private fun showOverview(overview: Overview) {
+        fun addTo(group: LinearLayout, view: View, first: Boolean) {
+            if (!first) group.addView(MoteComponents.divider(this))
+            group.addView(view)
+        }
+        list.addView(TextView(this).apply {
+            text = MoteI18n.text("采集与同步")
+            MoteUi.type(this, NativeFontRole.TITLE_MOBILE); MoteUi.textColor(this, NativeColorRole.INK)
+            setLineSpacing(0f, 1.25f)
+            setPadding(moteDp(4), moteDp(2), moteDp(4), 0)
+        }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(18) })
+        val sourcesGroup = MoteComponents.group(this)
+        overview.rows.forEachIndexed { index, row ->
+            val trailing = row.actionLabel?.let { label -> MoteComponents.smallButton(this, label) { handleSourceRow(row) } }
+            val view = MoteComponents.row(this, glyphFor(row.kind), row.title, value = row.detail.takeIf(String::isNotBlank),
+                valueFont = NativeFontRole.BODY,
+                valueColor = if (row.warn) NativeColorRole.WARNING else NativeColorRole.MUTED, trailing = trailing) {
+                if (row.actionLabel != null) handleSourceRow(row) else openSourceRow(row)
+            }
+            addTo(sourcesGroup, view, index == 0)
+        }
+        addTo(sourcesGroup, MoteComponents.row(this, MoteGlyph.PLUS, MoteI18n.text("添加来源"),
+            titleColor = NativeColorRole.ACCENT, iconColor = NativeColorRole.ACCENT, chevron = false) {
+            showAddSheet(overview.rows.map { it.kind }.toSet())
+        }.apply { tag = "sources-add" }, overview.rows.isEmpty())
+        list.addView(sourcesGroup, LinearLayout.LayoutParams(-1, -2))
+        val sendGroup = MoteComponents.group(this)
+        sendGroup.addView(MoteComponents.row(this, MoteGlyph.SEND, overview.send.host, subtitle = overview.send.text,
+            subtitleColor = if (overview.send.warn) NativeColorRole.WARNING else NativeColorRole.MUTED,
+            trailing = overview.send.actionLabel?.let { label -> MoteComponents.smallButton(this, label) { sendAction(overview.send) } }))
+        sendGroup.addView(MoteComponents.divider(this))
+        sendGroup.addView(MoteComponents.row(this, MoteGlyph.CLOCK, MoteI18n.text("发送方式"), value = overview.sendMethod,
+            valueFont = NativeFontRole.BODY) { showSendMethod() })
+        sendGroup.addView(MoteComponents.divider(this))
+        sendGroup.addView(MoteComponents.row(this, MoteGlyph.PAUSE, MoteI18n.text("暂停发送"),
+            trailing = MoteComponents.switch(this, overview.sendPaused, MoteI18n.text("暂停发送")) { changeSendPause(it) }))
+        list.addView(sendGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(24) })
+        val storageGroup = MoteComponents.group(this)
+        storageGroup.addView(MoteComponents.row(this, MoteGlyph.DISK, MoteI18n.text("本机存储"),
+            value = overview.storageText.takeIf(String::isNotBlank), valueFont = NativeFontRole.BODY) { openMoteLocalPage("STORAGE") })
+        list.addView(storageGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(24) })
+    }
+
+    private fun glyphFor(kind: CaptureSyncPresentation.SourceKind) = when (kind) {
+        CaptureSyncPresentation.SourceKind.SCREEN -> MoteGlyph.SCREEN
+        CaptureSyncPresentation.SourceKind.OBSERVATIONS -> MoteGlyph.BELL
+        CaptureSyncPresentation.SourceKind.MEDIA -> MoteGlyph.PLAY
+        CaptureSyncPresentation.SourceKind.FILES -> MoteGlyph.FOLDER
+        CaptureSyncPresentation.SourceKind.CALENDAR -> MoteGlyph.CALENDAR
+    }
+
+    private fun openSourceRow(row: CaptureSyncPresentation.SourceRow) = when (row.kind) {
+        CaptureSyncPresentation.SourceKind.SCREEN -> openMoteLocalPage("CAPTURE")
+        CaptureSyncPresentation.SourceKind.OBSERVATIONS, CaptureSyncPresentation.SourceKind.MEDIA -> openMoteLocalPage("OBSERVATIONS")
+        CaptureSyncPresentation.SourceKind.FILES -> startActivity(Intent(this, SourcesActivity::class.java).putExtra("kind", "local-files"))
+        CaptureSyncPresentation.SourceKind.CALENDAR -> startActivity(Intent(this, SourcesActivity::class.java).putExtra("kind", "local-calendar"))
+    }
+
+    private fun handleSourceRow(row: CaptureSyncPresentation.SourceRow) {
+        row.attentionSourceId?.let { startActivity(Intent(this, SourcesActivity::class.java).putExtra("detailSourceId", it)); return }
+        if (row.kind == CaptureSyncPresentation.SourceKind.SCREEN) openMoteLocalPage("CAPTURE") else openMoteLocalPage("PERMISSIONS")
+    }
+
+    private fun sendAction(send: CaptureSyncPresentation.SendView) = when (send.state) {
+        CaptureSyncPresentation.SendState.PENDING -> requestSyncNow()
+        else -> openMoteLocalPage("CONNECTION")
+    }
+
+    private fun requestSyncNow() {
+        if (task.busy) return
+        task.start(MoteI18n.text("正在提交同步任务…"), { operationStatus = it }, {
+            ConnectionGuard.sync {
+                val config = Settings(applicationContext).read(); config.validateConnection()
+                if (localSources().sources().any { it.enabled }) SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
+                else UploadWorker.schedule(applicationContext, config, true)
+            } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
+        }) { result ->
+            result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+            render()
+        }
+    }
+
+    private fun changeSendPause(paused: Boolean) {
+        if (task.busy) { render(); return }
+        task.start(MoteI18n.text("正在保存发送状态…"), { operationStatus = it }, {
+            SendPauseControl.set(applicationContext, paused)
+        }) { result ->
+            result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+            render()
+        }
+    }
+
+    private fun showSendMethod() {
+        val config = Settings(this).read()
+        val modes = listOf("realtime", "interval", "batch", "manual")
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20), moteDp(8), moteDp(20), moteDp(8)) }
+        val modeGroup = RadioGroup(this)
+        modes.forEachIndexed { index, mode ->
+            modeGroup.addView(RadioButton(this).apply { id = index; text = CaptureSyncPresentation.syncModeLabel(mode); isChecked = mode == config.syncMode; minHeight = moteDp(44) })
+        }
+        form.addView(modeGroup)
+        val intervalLabel = TextView(this).apply { text = MoteI18n.text("同步间隔 / 分钟（批量模式下也是最长等待时间）") }
+        val interval = MoteUi.field(EditText(this).apply { setText(config.syncIntervalMinutes.toString()); inputType = InputType.TYPE_CLASS_NUMBER })
+        val batchLabel = TextView(this).apply { text = MoteI18n.text("批量同步条数") }
+        val batch = MoteUi.field(EditText(this).apply { setText(config.syncBatchSize.toString()); inputType = InputType.TYPE_CLASS_NUMBER })
+        form.addView(intervalLabel); form.addView(interval); form.addView(batchLabel); form.addView(batch)
+        val wifi = CheckBox(this).apply { text = MoteI18n.text("仅非计费 Wi-Fi"); isChecked = config.wifiOnly; minHeight = moteDp(44) }
+        form.addView(wifi)
+        fun refreshFields() {
+            val mode = modes[modeGroup.checkedRadioButtonId.coerceAtLeast(0)]
+            val timed = mode in setOf("interval", "batch")
+            intervalLabel.visibility = if (timed) View.VISIBLE else View.GONE; interval.visibility = intervalLabel.visibility
+            batchLabel.visibility = if (mode == "batch") View.VISIBLE else View.GONE; batch.visibility = batchLabel.visibility
+        }
+        modeGroup.setOnCheckedChangeListener { _, _ -> refreshFields() }; refreshFields()
+        MoteUi.styleTree(form)
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("发送方式")).setView(form)
+            .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("保存"), null).create()
+        dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            if (task.busy || modeGroup.checkedRadioButtonId < 0) return@setOnClickListener
+            try {
+                val mode = modes[modeGroup.checkedRadioButtonId]
+                val intervalMinutes = interval.text.toString().toInt(); val batchSize = batch.text.toString().toInt()
+                SyncPolicy(mode, intervalMinutes, batchSize).validate()
+                val wifiOnly = wifi.isChecked
+                task.start(MoteI18n.text("正在保存发送设置…"), { operationStatus = it }, {
+                    SendPauseControl.setSendMethod(applicationContext, mode, intervalMinutes, batchSize, wifiOnly)
+                }) { result ->
+                    result.onSuccess { dialog.dismiss() }.onFailure { toast(it.message ?: MoteI18n.text("操作失败，请重试")) }
+                    render()
+                }
+            } catch (error: Exception) { toast(if (error is IllegalArgumentException) error.message ?: MoteI18n.text("操作失败，请重试") else MoteI18n.text("操作失败，请重试")) }
+        } }
+        dialog.show()
+    }
+
+    private fun showAddSheet(added: Set<CaptureSyncPresentation.SourceKind>) {
+        val sheetDialog = Dialog(this)
+        val sheet = MoteComponents.sheet(this)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
+            setPadding(moteDp(20), 0, moteDp(6), 0)
+        }
+        header.addView(TextView(this).apply {
+            text = MoteI18n.text("添加来源"); gravity = Gravity.CENTER_VERTICAL
+            MoteUi.type(this, 16, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
+        }, LinearLayout.LayoutParams(0, moteDp(48), 1f))
+        header.addView(MoteComponents.iconButton(this, MoteGlyph.CLOSE, description = MoteI18n.text("关闭"),
+            style = MoteIconButtonStyle.MUTED) { sheetDialog.dismiss() }, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
+        sheet.addView(header, LinearLayout.LayoutParams(-1, -2))
+        val kindsGroup = MoteComponents.group(this)
+        CaptureSyncPresentation.availableAddKinds(added).forEachIndexed { index, kind ->
+            if (index > 0) kindsGroup.addView(MoteComponents.divider(this))
+            kindsGroup.addView(MoteComponents.row(this, glyphFor(kind), MoteI18n.text(kind.titleKey),
+                trailing = if (kind.opensCentral) MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16) else null) {
+                sheetDialog.dismiss(); openAddKind(kind)
+            }.apply { tag = "add-source:${kind.name}" })
+        }
+        sheet.addView(kindsGroup, LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(moteDp(16), moteDp(8), moteDp(16), moteDp(32))
+        })
+        sheetDialog.setContentView(sheet)
+        sheetDialog.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.attributes = window.attributes.apply {
+                gravity = Gravity.BOTTOM; width = WindowManager.LayoutParams.MATCH_PARENT; dimAmount = 0.5f
+            }
+        }
+        sheetDialog.show()
+    }
+
+    private fun glyphFor(kind: CaptureSyncPresentation.AddKind) = when (kind) {
+        CaptureSyncPresentation.AddKind.FILE -> MoteGlyph.FILE
+        CaptureSyncPresentation.AddKind.FOLDER -> MoteGlyph.FOLDER
+        CaptureSyncPresentation.AddKind.CALENDAR -> MoteGlyph.CALENDAR
+        CaptureSyncPresentation.AddKind.SCREEN -> MoteGlyph.SCREEN
+        CaptureSyncPresentation.AddKind.CLOUD -> MoteGlyph.GLOBE
+    }
+
+    private fun openAddKind(kind: CaptureSyncPresentation.AddKind) = when (kind) {
+        CaptureSyncPresentation.AddKind.FILE -> startActivity(Intent(this, FileTaskActivity::class.java).putExtra("addAction", "FILE"))
+        CaptureSyncPresentation.AddKind.FOLDER -> startActivity(Intent(this, FileTaskActivity::class.java).putExtra("addAction", "FOLDER"))
+        CaptureSyncPresentation.AddKind.CALENDAR -> connectCalendar()
+        CaptureSyncPresentation.AddKind.SCREEN -> openMoteLocalPage("CAPTURE")
+        CaptureSyncPresentation.AddKind.CLOUD -> startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "sources"))
+    }
+
+    private data class SourceRow(val source: LocalSource, val summary: String, val presentationStatus: String, val local: List<org.json.JSONObject>, val localTotal: Int, val contextConflict: Boolean)
     private fun connectCalendar() {
         if (checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) chooseCalendars()
         else requestPermissions(arrayOf(Manifest.permission.READ_CALENDAR), 301)
@@ -202,8 +441,8 @@ class SourcesActivity : MoteActivity() {
     private fun resolveCalendarContext(source: LocalSource) {
         if (task.busy) return
         val config = Settings(this).read()
-        if (!config.hasSyncConnection()) { operationStatus.text = MoteI18n.text("等待网络/节点恢复"); return }
-        task.start(MoteI18n.text("正在读取资料说明…"), { operationStatus.text = it }, {
+        if (!config.hasSyncConnection()) { operationStatus = MoteI18n.text("等待网络/节点恢复"); return }
+        task.start(MoteI18n.text("正在读取资料说明…"), { operationStatus = it }, {
             owner.remoteContext(source)
         }) { result ->
             result.onSuccess { remote ->
@@ -216,7 +455,7 @@ class SourcesActivity : MoteActivity() {
                     .setPositiveButton(MoteI18n.text("以本机说明更新")) { _, _ -> apply(false) }
                     .setNeutralButton(MoteI18n.text("使用中央说明")) { _, _ -> apply(true) }
                     .setNegativeButton(MoteI18n.text("取消"), null).show()
-            }.onFailure { operationStatus.text = MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。") }
+            }.onFailure { operationStatus = MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。") }
         }
     }
     private fun confirmRemove(source: LocalSource) {
@@ -229,17 +468,17 @@ class SourcesActivity : MoteActivity() {
             }.show()
     }
     private fun work(label: String, action: () -> Unit) {
-        task.start(label, { operationStatus.text = it }, { action() }) { result ->
-            operationStatus.text = if (result.isSuccess) MoteI18n.text("操作已完成；同步进度会自动刷新") else result.exceptionOrNull()?.message ?: MoteI18n.text("操作失败，请重试")
+        task.start(label, { operationStatus = it }, { action() }) { result ->
+            operationStatus = if (result.isSuccess) MoteI18n.text("操作已完成；同步进度会自动刷新") else result.exceptionOrNull()?.message ?: MoteI18n.text("操作失败，请重试")
             render()
         }
     }
     private fun chooseCalendars() {
-        task.start(MoteI18n.text("正在读取本机日历…"), { operationStatus.text = it }, {
+        task.start(MoteI18n.text("正在读取本机日历…"), { operationStatus = it }, {
             owner.calendars() to owner.sources()
         }) { result ->
             result.onSuccess { (calendars, sources) ->
-                operationStatus.text = MoteI18n.text("已读取 {0} 个日历", calendars.size)
+                operationStatus = MoteI18n.text("已读取 {0} 个日历", calendars.size)
                 if (calendars.isEmpty()) { toast(MoteI18n.text("系统日历提供者暂无日历；只有保存在本机提供者中的日历可连接")); return@onSuccess }
                 MoteDialogBuilder(this).setTitle(MoteI18n.text("选择一个本机日历")).setItems(calendars.map { it.name }.toTypedArray()) { _, index ->
                     val item = calendars[index]
@@ -247,7 +486,7 @@ class SourcesActivity : MoteActivity() {
                     val existing = sources.find { it.kind == "local-calendar" && it.calendarId == item.id }
                     edit(existing ?: LocalSource(name = item.name.take(200).ifBlank { MoteI18n.text("本机日历") }, kind = "local-calendar", calendarId = item.id), newSource = existing == null)
                 }.setNegativeButton(MoteI18n.text("取消"), null).show()
-            }.onFailure { operationStatus.text = MoteI18n.text("无法读取日历列表，请检查权限与日历应用") }
+            }.onFailure { operationStatus = MoteI18n.text("无法读取日历列表，请检查权限与日历应用") }
         }
     }
     @Deprecated("Platform permission callback")
@@ -324,13 +563,13 @@ class SourcesActivity : MoteActivity() {
                 next.validate()
                 dialog.setCancelable(false)
                 listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL).forEach { dialog.getButton(it).isEnabled = false }
-                task.start(MoteI18n.text("正在保存来源设置…"), { operationStatus.text = it; dialog.getButton(AlertDialog.BUTTON_POSITIVE).text = it }, {
+                task.start(MoteI18n.text("正在保存来源设置…"), { operationStatus = it; dialog.getButton(AlertDialog.BUTTON_POSITIVE).text = it }, {
                     owner.saveAgainstOriginal(next, if (newSource) null else source, descriptionText)
                 }) { result ->
                     dialog.setCancelable(true)
                     listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL).forEach { dialog.getButton(it).isEnabled = true }
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).text = MoteI18n.text("保存来源设置")
-                    result.onSuccess { dialog.dismiss(); operationStatus.text = MoteI18n.text("来源已保存，正在等待后台扫描"); render() }
+                    result.onSuccess { dialog.dismiss(); operationStatus = MoteI18n.text("来源已保存，正在等待后台扫描"); render() }
                         .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
                 }
             } catch (error: Exception) { toast(if (error is IllegalArgumentException) error.message ?: MoteI18n.text("请检查来源设置") else MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }

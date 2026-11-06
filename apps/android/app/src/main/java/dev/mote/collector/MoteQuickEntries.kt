@@ -32,7 +32,7 @@ internal enum class MoteQuickEntry(val id: String, val labelKey: String, val ico
     fun destination(context: Context): Intent = when (this) {
         ASK -> Intent(context, MainActivity::class.java).putExtra("page", "ASK")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        else -> Intent(context, RecordEditorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        else -> Intent(context, if (this == AUDIO) MicrophoneRecordEditorActivity::class.java else RecordEditorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             .apply { media?.let { putExtra("startMedia", it) } }
     }
     val media get() = when (this) { PHOTO -> "camera"; AUDIO -> "audio"; else -> null }
@@ -114,6 +114,9 @@ internal object MoteSystemEntries {
         val availability = SystemEntriesPlugin.availability(context)
         MoteShortcuts.publish(context)
         runCatching { QuickEntryWidget.refresh(context) }
-        if (availability.active) runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, ScreenCaptureTileService::class.java)) }
+        if (availability.active) {
+            runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, ScreenCaptureTileService::class.java)) }
+            runCatching { android.service.quicksettings.TileService.requestListeningState(context, android.content.ComponentName(context, SendPauseTileService::class.java)) }
+        }
     }
 }

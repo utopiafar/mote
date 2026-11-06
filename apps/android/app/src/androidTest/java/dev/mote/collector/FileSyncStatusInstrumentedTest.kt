@@ -148,7 +148,7 @@ class FileSyncStatusInstrumentedTest {
         repeat(212) { File(root, "$it.txt").writeText("Generated $it") }
         assertFalse(FileSources(context).scan(source))
         assertFalse(context.fileArchives().progress(source).scanComplete)
-        ActivityScenario.launch(SourcesActivity::class.java).use { scenario ->
+        ActivityScenario.launch<SourcesActivity>(Intent(context, SourcesActivity::class.java).putExtra("detailSourceId", source.id)).use { scenario ->
             waitFor("Partial totals must be qualified") { labels(scenario).any { it.contains("扫描尚未完成，总数会继续更新") } }
             assertTrue(FileSources(context).scan(source))
             waitFor("Complete folder totals must update automatically") { labels(scenario).any { it.contains("0/212") && it.contains("等待稳定 212") && !it.contains("扫描尚未完成") } }
