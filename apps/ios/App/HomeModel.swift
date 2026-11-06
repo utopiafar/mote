@@ -6,6 +6,7 @@ import Observation
 
 /// Loads the saved connection, the single draft and durable local records.
 /// Central rows remain scoped to the connection that supplied them.
+/// Calendar needs are an independent read and do not replace local saved rows.
 @MainActor
 @Observable
 final class HomeModel {
@@ -16,6 +17,7 @@ final class HomeModel {
     private let fileManager: FileManager
     private var centralOriginals: [HomeOriginal] = []
     private var centralOrigin: String?
+    private var highlights: [HomeHighlight] = []
     private var refreshGeneration = 0
 
     init(calendar: Calendar = .current, session: URLSession = .shared, fileManager: FileManager = .default) {
@@ -25,7 +27,9 @@ final class HomeModel {
         let local = Self.readLocalState(fileManager: fileManager)
         let origin = local.connection?.serverUrl ?? ""
         centralOrigin = local.connection?.serverUrl
-        presentation = Self.makePresentation(local: local, central: [], origin: origin, calendar: calendar)
+        presentation = Self.makePresentation(
+            local: local, central: [], origin: origin, highlights: [], calendar: calendar
+        )
     }
 
     func refresh() async {
@@ -36,6 +40,7 @@ final class HomeModel {
         if centralOrigin != origin {
             centralOrigin = origin
             centralOriginals = []
+            highlights = []
         }
         render(local)
 
@@ -51,6 +56,22 @@ final class HomeModel {
         } catch CentralError.http(let status, _) where status == 401 || status == 403 {
             guard generation == refreshGeneration else { return }
             centralOriginals = []
+            highlights = []
+            render(local)
+            return
+        } catch {
+            guard generation == refreshGeneration else { return }
+            render(local)
+        }
+
+        do {
+            let needs = try await client.calendarNeeds()
+            guard generation == refreshGeneration else { return }
+            highlights = needs
+            render(local)
+        } catch CentralError.http(let status, _) where status == 401 || status == 403 {
+            guard generation == refreshGeneration else { return }
+            highlights = []
             render(local)
         } catch {
             guard generation == refreshGeneration else { return }
@@ -83,6 +104,7 @@ final class HomeModel {
             local: local,
             central: centralOriginals,
             origin: centralOrigin ?? "",
+            highlights: highlights,
             calendar: calendar
         )
     }
@@ -91,6 +113,7 @@ final class HomeModel {
         local: LocalState,
         central: [HomeOriginal],
         origin: String,
+        highlights: [HomeHighlight] = [],
         calendar: Calendar
     ) -> HomePresentation {
         let connected = local.connection != nil
@@ -106,7 +129,7 @@ final class HomeModel {
         return HomePresentation(
             facts: facts,
             hasDraft: local.hasDraft,
-            highlights: [],
+            highlights: highlights,
             originals: HomeFeed.merge(local: local.originals, central: central, origin: origin),
             calendar: calendar
         )

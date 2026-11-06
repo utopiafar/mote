@@ -141,6 +141,8 @@ struct HomeDestinationView: View {
                 onOpenOriginal: onOpenOriginal,
                 onConnect: onOpenConnection
             )
+        case .highlight(.schedule, _):
+            ScheduleScreen(onBack: { dismiss() })
         case .captureStatus:
             CaptureSyncScreen(onOpenConnection: onOpenConnection, onOpenOriginal: onOpenOriginal)
         default:
