@@ -73,10 +73,16 @@ final class HomeModel {
             return try await client.insights(limit: 30).items
         }
         self.originalsLoader = originalsLoader
-        self.calendarNeedsLoader = calendarNeedsLoader ?? (injected ? { _ in [] } : { connection in
-            let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
-            return try await client.calendarNeeds()
-        })
+        if let calendarNeedsLoader {
+            self.calendarNeedsLoader = calendarNeedsLoader
+        } else if injected {
+            self.calendarNeedsLoader = { _ in [] }
+        } else {
+            self.calendarNeedsLoader = { connection in
+                let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
+                return try await client.calendarNeeds()
+            }
+        }
         let local = self.localStateLoader()
         let origin = local.connection?.serverUrl ?? ""
         centralOrigin = local.connection?.serverUrl
