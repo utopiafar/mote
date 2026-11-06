@@ -97,10 +97,10 @@ class MaterialAskInstrumentedTest {
                     .putExtra("recordId",capture).putExtra("recordRemote",true).putExtra("recordOrigin",origin)
                     .putExtra("recordSource","screen").putExtra("directReader",true).putExtra("centralReaderActions",true)).use { s ->
                     readyAny(s,"Actual original reader"){a -> shownViews(a).filterIsInstance<TextView>().any { it.text.toString().contains("暖气费按实际用量分摊") }}
-                    clickAny(s,"Open the actual original More menu"){it is TextView && it.isClickable && it.text.toString()=="▸ 更多"}
+                    clickAny(s,"Open the actual original More menu"){it is TextView && it.isClickable && !it.isSelected && it.text.toString()=="更多"}
                     clickAny(s,"详情"){it is TextView && it.isClickable && it.text.toString()=="详情"}
                     until("Receipt timeline and references are visible"){main{windows().any{it is TextView&&it.text.toString()=="本机已保存"}&&windows().any{it is TextView&&it.text.toString()=="中央已接收"}&&windows().any{it is TextView&&it.text.toString()=="引用它的对话"}}}
-                    main { windows().filterIsInstance<TextView>().firstOrNull { it.text.toString()=="▾ 更多" }?.performClick() }
+                    main { windows().filterIsInstance<TextView>().firstOrNull { it.isSelected && it.text.toString()=="更多" }?.performClick() }
                     instrumentation.waitForIdleSync()
                     s.onActivity { a ->
                         assertTrue(windows().filterIsInstance<TextView>().any { it.text.toString()=="2" })

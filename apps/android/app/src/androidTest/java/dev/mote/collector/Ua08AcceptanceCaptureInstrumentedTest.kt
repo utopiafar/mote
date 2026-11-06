@@ -131,6 +131,12 @@ class Ua08AcceptanceCaptureInstrumentedTest {
             assertTrue("citation card position", visible.any { it.contentDescription?.toString() == "查看引用 2 · 租房合同 2026.pdf" })
             assertTrue("citation card location", visible.filterIsInstance<TextView>().any { it.text.toString() == "第 4 页" })
             assertTrue("answer actions", visible.filterIsInstance<TextView>().any { it.text.toString() == "保存为记录" })
+            val minimumTouchTarget = (48 * a.resources.displayMetrics.density).toInt()
+            for (label in listOf("复制", "更多", "添加图片")) {
+                val controls = visible.filter { it.contentDescription?.toString() == label }
+                assertTrue("$label remains available", controls.isNotEmpty())
+                assertTrue("$label has a 48dp touch target", controls.all { it.width >= minimumTouchTarget && it.height >= minimumTouchTarget })
+            }
         }
     }
 
@@ -158,6 +164,16 @@ class Ua08AcceptanceCaptureInstrumentedTest {
             ready(s, "Saved Material scope chip is shown") { a -> shown(a).any { it.contentDescription?.toString()?.startsWith("material:") == true } }
             assertTrue("Scope name", seen { it is TextView && it.text.toString() == "租房合同 2026.pdf" })
             shot(s, "anchored-$theme")
+            var point = intArrayOf()
+            s.onActivity { activity ->
+                val clear = shown(activity).single { it.contentDescription?.toString() == "清除范围" }
+                val rect = android.graphics.Rect(); assertTrue(clear.getGlobalVisibleRect(rect))
+                point = intArrayOf(rect.right + activity.moteDp(16), rect.centerY())
+            }
+            val at = SystemClock.uptimeMillis()
+            instrumentation.sendPointerSync(android.view.MotionEvent.obtain(at, at, android.view.MotionEvent.ACTION_DOWN, point[0].toFloat(), point[1].toFloat(), 0))
+            instrumentation.sendPointerSync(android.view.MotionEvent.obtain(at, at + 50, android.view.MotionEvent.ACTION_UP, point[0].toFloat(), point[1].toFloat(), 0))
+            until("The expanded clear target removes the selected scope") { !seen { it.contentDescription?.toString()?.startsWith("material:") == true } }
         }
     }
 
@@ -183,6 +199,11 @@ class Ua08AcceptanceCaptureInstrumentedTest {
         perTheme(unscoped = true) { s, theme ->
             control("hold-query")
             question(s, "押金什么时候退？")
+            s.onActivity { activity ->
+                val send = shown(activity).single { it.contentDescription?.toString() == "发送" }
+                val target = activity.moteDp(48)
+                assertTrue("Send has a 48dp touch target", send.width >= target && send.height >= target)
+            }
             click(s, "Send the generated follow-up") { it.contentDescription?.toString() == "发送" }
             ready(s, "The running answer offers only stop") { a ->
                 !a.isWorking && shown(a).any { it.isShown && it.tag == "ask-stop" } &&

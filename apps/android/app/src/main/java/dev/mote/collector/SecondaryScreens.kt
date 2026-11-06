@@ -6,6 +6,8 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 
 /** Presentation only: secondary screens keep their existing stores, task owners and callbacks. */
 internal object SecondaryUi {
@@ -32,23 +34,22 @@ internal object SecondaryUi {
 
     fun actions(parent: LinearLayout): ViewGroup = SecondaryActions(parent.context).also { parent.addView(it, LinearLayout.LayoutParams(-1, -2)) }
 
-    fun row(parent: LinearLayout, label: String, detail: String = "", icon: String? = null, action: () -> Unit): LinearLayout = LinearLayout(parent.context).apply {
+    fun row(parent: LinearLayout, label: String, detail: String = "", icon: MoteGlyph? = null, action: () -> Unit): LinearLayout = LinearLayout(parent.context).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         val inset = context.moteDp(MoteTheme.spaceItem)
         setPadding(0, inset, 0, inset); minimumHeight = context.moteDp(64)
         background = MoteUi.clickable(context, NativeColorRole.TRANSPARENT, 0, false); isFocusable = true; isClickable = true
-        if (icon != null) addView(TextView(context).apply {
-            text = icon; gravity = Gravity.CENTER; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.MUTED)
+        if (icon != null) addView(android.widget.FrameLayout(context).apply {
             background = MoteUi.shape(context, radius = NativeRadiusRole.CONTROL, outline = true)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            addView(MoteComponents.icon(context, icon), android.widget.FrameLayout.LayoutParams(context.moteDp(20), context.moteDp(20), Gravity.CENTER))
         }, LinearLayout.LayoutParams(context.moteDp(32), context.moteDp(32)).apply { marginEnd = context.moteDp(12); gravity = Gravity.TOP })
         val words = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         addView(words, LinearLayout.LayoutParams(0, -2, 1f))
         text(words, label, heading = true)
         if (detail.isNotBlank()) text(words, detail, muted = true)
-        addView(TextView(context).apply {
-            text = "›"; MoteUi.type(this, NativeFontRole.SECTION); MoteUi.textColor(this, NativeColorRole.MUTED)
-            setPadding(context.moteDp(MoteTheme.spaceInline), 0, 0, 0); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        addView(MoteComponents.icon(context, MoteGlyph.CHEV), LinearLayout.LayoutParams(context.moteDp(20), context.moteDp(20)).apply {
+            marginStart = context.moteDp(MoteTheme.spaceInline)
         })
         setOnClickListener { action() }
         parent.addView(View(context).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LinearLayout.LayoutParams(-1, context.moteDp(1)))
@@ -57,14 +58,23 @@ internal object SecondaryUi {
 
     fun disclosure(parent: LinearLayout, label: String, key: String, expanded: Boolean = false): LinearLayout {
         val content = LinearLayout(parent.context).apply { orientation = LinearLayout.VERTICAL; visibility = if (expanded) View.VISIBLE else View.GONE; tag = "$key:content" }
+        fun Button.updateDisclosureIcon() {
+            val glyph = if (isSelected) MoteGlyph.DOWN else MoteGlyph.CHEV
+            val drawable = context.getDrawable(glyph.drawable)?.mutate()
+            drawable?.setBounds(0, 0, context.moteDp(20), context.moteDp(20))
+            drawable?.setTint(NativeColorRole.MUTED.color())
+            setCompoundDrawablesRelative(drawable, null, null, null)
+            compoundDrawablePadding = context.moteDp(4)
+        }
         val toggle = MoteUi.action(Button(parent.context).apply {
-            text = (if (expanded) "▾ " else "▸ ") + label; tag = key; gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            text = label; tag = key; gravity = Gravity.START or Gravity.CENTER_VERTICAL
             isSelected = expanded; accessibilityState(expanded)
+            NativePresentationStyles.bind(this, "secondary-disclosure-icon") { (it as Button).updateDisclosureIcon() }
             setOnClickListener {
                 val show = content.visibility != View.VISIBLE
                 content.visibility = if (show) View.VISIBLE else View.GONE
-                text = (if (show) "▾ " else "▸ ") + label
                 isSelected = show; accessibilityState(show)
+                updateDisclosureIcon()
             }
         }, MoteUi.ButtonRole.TEXT)
         parent.addView(toggle, LinearLayout.LayoutParams(-1, -2))
