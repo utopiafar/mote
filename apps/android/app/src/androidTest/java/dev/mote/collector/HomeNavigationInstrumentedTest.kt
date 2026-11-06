@@ -292,7 +292,7 @@ class HomeNavigationInstrumentedTest {
                     assertTrue("The stale origin is explained on the real composer",ready)
                     scenario.onActivity { a ->
                         val labels=views(a.window.decorView).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
-                        assertTrue(labels.contains("＋ 参考资料")); assertFalse(labels.any { it.startsWith("参考这条记录") || it.startsWith("仅查这条记录") })
+                        assertTrue(labels.contains(MoteI18n.text("参考资料"))); assertFalse(labels.any { it.startsWith("参考这条记录") || it.startsWith("仅查这条记录") })
                     }
                     assertEquals(0,fixture.captureReads)
                 }

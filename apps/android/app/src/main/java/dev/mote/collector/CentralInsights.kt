@@ -13,6 +13,8 @@ import android.text.Spanned
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
 import android.text.TextPaint
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -127,7 +129,8 @@ internal class CentralInsights(private val screens: CentralScreens) {
                     ui.text(InsightPresentation.title(item), NativeFontRole.ROW, labels)
                     ui.text(preview(item),NativeFontRole.SUPPORT,labels).also { MoteUi.textColor(it,NativeColorRole.MUTED) }
                     ui.text(meta(item),NativeFontRole.META,labels).also { MoteUi.textColor(it,NativeColorRole.MUTED) }
-                    row.addView(TextView(ui).apply { text = "›"; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED); gravity = Gravity.CENTER },LinearLayout.LayoutParams(ui.moteDp(24),-2))
+                    row.addView(MoteComponents.icon(ui, MoteGlyph.CHEV, NativeColorRole.MUTED, 20),
+                        LinearLayout.LayoutParams(ui.moteDp(20), ui.moteDp(20)))
                     target.addView(row,LinearLayout.LayoutParams(-1,-2)); divider(target)
                 }
                 if (cursors.size > 1) ui.button(MoteI18n.text("上一页"), parent = target) { cursors.removeAt(cursors.lastIndex); historyScroll = 0; screens.refresh() }
@@ -184,7 +187,8 @@ internal class CentralInsights(private val screens: CentralScreens) {
             val labels = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }.also { row.addView(it,LinearLayout.LayoutParams(0,-2,1f)) }
             ui.text(citation.optString("title").ifBlank { citation.optString("appName").ifBlank { MoteI18n.text("原始记录") } },NativeFontRole.SUPPORT,labels)
             ui.text(date(citation.optString("contentAt",citation.optString("capturedAt"))),NativeFontRole.META,labels).also { MoteUi.textColor(it,NativeColorRole.MUTED) }
-            row.addView(TextView(ui).apply { text = "›"; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(ui.moteDp(24),-2))
+            row.addView(MoteComponents.icon(ui, MoteGlyph.CHEV, NativeColorRole.MUTED, 20),
+                LinearLayout.LayoutParams(ui.moteDp(20), ui.moteDp(20)))
             body.addView(row,LinearLayout.LayoutParams(-1,-2)); divider(body)
         }
         ui.restoreContentScroll(detailScroll)

@@ -199,7 +199,7 @@ class MaterialAskInstrumentedTest {
             val hash=read.getJSONArray("spans").getJSONObject(0).getJSONObject("asset").getString("hash")
             s.onActivity { a->assertTrue(shown(a).filterIsInstance<TextView>().any{it.text.toString()=="此版本暂无文字正文。"});assertTrue(shown(a).filterIsInstance<TextView>().any{it.text.toString()=="text/plain"});assertTrue(shown(a).filterIsInstance<TextView>().any{it.text.toString()=="原件已保留"});assertFalse(shown(a).filterIsInstance<TextView>().any{it.text.contains(hash) || it.text.toString().startsWith("[asset ") || it.text.toString().startsWith("sourceId ·")}) }
             screenshot(s,"asset-only-material-reader")
-            clickText(s,"更多  ›");ready(s,"Actual asset hash is available only in expanded details"){a->shown(a).filterIsInstance<TextView>().any{it.text.contains(hash)}};screenshot(s,"asset-only-expanded-real-metadata");clickText(s,"更多  ›")
+            click(s,"更多"){it is TextView && it.tag=="disclosure:"+MoteI18n.text("更多")};ready(s,"Actual asset hash is available only in expanded details"){a->shown(a).filterIsInstance<TextView>().any{it.text.contains(hash)}};screenshot(s,"asset-only-expanded-real-metadata");click(s,"更多"){it is TextView && it.tag=="disclosure:"+MoteI18n.text("更多")}
             clickText(s,"来源与处理");ready(s,"Pinned member original route"){a->!a.isWorking && shown(a).filterIsInstance<TextView>().any{it.text.toString()=="查看原文"}}
             val monitor=instrumentation.addMonitor(CaptureRecordsActivity::class.java.name,null,false)
             try { clickText(s,"查看原文");val reader=instrumentation.waitForMonitorWithTimeout(monitor,10_000) as? CaptureRecordsActivity;assertNotNull(reader)
