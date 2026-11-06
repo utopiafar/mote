@@ -142,5 +142,33 @@ final class MoteCentralTests: XCTestCase {
         XCTAssertEqual(memory.evidenceIds.count, 1)
         let evidence = try await client.memoryEvidence(id: try XCTUnwrap(UUID(uuidString: memoryId)))
         XCTAssertEqual(evidence.items.first?.ocrText, "Generated saved source body")
+
+        let trees = try await client.contextTrees()
+        XCTAssertTrue(trees.items.contains { tree in
+            tree.id == "knowledge" && tree.nodes.contains { $0.id == "episodic" }
+        })
+        let allMemories = try await client.memoryRecords()
+        XCTAssertTrue(allMemories.items.contains { $0.id == memoryId && !$0.statement.isEmpty })
+        let events = try await client.memoryContextPage(treeID: "knowledge", nodeID: "episodic")
+        XCTAssertTrue(events.items.contains { $0.id == memoryId })
+
+        let library = try await client.library()
+        XCTAssertTrue(library.items.contains { entry in
+            entry.entryType == "capture" && entry.capture?.id == note.id
+        })
+    }
+
+    func testLibraryBrowseDecodesMaterialAndCaptureEntries() throws {
+        let json = #"""
+        {"items":[
+          {"entryType":"material","ref":"material:generated","contentAt":"2026-10-01T02:00:00Z","material":{"title":"租房合同 2026.pdf","kind":"mote.file","origin":{"sourceId":"generated-source","lastAt":"2026-10-01T02:00:00Z"}}},
+          {"entryType":"capture","ref":"capture:generated","contentAt":"2026-10-01T01:00:00Z","capture":{"id":"00000000-0000-4000-8000-000000000001","capturedAt":"2026-10-01T01:00:00Z","deviceId":"generated-iphone","deviceName":"Generated iPhone","platform":"ios","source":"note","appId":"dev.mote.ios","appName":"Mote","windowTitle":"","durationMs":0,"hasImage":false,"ocr":{"status":"completed"},"textPreview":"Generated note","sizeBytes":14}}
+        ],"nextCursor":"generated-cursor"}
+        """#
+        let page = try JSONDecoder().decode(LibraryBrowsePage.self, from: Data(json.utf8))
+        XCTAssertEqual(page.nextCursor, "generated-cursor")
+        XCTAssertEqual(page.items.map(\.entryType), ["material", "capture"])
+        XCTAssertEqual(page.items.first?.material?.title, "租房合同 2026.pdf")
+        XCTAssertEqual(page.items.last?.capture?.source, .note)
     }
 }

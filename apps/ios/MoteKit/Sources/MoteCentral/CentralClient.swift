@@ -136,6 +136,47 @@ public struct CentralClient: Sendable {
         try await request("GET", "/api/memories/\(id.uuidString.lowercased())/evidence")
     }
 
+    /// Existing owner library browse used by the web and native library lists.
+    public func library(query: String? = nil, after: String? = nil, before: String? = nil,
+                        cursor: String? = nil, limit: Int = 30) async throws -> LibraryBrowsePage {
+        var queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        for (name, value) in [("query", query), ("after", after), ("before", before), ("cursor", cursor)] {
+            if let value, !value.isEmpty { queryItems.append(URLQueryItem(name: name, value: value)) }
+        }
+        return try await request("GET", "/api/library/browse", query: queryItems)
+    }
+
+    /// The same context-tree catalog Android reads before its memory filters.
+    public func contextTrees() async throws -> ContextTreeCatalog {
+        try await request("GET", "/api/context-trees")
+    }
+
+    /// `level=detail` is the existing memory list mode that includes the
+    /// statement; it does not add a new data access path.
+    public func memoryRecords(query: String? = nil, includeHistory: Bool = false,
+                              cursor: String? = nil, limit: Int = 30) async throws -> CentralPage<MemoryRecord> {
+        var queryItems = [
+            URLQueryItem(name: "level", value: "detail"),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        if let query, !query.isEmpty { queryItems.append(URLQueryItem(name: "query", value: query)) }
+        if includeHistory { queryItems.append(URLQueryItem(name: "includeHistory", value: "true")) }
+        if let cursor, !cursor.isEmpty { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await request("GET", "/api/memories", query: queryItems)
+    }
+
+    /// One filtered memory page from the existing context-tree route. The
+    /// route returns overview rows; the caller reads each exact memory body.
+    public func memoryContextPage(treeID: String, nodeID: String, query: String? = nil,
+                                  includeHistory: Bool = false, cursor: String? = nil,
+                                  limit: Int = 30) async throws -> CentralPage<MemorySummary> {
+        var queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        if let query, !query.isEmpty { queryItems.append(URLQueryItem(name: "query", value: query)) }
+        if includeHistory { queryItems.append(URLQueryItem(name: "includeHistory", value: "true")) }
+        if let cursor, !cursor.isEmpty { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await request("GET", "/api/context-trees/\(treeID)/nodes/\(nodeID)", query: queryItems)
+    }
+
     private func request<Response: Decodable>(_ method: String, _ path: String,
                                                query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> Response {
         try await perform(try makeRequest(method, path, query: query, authenticated: authenticated))
