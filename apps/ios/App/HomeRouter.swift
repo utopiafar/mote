@@ -112,6 +112,7 @@ struct HomeDestinationView: View {
     let onAsk: (OriginalAskScope) -> Void
     let onClearScope: () -> Void
     let onOpenConnection: () -> Void
+    let onOpenOriginal: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -141,7 +142,7 @@ struct HomeDestinationView: View {
         case .profile:
             ProfileMenuView(onOpenConnection: onOpenConnection)
         case .captureStatus:
-            CaptureSyncScreen(onOpenConnection: onOpenConnection)
+            CaptureSyncScreen(onOpenConnection: onOpenConnection, onOpenOriginal: onOpenOriginal)
         default:
             placeholder
         }
