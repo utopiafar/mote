@@ -65,12 +65,15 @@ class CaptureRecordsActivity : MoteActivity() {
     private var directReaderCleanup: (() -> Unit)? = null
     private var directReaderPaused = false
     private var restoreReaderScroll: Int? = null
+    private var citationExcerpt: String? = null
+    private var citationScrolled = false
     @Volatile private var generation = 0
     @Volatile private var loadGeneration = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
         restoreReaderScroll = savedInstanceState?.getInt("directReaderScroll")
+        citationExcerpt = savedInstanceState?.getString("citationExcerpt") ?: intent.getStringExtra("citationExcerpt")
         date = savedInstanceState?.getString("date")?.let(LocalDate::parse)
             ?: intent.getStringExtra("recordDate")?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: date
         central = savedInstanceState?.getBoolean("central") ?: false
@@ -420,6 +423,7 @@ class CaptureRecordsActivity : MoteActivity() {
         return image
     }
     private fun detail(id: String, remote: Boolean, client: CaptureRecordClient?, stamp: Int, version: String? = null) {
+        citationScrolled = false
         directReaderCleanup?.invoke(); directReaderCleanup = null
         readerDialog?.dismiss()
         val readerStamp=++readerSequence
@@ -632,11 +636,37 @@ class CaptureRecordsActivity : MoteActivity() {
     private fun errorMessage(error: Exception, remote: Boolean): String = if (error is IllegalStateException || error is IllegalArgumentException) error.message ?: MoteI18n.text("记录读取失败，请刷新重试") else if (remote) MoteI18n.text("中央记录暂不可读取，请检查网络后重试") else MoteI18n.text("本机记录暂不可读取，请刷新重试；文件已保留")
     private fun time(at: String): String = runCatching { DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.parse(at)) }.getOrDefault(at)
     private fun row(parent: LinearLayout) = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(10) }) }
-    private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply { text = value; MoteUi.type(this, size.toInt()); MoteUi.textColor(this, NativeColorRole.INK); setPadding(0, moteDp(5), 0, moteDp(5)) }.also(parent::addView)
+    private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply {
+        val range = ConversationCitationPresentation.locate(value, citationExcerpt ?: "")
+        text = if (range == null) value else android.text.SpannableString(value).apply {
+            setSpan(android.text.style.BackgroundColorSpan(NativeColorRole.TINT.color()), range.first, range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        MoteUi.type(this, size.toInt()); MoteUi.textColor(this, NativeColorRole.INK); setPadding(0, moteDp(5), 0, moteDp(5))
+        if (range != null) scrollToCitation(this, range.first)
+    }.also(parent::addView)
+    private fun scrollToCitation(view: TextView, offset: Int) {
+        if (citationScrolled) return
+        citationScrolled = true
+        view.post {
+            val layout = view.layout ?: return@post
+            var ancestor: View? = view
+            var scroll: ScrollView? = null
+            while (ancestor != null) {
+                if (ancestor is ScrollView) { scroll = ancestor; break }
+                ancestor = ancestor.parent as? View
+            }
+            val target = scroll ?: return@post
+            val viewLocation = IntArray(2); view.getLocationInWindow(viewLocation)
+            val scrollLocation = IntArray(2); target.getLocationInWindow(scrollLocation)
+            val line = layout.getLineForOffset(offset.coerceIn(0, view.text.length))
+            target.scrollTo(0, (viewLocation[1] - scrollLocation[1] + target.scrollY + layout.getLineTop(line)).coerceAtLeast(0))
+        }
+    }
     private fun button(parent: LinearLayout, label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { parent.addView(it, if (parent.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2)) }
     private fun clearList() { list.removeAllViews() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("directReaderScroll",(body.parent as? ScrollView)?.scrollY ?: 0)
+        outState.putString("citationExcerpt", citationExcerpt)
         outState.putBoolean("grid", grid); outState.putBoolean("sessionGrouping", sessionGrouping); outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource)
         val reader = openReader.takeIf { intent.getBooleanExtra("directReader",false) || readerDialog?.isShowing == true }
         outState.putString("readerVersion", reader?.version); outState.putString("readerId", reader?.id); outState.putBoolean("readerRemote", reader?.remote ?: false)

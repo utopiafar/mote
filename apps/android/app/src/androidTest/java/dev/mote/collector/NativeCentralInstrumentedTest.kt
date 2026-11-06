@@ -146,7 +146,7 @@ class NativeCentralInstrumentedTest {
     @Test fun renderGeneratedNativeViewsForVisualReview() {
         open("ask").use { scenario ->
             login(scenario); waitFor(scenario, "Ask ready") { !it.isWorking && contains(it, "你的问题") }
-            click(scenario, "新对话"); waitFor(scenario, "Fresh generated question") { !it.isWorking && contains(it, "你的问题") }
+            waitFor(scenario, "Fresh generated question") { !it.isWorking && contains(it, "你的问题") }
             for (page in listOf("ask", "notes", "settings")) {
                 scenario.onActivity { it.navigate(page) }; waitFor(scenario, "$page ready") { !it.isWorking }
                 // App drawing of this isolated fixture only; never capture another app or a personal device.
@@ -243,23 +243,26 @@ class NativeCentralInstrumentedTest {
                 await("Native login") { visible(it).any { view -> view.contentDescription == "中央管理令牌" } }
                 scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "中央管理令牌" }.setText(owner) }
                 click("登录并继续")
-                await("Ask ready") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
-                click("新对话")
+                await("Conversation list ready") { visible(it).any { view -> view.contentDescription == "问一问" && view.isEnabled } }
+                scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "问一问" }.setText("Generated primary navigation question") }
+                scenario.onActivity { activity -> visible(activity).first { it.isClickable && it.contentDescription?.toString() == "发送" }.performClick() }
                 await("New conversation ready") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
-                scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated primary navigation question") }
-                click("发送")
                 scenario.onActivity { activity -> activity.openGeneratedMenu(); activity.openGeneratedHome(); visible(activity).single { it.tag == "home-ask-action" }.performClick() }
+                await("The conversation list returns the accepted conversation") { visible(it).any { view -> view.contentDescription?.toString()?.startsWith("Generated primary navigation question. ") == true } }
+                scenario.onActivity { activity -> visible(activity).single { view -> view.contentDescription?.toString()?.startsWith("Generated primary navigation question. ") == true }.performClick() }
                 await("Accepted answer survives primary navigation") { visible(it).filterIsInstance<TextView>().any { view -> view.text.contains("Generated native answer") } }
                 scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated unsent draft") }
                 scenario.onActivity { activity -> activity.openGeneratedHome(); visible(activity).single { it.tag == "home-ask-action" }.performClick() }
                 Thread.sleep(2000) // Allow the return-to-tab poll timer to run before checking the next draft.
+                scenario.onActivity { activity -> visible(activity).single { view -> view.contentDescription?.toString()?.startsWith("Generated primary navigation question. ") == true }.performClick() }
+                await("The reopened conversation shows the unsent draft") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
                 scenario.onActivity { activity -> assertEquals("Generated unsent draft", visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.text.toString()) }
                 scenario.recreate(); scenario.awaitMainUi()
                 await("Ask draft survives host recreation") { visible(it).filterIsInstance<EditText>().any { view -> view.contentDescription == "你的问题" && view.isEnabled && view.text.toString() == "Generated unsent draft" } }
                 scenario.onActivity { activity ->
                     assertTrue(visible(activity).filterIsInstance<TextView>().any { it.text.contains("Generated native answer") })
                     assertEquals(0, visible(activity).filterIsInstance<MotePrimaryNavigation>().size)
-                    assertTrue(visible(activity).any { it.tag == "central-title" })
+                    assertTrue(visible(activity).any { it.contentDescription == "返回上级" })
                     assertFalse(Settings(activity).enabled)
                     val question = visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }
                     assertTrue(question.requestFocus())

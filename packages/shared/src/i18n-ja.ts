@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const japanese: Readonly<Record<string, string>> = {
+  "没有连上中央": "中央に接続していません",
+  "继续问": "続けて質問",
+  "第 {0} 行": "{0} 行目",
   "离开页面会停止录音，并保留草稿。": "このページを離れると録音を停止し、下書きを保持します。",
   "网页": "ウェブ",
   "截图与照片": "スクリーンショットと写真",
