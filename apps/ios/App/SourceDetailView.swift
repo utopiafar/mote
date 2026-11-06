@@ -76,7 +76,7 @@ struct SourceDetailView: View {
                         )
                     }
                     .padding(.horizontal, MoteMetrics.pageMargin)
-                    .padding(.top, 24)
+                    .padding(.top, 32)
                 }
                 .padding(.bottom, 34)
             }
@@ -101,7 +101,7 @@ struct ShortcutSetupView: View {
                 .foregroundStyle(MoteDesignTokens.ink.color)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
-                .padding(.bottom, 18)
+                .padding(.bottom, 14)
 
             MoteGroup {
                 ForEach(presentation.steps) { step in
@@ -129,7 +129,7 @@ struct ShortcutSetupView: View {
                         }
                     }
                     .padding(.horizontal, 14)
-                    .frame(minHeight: 52)
+                    .frame(minHeight: 50)
                     .overlay(alignment: .top) {
                         if step.number > 1 {
                             Rectangle()
@@ -139,7 +139,7 @@ struct ShortcutSetupView: View {
                     }
                 }
             }
-            .padding(.horizontal, MoteMetrics.pageMargin)
+            .padding(.horizontal, 18)
 
             if presentation.phase == .waiting {
                 MoteGroup {
@@ -190,7 +190,6 @@ struct ShortcutSetupView: View {
                 }
             }
             .padding(.horizontal, MoteMetrics.pageMargin)
-            Color.clear.frame(height: 34)
         }
         .background(MoteDesignTokens.background.color.ignoresSafeArea())
     }
@@ -245,7 +244,7 @@ private struct SourceSectionTitle: View {
             .foregroundStyle(MoteDesignTokens.muted.color)
             .padding(.horizontal, 30)
             .padding(.top, topPadding)
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
     }
 }
 
