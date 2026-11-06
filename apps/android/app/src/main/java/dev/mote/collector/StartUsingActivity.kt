@@ -9,6 +9,9 @@ import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import dev.mote.collector.plugins.NativeAdministrationPlugin
+import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.moteDisclosureGlyph
+import dev.mote.collector.ui.moteGlyph
 
 /** Installation guidance is read or copied explicitly; this page never installs a service. */
 class StartUsingActivity : MoteActivity() {
@@ -20,9 +23,9 @@ class StartUsingActivity : MoteActivity() {
         }.also(body::addView)
         fun button(value: String, primary: Boolean = false, run: () -> Unit) = MoteUi.button(Button(this).apply { text = value; setOnClickListener { run() } },primary).also { body.addView(it,android.widget.LinearLayout.LayoutParams(-2,-2).apply { bottomMargin=moteDp(16) }) }
         fun action(value: String, link: Boolean=false, run: () -> Unit) = object:TextView(this) { override fun getAccessibilityClassName(): CharSequence = Button::class.java.name }.apply {
-            text=if(link) value+" ↗" else value; contentDescription=value; isFocusable=true; minimumHeight=moteDp(44); gravity=android.view.Gravity.CENTER_VERTICAL
+            text=value; contentDescription=value; isFocusable=true; minimumHeight=moteDp(48); gravity=android.view.Gravity.CENTER_VERTICAL
             MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,if(link) NativeColorRole.ACCENT else NativeColorRole.MUTED)
-            if(link) paintFlags=paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+            if(link) { paintFlags=paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG; moteGlyph(MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 18) }
             background=MoteUi.clickable(this@StartUsingActivity,NativeColorRole.BACKGROUND,0,false); setOnClickListener { run() }
         }.also { body.addView(it,android.widget.LinearLayout.LayoutParams(-1,-2)) }
         text(MoteI18n.text("先准备你的资料库"),NativeFontRole.TITLE_MOBILE)
@@ -36,8 +39,14 @@ class StartUsingActivity : MoteActivity() {
         lateinit var disclosure: TextView
         disclosure=action(MoteI18n.text("查看安装提示词")) {
             prompt.visibility=if(prompt.visibility==View.VISIBLE) View.GONE else View.VISIBLE
-            disclosure.text=(if(prompt.visibility==View.VISIBLE) "▾ " else "▸ ")+MoteI18n.text("查看安装提示词")
-        }.apply { text="▸ "+MoteI18n.text("查看安装提示词") }
+            disclosure.isSelected=prompt.visibility==View.VISIBLE
+            disclosure.moteDisclosureGlyph(disclosure.isSelected)
+            if (android.os.Build.VERSION.SDK_INT >= 30)
+                disclosure.stateDescription=MoteI18n.text(if(disclosure.isSelected) "已展开" else "已收起")
+        }.apply {
+            isSelected=false; moteDisclosureGlyph(false)
+            if (android.os.Build.VERSION.SDK_INT >= 30) stateDescription=MoteI18n.text("已收起")
+        }
         body.addView(prompt)
         action(MoteI18n.text("查看安装文档"),link=true) { startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(NativeAdministrationPlugin.INSTALL_DOCUMENT))) }
         body.addView(View(this).apply { MoteUi.backgroundColor(this,NativeColorRole.DIVIDER) },android.widget.LinearLayout.LayoutParams(-1,moteDp(1)).apply { topMargin=moteDp(20); bottomMargin=moteDp(12) })

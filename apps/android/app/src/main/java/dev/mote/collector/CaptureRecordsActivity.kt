@@ -12,6 +12,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.moteGlyph
 import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
@@ -120,7 +123,10 @@ class CaptureRecordsActivity : MoteActivity() {
             }
         }
         layout = Switch(this).apply { text = MoteI18n.text("缩略图视图"); isChecked = grid; setOnCheckedChangeListener { _, checked -> grid = checked; load() } }; body.addView(layout)
-        backToAlbums = button(body, MoteI18n.text("‹ 返回分组")) { closeAlbum() }.apply { visibility = View.GONE }
+        backToAlbums = button(body, MoteI18n.text("返回分组")) { closeAlbum() }.apply {
+            visibility = View.GONE
+            moteGlyph(MoteGlyph.BACK, NativeColorRole.MUTED, 20, atStart = true)
+        }
         // Long translated labels and scaled text need actual width, not three narrow columns.
         val compactDates = resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f
         val days = if (compactDates) LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL } else row(body)
@@ -388,7 +394,8 @@ class CaptureRecordsActivity : MoteActivity() {
         card.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
         text(labels, item.optString("appName").ifBlank { item.optString("appId").ifBlank { MoteI18n.text("桌面 / 系统画面") } }, MoteTheme.fontSection.toFloat())
         text(labels, MoteI18n.text("{0} – {1} · {2} 条 · {3} 张截图", time(item.getString("firstAt")), time(item.getString("capturedAt")), item.getInt("count"), item.getInt("imageCount")), MoteTheme.fontSupport.toFloat())
-        text(card, "›", 24f)
+        card.addView(MoteComponents.icon(this@CaptureRecordsActivity, MoteGlyph.CHEV, NativeColorRole.MUTED, 20),
+            LinearLayout.LayoutParams(moteDp(20), moteDp(20)))
         val appId = item.optString("appId")
         if (appId.isNotBlank()) imageExecutor.execute {
             if (stamp != generation) return@execute

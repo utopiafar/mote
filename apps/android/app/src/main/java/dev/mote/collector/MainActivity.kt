@@ -24,12 +24,12 @@ import dev.mote.collector.plugins.DailyHomeOwner
 import dev.mote.collector.plugins.DailyHomePlugin
 import dev.mote.collector.plugins.DailyHomeSections
 import dev.mote.collector.plugins.NativeAdministrationPlugin
-import dev.mote.collector.plugins.NativeRecordReceipt
 import dev.mote.collector.plugins.NativeSystemToolsPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
+import dev.mote.collector.ui.moteGlyph
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -92,8 +92,6 @@ class MainActivity : MoteActivity() {
     private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
     private lateinit var homeNoticeRow: HomeNoticeRow
-    private lateinit var homeRecordReceipt: LinearLayout
-    private var homeReceiptAvailable = false
     internal fun isFirstUseRecordEntry() = firstUse
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
@@ -314,7 +312,6 @@ class MainActivity : MoteActivity() {
         homeNoticeRow = home.noticeRow(this, open = ::openHomeNotice, act = ::runHomeNotice)
         content.addView(homeNoticeRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         if (!loadedConfig.hasSyncConnection() && !settings.enabled) homeNoticeRow.bind(HomeNotice.connect())
-        homeRecordReceipt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; tag = "home-record-receipt" }.also(content::addView)
         // H08: waiting calendar items and existing discoveries lead the home list in the
         // shared row style; the feed below groups recent originals by day. Neither block
         // takes a position when its plugin has nothing to show.
@@ -335,7 +332,7 @@ class MainActivity : MoteActivity() {
             firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
         }) { original, origin ->
             startActivity(Intent(this, CaptureRecordsActivity::class.java)
-                .putExtra("recordId", original.id).putExtra("directReader", true).putExtra("recordRemote", true)
+                .putExtra("recordId", original.id).putExtra("directReader", true).putExtra("recordRemote", original.remote)
                 .putExtra("recordOrigin", origin).putExtra("recordDeviceId", original.deviceId)
                 .putExtra("recordSource", original.source).putExtra("recordDate", original.day))
         }
@@ -533,7 +530,6 @@ class MainActivity : MoteActivity() {
             }
             val captures = home.captures(LocalStatusProducer.get(applicationContext).state.value.revision.records,
                 applicationContext.recordDraftStore().draft(),
-                NativeRecordReceipt.recordId?.let { id -> QueueStorage(applicationContext).committedCapture(id)?.let { applicationContext.withNativeNotePreview(it) } },
                 pendingRecovery = { QueueStorage(applicationContext).stageRecoveryPending() }) {
                 HomeLocalCaptures.exists(
                     queue = { applicationContext.queue() },
@@ -547,24 +543,6 @@ class MainActivity : MoteActivity() {
                 // must still let independently readable drafts and source rows reach Home.
                 homeHasRecords = capturePage.isNull("hasAnyRecords") || capturePage.getBoolean("hasAnyRecords") || files.isNotEmpty() || sources.any { it.first.syncContinuously }
                 firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
-                val receipt = capturePage.optJSONObject("savedReceipt")
-                homeReceiptAvailable = receipt != null
-                val receiptSignature = home.receiptSignature(receipt?.optString("id").orEmpty(), receipt?.let(NativeRecordPreview::text).orEmpty(), receipt?.optString("capturedAt").orEmpty(), loadedConfig.hasSyncConnection())
-                if (home.receiptChanged(receiptSignature)) {
-                homeRecordReceipt.removeAllViews()
-                homeRecordReceipt.visibility = if (receipt == null) View.GONE else View.VISIBLE
-                if (receipt != null) {
-                    val card=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; background=MoteUi.shape(this@MainActivity,NativeColorRole.SURFACE,NativeRadiusRole.CONTAINER,true); setPadding(dp(16),dp(16),dp(16),dp(12)) }
-                    card.addView(TextView(this).apply { text="• "+MoteI18n.text("本机已保存"); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.ACCENT) })
-                    card.addView(TextView(this).apply { text=NativeRecordPreview.text(receipt).ifBlank { MoteI18n.text("记录") }; MoteUi.type(this,NativeFontRole.BODY); MoteUi.textColor(this,NativeColorRole.INK); maxLines=5; setPadding(0,dp(12),0,dp(16)) })
-                    val row=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL }
-                    val at=runCatching { java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT).withLocale(MoteI18n.locale()).withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(receipt.getString("capturedAt"))) }.getOrDefault("")
-                    row.addView(TextView(this).apply { text=listOf(MoteI18n.text("记录"),at).filter(String::isNotBlank).joinToString(" · "); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(0,-2,1f))
-                    lightTextAction(MoteI18n.text("查看原文")+" →",row) { startActivity(Intent(this@MainActivity,CaptureRecordsActivity::class.java).putExtra("recordId",receipt.getString("id")).putExtra("directReader",true)) }.contentDescription=MoteI18n.text("查看原文")
-                    card.addView(row); homeRecordReceipt.addView(card,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(18) })
-                    if(loadedConfig.hasSyncConnection()) lightTextAction(MoteI18n.text("查看 Central 的接收结果")+" ↗",homeRecordReceipt) { startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(loadedConfig.server))) }
-                }
-                }
                 val sourceSignature = home.sourceSignature(sources.filter { it.first.syncContinuously }.map { (source, state) ->
                     Triple(source.id, source.name, LocalContentPresentation.sourceStatus(source, state) + state.optString("folderProgress").takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty())
                 })
@@ -598,7 +576,8 @@ class MainActivity : MoteActivity() {
                 if (provenance.isNotBlank()) addView(TextView(this@MainActivity).apply { text = provenance; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, dp(5), 0, 0) })
                 addView(TextView(this@MainActivity).apply { text = detail; MoteUi.type(this, NativeFontRole.SUPPORT); maxLines = if (identity.startsWith("source:")) Int.MAX_VALUE else 3; MoteUi.textColor(this, if (identity.startsWith("library-record:")) NativeColorRole.INK else NativeColorRole.MUTED); setPadding(0, dp(9), 0, 0); setLineSpacing(0f, 1.25f) })
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(TextView(this@MainActivity).apply { text = "›"; textSize = 22f; MoteUi.textColor(this, NativeColorRole.ACCENT); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(16), -2).apply { marginStart = dp(8) })
+            addView(MoteComponents.icon(this@MainActivity, MoteGlyph.CHEV, NativeColorRole.ACCENT, 20),
+                LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginStart = dp(8); gravity = Gravity.CENTER_VERTICAL })
             setOnClickListener { action() }
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
     }
@@ -1365,8 +1344,8 @@ class MainActivity : MoteActivity() {
         permissionBadges[name]?.apply {
             text = if (tag == "permission-detail") status else MoteI18n.text(name) + " · " + status
             if (tag == "permission-detail") { MoteUi.textColor(this,NativeColorRole.MUTED); return@apply }
-            MoteUi.textColor(this, if (allowed == true) NativeColorRole.SUCCESS else if (allowed == false) NativeColorRole.DANGER else NativeColorRole.WARNING)
-            background = MoteUi.shape(this@MainActivity, if (allowed == true) NativeColorRole.SUCCESS_TINT else if (allowed == false) NativeColorRole.DANGER_TINT else NativeColorRole.WARNING_TINT, NativeRadiusRole.CONTAINER)
+            MoteUi.textColor(this, if (allowed == true) NativeColorRole.SUCCESS else NativeColorRole.WARNING)
+            background = MoteUi.shape(this@MainActivity, if (allowed == true) NativeColorRole.SUCCESS_TINT else NativeColorRole.WARNING_TINT, NativeRadiusRole.CONTAINER)
         }
     }
 
@@ -1962,7 +1941,8 @@ class MainActivity : MoteActivity() {
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
-        text(title + "  ›", NativeFontRole.ACTION, NativeColorRole.ACCENT).apply {
+        text(title, NativeFontRole.ACTION, NativeColorRole.ACCENT).apply {
+            moteGlyph(MoteGlyph.CHEV, NativeColorRole.ACCENT)
             minHeight = dp(MoteTheme.controlHeight); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
             setOnClickListener { MoteDialogBuilder(this@MainActivity).setTitle(title).setMessage(message).setPositiveButton(MoteI18n.text("知道了"), null).show() }
         }
@@ -2290,7 +2270,7 @@ class MainActivity : MoteActivity() {
             addView(TextView(this@MainActivity).apply { text = label; MoteUi.type(this,NativeFontRole.ACTION,medium = true); MoteUi.textColor(this,NativeColorRole.INK) })
             addView(TextView(this@MainActivity).apply { text = description; MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED); setPadding(0,dp(6),0,0); tag = "row-detail" })
         },LinearLayout.LayoutParams(0,-2,1f))
-        row.addView(TextView(this).apply { text = "›"; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(dp(16),-2))
+        row.addView(MoteComponents.icon(this, MoteGlyph.CHEV, NativeColorRole.MUTED, 20), LinearLayout.LayoutParams(dp(20), dp(20)))
         content.addView(row); return row
     }
 
@@ -2340,7 +2320,7 @@ class MainActivity : MoteActivity() {
         labels.addView(TextView(this).apply { text = label; MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK) })
         if (description.isNotBlank()) labels.addView(TextView(this).apply { text = description; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, dp(4), 0, 0) })
         row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(TextView(this).apply { text = "›"; textSize = 25f; MoteUi.textColor(this, NativeColorRole.MUTED); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(18), -2))
+        row.addView(MoteComponents.icon(this, MoteGlyph.CHEV, NativeColorRole.MUTED, 20), LinearLayout.LayoutParams(dp(20), dp(20)))
         val group = activeMenuGroup
         if (group != null && group.childCount > 0) group.addView(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LinearLayout.LayoutParams(-1, dp(MoteTheme.borderWidth)).apply { marginStart = dp(48); marginEnd = dp(MoteTheme.spacePanel) })
         (group ?: content).addView(row, LinearLayout.LayoutParams(-1, -2).apply { if (group == null) bottomMargin = dp(MoteTheme.spaceItem) })

@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.work.WorkManager
+import dev.mote.collector.ui.MoteGlyph
 import java.util.concurrent.Executors
 
 class SyncRecoveryActivity : MoteActivity() {
@@ -31,8 +32,8 @@ class SyncRecoveryActivity : MoteActivity() {
         val card = SecondaryUi.column(body, card = true)
         summary = SecondaryUi.text(card, MoteI18n.text("正在读取本机同步状态…"), heading = true)
         result = SecondaryUi.text(body, "", muted = true).apply { tag = "recovery-result"; accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
-        SecondaryUi.row(body, MoteI18n.text("检查两端记录状态"), MoteI18n.text("核对手机仍保留的记录"), icon = "⌕") { runAction { SyncRecoveryWorker.start(this, false) } }.tag = "recovery-check"
-        SecondaryUi.row(body, MoteI18n.text("补传本机保留的记录"), MoteI18n.text("仍遵守当前网络和来源设置"), icon = "⇡") {
+        SecondaryUi.row(body, MoteI18n.text("检查两端记录状态"), MoteI18n.text("核对手机仍保留的记录"), icon = MoteGlyph.SEARCH) { runAction { SyncRecoveryWorker.start(this, false) } }.tag = "recovery-check"
+        SecondaryUi.row(body, MoteI18n.text("补传本机保留的记录"), MoteI18n.text("仍遵守当前网络和来源设置"), icon = MoteGlyph.UP) {
             MoteDialogBuilder(this).setTitle(MoteI18n.text("重新上传本机保留的数据？"))
                 .setMessage(MoteI18n.text("会重发本机仍保留的截图、页面、应用活动、通知、设备事件、笔记及已启用来源的保留版本。中央核验相同 ID 去重，继续补齐缺失数据。\n\n已从手机清理的数据无法补传。中央已删除或内容冲突的记录不会覆盖或恢复，暂停的来源不会启用。此操作可能产生较多流量，仍遵守网络设置。"))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("开始补传")) { _, _ -> runAction { SyncRecoveryWorker.start(this, true) } }.show()

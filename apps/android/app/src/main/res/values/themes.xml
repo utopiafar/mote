@@ -28,4 +28,27 @@
         <item name="android:forceDarkAllowed">false</item>
     </style>
     <style name="AppTheme" parent="AppThemeLight" />
+    <!-- Translucent window so a bottom panel rides over the screen that opened it; MoteActivity picks the matching scheme. -->
+    <style name="AppThemeSheetLight" parent="AppThemeLight">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+        <item name="android:windowAnimationStyle">@style/MoteSheetAnimation</item>
+    </style>
+    <style name="AppThemeSheetDark" parent="AppThemeDark">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+        <item name="android:windowAnimationStyle">@style/MoteSheetAnimation</item>
+    </style>
+    <style name="MoteSheetAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/mote_sheet_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/mote_sheet_stay</item>
+        <item name="android:activityCloseEnterAnimation">@anim/mote_sheet_stay</item>
+        <item name="android:activityCloseExitAnimation">@anim/mote_sheet_out</item>
+    </style>
 </resources>

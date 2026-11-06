@@ -16,6 +16,8 @@ import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
+import dev.mote.collector.ui.moteDisclosureGlyph
+import dev.mote.collector.ui.moteGlyph
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -265,13 +267,15 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         scopeBox = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL }.also(compose::addView)
         val chipFrame = android.widget.FrameLayout(ui).apply {
             minimumHeight = ui.moteDp(48)
+            // The chip stays visually compact while its clear action can receive 48dp of touch area.
+            setPadding(0, 0, ui.moteDp(22), 0)
         }
         scopeChip = LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
             minimumHeight = ui.moteDp(30); setPadding(ui.moteDp(12), 0, ui.moteDp(4), 0)
         }.also { chipFrame.addView(it, android.widget.FrameLayout.LayoutParams(-2, ui.moteDp(30)).apply { gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL }) }
-        scopeIcon = MoteComponents.icon(ui, MoteGlyph.FILE, NativeColorRole.ACCENT, 16).also {
-            scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2).apply { marginEnd = ui.moteDp(6) })
+        scopeIcon = MoteComponents.icon(ui, MoteGlyph.PLUS, NativeColorRole.MUTED, 16).also {
+            scopeChip!!.addView(it, LinearLayout.LayoutParams(ui.moteDp(16), ui.moteDp(16)).apply { marginEnd = ui.moteDp(6) })
         }
         scopeLabel = TextView(ui).apply {
             MoteUi.type(this, 13)
@@ -304,6 +308,14 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 (value as ImageButton).imageTintList = android.content.res.ColorStateList.valueOf(MoteUi.accent)
             }
         }.also { scopeChip!!.addView(it, LinearLayout.LayoutParams(ui.moteDp(26), ui.moteDp(30))) }
+        scopeClear!!.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            val bounds = android.graphics.Rect()
+            view.getDrawingRect(bounds)
+            chipFrame.offsetDescendantRectToMyCoords(view, bounds)
+            bounds.right = bounds.left + ui.moteDp(48)
+            bounds.top = 0; bounds.bottom = ui.moteDp(48)
+            chipFrame.touchDelegate = android.view.TouchDelegate(bounds, view)
+        }
         scopeBox!!.addView(chipFrame, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
         updateScope()
 
@@ -318,7 +330,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         compose.addView(pill, LinearLayout.LayoutParams(-1, ui.moteDp(50)))
         addAskImage = MoteComponents.iconButton(ui, MoteGlyph.PHOTO, "添加图片", MoteIconButtonStyle.MUTED) {
             if (!askBusy() && ask.imageCount()<4) ui.pickAttachment(chat = true)
-        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(44), ui.moteDp(48))) }
+        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48))) }
         question = EditText(ui).apply {
             hint = MoteI18n.text(if (askState.optString("conversationId").isNotBlank()) "继续问" else "问一问")
             contentDescription = MoteI18n.text("你的问题"); isSaveEnabled = false
@@ -332,10 +344,12 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         send = MoteComponents.iconButton(ui, MoteGlyph.UP, "发送", MoteIconButtonStyle.SOLID) { submitAsk() }.apply {
             tag = "ask-send"
             NativePresentationStyles.bind(this, "ask-send") { (it as ImageButton).apply {
-                minimumWidth = ui.moteDp(40); minimumHeight = ui.moteDp(40)
-                background = MoteUi.clickable(ui, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL, false)
+                minimumWidth = ui.moteDp(48); minimumHeight = ui.moteDp(48)
+                background = android.graphics.drawable.InsetDrawable(
+                    MoteUi.clickable(ui, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL, false), ui.moteDp(4),
+                )
             } }
-        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(40), ui.moteDp(40)).apply { marginStart = ui.moteDp(4) }) }
+        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48))) }
         stopAction = MoteComponents.iconButton(ui, MoteGlyph.STOP, "停止回答", MoteIconButtonStyle.FILLED) { stopAsk() }.apply {
             tag = "ask-stop"
             // 48dp touch target around the 40dp visible disc.
@@ -354,7 +368,9 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 text = label; contentDescription = MoteI18n.text(description); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED)
                 isFocusable = true; minHeight = ui.moteDp(48); gravity = android.view.Gravity.CENTER; setPadding(ui.moteDp(8), 0, ui.moteDp(8), 0)
             }
-            val modelRow = action("▸ " + MoteI18n.text("本次模型"), "本次模型")
+            val modelRow = action(MoteI18n.text("本次模型"), "本次模型").apply {
+                moteDisclosureGlyph(expanded = false, gapDp = 4)
+            }
             meta.addView(modelRow, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
             modelRow.setOnClickListener { modelBoxVisibility(label = modelRow) }
             val box = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
@@ -441,7 +457,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val box = modelBox ?: return
         val show = box.visibility != android.view.View.VISIBLE
         box.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
-        label.text = (if (show) "▾ " else "▸ ") + MoteI18n.text("本次模型")
+        label.moteDisclosureGlyph(show, gapDp = 4)
     }
 
     private fun askBusy() = ask.busy()
@@ -645,7 +661,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             material != null -> MoteI18n.text("参考整份资料")
             strict -> MoteI18n.text("仅查这条记录")
             anchored -> MoteI18n.text("参考这条记录，自动查找相关上下文")
-            else -> "＋ " + MoteI18n.text("参考资料")
+            else -> MoteI18n.text("参考资料")
         }
         val label = if (scoped) ask.scopeLabel() ?: fallback else fallback
         scopeBox?.visibility = if (scoped || askState.optString("conversationId").isBlank()) android.view.View.VISIBLE else android.view.View.GONE
@@ -657,7 +673,15 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 }
             }
         }
-        scopeIcon?.visibility = if (scoped) android.view.View.VISIBLE else android.view.View.GONE
+        scopeIcon?.let { icon ->
+            icon.visibility = android.view.View.VISIBLE
+            NativePresentationStyles.bind(icon, "scope-glyph") { value ->
+                (value as ImageView).apply {
+                    setImageResource((if (scoped) MoteGlyph.FILE else MoteGlyph.PLUS).drawable)
+                    imageTintList = android.content.res.ColorStateList.valueOf((if (scoped) NativeColorRole.ACCENT else NativeColorRole.MUTED).color())
+                }
+            }
+        }
         scopeLabel?.let { view ->
             view.text = label
             view.contentDescription = material ?: label
@@ -833,10 +857,10 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                         val clipboard = ui.getSystemService(android.content.ClipboardManager::class.java)
                         clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(MoteI18n.text("回答"), answer.optString("answer")))
                     }
-                }, LinearLayout.LayoutParams(ui.moteDp(44), ui.moteDp(44)))
+                }, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48)))
                 actions.addView(MoteComponents.iconButton(ui, MoteGlyph.MORE, "更多", MoteIconButtonStyle.MUTED) {
                     if (!ui.isWorking) showTurnDetails(id,turn.getString("id"),answer,citations)
-                }, LinearLayout.LayoutParams(ui.moteDp(44), ui.moteDp(44)))
+                }, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48)))
             }
             turn.optJSONObject("error")?.let { error ->
                 ui.text(MoteI18n.text("回答未完成"),NativeFontRole.SUPPORT,target)
@@ -902,7 +926,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         labels.addView(TextView(ui).apply { text = name; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.INK) })
         citation.optString("capturedAt").takeIf { it.isNotBlank() }?.let { time -> labels.addView(TextView(ui).apply { text = runCatching { java.time.Instant.parse(time).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT).withLocale(MoteI18n.locale())) }.getOrDefault(time); MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED) }) }
         row.addView(labels,LinearLayout.LayoutParams(0,-2,1f))
-        row.addView(TextView(ui).apply { text = "↗"; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(ui.moteDp(20),-2))
+        row.addView(MoteComponents.icon(ui, MoteGlyph.EXTERNAL), LinearLayout.LayoutParams(ui.moteDp(20), ui.moteDp(20)))
         parent.addView(row,LinearLayout.LayoutParams(-1,-2))
         parent.addView(android.view.View(ui).apply { MoteUi.backgroundColor(this,NativeColorRole.DIVIDER) },LinearLayout.LayoutParams(-1,ui.moteDp(1)))
     }

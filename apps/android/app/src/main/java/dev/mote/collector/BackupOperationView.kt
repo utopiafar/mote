@@ -5,6 +5,9 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.moteGlyph
 
 /** UI state only; every result and action comes from the existing archive operation. */
 internal class BackupOperationView(private val activity: Activity, private val body: LinearLayout,
@@ -19,7 +22,9 @@ internal class BackupOperationView(private val activity: Activity, private val b
         showing = true; landing.visibility = View.GONE; page.visibility = View.VISIBLE
         (activity.window.decorView.findViewWithTag<View>("detail-title") as? TextView)?.text = title
         page.removeAllViews()
-        MoteUi.action(SecondaryUi.action(page, "← " + MoteI18n.text("备份与恢复")) { onReturn() }, MoteUi.ButtonRole.TEXT)
+        MoteUi.action(SecondaryUi.action(page, MoteI18n.text("备份与恢复")) { onReturn() }.apply {
+            moteGlyph(MoteGlyph.BACK, NativeColorRole.MUTED, 20, atStart = true)
+        }, MoteUi.ButtonRole.TEXT)
         val card = SecondaryUi.column(page, card = true)
         if (state.isNotBlank()) SecondaryUi.text(card, state, muted = true)
         SecondaryUi.text(card, heading, heading = true)
@@ -42,11 +47,8 @@ internal class BackupOperationView(private val activity: Activity, private val b
         if (file == null) return
         card.orientation = LinearLayout.HORIZONTAL; card.gravity = android.view.Gravity.CENTER_VERTICAL
         card.setPadding(activity.moteDp(16),activity.moteDp(16),activity.moteDp(16),activity.moteDp(16))
-        card.addView(TextView(activity).apply {
-            text = "▤"; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.ACCENT)
-            NativePresentationStyles.bind(this,"backup-file-icon") { (it as TextView).textSize = 25f }
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(-2,-2).apply { marginEnd = activity.moteDp(14) })
+        card.addView(MoteComponents.icon(activity, MoteGlyph.FILE, NativeColorRole.ACCENT, 25),
+            LinearLayout.LayoutParams(activity.moteDp(25), activity.moteDp(25)).apply { marginEnd = activity.moteDp(14) })
         val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }.also { card.addView(it,LinearLayout.LayoutParams(0,-2,1f)) }
         fun line(value:String,tagName:String,size:Float,muted:Boolean) = SecondaryUi.text(words,value,muted=muted).apply {
             tag = tagName; setTextIsSelectable(true)

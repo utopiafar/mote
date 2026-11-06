@@ -21,8 +21,11 @@ const scenes = [
   { id: 'home', label: '首页', web: 'today', desktop: 'ui-fixture.png' },
   { id: 'library', label: '资料库', web: 'library', desktop: 'capture-records-ui-fixture.png' },
   { id: 'sources', label: '来源', web: 'connections', desktop: 'source-ui-fixture.png' },
+  { id: 'devices', label: '采集与设备', web: 'sources/devices' },
+  { id: 'device-detail', label: '设备详情', web: 'sources/devices?deviceId=generated-mac' },
   { id: 'ask', label: '问一问', web: 'ask' },
   { id: 'settings', label: '设置', web: 'preferences', desktop: 'settings-ui-fixture.png' },
+  { id: 'capture-sync', label: '采集与同步', desktop: 'capture-sync-ui-fixture.png' },
 ];
 const viewports = [{ id: 'wide', width: 1360, height: 900 }, { id: 'phone', width: 390, height: 844 }];
 // A 1x1 generated PNG keeps fixture captures valid without any screen content.
@@ -51,6 +54,10 @@ async function captureWeb() {
     const mobile = index % 2 === 1;
     await request('/api/captures', { id: randomUUID(), deviceId: mobile ? 'generated-android' : 'generated-mac', deviceName: mobile ? 'Generated Android' : 'Generated Mac', platform: mobile ? 'android' : 'macos', capturedAt: new Date(Date.now() - (6 - index) * 60000).toISOString(), durationMs: 15000, appName: 'Generated fixture', appId: 'fixture.generated', windowTitle: 'Generated cross-client record ' + (index + 1), ocrText: 'Generated text for the cross-client visual check only.', imageBase64: pixel, imageMime: 'image/png', source: 'screen', privacy: { excluded: false, redacted: false, mode: 'local' } });
   }
+  // One normal device (no dot) and one needing permission (amber dot) make the
+  // shared capture-status mapping visible in the device-list scene.
+  await request('/api/devices/heartbeat', { deviceId: 'generated-mac', deviceName: 'Generated Mac', platform: 'macos', status: 'capturing', queueDepth: 12, lastCaptureAt: new Date().toISOString(), sync: { mode: 'manual', state: 'idle', intervalMinutes: 1, batchSize: 100, pendingRecords: 12 } });
+  await request('/api/devices/heartbeat', { deviceId: 'generated-android', deviceName: 'Generated Android', platform: 'android', status: 'permission_required', queueDepth: 0 });
   const window = new BrowserWindow({ width: 1360, height: 900, show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
   const wc = window.webContents, js = code => wc.executeJavaScript(code);
   const browser = await request('/api/login/session', { serverUrl: base, deviceId: randomUUID(), deviceName: 'Generated UI browser', platform: 'other', durationMs: 0 });
@@ -60,6 +67,7 @@ async function captureWeb() {
   for (const viewport of viewports) {
     window.setSize(viewport.width, viewport.height);
     for (const scene of scenes) {
+      if (!scene.web) continue;
       await js(`location.hash='#/${scene.web}'`);
       await until(() => js(`!!document.querySelector('.content h1')`), scene.id + ' ' + viewport.id);
       // Resources load after the heading; a short settle keeps loading placeholders out of the sheet.
@@ -87,7 +95,7 @@ function writeSheet() {
   const cell = path => path && existsSync(join(out, path)) ? `<a href="${path}"><img src="${path}" alt=""></a>` : '<span class="missing">未提供</span>';
   const rows = scenes.map(scene => {
     const android = androidDirectory && existsSync(join(androidDirectory, scene.id + '.png')) ? (copyFileSync(join(androidDirectory, scene.id + '.png'), join(out, 'android', scene.id + '.png')), `android/${scene.id}.png`) : undefined;
-    return `<tr><th>${scene.label}</th><td>${cell(`web/${scene.id}-wide.png`)}</td><td>${cell(scene.desktop && `desktop/${scene.desktop}`)}</td><td class="phone">${cell(`web/${scene.id}-phone.png`)}</td><td class="phone">${cell(android)}</td></tr>`;
+    return `<tr><th>${scene.label}</th><td>${cell(scene.web && `web/${scene.id}-wide.png`)}</td><td>${cell(scene.desktop && `desktop/${scene.desktop}`)}</td><td class="phone">${cell(scene.web && `web/${scene.id}-phone.png`)}</td><td class="phone">${cell(android)}</td></tr>`;
   }).join('\n');
   writeFileSync(join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Mote 三端对照</title><style>body{font:14px -apple-system,sans-serif;margin:24px;background:#f7f5f1;color:#292623}table{border-collapse:collapse}th,td{border:1px solid #d8d2c9;padding:8px;vertical-align:top;background:#fffdf9}th{text-align:left;white-space:nowrap}img{display:block;width:420px}td.phone img{width:180px}.missing{color:#6b625b}</style><h1>Mote 三端对照</h1><p>生成数据，仅供人工比对。Android 列来自 --android 目录中的 home/library/sources/ask/settings.png。</p><table><tr><th></th><th>Web 宽屏</th><th>Mac</th><th>Web 手机</th><th>Android</th></tr>${rows}</table>`);
 }
