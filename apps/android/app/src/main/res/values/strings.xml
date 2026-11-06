@@ -3,6 +3,7 @@
     <string name="accessibility_name">Mote Screen Capture</string>
     <string name="accessibility_description">Collects only after you tap Start. Reads app identity for your privacy rules and captures screenshots. When you explicitly enable page collection and configure rules, also reads visible UI text, filtering passwords, input fields and masked regions. Never taps, scrolls or executes page instructions. Records are queued privately and uploaded to your configured central node. Stop anytime in the app or notification.</string>
     <string name="tile_screen_capture">Screen capture</string>
+    <string name="tile_send_pause">Pause sending</string>
     <string name="widget_label">Mote quick entries</string>
     <string name="widget_description">Ask and record from the home screen</string>
     <string name="widget_ask">Ask</string>

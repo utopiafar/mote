@@ -19,6 +19,7 @@ struct MoteApp: App {
 
     init() {
         editorStore = try? MoteStorage.editorDraftStore()
+        RecordingLiveActivity.initialize()
     }
 
     var body: some Scene {
@@ -53,6 +54,12 @@ struct MoteApp: App {
                         .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteShortcutSetupPreview") {
                     ShortcutSetupPreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteProfilePreview") {
+                    ProfileMenuPreview()
+                        .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteSharePreview") {
+                    SharePreview()
                         .preferredColorScheme(previewScheme)
                 } else {
                     HomeRootView(arguments: arguments, editorStore: editorStore)

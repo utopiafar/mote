@@ -323,7 +323,7 @@ internal class Notifications(
     companion object {
         const val ID = 4101
         private const val MEDIA_ID = 4102
-        private const val ATTENTION_ID = 4103
+        internal const val ATTENTION_ID = 4103
         private const val CHANNEL = "mote_capture"
         private const val ATTENTION_CHANNEL = "mote_attention"
     }
@@ -334,4 +334,27 @@ internal fun Context.systemEntries(): Notifications = SystemEntriesPlugin.notifi
 
 class StopReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = holdUntilDone { done -> dev.mote.collector.plugins.CapturePlugin.controls().stopAll(context) { done() } }
+}
+
+/** The recording notification belongs to the microphone service, not screen capture. */
+internal fun recordingNotification(context: Context, snapshot: dev.mote.collector.recording.RecordingSnapshot): Notification {
+    val channel = "mote_recording"
+    val manager = context.getSystemService(NotificationManager::class.java)
+    manager.createNotificationChannel(NotificationChannel(channel, MoteI18n.text("录音"), NotificationManager.IMPORTANCE_LOW))
+    val open = PendingIntent.getActivity(context, 4103, Intent(context, RecordEditorActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    fun action(name: String, request: Int) = PendingIntent.getService(context, request,
+        Intent(context, dev.mote.collector.recording.RecordingService::class.java).setAction(name), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    val paused = snapshot.phase == dev.mote.collector.recording.RecordingPhase.PAUSED
+    val stopping = snapshot.phase == dev.mote.collector.recording.RecordingPhase.STOPPING
+    val builder = Notification.Builder(context, channel).setSmallIcon(R.drawable.ic_mote)
+        .setContentTitle(MoteI18n.text(if (paused) "录音已暂停" else "录音"))
+        .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
+        .setWhen(System.currentTimeMillis() - snapshot.elapsedMs).setShowWhen(true).setUsesChronometer(!paused && !stopping)
+    if (!stopping) {
+        builder.addAction(Notification.Action.Builder(null, MoteI18n.text(if (paused) "继续" else "暂停"),
+            action(if (paused) dev.mote.collector.recording.RecordingService.ACTION_RESUME else dev.mote.collector.recording.RecordingService.ACTION_PAUSE, 4104)).build())
+        builder.addAction(Notification.Action.Builder(null, MoteI18n.text("停止"), action(dev.mote.collector.recording.RecordingService.ACTION_STOP, 4105)).build())
+    }
+    return builder.build()
 }

@@ -116,6 +116,7 @@ internal class CentralContent(
 
     val root: LinearLayout
     private lateinit var backButton: ImageButton
+    private lateinit var headerBar: LinearLayout
     private lateinit var headerDivider: View
     val isDestroyed get() = activity.isDestroyed
     val isFinishing get() = activity.isFinishing
@@ -232,6 +233,7 @@ internal class CentralContent(
             orientation = if (compactHeader) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL; tag = "central-header"; setPadding(moteDp(12), 0, moteDp(12), 0)
         }
+        headerBar = header
         val heading = if (compactHeader) LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL } else header
         val actions = if (compactHeader) LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL } else header
         backButton = MoteComponents.iconButton(this, MoteGlyph.BACK, "返回上级") {
@@ -253,7 +255,7 @@ internal class CentralContent(
         addAction = headerAction("记下", "记下", tonal = true) { activity.openRecordEditor() }
         settingsAction = headerAction("设置") { localPage("SETTINGS") }
         moreAction = headerAction("更多") { if (page == "insights") insightMoreAction?.invoke() ?: more() else more() }
-        historyAction = headerAction("◷", "对话历史") { screens?.showAskHistory() }
+        historyAction = headerAction("◷", "对话历史") { openConversationList() }
         newConversationAction = headerAction("＋", "新对话") { screens?.newConversation() }
         conversationMoreAction = headerAction("⋯", "对话更多") { screens?.conversationMore() }
         memoryFilterAction = MoteComponents.iconButton(this, MoteGlyph.SLIDERS, "筛选") { memoryFilter?.invoke() }.apply { tag = "memory-filter" }
@@ -334,7 +336,7 @@ internal class CentralContent(
             pendingInsightId?.let { screens?.selectInsight(it) }; pendingInsightId = null
         }
         if (client == null) { screens?.clearPrivateState(); login() }
-        else if (changed || authenticated || sessionChanged || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll()
+        else if (changed || authenticated || sessionChanged || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll() else if (page == "conversations") screens?.refreshConversationList()
     }
     private fun deliverPendingResult() {
         accessReady = true
@@ -373,19 +375,34 @@ internal class CentralContent(
         backButton.visibility = View.VISIBLE
         addAction.visibility = View.GONE
         val ask = page == "ask"
+        val conversations = page == "conversations"
+        headerBar.minimumHeight = moteDp(if (conversations) 48 else if (page == "memories") 56 else 66)
+        headerBar.setPadding(moteDp(if (conversations) 6 else 12), 0, moteDp(if (conversations) 6 else 12), 0)
+        headerDivider.visibility = if (conversations || page == "memories" || embeddedActions) View.GONE else View.VISIBLE
+        title.tag = if (conversations) null else "central-title"
         moreAction.tag = if (page == "insights") "insight-more" else null
-        settingsAction.visibility = if (ask || page == "insights" || page == "memories") View.GONE else View.VISIBLE
-        moreAction.visibility = if (ask || page == "memories") View.GONE else View.VISIBLE
+        settingsAction.visibility = if (ask || page == "insights" || page == "memories" || conversations) View.GONE else View.VISIBLE
+        moreAction.visibility = if (ask || page == "memories" || conversations) View.GONE else View.VISIBLE
         memoryFilterAction.visibility = View.GONE
-        headerDivider.visibility = if (page == "memories") View.GONE else View.VISIBLE
         historyAction.visibility = if (ask && client != null) View.VISIBLE else View.GONE
         newConversationAction.visibility = historyAction.visibility
         conversationMoreAction.visibility = View.GONE
     }
+    /** The conversation list is a peer of the thread: reaching it clears in-page
+     * history so its back action returns to the home surface, not the thread. */
+    internal fun openConversationList() { pageHistory.clear(); navigate("conversations", remember = false) }
     internal fun hostActivity(): MoteActivity = activity
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
         return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(20),moteDp(8),moteDp(20),moteDp(22)) }.also(composer::addView)
+    }
+    /** The AND-History dock: page background, no divider, the pill composer inside. */
+    internal fun conversationComposer(): LinearLayout {
+        composer.removeAllViews(); composer.visibility = View.VISIBLE
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(moteDp(16), moteDp(8), moteDp(16), moteDp(12))
+        }.also(composer::addView)
     }
     internal fun hideAskComposer() { composer.visibility = View.GONE }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
@@ -440,7 +457,7 @@ internal class CentralContent(
         composer.removeAllViews(); composer.visibility = View.GONE; updateBackButton()
         title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         text(MoteI18n.text(when {
-            page == "ask" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
+            page == "ask" || page == "conversations" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
             MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
             else -> "中央功能需要连接中央；文件和记录仍可在本机保存和查看。"
         }))
@@ -603,12 +620,14 @@ internal class CentralContent(
         addView(TextView(this@CentralContent).apply { text = "›"; textSize = 20f; MoteUi.textColor(this, NativeColorRole.ACCENT) }, LinearLayout.LayoutParams(moteDp(20), -2))
         setOnClickListener { if (!task.busy) runCatching { action(); MoteUi.styleSelects(body) }.onFailure { notice(it.message ?: MoteI18n.text("操作失败")) } }
     }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(4) }) }
-    internal fun disclosure(label: String, parent: LinearLayout = body, build: (LinearLayout) -> Unit): LinearLayout {
+    internal fun disclosure(label: String, parent: LinearLayout = body, eager: Boolean = false, build: (LinearLayout) -> Unit): LinearLayout {
         val section = card(parent)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         var built = false
+        fun ensure() { if (!built) { build(content); built = true } }
+        if (eager) ensure()
         button(label + "  ›", parent = section) {
-            if (!built) { build(content); built = true }
+            ensure()
             content.visibility = if (content.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }.apply { contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         section.addView(content)

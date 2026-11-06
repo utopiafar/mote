@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 
-/** H04/H05 and G01 rules that the home dock and capture line must keep. */
+/** H04/H05/H06 and G01 rules that the home dock and status notice must keep. */
 class HomeFrameTest {
     @Test fun draftChangesOnlyTheRecordLabel() {
         assertEquals("记录", HomeFrame.recordLabel(hasDraft = false))
@@ -28,11 +28,18 @@ class HomeFrameTest {
     }
 
     @Test fun normalCaptureStaysOffTheHome() {
-        assertFalse(HomeFrame.showsCaptureNotice(CaptureOverview.Kind.HIDDEN))
-        assertFalse(HomeFrame.showsCaptureNotice(CaptureOverview.Kind.ACTIVE))
-        assertTrue(HomeFrame.showsCaptureNotice(CaptureOverview.Kind.SCREEN_PAUSED))
-        assertTrue(HomeFrame.showsCaptureNotice(CaptureOverview.Kind.PAUSED))
-        assertTrue(HomeFrame.showsCaptureNotice(CaptureOverview.Kind.ATTENTION))
+        fun facts(
+            connection: CaptureConnection = CaptureConnection.CONNECTED,
+            enabled: Boolean = true,
+            live: Boolean = true,
+            permission: CapturePermission? = null,
+            sync: CaptureSyncState = CaptureSyncState.IDLE,
+        ) = CaptureStatusFacts(connection, enabled, live, permission = permission, syncState = sync)
+
+        assertNull(HomeNotice.from(facts()))
+        assertEquals(CaptureStatusLevel.REMINDER, HomeNotice.from(facts(enabled = false))?.level)
+        assertEquals(CaptureStatusLevel.NEEDS_ACTION, HomeNotice.from(facts(permission = CapturePermission.MISSING))?.level)
+        assertEquals("连接你的 Mote", HomeNotice.from(facts(connection = CaptureConnection.UNCONFIGURED, enabled = false, live = false, sync = CaptureSyncState.UNCONFIGURED))?.titleKey)
     }
 
     @Test fun homeHasNoGreetingWelcomeOrFirstUseParagraph() {

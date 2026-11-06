@@ -176,25 +176,29 @@ internal object MoteComponents {
         title: String,
         subtitle: String? = null,
         value: String? = null,
+        valueFont: NativeFontRole = NativeFontRole.META,
         valueColor: NativeColorRole = NativeColorRole.MUTED,
         titleColor: NativeColorRole = NativeColorRole.INK,
+        iconColor: NativeColorRole = NativeColorRole.MUTED,
+        subtitleColor: NativeColorRole = NativeColorRole.MUTED,
         trailing: View? = null,
+        chevron: Boolean = true,
         verticalPaddingDp: Int = 9,
         onClick: ((View) -> Unit)? = null,
     ): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
         minimumHeight = context.moteDp(MoteTheme.controlHeight)
         setPadding(context.moteDp(14), context.moteDp(verticalPaddingDp), context.moteDp(14), context.moteDp(verticalPaddingDp))
-        icon?.let { addView(MoteComponents.icon(context, it), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = context.moteDp(12) }) }
+        icon?.let { addView(MoteComponents.icon(context, it, iconColor), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = context.moteDp(12) }) }
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(context).apply { text = title; MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, titleColor) })
-            subtitle?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED) }) }
+            subtitle?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, subtitleColor) }) }
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        value?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, valueColor) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) }) }
+        value?.let { addView(TextView(context).apply { text = it; MoteUi.type(this, valueFont); MoteUi.textColor(this, valueColor) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) }) }
         when {
             trailing != null -> addView(trailing, LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) })
-            onClick != null -> addView(MoteComponents.icon(context, MoteGlyph.CHEV, NativeColorRole.MUTED, 16), LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) })
+            onClick != null && chevron -> addView(MoteComponents.icon(context, MoteGlyph.CHEV, NativeColorRole.MUTED, 16), LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.moteDp(12) })
         }
         if (onClick != null) {
             bind(this, "row") { it.background = MoteUi.clickable(context, NativeColorRole.TRANSPARENT, NativeRadiusRole.CONTAINER, false) }

@@ -173,6 +173,19 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             JSONObject().put("total", rows.size).put("items", org.json.JSONArray(items))
         }
     }
+    /** Newest committed capture time per queue source, for source-row recency. */
+    fun latestCapturedAt(): Map<String, String> {
+        prepareIndex()
+        return guarded {
+            val latest = mutableMapOf<String, String>()
+            for (row in metadata()) {
+                val at = row.getString("capturedAt")
+                val source = row.optString("source")
+                if (at > latest[source].orEmpty()) latest[source] = at
+            }
+            latest
+        }
+    }
     fun syncIds(after: String? = null, limit: Int = 100): List<String> = guarded {
         require(limit in 1..100)
         records().filter { matchesOrigin(read(it)) }.map { it.nameWithoutExtension }.filter { after == null || it > after }.sorted().take(limit)

@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <queries>
@@ -48,6 +49,9 @@
             <intent-filter><action android:name="android.intent.action.SEND_MULTIPLE" /><category android:name="android.intent.category.DEFAULT" /><data android:mimeType="*/*" /></intent-filter>
         </activity>
         <activity android:configChanges="uiMode" android:name=".AnswerRecordActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
+        </activity>
+        <activity android:configChanges="uiMode" android:name=".MicrophoneRecordEditorActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
         </activity>
         <activity android:configChanges="uiMode" android:name=".CentralActivity" android:exported="false" android:windowSoftInputMode="adjustResize">
@@ -121,6 +125,9 @@
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/record_file_paths" />
         </provider>
+        <service android:name=".recording.RecordingService" android:exported="false" android:foregroundServiceType="microphone">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.notes" />
+        </service>
         <service android:name=".ProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
         </service>
@@ -142,6 +149,11 @@
         </receiver>
         <service android:name=".ScreenCaptureTileService" android:exported="true" android:label="@string/tile_screen_capture"
             android:icon="@drawable/ic_tile_screen" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+        <service android:name=".SendPauseTileService" android:exported="true" android:label="@string/tile_send_pause"
+            android:icon="@drawable/ic_tile_send" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.system-entries" />
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
