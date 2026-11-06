@@ -20,6 +20,11 @@ public enum MoteStorage {
         SendQueue(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("SendQueue", isDirectory: true))
     }
 
+    public static func shortcutSourceStore(fileManager: FileManager = .default) throws -> ShortcutSourceStore {
+        ShortcutSourceStore(directoryURL: try containerURL(fileManager: fileManager).appendingPathComponent("Sources", isDirectory: true),
+                            fileManager: fileManager)
+    }
+
     public static func connectionStore(fileManager: FileManager = .default) throws -> ConnectionStore {
         #if DEBUG && targetEnvironment(simulator)
         if let service = ProcessInfo.processInfo.environment["MOTE_TEST_CONNECTION_SERVICE"] {

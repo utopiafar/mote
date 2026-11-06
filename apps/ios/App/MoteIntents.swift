@@ -33,6 +33,14 @@ private enum MoteIntentSupport {
                           validatingAttachments: attachment.map { [$0] } ?? [])
         await AppSendPipeline.shared.reconcileAndSend()
     }
+
+    static func settings(for kind: ShortcutSourceKind) throws -> ShortcutSourceSettings {
+        try MoteStorage.shortcutSourceStore().snapshot(for: kind).settings
+    }
+
+    static func record(_ receipt: ShortcutSourceReceipt, for kind: ShortcutSourceKind) throws {
+        try MoteStorage.shortcutSourceStore().record(receipt, for: kind)
+    }
 }
 
 private func openURL(for entry: MoteEntry) throws -> URL {
@@ -87,7 +95,14 @@ struct SaveScreenshotIntent: AppIntent {
     @Parameter(title: "截图")
     var screenshot: IntentFile
 
+    @Parameter(title: "截图文字")
+    var recognizedText: String?
+
     func perform() async throws -> some IntentResult {
+        let settings = try await MoteIntentSupport.settings(for: .screenshot)
+        guard ShortcutSourceFilter.acceptsScreenshot(recognizedText: recognizedText, settings: settings) else {
+            return .result()
+        }
         let bytes = screenshot.data
         guard !bytes.isEmpty else { throw MoteIntentError.emptyScreenshot }
         let identity = try await MoteIntentSupport.identity()
@@ -106,6 +121,13 @@ struct SaveScreenshotIntent: AppIntent {
             )
         )
         try await MoteIntentSupport.enqueue(capture, attachment: bytes)
+        let title = recognizedText?.split(whereSeparator: \.isNewline)
+            .first.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "截图"
+        try await MoteIntentSupport.record(
+            ShortcutSourceReceipt(id: capture.id, title: title, capturedAt: capturedAt),
+            for: .screenshot
+        )
         return .result()
     }
 }
@@ -132,7 +154,7 @@ struct SaveNotificationIntent: AppIntent {
     var postedAt: Date?
 
     func perform() async throws -> some IntentResult {
-        let identity = try await MoteIntentSupport.identity()
+        let settings = try await MoteIntentSupport.settings(for: .notification)
         let content = IOSNotificationContent(
             appId: appId,
             appName: appName,
@@ -140,13 +162,25 @@ struct SaveNotificationIntent: AppIntent {
             text: text,
             category: category
         )
+        guard let content = ShortcutSourceFilter.notification(content, settings: settings) else {
+            return .result()
+        }
+        let identity = try await MoteIntentSupport.identity()
+        let capturedAt = CentralTimestamp.string(postedAt ?? Date())
         let capture = try IOSNotificationCapture.make(
             content: content,
             deviceId: identity.id,
             deviceName: identity.name,
-            postedAt: CentralTimestamp.string(postedAt ?? Date())
+            postedAt: capturedAt
         )
         try await MoteIntentSupport.enqueue(capture)
+        let receiptTitle = [content.title, content.text, content.appName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? "通知"
+        try await MoteIntentSupport.record(
+            ShortcutSourceReceipt(id: capture.id, title: receiptTitle, appName: content.appName, capturedAt: capturedAt),
+            for: .notification
+        )
         return .result()
     }
 }
