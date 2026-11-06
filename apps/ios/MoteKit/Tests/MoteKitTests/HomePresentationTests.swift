@@ -2,6 +2,12 @@ import XCTest
 import MoteCore
 
 final class HomePresentationTests: XCTestCase {
+    private struct CaptureFixture: Decodable {
+        let name: String
+        let facts: CaptureStatusFacts
+        let expected: CaptureStatusRow
+    }
+
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
@@ -96,4 +102,39 @@ final class HomePresentationTests: XCTestCase {
         XCTAssertTrue(empty.highlights.isEmpty)
         XCTAssertTrue(empty.days.isEmpty)
     }
+
+    func testEverySharedCaptureCaseRendersTheHomeColumn() throws {
+        let fixtures = try JSONDecoder().decode([CaptureFixture].self, from: Data(contentsOf: Self.fixtureURL))
+        XCTAssertEqual(fixtures.count, 20)
+        for fixture in fixtures {
+            let home = HomePresentation(facts: fixture.facts, hasDraft: false, highlights: [], originals: [])
+            if fixture.facts.connection == .unconfigured && fixture.expected.level != .needsAction {
+                XCTAssertEqual(home.notice?.title, "连接你的 Mote", fixture.name)
+                XCTAssertEqual(home.notice?.actionTitle, "连接", fixture.name)
+                XCTAssertEqual(home.notice?.operation, .connect, fixture.name)
+                continue
+            }
+            guard let expected = fixture.expected.home else {
+                XCTAssertNil(home.notice, fixture.name)
+                continue
+            }
+            XCTAssertEqual(home.notice?.title, expected.titleKey, fixture.name)
+            XCTAssertEqual(home.notice?.level, fixture.expected.level, fixture.name)
+            XCTAssertEqual(home.notice?.operation, .capture(expected.operation), fixture.name)
+            XCTAssertEqual(home.notice?.actionTitle, Self.actionTitle(expected.operation), fixture.name)
+        }
+    }
+
+    private static func actionTitle(_ operation: CaptureStatusOperation) -> String {
+        switch operation {
+        case .resumeCapture, .resumeSend: return "恢复"
+        case .reconnect: return "连接"
+        case .restartCapture: return "重新开启"
+        case .openPermissions, .openStorage, .openSync: return "处理"
+        }
+    }
+
+    private static let fixtureURL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .appendingPathComponent("../../../../../packages/shared/test-fixtures/capture-status-cases.json")
 }

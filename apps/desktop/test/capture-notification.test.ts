@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { captureStatus, captureStatusRow } from '@mote/shared/native-status';
-import { CaptureNeedsActionNotifier, captureStatusFacts, captureStatusRowFor } from '../src/capture-notification';
+import { moteText } from '@mote/shared/i18n';
+import { captureStatus, captureStatusRow, captureStatusTable } from '@mote/shared/native-status';
+import { CaptureNeedsActionNotifier, captureNotification, captureStatusFacts, captureStatusRowFor } from '../src/capture-notification';
 import type { Status } from '../src/contracts';
 
 const normal = captureStatus({ connection: 'connected', captureEnabled: true, captureLive: true, syncState: 'idle', pending: 0 });
@@ -78,6 +79,19 @@ describe('Mac needs-action notifications', () => {
       body: '采集与同步',
       action: '处理',
     });
+  });
+
+  it('renders every shared system-notification cell tagged for Mac', () => {
+    const cells = captureStatusTable.filter(row => row.notification?.platforms.includes('macos'));
+    expect(cells).toHaveLength(5);
+    for (const row of cells) {
+      expect(captureNotification(row)).toMatchObject({
+        id: row.id,
+        title: moteText(row.notification!.titleKey),
+        operation: row.notification!.operation,
+      });
+    }
+    expect(captureNotification(captureStatusRow('disconnected'))).toBeUndefined();
   });
 
   it('derives the shared status row from the desktop status', () => {
