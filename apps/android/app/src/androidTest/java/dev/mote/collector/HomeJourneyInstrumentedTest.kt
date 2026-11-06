@@ -289,9 +289,10 @@ class HomeJourneyInstrumentedTest {
             ActivityScenario.launch(MainActivity::class.java).use {
                 val home = onTop("Home is ready") { activity -> shown(activity).any { it.tag == "home-ask-action" } }
                 click(home) { it.tag == "home-ask-action" }
-                val ask = onTop("Ask opens the existing conversation surface") { activity ->
-                    activity is MainActivity && shown(activity).any { it.tag == "central-title" && (it as TextView).text.toString() == MoteI18n.text("问一问") }
+                val ask = onTop("Ask opens the conversation list") { activity ->
+                    activity is MainActivity && shown(activity).any { it.tag == "central-title" && (it as TextView).text.toString() == MoteI18n.text("对话") }
                 }
+                assertTrue("The list keeps the native create-question entry", shown(ask).filterIsInstance<EditText>().any { it.contentDescription == MoteI18n.text("问一问") })
                 instrumentation.runOnMainSync {
                     assertFalse("Ask must not focus its composer on entry", shown(ask).filterIsInstance<EditText>().any { it.isFocused })
                     assertEquals("Ask must not submit a question by itself", 0, fixture.writes)

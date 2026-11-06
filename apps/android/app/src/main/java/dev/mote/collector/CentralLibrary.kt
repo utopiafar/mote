@@ -178,7 +178,14 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             ui.button(MoteI18n.text("查看原文"), parent = card) { material(row.getString("id"), row.getString("revision")) }.tag="material-open:"+row.getString("id")
         }
     }
-    fun captureEvidence(id: String, conversationId: String? = null, returnScroll: Int? = null, returnToConversation: (() -> Unit)? = null) { capture(id, conversationId = conversationId, returnScroll = returnScroll, returnToConversation = returnToConversation) }
+    fun captureEvidence(id: String, conversationId: String? = null, returnScroll: Int? = null, excerpt: String? = null, returnToConversation: (() -> Unit)? = null) { capture(id, conversationId = conversationId, returnScroll = returnScroll, returnToConversation = returnToConversation, citationExcerpt = excerpt) }
+    private fun highlightCitation(view: TextView, excerpt: String?) {
+        val range = ConversationCitationPresentation.locate(view.text?.toString().orEmpty(), excerpt ?: return) ?: return
+        val styled = android.text.SpannableString(view.text)
+        styled.setSpan(android.text.style.BackgroundColorSpan(NativeColorRole.TINT.color()), range.first, range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        view.text = styled
+        ui.scrollToText(view, range.first)
+    }
     fun evidence(reference: String, offset: Int = 0) {
         require(reference.isNotBlank() && reference.length <= 4096)
         val materialRef = Regex("^material:(mat_[a-f0-9]{64})(?:@([a-f0-9]{64}))?$").matchEntire(reference)
@@ -199,7 +206,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             for (i in 0 until refs.length()) ui.button(MoteI18n.text("查看原始记录") + " · " + refs.getString(i).takeLast(8)) { evidence(refs.getString(i)) }
         }
     }
-    private fun capture(id: String, topicMemoryId: String? = null, accept: ((JSONObject) -> Boolean)? = null, conversationId: String? = null, returnScroll: Int? = null, returnToConversation: (() -> Unit)? = null, workMemory: WorkMemoryReference? = null, returnToWork: (() -> Unit)? = null, memoryFailure: ((Throwable) -> Unit)? = null) {
+    private fun capture(id: String, topicMemoryId: String? = null, accept: ((JSONObject) -> Boolean)? = null, conversationId: String? = null, returnScroll: Int? = null, returnToConversation: (() -> Unit)? = null, workMemory: WorkMemoryReference? = null, returnToWork: (() -> Unit)? = null, memoryFailure: ((Throwable) -> Unit)? = null, citationExcerpt: String? = null) {
         val api = client;val currentVisit=ui.readVisit()
         ui.work(MoteI18n.text("正在读取原文…"), { runCatching {
             workMemory?.verify(api,id)
@@ -219,7 +226,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             if (memory != null && accept != null && !accept(memory)) return@work
             if (dev.mote.collector.plugins.NativeLibraryPlugin.owner(ui).supportsCapture(row.optString("source"))) {
                 check(row.getString("id") == id)
-                ui.openCaptureReader(api.server,row,conversationId,returnScroll,workMemory)
+                ui.openCaptureReader(api.server,row,conversationId,returnScroll,workMemory,citationExcerpt)
                 return@work
             }
             val memoryScroll=if(workMemory!=null)ui.contentScroll() else null
@@ -232,9 +239,14 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     screens.setBack(returnToWork);screens.restoreWorkMemoryAfterReader(workMemory.work,requireNotNull(memoryScroll))
                 } else returnToConversation?.invoke() ?: screens.refresh()
             }
-            ui.text(row.optString("appName"), NativeFontRole.TITLE_MOBILE); ui.text(row.optString("capturedAt"))
+            val file = row.optJSONObject("fileEvidence")
+            val citation = if (file != null) ConversationCitationPresentation.read(JSONObject(row.toString())
+                .put("excerpt", row.optString("ocrText")).put("title", row.optString("windowTitle"))) else null
+            ui.text(citation?.name ?: row.optString("appName"), NativeFontRole.TITLE_MOBILE)
+            ui.text(listOfNotNull(citation?.detail, row.optString("capturedAt").takeIf(String::isNotBlank)).joinToString(" · "))
             projected?.speaker?.let { ui.text(MoteI18n.text("说话人 {0}",it),NativeFontRole.SUPPORT) }
-            ui.text(projected?.text ?: row.optString("ocrText")).tag="capture-reference-text"
+            val citedText = ui.text(projected?.text ?: row.optString("ocrText")).apply { tag="capture-reference-text" }
+            highlightCitation(citedText, citationExcerpt)
             ui.button(MoteI18n.text("围绕这份资料提问")) { screens.askAbout(id, NativeOriginalDetail.title(row)) }
             val metadata = row.optJSONObject("metadata")
             if(projected==null)values(metadata ?: JSONObject(), ui.card())
