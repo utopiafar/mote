@@ -81,9 +81,9 @@ class FinalEditorActionsInstrumentedTest {
         instrumentation.addMonitor(camera)
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{scenario->
-            until("Actual first-use home"){hasTag("home-first-use-guide")};assertTrue(main{(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).single() as MainActivity).isFirstUseRecordEntry()});picture("first-use-dark-entry")
+            until("Actual first-use home"){hasTag("home-notice-connect")};assertTrue(main{(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).single() as MainActivity).isFirstUseRecordEntry()});picture("first-use-dark-entry")
             tag("home-record-action");until("First-use editor ready"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}};main{assertFalse(shown().filterIsInstance<TextView>().single{it.text.toString()=="保存"}.isEnabled)};picture("editor-dark-empty-save-disabled")
-            click("拍照");until("Actual camera ACTION_IMAGE_CAPTURE returned cancelled"){cameraCalls.get()==1&&context.recordDraftStore().pendingMedia().length()==0};assertEquals(0,store.draft().getJSONArray("attachments").length());click("返回上一页");until("Camera cancel returns first-use home"){hasTag("home-first-use-guide")};tag("home-record-action");until("Actual first-use mic route"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
+            click("拍照");until("Actual camera ACTION_IMAGE_CAPTURE returned cancelled"){cameraCalls.get()==1&&context.recordDraftStore().pendingMedia().length()==0};assertEquals(0,store.draft().getJSONArray("attachments").length());click("返回上一页");until("Camera cancel returns first-use home"){hasTag("home-notice-connect")};tag("home-record-action");until("Actual first-use mic route"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
             main{shown().filterIsInstance<EditText>().single{it.contentDescription=="正在想什么"}.apply{requestFocus();setText("Generated AVD silent audio draft");setSelection(text.length)}};picture("editor-dark-focused-text")
             click("录音");until("Actual foreground recording with recording controls"){main{shown().any{it.contentDescription=="停止录音"}&&shown().single{it.tag=="recording-time"}.isShown}};main{assertTrue(shown().filterIsInstance<TextView>().single{it.text.toString()=="保存"}.isEnabled);for(label in listOf("拍照","照片","文件"))assertFalse(label,shown().any{it.contentDescription==label})};picture("editor-dark-recording-save-enabled");assertEquals(0,context.queue().depth());Thread.sleep(1300);click("停止录音")
             until("Actual AAC attachment staged"){store.draft().getJSONArray("attachments").length()==1&&main{shown().filterIsInstance<TextView>().any{it.text.toString()=="保存"&&it.isEnabled}}};val attachment=store.draft().getJSONArray("attachments").getJSONObject(0);val bytes=store.bytes(attachment.getString("id"));val file=File(context.cacheDir,"selected-silent-avd.aac").apply{writeBytes(bytes)};val metadata=MediaMetadataRetriever();try{metadata.setDataSource(file.absolutePath);assertTrue(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()>0)}finally{metadata.release();file.delete()};picture("editor-dark-generated-aac-ready")
@@ -98,7 +98,7 @@ class FinalEditorActionsInstrumentedTest {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName,Manifest.permission.CAMERA)
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
-            until("Actual first-use home before the system camera"){hasTag("home-first-use-guide")} ;tag("home-record-action")
+            until("Actual first-use home before the system camera"){hasTag("home-notice-connect")} ;tag("home-record-action")
             until("First-use editor is ready for a photo"){main{shown().any{it.contentDescription=="拍照"&&it.isEnabled}}};click("拍照")
             until("The private full-size camera destination is journaled"){store.pendingMedia().length()==1}
             instrumentation.sendStatus(0,android.os.Bundle().apply{putString("stream","FIRST_USE_CAMERA_READY_FOR_DRIVER\n")})
@@ -120,13 +120,13 @@ class FinalEditorActionsInstrumentedTest {
         val clipboard=context.getSystemService(android.content.ClipboardManager::class.java);var previous:android.content.ClipData?=null;var clipboardRead=false
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
-            until("Actual first-use home opens installation help"){hasTag("home-first-use-guide")};click("还没有自己的 Mote？");until("Home opens the real installation help"){has("先准备你的资料库")}
+            until("Actual first-use home offers connection"){hasTag("home-notice-connect")};click("连接");until("The actual connection entry loads"){has("把记录接到一起")};click("还没有自己的 Mote？");until("Connection opens the real installation help"){has("先准备你的资料库")}
             previous=main{clipboard.primaryClip?.let{android.content.ClipData(it)}};clipboardRead=true
             click("复制给安装助手");assertEquals(StartUsingActivity.INSTALL_PROMPT,main{clipboard.primaryClip!!.getItemAt(0).text.toString()});click("查看安装提示词");until("The copied installation prompt is visible"){has(StartUsingActivity.INSTALL_PROMPT)};picture("first-home-help-prompt")
             click("现在先记下来");until("The local first-use editor opens"){main{shown().filterIsInstance<EditText>().any{it.contentDescription=="正在想什么"&&it.isEnabled}}}
             val body="Generated first-use installation-help thought";val description="Generated independent first-use explanation"
             main{shown().filterIsInstance<EditText>().single{it.contentDescription=="正在想什么"}.setText(body)};click("资料说明");main{(shown().single{it.tag=="record-description"}as EditText).setText(description)}
-            click("保存");until("The local first-use receipt is visible"){has("• 本机已保存")};val id=requireNotNull(NativeRecordReceipt.recordId);val saved=requireNotNull(context.queue().capture(id))
+            click("保存");until("The saved editor returns to the connection page"){has("把记录接到一起")};click("稍后连接");until("The home returns with its local receipt"){has("• 本机已保存")};val id=requireNotNull(NativeRecordReceipt.recordId);val saved=requireNotNull(context.queue().capture(id))
             assertEquals(body,saved.getString("ocrText"));assertEquals(description,saved.getJSONObject("metadata").getString("ownerDescription"));assertTrue(NativeRecordReceipt.fromFirstUse);picture("first-home-help-local-receipt")
             click("查看原文");until("The same saved original is readable"){has(body)};picture("first-home-help-exact-original");click("返回上一页");until("The same local receipt returns"){has("• 本机已保存")};assertEquals(id,NativeRecordReceipt.recordId);assertEquals(0,requests.get())
         }}finally{HttpJson.onRequest=hook;main{if(clipboardRead){if(previous==null)clipboard.clearPrimaryClip()else clipboard.setPrimaryClip(previous!!)}}}
@@ -138,11 +138,11 @@ class FinalEditorActionsInstrumentedTest {
         store.edit(draft,JSONArray(),JSONObject().put("kind","manual"),explanation);settings.save(settings.read().copy(server="",token="",syncMode="manual",syncPaused=true),confirmCentralEndpoint=true);context.getSharedPreferences("mote",0).edit().remove("lastCapture").commit();NativeRecordReceipt.recordId=null;LocalStateChanges.changed(records=true,immediate=true)
         val requests=AtomicInteger();val hook=HttpJson.onRequest;HttpJson.onRequest={requests.incrementAndGet()}
         try{ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use{
-            until("Actual first-use home offers connection"){hasTag("home-first-use-guide")};click("连接");until("The actual connection entry loads"){has("把记录接到一起")}
+            until("Actual first-use home offers connection"){hasTag("home-notice-connect")};click("连接");until("The actual connection entry loads"){has("把记录接到一起")}
             val invitation="Generated incomplete invitation retained across help";main{shown().filterIsInstance<EditText>().single{it.isShown}.setText(invitation)}
             click("还没有自己的 Mote？");until("Connection opens its real installation help"){has("先准备你的资料库")};picture("connection-help-open")
             click("返回上一页");until("The exact invitation returns"){main{shown().filterIsInstance<EditText>().any{it.isShown&&it.text.toString()==invitation}}};picture("connection-help-same-invitation")
-            click("稍后连接");until("The original home returns"){hasTag("home-first-use-guide")} ;assertEquals(draft,store.draft().getString("text"));assertEquals(explanation,store.draft().getString("description"));assertEquals(0,context.queue().depth());assertEquals(0,requests.get())
+            click("稍后连接");until("The original home returns"){hasTag("home-notice-connect")} ;assertEquals(draft,store.draft().getString("text"));assertEquals(explanation,store.draft().getString("description"));assertEquals(0,context.queue().depth());assertEquals(0,requests.get())
         }}finally{HttpJson.onRequest=hook}
     }
     @Test fun isolatedEmptyQueueBulkComparisonAndRestoreKeepsOriginalProfile()=fixture{

@@ -52,6 +52,9 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteCaptureSyncPreview") {
                     CaptureSyncPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteProfilePreview") {
+                    ProfileMenuPreview()
+                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteSharePreview") {
                     SharePreview()
                         .preferredColorScheme(previewScheme)

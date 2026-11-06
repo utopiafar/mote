@@ -421,12 +421,12 @@ class PluginStageInstrumentedTest {
         PluginStageFixture().use { fixture ->
             connect(fixture)
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                onTop("the home reads the generated conversation") { activity ->
-                    tags(activity).contains("home-conversation:" + STAGE_CONVERSATION)
+                onTop("the home reads the generated feed") { activity ->
+                    texts(activity).contains(MoteI18n.text("暂无记录。"))
                 }
-                assertTrue("the home read came from the generated Central", fixture.requests.any { it.method == "GET" && it.path == "/api/conversations?limit=5" })
+                assertTrue("the home read came from the generated Central", fixture.requests.any { it.method == "GET" && it.path.startsWith("/api/capture-browser?") })
                 until("the plugin-owned home reads its three visible sections") {
-                    fixture.requests.any { it.path.startsWith("/api/conversations?limit=5") } &&
+                    fixture.requests.any { it.path.startsWith("/api/capture-browser?") } &&
                         fixture.requests.any { it.path.startsWith("/api/actions?") } &&
                         fixture.requests.any { it.path.startsWith("/api/insights?") }
                 }
@@ -552,7 +552,7 @@ class PluginStageInstrumentedTest {
 
         fun homeReads(): Int = requests.count { request ->
             request.method == "GET" && (
-                request.path.startsWith("/api/conversations?limit=5") ||
+                request.path.startsWith("/api/capture-browser?") ||
                     request.path == "/api/actions" || request.path.startsWith("/api/actions?") ||
                     request.path == "/api/insights" || request.path.startsWith("/api/insights?")
                 )

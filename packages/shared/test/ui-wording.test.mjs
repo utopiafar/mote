@@ -112,7 +112,7 @@ test('promise copy stays verbatim across clients',()=>{
   }
   const required=new Map([
     ['apps/web/src/plugins/memory/MemoryDeleteDialog.tsx',[memoryDelete]],
-    ['apps/android/app/src/main/java/dev/mote/collector/CentralLibrary.kt',[memoryDelete]],
+    ['apps/android/app/src/main/java/dev/mote/collector/MemoryDetailPanel.kt',[memoryDelete]],
     ['apps/web/src/plugins/ask/Conversations.tsx',[conversationTitle,conversationBody,conversationAction]],
     ['apps/android/app/src/main/java/dev/mote/collector/CentralScreens.kt',[conversationTitle,conversationBody,conversationAction]],
   ]);
