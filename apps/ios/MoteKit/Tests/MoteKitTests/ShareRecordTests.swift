@@ -138,6 +138,38 @@ final class ShareRecordTests: XCTestCase {
         XCTAssertNil(metadata["attachments"])
     }
 
+    func testConversationSaveWithoutSupplementKeepsQuotedOriginal() throws {
+        let queue = SendQueue(directoryURL: directoryURL.appendingPathComponent("Queue", isDirectory: true))
+        let attachments = ShareAttachmentStore(directoryURL: directoryURL.appendingPathComponent("Shared", isDirectory: true))
+        let quote = ShareConversationQuote(
+            question: "押金是多少？",
+            answer: "合同第 4 页写的是两个月租金[ev_2]。",
+            displayAnswer: "合同第 4 页写的是两个月租金。",
+            conversationId: "11111111-2222-3333-4444-555555555555",
+            turnId: "turn-2"
+        )
+
+        _ = try ShareSubmission.save(
+            request: ShareRequest(conversation: quote),
+            note: "",
+            description: "  ",
+            deviceId: "generated-iphone",
+            deviceName: "Generated iPhone",
+            capturedAt: "2026-11-06T02:04:00.000Z",
+            queue: queue,
+            attachmentStore: attachments
+        )
+
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(queue.pending().first).payload) as? [String: Any])
+        XCTAssertEqual(object["ocrText"] as? String, "")
+        let metadata = try XCTUnwrap(object["metadata"] as? [String: Any])
+        XCTAssertNil(metadata["ownerDescription"])
+        let origin = try XCTUnwrap(metadata["noteOrigin"] as? [String: Any])
+        XCTAssertEqual(origin["kind"] as? String, "conversation")
+        XCTAssertEqual(origin["text"] as? String, "押金是多少？\n\n合同第 4 页写的是两个月租金[ev_2]。")
+        XCTAssertEqual(origin["messageIds"] as? [String], ["turn-2"])
+    }
+
     func testConversationSaveRejectsIncompleteIdentity() throws {
         let queue = SendQueue(directoryURL: directoryURL.appendingPathComponent("Queue", isDirectory: true))
         let attachments = ShareAttachmentStore(directoryURL: directoryURL.appendingPathComponent("Shared", isDirectory: true))
