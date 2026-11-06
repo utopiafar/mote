@@ -134,7 +134,7 @@ public struct CaptureStatusFacts: Decodable, Sendable {
 public enum CaptureStatusMapping {
     public static let table: [CaptureStatusRow] = [
         row(.capturing, .normal, androidOngoing: "采集中", macIcon: .normal, central: central("正在采集", .ok)),
-        row(.pendingSync, .normal, androidOngoing: "采集中 · 待同步 {0} 条", macIcon: .normal, central: central("正在采集", .ok)),
+        row(.pendingSync, .normal, androidOngoing: "采集中", macIcon: .normal, central: central("正在采集", .ok)),
         row(.screenPaused, .reminder, home: home("屏幕采集已暂停", .resumeCapture), androidOngoing: "屏幕采集已暂停", macIcon: .paused, central: central("正在采集", .ok)),
         row(.paused, .reminder, home: home("采集已暂停", .resumeCapture), androidOngoing: "采集已暂停", macIcon: .paused, central: central("已暂停", .neutral)),
         row(.sendPaused, .reminder, home: home("发送已暂停", .resumeSend), androidOngoing: "采集中 · 发送已暂停", macIcon: .normal),

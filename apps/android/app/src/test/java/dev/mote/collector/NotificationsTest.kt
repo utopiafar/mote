@@ -12,15 +12,27 @@ class NotificationsTest {
     private fun row(id: CaptureStatusId) = CaptureStatusMapping.row(id)
 
     @Test fun theOngoingTitleIsTheCurrentStatusAndNeverTheLocalCount() {
-        assertEquals("采集中", ongoingCaptureTitle(row(CaptureStatusId.CAPTURING), 0))
-        assertEquals("采集中 · 待同步 12 条", ongoingCaptureTitle(row(CaptureStatusId.PENDING_SYNC), 12))
-        assertEquals("屏幕采集已暂停", ongoingCaptureTitle(row(CaptureStatusId.SCREEN_PAUSED), 12))
-        assertEquals("采集已暂停", ongoingCaptureTitle(row(CaptureStatusId.PAUSED), 12))
-        assertEquals("需要重新连接", ongoingCaptureTitle(row(CaptureStatusId.RECONNECT), 12))
-        assertEquals("本机空间已满", ongoingCaptureTitle(row(CaptureStatusId.STORAGE_FULL), 12))
-        assertEquals("部分来源等待权限", ongoingCaptureTitle(row(CaptureStatusId.PERMISSION), 12))
-        assertEquals("采集中 · 发送需要处理", ongoingCaptureTitle(row(CaptureStatusId.SEND_ATTENTION), 12))
-        assertNull("A stopped service has no ongoing title", ongoingCaptureTitle(row(CaptureStatusId.INTERRUPTED), 12))
+        assertEquals("采集中", ongoingCaptureTitle(row(CaptureStatusId.CAPTURING)))
+        assertEquals("采集中", ongoingCaptureTitle(row(CaptureStatusId.PENDING_SYNC)))
+        assertEquals("屏幕采集已暂停", ongoingCaptureTitle(row(CaptureStatusId.SCREEN_PAUSED)))
+        assertEquals("采集已暂停", ongoingCaptureTitle(row(CaptureStatusId.PAUSED)))
+        assertEquals("需要重新连接", ongoingCaptureTitle(row(CaptureStatusId.RECONNECT)))
+        assertEquals("本机空间已满", ongoingCaptureTitle(row(CaptureStatusId.STORAGE_FULL)))
+        assertEquals("部分来源等待权限", ongoingCaptureTitle(row(CaptureStatusId.PERMISSION)))
+        assertEquals("采集中 · 发送需要处理", ongoingCaptureTitle(row(CaptureStatusId.SEND_ATTENTION)))
+        assertNull("A stopped service has no ongoing title", ongoingCaptureTitle(row(CaptureStatusId.INTERRUPTED)))
+    }
+
+    /** Zero and many pending records keep the same status title; the count stays in 采集与存储详情. */
+    @Test fun pendingSyncKeepsTheStatusTitleAtAnyCount() {
+        fun status(pending: Int?) = CaptureStatusMapping.status(CaptureStatusFacts(
+            connection = CaptureConnection.CONNECTED, captureEnabled = true, captureLive = true,
+            syncState = CaptureSyncState.WAITING, pending = pending))
+        assertEquals(CaptureStatusId.CAPTURING, status(0).id)
+        assertEquals(CaptureStatusId.PENDING_SYNC, status(3).id)
+        assertEquals("采集中", ongoingCaptureTitle(status(0)))
+        assertEquals("采集中", ongoingCaptureTitle(status(3)))
+        assertEquals("采集中", ongoingCaptureTitle(status(1200)))
     }
 
     @Test fun onlyInterruptionsPostAndOnlyOncePerIncident() {
