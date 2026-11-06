@@ -19,4 +19,23 @@ final class SystemControlIntentTests: XCTestCase {
             XCTAssertEqual(MoteEntry.resolve(try XCTUnwrap(entry.deepLinkURL)), expectedEntry)
         }
     }
+
+    @MainActor
+    func testControlEntriesRouteToTheirHomeDestinations() async throws {
+        let cases: [(MoteSystemControl, HomeDestination)] = [
+            (.record, .editor(.record)),
+            (.photo, .editor(.camera)),
+            (.recording, .editor(.microphone)),
+            (.ask, .ask(nil)),
+        ]
+
+        for (control, destination) in cases {
+            let intent = OpenSystemControlIntent(control: control)
+            let url = try XCTUnwrap(intent.target.entry?.deepLinkURL)
+            let entry = try XCTUnwrap(MoteEntry.resolve(url))
+            let router = HomeRouter()
+            router.open(entry)
+            XCTAssertEqual(router.destination, destination, "Wrong destination for \(control.rawValue)")
+        }
+    }
 }
