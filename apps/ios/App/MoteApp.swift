@@ -67,6 +67,9 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteLibraryPreview") {
                     LibraryMemoriesPreview()
                         .preferredColorScheme(previewScheme)
+                } else if arguments.contains("-MoteSearchPreview") {
+                    SearchRecordsPreview()
+                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteMemoryDetailPreview") {
                     MemoryDetailPreview()
                         .preferredColorScheme(previewScheme)
