@@ -48,20 +48,27 @@ class SourcesOverviewInstrumentedTest {
     private fun setScreenConnected(value: Boolean) {
         CaptureAccessibilityService::class.java.getDeclaredField("connected").apply { isAccessible = true }.setBoolean(null, value)
     }
-    private fun screenshot(name: String) {
-        val windows = WindowInspector.getGlobalWindowViews().filter { it.isShown }
-        val decor = windows.firstOrNull { root -> views(root).any { it.tag == "sources-add" || it.tag == "detail-title" } }
-            ?: windows.maxByOrNull { it.width.toLong() * it.height } ?: error("No visible window for $name")
-        val bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap); decor.draw(canvas)
-        if (windows.any { it !== decor }) canvas.drawColor(android.graphics.Color.argb(92, 45, 42, 38))
-        windows.filter { it !== decor }.forEach { window ->
-            val position = IntArray(2); window.getLocationOnScreen(position)
-            canvas.save(); canvas.translate(position[0].toFloat(), position[1].toFloat()); window.draw(canvas); canvas.restore()
-        }
+    private fun screenshot(scenario: ActivityScenario<SourcesActivity>, name: String) {
         val directory = File(context.filesDir, "ua17-sources").apply { mkdirs() }
-        File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        bitmap.recycle()
+        GeneratedVisualScreencap.save(context, directory, name)
+        val captured = GeneratedVisualScreencap.window(scenario)
+        val bitmap = captured.bitmap
+        try {
+            main {
+                val windows = WindowInspector.getGlobalWindowViews().filter { it.isShown }
+                val decor = windows.firstOrNull { root -> views(root).any { it.tag == "sources-add" || it.tag == "detail-title" } }
+                    ?: error("No source window for $name")
+                val overlays = windows.filter { it !== decor }
+                val canvas = Canvas(bitmap)
+                if (overlays.isNotEmpty()) canvas.drawColor(android.graphics.Color.argb(if (MoteAppearance.dark()) 140 else 77, 0, 0, 0))
+                overlays.forEach { window ->
+                    val position = IntArray(2); window.getLocationOnScreen(position)
+                    canvas.save(); canvas.translate((position[0] - captured.x).toFloat(), (position[1] - captured.y).toFloat())
+                    window.draw(canvas); canvas.restore()
+                }
+            }
+            File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } finally { bitmap.recycle() }
     }
     private fun frames(scenario: ActivityScenario<out Activity>) {
         val frame = java.util.concurrent.CountDownLatch(1)
@@ -75,7 +82,8 @@ class SourcesOverviewInstrumentedTest {
                 val texts = views(activity.window.decorView).filter { it.isShown }.filterIsInstance<TextView>().map { it.text.toString() }
                 ready = texts.contains("采集与同步") && texts.contains("屏幕与应用活动") && texts.contains("通知与设备事件") &&
                     texts.contains("媒体") && texts.contains("同步文件夹") && texts.contains("本机日历") &&
-                    texts.contains("添加来源") && texts.any { it == "mote.example.net" } && !texts.any { it.startsWith("正在读取") }
+                    texts.contains("添加来源") && texts.any { it == "mote.example.net" } &&
+                    texts.contains("2 个") && texts.contains("今天") && !texts.any { it == "处理" || it.startsWith("正在读取") }
             }
             ready
         }
@@ -97,12 +105,20 @@ class SourcesOverviewInstrumentedTest {
         require(queue.inventory().records == 0) { "Overview screenshots need an empty generated queue" }
         require(MediaCollection.permissionAllowed(context)) { "Grant the generated notification-listener fixture first" }
         require(context.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) { "Grant the generated notification fixture first" }
-        require(context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "Grant the generated calendar fixture first" }
+        require(context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "Grant the generated calendar fixture first" }
+        require(previousSources.isEmpty()) { "Overview screenshots need an empty generated source store" }
         val storageDirectory = File(QueueStorage(context).current().path)
         val beforeFiles = storageDirectory.listFiles().orEmpty().map { it.name }.toSet()
         val storageFixture = File(storageDirectory, "generated-ua17-storage.bin")
         val treeUri = android.provider.DocumentsContract.buildTreeDocumentUri(context.packageName + ".file-fixtures", "root")
         val created = mutableListOf<LocalSource>()
+        val account = "generated-visual-" + UUID.randomUUID()
+        val calendarBase = android.provider.CalendarContract.Calendars.CONTENT_URI.buildUpon()
+            .appendQueryParameter(android.provider.CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(android.provider.CalendarContract.Calendars.ACCOUNT_NAME, account)
+            .appendQueryParameter(android.provider.CalendarContract.Calendars.ACCOUNT_TYPE, android.provider.CalendarContract.ACCOUNT_TYPE_LOCAL).build()
+        var calendarUri: android.net.Uri? = null
         try {
             MoteI18n.select(context, "zh-CN"); MoteAppearance.select(context, AppearancePreference.LIGHT)
             setScreenConnected(true)
@@ -135,9 +151,19 @@ class SourcesOverviewInstrumentedTest {
             val tree = treeUri
             context.grantUriPermission(context.packageName, tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
             context.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            LocalSource(name = "Generated 文档", kind = "local-files", tree = true, uri = tree.toString()).let { store.save(it); created.add(it) }
-            LocalSource(name = "Generated 图片", kind = "local-files", tree = true, uri = tree.toString()).let { store.save(it); created.add(it) }
-            LocalSource(name = "Generated 日历", kind = "local-calendar", calendarId = 991991).also { created.add(it) }.let { calendar ->
+            LocalSource(name = "Generated 文档", kind = "local-files", tree = true, uri = tree.toString(), centralProcessingConsent = true).let { store.save(it); created.add(it) }
+            LocalSource(name = "Generated 图片", kind = "local-files", tree = true, uri = tree.toString(), centralProcessingConsent = true).let { store.save(it); created.add(it) }
+            calendarUri = requireNotNull(context.contentResolver.insert(calendarBase, android.content.ContentValues().apply {
+                put(android.provider.CalendarContract.Calendars.ACCOUNT_NAME, account)
+                put(android.provider.CalendarContract.Calendars.ACCOUNT_TYPE, android.provider.CalendarContract.ACCOUNT_TYPE_LOCAL)
+                put(android.provider.CalendarContract.Calendars.NAME, account)
+                put(android.provider.CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, "Generated visual calendar")
+                put(android.provider.CalendarContract.Calendars.OWNER_ACCOUNT, account)
+                put(android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, android.provider.CalendarContract.Calendars.CAL_ACCESS_OWNER)
+                put(android.provider.CalendarContract.Calendars.VISIBLE, 1); put(android.provider.CalendarContract.Calendars.SYNC_EVENTS, 1)
+                put(android.provider.CalendarContract.Calendars.CALENDAR_TIME_ZONE, "UTC")
+            }))
+            LocalSource(name = "Generated 日历", kind = "local-calendar", calendarId = android.content.ContentUris.parseId(calendarUri!!)).also { created.add(it) }.let { calendar ->
                 store.save(calendar)
                 store.scan(calendar, SourceScan(emptyList(), true, at(LocalTime.of(2, 0)).toString()))
             }
@@ -159,11 +185,11 @@ class SourcesOverviewInstrumentedTest {
             ActivityScenario.launch(SourcesActivity::class.java).use { scenario ->
                 waitForOverview(scenario, "normal")
                 frames(scenario)
-                screenshot("impl-overview-light")
+                screenshot(scenario, "impl-overview-light")
                 for (theme in listOf(AppearancePreference.DARK)) {
                     main { MoteAppearance.select(context, theme) }; instrumentation.waitForIdleSync()
                     frames(scenario)
-                    screenshot("impl-overview-dark")
+                    screenshot(scenario, "impl-overview-dark")
                 }
                 main { MoteAppearance.select(context, AppearancePreference.LIGHT) }; instrumentation.waitForIdleSync(); frames(scenario)
                 until("add row") { var ready = false; scenario.onActivity { a -> ready = views(a.window.decorView).any { it.isShown && it.tag == "sources-add" } }; ready }
@@ -176,7 +202,10 @@ class SourcesOverviewInstrumentedTest {
                     assertEquals(listOf("导入文件", "同步文件夹", "云端来源"),
                         names.filter { it in CaptureSyncPresentation.addKinds.map { kind -> MoteI18n.text(kind.titleKey) } })
                 }
-                screenshot("impl-adding-light")
+                screenshot(scenario, "impl-adding-light")
+                main { MoteAppearance.select(context, AppearancePreference.DARK) }; instrumentation.waitForIdleSync(); frames(scenario)
+                screenshot(scenario, "impl-adding-dark")
+                main { MoteAppearance.select(context, AppearancePreference.LIGHT) }
             }
             ActivityScenario.launch(SourcesActivity::class.java).use { scenario ->
                 configure(connected = false)
@@ -184,7 +213,9 @@ class SourcesOverviewInstrumentedTest {
                 waitForOverview(scenario, "reconnect")
                 until("reconnect copy") { var ready = false; scenario.onActivity { a -> ready = views(a.window.decorView).any { it.isShown && it is TextView && it.text.toString() == "需要重新连接" } }; ready }
                 frames(scenario)
-                screenshot("impl-reconnect-light")
+                screenshot(scenario, "impl-reconnect-light")
+                main { MoteAppearance.select(context, AppearancePreference.DARK) }; instrumentation.waitForIdleSync(); frames(scenario)
+                screenshot(scenario, "impl-reconnect-dark")
             }
         } finally {
             runCatching { setScreenConnected(false) }
@@ -192,6 +223,7 @@ class SourcesOverviewInstrumentedTest {
             runCatching { storageDirectory.listFiles().orEmpty().filterNot { it.name in beforeFiles }.forEach { it.delete() } }
             runCatching { context.contentResolver.releasePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             runCatching { created.forEach { store.remove(it.id) } }
+            runCatching { calendarUri?.lastPathSegment?.let { id -> context.contentResolver.delete(calendarBase.buildUpon().appendPath(id).build(), null, null) } }
             runCatching { prefs.edit().clear().apply { previousPrefs.forEach { (key, value) -> when (value) { is String -> putString(key, value); is Boolean -> putBoolean(key, value); is Int -> putInt(key, value); is Long -> putLong(key, value); is Float -> putFloat(key, value); is Set<*> -> putStringSet(key, value.filterIsInstance<String>().toSet()) } } }.commit() }
             MoteI18n.select(context, previousLanguage); main { MoteAppearance.select(context, previousAppearance) }
         }
