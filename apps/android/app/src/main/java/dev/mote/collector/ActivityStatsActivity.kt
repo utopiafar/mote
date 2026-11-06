@@ -6,6 +6,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 import org.json.JSONObject
 import java.io.File
 import java.time.Instant
@@ -15,6 +17,7 @@ class ActivityStatsActivity : MoteActivity() {
     private lateinit var body: LinearLayout
     private lateinit var summary: LinearLayout
     private lateinit var inventory: TextView
+    private lateinit var warning: LinearLayout
     private lateinit var history: LinearLayout
     private val executor = Executors.newSingleThreadExecutor()
     private val task by lazy { UiTask(this) }
@@ -35,6 +38,17 @@ class ActivityStatsActivity : MoteActivity() {
         body = moteDetailPage(title = MoteI18n.text("采集与存储详情"))
         text(MoteI18n.text("这些统计始终在本机保存，与开发者诊断开关独立。记录固定结果与数字，不记录画面、文字、应用名、邀请或令牌。"))
         inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
+        warning = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; visibility = android.view.View.GONE
+            background = MoteUi.shape(this@ActivityStatsActivity, NativeColorRole.WARNING_TINT, NativeRadiusRole.CONTAINER, false)
+            setPadding(moteDp(12), moteDp(10), moteDp(12), moteDp(10))
+            addView(MoteComponents.icon(this@ActivityStatsActivity, MoteGlyph.ALERT, NativeColorRole.WARNING, 20),
+                LinearLayout.LayoutParams(moteDp(20), moteDp(20)).apply { marginEnd = moteDp(10) })
+            addView(TextView(this@ActivityStatsActivity).apply {
+                text = MoteI18n.text("曾有统计写入失败，本周期数据不完整。")
+                MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.INK)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }; body.addView(warning, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(12) })
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
         renderSummary(MoteI18n.text("正在读取本机统计…"))
         progress = ProgressBar(this); body.addView(progress)
@@ -70,6 +84,7 @@ class ActivityStatsActivity : MoteActivity() {
                 // Live inventory is published independently. Directory sizes are expensive,
                 // approximate diagnostics and need not walk every file on every record change.
                 fun directoryBytes(file: File): Long = directorySizes.getOrPut(file.absolutePath) { bytes(file) }
+                val incomplete = getSharedPreferences("operation-health", 0).getBoolean("incomplete", false)
                 val state = Operations.ledger(this).read(); val counts = state.getJSONObject("counts")
                 val queue = queue().summary(); val config = Settings(this).read()
                 fun count(kind: OperationKind) = counts.getLong(kind.name)
@@ -80,7 +95,6 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("当前采集\n状态：{0}\n", if (Settings(this@ActivityStatsActivity).enabled) MoteI18n.text("已启用") else MoteI18n.text("已停止")))
                     append(MoteI18n.text("起算：{0}\n", Instant.ofEpochMilli(state.getLong("epochAtMs"))))
                     append(MoteI18n.text("统计起点：{0}\n", when (state.getString("epochReason")) { "recovered" -> MoteI18n.text("统计文件曾不可读，已重新起算"); "user_reset" -> MoteI18n.text("用户主动重置"); else -> MoteI18n.text("首次建立统计，之前历史不可用") }))
-                    if (getSharedPreferences("operation-health", 0).getBoolean("incomplete", false)) append(MoteI18n.text("⚠ 曾有统计写入失败，本周期数据不完整。\n"))
                     append(MoteI18n.text("\n累计结果\n截图请求 {0} · 收到画面 {1}\n", count(OperationKind.CAPTURE_REQUESTED), count(OperationKind.FRAME_RECEIVED)))
                     append(MoteI18n.text("累计截图记录 {0} · 已保存记录 {1}\n", count(OperationKind.SCREEN_QUEUED), count(OperationKind.NOTE_QUEUED)))
                     append(MoteI18n.text("系统事件已保存 {0} · 已确认 {1}\n", count(OperationKind.SYSTEM_EVENT_QUEUED), count(OperationKind.SYSTEM_EVENT_ACK)))
@@ -105,6 +119,7 @@ class ActivityStatsActivity : MoteActivity() {
                 }
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
+                    warning.visibility = if (incomplete) android.view.View.VISIBLE else android.view.View.GONE
                     renderSummary(content); history.removeAllViews()
                     snapshot = state; queueSnapshot = queue; historyPage = historyPage.coerceAtMost(((state.getJSONArray("events").length() - 1) / 10).coerceAtLeast(0)); pendingPage = pendingPage.coerceAtMost(((queue.getJSONArray("pending").length() - 1) / 10).coerceAtLeast(0)); renderHistory()
                 }

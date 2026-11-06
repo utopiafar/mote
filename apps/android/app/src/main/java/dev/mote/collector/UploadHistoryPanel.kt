@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.widget.*
+import dev.mote.collector.ui.moteDisclosureGlyph
 import java.time.ZoneId
 
 internal class UploadHistoryPanel(private val activity: Activity, private val body: LinearLayout, state: Bundle?) {
@@ -62,7 +63,9 @@ internal class UploadHistoryPanel(private val activity: Activity, private val bo
         if (filtered.isEmpty()) dates.addView(TextView(activity).apply { text = MoteI18n.text("暂无上传历史") })
         filtered.drop(page * 10).take(10).groupBy { it.date(ZoneId.systemDefault()) }.forEach { (date, rows) ->
             dates.addView(MoteUi.button(Button(activity).apply {
-                text = (if (date in expanded) "▾ " else "▸ ") + date
+                text = date
+                isSelected = date in expanded
+                moteDisclosureGlyph(isSelected)
                 tag = "history-date-$date"
                 setOnClickListener { scroll = scroller()?.scrollY ?: 0; if (!expanded.add(date)) expanded.remove(date); render() }
             }))

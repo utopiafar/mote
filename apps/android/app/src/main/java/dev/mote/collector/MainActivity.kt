@@ -29,6 +29,7 @@ import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
+import dev.mote.collector.ui.moteGlyph
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -575,7 +576,8 @@ class MainActivity : MoteActivity() {
                 if (provenance.isNotBlank()) addView(TextView(this@MainActivity).apply { text = provenance; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, dp(5), 0, 0) })
                 addView(TextView(this@MainActivity).apply { text = detail; MoteUi.type(this, NativeFontRole.SUPPORT); maxLines = if (identity.startsWith("source:")) Int.MAX_VALUE else 3; MoteUi.textColor(this, if (identity.startsWith("library-record:")) NativeColorRole.INK else NativeColorRole.MUTED); setPadding(0, dp(9), 0, 0); setLineSpacing(0f, 1.25f) })
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(TextView(this@MainActivity).apply { text = "›"; textSize = 22f; MoteUi.textColor(this, NativeColorRole.ACCENT); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(16), -2).apply { marginStart = dp(8) })
+            addView(MoteComponents.icon(this@MainActivity, MoteGlyph.CHEV, NativeColorRole.ACCENT, 20),
+                LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginStart = dp(8); gravity = Gravity.CENTER_VERTICAL })
             setOnClickListener { action() }
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
     }
@@ -1939,7 +1941,8 @@ class MainActivity : MoteActivity() {
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
-        text(title + "  ›", NativeFontRole.ACTION, NativeColorRole.ACCENT).apply {
+        text(title, NativeFontRole.ACTION, NativeColorRole.ACCENT).apply {
+            moteGlyph(MoteGlyph.CHEV, NativeColorRole.ACCENT)
             minHeight = dp(MoteTheme.controlHeight); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
             setOnClickListener { MoteDialogBuilder(this@MainActivity).setTitle(title).setMessage(message).setPositiveButton(MoteI18n.text("知道了"), null).show() }
         }
@@ -2267,7 +2270,7 @@ class MainActivity : MoteActivity() {
             addView(TextView(this@MainActivity).apply { text = label; MoteUi.type(this,NativeFontRole.ACTION,medium = true); MoteUi.textColor(this,NativeColorRole.INK) })
             addView(TextView(this@MainActivity).apply { text = description; MoteUi.type(this,NativeFontRole.META); MoteUi.textColor(this,NativeColorRole.MUTED); setPadding(0,dp(6),0,0); tag = "row-detail" })
         },LinearLayout.LayoutParams(0,-2,1f))
-        row.addView(TextView(this).apply { text = "›"; MoteUi.type(this,NativeFontRole.SUPPORT); MoteUi.textColor(this,NativeColorRole.MUTED) },LinearLayout.LayoutParams(dp(16),-2))
+        row.addView(MoteComponents.icon(this, MoteGlyph.CHEV, NativeColorRole.MUTED, 20), LinearLayout.LayoutParams(dp(20), dp(20)))
         content.addView(row); return row
     }
 
@@ -2317,7 +2320,7 @@ class MainActivity : MoteActivity() {
         labels.addView(TextView(this).apply { text = label; MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK) })
         if (description.isNotBlank()) labels.addView(TextView(this).apply { text = description; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED); setPadding(0, dp(4), 0, 0) })
         row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(TextView(this).apply { text = "›"; textSize = 25f; MoteUi.textColor(this, NativeColorRole.MUTED); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(18), -2))
+        row.addView(MoteComponents.icon(this, MoteGlyph.CHEV, NativeColorRole.MUTED, 20), LinearLayout.LayoutParams(dp(20), dp(20)))
         val group = activeMenuGroup
         if (group != null && group.childCount > 0) group.addView(View(this).apply { MoteUi.backgroundColor(this, NativeColorRole.DIVIDER) }, LinearLayout.LayoutParams(-1, dp(MoteTheme.borderWidth)).apply { marginStart = dp(48); marginEnd = dp(MoteTheme.spacePanel) })
         (group ?: content).addView(row, LinearLayout.LayoutParams(-1, -2).apply { if (group == null) bottomMargin = dp(MoteTheme.spaceItem) })

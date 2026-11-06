@@ -146,7 +146,7 @@ class UiIterationInstrumentedTest {
                             if ((activity.resources.configuration.screenWidthDp < 360 || activity.resources.configuration.fontScale > 1.2f) && name in setOf("connection", "note", "screen-scope"))
                                 assertEquals("Compact titles use their complete heading row, without Add/Settings squeezing their words", 1, title.lineCount)
                             assertFalse("A local page no longer repeats the brand and return label above its title",
-                                views(root).filterIsInstance<TextView>().any { it.isShown && it.text.toString() in setOf("Mote", "‹  " + MoteI18n.text("返回上级")) })
+                                views(root).filterIsInstance<TextView>().any { it.isShown && it.text.toString() in setOf("Mote", MoteI18n.text("返回上级")) })
                         }
                         GeneratedWindowRendering.save(activity, directory, name)
                         if (args.getString("uiScrollEvidence") == "true") {

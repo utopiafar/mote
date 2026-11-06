@@ -1,19 +1,23 @@
 package dev.mote.collector
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import dev.mote.collector.plugins.CapturePlugin
 import dev.mote.collector.plugins.SourceProviderPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.MoteIconButtonStyle
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.Executors
@@ -54,17 +58,35 @@ class CaptureStatusActivity : MoteActivity() {
     }
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 2500) } }
 
+    override fun sheetWindow() = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val content = moteDetailPage(primary = null, title = MoteI18n.text("采集状态"), onBack = ::leave)
-        window.decorView.findViewWithTag<TextView>("detail-title")?.let { MoteUi.type(it, 16, medium = true) }
-        // The panel is the capture sheet: keep its own chrome on the raised surface the sheet uses over the home.
-        var shell: View? = content
-        while (shell != null && shell !is NativeAppShell) shell = shell.parent as? View
-        shell?.let { MoteUi.backgroundColor(it, NativeColorRole.SURFACE_RAISED) }
-        paintPanelBars()
-        content.setPadding(moteDp(16), moteDp(4), moteDp(16), moteDp(16))
+        // The sheet covers a scrim over whatever opened it; taps outside leave like Back and the close action.
+        val root = FrameLayout(this)
+        root.addView(View(this).apply {
+            tag = "capture-status-scrim"; contentDescription = MoteI18n.text("关闭"); isFocusable = true
+            NativePresentationStyles.bind(this, "scrim") { it.setBackgroundColor(scrimColor()) }
+            setOnClickListener { leave() }
+        }, FrameLayout.LayoutParams(-1, -1))
+        val sheet = MoteComponents.sheet(this).apply { tag = "capture-status-panel"; accessibilityPaneTitle = MoteI18n.text("采集状态") }
+        root.addView(sheet, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            @Suppress("DEPRECATION")
+            val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) insets.getInsets(WindowInsets.Type.systemBars()).bottom else insets.systemWindowInsetBottom
+            sheet.setPadding(0, 0, 0, bottom + moteDp(8))
+            insets
+        }
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
+            minimumHeight = moteDp(52); setPadding(moteDp(20), 0, moteDp(4), 0)
+        }
+        bar.addView(TextView(this).apply {
+            text = MoteI18n.text("采集状态"); MoteUi.type(this, 16, medium = true); MoteUi.textColor(this, NativeColorRole.INK)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        bar.addView(MoteComponents.iconButton(this, MoteGlyph.CLOSE, description = MoteI18n.text("关闭"), style = MoteIconButtonStyle.MUTED) { leave() })
+        sheet.addView(bar)
         val group = MoteComponents.group(this)
         fun add(row: PanelRow) {
             if (group.childCount > 0) group.addView(MoteComponents.divider(this))
@@ -107,7 +129,7 @@ class CaptureStatusActivity : MoteActivity() {
         send.trailing.addView(sendButton)
         add(send)
 
-        content.addView(group, LinearLayout.LayoutParams(-1, -2))
+        sheet.addView(group, LinearLayout.LayoutParams(-1, -2).apply { setMargins(moteDp(16), moteDp(4), moteDp(16), 0) })
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
         }
@@ -115,8 +137,9 @@ class CaptureStatusActivity : MoteActivity() {
         actions.addView(all, LinearLayout.LayoutParams(0, -2, 1f))
         more = MoteComponents.button(this, MoteI18n.text("更多"), MoteUi.ButtonRole.TEXT) { showMore() }.apply { tag = "capture-status-more" }
         actions.addView(more, LinearLayout.LayoutParams(-2, -2).apply { marginStart = moteDp(8) })
-        content.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(16) })
-        MoteUi.styleTree(content)
+        sheet.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { setMargins(moteDp(16), moteDp(16), moteDp(16), 0) })
+        setContentView(root)
+        MoteUi.styleTree(root)
         if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { leave() }
     }
     override fun onResume() { super.onResume(); handler.post(refresh) }
@@ -131,10 +154,11 @@ class CaptureStatusActivity : MoteActivity() {
         finish()
     }
 
-    @Suppress("DEPRECATION")
-    private fun paintPanelBars() {
-        window.statusBarColor = MoteTheme.surfaceRaised
-        window.navigationBarColor = MoteTheme.surfaceRaised
+    /** Canvas scrim: ink at 36% on light, black at 55% on dark. */
+    private fun scrimColor(): Int {
+        if (!lightSurface()) return Color.argb(140, 0, 0, 0)
+        val ink = MoteTheme.ink
+        return Color.argb(92, Color.red(ink), Color.green(ink), Color.blue(ink))
     }
 
     private class PanelRow(val root: LinearLayout, val detail: TextView, val trailing: LinearLayout)

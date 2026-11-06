@@ -7,6 +7,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
+import dev.mote.collector.ui.moteGlyph
 
 /** UI state only; every result and action comes from the existing archive operation. */
 internal class BackupOperationView(private val activity: Activity, private val body: LinearLayout,
@@ -21,7 +22,9 @@ internal class BackupOperationView(private val activity: Activity, private val b
         showing = true; landing.visibility = View.GONE; page.visibility = View.VISIBLE
         (activity.window.decorView.findViewWithTag<View>("detail-title") as? TextView)?.text = title
         page.removeAllViews()
-        MoteUi.action(SecondaryUi.action(page, "← " + MoteI18n.text("备份与恢复")) { onReturn() }, MoteUi.ButtonRole.TEXT)
+        MoteUi.action(SecondaryUi.action(page, MoteI18n.text("备份与恢复")) { onReturn() }.apply {
+            moteGlyph(MoteGlyph.BACK, NativeColorRole.MUTED, 20, atStart = true)
+        }, MoteUi.ButtonRole.TEXT)
         val card = SecondaryUi.column(page, card = true)
         if (state.isNotBlank()) SecondaryUi.text(card, state, muted = true)
         SecondaryUi.text(card, heading, heading = true)

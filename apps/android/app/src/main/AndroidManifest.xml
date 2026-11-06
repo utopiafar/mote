@@ -32,7 +32,7 @@
         <activity android:configChanges="uiMode" android:name=".StartUsingActivity" android:exported="false">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.administration" />
         </activity>
-        <activity android:configChanges="uiMode" android:name=".CaptureStatusActivity" android:exported="false">
+        <activity android:configChanges="uiMode" android:name=".CaptureStatusActivity" android:exported="false" android:theme="@style/AppThemeSheetLight">
             <meta-data android:name="mote.plugin.owner" android:value="dev.mote.capture" />
         </activity>
         <!-- Launcher shortcuts arrive with a cleared task; this entry owns its own task so the app's back stack is kept. -->

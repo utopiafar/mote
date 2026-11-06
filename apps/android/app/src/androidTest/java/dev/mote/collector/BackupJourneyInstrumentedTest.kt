@@ -125,7 +125,7 @@ class BackupJourneyInstrumentedTest {
         tag("backup-restore-records")
         picker(Intent.ACTION_OPEN_DOCUMENT, file) { click("选择备份文件"); until("backup checked") { textVisible("备份已校验") } }
     }
-    private fun home() = click("← " + MoteI18n.text("备份与恢复"))
+    private fun home() = click(MoteI18n.text("备份与恢复"))
 
     @Test fun validArchivePreviewCancelImportAndDuplicateRetryKeepOriginalIds() = fixture { root ->
         val (file, ids) = archive(root); val id = ids.single(); val count = context.queue().inventory().records
