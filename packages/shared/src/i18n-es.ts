@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const spanish: Readonly<Record<string, string>> = {
+  "没有连上中央": "Sin conexión con Central",
+  "继续问": "Seguir preguntando",
+  "第 {0} 行": "Fila {0}",
   "昨天": "Ayer",
   "离开页面会停止录音，并保留草稿。": "Al salir de esta página se detiene la grabación y se conserva el borrador.",
   "网页": "Web",

@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const french: Readonly<Record<string, string>> = {
+  "没有连上中央": "Central n'est pas joignable",
+  "继续问": "Continuer à demander",
+  "第 {0} 行": "Ligne {0}",
   "昨天": "Hier",
   "离开页面会停止录音，并保留草稿。": "Quitter cette page arrête l’enregistrement et conserve le brouillon.",
   "网页": "Web",

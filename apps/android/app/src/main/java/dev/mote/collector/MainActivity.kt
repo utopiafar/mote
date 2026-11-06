@@ -2001,7 +2001,8 @@ class MainActivity : MoteActivity() {
                 Page.MANAGE -> buildManagement()
                 Page.LIBRARY -> buildLibrary()
                 Page.ASK -> {
-                    val central = CentralContent(this, centralState, openLocalPage = {
+                    val explicit = intent.getStringExtra("conversationId") != null || intent.getStringExtra("evidenceId") != null
+                    val central = CentralContent(this, centralState, initialPage = if (explicit) "ask" else "conversations", openLocalPage = {
                         val next = Page.valueOf(it)
                         showPage(next, connectionEntryOrigin = if (next == Page.CONNECTION) ConnectionOrigin.LOCAL_ASK else null)
                     })

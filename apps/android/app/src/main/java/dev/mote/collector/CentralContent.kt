@@ -28,12 +28,12 @@ internal class CentralContent(
     private val embeddedActions: Boolean = false,
     private val openCalendar: (() -> Unit)? = null,
 ) : ContextWrapper(activity) {
-    fun openCaptureReader(origin: String, row: org.json.JSONObject, conversationId: String?, returnScroll: Int? = null, workMemory: WorkMemoryReference? = null) {
+    fun openCaptureReader(origin: String, row: org.json.JSONObject, conversationId: String?, returnScroll: Int? = null, workMemory: WorkMemoryReference? = null, citationExcerpt: String? = null) {
         val restore = if (conversationId != null && returnScroll != null) ReaderReturn(origin, accessGeneration, revision, conversationId, returnScroll) else null
         pendingReaderReturn = restore
         val workRestore = if(workMemory!=null) ReaderReturn(origin,accessGeneration,revision,workMemory.work,contentScroll()) else null
         try {
-            dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).openCapture(activity,origin,row,conversationId,workMemory,accessGeneration)
+            dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).openCapture(activity,origin,row,conversationId,workMemory,accessGeneration,citationExcerpt)
             if(workRestore!=null) { pendingWorkReaderReturn=workRestore;body.visibility=View.INVISIBLE }
         }
         catch (error: Exception) { pendingReaderReturn = null; throw error }
@@ -136,9 +136,6 @@ internal class CentralContent(
     private var insightMoreAction: (() -> Unit)? = null
     private lateinit var settingsAction: TextView
     private lateinit var moreAction: TextView
-    private lateinit var historyAction: TextView
-    private lateinit var newConversationAction: TextView
-    private lateinit var conversationMoreAction: TextView
     private lateinit var memoryFilterAction: ImageButton
     private var memoryFilter: (() -> Unit)? = null
     private val pageHistory = mutableListOf<String>()
@@ -255,9 +252,6 @@ internal class CentralContent(
         addAction = headerAction("记下", "记下", tonal = true) { activity.openRecordEditor() }
         settingsAction = headerAction("设置") { localPage("SETTINGS") }
         moreAction = headerAction("更多") { if (page == "insights") insightMoreAction?.invoke() ?: more() else more() }
-        historyAction = headerAction("◷", "对话历史") { openConversationList() }
-        newConversationAction = headerAction("＋", "新对话") { screens?.newConversation() }
-        conversationMoreAction = headerAction("⋯", "对话更多") { screens?.conversationMore() }
         memoryFilterAction = MoteComponents.iconButton(this, MoteGlyph.SLIDERS, "筛选") { memoryFilter?.invoke() }.apply { tag = "memory-filter" }
         actions.addView(memoryFilterAction, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
         header.minimumHeight = moteDp(if (page == "memories") 56 else 66)
@@ -384,9 +378,6 @@ internal class CentralContent(
         settingsAction.visibility = if (ask || page == "insights" || page == "memories" || conversations) View.GONE else View.VISIBLE
         moreAction.visibility = if (ask || page == "memories" || conversations) View.GONE else View.VISIBLE
         memoryFilterAction.visibility = View.GONE
-        historyAction.visibility = if (ask && client != null) View.VISIBLE else View.GONE
-        newConversationAction.visibility = historyAction.visibility
-        conversationMoreAction.visibility = View.GONE
     }
     /** The conversation list is a peer of the thread: reaching it clears in-page
      * history so its back action returns to the home surface, not the thread. */
@@ -406,22 +397,15 @@ internal class CentralContent(
     }
     internal fun hideAskComposer() { composer.visibility = View.GONE }
     internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
-    internal fun askConversationActions(showMore: Boolean) { conversationMoreAction.visibility = if (showMore) View.VISIBLE else View.GONE }
     /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
     internal fun askConversationVisible(visible: Boolean) {
         title.visibility = if (visible) View.GONE else View.VISIBLE
         headerDivider.visibility = if (visible || embeddedActions) View.GONE else View.VISIBLE
-        newConversationAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
-        conversationMoreAction.visibility = View.GONE
-        historyAction.visibility = if (!visible && page == "ask" && client != null) View.VISIBLE else View.GONE
     }
     internal fun detailTitle(value: String) {
         title.visibility = View.VISIBLE
         title.text = value
         memoryFilterAction.visibility = View.GONE
-        historyAction.visibility = View.GONE
-        newConversationAction.visibility = View.GONE
-        conversationMoreAction.visibility = View.GONE
     }
     internal fun memoryLibraryHeader(filter: () -> Unit) {
         title.text = ""; memoryFilter = filter; memoryFilterAction.visibility = View.VISIBLE
@@ -638,6 +622,7 @@ internal class CentralContent(
     internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun) }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
         notice((if(page=="ask")screens?.askFailurePresentation(error) else null) ?: error.message ?: MoteI18n.text("操作失败"))
+        if (page == "ask" && networkFailure(error)) screens?.showOffline()
         if (client == null && body.childCount == 0) {
             button(MoteI18n.text("重试")) { recreate() }; connectionButton()
         }
@@ -646,6 +631,25 @@ internal class CentralContent(
         } else {
             handler.removeCallbacks(refreshLogin); handler.post(refreshLogin)
             if (page == "ask") scheduleAskPoll(5000)
+        }
+    }
+    /** The composer's retry banner owns this route, not a second connection screen. */
+    private fun networkFailure(error: Throwable): Boolean {
+        var value: Throwable? = error
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+        while (value != null && seen.add(value)) {
+            if (value is java.io.IOException) return true
+            value = value.cause
+        }
+        return false
+    }
+    internal fun retryAsk() { screens?.clearOffline(); navigate("ask") }
+    internal fun scrollToView(target: View) { scroll.post { scroll.scrollTo(0, target.top.coerceAtLeast(0)) } }
+    internal fun scrollToText(target: TextView, offset: Int) {
+        scroll.post {
+            val layout = target.layout ?: return@post
+            val line = layout.getLineForOffset(offset.coerceIn(0, target.text.length))
+            scroll.scrollTo(0, (target.top + layout.getLineTop(line)).coerceAtLeast(0))
         }
     }
     internal fun scheduleAskPoll(delay: Long = 1500) { handler.removeCallbacks(refreshRun); if (resumed && page == "ask") handler.postDelayed(refreshRun, delay) }

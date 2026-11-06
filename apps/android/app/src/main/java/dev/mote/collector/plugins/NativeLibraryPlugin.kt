@@ -136,8 +136,8 @@ internal class NativeLibraryOwner internal constructor(
 
     fun supportsCapture(source: String) = CentralCaptureReader.supports(source)
 
-    fun openCapture(activity: Activity, origin: String, row: JSONObject, conversationId: String?, workMemory: WorkMemoryReference?, accessGeneration: Long?) =
-        CentralCaptureReader.open(activity, origin, row, conversationId, workMemory, accessGeneration)
+    fun openCapture(activity: Activity, origin: String, row: JSONObject, conversationId: String?, workMemory: WorkMemoryReference?, accessGeneration: Long?, citationExcerpt: String? = null) =
+        CentralCaptureReader.open(activity, origin, row, conversationId, workMemory, accessGeneration, citationExcerpt)
 
     /** The only pinned reader for this Library scope. A new Activity view gets a
      * new session; the access selection is resolved on every read so a revoked
