@@ -86,15 +86,16 @@ app.on('browser-window-created', (_event, window) => {
         if(page==='notes'){await mainJs('window.mote.openQuickNote()');await waitQuick();assert(await js(`!document.querySelector('[data-page=notes]').hidden`));return;}
         await mainJs(`(async()=>{
           const visible=()=>Array.from(document.querySelectorAll('[data-nav="${page}"]')).find(button=>button.getClientRects().length);
-          if(!visible()){
-            document.querySelector('aside [data-nav=settings]').click();await new Promise(resolve=>requestAnimationFrame(resolve));
-            if(['screen'].includes('${page}')){document.querySelector('aside [data-nav=sources]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=sources] [data-nav=screen]').click();await new Promise(resolve=>setTimeout(resolve,180));return;}
-            if(['sync','privacy'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=capture-sync]').click();await new Promise(resolve=>requestAnimationFrame(resolve));document.querySelector('[data-page=capture-sync] [data-nav=${page}]').click();await new Promise(resolve=>setTimeout(resolve,180));return;}
-            if(['storage','backup','restore'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=connection]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
-            if(['capture','developer','about','preferences','chrome','statistics','activity','compression'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=mac-options]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
-            if('${page}'==='compression'){document.querySelector('[data-page=mac-options] [data-nav=capture]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
-          }
-          const button=visible();if(!button)throw Error('No visible route to ${page}');button.click();await new Promise(resolve=>setTimeout(resolve,180));
+          // The entry belongs to the page that shows it; click it once because navigation hides it.
+          const click=async button=>{if(!button)throw Error('No visible route to ${page}');button.click();await new Promise(resolve=>setTimeout(resolve,180));};
+          const direct=visible();if(direct){await click(direct);return;}
+          document.querySelector('aside [data-nav=settings]').click();await new Promise(resolve=>requestAnimationFrame(resolve));
+          if(['screen'].includes('${page}')){document.querySelector('aside [data-nav=sources]').click();await new Promise(resolve=>requestAnimationFrame(resolve));await click(document.querySelector('[data-page=sources] [data-nav=screen]'));return;}
+          if(['sync','privacy'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=capture-sync]').click();await new Promise(resolve=>requestAnimationFrame(resolve));await click(document.querySelector('[data-page=capture-sync] [data-nav=${page}]'));return;}
+          if(['storage','backup','restore'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=connection]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
+          if(['capture','developer','about','preferences','chrome','statistics','activity','compression'].includes('${page}')){document.querySelector('[data-page=settings] [data-nav=mac-options]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
+          if('${page}'==='compression'){document.querySelector('[data-page=mac-options] [data-nav=capture]').click();await new Promise(resolve=>requestAnimationFrame(resolve));}
+          await click(visible());
         })()`);
         assert(await js(`Array.from(document.querySelectorAll('[data-page]')).every(element => element.hidden === (element.dataset.page !== '${page}'))`), `Only ${page} should be visible: ${await js("Array.from(document.querySelectorAll('[data-page]')).map(e=>[e.dataset.page,e.hidden])")}`);
         assert(await js(`document.activeElement.matches('[data-page-title]')`), 'Navigation focuses the page heading');
@@ -161,6 +162,8 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(quick().isVisible(),false,'Quick note obeys fixture-background');
       await closeQuick();
       assert(await js(`!document.querySelector('[data-page=overview]').hidden`), 'An offline note returns to home without starting capture');
+      // The screen route lives on Sources; enter it there so the fixture keeps the entry click authoritative.
+      await navigate('sources');
       await navigate('screen');
       assert(await js(`!document.querySelector('#setup-prompt').hidden`), 'Screen recording has its own first-use scope setup');
       await js(`document.querySelector('#setup-primary').click(); new Promise(resolve => setTimeout(resolve, 100))`);
