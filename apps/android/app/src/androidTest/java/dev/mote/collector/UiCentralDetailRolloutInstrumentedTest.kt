@@ -69,6 +69,11 @@ class UiCentralDetailRolloutInstrumentedTest {
                 scenario.onActivity { activity -> assertTrue(shown(activity).filterIsInstance<Button>().single { it.text.toString() == MoteI18n.text(key) }.performClick()) }
                 waitFor(scenario, key) { true }
             }
+            fun clickTag(tag: String) {
+                waitFor(scenario, tag) { shown(it).any { view -> view.tag == tag && view.isEnabled } }
+                scenario.onActivity { activity -> assertTrue(shown(activity).single { it.tag == tag }.performClick()) }
+                waitFor(scenario, tag) { true }
+            }
             fun clickCard(title: String, key: String) {
                 waitFor(scenario, "$title / $key") { labels(it).contains(title) }
                 scenario.onActivity { activity ->
@@ -155,20 +160,20 @@ class UiCentralDetailRolloutInstrumentedTest {
             navigate("memories"); save("memories", "memories-populated", "Generated detail memory", translated = false)
             scenario.onActivity { assertTrue("Actual metadata title remains in the native list", labels(it).contains("Generated detail memory")) }
             scenario.onActivity { assertTrue("Actual metadata evidence count and effective status remain visible", labels(it).contains(MoteI18n.text("已生效") + " · 1 " + MoteI18n.text("条证据"))) }
-            click("查看详情"); save("memories", "memory-correction", "保存校正")
+            click("查看详情"); disclosure("更多"); clickTag("memory-more-correct"); save("memories", "memory-correction", "纠正")
             scenario.onActivity { activity ->
-                assertTrue("Actual memory title, full statement and correction controls precede technical metadata", labels(activity).contains("Generated detail memory") && labels(activity).any { it.startsWith("Generated owner statement") } && labels(activity).contains(MoteI18n.text("保存校正")))
+                assertTrue("Actual memory title, full statement and correction controls precede technical metadata", labels(activity).contains("Generated detail memory") && labels(activity).any { it.startsWith("Generated owner statement") } && labels(activity).contains(MoteI18n.text("纠正")))
                 assertTrue("Actual evidence remains available with metadata closed", labels(activity).contains(MoteI18n.text("查看原文依据") + " 1"))
                 assertFalse("Raw independent-review receipt is initially disclosed", labels(activity).any { it.contains("\"reviewReceipt\"") })
             }
-            disclosure("元数据"); save("memories", "memory-metadata", "reviewReceipt", translated = false)
+            clickTag("memory-more-generation"); disclosure("元数据"); save("memories", "memory-metadata", "reviewReceipt", translated = false)
             scenario.onActivity { activity ->
                 val complete = JSONObject(labels(activity).single { it.startsWith("{\n") && it.contains("\"reviewReceipt\"") })
                 assertEquals("Complete original memory title remains in technical record", "Generated detail memory", complete.getString("title"))
                 assertTrue("Complete review, admission, statement and evidence remain accessible", complete.has("reviewReceipt") && complete.has("admission") && complete.has("statement") && complete.has("evidence"))
             }
             disclosure("元数据")
-            click("删除记忆"); save("memories", "memory-delete-confirmation", "删除记忆", dialog = true); cancelDialog()
+            clickTag("memory-more-delete"); save("memories", "memory-delete-confirmation", "删除这条记忆？", dialog = true); cancelDialog()
             navigate("memories"); click("提取记忆"); save("memories", "memory-extraction-jobs", "开始提取")
             navigate("imports"); click("查看预览"); save("imports", "import-preview", "确认导入")
             click("确认导入"); save("imports", "import-confirmation", "请核对预览后再确认。", dialog = true); cancelDialog()

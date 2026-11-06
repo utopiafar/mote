@@ -1,7 +1,7 @@
 package dev.mote.collector.plugins
 
 import dev.mote.collector.HomeArchiveProbe
-import dev.mote.collector.HomeConversationRead
+import dev.mote.collector.HomeFeed
 import dev.mote.collector.HomeSection
 import org.json.JSONArray
 import org.json.JSONObject
@@ -97,20 +97,22 @@ class DailyHomePluginTest {
         assertTrue(owner.sourcesChanged(sources))
     }
 
-    @Test fun theHomeReadValidatesTheExactConversationPageItRenders() {
+    @Test fun theHomeReadValidatesTheExactCapturePageItRenders() {
         val id = UUID.randomUUID().toString()
         val page = JSONObject().put("items", JSONArray().put(JSONObject()
-            .put("id", id).put("title", "Generated home conversation").put("updatedAt", "2026-11-04T04:00:00Z").put("turnCount", 1)))
-        val rows = HomeConversationRead.page { path ->
-            assertEquals("/api/conversations?limit=5", path)
+            .put("id", id).put("capturedAt", "2026-11-04T04:00:00Z").put("source", "note")
+            .put("deviceId", "generated-device").put("hasImage", false)))
+        val rows = HomeFeed.page { path ->
+            assertEquals("/api/capture-browser?limit=30", path)
             page
         }
-        assertEquals(1, rows.length())
-        assertEquals("Generated home conversation", rows.getJSONObject(0).getString("title"))
+        assertEquals(1, rows.size)
+        assertEquals(id, rows[0].id)
+        assertEquals("note", rows[0].source)
 
         val malformed = JSONObject().put("items", JSONArray().put(JSONObject()
-            .put("id", "not-a-uuid").put("title", "Generated").put("updatedAt", "2026-11-04T04:00:00Z").put("turnCount", 1)))
-        assertThrows(IllegalArgumentException::class.java) { HomeConversationRead.page { malformed } }
+            .put("id", "not-a-uuid").put("capturedAt", "2026-11-04T04:00:00Z").put("source", "note").put("deviceId", "generated-device")))
+        assertThrows(IllegalArgumentException::class.java) { HomeFeed.page { malformed } }
 
         val archive = HomeArchiveProbe.empty { path ->
             when {
