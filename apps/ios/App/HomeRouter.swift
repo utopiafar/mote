@@ -23,6 +23,7 @@ final class HomeRouter {
         case .notice(.connect): destination = .connection
         case .notice(.capture(.reconnect)): destination = .connection
         case .notice(.capture): destination = .captureStatus
+        case .highlight(.discovery, _): destination = .discovery
         case .highlight(let kind, let id): destination = .highlight(kind, id)
         case .original(let id): destination = .original(id)
         }
@@ -52,8 +53,10 @@ enum HomeDestination: Equatable, Identifiable {
     case connection
     // Destination: IOS19 采集与同步
     case captureStatus
+    // Destination: 既有发现历史与只读报告
+    case discovery
     case original(String)
-    // Destination: 日程与待办、发现历史（后续单元）
+    // Destination: 日程与待办（后续单元）
     case highlight(HomeHighlight.Kind, String)
 
     enum EditorIntent: String {
@@ -70,6 +73,7 @@ enum HomeDestination: Equatable, Identifiable {
         case .editor(let intent): "editor.\(intent.rawValue)"
         case .connection: "connection"
         case .captureStatus: "captureStatus"
+        case .discovery: "discovery"
         case .original(let id): "original.\(id)"
         case .highlight(let kind, let id): "highlight.\(kind.rawValue).\(id)"
         }
@@ -90,6 +94,7 @@ enum HomeDestination: Equatable, Identifiable {
         case .editor(.microphone): "录音"
         case .connection: "连接 Mote"
         case .captureStatus: "采集状态"
+        case .discovery: "发现历史"
         case .original: "原文"
         case .highlight(.schedule, _): "日程"
         case .highlight(.discovery, _): "发现"
@@ -98,7 +103,7 @@ enum HomeDestination: Equatable, Identifiable {
 
     var isFullScreen: Bool {
         switch self {
-        case .profile, .captureStatus, .editor, .ask(.none), .connection: true
+        case .profile, .captureStatus, .editor, .ask(.none), .connection, .discovery: true
         default: false
         }
     }
@@ -134,9 +139,11 @@ struct HomeDestinationView: View {
             // conversation page. Scoped ask roots at a fresh conversation.
             ConversationFlowView(scope: scope, onDismiss: { dismiss() }, onAddImage: {})
         case .profile:
-            ProfileMenuView(onOpenConnection: onOpenConnection)
+            ProfileMenuView(onOpenConnection: onOpenConnection, onAsk: onAsk)
         case .captureStatus:
             CaptureSyncScreen(onOpenConnection: onOpenConnection, onOpenOriginal: onOpenOriginal)
+        case .discovery:
+            DiscoveryHistoryView(onBack: { dismiss() }, onOpenConnection: onOpenConnection, onAsk: onAsk)
         default:
             placeholder
         }

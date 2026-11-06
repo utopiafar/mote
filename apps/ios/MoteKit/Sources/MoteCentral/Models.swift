@@ -519,6 +519,12 @@ public struct CentralPage<Item: Codable & Sendable>: Codable, Sendable {
     public let items: [Item]
     public let nextCursor: String?
     public let totalCount: Int?
+
+    public init(items: [Item], nextCursor: String? = nil, totalCount: Int? = nil) {
+        self.items = items
+        self.nextCursor = nextCursor
+        self.totalCount = totalCount
+    }
 }
 
 public struct ConversationScope: Codable, Equatable, Sendable {
@@ -601,6 +607,17 @@ public struct Answer: Codable, Equatable, Sendable {
         public let contentAt: String?
         public let title: String?
         public let location: String?
+
+        public init(id: String, capturedAt: String, appName: String, excerpt: String,
+                    contentAt: String? = nil, title: String? = nil, location: String? = nil) {
+            self.id = id
+            self.capturedAt = capturedAt
+            self.appName = appName
+            self.excerpt = excerpt
+            self.contentAt = contentAt
+            self.title = title
+            self.location = location
+        }
     }
     public struct Trace: Codable, Equatable, Sendable {
         public let tool: String

@@ -149,6 +149,10 @@ targets:
       - target: Mote
       - package: MoteKit
         product: MoteCore
+      - package: MoteKit
+        product: MoteCentral
+      - package: MoteKit
+        product: MoteStorage
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.mote.ios.tests

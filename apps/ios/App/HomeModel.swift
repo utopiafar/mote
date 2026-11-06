@@ -4,63 +4,95 @@ import MoteCore
 import MoteStorage
 import Observation
 
-/// Loads the facts the home screen can read today: the saved connection, the
-/// single draft and the durable send queue. Records come from Central only
+/// Local facts the home screen reads today. Loading and opening content remain
+/// the responsibility of the feature that owns each operation.
+struct HomeLocalState: Sendable {
+    let connection: StoredConnection?
+    let hasDraft: Bool
+    let pendingCount: Int
+
+    init(connection: StoredConnection?, hasDraft: Bool, pendingCount: Int) {
+        self.connection = connection
+        self.hasDraft = hasDraft
+        self.pendingCount = pendingCount
+    }
+}
+
+/// Loads the saved connection, the single draft, the durable send queue and
+/// the owner's existing archived discoveries. Records come from Central only
 /// when a connection exists; there is no sample data on this path.
 @MainActor
 @Observable
 final class HomeModel {
+    typealias LocalStateLoader = @MainActor () -> HomeLocalState
+    typealias InsightLoader = @MainActor (StoredConnection) async throws -> [InsightReport]
+    typealias OriginalsLoader = @MainActor (StoredConnection) async throws -> [CapturePreview]
+
     private(set) var presentation: HomePresentation
 
     private let calendar: Calendar
-    private let session: URLSession
-    private let fileManager: FileManager
+    private let localStateLoader: LocalStateLoader
+    private let insightLoader: InsightLoader
+    private let originalsLoader: OriginalsLoader
     private var originals: [HomeOriginal] = []
     private var refreshGeneration = 0
 
-    init(calendar: Calendar = .current, session: URLSession = .shared, fileManager: FileManager = .default) {
+    init(calendar: Calendar = .current, session: URLSession = .shared, fileManager: FileManager = .default,
+         localState: LocalStateLoader? = nil, insightLoader: InsightLoader? = nil,
+         originalsLoader: OriginalsLoader? = nil) {
         self.calendar = calendar
-        self.session = session
-        self.fileManager = fileManager
-        let local = Self.readLocalState(fileManager: fileManager)
-        presentation = Self.makePresentation(local: local, originals: [], calendar: calendar)
+        let loader = localState ?? { Self.readLocalState(fileManager: fileManager) }
+        self.localStateLoader = loader
+        self.insightLoader = insightLoader ?? { connection in
+            let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
+            return try await client.insights(limit: 30).items
+        }
+        self.originalsLoader = originalsLoader ?? { connection in
+            let client = try CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
+            return try await client.originals(limit: 30).items
+        }
+        let local = loader()
+        presentation = Self.makePresentation(local: local, highlights: [], originals: [], calendar: calendar)
     }
 
     func refresh() async {
         refreshGeneration += 1
         let generation = refreshGeneration
-        let local = Self.readLocalState(fileManager: fileManager)
-        presentation = Self.makePresentation(local: local, originals: originals, calendar: calendar)
+        let local = localStateLoader()
+        presentation = Self.makePresentation(local: local, highlights: [], originals: originals, calendar: calendar)
 
-        guard let connection = local.connection,
-              let client = try? CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
-        else {
+        guard let connection = local.connection else {
             originals = []
-            presentation = Self.makePresentation(local: local, originals: [], calendar: calendar)
+            presentation = Self.makePresentation(local: local, highlights: [], originals: [], calendar: calendar)
             return
         }
 
-        guard let page = try? await client.originals(limit: 30), generation == refreshGeneration else { return }
-        originals = page.items.map { Self.original(from: $0) }
-        presentation = Self.makePresentation(local: local, originals: originals, calendar: calendar)
+        // Discovery is an independent read of archived reports. Any failure,
+        // including a stopped insight capability or a revoked read, only
+        // clears this block; recent records keep loading on their own.
+        let insights = (try? await insightLoader(connection)) ?? []
+        guard generation == refreshGeneration else { return }
+        let highlights = InsightPresentation.featured(insights).flatMap {
+            InsightPresentation.homeHighlight($0, calendar: calendar)
+        }.map { [$0] } ?? []
+
+        let page = try? await originalsLoader(connection)
+        guard generation == refreshGeneration else { return }
+        originals = page?.map { Self.original(from: $0) } ?? []
+        presentation = Self.makePresentation(local: local, highlights: highlights, originals: originals, calendar: calendar)
     }
 
-    private struct LocalState {
-        let connection: StoredConnection?
-        let hasDraft: Bool
-        let pendingCount: Int
-    }
-
-    private static func readLocalState(fileManager: FileManager) -> LocalState {
+    private static func readLocalState(fileManager: FileManager) -> HomeLocalState {
         let connection = (try? MoteStorage.connectionStore(fileManager: fileManager).read()) ?? nil
         let hasDraft = (try? MoteStorage.editorDraftStore(fileManager: fileManager).load())
             .map { !$0.isEmpty } ?? false
         let pendingCount = (try? MoteStorage.sendQueue(fileManager: fileManager).pending().count) ?? 0
-        return LocalState(connection: connection, hasDraft: hasDraft, pendingCount: pendingCount)
+        return HomeLocalState(connection: connection, hasDraft: hasDraft, pendingCount: pendingCount)
     }
 
     private static func makePresentation(
-        local: LocalState,
+        local: HomeLocalState,
+        highlights: [HomeHighlight],
         originals: [HomeOriginal],
         calendar: Calendar
     ) -> HomePresentation {
@@ -77,7 +109,7 @@ final class HomeModel {
         return HomePresentation(
             facts: facts,
             hasDraft: local.hasDraft,
-            highlights: [],
+            highlights: highlights,
             originals: originals,
             calendar: calendar
         )
